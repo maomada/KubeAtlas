@@ -40,5 +40,4 @@ updates:
     commit-message:
       prefix: "deps(actions):"
     cooldown:
-      default-days: 7
-      semver-major-days: 14
+      default-days: 14
