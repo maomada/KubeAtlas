@@ -1,5 +1,19 @@
 # AI Integration (MCP)
 
+For the opt-in, multi-cluster `/mcp-fleet` endpoint, including default-off
+prepare/execute operations and durable audit, see
+[Fleet Manager](fleet.md). The existing endpoints below keep their single-cluster
+Context behavior.
+
+`/mcp-fleet` always exposes `list_clusters`, `get_fleet_overview`,
+`search_fleet_resources`, `get_fleet_resource`, `get_fleet_events`,
+`get_fleet_logs`, `diagnose_fleet_resource`, `get_fleet_relationships` and
+`get_fleet_topology`, plus the read-only `get_fleet_audit`. With
+`--fleet-writes`, it additionally exposes `prepare_fleet_operation` and
+`execute_fleet_operation`. Its companion
+`/api/fleet` routes provide inventory and separately authorized metadata
+management; neither endpoint changes the legacy `/mcp` contract.
+
 KubeAtlas includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that lets AI agents inspect, investigate, and operate your Kubernetes cluster.
 
 ## Node drain timeouts

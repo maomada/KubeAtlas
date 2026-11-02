@@ -1,0 +1,308 @@
+# Fleet Manager: managed connections and metadata API
+
+Fleet is opt-in. The same KubeAtlas process connects directly to multiple Kubernetes
+API servers, using a separate client, discovery client and informer cache for each
+connection. The existing UI and `/mcp` still use their original single-cluster
+Context; switching that Context does not retarget Fleet requests.
+
+This increment provides a persistent identity catalog, configuration-based Fleet
+membership and the independent HTTP endpoint `/mcp-fleet` (under `--base-path`
+when configured). It is not the independent KubeAtlas Portal directory and does not
+use Portal registration or viewer credentials.
+
+## Local configuration
+
+Create a trusted operator-owned JSON file:
+
+```json
+{
+  "version": 1,
+  "connections": [
+    {
+      "id": "east",
+      "name": "East",
+      "source": {"type": "kubeconfig", "kubeconfig": "./east.yaml", "context": "east"},
+      "namespaces": ["production"]
+    },
+    {
+      "id": "west",
+      "name": "West",
+      "source": {"type": "kubeconfig", "kubeconfig": "./west.yaml", "context": "west"}
+    }
+  ],
+  "fleets": [{"id": "production", "name": "Production", "connections": ["east", "west"]}]
+}
+```
+
+```bash
+kubeatlas --fleet-config ./fleet.json --fleet-state ./fleet-state.json --no-browser
+```
+
+The normal KubeAtlas kubeconfig/ServiceAccount setup still applies to the original UI.
+Fleet uses explicit contexts from its own connection document, not the UI's
+current Context or `kubectl config use-context`. Relative kubeconfig paths resolve
+against the Fleet configuration file. The internal discovery helper reads each
+explicit kubeconfig separately; there is no automatic enrollment of all contexts.
+Kubeconfigs are executable trusted configuration (for example, exec credential
+plugins), not untrusted uploads. They are never returned over MCP or copied into
+the catalog. Do not put credentials in connection names or IDs.
+
+Authenticated operators can manage Fleet metadata only when their exact username
+appears in the comma-separated `--fleet-admin-users` flag; it defaults to empty.
+Kubernetes read access does not grant Fleet administration. With KubeAtlas auth
+disabled, management is available only on the loopback listener.
+`--fleet-local-connections` (default false) additionally enables trusted local
+kubeconfig admission and removal; it is forbidden in-cluster. These controls do
+not enable Kubernetes writes. `--fleet-writes` (default false) separately
+enables Fleet prepare/execute operations; it is rejected without Fleet
+configuration or when MCP is configured read-only.
+
+The protected registry persists stable cluster IDs and managed kubeconfig source
+references, never kubeconfig contents or credentials. Candidate IDs are resolved
+again from trusted server-side context discovery when admitted. The candidate API
+returns only `{id,name,context,sourceLabel}` and the source label is a basename;
+clients cannot submit paths, kubeconfig data, URLs or arbitrary contexts. A
+managed source missing or no longer present in trusted discovery is retained with
+its stable ID but becomes inactive and unroutable after restart. Re-adding the
+same connection ID and source can reactivate that record. Explicit removal also
+leaves the identity record inactive, so a later deliberate re-addition preserves
+the ID.
+
+Local connections inherit startup namespace settings as a hard collection clamp.
+When `--namespace-scope` is set, its selected namespace remains the boundary;
+managed connections cannot broaden it. The ordinary namespace picker does not
+retarget Fleet.
+
+`--fleet-state` defaults to `~/.kubeatlas/fleet-state.json`. Preserve this file across
+restarts: it contains stable internal cluster IDs, identity evidence and membership,
+not Kubernetes credentials. Only one process may own it. An invalid/locked catalog
+fails startup rather than silently assigning new IDs. Configuration is read at
+startup; restart KubeAtlas after edits, credential rotation or connection recovery.
+This increment does not automatically reconnect or live-reload configuration.
+
+An explicit `namespaces` array is a hard collection boundary for namespaced kinds.
+Omitting it requests cluster-wide collection and may return denied. Cluster-scoped
+Nodes/Namespaces still require their own Kubernetes permissions. The initial
+supported kinds are Pods, Deployments, Services, Nodes and Namespaces.
+
+## Identity and duplicate connections
+
+Connection IDs identify operator configuration. Random internal cluster IDs are
+persisted independently. Context names and API URLs are not physical identity.
+Changing an existing connection's source reference requires a new connection ID.
+Changing credentials in the referenced kubeconfig does not merge permissions.
+
+The `kube-system` namespace UID is an observed identity signal, not a universal
+proof (clusters can be cloned/restored). If it is unreadable, identity stays
+unresolved and the connection retains a separate record. Matching observed UIDs
+produce duplicate candidates; they do **not** merge clients, caches or credentials.
+Changing a previously observed UID produces an identity conflict and disables
+routing for that connection. Resolve that change operationally, rather than
+discarding the state file to bypass the guard.
+
+`list_clusters` reports startup connection/collection observations with timestamps;
+they are not a continuous availability monitor. Informer readiness and identity
+verification are not proof that a cluster is healthy. Live queries report their own
+fresh acquisition status. Do not sum duplicate candidates as distinct clusters.
+
+## MCP contract and access control
+
+Connect an MCP Streamable HTTP client to `http://127.0.0.1:9280/mcp-fleet` locally
+or to the authenticated deployment's equivalent URL. Fleet is HTTP-only in this
+increment; legacy stdio/catalog-only modes do not become Fleet transports.
+
+| Tool | Inputs | Result |
+| --- | --- | --- |
+| `list_clusters` | Optional `fleetId`, `clusterIds` | Active inventory, stable IDs, connection and identity observations, duplicate candidates and memberships |
+| `get_fleet_overview` | Optional `fleetId`, `clusterIds` | Per-cluster rows add `assessmentState`, `findings`, `assessmentCoverage`, and `assessmentTruncated` to the scoped inventory |
+| `search_fleet_resources` | `resource`; optional `fleetId`, `clusterIds`, `namespace`, `nameContains`, `labelSelector`, `limit` | Metadata only: cluster/connection, group/kind/namespace/name, UID, resourceVersion, source/time and per-cluster coverage |
+| `get_fleet_resource` | `clusterId`, `resource`, `namespace`, `name`, optional `uid` | `{target,state,object?,limitations}`; one sanitized allowlisted resource; Secret reads are denied |
+| `get_fleet_events` | `clusterId`, `resource`, `namespace`, `name`, `uid`, optional `limit` | `{target,state,events,truncated,limitations}` with UID-bound, redacted events |
+| `get_fleet_logs` | `clusterId`, `namespace`, `name`, `container`, optional `tailLines`, `previous` | `{target,state,container,text,truncated,limitations}`; stale Pod UIDs suppress text. Redaction is best effort and cannot guarantee removal of arbitrary application secrets. |
+| `diagnose_fleet_resource` | `clusterId`, `resource`, `namespace`, `name`, optional `uid` | `{target,state,findings,limitations}` with deterministic canonical health observations, not an LLM root-cause claim |
+| `get_fleet_relationships` | Optional `fleetId`, `clusterIds` | `{relationships,coverage,truncated,limitations}`; evidence-backed Karmada identity/distribution declarations |
+| `get_fleet_topology` | Optional `fleetId`, `clusterIds` | `{nodes,edges,coverage,truncated,limitations}` with typed referentially valid nodes and evidence-backed edges |
+
+Omitting selection queries all active configured clusters. Supplying an unknown
+cluster or a cluster outside the selected Fleet is an error, never a fallback to
+the current Context. A failed peer does not erase results from healthy peers.
+Search defaults to at most 100 matches and caps the requested limit at 200.
+Collection is bounded to 500 objects per resource/cluster, four concurrent
+clusters and a 20-second call budget. Continuation, namespace failures or collection
+limits yield partial coverage. Partial counts are lower bounds; denied,
+unavailable and out-of-scope counts are omitted, not zero. Search count coverage
+is before the client-side name filter. `truncated` indicates the returned match
+limit; collection incompleteness is separately reported in `coverage`.
+
+Evidence reads allow only Pods, Deployments, StatefulSets, DaemonSets, ReplicaSets,
+Services, Nodes and Namespaces; Secret reads are not supported. Resource detail
+removes managed fields and the last-applied annotation and uses KubeAtlas's shared
+structured and inline-secret redaction. Event reads bind to the fetched object's
+UID, not its name. Pod logs require an explicit regular, init or ephemeral
+container, are limited to 200 lines, 64 KiB and 20 seconds, and return no text
+when the Pod UID changes during the read. Log redaction is best effort; it cannot
+guarantee removal of arbitrary application secrets.
+
+`diagnose_fleet_resource` is a deterministic, scoped observation using KubeAtlas's
+canonical Pod, workload and Node lifecycle classifiers. Missing required fields
+or incomplete coverage remain unknown; historical OOM evidence is not called a
+current root cause. Overview assessments reuse their bounded collections and
+keep collection coverage separate from assessment certainty. Neither surface
+claims whole-cluster health.
+
+Relationships are emitted only for supported Karmada APIs. Karmada `Cluster`
+`spec.id` is compared only with fresh caller-authorized `kube-system` namespace
+UIDs; it is a declared identity cross-check, not physical proof. Duplicate matches
+remain ambiguous and custom IDs remain unresolved. ResourceBinding membership is
+a declared distribution only; authorized exact source and destination GETs may
+add observed endpoints, but do not prove delivery, controller ownership or
+successful application. Coverage distinguishes unsupported APIs from denied reads.
+Topology preserves unresolved destinations and every edge references a returned
+node. Result arrays are always non-null; unavailable optional evidence is omitted
+or represented by its explicit state rather than a false assertion.
+
+Without KubeAtlas authentication, loopback callers use each connection's credentials.
+The CLI refuses Fleet on a non-loopback listener without KubeAtlas authentication.
+Do not expose an unauthenticated loopback process through a public proxy/tunnel.
+
+With KubeAtlas authentication, each data query makes fresh Kubernetes LIST requests
+impersonating that caller on **each target cluster**. Each connection identity must
+have the necessary impersonation permissions there, and the caller must have LIST
+permissions there. The service identity's informer cache is not used as a shortcut
+around caller RBAC. Denied impersonation is denied data, not a fallback to service
+credentials. Configured inventory and service collection status are visible to
+authenticated KubeAtlas users; they do not themselves grant Kubernetes access.
+Cloud/user-token forwarding is unsupported and fails closed: an incoming token is
+never forwarded to arbitrary Fleet clusters. Configure authentication and trusted
+proxy/OIDC boundaries as described in [authentication.md](authentication.md).
+
+## Fleet workspace
+
+Open `/fleet` (under the configured base path) or select **Fleet Manager** in the
+standalone navigation. The workspace uses the same authenticated Fleet API as
+MCP: inventory and grouping, scoped overview, resource search, on-demand evidence,
+relationship/topology tables, and explicit-target operations with audit history.
+Denied, partial, unavailable and unresolved observations remain visible rather
+than becoming zero counts or healthy states. Refresh controls request fresh
+evidence; displayed observations are not a promise of continuous monitoring.
+
+Writes are disabled unless the operator enables them. Review a server dry-run,
+check the explicit cluster/resource identity and confirm once; changing form
+inputs clears the preview. An uncertain outcome must be reconciled against fresh
+evidence and audit before preparing another request. Credentials and manifests
+are not saved to browser storage. Embedded KubeAtlas consumers keep their existing
+host-owned navigation and per-cluster API configuration.
+
+## HTTP inventory and management API
+
+When Fleet is enabled, KubeAtlas mounts these routes under the existing authenticated
+and same-origin `/api` boundary. They do not inherit legacy current-cluster
+authorization or its namespace filter; live Fleet queries explicitly route to
+selected runtimes and enforce the caller's access on each target cluster.
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /api/fleet/capabilities` | Returns `enabled`, caller-specific `canManage`, configured `localConnections`, and the `writesEnabled` feature flag. This flag does not grant target-cluster RBAC. |
+| `POST /api/fleet/query/{tool}` | Runs the ten read tools, plus prepare/execute only when `--fleet-writes` is enabled, with the same bounded inputs and structured results as MCP. |
+| `GET /api/fleet/candidates` | Lists current trusted server-side context candidates; source paths and credentials are not returned. |
+| `POST /api/fleet/connections` | Adds `{ "id": "...", "name": "...", "candidateId": "..." }` when local connections are enabled and the caller may manage Fleet. Returns `{ "ok": true, "clusterId": "..." }`. |
+| `DELETE /api/fleet/connections/{id}` | Removes only a locally managed connection. Declarative connections are immutable. |
+| `PUT /api/fleet/fleets/{id}` | Upserts `{ "name": "...", "clusterIds": [] }` and memberships. |
+| `DELETE /api/fleet/fleets/{id}` | Deletes a locally managed Fleet. Declarative Fleets return `409`; edit the Fleet configuration instead. |
+| `POST /api/fleet/clusters/{clusterId}/refresh` | Refreshes only that cluster's runtime. |
+| `POST /api/fleet/duplicates` | Persists `{ "clusterId": "...", "otherClusterId": "...", "decision": "keep_separate" }` only for active, verified duplicate candidates. |
+| `POST /api/fleet/query/prepare_fleet_operation` | With writes enabled, server-dry-runs one explicit restart, scale, or allowlisted apply and returns a bounded summary plus a five-minute one-shot confirmation. |
+| `POST /api/fleet/query/execute_fleet_operation` | Consumes the confirmation once, rechecks the exact target and runtime, durably records intent, then dispatches one caller-authorized mutation. |
+| `POST /api/fleet/query/get_fleet_audit` | Reads up to 100 latest durable records; authenticated non-admins see only their own records. Audit remains readable when writes are disabled. |
+
+Operations target exactly one namespace/name on one explicit cluster ID.
+Restart supports Deployments, StatefulSets and DaemonSets; scale supports
+Deployments and StatefulSets with 0–10000 replicas. Apply accepts one strict
+YAML/JSON object for Pods, Services, ReplicaSets, Deployments, StatefulSets or
+DaemonSets. Secrets, RBAC, CRDs, cluster-scoped objects, force ownership and
+multi-document manifests are unsupported. Preview and execution use the
+caller-specific Kubernetes identity and configured namespace clamp; the Fleet
+admin allowlist is not Kubernetes authorization. User-token forwarding is
+unsupported. Runtime replacement, identity change, or UID/resourceVersion
+change invalidates a preview. Timeouts after dispatch are outcome-unknown and
+must not be automatically retried. `applied` means only that the API
+acknowledged the mutation, not that rollout converged.
+
+Target-cluster RBAC must allow workload `get` plus `patch` for restart,
+`get` plus `patch` on the `scale` subresource for scale, and `get` plus
+`patch` for an existing apply target or `create` for an absent apply target.
+The API server dry-run uses the same caller identity and requires the same
+authorization as the eventual mutation.
+
+Durable audit is stored beside the registry at `<fleet-state>.audit.jsonl`,
+requires a regular 0600 file and is capped at 16 MiB. Intents are synced before
+mutation and results after; full, insecure, torn or malformed history fails
+closed. Preserve the file; rotate it only while KubeAtlas is stopped after archive.
+
+Successful metadata mutations return `{ "ok": true }`, except connection
+admission, which also returns the stable `clusterId`. `list_clusters` and API
+inventory include `managedConnectionIds` for active locally owned connections
+and `duplicateDecisions`; both arrays are always non-null. Declarative records
+are never included in `managedConnectionIds`. Duplicate decisions preserve
+separate identities and never merge credentials, runtimes or access.
+Candidate discovery is restricted to Fleet administrators; ordinary authenticated
+readers can query capabilities and inventory but cannot inspect local candidates.
+
+## Helm configuration
+
+Use a locally built image containing this implementation; released upstream images
+do not gain these flags from values alone. No image or chart is published by this
+change. The canonical chart is `deploy/helm/kubeatlas` in this repository.
+
+The chart's `fleet` settings render a non-secret configuration ConfigMap, mount
+operator-managed kubeconfig Secrets read-only, and require an existing state PVC.
+For example, after provisioning the PVC, Secret, authentication proxy and target
+RBAC:
+
+```yaml
+replicaCount: 1
+auth:
+  mode: proxy
+fleet:
+  enabled: true
+  writesEnabled: false
+  adminUsers: [operator@example.com]
+  state:
+    existingClaim: kubeatlas-fleet-state
+  kubeconfigSecrets:
+    - name: member
+      secretName: kubeatlas-member-kubeconfig
+  config:
+    version: 1
+    connections:
+      - id: member
+        name: Member cluster
+        source:
+          type: kubeconfig
+          kubeconfig: /etc/kubeatlas/fleet-credentials/member/config
+          context: member
+    fleets:
+      - id: production
+        name: Production
+        connections: [member]
+```
+
+Use absolute mounted paths in each `source.kubeconfig`. A local cluster can instead
+use `"source": {"type": "in-cluster"}`, which retains the pod's ServiceAccount.
+Ensure the container can read the mounted files and write the state directory.
+The chart requires one replica and uses Recreate so a second pod does not contend
+for the catalog lock. Preserve the PVC, including the audit log, across upgrades.
+Generated Fleet configuration changes update the pod checksum; external Secret
+rotation still requires reconnecting the affected runtime or restarting KubeAtlas.
+Cloud tunneling and MCP-disabled mode cannot be combined with Fleet. Enabling
+`fleet.writesEnabled` with `mcp.readOnly` is rejected. This chart grants no remote
+cluster or Kubernetes write permissions. See the [chart guide](../deploy/helm/kubeatlas/README.md#fleet-manager)
+for storage ownership and target authorization requirements.
+
+## Deliberate limits
+
+Fleet operations are explicit one-cluster requests and do not wait for rollout
+convergence. Server-side dry-run is validation evidence, not a guarantee that a
+later request succeeds. Evidence has separately documented redaction and
+coverage limitations. Fake-client and HTTP-fixture tests are not real-cluster
+deployment evidence.
