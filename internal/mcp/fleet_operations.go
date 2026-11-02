@@ -15,10 +15,10 @@ import (
 	"sync"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/maomada/KubeAtlas/internal/fleet"
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
 	"github.com/maomada/KubeAtlas/pkg/resourceid"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"gopkg.in/yaml.v3"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"

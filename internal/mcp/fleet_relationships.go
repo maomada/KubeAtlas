@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/maomada/KubeAtlas/internal/fleet"
 	"github.com/maomada/KubeAtlas/pkg/resourceid"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime/schema"
