@@ -19,12 +19,12 @@ require (
 	github.com/hashicorp/yamux v0.1.2
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/klauspost/compress v1.20.3
+	github.com/maomada/KubeAtlas/pkg v0.0.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.3
 	github.com/prometheus/common v0.72.1
-	github.com/maomada/KubeAtlas/pkg v0.0.0
 	github.com/wailsapp/wails/v2 v2.17.0
 	golang.org/x/net v0.61.0
 	golang.org/x/oauth2 v0.37.0
@@ -43,9 +43,10 @@ require (
 	k8s.io/client-go v0.37.1
 	k8s.io/component-helpers v0.37.1
 	k8s.io/klog/v2 v2.140.0
+	k8s.io/streaming v0.37.1
 	k8s.io/utils v0.0.0-20260707023825-cf1189d6abe3
 	modernc.org/sqlite v1.60.1
-	oras.land/oras-go/v2 v2.6.2
+	oras.land/oras-go/v2 v2.7.0
 	sigs.k8s.io/yaml v1.6.0
 )
 
@@ -182,7 +183,6 @@ require (
 	k8s.io/csi-translation-lib v0.37.1 // indirect
 	k8s.io/kube-openapi v0.0.0-20260721132016-d427ff9ee9ad // indirect
 	k8s.io/kubectl v0.37.1 // indirect
-	k8s.io/streaming v0.37.1 // indirect
 	modernc.org/libc v1.77.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
