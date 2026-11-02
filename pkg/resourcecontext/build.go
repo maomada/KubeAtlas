@@ -1,0 +1,2043 @@
+package resourcecontext
+
+import (
+	"context"
+	"slices"
+	"sort"
+	"time"
+
+	"github.com/maomada/KubeAtlas/pkg/health"
+	"github.com/maomada/KubeAtlas/pkg/ownership"
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	"github.com/maomada/KubeAtlas/pkg/configrefs"
+	"github.com/maomada/KubeAtlas/pkg/hpadiag"
+	"github.com/maomada/KubeAtlas/pkg/rolloutdiag"
+	"github.com/maomada/KubeAtlas/pkg/topology"
+)
+
+// Options carries everything Build needs to compute a ResourceContext.
+//
+// Per the v1 contract, this package depends only on pkg/topology — callers
+// in internal/* pre-compute IssueSummary / AuditSummary / PolicyReports and
+// pass them in, so we don't reach into internal/issues or internal/audit.
+type Options struct {
+	Reflections ReflectionLookup
+	Tier        ContextTier
+
+	// AccessChecker gates every emitted ContextRef. nil = no gating (treat
+	// as fully authorized — local-kubeconfig / tests).
+	AccessChecker RefAccessChecker
+
+	// Topology data sources. When Topology is nil, the topology-derived
+	// fields (Exposes, SelectedBy, ScaledBy, ManagedBy, RunsOn,
+	// Uses.ServiceAccount) are skipped.
+	Topology    *topology.Topology
+	Provider    topology.ResourceProvider
+	DynamicProv topology.DynamicProvider
+
+	// Relationships is the pre-computed per-resource projection. When non-nil,
+	// Build consumes it directly instead of calling
+	// topology.GetRelationshipsWithObject — single-resource handlers should
+	// leave this nil and let Build compute; bulk/list callers that already
+	// loop over relationships per row SHOULD pass it to avoid double work.
+	//
+	// Topology MUST still be set when Relationships is set — synthesis
+	// helpers (e.g. ManagedBy owner walk) read Topology and RelIndex through
+	// it.
+	Relationships *topology.Relationships
+
+	// Ownership, when set, answers the relationships' Owner from owner
+	// references in place of the topology's manages edges, for fetched, the
+	// object Build describes. Build reads only Owner, the owner state and the
+	// manager answer (rel.Ownership.Manager) of rel.Ownership, so a host
+	// needn't search for children (see topology.ApplyOwner). rel is never nil.
+	Ownership func(rel *topology.Relationships, fetched ownership.Observation)
+
+	// RelIndex is the topology inverted-edge index. Pass a shared instance
+	// (topology.IndexByResource(topo)) for high-fanout callers; nil is fine
+	// for single-resource Build paths — the per-call inline scan is O(E) once.
+	RelIndex *topology.RelationshipsIndex
+
+	// Pre-computed summaries — pass-through into the response.
+	IssueSummary  *IssueSummary
+	AuditSummary  *AuditSummary
+	Scheduling    *SchedulingSummary
+	Execution     *ExecutionSummary
+	Serving       *ServingSummary
+	PolicyReports PolicyReportLookup // nil = Kyverno not installed / no findings
+	AppReferences *AppReferences
+	// Attached only after the evidence Job and Pod pass the access gate.
+	ContainerCompletionSplit *ContainerCompletionSplit
+	// TemplateDivergence passes through unchanged; the caller authorizes the
+	// Pods and templates it compared.
+	TemplateDivergence *TemplateDivergence
+
+	// Optional kind-specific lookups. ServiceBackends is used only for
+	// Service resources to attach realized pod-selection state. The raw
+	// Service spec already carries selector/ports; this lookup answers
+	// whether that selector currently resolves to ready Pods.
+	ServiceBackends ServiceBackendLookup
+}
+
+// PolicyReportLookup is the minimal interface Build needs from the
+// PolicyReport index. The concrete index lives in pkg/policyreports.
+//
+// Build does not import pkg/policyreports directly because callers may
+// adapt other policy engines into the same shape.
+type PolicyReportLookup interface {
+	FindingsFor(group, kind, namespace, name string) []KyvernoFinding
+}
+
+// PolicyReportAvailability is an optional interface a PolicyReportLookup may
+// also implement to say that findings could not be read at all, and why.
+//
+// Without it, "this resource has no policy violations" and "Radar could not
+// see the policy reports" produce the identical empty response — the silent
+// emptiness this codebase treats as a bug. Implementing it makes Build emit
+// `omitted: [{field: "policySummary.kyverno", reason: ...}]` instead.
+//
+// Optional rather than part of PolicyReportLookup so existing implementers
+// keep compiling.
+type PolicyReportAvailability interface {
+	// Unavailable reports (reason, true) when findings are unreadable.
+	// (_, false) means the lookup is serving normally.
+	Unavailable() (OmittedReason, bool)
+}
+
+// PolicyReportWithholding is implemented by lookups that filter findings per
+// caller.
+//
+// Unavailable answers for the whole lookup and cannot answer for one resource:
+// a caller authorized on one report family and not the other is serving
+// normally right up until the resource they ask about has its findings in the
+// other one. Dropping those silently leaves an empty policy summary, which
+// reads as a resource that violates nothing — the one conclusion the data does
+// not support.
+//
+// Optional, for the same reason as PolicyReportAvailability: existing
+// implementers keep compiling.
+type PolicyReportWithholding interface {
+	// WithheldFor reports whether any finding for this subject was filtered out
+	// as unreadable by the caller.
+	WithheldFor(group, kind, namespace, name string) bool
+}
+
+type ServiceBackendLookup interface {
+	PodsForServiceSelector(namespace string, selector labels.Selector) ([]*corev1.Pod, error)
+}
+
+// ServiceBackendGrouper is optional on a ServiceBackendLookup, so existing
+// implementers keep compiling: it groups a Service's selected Pods by the
+// workload that runs them. Without it a Service gets no workload breakdown.
+type ServiceBackendGrouper interface {
+	GroupServiceBackends(svc *corev1.Service, pods []*corev1.Pod) ServiceBackendGrouping
+}
+
+type ServiceBackendGrouping struct {
+	Workloads []ServiceBackendWorkload
+	// MixedBackends is set when the workloads don't all serve the Service,
+	// and explains why.
+	MixedBackends string
+}
+
+// RefAccessChecker abstracts the RBAC check so this package doesn't import
+// any internal/* package. REST and MCP handlers each implement this with a
+// request-scoped batch cache (see internal/server/rc_rbac.go).
+//
+// Implementations should treat (group, kind, namespace) as the cache key —
+// per-name SAR has no upside since RBAC is namespace-granular.
+type RefAccessChecker interface {
+	CanRead(ctx context.Context, group, kind, namespace string) bool
+}
+
+// Build produces a ResourceContext for obj at the requested tier.
+//
+// Returns nil when obj is nil. Returns a zero-value (.Tier-only)
+// ResourceContext when obj is recognized but no enrichment fields apply.
+// Never panics on nil sub-fields of opts.
+func Build(ctx context.Context, obj runtime.Object, opts Options) *ResourceContext {
+	if obj == nil {
+		return nil
+	}
+
+	ident, ok := identityOf(obj)
+	if !ok {
+		return &ResourceContext{Tier: opts.Tier}
+	}
+
+	rc := &ResourceContext{Tier: opts.Tier, CrossplanePause: CrossplanePauseFor(obj)}
+	omitted := newOmittedTracker()
+
+	// Topology-derived relationships drive ManagedBy / Exposes / SelectedBy /
+	// ScaledBy / RunsOn / Uses.ServiceAccount. T23 made
+	// topology.Relationships the canonical projection: server-side
+	// SynthesizeManagedBy walks the owner chain + GitOps signals, and the Pod
+	// hygiene fields (.ServiceAccount, .Node) are populated from pod.Spec.
+	// ManagedBy stays delegated to topology to avoid duplicating its owner-chain
+	// and GitOps logic. The direct Owner field below may still fall back to the
+	// object's controller OwnerReference when topology is absent or cold.
+	//
+	// Single-resource callers (REST GET, MCP get_resource) leave
+	// opts.Relationships nil and let us compute via GetRelationshipsWithObject
+	// — passing obj keeps kind/group disambiguation correct for CRDs whose
+	// plural collides with a core resource. Bulk callers that already loop
+	// over relationships per row pass them in directly.
+	rel := opts.Relationships
+	if rel == nil && opts.Topology != nil {
+		// Resolve the topology-pseudo-kind so cross-group CRDs (Knative
+		// serving.knative.dev/Service, CAPI cluster.x-k8s.io/Cluster, …)
+		// look up the right node. Using ident.Kind directly would lower-
+		// case to "service" and resolve to the core Service node, leaking
+		// the wrong resource's relationships into the CRD's resourceContext.
+		// The handler-side pre-computation does this same KindForGVK
+		// resolution; mirror it here so the fallback path doesn't undo it.
+		rel = topology.GetRelationshipsWithObject(
+			topology.KindForGVK(ident.Kind, ident.Group), ident.Namespace, ident.Name, obj,
+			opts.Topology, opts.Provider, opts.DynamicProv, opts.RelIndex,
+		)
+	}
+	// Whether the topology answered, before an ownership answer exists to
+	// carry the rest.
+	fromTopology := rel != nil
+	// answered: the host's ownership answer stands, even one with nothing to
+	// say, as for an Event, whose owner references ownership doesn't follow.
+	answered := false
+	if m, ok := obj.(metav1.Object); ok && opts.Ownership != nil {
+		if rel == nil {
+			rel = &topology.Relationships{}
+		}
+		ref := resourceid.Ref{Group: ident.Group, Kind: ident.Kind, Namespace: ident.Namespace, Name: ident.Name}
+		opts.Ownership(rel, ownership.Observe(ref, m))
+		answered = true
+	}
+
+	// 1. ManagedBy — prefer Relationships.ManagedBy (server-synthesized when
+	// a topology is available; covers GitOps signals + owner-chain walk).
+	// Fall back to topology.SynthesizeManagedBy with the obj alone when no
+	// topology is provided — that path still detects Argo/Flux/Helm signals
+	// from labels and annotations without needing a graph.
+	var managedBy []topology.ResourceRef
+	if rel != nil && len(rel.ManagedBy) > 0 {
+		managedBy = rel.ManagedBy
+	} else if !fromTopology {
+		if m, ok := obj.(metav1.Object); ok {
+			managedBy = topology.SynthesizeManagedBy(m, ident.Kind, ident.Namespace, ident.Name, nil, nil, nil)
+		}
+	}
+	if answered && rel.Ownership != nil && rel.Ownership.Manager != nil {
+		rc.Manager = managerContext(rel.Ownership.Manager)
+	}
+	// With a manager answer, the GitOps and Helm managers are its to name:
+	// managedBy keeps the rest (a controller, cert-manager), not a second,
+	// metadata-only answer to the same question.
+	if rc.Manager != nil {
+		managedBy = slices.DeleteFunc(slices.Clone(managedBy), answeredManager)
+	}
+	// Unlike the other references, a managedBy the caller can't read leaves no
+	// omission note: the note would say a hidden manager links to this object.
+	// The manager answer's narrowed says the caller sees only part.
+	if len(managedBy) > 0 {
+		rc.ManagedBy = filterRefs(ctx, opts.AccessChecker,
+			toContextRefs(managedBy),
+			"managedBy", nil)
+	}
+
+	if rel != nil && rel.Owner != nil {
+		candidate := &ContextRef{
+			Kind:      rel.Owner.Kind,
+			Group:     rel.Owner.Group,
+			Namespace: rel.Owner.Namespace,
+			Name:      rel.Owner.Name,
+		}
+		if checkRef(ctx, opts.AccessChecker, candidate) {
+			rc.Owner = candidate
+		} else {
+			omitted.add("owner", OmittedRBACDenied)
+		}
+	} else if rel != nil && rel.Ownership != nil {
+		// An ownership answer without an owner: say why, unless there is no
+		// owner to name (none referenced, or one that is gone).
+		switch {
+		case rel.Ownership.PrimaryOwnerState == "withheld":
+			omitted.add("owner", OmittedRBACDenied)
+		case rel.Ownership.PrimaryOwnerState == "unknown",
+			rel.Ownership.UnavailableReason != "" && ownerFromObject(obj, ident.Namespace) != nil:
+			omitted.add("owner", OmittedUnavailable)
+		}
+	} else if owner := ownerFromObject(obj, ident.Namespace); owner != nil && !answered {
+		// Without an ownership answer, the object's own controller reference.
+		if checkRef(ctx, opts.AccessChecker, owner) {
+			rc.Owner = owner
+		} else {
+			omitted.add("owner", OmittedRBACDenied)
+		}
+	}
+
+	// 2. Topology-derived: Exposes, SelectedBy, ScaledBy
+	if rel != nil {
+		exposedBy := make([]topology.ResourceRef, 0, len(rel.Services)+len(rel.Ingresses)+len(rel.Gateways)+len(rel.Routes)+len(rel.RoutedFrom))
+		exposedBy = append(exposedBy, rel.Services...)
+		exposedBy = append(exposedBy, rel.Ingresses...)
+		exposedBy = append(exposedBy, rel.Gateways...)
+		exposedBy = append(exposedBy, rel.Routes...)
+		exposedBy = append(exposedBy, rel.RoutedFrom...)
+		backends := append([]topology.ResourceRef(nil), rel.Backends...)
+		// Deployment and Node Pods are containment shortcuts, not routing targets.
+		if !(ident.Kind == "Deployment" && ident.Group == "apps") && !(ident.Kind == "Node" && ident.Group == "") {
+			backends = append(backends, rel.Pods...)
+		}
+		rc.ExposedBy = filterRefs(ctx, opts.AccessChecker, toContextRefs(exposedBy), "exposedBy", omitted)
+		rc.Backends = filterRefs(ctx, opts.AccessChecker, toContextRefs(backends), "backends", omitted)
+		exposes := append(exposedBy, backends...)
+		rc.Exposes = filterRefs(ctx, opts.AccessChecker, toContextRefs(exposes), "exposes", omitted)
+
+		selected := make([]topology.ResourceRef, 0, len(rel.PDBs)+len(rel.NetworkPolicies))
+		selected = append(selected, rel.PDBs...)
+		selected = append(selected, rel.NetworkPolicies...)
+		rc.SelectedBy = filterRefs(ctx, opts.AccessChecker,
+			toContextRefs(selected),
+			"selectedBy", omitted)
+
+		rc.Protects = filterRefs(ctx, opts.AccessChecker, toContextRefs(rel.Protects), "protects", omitted)
+		rc.HealthChecks = filterRefs(ctx, opts.AccessChecker, toContextRefs(rel.HealthChecks), "healthChecks", omitted)
+		rc.StagedPolicies = filterRefs(ctx, opts.AccessChecker, toContextRefs(rel.StagedPolicies), "stagedPolicies", omitted)
+		rc.Monitors = filterRefs(ctx, opts.AccessChecker, toContextRefs(rel.Monitors), "monitors", omitted)
+		rc.MonitorTargets = filterRefs(ctx, opts.AccessChecker, toContextRefs(rel.MonitorTargets), "monitorTargets", omitted)
+
+		rc.Dependencies = filterRefs(ctx, opts.AccessChecker,
+			toContextRefs(rel.Dependencies), "dependencies", omitted)
+		rc.Dependents = filterRefs(ctx, opts.AccessChecker,
+			toContextRefs(rel.Dependents), "dependents", omitted)
+
+		rc.ScaledBy = buildScaledBy(ctx, rel.Scalers, opts.Provider, opts.AccessChecker, omitted)
+	}
+
+	// 3. Pod-specific: RunsOn (Node) + Uses (ConfigMap/Secret/PVC/SA).
+	//
+	// RunsOn and Uses.ServiceAccount come from topology.Relationships when
+	// available (T23 populates them from pod.Spec server-side). We still
+	// scan pod.Spec.Volumes / .EnvFrom directly for the ConfigMap/Secret/PVC
+	// inventory — topology doesn't model those use-edges at the granularity
+	// Build needs.
+	if pod, ok := obj.(*corev1.Pod); ok {
+		rc.Uses = buildUsesFromPod(ctx, pod, opts.AccessChecker, omitted)
+		rc.PodSummary = buildPodSummary(pod)
+
+		// Prefer rel.ServiceAccount over re-reading pod.Spec — same source,
+		// but consolidating through Relationships keeps Build aligned with
+		// how MCP/agents consume the field.
+		if rc.Uses != nil && rc.Uses.ServiceAccount == nil && rel != nil && rel.ServiceAccount != nil {
+			candidate := &ContextRef{
+				Kind:      rel.ServiceAccount.Kind,
+				Group:     rel.ServiceAccount.Group,
+				Namespace: rel.ServiceAccount.Namespace,
+				Name:      rel.ServiceAccount.Name,
+			}
+			if checkRef(ctx, opts.AccessChecker, candidate) {
+				rc.Uses.ServiceAccount = candidate
+			} else {
+				omitted.add("uses.serviceAccount", OmittedRBACDenied)
+			}
+		}
+
+		// RunsOn: prefer the topology-supplied Node ref. Fall back to
+		// pod.Spec.NodeName any time rel.Node is empty — the Node informer
+		// may be cold, the node may not yet be in the topology graph, or
+		// rel itself may be nil. The previous `else if rel == nil` guard
+		// dropped the fallback when topology was built but rel.Node hadn't
+		// been populated yet, leaving RunsOn empty even though the Pod
+		// spec clearly named a node.
+		var nodeName, nodeGroup string
+		if rel != nil && rel.Node != nil {
+			nodeName = rel.Node.Name
+			nodeGroup = rel.Node.Group
+		} else {
+			nodeName = pod.Spec.NodeName
+		}
+		if nodeName != "" {
+			candidate := &ContextRef{
+				Kind:  "Node",
+				Group: nodeGroup,
+				Name:  nodeName,
+			}
+			if checkRef(ctx, opts.AccessChecker, candidate) {
+				rc.RunsOn = candidate
+			} else {
+				omitted.add("runsOn", OmittedRBACDenied)
+			}
+		}
+	}
+
+	if svc, ok := obj.(*corev1.Service); ok {
+		rc.ServiceSummary = buildServiceSummary(ctx, svc, opts.ServiceBackends, opts.AccessChecker, omitted)
+	}
+	rc.Reflection = buildReflection(ctx, obj, opts.Reflections, opts.AccessChecker, omitted)
+	rc.ReferencedBy = buildReferencedBy(ctx, obj, opts.Provider, rel, opts.AccessChecker, omitted)
+	if uses := buildUsesFromWorkload(ctx, obj, opts.AccessChecker, omitted); uses != nil {
+		rc.Uses = uses
+	}
+	rc.WorkloadSummary = buildWorkloadSummary(obj)
+	rc.IngressSummary = buildIngressSummary(ctx, obj, opts.AccessChecker, omitted)
+	rc.NodeSummary = buildNodeSummary(obj)
+	rc.PVCSummary = buildPVCSummary(obj)
+	rc.JobSummary = buildJobSummary(obj)
+	rc.CronJobSummary = buildCronJobSummary(ctx, obj, opts.AccessChecker, omitted)
+	if rc.JobSummary != nil && opts.ContainerCompletionSplit != nil {
+		rc.JobSummary.ContainerCompletionSplit = gateContainerCompletionSplit(
+			ctx, opts.AccessChecker, obj, opts.ContainerCompletionSplit, "jobSummary.containerCompletionSplit", omitted)
+	} else if rc.CronJobSummary != nil && opts.ContainerCompletionSplit != nil {
+		rc.CronJobSummary.ContainerCompletionSplit = gateContainerCompletionSplit(
+			ctx, opts.AccessChecker, obj, opts.ContainerCompletionSplit, "cronJobSummary.containerCompletionSplit", omitted)
+	}
+	rc.HPASummary = buildHPASummary(obj)
+	rc.StatusSummary = buildStatusSummary(obj)
+	rc.Scheduling = filterSchedulingSummary(ctx, opts.Scheduling, opts.AccessChecker, omitted)
+	rc.Execution = opts.Execution
+	rc.Serving = opts.Serving
+
+	// 4. Pre-computed summaries — pass-through.
+	rc.IssueSummary = opts.IssueSummary
+	rc.AuditSummary = opts.AuditSummary
+	rc.AppReferences = filterAppReferences(ctx, opts.AppReferences, opts.AccessChecker, omitted)
+	rc.TemplateDivergence = opts.TemplateDivergence
+
+	// 5. PolicyReports — Kyverno findings rolled up. Basic tier emits
+	// counts only (fail/warn/pass); diagnostic tier adds the top[]
+	// findings. Tier discrimination keeps the basic-tier wire size tight.
+	if opts.PolicyReports != nil {
+		if avail, ok := opts.PolicyReports.(PolicyReportAvailability); ok {
+			if reason, unavailable := avail.Unavailable(); unavailable {
+				omitted.add("policySummary.kyverno", reason)
+			}
+		}
+		findings := opts.PolicyReports.FindingsFor(ident.Group, ident.Kind, ident.Namespace, ident.Name)
+		// Per subject, because a lookup serving normally still withholds the
+		// findings of a family this caller may not read. The tracker dedupes, so
+		// this collapses into the note above when the whole lookup was denied.
+		if w, ok := opts.PolicyReports.(PolicyReportWithholding); ok &&
+			w.WithheldFor(ident.Group, ident.Kind, ident.Namespace, ident.Name) {
+			omitted.add("policySummary.kyverno", OmittedRBACDenied)
+		}
+		if len(findings) > 0 {
+			rc.PolicySummary = buildPolicySummary(findings, opts.Tier)
+		}
+	}
+
+	rc.Omitted = omitted.collect()
+	return rc
+}
+
+// ---------------------------------------------------------------------------
+// Identity extraction
+// ---------------------------------------------------------------------------
+
+// resourceIdentity is the projection of obj that Build needs without holding
+// on to the full runtime.Object. The (Kind, Namespace, Name) tuple keys
+// topology relationship lookups and summary lookups; Group is retained for
+// future use by callers inspecting the identity directly.
+type resourceIdentity struct {
+	Kind      string
+	Group     string
+	Namespace string
+	Name      string
+}
+
+// identityOf extracts identity from a typed K8s object or unstructured.
+// Returns (_, false) for unknown shapes so callers can short-circuit.
+func identityOf(obj runtime.Object) (resourceIdentity, bool) {
+	if obj == nil {
+		return resourceIdentity{}, false
+	}
+	switch v := obj.(type) {
+	case *corev1.Pod:
+		return identFromMeta("Pod", "", &v.ObjectMeta), true
+	case *corev1.Service:
+		return identFromMeta("Service", "", &v.ObjectMeta), true
+	case *corev1.ConfigMap:
+		return identFromMeta("ConfigMap", "", &v.ObjectMeta), true
+	case *corev1.Secret:
+		return identFromMeta("Secret", "", &v.ObjectMeta), true
+	case *corev1.Node:
+		return identFromMeta("Node", "", &v.ObjectMeta), true
+	case *corev1.Namespace:
+		return identFromMeta("Namespace", "", &v.ObjectMeta), true
+	case *corev1.PersistentVolume:
+		return identFromMeta("PersistentVolume", "", &v.ObjectMeta), true
+	case *corev1.PersistentVolumeClaim:
+		return identFromMeta("PersistentVolumeClaim", "", &v.ObjectMeta), true
+	case *corev1.ServiceAccount:
+		return identFromMeta("ServiceAccount", "", &v.ObjectMeta), true
+	case *corev1.Event:
+		return identFromMeta("Event", "", &v.ObjectMeta), true
+	case *corev1.LimitRange:
+		return identFromMeta("LimitRange", "", &v.ObjectMeta), true
+	case *appsv1.Deployment:
+		return identFromMeta("Deployment", "apps", &v.ObjectMeta), true
+	case *appsv1.DaemonSet:
+		return identFromMeta("DaemonSet", "apps", &v.ObjectMeta), true
+	case *appsv1.StatefulSet:
+		return identFromMeta("StatefulSet", "apps", &v.ObjectMeta), true
+	case *appsv1.ReplicaSet:
+		return identFromMeta("ReplicaSet", "apps", &v.ObjectMeta), true
+	case *autoscalingv2.HorizontalPodAutoscaler:
+		return identFromMeta("HorizontalPodAutoscaler", "autoscaling", &v.ObjectMeta), true
+	case *batchv1.Job:
+		return identFromMeta("Job", "batch", &v.ObjectMeta), true
+	case *batchv1.CronJob:
+		return identFromMeta("CronJob", "batch", &v.ObjectMeta), true
+	case *networkingv1.Ingress:
+		return identFromMeta("Ingress", "networking.k8s.io", &v.ObjectMeta), true
+	case *networkingv1.NetworkPolicy:
+		return identFromMeta("NetworkPolicy", "networking.k8s.io", &v.ObjectMeta), true
+	case *policyv1.PodDisruptionBudget:
+		return identFromMeta("PodDisruptionBudget", "policy", &v.ObjectMeta), true
+	case *storagev1.StorageClass:
+		return identFromMeta("StorageClass", "storage.k8s.io", &v.ObjectMeta), true
+	case *rbacv1.Role:
+		return identFromMeta("Role", "rbac.authorization.k8s.io", &v.ObjectMeta), true
+	case *rbacv1.ClusterRole:
+		return identFromMeta("ClusterRole", "rbac.authorization.k8s.io", &v.ObjectMeta), true
+	case *rbacv1.RoleBinding:
+		return identFromMeta("RoleBinding", "rbac.authorization.k8s.io", &v.ObjectMeta), true
+	case *rbacv1.ClusterRoleBinding:
+		return identFromMeta("ClusterRoleBinding", "rbac.authorization.k8s.io", &v.ObjectMeta), true
+	case *unstructured.Unstructured:
+		gvk := v.GroupVersionKind()
+		return resourceIdentity{
+			Kind:      gvk.Kind,
+			Group:     gvk.Group,
+			Namespace: v.GetNamespace(),
+			Name:      v.GetName(),
+		}, true
+	}
+	return resourceIdentity{}, false
+}
+
+func identFromMeta(kind, group string, m *metav1.ObjectMeta) resourceIdentity {
+	return resourceIdentity{
+		Kind:      kind,
+		Group:     group,
+		Namespace: m.Namespace,
+		Name:      m.Name,
+	}
+}
+
+func ownerFromObject(obj runtime.Object, namespace string) *ContextRef {
+	m, ok := obj.(metav1.Object)
+	if !ok {
+		return nil
+	}
+	owners := m.GetOwnerReferences()
+	if len(owners) == 0 {
+		return nil
+	}
+	chosen := owners[0]
+	for _, owner := range owners {
+		if owner.Controller != nil && *owner.Controller {
+			chosen = owner
+			break
+		}
+	}
+	return &ContextRef{
+		Kind:      chosen.Kind,
+		Group:     resourceid.GroupFromAPIVersion(chosen.APIVersion),
+		Namespace: namespace,
+		Name:      chosen.Name,
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Uses (Pod-specific)
+// ---------------------------------------------------------------------------
+
+// buildUsesFromPod extracts ConfigMap/Secret/PVC/ServiceAccount references
+// from pod.Spec. Returns nil when the pod uses no configuration.
+//
+// Reference extraction is shared with audit and reverse context, including
+// init/debug containers, image pull credentials and volume-driver credentials.
+// Only the PodSpec's declared references are used; current ServiceAccount pull
+// secrets are not inferred into an already-admitted Pod.
+func buildUsesFromPod(ctx context.Context, pod *corev1.Pod, ac RefAccessChecker, omitted *omittedTracker) *UsesBlock {
+	if pod == nil {
+		return nil
+	}
+	return buildUsesFromPodSpec(ctx, pod.Namespace, pod.Spec, ac, omitted)
+}
+
+func buildUsesFromPodSpec(ctx context.Context, namespace string, spec corev1.PodSpec, ac RefAccessChecker, omitted *omittedTracker) *UsesBlock {
+	cmSet := newRefSet()
+	secretSet := newRefSet()
+	pvcSet := newRefSet()
+
+	for _, reference := range configrefs.PodSpecReferences(namespace, spec) {
+		switch reference.Kind {
+		case "ConfigMap":
+			cmSet.add(reference.Name, reference.Namespace)
+		case "Secret":
+			secretSet.add(reference.Name, reference.Namespace)
+		case "PersistentVolumeClaim":
+			pvcSet.add(reference.Name, reference.Namespace)
+		}
+	}
+
+	uses := &UsesBlock{
+		ConfigMaps: filterRefs(ctx, ac, cmSet.refs("ConfigMap", ""), "uses.configMaps", omitted),
+		Secrets:    filterRefs(ctx, ac, secretSet.refs("Secret", ""), "uses.secrets", omitted),
+		PVCs:       filterRefs(ctx, ac, pvcSet.refs("PersistentVolumeClaim", ""), "uses.pvcs", omitted),
+	}
+
+	if sa := spec.ServiceAccountName; sa != "" {
+		candidate := &ContextRef{
+			Kind:      "ServiceAccount",
+			Namespace: namespace,
+			Name:      sa,
+		}
+		if checkRef(ctx, ac, candidate) {
+			uses.ServiceAccount = candidate
+		} else {
+			omitted.add("uses.serviceAccount", OmittedRBACDenied)
+		}
+	}
+
+	if len(uses.ConfigMaps) == 0 && len(uses.Secrets) == 0 && len(uses.PVCs) == 0 && uses.ServiceAccount == nil {
+		return nil
+	}
+	return uses
+}
+
+func buildUsesFromWorkload(ctx context.Context, obj runtime.Object, ac RefAccessChecker, omitted *omittedTracker) *UsesBlock {
+	switch v := obj.(type) {
+	case *appsv1.Deployment:
+		return buildUsesFromPodSpec(ctx, v.Namespace, v.Spec.Template.Spec, ac, omitted)
+	case *appsv1.StatefulSet:
+		return buildUsesFromPodSpec(ctx, v.Namespace, v.Spec.Template.Spec, ac, omitted)
+	case *appsv1.DaemonSet:
+		return buildUsesFromPodSpec(ctx, v.Namespace, v.Spec.Template.Spec, ac, omitted)
+	case *appsv1.ReplicaSet:
+		return buildUsesFromPodSpec(ctx, v.Namespace, v.Spec.Template.Spec, ac, omitted)
+	case *batchv1.Job:
+		return buildUsesFromPodSpec(ctx, v.Namespace, v.Spec.Template.Spec, ac, omitted)
+	case *batchv1.CronJob:
+		return buildUsesFromPodSpec(ctx, v.Namespace, v.Spec.JobTemplate.Spec.Template.Spec, ac, omitted)
+	default:
+		return nil
+	}
+}
+
+const (
+	maxReferencedByItems       = 20
+	maxReferencedByPathsPerRef = 8
+)
+
+func buildReferencedBy(ctx context.Context, obj runtime.Object, provider topology.ResourceProvider, rel *topology.Relationships, ac RefAccessChecker, omitted *omittedTracker) *ReferencedBy {
+	if node, ok := obj.(*corev1.Node); ok {
+		if rel != nil && rel.PodPlacementObserved {
+			if rel.PodPlacementUnavailable {
+				omitted.add("referencedBy", OmittedUnavailable)
+				return nil
+			}
+			var refs []ReferenceUse
+			for _, pod := range rel.Pods {
+				if pod.Kind == "Pod" && pod.Group == "" {
+					refs = append(refs, ReferenceUse{Kind: "Pod", Namespace: pod.Namespace, Name: pod.Name, Paths: []string{"spec.nodeName"}})
+				}
+			}
+			return filterReferenceUses(ctx, refs, ac, omitted)
+		}
+		if provider == nil {
+			omitted.add("referencedBy", OmittedUnavailable)
+			return nil
+		}
+		pods, err := provider.Pods()
+		if err != nil {
+			omitted.add("referencedBy", OmittedUnavailable)
+			return nil
+		}
+		var refs []ReferenceUse
+		for _, pod := range pods {
+			if pod == nil || pod.Spec.NodeName != node.Name || pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+				continue
+			}
+			refs = append(refs, ReferenceUse{Kind: "Pod", Namespace: pod.Namespace, Name: pod.Name, Paths: []string{"spec.nodeName"}})
+		}
+		return filterReferenceUses(ctx, refs, ac, omitted)
+	}
+	if provider == nil {
+		return nil
+	}
+
+	ident, ok := identityOf(obj)
+	if !ok || ident.Group != "" || ident.Namespace == "" {
+		return nil
+	}
+
+	var target refTarget
+	switch ident.Kind {
+	case "ConfigMap":
+		target = refTarget{kind: "ConfigMap", namespace: ident.Namespace, name: ident.Name}
+	case "Secret", "PersistentVolumeClaim", "ServiceAccount":
+		target = refTarget{kind: ident.Kind, namespace: ident.Namespace, name: ident.Name}
+	default:
+		return nil
+	}
+
+	var refs []ReferenceUse
+	appendRef := func(ref ReferenceUse) {
+		if len(ref.Paths) == 0 || ref.Namespace != target.namespace {
+			return
+		}
+		refs = append(refs, ref)
+	}
+
+	if target.kind == "Secret" {
+		if ingresses, err := provider.Ingresses(); err != nil {
+			omitted.add("referencedBy", OmittedUnavailable)
+		} else {
+			for _, ing := range ingresses {
+				if ing == nil || ing.Namespace != target.namespace {
+					continue
+				}
+				for _, ref := range configrefs.IngressTLSSecretReferences(ing) {
+					if ref.Name == target.name {
+						appendRef(ReferenceUse{Kind: "Ingress", Group: "networking.k8s.io", Namespace: ing.Namespace, Name: ing.Name, Paths: []string{"spec.tls[].secretName"}})
+					}
+				}
+			}
+		}
+	}
+
+	if deployments, err := provider.Deployments(); err != nil {
+		omitted.add("referencedBy", OmittedUnavailable)
+	} else {
+		for _, d := range deployments {
+			if d == nil || d.Namespace != target.namespace {
+				continue
+			}
+			appendRef(referenceUseForPodSpec("Deployment", "apps", d.Namespace, d.Name, d.Spec.Template.Spec, "spec.template.spec", target))
+		}
+	}
+	if statefulSets, err := provider.StatefulSets(); err != nil {
+		omitted.add("referencedBy", OmittedUnavailable)
+	} else {
+		for _, s := range statefulSets {
+			if s == nil || s.Namespace != target.namespace {
+				continue
+			}
+			appendRef(referenceUseForPodSpec("StatefulSet", "apps", s.Namespace, s.Name, s.Spec.Template.Spec, "spec.template.spec", target))
+		}
+	}
+	if daemonSets, err := provider.DaemonSets(); err != nil {
+		omitted.add("referencedBy", OmittedUnavailable)
+	} else {
+		for _, d := range daemonSets {
+			if d == nil || d.Namespace != target.namespace {
+				continue
+			}
+			appendRef(referenceUseForPodSpec("DaemonSet", "apps", d.Namespace, d.Name, d.Spec.Template.Spec, "spec.template.spec", target))
+		}
+	}
+	if replicaSets, err := provider.ReplicaSets(); err != nil {
+		omitted.add("referencedBy", OmittedUnavailable)
+	} else {
+		for _, replicaSet := range replicaSets {
+			if replicaSet == nil || replicaSet.Namespace != target.namespace {
+				continue
+			}
+			appendRef(referenceUseForPodSpec("ReplicaSet", "apps", replicaSet.Namespace, replicaSet.Name, replicaSet.Spec.Template.Spec, "spec.template.spec", target))
+		}
+	}
+	if jobs, err := provider.Jobs(); err != nil {
+		omitted.add("referencedBy", OmittedUnavailable)
+	} else {
+		for _, j := range jobs {
+			if j == nil || j.Namespace != target.namespace {
+				continue
+			}
+			appendRef(referenceUseForPodSpec("Job", "batch", j.Namespace, j.Name, j.Spec.Template.Spec, "spec.template.spec", target))
+		}
+	}
+	if cronJobs, err := provider.CronJobs(); err != nil {
+		omitted.add("referencedBy", OmittedUnavailable)
+	} else {
+		for _, c := range cronJobs {
+			if c == nil || c.Namespace != target.namespace {
+				continue
+			}
+			appendRef(referenceUseForPodSpec("CronJob", "batch", c.Namespace, c.Name, c.Spec.JobTemplate.Spec.Template.Spec, "spec.jobTemplate.spec.template.spec", target))
+		}
+	}
+	if pods, err := provider.Pods(); err != nil {
+		omitted.add("referencedBy", OmittedUnavailable)
+	} else {
+		for _, p := range pods {
+			if p == nil || p.Namespace != target.namespace {
+				continue
+			}
+			appendRef(referenceUseForPodSpec("Pod", "", p.Namespace, p.Name, p.Spec, "spec", target))
+		}
+	}
+
+	return filterReferenceUses(ctx, refs, ac, omitted)
+}
+
+func filterReferenceUses(ctx context.Context, refs []ReferenceUse, ac RefAccessChecker, omitted *omittedTracker) *ReferencedBy {
+	if len(refs) == 0 {
+		return nil
+	}
+	sort.Slice(refs, func(i, j int) bool {
+		if refs[i].Kind != refs[j].Kind {
+			return refs[i].Kind < refs[j].Kind
+		}
+		if refs[i].Namespace != refs[j].Namespace {
+			return refs[i].Namespace < refs[j].Namespace
+		}
+		return refs[i].Name < refs[j].Name
+	})
+
+	// Count visible refs only — leaking the pre-RBAC total would let a
+	// caller infer the count of consuming resources they can't otherwise
+	// see (e.g. ConfigMap visible to caller but consuming workloads in
+	// hidden namespaces). The omitted=[referencedBy:rbac_denied] marker
+	// emitted above signals that some refs were filtered without
+	// disclosing how many.
+	visible := 0
+	groups := make(map[[2]string][]ReferenceUse)
+	var order [][2]string
+	for i := range refs {
+		ref := refs[i]
+		if len(ref.Paths) > maxReferencedByPathsPerRef {
+			ref.Paths = append([]string(nil), ref.Paths[:maxReferencedByPathsPerRef]...)
+		}
+		candidate := &ContextRef{Kind: ref.Kind, Group: ref.Group, Namespace: ref.Namespace, Name: ref.Name}
+		if !checkRef(ctx, ac, candidate) {
+			omitted.add("referencedBy", OmittedRBACDenied)
+			continue
+		}
+		visible++
+		key := [2]string{ref.Kind, ref.Group}
+		if _, exists := groups[key]; !exists {
+			order = append(order, key)
+		}
+		groups[key] = append(groups[key], ref)
+	}
+	// Round-robin readable kinds so a large replica population cannot hide
+	// the workload and revision templates that explain those Pods' references.
+	filtered := make([]ReferenceUse, 0, minInt(visible, maxReferencedByItems))
+	for row := 0; len(filtered) < maxReferencedByItems; row++ {
+		added := false
+		for _, key := range order {
+			if row >= len(groups[key]) {
+				continue
+			}
+			filtered = append(filtered, groups[key][row])
+			added = true
+			if len(filtered) == maxReferencedByItems {
+				break
+			}
+		}
+		if !added {
+			break
+		}
+	}
+	if len(filtered) == 0 {
+		return nil
+	}
+	return &ReferencedBy{
+		Total:     visible,
+		Items:     filtered,
+		Truncated: visible > len(filtered),
+	}
+}
+
+type refTarget struct {
+	kind      string
+	namespace string
+	name      string
+}
+
+func referenceUseForPodSpec(kind, group, namespace, name string, spec corev1.PodSpec, pathPrefix string, target refTarget) ReferenceUse {
+	paths := podSpecReferencePaths(spec, pathPrefix, target)
+	return ReferenceUse{
+		Kind:      kind,
+		Group:     group,
+		Namespace: namespace,
+		Name:      name,
+		Paths:     paths,
+	}
+}
+
+func podSpecReferencePaths(spec corev1.PodSpec, pathPrefix string, target refTarget) []string {
+	pathSet := map[string]struct{}{}
+	for _, ref := range configrefs.PodSpecReferences(target.namespace, spec) {
+		if ref.Kind == target.kind && ref.Name == target.name {
+			pathSet[pathPrefix+"."+ref.Path] = struct{}{}
+		}
+	}
+	paths := make([]string, 0, len(pathSet))
+	for path := range pathSet {
+		paths = append(paths, path)
+	}
+	sort.Strings(paths)
+	return paths
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+const maxServicePodRefs = 10
+
+func buildServiceSummary(ctx context.Context, svc *corev1.Service, lookup ServiceBackendLookup, ac RefAccessChecker, omitted *omittedTracker) *ServiceSummary {
+	if svc == nil {
+		return nil
+	}
+	out := &ServiceSummary{}
+
+	if len(svc.Spec.Selector) == 0 {
+		if svc.Spec.Type != corev1.ServiceTypeExternalName {
+			out.Warnings = append(out.Warnings, ServiceWarningNoSelector)
+		}
+		return out
+	}
+	if lookup == nil {
+		return nil
+	}
+
+	selector := labels.SelectorFromSet(labels.Set(svc.Spec.Selector))
+	pods, err := lookup.PodsForServiceSelector(svc.Namespace, selector)
+	if err != nil {
+		return nil
+	}
+
+	// Total counts visible refs only — leaking len(pods) would let a
+	// caller with Service access infer the pod count even when RBAC
+	// hides the individual Pods. Mirrors ReferencedBy.Total semantics.
+	sel := &PodSelectionSummary{}
+	visible := make([]*corev1.Pod, 0, len(pods))
+	for _, pod := range pods {
+		ref := ContextRef{Kind: "Pod", Namespace: pod.Namespace, Name: pod.Name}
+		if !checkRef(ctx, ac, &ref) {
+			omitted.add("serviceSummary.selectedPods", OmittedRBACDenied)
+			continue
+		}
+		visible = append(visible, pod)
+		sel.Total++
+		if isPodReady(pod) {
+			sel.Ready++
+			appendBoundedPodRef(&sel.ReadyPods, ref, sel)
+		} else {
+			sel.NotReady++
+			appendBoundedPodRef(&sel.NotReadyPods, ref, sel)
+		}
+	}
+
+	if sel.Total == 0 {
+		out.Warnings = append(out.Warnings, ServiceWarningNoSelectedPods)
+	} else if sel.Ready == 0 {
+		out.Warnings = append(out.Warnings, ServiceWarningNoReadyPods)
+	}
+	out.SelectedPods = sel
+	if grouper, ok := lookup.(ServiceBackendGrouper); ok && len(visible) > 1 {
+		addServiceBackendWorkloads(ctx, out, grouper.GroupServiceBackends(svc, visible), ac, omitted)
+	}
+	return out
+}
+
+// addServiceBackendWorkloads attaches the workload breakdown only when the
+// caller may read every workload it names: a Pod's visibility doesn't extend
+// to the Deployment or Rollout behind its ReplicaSet.
+func addServiceBackendWorkloads(ctx context.Context, out *ServiceSummary, g ServiceBackendGrouping, ac RefAccessChecker, omitted *omittedTracker) {
+	if len(g.Workloads) < 2 {
+		return
+	}
+	for i := range g.Workloads {
+		if !checkRef(ctx, ac, &g.Workloads[i].ContextRef) {
+			omitted.add("serviceSummary.workloads", OmittedRBACDenied)
+			return
+		}
+	}
+	out.Workloads = g.Workloads
+	if len(out.Workloads) > maxServicePodRefs {
+		out.Workloads = out.Workloads[:maxServicePodRefs]
+		out.WorkloadsTruncated = true
+	}
+	if g.MixedBackends != "" {
+		out.MixedBackends = g.MixedBackends
+		out.Warnings = append(out.Warnings, ServiceWarningMixedBackends)
+	}
+}
+
+func appendBoundedPodRef(dst *[]ContextRef, ref ContextRef, sel *PodSelectionSummary) {
+	if len(*dst) >= maxServicePodRefs {
+		sel.Truncated = true
+		return
+	}
+	*dst = append(*dst, ref)
+}
+
+func isPodReady(pod *corev1.Pod) bool {
+	if pod == nil {
+		return false
+	}
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodReady {
+			return cond.Status == corev1.ConditionTrue
+		}
+	}
+	return false
+}
+
+const maxSummaryItems = 12
+
+func buildPodSummary(pod *corev1.Pod) *PodSummary {
+	if pod == nil {
+		return nil
+	}
+	out := &PodSummary{
+		Phase: string(pod.Status.Phase),
+		Ready: isPodReady(pod),
+	}
+	statuses := make([]corev1.ContainerStatus, 0, len(pod.Status.InitContainerStatuses)+len(pod.Status.ContainerStatuses))
+	statuses = append(statuses, pod.Status.InitContainerStatuses...)
+	statuses = append(statuses, pod.Status.ContainerStatuses...)
+	if len(statuses) > maxSummaryItems {
+		statuses = statuses[:maxSummaryItems]
+	}
+	for _, st := range statuses {
+		out.RestartCount += st.RestartCount
+		out.Containers = append(out.Containers, containerStateSummary(st))
+	}
+	return out
+}
+
+func containerStateSummary(st corev1.ContainerStatus) ContainerStateSummary {
+	out := ContainerStateSummary{
+		Name:         st.Name,
+		Ready:        st.Ready,
+		RestartCount: st.RestartCount,
+	}
+	switch {
+	case st.State.Waiting != nil:
+		out.State = "waiting"
+		out.Reason = st.State.Waiting.Reason
+	case st.State.Running != nil:
+		out.State = "running"
+	case st.State.Terminated != nil:
+		out.State = "terminated"
+		out.Reason = st.State.Terminated.Reason
+	}
+	if st.LastTerminationState.Terminated != nil {
+		out.LastTerminationReason = st.LastTerminationState.Terminated.Reason
+	}
+	return out
+}
+
+func buildWorkloadSummary(obj runtime.Object) *WorkloadSummary {
+	switch v := obj.(type) {
+	case *appsv1.Deployment:
+		summary := &WorkloadSummary{Replicas: &ReplicaSummary{
+			Desired:     replicasOrZero(v.Spec.Replicas),
+			Ready:       v.Status.ReadyReplicas,
+			Available:   v.Status.AvailableReplicas,
+			Updated:     v.Status.UpdatedReplicas,
+			Unavailable: v.Status.UnavailableReplicas,
+		}}
+		if risk := rolloutdiag.Analyze(v); risk != nil {
+			summary.RolloutRisk = &RolloutRiskSummary{
+				Reason:                 risk.Reason,
+				Replicas:               risk.Replicas,
+				MaxSurge:               risk.MaxSurge,
+				MaxUnavailable:         risk.MaxUnavailable,
+				ResolvedMaxSurge:       risk.ResolvedMaxSurge,
+				ResolvedMaxUnavailable: risk.ResolvedMaxUnavailable,
+				Message:                risk.Message,
+				Action:                 risk.Remediation,
+			}
+		}
+		return summary
+	case *appsv1.StatefulSet:
+		return &WorkloadSummary{Replicas: &ReplicaSummary{
+			Desired:   replicasOrZero(v.Spec.Replicas),
+			Ready:     v.Status.ReadyReplicas,
+			Available: v.Status.AvailableReplicas,
+			Updated:   v.Status.UpdatedReplicas,
+		}}
+	case *appsv1.DaemonSet:
+		return &WorkloadSummary{Replicas: &ReplicaSummary{
+			Desired:     v.Status.DesiredNumberScheduled,
+			Ready:       v.Status.NumberReady,
+			Available:   v.Status.NumberAvailable,
+			Updated:     v.Status.UpdatedNumberScheduled,
+			Unavailable: v.Status.NumberUnavailable,
+		}}
+	case *appsv1.ReplicaSet:
+		return &WorkloadSummary{Replicas: &ReplicaSummary{
+			Desired:     replicasOrZero(v.Spec.Replicas),
+			Ready:       v.Status.ReadyReplicas,
+			Available:   v.Status.AvailableReplicas,
+			Unavailable: maxInt32(0, v.Status.Replicas-v.Status.AvailableReplicas),
+		}}
+	default:
+		return nil
+	}
+}
+
+func buildIngressSummary(ctx context.Context, obj runtime.Object, ac RefAccessChecker, omitted *omittedTracker) *IngressSummary {
+	ing, ok := obj.(*networkingv1.Ingress)
+	if !ok || ing == nil {
+		return nil
+	}
+	out := &IngressSummary{}
+	if ing.Spec.IngressClassName != nil {
+		out.Class = *ing.Spec.IngressClassName
+	} else if ing.Annotations != nil {
+		out.Class = ing.Annotations["kubernetes.io/ingress.class"]
+	}
+	for _, addr := range ing.Status.LoadBalancer.Ingress {
+		if addr.IP != "" {
+			out.Addresses = append(out.Addresses, addr.IP)
+		} else if addr.Hostname != "" {
+			out.Addresses = append(out.Addresses, addr.Hostname)
+		}
+	}
+	if len(out.Addresses) == 0 {
+		out.Warnings = append(out.Warnings, IngressWarningNoAddress)
+	}
+	if out.Class == "" {
+		out.Warnings = append(out.Warnings, IngressWarningNoClass)
+	}
+	if len(ing.Spec.Rules) == 0 {
+		out.Warnings = append(out.Warnings, IngressWarningNoRules)
+	}
+
+	svcSet := newRefSet()
+	for _, name := range configrefs.IngressBackendServices(ing) {
+		svcSet.add(name, ing.Namespace)
+	}
+	out.BackendServices = filterRefs(ctx, ac, svcSet.refs("Service", ""), "ingressSummary.backendServices", omitted)
+
+	secretSet := newRefSet()
+	for _, ref := range configrefs.IngressTLSSecretReferences(ing) {
+		secretSet.add(ref.Name, ref.Namespace)
+	}
+	out.TLSSecrets = filterRefs(ctx, ac, secretSet.refs("Secret", ""), "ingressSummary.tlsSecrets", omitted)
+
+	if out.Class == "" && len(out.Addresses) == 0 && len(out.BackendServices) == 0 && len(out.TLSSecrets) == 0 && len(out.Warnings) == 0 {
+		return nil
+	}
+	return out
+}
+
+func buildNodeSummary(obj runtime.Object) *NodeSummary {
+	node, ok := obj.(*corev1.Node)
+	if !ok || node == nil {
+		return nil
+	}
+	out := &NodeSummary{
+		Unschedulable: node.Spec.Unschedulable,
+		Capacity:      compactResourceList(node.Status.Capacity),
+		Allocatable:   compactResourceList(node.Status.Allocatable),
+	}
+	lifecycle := health.NodeLifecycle(node, time.Now())
+	out.Lifecycle = &lifecycle
+	if out.Unschedulable && !lifecycle.Removing {
+		out.Warnings = append(out.Warnings, NodeWarningUnschedulable)
+	}
+	for _, cond := range node.Status.Conditions {
+		switch cond.Type {
+		case corev1.NodeReady:
+			out.ReadyStatus = string(cond.Status)
+			if lifecycle.ReadinessFailed {
+				out.Warnings = append(out.Warnings, NodeWarningNotReady)
+			}
+		case corev1.NodeDiskPressure:
+			if cond.Status == corev1.ConditionTrue {
+				out.Warnings = append(out.Warnings, NodeWarningDiskPressure)
+			}
+		case corev1.NodeMemoryPressure:
+			if cond.Status == corev1.ConditionTrue {
+				out.Warnings = append(out.Warnings, NodeWarningMemoryPressure)
+			}
+		case corev1.NodePIDPressure:
+			if cond.Status == corev1.ConditionTrue {
+				out.Warnings = append(out.Warnings, NodeWarningPIDPressure)
+			}
+		case corev1.NodeNetworkUnavailable:
+			if slices.Contains(lifecycle.Problems, "NetworkUnavailable") {
+				out.Warnings = append(out.Warnings, NodeWarningNetworkUnavailable)
+			}
+		}
+	}
+	for _, taint := range node.Spec.Taints {
+		out.Taints = append(out.Taints, TaintSummary{
+			Key:    taint.Key,
+			Value:  taint.Value,
+			Effect: string(taint.Effect),
+		})
+	}
+	return out
+}
+
+func compactResourceList(resources corev1.ResourceList) map[string]string {
+	if len(resources) == 0 {
+		return nil
+	}
+	out := make(map[string]string, 4)
+	for _, name := range []corev1.ResourceName{
+		corev1.ResourceCPU,
+		corev1.ResourceMemory,
+		corev1.ResourcePods,
+		corev1.ResourceEphemeralStorage,
+	} {
+		if qty, ok := resources[name]; ok {
+			out[string(name)] = qty.String()
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func buildPVCSummary(obj runtime.Object) *PVCSummary {
+	pvc, ok := obj.(*corev1.PersistentVolumeClaim)
+	if !ok || pvc == nil {
+		return nil
+	}
+	out := &PVCSummary{
+		Phase:            string(pvc.Status.Phase),
+		StorageClassName: valueOrEmpty(pvc.Spec.StorageClassName),
+		VolumeName:       pvc.Spec.VolumeName,
+		VolumeMode:       string(valueOrZero(pvc.Spec.VolumeMode)),
+	}
+	if req, ok := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; ok {
+		out.RequestedStorage = req.String()
+	}
+	if cap, ok := pvc.Status.Capacity[corev1.ResourceStorage]; ok {
+		out.CapacityStorage = cap.String()
+	}
+	for _, mode := range pvc.Spec.AccessModes {
+		out.AccessModes = append(out.AccessModes, string(mode))
+	}
+	if pvc.Annotations != nil {
+		out.Provisioner = pvc.Annotations["volume.kubernetes.io/storage-provisioner"]
+		out.SelectedNode = pvc.Annotations["volume.kubernetes.io/selected-node"]
+		out.BindCompleted = pvc.Annotations["pv.kubernetes.io/bind-completed"]
+	}
+	switch pvc.Status.Phase {
+	case corev1.ClaimPending:
+		out.Warnings = append(out.Warnings, PVCWarningPending)
+	case corev1.ClaimLost:
+		out.Warnings = append(out.Warnings, PVCWarningLost)
+	}
+	return out
+}
+
+func buildJobSummary(obj runtime.Object) *JobSummary {
+	job, ok := obj.(*batchv1.Job)
+	if !ok || job == nil {
+		return nil
+	}
+	out := &JobSummary{
+		Active:       job.Status.Active,
+		Succeeded:    job.Status.Succeeded,
+		Failed:       job.Status.Failed,
+		Completions:  int32OrDefault(job.Spec.Completions, 1),
+		Parallelism:  int32OrDefault(job.Spec.Parallelism, 1),
+		BackoffLimit: int32OrDefault(job.Spec.BackoffLimit, 6),
+		Suspended:    boolOrFalse(job.Spec.Suspend),
+	}
+	return out
+}
+
+func buildCronJobSummary(ctx context.Context, obj runtime.Object, ac RefAccessChecker, omitted *omittedTracker) *CronJobSummary {
+	cj, ok := obj.(*batchv1.CronJob)
+	if !ok || cj == nil {
+		return nil
+	}
+	out := &CronJobSummary{
+		Schedule:  cj.Spec.Schedule,
+		Suspended: boolOrFalse(cj.Spec.Suspend),
+	}
+	if cj.Status.LastScheduleTime != nil {
+		out.LastScheduleTime = cj.Status.LastScheduleTime.Format("2006-01-02T15:04:05Z07:00")
+	}
+	if cj.Status.LastSuccessfulTime != nil {
+		out.LastSuccessfulTime = cj.Status.LastSuccessfulTime.Format("2006-01-02T15:04:05Z07:00")
+	}
+	active := make([]ContextRef, 0, len(cj.Status.Active))
+	for _, ref := range cj.Status.Active {
+		if ref.Kind == "" || ref.Name == "" {
+			continue
+		}
+		active = append(active, ContextRef{
+			Kind:      ref.Kind,
+			Group:     resourceid.GroupFromAPIVersion(ref.APIVersion),
+			Namespace: cj.Namespace,
+			Name:      ref.Name,
+		})
+	}
+	out.ActiveJobs = filterRefs(ctx, ac, active, "cronJobSummary.activeJobs", omitted)
+	return out
+}
+
+// buildScaledBy gates the scaler refs first and only then looks up the HPA
+// object, so a scaler the caller cannot read never reaches the diagnosis and
+// nothing about it (state, bounds, metric names) can leak through the summary.
+func buildScaledBy(ctx context.Context, scalers []topology.ResourceRef, provider topology.ResourceProvider, ac RefAccessChecker, omitted *omittedTracker) []ScalerRef {
+	refs := filterRefs(ctx, ac, toContextRefs(scalers), "scaledBy", omitted)
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]ScalerRef, 0, len(refs))
+	var hpas map[string]*autoscalingv2.HorizontalPodAutoscaler
+	hpasLoaded := false
+	for _, ref := range refs {
+		entry := ScalerRef{ContextRef: ref}
+		if isHPARef(ref) && provider != nil {
+			if !hpasLoaded {
+				hpas = indexHPAs(provider)
+				hpasLoaded = true
+			}
+			if hpa := hpas[hpaKey(ref.Namespace, ref.Name)]; hpa != nil {
+				entry.HPASummary = buildHPASummary(hpa)
+				entry.ManagedBy = kedaScaledObjectRef(ctx, hpa, ac, omitted)
+			}
+		}
+		out = append(out, entry)
+	}
+	return out
+}
+
+// Topology refs carry the autoscaling group only when discovery resolved it;
+// without a dynamic provider the group is empty, as it is for core kinds.
+func isHPARef(ref ContextRef) bool {
+	return ref.Kind == "HorizontalPodAutoscaler" && (ref.Group == "" || ref.Group == "autoscaling")
+}
+
+// KEDA owns the HPAs it creates and also labels them with the ScaledObject
+// name; either is enough to attribute the HPA. The pointer is gated like any
+// other ref so a ScaledObject the caller cannot read is not named.
+func kedaScaledObjectRef(ctx context.Context, hpa *autoscalingv2.HorizontalPodAutoscaler, ac RefAccessChecker, omitted *omittedTracker) *ContextRef {
+	name := ""
+	for _, owner := range hpa.OwnerReferences {
+		if owner.Kind == "ScaledObject" && resourceid.GroupFromAPIVersion(owner.APIVersion) == "keda.sh" {
+			name = owner.Name
+			break
+		}
+	}
+	if name == "" {
+		name = hpa.Labels["scaledobject.keda.sh/name"]
+	}
+	if name == "" {
+		return nil
+	}
+	ref := &ContextRef{Kind: "ScaledObject", Group: "keda.sh", Namespace: hpa.Namespace, Name: name}
+	if !checkRef(ctx, ac, ref) {
+		omitted.add("scaledBy.managedBy", OmittedRBACDenied)
+		return nil
+	}
+	return ref
+}
+
+// indexHPAs keys the provider's HPAs so each scaler ref is one map lookup.
+// A workload can name several scalers and the cluster can hold thousands of
+// HPAs, so scanning the list per ref makes a context build quadratic in the
+// worst case. The list itself is the provider's only read API.
+func indexHPAs(provider topology.ResourceProvider) map[string]*autoscalingv2.HorizontalPodAutoscaler {
+	list, _ := provider.HorizontalPodAutoscalers()
+	byKey := make(map[string]*autoscalingv2.HorizontalPodAutoscaler, len(list))
+	for _, hpa := range list {
+		if hpa == nil {
+			continue
+		}
+		// Two HPAs cannot share a namespace and name, so a repeat key is a
+		// provider artefact; the first entry is the one to keep.
+		key := hpaKey(hpa.Namespace, hpa.Name)
+		if _, seen := byKey[key]; !seen {
+			byKey[key] = hpa
+		}
+	}
+	return byKey
+}
+
+func hpaKey(namespace, name string) string {
+	return namespace + "\x00" + name
+}
+
+func buildHPASummary(obj runtime.Object) *HPASummary {
+	hpa, ok := obj.(*autoscalingv2.HorizontalPodAutoscaler)
+	if !ok || hpa == nil {
+		return nil
+	}
+	diagnosis := hpadiag.Analyze(hpa)
+	if diagnosis == nil {
+		return nil
+	}
+	out := &HPASummary{
+		State:   string(diagnosis.State),
+		Summary: diagnosis.Summary,
+		Target: &ContextRef{
+			Kind:      diagnosis.Target.Kind,
+			Group:     resourceid.GroupFromAPIVersion(diagnosis.Target.APIVersion),
+			Namespace: hpa.Namespace,
+			Name:      diagnosis.Target.Name,
+		},
+		Bounds: &HPAReplicaBounds{
+			Min:                diagnosis.Bounds.Min,
+			Max:                diagnosis.Bounds.Max,
+			Current:            diagnosis.Bounds.Current,
+			Desired:            diagnosis.Bounds.Desired,
+			ObservedGeneration: diagnosis.Bounds.ObservedGeneration,
+			Generation:         diagnosis.Bounds.Generation,
+		},
+	}
+	for _, metric := range diagnosis.Metrics {
+		out.Metrics = append(out.Metrics, HPAMetricSummary{
+			Type:    metric.Type,
+			Name:    metric.Name,
+			Current: metric.Current,
+			Target:  metric.Target,
+			Status:  metric.Status,
+		})
+	}
+	for _, reason := range diagnosis.Reasons {
+		out.Reasons = append(out.Reasons, HPAReasonSummary{
+			ID:              string(reason.ID),
+			Message:         reason.Message,
+			Detail:          reason.Detail,
+			ConditionType:   reason.ConditionType,
+			ConditionReason: reason.ConditionReason,
+		})
+	}
+	return out
+}
+
+func replicasOrZero(p *int32) int32 {
+	if p == nil {
+		return 0
+	}
+	return *p
+}
+
+func int32OrDefault(p *int32, fallback int32) int32 {
+	if p == nil {
+		return fallback
+	}
+	return *p
+}
+
+func boolOrFalse(p *bool) bool {
+	return p != nil && *p
+}
+
+func valueOrEmpty(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
+}
+
+func valueOrZero[T ~string](p *T) T {
+	var zero T
+	if p == nil {
+		return zero
+	}
+	return *p
+}
+
+func maxInt32(a, b int32) int32 {
+	if a > b {
+		return a
+	}
+	return b
+}
+
+func buildStatusSummary(obj runtime.Object) *StatusSummary {
+	if obj == nil {
+		return nil
+	}
+	u, ok := objectToMap(obj)
+	if !ok {
+		return nil
+	}
+	status, ok, _ := unstructured.NestedMap(u, "status")
+	if !ok {
+		return nil
+	}
+	out := &StatusSummary{}
+	if phase, ok, _ := unstructured.NestedString(status, "phase"); ok {
+		out.Phase = phase
+	}
+	if conditions, ok, _ := unstructured.NestedSlice(status, "conditions"); ok {
+		if len(conditions) > maxSummaryItems {
+			out.ConditionsTruncated = true
+			conditions = conditions[:maxSummaryItems]
+		}
+		for _, item := range conditions {
+			cond, ok := item.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			summary := ConditionSummary{
+				Type:               stringField(cond, "type"),
+				Status:             stringField(cond, "status"),
+				Reason:             stringField(cond, "reason"),
+				Message:            truncateRunes(stringField(cond, "message"), 300),
+				LastTransitionTime: stringField(cond, "lastTransitionTime"),
+			}
+			if observedGeneration, ok, _ := unstructured.NestedInt64(cond, "observedGeneration"); ok {
+				summary.ObservedGeneration = observedGeneration
+			}
+			if summary.Type == "" && summary.Status == "" {
+				continue
+			}
+			out.Conditions = append(out.Conditions, summary)
+		}
+	}
+	if out.Phase == "" && len(out.Conditions) == 0 && !out.ConditionsTruncated {
+		return nil
+	}
+	return out
+}
+
+func objectToMap(obj runtime.Object) (map[string]interface{}, bool) {
+	if u, ok := obj.(*unstructured.Unstructured); ok {
+		return u.Object, true
+	}
+	out, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return nil, false
+	}
+	return out, true
+}
+
+func stringField(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func truncateRunes(s string, limit int) string {
+	if limit <= 0 || len(s) == 0 {
+		return ""
+	}
+	runes := []rune(s)
+	if len(runes) <= limit {
+		return s
+	}
+	return string(runes[:limit])
+}
+
+// refSet collects (name, namespace) pairs with insertion-order preservation
+// for deterministic output. Names with empty namespaces are tolerated (the
+// PVC ClaimName can be cluster-scoped only in odd configurations, but we
+// pass through whatever the pod spec says).
+type refSet struct {
+	seen  map[string]bool
+	order []nsName
+}
+
+type nsName struct {
+	Namespace string
+	Name      string
+}
+
+func newRefSet() *refSet {
+	return &refSet{seen: make(map[string]bool)}
+}
+
+func (s *refSet) add(name, ns string) {
+	if name == "" {
+		return
+	}
+	key := ns + "/" + name
+	if s.seen[key] {
+		return
+	}
+	s.seen[key] = true
+	s.order = append(s.order, nsName{Namespace: ns, Name: name})
+}
+
+// refs returns the accumulated set as ContextRefs sorted by (namespace, name)
+// for deterministic golden output.
+func (s *refSet) refs(kind, group string) []ContextRef {
+	if len(s.order) == 0 {
+		return nil
+	}
+	out := make([]ContextRef, len(s.order))
+	sorted := append([]nsName(nil), s.order...)
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Namespace != sorted[j].Namespace {
+			return sorted[i].Namespace < sorted[j].Namespace
+		}
+		return sorted[i].Name < sorted[j].Name
+	})
+	for i, e := range sorted {
+		out[i] = ContextRef{
+			Kind:      kind,
+			Group:     group,
+			Namespace: e.Namespace,
+			Name:      e.Name,
+		}
+	}
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// Topology ref → ContextRef
+// ---------------------------------------------------------------------------
+
+// managerContext compacts a manager answer: the evidence that answers, the
+// resource's or its controller's, and in AlsoClaimed the claims that didn't
+// settle it, each on its object. Copied claims are dropped. Every reference
+// in it is one the caller may read, or metadata on one.
+func managerContext(m *topology.ManagerAnswer) *ManagerContext {
+	out := &ManagerContext{State: m.State, Narrowed: m.Narrowed}
+	if m.Lead != nil {
+		lead := toContextRef(*m.Lead)
+		out.Lead = &lead
+	}
+	evidence := m.Direct
+	if m.Via != nil {
+		evidence = *m.Via
+		via := toContextRef(m.Via.Object)
+		out.Via = &via
+	}
+	out.ListedBy = toContextRefs(evidence.Recorders)
+	out.Claims = claimContexts(evidence, false)
+	if m.Via != nil {
+		out.AlsoClaimed = claimContexts(m.Direct, true)
+	}
+	for _, e := range m.Between {
+		out.AlsoClaimed = append(out.AlsoClaimed, claimContexts(e, true)...)
+	}
+	return out
+}
+
+// claimContexts are e's claims but the copied ones, which name another object;
+// with on, each says which object makes it.
+func claimContexts(e topology.ManagerEvidence, on bool) []ManagerClaimContext {
+	var out []ManagerClaimContext
+	for _, c := range e.Claims {
+		if c.Copied {
+			continue
+		}
+		cc := ManagerClaimContext{Manager: toContextRef(c.Manager), Check: c.Check}
+		if on {
+			object := toContextRef(e.Object)
+			cc.On = &object
+		}
+		out = append(out, cc)
+	}
+	return out
+}
+
+func toContextRef(r topology.ResourceRef) ContextRef {
+	return ContextRef{Kind: r.Kind, Group: r.Group, Namespace: r.Namespace, Name: r.Name}
+}
+
+// toContextRefs translates a slice of topology.ResourceRef into ContextRefs.
+// Sorted by (kind, namespace, name) for determinism — golden tests rely on
+// this ordering.
+func toContextRefs(refs []topology.ResourceRef) []ContextRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]ContextRef, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, ContextRef{
+			Kind:      r.Kind,
+			Group:     r.Group,
+			Namespace: r.Namespace,
+			Name:      r.Name,
+		})
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].Kind != out[j].Kind {
+			return out[i].Kind < out[j].Kind
+		}
+		if out[i].Namespace != out[j].Namespace {
+			return out[i].Namespace < out[j].Namespace
+		}
+		return out[i].Name < out[j].Name
+	})
+	return out
+}
+
+// ---------------------------------------------------------------------------
+// RBAC gating
+// ---------------------------------------------------------------------------
+
+// filterRefs applies the access check to each ref. Denied refs are dropped
+// and one omitted entry is recorded per field (deduped by the tracker).
+// When ac is nil (local-kubeconfig / no auth), every ref passes.
+// filterRefs keeps the refs the caller may read. With omitted, a dropped ref
+// records an rbac_denied note for fieldPath; nil drops silently.
+func filterRefs(ctx context.Context, ac RefAccessChecker, refs []ContextRef, fieldPath string, omitted *omittedTracker) []ContextRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]ContextRef, 0, len(refs))
+	deniedAny := false
+	for _, r := range refs {
+		if !checkRef(ctx, ac, &r) {
+			deniedAny = true
+			continue
+		}
+		out = append(out, r)
+	}
+	if deniedAny && omitted != nil {
+		omitted.add(fieldPath, OmittedRBACDenied)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// answeredManager reports whether ref is a manager kind the manager answer
+// weighs: an Argo CD Application, a Flux Kustomization or HelmRelease, or a
+// native Helm release.
+func answeredManager(ref topology.ResourceRef) bool {
+	switch {
+	case ref.Kind == "Application" && ref.Group == "argoproj.io":
+		return true
+	case ref.Kind == "Kustomization" && ref.Group == "kustomize.toolkit.fluxcd.io":
+		return true
+	case ref.Kind == "HelmRelease" && (ref.Group == "helm.toolkit.fluxcd.io" || ref.Group == ""):
+		return true
+	}
+	return false
+}
+
+// FilterSchedulingSummary applies the same reference permissions as Build without
+// collecting unrelated resource context. The input remains unchanged.
+func FilterSchedulingSummary(ctx context.Context, summary *SchedulingSummary, ac RefAccessChecker) (*SchedulingSummary, []OmittedField) {
+	omitted := newOmittedTracker()
+	filtered := filterSchedulingSummary(ctx, summary, ac, omitted)
+	return filtered, omitted.collect()
+}
+
+func filterSchedulingSummary(ctx context.Context, summary *SchedulingSummary, ac RefAccessChecker, omitted *omittedTracker) *SchedulingSummary {
+	if summary == nil || len(summary.Observations) == 0 {
+		return nil
+	}
+	out := &SchedulingSummary{Observations: make([]SchedulingObservation, 0, len(summary.Observations))}
+	for i := range summary.Observations {
+		observation := summary.Observations[i]
+		if !checkRef(ctx, ac, &observation.Subject) {
+			omitted.add("scheduling.observations.subject", OmittedRBACDenied)
+			continue
+		}
+		filtered := observation
+		if observation.PrimaryCondition != nil {
+			condition := *observation.PrimaryCondition
+			filtered.PrimaryCondition = &condition
+		}
+		filtered.Disruptions = append([]ConditionSummary(nil), observation.Disruptions...)
+
+		filtered.Queues = nil
+		for _, queue := range observation.Queues {
+			filteredQueue := queue
+			filteredQueue.Roles = append([]SchedulingQueueRole(nil), queue.Roles...)
+			filteredQueue.Ref = nil
+			if queue.Ref != nil {
+				ref := *queue.Ref
+				if checkRef(ctx, ac, &ref) {
+					filteredQueue.Ref = &ref
+				} else {
+					omitted.add("scheduling.observations.queues.ref", OmittedRBACDenied)
+				}
+			}
+			filtered.Queues = append(filtered.Queues, filteredQueue)
+		}
+
+		filtered.Gates = nil
+		for _, gate := range observation.Gates {
+			filteredGate := gate
+			filteredGate.Ref = nil
+			if gate.Ref != nil {
+				ref := *gate.Ref
+				if checkRef(ctx, ac, &ref) {
+					filteredGate.Ref = &ref
+				} else {
+					omitted.add("scheduling.observations.gates.ref", OmittedRBACDenied)
+				}
+			}
+			if gate.RequeueAfterSeconds != nil {
+				requeueAfter := *gate.RequeueAfterSeconds
+				filteredGate.RequeueAfterSeconds = &requeueAfter
+			}
+			if gate.RetryCount != nil {
+				retryCount := *gate.RetryCount
+				filteredGate.RetryCount = &retryCount
+			}
+			filtered.Gates = append(filtered.Gates, filteredGate)
+		}
+
+		filtered.Kueue = filterKueueScheduling(ctx, observation.Kueue, ac, omitted)
+		out.Observations = append(out.Observations, filtered)
+	}
+	if len(out.Observations) == 0 {
+		return nil
+	}
+	return out
+}
+
+func filterKueueScheduling(ctx context.Context, scheduling *KueueScheduling, ac RefAccessChecker, omitted *omittedTracker) *KueueScheduling {
+	if scheduling == nil {
+		return nil
+	}
+	out := *scheduling
+	if scheduling.Active != nil {
+		active := *scheduling.Active
+		out.Active = &active
+	}
+	if scheduling.PodsReady != nil {
+		condition := *scheduling.PodsReady
+		out.PodsReady = &condition
+	}
+	if scheduling.WaitingForReplacementPods != nil {
+		condition := *scheduling.WaitingForReplacementPods
+		out.WaitingForReplacementPods = &condition
+	}
+	if scheduling.RequeueState != nil {
+		requeue := *scheduling.RequeueState
+		if scheduling.RequeueState.Count != nil {
+			count := *scheduling.RequeueState.Count
+			requeue.Count = &count
+		}
+		out.RequeueState = &requeue
+	}
+	if scheduling.ConcurrentAdmission != nil {
+		concurrent := *scheduling.ConcurrentAdmission
+		concurrent.ParentRef = nil
+		if scheduling.ConcurrentAdmission.ParentRef != nil {
+			parent := *scheduling.ConcurrentAdmission.ParentRef
+			if checkRef(ctx, ac, &parent) {
+				concurrent.ParentRef = &parent
+			} else {
+				omitted.add("scheduling.observations.kueue.concurrentAdmission.parentRef", OmittedRBACDenied)
+			}
+		}
+		out.ConcurrentAdmission = &concurrent
+	}
+
+	out.PodSetAssignments = nil
+	for _, assignment := range scheduling.PodSetAssignments {
+		filteredAssignment := assignment
+		if assignment.Count != nil {
+			count := *assignment.Count
+			filteredAssignment.Count = &count
+		}
+		filteredAssignment.Resources = nil
+		for _, resource := range assignment.Resources {
+			filteredResource := resource
+			filteredResource.FlavorRef = nil
+			if resource.FlavorRef != nil {
+				flavor := *resource.FlavorRef
+				if checkRef(ctx, ac, &flavor) {
+					filteredResource.FlavorRef = &flavor
+				} else {
+					omitted.add("scheduling.observations.kueue.podSetAssignments.resources.flavorRef", OmittedRBACDenied)
+				}
+			}
+			filteredAssignment.Resources = append(filteredAssignment.Resources, filteredResource)
+		}
+		out.PodSetAssignments = append(out.PodSetAssignments, filteredAssignment)
+	}
+	return &out
+}
+
+func filterAppReferences(ctx context.Context, refs *AppReferences, ac RefAccessChecker, omitted *omittedTracker) *AppReferences {
+	if refs == nil {
+		return nil
+	}
+	out := &AppReferences{DuplicateEnv: append([]DuplicateEnvVarReference(nil), refs.DuplicateEnv...)}
+	deniedAny := false
+	for _, ref := range refs.ServiceEnv {
+		if !checkRef(ctx, ac, &ref.Service) {
+			deniedAny = true
+			continue
+		}
+		out.ServiceEnv = append(out.ServiceEnv, ref)
+	}
+	if deniedAny {
+		omitted.add("appReferences.serviceEnv", OmittedRBACDenied)
+	}
+	deniedAny = false
+	for _, ref := range refs.RemovedServiceEnv {
+		if !checkRef(ctx, ac, &ref.Service) {
+			deniedAny = true
+			continue
+		}
+		out.RemovedServiceEnv = append(out.RemovedServiceEnv, ref)
+	}
+	if deniedAny {
+		omitted.add("appReferences.removedServiceEnv", OmittedRBACDenied)
+	}
+	deniedAny = false
+	for _, ref := range refs.StaleSecretEnv {
+		if !checkRef(ctx, ac, &ref.Secret) {
+			deniedAny = true
+			continue
+		}
+		out.StaleSecretEnv = append(out.StaleSecretEnv, ref)
+	}
+	if len(out.StaleSecretEnv) > 0 {
+		out.StaleSecretEnvTruncated = refs.StaleSecretEnvTruncated
+	}
+	if deniedAny {
+		omitted.add("appReferences.staleSecretEnv", OmittedRBACDenied)
+	}
+	if len(out.ServiceEnv) == 0 && len(out.DuplicateEnv) == 0 && len(out.RemovedServiceEnv) == 0 && len(out.StaleSecretEnv) == 0 {
+		return nil
+	}
+	return out
+}
+
+// checkRef returns true when ac permits a read of (group, kind, namespace).
+// Nil ac = permit everything.
+func checkRef(ctx context.Context, ac RefAccessChecker, r *ContextRef) bool {
+	if ac == nil || r == nil {
+		return true
+	}
+	return ac.CanRead(ctx, r.Group, r.Kind, r.Namespace)
+}
+
+// gateContainerCompletionSplit requires access to both resources that establish
+// the observation; namespace access alone does not imply access to their state.
+func gateContainerCompletionSplit(ctx context.Context, ac RefAccessChecker, obj runtime.Object, obs *ContainerCompletionSplit, fieldPath string, omitted *omittedTracker) *ContainerCompletionSplit {
+	if obs == nil {
+		return nil
+	}
+	var namespace string
+	switch subject := obj.(type) {
+	case *batchv1.Job:
+		namespace = subject.Namespace
+	case *batchv1.CronJob:
+		namespace = subject.Namespace
+	default:
+		return nil
+	}
+	podRef := ContextRef{Kind: "Pod", Namespace: namespace, Name: obs.Pod}
+	jobRef := ContextRef{Kind: "Job", Group: "batch", Namespace: namespace, Name: obs.Job}
+	if !checkRef(ctx, ac, &podRef) || !checkRef(ctx, ac, &jobRef) {
+		omitted.add(fieldPath, OmittedRBACDenied)
+		return nil
+	}
+	return obs
+}
+
+// ---------------------------------------------------------------------------
+// Policy summary
+// ---------------------------------------------------------------------------
+
+// buildPolicySummary rolls up Kyverno findings into the summary block.
+// Top findings are picked first by fail > warn > error > pass, then by
+// stable input order — capped at policySummaryTopMax.
+//
+// Tier discrimination: basic emits counts only (Fail/Warn/Pass) for a
+// minimal wire footprint; diagnostic adds the Top[] findings. Locked
+// in the plan's v1 contract.
+const policySummaryTopMax = 3
+
+func buildPolicySummary(findings []KyvernoFinding, tier ContextTier) *PolicySummary {
+	var fail, warn, pass int
+	for _, f := range findings {
+		switch f.Result {
+		case "fail":
+			fail++
+		case "warn":
+			warn++
+		case "pass":
+			pass++
+		}
+	}
+
+	ks := &KyvernoSummary{
+		Fail: fail,
+		Warn: warn,
+		Pass: pass,
+	}
+
+	// Top[] only on diagnostic tier. Basic stays counts-only.
+	if tier == TierDiagnostic {
+		ordered := append([]KyvernoFinding(nil), findings...)
+		sort.SliceStable(ordered, func(i, j int) bool {
+			return resultRank(ordered[i].Result) < resultRank(ordered[j].Result)
+		})
+		if len(ordered) > policySummaryTopMax {
+			ordered = ordered[:policySummaryTopMax]
+		}
+		ks.Top = ordered
+	}
+
+	return &PolicySummary{Kyverno: ks}
+}
+
+func resultRank(r string) int {
+	switch r {
+	case "fail":
+		return 0
+	case "warn":
+		return 1
+	case "error":
+		return 2
+	case "pass":
+		return 3
+	default:
+		return 4
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Omitted tracker
+// ---------------------------------------------------------------------------
+
+// omittedTracker deduplicates (field, reason) entries so callers don't emit
+// "managedBy" / OmittedRBACDenied twice when multiple refs in the same field
+// fail. Insertion order is preserved for stable JSON output.
+type omittedTracker struct {
+	seen  map[string]bool
+	items []OmittedField
+}
+
+func newOmittedTracker() *omittedTracker {
+	return &omittedTracker{seen: make(map[string]bool)}
+}
+
+func (t *omittedTracker) add(field string, reason OmittedReason) {
+	key := field + "|" + string(reason)
+	if t.seen[key] {
+		return
+	}
+	t.seen[key] = true
+	t.items = append(t.items, OmittedField{Field: field, Reason: reason})
+}
+
+func (t *omittedTracker) collect() []OmittedField {
+	if len(t.items) == 0 {
+		return nil
+	}
+	return t.items
+}

@@ -1,0 +1,149 @@
+import { ClipboardCheck, ArrowRight, Check, AlertTriangle } from 'lucide-react'
+import { clsx } from 'clsx'
+import { SEVERITY_TEXT, SEVERITY_DOT } from '../../utils/badge-colors'
+import { SEVERITY_FILL_CLASS, SEVERITY_TEXT_CLASS } from '../checks/severity'
+
+export interface AuditCardData {
+  missingInputs?: string[]
+  passing: number
+  /** Raw compatibility counts; warning renders as Medium and danger as High. */
+  warning: number
+  danger: number
+  /** Nested warning/danger counts follow the same Medium/High mapping. */
+  categories: Record<string, { passing: number; warning: number; danger: number }>
+}
+
+interface AuditCardProps {
+  data: AuditCardData
+  onNavigate: () => void
+}
+
+type SeverityLevel = 'success' | 'high' | 'medium' | 'neutral'
+
+const CATEGORY_LABELS: Record<string, string> = {
+  Efficiency: '效率',
+  Reliability: '可靠性',
+  Security: '安全性',
+}
+
+function getSeverityLevel(data: AuditCardData): SeverityLevel {
+  if (data.warning + data.danger === 0) return data.missingInputs?.length || data.passing === 0 ? 'neutral' : 'success'
+  const highRatio = data.danger / (data.warning + data.danger)
+  if (highRatio > 0.2) return 'high'
+  return 'medium'
+}
+
+const ACCENT_BG: Record<SeverityLevel, string> = {
+  neutral: 'bg-theme-elevated',
+  success: 'bg-green-500/10',
+  high: 'bg-orange-500/10',
+  medium: 'bg-yellow-500/10',
+}
+
+export function AuditCard({ data, onNavigate }: AuditCardProps) {
+  const total = data.passing + data.warning + data.danger
+  const issueCount = data.warning + data.danger
+  const incomplete = (data.missingInputs?.length ?? 0) > 0
+  const allPassing = issueCount === 0 && total > 0 && !incomplete
+  const level = getSeverityLevel(data)
+  const accentColor = level === 'neutral' ? 'text-theme-text-secondary' : level === 'success' ? SEVERITY_TEXT.success : SEVERITY_TEXT_CLASS[level]
+  const accentBg = ACCENT_BG[level]
+
+  return (
+    <button
+      onClick={onNavigate}
+      className="group h-[260px] rounded-xl bg-theme-surface shadow-theme-sm hover:-translate-y-1 hover:shadow-theme-md transition-all duration-200 text-left animate-fade-in-up"
+    >
+      <div className="flex flex-col h-full w-full">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-theme-border/50">
+          <div className="flex items-center gap-2">
+            <ClipboardCheck className={clsx('w-4 h-4', accentColor)} />
+            <span className={clsx('text-xs font-semibold uppercase tracking-wider', accentColor)}>集群检查</span>
+            {issueCount > 0 ? (
+              <span className={clsx('badge-sm', accentBg, accentColor)}>
+                {issueCount}
+              </span>
+            ) : (
+              <span className={clsx('badge-sm', accentBg, accentColor)}>
+                {allPassing ? <Check className="w-3 h-3" /> : <ClipboardCheck className="w-3 h-3" />}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex-1 min-h-0 flex flex-col items-center justify-center px-4 py-4">
+          {allPassing ? (
+            <div className="flex flex-col items-center gap-2">
+              <Check className={clsx('w-8 h-8', SEVERITY_TEXT.success)} />
+              <span className={clsx('text-sm font-medium', SEVERITY_TEXT.success)}>全部检查通过</span>
+              {total > 0 && (
+                <span className="text-xs text-theme-text-tertiary">{total} 项检查，涵盖 {Object.keys(data.categories).length} 个类别</span>
+              )}
+            </div>
+          ) : issueCount === 0 ? (
+            <div className="flex flex-col items-center gap-2 text-center">
+              {incomplete ? <AlertTriangle className="w-8 h-8 text-warning-text" /> : <ClipboardCheck className="w-8 h-8 text-theme-text-tertiary" />}
+              <span className="text-sm font-medium text-theme-text-primary">{incomplete ? '部分检查无法运行' : '没有评估任何资源'}</span>
+              <span className="text-xs text-theme-text-secondary">{incomplete ? '当前可用数据中没有发现问题。' : '请检查所选范围和检查设置。'}</span>
+            </div>
+          ) : (
+            <>
+              {/* Distribution bar — only show when we have passing data for context */}
+              {data.passing > 0 && total > 0 && (
+                <div className="flex items-center gap-3 w-full">
+                  <div className="flex-1 h-3 rounded-full overflow-hidden bg-theme-hover flex">
+                    <div className={clsx('h-full', SEVERITY_DOT.success)} style={{ width: `${(data.passing / total) * 100}%` }} />
+                    {data.warning > 0 && (
+                      <div className={clsx('h-full', SEVERITY_FILL_CLASS.medium)} style={{ width: `${(data.warning / total) * 100}%` }} />
+                    )}
+                    {data.danger > 0 && (
+                      <div className={clsx('h-full', SEVERITY_FILL_CLASS.high)} style={{ width: `${(data.danger / total) * 100}%` }} />
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Category breakdown */}
+              <div className="grid grid-cols-1 gap-y-2 mt-4 w-full">
+                {Object.entries(data.categories).map(([category, counts]) => {
+                  const catIssues = counts.warning + counts.danger
+                  const dotColor = counts.danger > 0 ? SEVERITY_FILL_CLASS.high : counts.warning > 0 ? SEVERITY_FILL_CLASS.medium : SEVERITY_DOT.success
+                  return (
+                    <div key={category} className="flex items-center gap-2">
+                      <span className={clsx('w-2 h-2 rounded-full shrink-0', dotColor)} />
+                      <span className="text-xs text-theme-text-secondary flex-1">{CATEGORY_LABELS[category] ?? category}</span>
+                      {catIssues > 0 ? (
+                        <div className="flex items-center gap-2">
+                          {counts.danger > 0 && (
+                            <span className={clsx('text-xs font-semibold tabular-nums', SEVERITY_TEXT_CLASS.high)}>{counts.danger} 高风险</span>
+                          )}
+                          {counts.warning > 0 && (
+                            <span className={clsx('text-xs font-semibold tabular-nums', SEVERITY_TEXT_CLASS.medium)}>{counts.warning} 中风险</span>
+                          )}
+                        </div>
+                      ) : (
+                        <span className={clsx('text-xs font-semibold', incomplete ? 'text-theme-text-secondary' : SEVERITY_TEXT.success)}>{incomplete ? '没有发现问题' : '全部通过'}</span>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
+          )}
+        </div>
+
+        {incomplete && issueCount > 0 && <p className="px-4 pb-2 text-xs text-warning-text">部分检查无法运行。</p>}
+
+        <div className="px-4 py-1.5 border-t border-theme-border/50 flex items-center justify-end">
+          <span className={clsx(
+            'flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider transition-colors',
+            accentColor,
+          )}>
+            查看详情
+            <ArrowRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5" />
+          </span>
+        </div>
+      </div>
+    </button>
+  )
+}

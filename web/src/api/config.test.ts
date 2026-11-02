@@ -1,0 +1,100 @@
+// @vitest-environment jsdom
+import { describe, expect, it, afterEach } from 'vitest'
+
+import { setBasename, getBasename, stripBasename, routePath, mcpEndpointUrl, apiUrl, getApiBase, setApiBase } from './config'
+
+it('strips long trailing slash runs without changing internal slashes', () => {
+  const suffix = '/'.repeat(100000)
+  setApiBase('https://example.test/api' + suffix)
+  setBasename('/tools//atlas' + suffix)
+  expect(getApiBase()).toBe('https://example.test/api')
+  expect(getBasename()).toBe('/tools//atlas')
+  setApiBase(suffix)
+  setBasename('')
+  expect(getApiBase()).toBe('')
+  expect(getBasename()).toBe('')
+})
+
+// setBasename mutates module state — restore standalone default after each test.
+afterEach(() => {
+  setBasename('')
+  setApiBase('/api')
+})
+
+it('keeps an explicitly captured API base when the host changes', () => {
+  setApiBase('/c/original/api')
+  const original = getApiBase()
+  setApiBase('/c/other/api')
+  expect(apiUrl('/nodes/worker/drain', original)).toBe('/c/original/api/nodes/worker/drain')
+  expect(apiUrl('/nodes/worker/drain')).toBe('/c/other/api/nodes/worker/drain')
+})
+
+describe('MCP client endpoint', () => {
+  it('selects the available endpoint for the effective mode', () => {
+    expect(mcpEndpointUrl()).toBe(`${window.location.origin}/mcp`)
+    expect(mcpEndpointUrl(true)).toBe(`${window.location.origin}/mcp-readonly`)
+  })
+
+  it('preserves the configured base path', () => {
+    setBasename('/tools/radar')
+    expect(mcpEndpointUrl(true)).toBe(`${window.location.origin}/tools/radar/mcp-readonly`)
+  })
+})
+
+describe('stripBasename', () => {
+  it('passes paths through unchanged when no basename is configured', () => {
+    expect(stripBasename('/resources/pods')).toBe('/resources/pods')
+    expect(stripBasename('/')).toBe('/')
+  })
+
+  it('strips a configured basename prefix', () => {
+    setBasename('/c/abc')
+    expect(stripBasename('/c/abc/resources/pods')).toBe('/resources/pods')
+    expect(stripBasename('/c/abc/timeline?range=1h')).toBe('/timeline?range=1h')
+  })
+
+  it('maps the bare basename to root', () => {
+    setBasename('/c/abc')
+    expect(stripBasename('/c/abc')).toBe('/')
+  })
+
+  it('strips when the basename is followed directly by a query string', () => {
+    setBasename('/c/abc')
+    expect(stripBasename('/c/abc?tab=events')).toBe('?tab=events')
+  })
+
+  it('leaves basename-relative paths unchanged (idempotent)', () => {
+    setBasename('/c/abc')
+    expect(stripBasename('/resources/pods')).toBe('/resources/pods')
+    expect(stripBasename(stripBasename('/c/abc/resources/pods'))).toBe('/resources/pods')
+  })
+
+  it('does not strip a path that merely shares a string prefix', () => {
+    setBasename('/c/abc')
+    expect(stripBasename('/c/abcdef/resources')).toBe('/c/abcdef/resources')
+  })
+
+  // Standalone KubeAtlas sets a basename too once --base-path is configured, so the
+  // session-expiry return path round-trips through this in a new shape. Store
+  // strips once (client.ts) and restore strips again defensively (App.tsx) before
+  // navigate() re-applies the basename — the net effect must be the original
+  // route, never a doubled one.
+  it('round-trips a return path under a base path without doubling', () => {
+    setBasename('/radar')
+    const stored = stripBasename('/radar/resources/pods') + '?namespaces=prod'
+    expect(stored).toBe('/resources/pods?namespaces=prod')
+    // Restore side strips a second time; already-relative values are untouched.
+    expect(stripBasename(stored)).toBe('/resources/pods?namespaces=prod')
+  })
+
+  it('leaves a nested base path return path relative', () => {
+    setBasename('/tools/radar')
+    expect(stripBasename('/tools/radar/topology')).toBe('/topology')
+    expect(stripBasename(stripBasename('/tools/radar/topology'))).toBe('/topology')
+  })
+
+  it('inverts routePath', () => {
+    setBasename('/c/abc')
+    expect(stripBasename(routePath('/auth/login'))).toBe('/auth/login')
+  })
+})

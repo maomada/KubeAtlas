@@ -1,0 +1,287 @@
+// Package cloud connects the Radar binary to a Radar Cloud service.
+//
+// When configured with a Cloud URL, Radar dials out via WebSocket, establishes
+// a yamux session with itself as the server, and serves its existing HTTP
+// router over streams that Cloud opens on behalf of browsers. All of
+// Radar's endpoints (topology, resources, SSE, pod exec, MCP) work unchanged
+// because a yamux stream IS a net.Conn — the router doesn't know the request
+// came from a tunnel.
+//
+// This package is only active when --cloud-url is set. With no Cloud
+// configured, Radar's local-binary behavior is unchanged.
+package cloud
+
+import (
+	"context"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
+)
+
+// Config is the runtime configuration for connecting to Radar Cloud.
+type Config struct {
+	// URL is the WebSocket URL of the Cloud service's /agent endpoint,
+	// e.g. wss://api.example.test/agent
+	URL string
+
+	// InsecureSkipVerify disables TLS certificate verification on the wss
+	// tunnel. Intended only for trials against a self-hosted hub that serves a
+	// self-signed certificate: the connection stays encrypted but is not
+	// authenticated, so a network attacker could impersonate the hub. Leave
+	// false for any hub with a publicly trusted certificate.
+	InsecureSkipVerify bool
+
+	// CA, when set, is the system roots plus an extra CA bundle, for the
+	// tunnel's TLS verification.
+	CA *x509.CertPool
+
+	// Enrolled marks a token this Radar obtained by enrolling. A token the
+	// Hub rejects (401) ends Run with ErrTokenRejected instead of retrying
+	// forever, so the caller can enroll again for a new one.
+	Enrolled bool
+
+	// OnConnected, when set, is called each time a tunnel session opens. It
+	// runs on Run's goroutine and must not block.
+	OnConnected func()
+
+	// Token is the cluster bearer token issued by the Cloud install wizard.
+	// Format: rhc_<random>.
+	Token string
+
+	// ClusterID stably identifies this cluster to Cloud. Derived from the
+	// token on the Cloud side; sent as a query param for clarity and logging.
+	ClusterID string
+
+	// ClusterName is the human-readable label the user chose in the wizard.
+	ClusterName string
+
+	// Namespace is the Kubernetes namespace Radar is running in. Sent to the
+	// hub on connect so it knows where to target Deployment patches on upgrade.
+	// Populated from MY_POD_NAMESPACE (downward API); empty string is fine —
+	// the hub stores whatever it receives and surfaces a "reconnect required"
+	// error if the field is absent when an upgrade is requested.
+	Namespace string
+
+	// Release is the Helm release name Radar was installed under, from
+	// KUBEATLAS_HELM_RELEASE (set by the chart from .Release.Name). Sent to the
+	// hub so the dashboard's token-rotation command targets this release
+	// instead of assuming `radar`. Empty for non-Helm installs; the hub keeps
+	// its last stored value then.
+	Release string
+
+	// APIServerURL is the externally-reachable URL of this cluster's
+	// kube-apiserver, sent to the hub so it can correlate this cluster
+	// with references from other surfaces (most notably Argo CD's
+	// `spec.destination.server`). Populated via DiscoverAPIServerURL
+	// from the kube-public/cluster-info ConfigMap when present; empty
+	// when the ConfigMap isn't there (managed K8s services frequently
+	// omit it) or RBAC denies the read. The hub stores whatever it
+	// receives and falls back to name-based correlation when the field
+	// is empty.
+	APIServerURL string
+
+	// SelfUpgradeAvailable reports whether this installation has the RBAC
+	// Radar's in-cluster self-upgrade endpoint needs. It is advertised
+	// explicitly on every Cloud tunnel handshake so the Hub never has to infer
+	// capability from the Radar version.
+	//
+	// It is a func, not a bool, because the answer can change without
+	// restarting Radar: enabling rbac.selfUpgrade adds a Role and RoleBinding
+	// but leaves the pod template untouched, so a value sampled once at
+	// startup would stay stale for the process lifetime. Re-evaluated per
+	// handshake, and re-checked periodically while a tunnel is up — a stable
+	// change closes the session so the next handshake re-advertises, since a
+	// healthy tunnel might otherwise never hand-shake again. Nil means
+	// unavailable.
+	SelfUpgradeAvailable func() bool
+
+	// Handler is the HTTP handler to serve over tunneled streams — typically
+	// Radar's Server.Handler() (chi router).
+	Handler http.Handler
+}
+
+func (c Config) validate() error {
+	if c.URL == "" {
+		return errors.New("cloud: URL is required")
+	}
+	if err := ValidateWebSocketURL(c.URL); err != nil {
+		return fmt.Errorf("cloud: %w", err)
+	}
+	if c.Token == "" {
+		return errors.New("cloud: Token is required")
+	}
+	if c.ClusterID == "" {
+		return errors.New("cloud: ClusterID is required")
+	}
+	if c.Handler == nil {
+		return errors.New("cloud: Handler is required")
+	}
+	return nil
+}
+
+// Run connects to Radar Cloud and serves incoming streams until ctx is
+// cancelled. It reconnects with exponential backoff on disconnect; Run
+// returns only on context cancellation or unrecoverable config errors.
+func Run(ctx context.Context, cfg Config) error {
+	if err := cfg.validate(); err != nil {
+		return err
+	}
+
+	backoff := 1 * time.Second
+	const maxBackoff = 30 * time.Second
+
+	failures := 0
+
+	for {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		log.Printf("[cloud] dialing Radar Cloud: %s cluster=%s", cfg.URL, cfg.ClusterID)
+		advertised := cfg.SelfUpgradeAvailable != nil && cfg.SelfUpgradeAvailable()
+		sess, err := dial(ctx, cfg, advertised)
+		if err != nil {
+			failures++
+			if cfg.Enrolled && errors.Is(err, errEnrolledTokenRejected) {
+				return ErrTokenRejected
+			}
+			log.Printf("[cloud] dial failed: %v (retry in %s)", err, backoff)
+			if failures == warnAfterFailures {
+				warning := escalationWarning(failures, err)
+				var answered *handshakeStatusError
+				if cfg.Enrolled && !errors.As(err, &answered) {
+					warning = fmt.Sprintf("%d consecutive failures: %v. Check that this cluster can reach the Hub's agent address %s", failures, err, cfg.URL)
+				}
+				log.Printf("[cloud] WARN: %s", warning)
+			}
+			if !sleep(ctx, backoff) {
+				return ctx.Err()
+			}
+			backoff = nextBackoff(backoff, maxBackoff)
+			continue
+		}
+		failures = 0
+
+		log.Printf("[cloud] connected to Radar Cloud; serving streams")
+		connectedAt := time.Now()
+		if cfg.OnConnected != nil {
+			cfg.OnConnected()
+		}
+
+		if cfg.SelfUpgradeAvailable != nil {
+			go watchSelfUpgradeAdvertisement(ctx, cfg.SelfUpgradeAvailable, advertised, sess, selfUpgradeRecheckInterval)
+		}
+		err = serve(ctx, sess, cfg.Handler)
+		if err != nil && !errors.Is(err, context.Canceled) {
+			log.Printf("[cloud] session ended: %v", err)
+		}
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		// Only reset backoff if the session stayed up long enough to count
+		// as healthy — otherwise a Cloud that accepts-then-immediately-kills
+		// the stream causes a tight dial→die→dial loop. Sleep before the
+		// next dial in the short-session case.
+		if time.Since(connectedAt) >= 30*time.Second {
+			backoff = 1 * time.Second
+		} else {
+			if !sleep(ctx, backoff) {
+				return ctx.Err()
+			}
+			backoff = nextBackoff(backoff, maxBackoff)
+		}
+	}
+}
+
+const selfUpgradeRecheckInterval = 3 * time.Minute
+
+// ErrTokenRejected ends Run for an enrolled token the Hub answered 401 to.
+// The caller joins again with the key, which lands on the same cluster entry.
+var ErrTokenRejected = errors.New("the Hub rejected this cluster's token")
+
+var errEnrolledTokenRejected = errors.New("the Hub rejected this cluster's token (401)")
+
+// warnAfterFailures is how many consecutive dial failures escalate to a WARN.
+// A var so a test can reach the escalation without sitting through the
+// backoff that separates five real attempts.
+var warnAfterFailures = 5
+
+// advertisementSession is the slice of *yamux.Session the capability watcher
+// needs; an interface so tests can observe the close decision without a
+// real tunnel.
+type advertisementSession interface {
+	CloseChan() <-chan struct{}
+	Close() error
+}
+
+// watchSelfUpgradeAdvertisement closes the session when the self-upgrade
+// capability stops matching what this session's handshake advertised, forcing
+// the reconnect loop to re-dial and re-advertise. Without it, enabling
+// rbac.selfUpgrade — which adds only RBAC objects, restarting nothing — would
+// leave a healthy long-lived tunnel advertising the old answer indefinitely.
+// Two consecutive mismatches are required so one transient probe failure
+// cannot cycle a healthy tunnel.
+func watchSelfUpgradeAdvertisement(ctx context.Context, current func() bool, advertised bool, sess advertisementSession, interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	mismatches := 0
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-sess.CloseChan():
+			return
+		case <-ticker.C:
+			if current() == advertised {
+				mismatches = 0
+				continue
+			}
+			mismatches++
+			if mismatches < 2 {
+				continue
+			}
+			log.Printf("[cloud] self-upgrade capability changed (advertised %t); reconnecting to re-advertise", advertised)
+			sess.Close()
+			return
+		}
+	}
+}
+
+func sleep(ctx context.Context, d time.Duration) bool {
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return false
+	case <-t.C:
+		return true
+	}
+}
+
+func nextBackoff(cur, max time.Duration) time.Duration {
+	n := cur * 2
+	if n > max {
+		n = max
+	}
+	return n
+}
+
+// escalationWarning is what Radar says once a run of dial failures stops
+// looking transient.
+//
+// A handshake that was answered carries its own instruction, and the flag list
+// contradicts it: on a Cloud-side outage it tells the operator to go re-check a
+// token that was never rejected. The list is for the case with no answer at
+// all, where a wrong URL and an unreachable one look identical from here.
+func escalationWarning(failures int, err error) string {
+	var answered *handshakeStatusError
+	if errors.As(err, &answered) {
+		return fmt.Sprintf("%d consecutive failures, still retrying: %v", failures, err)
+	}
+	return fmt.Sprintf("%d consecutive failures: %v. Verify --cloud-url, --cloud-token and --cluster-name", failures, err)
+}

@@ -1,0 +1,61 @@
+import { useOpenCostSummary, usePrometheusStatus, type useArgoStatus } from '../../api/client'
+import { costIntegrationUnavailableMessage, costSourceLabel } from '../cost/source'
+import type { IntegrationKind, IntegrationProfile } from './LocalConnectionSettings'
+import { Badge, Collapse } from '@maomada/k8s-ui'
+import { useRef } from 'react'
+
+export function LocalIntegrationStatus({ kind, profile, argo, busy, changedAt }: {
+  kind: IntegrationKind
+  profile: IntegrationProfile
+  argo: ReturnType<typeof useArgoStatus>
+  busy: boolean
+  changedAt: number
+}) {
+  const prom = usePrometheusStatus(kind === 'metrics')
+  const cost = useOpenCostSummary(kind === 'cost')
+  const query = kind === 'metrics' ? prom : kind === 'cost' ? cost : argo
+  // Background polls keep the last status; only the first load, or a result
+  // older than the latest saved integration change, reads as "Checking…".
+  const checking = busy || query.isPlaceholderData || (query.isFetching && !query.data) ||
+    Math.max(query.dataUpdatedAt, query.errorUpdatedAt) < changedAt
+  let status = 'Checking…'
+  let detail: string | undefined
+  if (!checking) {
+    if (query.isError) status = 'Status unavailable'
+    else if (kind === 'metrics' && prom.data) {
+      status = prom.data.connected ? 'Connected' : prom.data.discovering ? 'Discovering…' : 'Not connected'
+      detail = prom.data.connected ? !profile.url ? `已发现：${prom.data.address}` : undefined : prom.data.error
+    } else if (kind === 'argocd' && argo.data) {
+      status = argo.data.connected ? argo.data.anonymous ? 'Connected · no token needed' : 'Connected' : argo.data.connecting ? 'Connecting…' : 'Not connected'
+      detail = argo.data.reason ?? (argo.data.connected && !profile.url ? `已发现：${argo.data.address}` : undefined)
+    } else if (kind === 'cost' && cost.data) {
+      status = cost.data.available ? `Available · ${costSourceLabel(cost.data.source)}`
+        : ['no_prometheus', 'no_cost_source', 'no_metrics'].includes(cost.data.reason ?? '') ? 'No cost data' : 'Unavailable'
+      detail = cost.data.reason ? costIntegrationUnavailableMessage(cost.data.reason) : undefined
+    }
+  }
+  const lastDetail = useRef({ text: detail, visible: !!detail })
+  if (!checking) lastDetail.current = { text: detail ?? lastDetail.current.text, visible: !!detail }
+  const configured = !!(profile.url || profile.secretSet || profile.headerKeys.length || profile.clusterId || profile.mode === 'prometheus')
+  const failed = !checking && (query.isError || configured && ['Not connected', 'Unavailable', 'No cost data'].includes(status))
+  const displayStatus: Record<string, string> = {
+    'Checking…': '检查中…',
+    'Status unavailable': '状态不可用',
+    Connected: '已连接',
+    'Connected · no token needed': '已连接 · 无需令牌',
+    'Connecting…': '正在连接…',
+    'Not connected': '未连接',
+    Discovering: '正在发现…',
+    'Discovering…': '正在发现…',
+    'No cost data': '无成本数据',
+    Unavailable: '不可用',
+  }
+  return (
+    <div role="group" className="contents text-xs text-theme-text-secondary" aria-label="当前连接">
+      <Badge severity={status.startsWith('Connected') || status.startsWith('Available') ? 'success' : failed ? 'warning' : 'neutral'}>{status.startsWith('Available ·') ? status.replace('Available ·', '可用 ·') : displayStatus[status] ?? status}</Badge>
+      <Collapse open={lastDetail.current.visible} className="basis-full min-w-0">
+        <p className={`break-words text-theme-text-tertiary ${checking ? 'invisible' : ''}`}>{lastDetail.current.text}</p>
+      </Collapse>
+    </div>
+  )
+}

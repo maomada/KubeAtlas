@@ -1,0 +1,390 @@
+package timeline
+
+import (
+	"context"
+	"regexp"
+	"slices"
+	"strings"
+	"time"
+
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+)
+
+type SequenceOrder string
+
+const (
+	SequenceOrderAscending  SequenceOrder = "ascending"
+	SequenceOrderDescending SequenceOrder = "descending"
+)
+
+// EventStore is the interface for timeline event storage backends.
+// Implementations must be safe for concurrent use.
+type EventStore interface {
+	// Append adds a single event to the store
+	Append(ctx context.Context, event TimelineEvent) error
+
+	// AppendBatch adds multiple events atomically
+	AppendBatch(ctx context.Context, events []TimelineEvent) error
+
+	// Query retrieves events matching the given options
+	Query(ctx context.Context, opts QueryOptions) ([]TimelineEvent, error)
+
+	// OwnedUIDs returns the distinct UIDs of resources whose rows name one of
+	// ownerUIDs as their owner, in one cluster context, at most limit of them.
+	// K8s Event rows count: their uid is the subject's, and their owner is the
+	// subject's owner. Callers walk ownership one level per call.
+	OwnedUIDs(ctx context.Context, clusterContext string, ownerUIDs []string, limit int) ([]string, error)
+
+	// Identities returns the distinct resources the rows matching q were
+	// about, at most limit of them. It reads identities rather than rows, so a
+	// resource with many rows can't crowd others out of the limit.
+	Identities(ctx context.Context, q IdentityQuery, limit int) ([]Identity, error)
+
+	// GetEvent retrieves a single event by ID
+	GetEvent(ctx context.Context, id string) (*TimelineEvent, error)
+
+	// MarkResourceSeen records that a resource has been seen (for dedup on
+	// restart). clusterContext scopes the key — the store outlives kubeconfig
+	// context switches, so a same-named resource in another cluster must not
+	// read as already-seen. group distinguishes colliding Kubernetes kinds.
+	MarkResourceSeen(clusterContext, group, kind, namespace, name string)
+
+	// IsResourceSeen checks if a resource has been seen before in the given
+	// cluster context and API group.
+	IsResourceSeen(clusterContext, group, kind, namespace, name string) bool
+
+	// ClearResourceSeen removes a resource from the seen set (on delete)
+	ClearResourceSeen(clusterContext, group, kind, namespace, name string)
+
+	// Stats returns storage statistics
+	Stats() StoreStats
+
+	// Close releases any resources held by the store
+	Close() error
+}
+
+// EvictionBoundary is implemented by stores that delete recorded events to
+// stay within a size or age limit. EvictedThrough returns a time T such that
+// every recorded event newer than T is still in the store; zero means nothing
+// has been deleted. A store may return a later T than strictly needed, never
+// an earlier one: callers use it to decide when an empty answer is complete.
+type EvictionBoundary interface {
+	EvictedThrough() time.Time
+}
+
+// QueryOptions configures event queries
+type QueryOptions struct {
+	// Filters
+	Namespaces []string // Filter by namespaces (empty = all)
+	Kinds      []string // Filter by resource kinds (empty = all)
+	Names      []string // Filter by resource names (empty = all)
+	// APIGroups filters by the group parsed from APIVersion before pagination
+	// limits are applied. Use "" for the core group. Events whose APIVersion
+	// was not recorded are retained as unknown rather than treated as a known
+	// mismatch (empty slice = all groups).
+	APIGroups []string
+	// RequireAPIVersion excludes unknown identities for exact resource drill-downs.
+	RequireAPIVersion bool
+	Since             time.Time     // Filter events after this time
+	Until             time.Time     // Filter events before this time
+	Sources           []EventSource // Filter by event source (empty = all)
+	EventTypes        []EventType   // Filter by event type, e.g. add/delete (empty = all)
+	// ClusterContext scopes results to one cluster's events (empty = all).
+	// Anything answering "what happened on THIS cluster" must set it: the
+	// SQLite store outlives context switches, and rows written before the
+	// column existed carry "" (unknowable provenance), which a non-empty
+	// filter deliberately excludes.
+	ClusterContext string
+
+	// SinceSeq returns only events whose arrival number (Seq) is greater
+	// than this; 0 means no cursor. This is the delta-read cursor: arrival
+	// order, not event time, so late-arriving events can't be skipped.
+	// Delta reads page oldest-first (ascending seq) so a burst larger than
+	// Limit resumes from the lowest unseen seq. Do not combine with Offset —
+	// it is defined for the newest-first shape only and its delta-mode
+	// behavior is unspecified.
+	SinceSeq int64
+	// UntilSeq returns only events whose arrival number (Seq) is less than
+	// this value. It provides stable backwards pagination without relying on
+	// event timestamps, which may arrive out of order. Do not combine it with
+	// SinceSeq.
+	UntilSeq int64
+	// SequenceOrder explicitly orders a bounded snapshot by arrival number.
+	// Use it when the result becomes the baseline for sequence cursors: timestamp
+	// ordering can omit a late arrival with an older event time and then advance
+	// the cursor past it. SinceSeq and UntilSeq still apply their filters.
+	SequenceOrder SequenceOrder
+
+	// SeqPaging forces the delta-read shape (seq > SinceSeq, ascending seq)
+	// even when SinceSeq is 0 — i.e. "every row the query's OTHER filters
+	// admit, in arrival order" (content filters like FilterPreset and
+	// IncludeManaged still apply; a full backfill pairs this with the
+	// everything-visible options). A plain
+	// SinceSeq of 0 keeps its historical meaning (no cursor, newest-first),
+	// which existing full-fetch callers rely on; this flag is how a consumer
+	// that needs a FULL backfill in resumable pages asks for page one. Same
+	// combination caveats as SinceSeq.
+	SeqPaging bool
+
+	// Filter preset (overrides individual filters if set)
+	FilterPreset string
+
+	// Pagination
+	Limit  int // Max results (default 200, max 1000)
+	Offset int // Skip first N results
+
+	// Scope restricts results to rows about a set of resources. Empty = no scope.
+	Scope ResourceScope
+
+	// Include/exclude options
+	IncludeManaged   bool // Include ReplicaSets, Pods, Events (default false)
+	ExcludeDeleted   bool // Exclude delete events
+	IncludeK8sEvents bool // Include K8s Event resources (default true)
+}
+
+// ResourceScope selects rows about a set of resources: a row is in scope when
+// its subject UID is in UIDs, or its owner's UID is in OwnerUIDs, or its
+// group/kind/namespace/name is one of Refs, or it is one of OwnerlessRefs and
+// records no owner UID. A row that didn't record its
+// apiVersion matches a Ref on kind/namespace/name, the same way APIGroups
+// treats unknown versions.
+type ResourceScope struct {
+	UIDs      []string
+	OwnerUIDs []string
+	Refs      []resourceid.Ref
+	// OwnerlessRefs are resources attributed without an owner record (for
+	// example by the name a controller gives its children). Only a row whose
+	// owner is unknown (OwnerUnknown) matches through them: a recorded owner
+	// decides, and so does a recorded absence of one.
+	OwnerlessRefs []resourceid.Ref
+}
+
+// IsZero reports whether the scope selects nothing in particular, i.e. is off.
+func (s ResourceScope) IsZero() bool {
+	return len(s.UIDs) == 0 && len(s.OwnerUIDs) == 0 && len(s.Refs) == 0 && len(s.OwnerlessRefs) == 0
+}
+
+// Matches reports whether an event is in scope. An empty scope matches everything.
+func (s ResourceScope) Matches(e *TimelineEvent) bool {
+	if s.IsZero() {
+		return true
+	}
+	if e.UID != "" && slices.Contains(s.UIDs, e.UID) {
+		return true
+	}
+	if e.Owner != nil && e.Owner.UID != "" && slices.Contains(s.OwnerUIDs, e.Owner.UID) {
+		return true
+	}
+	if slices.ContainsFunc(s.Refs, func(ref resourceid.Ref) bool { return rowIsAbout(e, ref) }) {
+		return true
+	}
+	if OwnerUnknown(e) {
+		return slices.ContainsFunc(s.OwnerlessRefs, func(ref resourceid.Ref) bool { return rowIsAbout(e, ref) })
+	}
+	return false
+}
+
+// OwnerUnknown reports whether a row leaves its subject's owner unknown: it
+// records no owner UID, and nothing that saw the subject recorded that it had
+// none (observed, enriched and reconstructed rows did look). The SQL stores
+// encode the same rule.
+func OwnerUnknown(e *TimelineEvent) bool {
+	if e.Owner != nil && e.Owner.UID != "" {
+		return false
+	}
+	switch e.OwnerEvidence {
+	case OwnerObserved, OwnerEnriched, OwnerReconstructed:
+		return false
+	}
+	return true
+}
+
+func rowIsAbout(e *TimelineEvent, ref resourceid.Ref) bool {
+	if ref.Kind != e.Kind || ref.Namespace != e.Namespace || ref.Name != e.Name {
+		return false
+	}
+	return e.APIVersion == "" || resourceid.GroupFromAPIVersion(e.APIVersion) == ref.Group
+}
+
+// IdentityQuery selects the rows Identities reads. Every set field narrows.
+type IdentityQuery struct {
+	ClusterContext string
+	Namespace      string
+	// Ref keeps rows recorded under this key. A row that didn't record its
+	// apiVersion matches on kind, namespace and name.
+	Ref   *resourceid.Ref
+	Kinds []string
+	// NamePrefix keeps rows whose name starts with it, case-sensitively.
+	NamePrefix string
+	// OwnerUnknown keeps rows whose subject's owner is unknown (see the
+	// OwnerUnknown func): mostly K8s Events whose subject was already gone,
+	// and rows written before owners were recorded.
+	OwnerUnknown bool
+}
+
+// Matches reports whether a row is one the query reads.
+func (q IdentityQuery) Matches(e *TimelineEvent) bool {
+	if q.ClusterContext != "" && e.ClusterContext != q.ClusterContext {
+		return false
+	}
+	if q.Namespace != "" && e.Namespace != q.Namespace {
+		return false
+	}
+	if q.Ref != nil && !rowIsAbout(e, *q.Ref) {
+		return false
+	}
+	if len(q.Kinds) > 0 && !slices.Contains(q.Kinds, e.Kind) {
+		return false
+	}
+	if q.NamePrefix != "" && !strings.HasPrefix(e.Name, q.NamePrefix) {
+		return false
+	}
+	return !q.OwnerUnknown || OwnerUnknown(e)
+}
+
+// Identity is one resource as a row recorded it. OwnerUID is empty when the
+// row recorded no owner.
+type Identity struct {
+	APIVersion string
+	Kind       string
+	Name       string
+	UID        string
+	OwnerUID   string
+}
+
+// DefaultQueryOptions returns sensible defaults
+func DefaultQueryOptions() QueryOptions {
+	return QueryOptions{
+		Limit:            200,
+		IncludeManaged:   false,
+		ExcludeDeleted:   false,
+		IncludeK8sEvents: true,
+	}
+}
+
+// StoreStats contains statistics about the event store
+type StoreStats struct {
+	TotalEvents   int64     `json:"totalEvents"`
+	OldestEvent   time.Time `json:"oldestEvent"`
+	NewestEvent   time.Time `json:"newestEvent"`
+	OldestSeq     int64     `json:"oldestSeq,omitempty"`
+	NewestSeq     int64     `json:"newestSeq,omitempty"`
+	MaxEvents     int       `json:"maxEvents,omitempty"`
+	EventsEvicted bool      `json:"eventsEvicted,omitempty"`
+	StorageBytes  int64     `json:"storageBytes,omitempty"`
+	SeenResources int       `json:"seenResources"`
+
+	// Degraded is set when the configured persistent backend could not be
+	// opened and the store fell back to in-memory for this session — surfaced
+	// so diagnostics show why persistence is missing instead of the timeline
+	// looking healthy. DegradedReason carries the original open error.
+	Degraded       bool   `json:"degraded,omitempty"`
+	DegradedReason string `json:"degradedReason,omitempty"`
+
+	// SQLite-only retention/cleanup state. Zero values for memory store.
+	RetentionAge           time.Duration `json:"retentionAge,omitempty"`
+	MaxStorageBytes        int64         `json:"maxStorageBytes,omitempty"`
+	LastCleanupAt          time.Time     `json:"lastCleanupAt,omitempty"`
+	LastCleanupDeletedRows int64         `json:"lastCleanupDeletedRows,omitempty"`
+	LastCleanupError       string        `json:"lastCleanupError,omitempty"`
+}
+
+// CompiledFilter is a pre-compiled filter for efficient event filtering
+type CompiledFilter struct {
+	preset            *FilterPreset
+	excludeKindsMap   map[string]bool
+	includeKindsMap   map[string]bool
+	excludePatterns   []*regexp.Regexp
+	includeEventTypes map[EventType]bool
+	excludeOperations map[EventType]bool
+}
+
+// CompileFilter compiles a FilterPreset for efficient matching
+func CompileFilter(preset *FilterPreset) (*CompiledFilter, error) {
+	if preset == nil {
+		return nil, nil
+	}
+
+	cf := &CompiledFilter{
+		preset:            preset,
+		excludeKindsMap:   make(map[string]bool),
+		includeKindsMap:   make(map[string]bool),
+		includeEventTypes: make(map[EventType]bool),
+		excludeOperations: make(map[EventType]bool),
+	}
+
+	for _, k := range preset.ExcludeKinds {
+		cf.excludeKindsMap[k] = true
+	}
+	for _, k := range preset.IncludeKinds {
+		cf.includeKindsMap[k] = true
+	}
+
+	for _, pattern := range preset.ExcludeNamePatterns {
+		re, err := regexp.Compile(pattern)
+		if err != nil {
+			return nil, err
+		}
+		cf.excludePatterns = append(cf.excludePatterns, re)
+	}
+
+	for _, t := range preset.IncludeEventTypes {
+		cf.includeEventTypes[t] = true
+	}
+	for _, t := range preset.ExcludeOperations {
+		cf.excludeOperations[t] = true
+	}
+
+	return cf, nil
+}
+
+// IncludesManaged reports whether the compiled preset allows managed resources.
+func (cf *CompiledFilter) IncludesManaged() bool {
+	return cf != nil && cf.preset != nil && cf.preset.IncludeManaged
+}
+
+// Matches returns true if the event passes the filter
+func (cf *CompiledFilter) Matches(event *TimelineEvent) bool {
+	if cf == nil || cf.preset == nil {
+		return true
+	}
+
+	// Check include kinds (whitelist)
+	if len(cf.includeKindsMap) > 0 && !cf.includeKindsMap[event.Kind] {
+		return false
+	}
+
+	// Check exclude kinds (blacklist)
+	if cf.excludeKindsMap[event.Kind] {
+		return false
+	}
+
+	// Check exclude name patterns
+	for _, re := range cf.excludePatterns {
+		if re.MatchString(event.Name) {
+			return false
+		}
+	}
+
+	// Check include event types (whitelist)
+	if len(cf.includeEventTypes) > 0 && !cf.includeEventTypes[event.EventType] {
+		return false
+	}
+
+	// Check exclude operations
+	if cf.excludeOperations[event.EventType] {
+		return false
+	}
+
+	// Note: IncludeManaged is handled in matchesFilters to allow query option override
+	return true
+}
+
+// SeenResourceKey qualifies the canonical resource identity with the cluster
+// context. The NUL separator can't appear in a kubeconfig context name or the
+// resource key. Older opaque keys without group identity deliberately don't
+// match: their API group is unknowable, so the resource is re-extracted once
+// rather than a same-named resource in another group being suppressed.
+func SeenResourceKey(clusterContext, group, kind, namespace, name string) string {
+	return clusterContext + "\x00" + resourceid.ResourceKey(group, kind, namespace, name)
+}

@@ -1,0 +1,888 @@
+package auth
+
+import (
+	"context"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"net/url"
+	"os"
+	"sort"
+	"strings"
+	"time"
+
+	"github.com/coreos/go-oidc/v3/oidc"
+	"golang.org/x/oauth2"
+)
+
+const oidcStateCookieName = "radar_oidc_state"
+const oidcVerifierCookieName = "radar_oidc_verifier"
+const oidcForceLoginCookieName = "radar_force_login"
+
+// OIDCHandler handles the OIDC login flow
+type OIDCHandler struct {
+	cfg                Config
+	provider           *oidc.Provider
+	oauth              oauth2.Config
+	verifier           *oidc.IDTokenVerifier // used for both ID tokens and logout_tokens (nonce checked manually, not by verifier)
+	endSessionEndpoint string                // from OIDC discovery; empty if IdP doesn't support RP-Initiated Logout
+	httpClient         *http.Client          // custom TLS client for OIDC provider calls; nil = default
+	revoker            *MemoryRevoker        // session revocation store; nil = backchannel logout disabled
+	pkceEnabled        bool                  // opt-in PKCE (S256) for the authorization-code flow
+
+	// basePath is the URL prefix Radar serves under ("" at the root). Where Radar
+	// is mounted is the server's concern, not part of the shared auth config, but
+	// the post-login redirect has to land inside the app: under a no-strip subpath
+	// ingress only {basePath}/* is routed here, so "/" would leave the app.
+	basePath string
+
+	// Discovery: backchannel logout support
+	backchannelLogoutSupported        bool
+	backchannelLogoutSessionSupported bool
+}
+
+type oidcDiscoveryClaims struct {
+	EndSessionEndpoint                string `json:"end_session_endpoint"`
+	BackchannelLogoutSupported        bool   `json:"backchannel_logout_supported"`
+	BackchannelLogoutSessionSupported bool   `json:"backchannel_logout_session_supported"`
+}
+
+type oidcProviderMetadata struct {
+	oidc.ProviderConfig
+	oidcDiscoveryClaims
+}
+
+var supportedOIDCSigningAlgorithms = map[string]bool{
+	oidc.RS256: true,
+	oidc.RS384: true,
+	oidc.RS512: true,
+	oidc.ES256: true,
+	oidc.ES384: true,
+	oidc.ES512: true,
+	oidc.PS256: true,
+	oidc.PS384: true,
+	oidc.PS512: true,
+	oidc.EdDSA: true,
+}
+
+// NewOIDCHandler creates a new OIDC handler. basePath is the URL prefix Radar is
+// served under ("" at the root), which the post-login redirect must target.
+// Returns an error if the provider cannot be discovered (network error, invalid
+// issuer URL, etc.).
+// warnIfInsecureOIDCOrigin logs a prominent warning when OIDC is configured on a
+// non-secure origin. Session cookies are issued Secure, so the browser silently
+// drops them over plain HTTP and the user loops on login with no server-side
+// error. localhost is exempt — browsers treat it as a secure context.
+func warnIfInsecureOIDCOrigin(redirectURL string) {
+	u, err := url.Parse(redirectURL)
+	if err != nil || u.Scheme != "http" || isLoopbackHost(u.Hostname()) {
+		return
+	}
+	log.Printf("[oidc] WARNING: redirect URL %s is not HTTPS — the browser will drop the Secure session cookie and login will loop. Serve Radar over HTTPS, or ensure your TLS-terminating proxy sets X-Forwarded-Proto: https.", redirectURL)
+}
+
+func isLoopbackHost(host string) bool {
+	switch host {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	return strings.HasSuffix(host, ".localhost")
+}
+
+func NewOIDCHandler(ctx context.Context, cfg Config, basePath string) (*OIDCHandler, error) {
+	// Build a custom HTTP client for OIDC provider TLS when configured
+	var httpClient *http.Client
+	if cfg.OIDCCACert != "" {
+		caCert, err := os.ReadFile(cfg.OIDCCACert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read OIDC CA cert %s: %w", cfg.OIDCCACert, err)
+		}
+		pool := x509.NewCertPool()
+		if !pool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse OIDC CA cert %s: no valid certificates found", cfg.OIDCCACert)
+		}
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{RootCAs: pool}
+		httpClient = &http.Client{Transport: transport}
+		log.Printf("[oidc] Using custom CA certificate: %s", cfg.OIDCCACert)
+		if cfg.OIDCInsecureSkipVerify {
+			log.Printf("[oidc] WARNING: --auth-oidc-insecure-skip-verify is ignored because --auth-oidc-ca-cert is set")
+		}
+	} else if cfg.OIDCInsecureSkipVerify {
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true} //nolint:gosec // user-requested via CLI flag
+		httpClient = &http.Client{Transport: transport}
+		log.Printf("[oidc] WARNING: TLS verification disabled for OIDC provider — do NOT use in production")
+	}
+
+	if httpClient != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, httpClient)
+	}
+
+	warnIfInsecureOIDCOrigin(cfg.OIDCRedirectURL)
+
+	provider, providerClaims, err := newOIDCProvider(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	scopes := cfg.OIDCScopes
+	if len(scopes) == 0 {
+		scopes = []string{oidc.ScopeOpenID, "profile", "email", "groups"}
+	}
+	oauthCfg := oauth2.Config{
+		ClientID:     cfg.OIDCClientID,
+		ClientSecret: cfg.OIDCClientSecret,
+		RedirectURL:  cfg.OIDCRedirectURL,
+		Endpoint:     provider.Endpoint(),
+		Scopes:       scopes,
+	}
+	log.Printf("[oidc] Requesting scopes: %v", scopes)
+
+	verifier := provider.Verifier(&oidc.Config{ClientID: cfg.OIDCClientID})
+	if providerClaims.EndSessionEndpoint != "" {
+		log.Printf("[oidc] RP-Initiated Logout enabled (end_session_endpoint discovered)")
+	} else {
+		log.Printf("[oidc] IdP does not advertise end_session_endpoint — will use prompt=login on next auth after logout")
+	}
+
+	h := &OIDCHandler{
+		cfg:                               cfg,
+		basePath:                          basePath,
+		provider:                          provider,
+		oauth:                             oauthCfg,
+		verifier:                          verifier,
+		endSessionEndpoint:                providerClaims.EndSessionEndpoint,
+		httpClient:                        httpClient,
+		backchannelLogoutSupported:        providerClaims.BackchannelLogoutSupported,
+		backchannelLogoutSessionSupported: providerClaims.BackchannelLogoutSessionSupported,
+		pkceEnabled:                       cfg.OIDCEnablePKCE,
+	}
+
+	if h.pkceEnabled {
+		log.Printf("[oidc] PKCE (S256) enabled")
+	}
+
+	if cfg.OIDCBackchannelLogout {
+		switch {
+		case providerClaims.BackchannelLogoutSupported && providerClaims.BackchannelLogoutSessionSupported:
+			log.Printf("[oidc] Backchannel Logout enabled (sid-based revocation)")
+		case providerClaims.BackchannelLogoutSupported:
+			log.Printf("[oidc] Backchannel Logout enabled (sub-based revocation — IdP does not advertise sid support)")
+		default:
+			log.Printf("[oidc] WARNING: --auth-oidc-backchannel-logout is set, but IdP does not advertise backchannel_logout_supported. The endpoint will be registered but this IdP will not use it. Exposure is bounded by cookie TTL (%s).", cfg.CookieTTL)
+		}
+	}
+
+	return h, nil
+}
+
+func newOIDCProvider(ctx context.Context, cfg Config) (*oidc.Provider, oidcDiscoveryClaims, error) {
+	if !hasCustomOIDCEndpoints(cfg) {
+		provider, err := oidc.NewProvider(ctx, cfg.OIDCIssuer)
+		if err != nil {
+			return nil, oidcDiscoveryClaims{}, err
+		}
+		var claims oidcDiscoveryClaims
+		if err := provider.Claims(&claims); err != nil {
+			log.Printf("[oidc] Warning: failed to parse optional OIDC discovery claims: %v", err)
+		}
+		return provider, claims, nil
+	}
+
+	metadata, err := resolveOIDCProviderMetadata(ctx, cfg)
+	if err != nil {
+		return nil, oidcDiscoveryClaims{}, err
+	}
+	return metadata.ProviderConfig.NewProvider(ctx), metadata.oidcDiscoveryClaims, nil
+}
+
+func hasCustomOIDCEndpoints(cfg Config) bool {
+	return cfg.OIDCInternalIssuer != "" ||
+		cfg.OIDCAuthorizationURL != "" ||
+		cfg.OIDCTokenURL != "" ||
+		cfg.OIDCUserInfoURL != "" ||
+		cfg.OIDCJWKSURL != ""
+}
+
+func resolveOIDCProviderMetadata(ctx context.Context, cfg Config) (*oidcProviderMetadata, error) {
+	var metadata oidcProviderMetadata
+	if cfg.OIDCInternalIssuer != "" || !hasExplicitRequiredOIDCEndpoints(cfg) {
+		discoveryIssuer := cfg.OIDCIssuer
+		if cfg.OIDCInternalIssuer != "" {
+			discoveryIssuer = cfg.OIDCInternalIssuer
+		}
+		discovered, err := fetchOIDCProviderMetadata(ctx, discoveryIssuer)
+		if err != nil {
+			return nil, err
+		}
+		metadata = *discovered
+		if metadata.IssuerURL != cfg.OIDCIssuer {
+			return nil, fmt.Errorf("oidc: issuer URL configured for Radar (%q) did not match the issuer URL returned by provider discovery (%q)", cfg.OIDCIssuer, metadata.IssuerURL)
+		}
+	} else {
+		// Explicit-endpoint mode skips discovery, so the provider advertises no
+		// signing algorithms. go-oidc then narrows the verifier to RS256 only,
+		// which would reject valid ES256/PS256/EdDSA tokens; seed the full
+		// supported set so the JWKS keys alone constrain which algorithms verify.
+		metadata.ProviderConfig.IssuerURL = cfg.OIDCIssuer
+		metadata.ProviderConfig.Algorithms = supportedOIDCSigningAlgorithmList()
+	}
+
+	metadata.ProviderConfig.IssuerURL = cfg.OIDCIssuer
+	metadata.ProviderConfig.Algorithms = filterOIDCSigningAlgorithms(metadata.ProviderConfig.Algorithms)
+	applyOIDCEndpointConfig(&metadata, cfg)
+	if stuck := unreachableInternalEndpoints(cfg, metadata.ProviderConfig); len(stuck) > 0 {
+		log.Printf("[oidc] WARNING: these server-side endpoints were not rewritten to the internal issuer host: %s. If the Radar pod cannot reach these hosts, set the matching --auth-oidc-<endpoint>-url override.", strings.Join(stuck, ", "))
+	}
+	if err := validateOIDCProviderMetadata(metadata.ProviderConfig); err != nil {
+		return nil, err
+	}
+	return &metadata, nil
+}
+
+// unreachableInternalEndpoints reports server-side endpoints (token, JWKS,
+// userinfo) that resolve to a host other than the internal issuer's when an
+// internal issuer is configured. Those endpoints were not derivable from the
+// public issuer base (the IdP serves them elsewhere), so the rewrite left them
+// pointing at a host the pod may not reach. Endpoints with an explicit override
+// are trusted as configured and skipped.
+func unreachableInternalEndpoints(cfg Config, metadata oidc.ProviderConfig) []string {
+	if cfg.OIDCInternalIssuer == "" {
+		return nil
+	}
+	internalHost := oidcURLHost(cfg.OIDCInternalIssuer)
+	if internalHost == "" {
+		return nil
+	}
+	var stuck []string
+	if cfg.OIDCTokenURL == "" && metadata.TokenURL != "" && oidcURLHost(metadata.TokenURL) != internalHost {
+		stuck = append(stuck, "token")
+	}
+	if cfg.OIDCJWKSURL == "" && metadata.JWKSURL != "" && oidcURLHost(metadata.JWKSURL) != internalHost {
+		stuck = append(stuck, "jwks")
+	}
+	if cfg.OIDCUserInfoURL == "" && metadata.UserInfoURL != "" && oidcURLHost(metadata.UserInfoURL) != internalHost {
+		stuck = append(stuck, "userinfo")
+	}
+	return stuck
+}
+
+func oidcURLHost(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
+
+func hasExplicitRequiredOIDCEndpoints(cfg Config) bool {
+	return cfg.OIDCAuthorizationURL != "" && cfg.OIDCTokenURL != "" && cfg.OIDCJWKSURL != ""
+}
+
+func supportedOIDCSigningAlgorithmList() []string {
+	algs := make([]string, 0, len(supportedOIDCSigningAlgorithms))
+	for alg := range supportedOIDCSigningAlgorithms {
+		algs = append(algs, alg)
+	}
+	sort.Strings(algs)
+	return algs
+}
+
+func filterOIDCSigningAlgorithms(algs []string) []string {
+	if len(algs) == 0 {
+		return nil
+	}
+	filtered := make([]string, 0, len(algs))
+	for _, alg := range algs {
+		if supportedOIDCSigningAlgorithms[alg] {
+			filtered = append(filtered, alg)
+		}
+	}
+	return filtered
+}
+
+func fetchOIDCProviderMetadata(ctx context.Context, issuer string) (*oidcProviderMetadata, error) {
+	wellKnown := strings.TrimSuffix(issuer, "/") + "/.well-known/openid-configuration"
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, wellKnown, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	client := http.DefaultClient
+	if c, ok := ctx.Value(oauth2.HTTPClient).(*http.Client); ok && c != nil {
+		client = c
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read response body: %w", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s: %s", resp.Status, body)
+	}
+
+	var metadata oidcProviderMetadata
+	if err := json.Unmarshal(body, &metadata); err != nil {
+		return nil, fmt.Errorf("oidc: failed to decode provider discovery object: %w", err)
+	}
+	return &metadata, nil
+}
+
+func applyOIDCEndpointConfig(metadata *oidcProviderMetadata, cfg Config) {
+	publicIssuer := cfg.OIDCIssuer
+	internalIssuer := cfg.OIDCInternalIssuer
+
+	if cfg.OIDCAuthorizationURL != "" {
+		metadata.AuthURL = cfg.OIDCAuthorizationURL
+	} else if internalIssuer != "" {
+		metadata.AuthURL = replaceOIDCURLBase(metadata.AuthURL, internalIssuer, publicIssuer)
+	}
+
+	if cfg.OIDCTokenURL != "" {
+		metadata.TokenURL = cfg.OIDCTokenURL
+	} else if internalIssuer != "" {
+		metadata.TokenURL = replaceOIDCURLBase(metadata.TokenURL, publicIssuer, internalIssuer)
+	}
+
+	if cfg.OIDCUserInfoURL != "" {
+		metadata.UserInfoURL = cfg.OIDCUserInfoURL
+	} else if internalIssuer != "" {
+		metadata.UserInfoURL = replaceOIDCURLBase(metadata.UserInfoURL, publicIssuer, internalIssuer)
+	}
+
+	if cfg.OIDCJWKSURL != "" {
+		metadata.JWKSURL = cfg.OIDCJWKSURL
+	} else if internalIssuer != "" {
+		metadata.JWKSURL = replaceOIDCURLBase(metadata.JWKSURL, publicIssuer, internalIssuer)
+	}
+
+	if internalIssuer != "" {
+		metadata.EndSessionEndpoint = replaceOIDCURLBase(metadata.EndSessionEndpoint, internalIssuer, publicIssuer)
+	}
+}
+
+func validateOIDCProviderMetadata(metadata oidc.ProviderConfig) error {
+	if metadata.AuthURL == "" {
+		return fmt.Errorf("oidc: authorization endpoint is empty")
+	}
+	if metadata.TokenURL == "" {
+		return fmt.Errorf("oidc: token endpoint is empty")
+	}
+	if metadata.JWKSURL == "" {
+		return fmt.Errorf("oidc: JWKS endpoint is empty")
+	}
+	return nil
+}
+
+func replaceOIDCURLBase(raw, fromBase, toBase string) string {
+	if raw == "" || fromBase == "" || toBase == "" {
+		return raw
+	}
+	from := strings.TrimRight(fromBase, "/")
+	to := strings.TrimRight(toBase, "/")
+	if raw == from {
+		return to
+	}
+	if strings.HasPrefix(raw, from+"/") {
+		return to + strings.TrimPrefix(raw, from)
+	}
+	return raw
+}
+
+// newFlowCookie builds a short-lived (5 min) HttpOnly cookie for a login-flow
+// secret (state nonce, PKCE verifier). Secure is derived from the request so
+// HTTP/loopback logins can still return the cookie; both the state and verifier
+// cookies go through here so their attributes can't drift apart.
+func (h *OIDCHandler) newFlowCookie(name, value string, r *http.Request) *http.Cookie {
+	return &http.Cookie{
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		MaxAge:   300, // 5 minutes
+		HttpOnly: true,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+// clearFlowCookie builds the deletion cookie for a flow cookie. Path and Secure
+// must match the cookie being cleared — some browsers won't evict a Secure
+// cookie with a non-Secure deletion, so over HTTPS the secret would otherwise
+// linger until its own expiry.
+func (h *OIDCHandler) clearFlowCookie(name string, r *http.Request) *http.Cookie {
+	return &http.Cookie{
+		Name:     name,
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+		SameSite: http.SameSiteLaxMode,
+	}
+}
+
+// HandleLogin redirects to the OIDC provider for authentication
+func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
+	// Generate random state nonce and store in a short-lived cookie for CSRF protection
+	b := make([]byte, 16)
+	if _, err := rand.Read(b); err != nil {
+		log.Printf("[oidc] Failed to generate state nonce: %v", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	state := hex.EncodeToString(b)
+
+	http.SetCookie(w, h.newFlowCookie(oidcStateCookieName, state, r))
+
+	// If the user just logged out, force the IdP to show a login prompt instead
+	// of silently re-authenticating with an existing SSO session.
+	var authOpts []oauth2.AuthCodeOption
+	if cookie, err := r.Cookie(oidcForceLoginCookieName); err == nil && cookie.Value == "1" {
+		authOpts = append(authOpts, oauth2.SetAuthURLParam("prompt", "login"))
+		// Clear the cookie — only force login once
+		http.SetCookie(w, &http.Cookie{
+			Name:   oidcForceLoginCookieName,
+			Path:   "/",
+			MaxAge: -1,
+		})
+	}
+
+	// PKCE (opt-in): generate a per-request verifier, stash it in a cookie for
+	// the callback, and send its S256 challenge to the IdP.
+	if h.pkceEnabled {
+		verifier := oauth2.GenerateVerifier()
+		http.SetCookie(w, h.newFlowCookie(oidcVerifierCookieName, verifier, r))
+		authOpts = append(authOpts, oauth2.S256ChallengeOption(verifier))
+	}
+
+	http.Redirect(w, r, h.oauth.AuthCodeURL(state, authOpts...), http.StatusFound)
+}
+
+// HandleCallback processes the OIDC callback after authentication
+func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+
+	// Inject custom TLS client for OIDC provider calls (token exchange, JWKS fetch)
+	if h.httpClient != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, h.httpClient)
+	}
+
+	// Verify state against cookie to prevent CSRF
+	stateCookie, err := r.Cookie(oidcStateCookieName)
+	if err != nil || stateCookie.Value == "" {
+		http.Error(w, "missing state cookie — please retry login", http.StatusBadRequest)
+		return
+	}
+	if r.URL.Query().Get("state") != stateCookie.Value {
+		http.Error(w, "invalid state parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Read the PKCE verifier before clearing it. When PKCE is disabled this stays
+	// empty and the flow is byte-for-byte identical to the non-PKCE path.
+	var verifier string
+	if h.pkceEnabled {
+		if c, err := r.Cookie(oidcVerifierCookieName); err == nil {
+			verifier = c.Value
+		}
+	}
+
+	// Clear the state cookie. Clear the verifier cookie at the same point (after
+	// state is validated) so a stale PKCE secret never lingers past a successful
+	// state check, regardless of what happens next in the exchange.
+	http.SetCookie(w, &http.Cookie{
+		Name:   oidcStateCookieName,
+		Path:   "/",
+		MaxAge: -1,
+	})
+	if h.pkceEnabled {
+		http.SetCookie(w, h.clearFlowCookie(oidcVerifierCookieName, r))
+	}
+
+	if h.pkceEnabled && verifier == "" {
+		http.Error(w, "missing PKCE verifier — please retry login", http.StatusBadRequest)
+		return
+	}
+
+	// Exchange code for token
+	code := r.URL.Query().Get("code")
+	if code == "" {
+		http.Error(w, "missing authorization code", http.StatusBadRequest)
+		return
+	}
+
+	var exchangeOpts []oauth2.AuthCodeOption
+	if h.pkceEnabled {
+		exchangeOpts = append(exchangeOpts, oauth2.VerifierOption(verifier))
+	}
+	token, err := h.oauth.Exchange(ctx, code, exchangeOpts...)
+	if err != nil {
+		// The browser navigating away mid-login (common during a first-load 401
+		// burst) cancels this request's context. That's the client's doing, not a
+		// server fault — don't log it as an error or return 500. A deadline
+		// (context.DeadlineExceeded) is a real IdP timeout and still falls through.
+		if errors.Is(err, context.Canceled) {
+			log.Printf("[oidc] Token exchange canceled (client disconnected)")
+			return
+		}
+		log.Printf("[oidc] Token exchange failed: %v", err)
+		http.Error(w, "authentication failed", http.StatusInternalServerError)
+		return
+	}
+
+	// Extract and verify ID token
+	rawIDToken, ok := token.Extra("id_token").(string)
+	if !ok {
+		log.Printf("[oidc] No id_token in token response")
+		http.Error(w, "authentication failed: no id_token", http.StatusInternalServerError)
+		return
+	}
+
+	idToken, err := h.verifier.Verify(ctx, rawIDToken)
+	if err != nil {
+		log.Printf("[oidc] Token verification failed: %v", err)
+		http.Error(w, "authentication failed: invalid token", http.StatusUnauthorized)
+		return
+	}
+
+	// Extract claims
+	var claims map[string]any
+	if err := idToken.Claims(&claims); err != nil {
+		log.Printf("[oidc] Failed to parse claims: %v", err)
+		http.Error(w, "authentication failed: invalid claims", http.StatusInternalServerError)
+		return
+	}
+
+	username, usernameClaim, err := oidcUsername(claims, h.cfg.OIDCUsernameClaim)
+	if err != nil {
+		var unverified *unverifiedEmailError
+		if errors.As(err, &unverified) {
+			log.Printf("[oidc] Refusing login for %q: email_verified is false in the ID token", unverified.email)
+			http.Error(w, "Your email address is not verified at your identity provider, so Radar will not use it as your Kubernetes username. Verify the address with your identity provider, or set --auth-oidc-username-claim to a claim that does not depend on email (for example sub).", http.StatusForbidden)
+			return
+		}
+		log.Printf("[oidc] %v", err)
+		http.Error(w, "authentication failed: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	// Extract groups from configured claim
+	var groups []string
+	if groupsClaim, ok := claims[h.cfg.OIDCGroupsClaim]; ok {
+		switch g := groupsClaim.(type) {
+		case []any:
+			for _, v := range g {
+				if s, ok := v.(string); ok {
+					groups = append(groups, s)
+				}
+			}
+		case string:
+			groups = []string{g}
+		}
+	}
+
+	// Apply OIDC prefix to match Kubernetes API server's --oidc-username-prefix / --oidc-groups-prefix
+	if h.cfg.OIDCUsernamePrefix != "" {
+		username = h.cfg.OIDCUsernamePrefix + username
+	}
+	if h.cfg.OIDCGroupsPrefix != "" {
+		for i, g := range groups {
+			groups[i] = h.cfg.OIDCGroupsPrefix + g
+		}
+	}
+
+	if !ForwardedIdentityAllowed(username, groups, false) {
+		log.Printf("[oidc] Refusing login for %s: identity asserts a reserved Kubernetes principal (system:*)", username)
+		http.Error(w, "Your identity includes a reserved Kubernetes user or group (system:*), which Radar will not impersonate. Set --auth-oidc-groups-prefix / --auth-oidc-username-prefix to match your API server, or remove the group at your identity provider.", http.StatusForbidden)
+		return
+	}
+
+	user := &User{Username: username, Groups: groups}
+
+	// Extract session ID from ID token if present (needed for backchannel logout matching),
+	// otherwise generate a random one.
+	var sid string
+	if s, ok := claims["sid"].(string); ok && s != "" {
+		sid = s
+		log.Printf("[oidc] Using IdP-provided session ID (sid claim present)")
+	} else {
+		sid = NewSessionID()
+		log.Printf("[oidc] Generated local session ID (IdP did not provide sid claim)")
+	}
+
+	// Create session cookie (include raw ID token for RP-Initiated Logout).
+	// OIDC runs over HTTPS in practice; mark the cookie Secure unconditionally
+	// to match the middleware invariant (which forces Secure in OIDC mode). The
+	// callback is auth-exempt, so middleware never re-issues to fix a cookie
+	// that was issued non-Secure here.
+	secure := true
+	cookies := CreateSessionCookie(user, sid, rawIDToken, h.cfg.Secret, h.cfg.CookieTTL, secure)
+	for _, c := range cookies {
+		http.SetCookie(w, c)
+	}
+
+	// CreateSessionCookie returns only clearing cookies (no value-bearing
+	// cookie) when the identity is too large to fit even when chunked. Don't
+	// redirect as if login succeeded — that loops back to /auth/login. Fail
+	// loudly so the user (and operator, via the [auth] ERROR log) can act.
+	if !sessionIssued(cookies) {
+		log.Printf("[oidc] Session for %s too large to store in cookies (groups: %d) — refusing login", username, len(groups))
+		http.Error(w, "Your identity has too many groups or claims to fit in a session cookie. Reduce OIDC group membership or token claims.", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	log.Printf("[oidc] User %s authenticated (username claim: %s, groups: %v)", username, usernameClaim, groups)
+
+	// Redirect to the app root under its base path. A bare "/" would leave the
+	// user outside Radar on a subpath deployment, where the ingress routes only
+	// the prefix to this service.
+	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
+}
+
+// sessionIssued reports whether a CreateSessionCookie result actually
+// establishes a session (a value-bearing cookie) rather than only clearing
+// cookies returned when the identity is too large to store.
+func sessionIssued(cookies []*http.Cookie) bool {
+	for _, c := range cookies {
+		if c.Value != "" {
+			return true
+		}
+	}
+	return false
+}
+
+// HandleLogout clears the local session and, when the IdP supports RP-Initiated
+// Logout, returns a JSON response with a "redirectTo" field containing the IdP's
+// end_session_endpoint URL so the frontend can redirect the browser to terminate
+// the SSO session.
+func (h *OIDCHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
+	// Extract ID token before clearing the cookie (needed as id_token_hint)
+	var idToken string
+	if session := ParseSessionCookie(r, h.cfg.Secret); session != nil {
+		idToken = session.IDToken
+	}
+
+	for _, c := range ClearSessionCookie(r) {
+		http.SetCookie(w, c)
+	}
+
+	// Set force-login cookie so the next auth request uses prompt=login,
+	// preventing silent re-authentication with an existing IdP session.
+	// This is especially important for providers like Google that don't
+	// support end_session_endpoint.
+	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	http.SetCookie(w, &http.Cookie{
+		Name:     oidcForceLoginCookieName,
+		Value:    "1",
+		Path:     "/",
+		MaxAge:   300, // 5 minutes — enough time for the redirect chain
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+	})
+
+	resp := map[string]string{"status": "logged out"}
+
+	if h.endSessionEndpoint != "" {
+		logoutURL, err := url.Parse(h.endSessionEndpoint)
+		if err != nil {
+			log.Printf("[oidc] Failed to parse end_session_endpoint %q: %v", h.endSessionEndpoint, err)
+		} else {
+			q := logoutURL.Query()
+			if idToken != "" {
+				q.Set("id_token_hint", idToken)
+			} else {
+				// Fallback for old sessions without stored ID token
+				q.Set("client_id", h.cfg.OIDCClientID)
+			}
+			if h.cfg.OIDCPostLogoutRedirectURL != "" {
+				q.Set("post_logout_redirect_uri", h.cfg.OIDCPostLogoutRedirectURL)
+			}
+			logoutURL.RawQuery = q.Encode()
+			resp["redirectTo"] = logoutURL.String()
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
+}
+
+// SetRevoker injects the session revocation store for backchannel logout.
+// Must be called before the handler is registered if backchannel logout is enabled.
+func (h *OIDCHandler) SetRevoker(r *MemoryRevoker) {
+	h.revoker = r
+}
+
+// backchannelLogoutEventURI is the OIDC event type that must appear in the
+// logout_token's "events" claim per the Back-Channel Logout spec §2.4.
+const backchannelLogoutEventURI = "http://schemas.openid.net/event/backchannel-logout"
+
+// HandleBackchannelLogout handles POST /auth/backchannel-logout.
+// The IdP sends a signed logout_token JWT to notify Radar that a session
+// should be revoked. See: https://openid.net/specs/openid-connect-backchannel-1_0.html
+func (h *OIDCHandler) HandleBackchannelLogout(w http.ResponseWriter, r *http.Request) {
+	// Spec §2.5: response MUST include Cache-Control: no-store
+	w.Header().Set("Cache-Control", "no-store")
+
+	if h.revoker == nil {
+		http.Error(w, "backchannel logout not configured", http.StatusNotImplemented)
+		return
+	}
+
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Parse logout_token from form body (application/x-www-form-urlencoded)
+	if err := r.ParseForm(); err != nil {
+		log.Printf("[oidc] Backchannel logout: failed to parse form: %v", err)
+		http.Error(w, "invalid request body", http.StatusBadRequest)
+		return
+	}
+	rawToken := r.FormValue("logout_token")
+	if rawToken == "" {
+		http.Error(w, "missing logout_token parameter", http.StatusBadRequest)
+		return
+	}
+
+	// Verify JWT signature, issuer, audience, and expiry using the OIDC provider's JWKS.
+	ctx, cancel := context.WithTimeout(r.Context(), 15*time.Second)
+	defer cancel()
+
+	if h.httpClient != nil {
+		ctx = context.WithValue(ctx, oauth2.HTTPClient, h.httpClient)
+	}
+
+	idToken, err := h.verifier.Verify(ctx, rawToken)
+	if err != nil {
+		log.Printf("[oidc] Backchannel logout: token verification failed: %v", err)
+		http.Error(w, "invalid logout_token", http.StatusBadRequest)
+		return
+	}
+
+	// Parse all claims for validation
+	var claims map[string]any
+	if err := idToken.Claims(&claims); err != nil {
+		log.Printf("[oidc] Backchannel logout: failed to parse claims: %v", err)
+		http.Error(w, "invalid logout_token claims", http.StatusBadRequest)
+		return
+	}
+
+	// Spec §2.4: MUST contain "events" claim with the backchannel logout event URI
+	events, ok := claims["events"].(map[string]any)
+	if !ok {
+		log.Printf("[oidc] Backchannel logout: missing or invalid 'events' claim")
+		http.Error(w, "missing events claim", http.StatusBadRequest)
+		return
+	}
+	if _, hasEvent := events[backchannelLogoutEventURI]; !hasEvent {
+		log.Printf("[oidc] Backchannel logout: events claim missing backchannel-logout event URI")
+		http.Error(w, "missing backchannel-logout event", http.StatusBadRequest)
+		return
+	}
+
+	// Spec §2.4: MUST NOT contain a "nonce" claim
+	if _, hasNonce := claims["nonce"]; hasNonce {
+		log.Printf("[oidc] Backchannel logout: logout_token contains 'nonce' claim (rejected per spec)")
+		http.Error(w, "logout_token must not contain nonce", http.StatusBadRequest)
+		return
+	}
+
+	// Extract sid and/or sub — at least one must be present (spec §2.4)
+	sid, _ := claims["sid"].(string)
+	sub := idToken.Subject
+
+	if sid == "" && sub == "" {
+		log.Printf("[oidc] Backchannel logout: logout_token has neither 'sid' nor 'sub' claim")
+		http.Error(w, "logout_token must contain sid or sub", http.StatusBadRequest)
+		return
+	}
+
+	// JTI dedupe — spec §2.7 requires idempotent handling of retries
+	jti, _ := claims["jti"].(string)
+	if jti == "" {
+		log.Printf("[oidc] Backchannel logout: logout_token has no 'jti' claim — idempotency protection disabled for this token (sub=%s, sid=%s)", sub, sid)
+	}
+	jtiExpiry := idToken.Expiry
+	if jtiExpiry.IsZero() {
+		jtiExpiry = time.Now().Add(h.cfg.CookieTTL) // fall back to cookie TTL
+	}
+	if h.revoker.SeenJTI(jti, jtiExpiry) {
+		// Already processed this logout_token — return 200 (idempotent)
+		log.Printf("[oidc] Backchannel logout: duplicate jti=%s (idempotent 200)", jti)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Revoke the session
+	revocationExpiry := time.Now().Add(h.cfg.CookieTTL)
+	if sid != "" {
+		h.revoker.Revoke(sid, revocationExpiry)
+		log.Printf("[oidc] Backchannel logout: revoked sid=%s (sub=%s, jti=%s)", sid, sub, jti)
+	} else {
+		// sub-only: we can't do targeted revocation (our store is sid-keyed).
+		// Return 501 so the IdP knows this wasn't processed, rather than
+		// returning 200 and silently doing nothing.
+		log.Printf("[oidc] Backchannel logout: sub-only revocation not supported (sub=%s, jti=%s) — IdP did not provide sid", sub, jti)
+		http.Error(w, "sub-only revocation not supported; sid claim required", http.StatusNotImplemented)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+type unverifiedEmailError struct{ email string }
+
+func (e *unverifiedEmailError) Error() string {
+	return fmt.Sprintf("email %s is not verified", e.email)
+}
+
+// oidcUsername returns the username Radar impersonates and the claim it came
+// from. With no claim configured it prefers email and falls back to sub. A
+// configured claim must be present: falling back would impersonate a
+// different identity than the one the operator mapped in RBAC.
+//
+// An email-derived username follows kube-apiserver's rule: when the token
+// carries email_verified, it must be true. Otherwise anyone who can set an
+// unverified address at the IdP could sign in as the owner of that address.
+func oidcUsername(claims map[string]any, claim string) (string, string, error) {
+	if claim == "" {
+		if email, ok := claims["email"].(string); ok && email != "" {
+			claim = "email"
+		} else if sub, ok := claims["sub"].(string); ok && sub != "" {
+			return sub, "sub", nil
+		} else {
+			return "", "", errors.New("no username in token (no email or sub claim)")
+		}
+	}
+	username, ok := claims[claim].(string)
+	if !ok || username == "" {
+		return "", "", fmt.Errorf("no username in token: the %q claim set by --auth-oidc-username-claim is missing or not a string", claim)
+	}
+	if claim == "email" {
+		if v, present := claims["email_verified"]; present {
+			verified, ok := v.(bool)
+			if !ok {
+				return "", "", fmt.Errorf("the email_verified claim is %T, not a boolean", v)
+			}
+			if !verified {
+				return "", "", &unverifiedEmailError{email: username}
+			}
+		}
+	}
+	return username, claim, nil
+}

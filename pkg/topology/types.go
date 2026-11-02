@@ -1,0 +1,849 @@
+package topology
+
+import (
+	"encoding/json"
+	"maps"
+	"slices"
+
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/maomada/KubeAtlas/pkg/hpadiag"
+	k8score "github.com/maomada/KubeAtlas/pkg/k8score"
+)
+
+// NodeKind represents the type of a topology node
+//
+// When adding a new NodeKind constant, also update:
+//   - builder.go: node creation + edge creation (both resources and traffic views)
+//   - builder.go: genericCRDExclusion check (if kind is handled via dynamic cache)
+//   - relationships.go: buildNodeID + normalizeKind maps, EdgeRoutesTo dispatch
+//   - history.go: diff dispatch switch
+//   - dashboard.go: resource counting (if applicable)
+//   - capabilities.go: ResourcePermissions struct + permCheck array (if needs RBAC)
+//   - dynamic_cache.go: warmup list (if CRD)
+//   - if the kind is cluster-scoped: add an entry to topology.ClusterScopedKinds
+//     in pkg/topology/cluster_scoped_kinds.go so the topology strip helpers
+//     AND neighborhood per-node gates can SAR-check it. Missing the entry
+//     leaks the cluster-scoped node to namespace-restricted users via
+//     /api/topology, get_topology MCP, AND get_neighborhood MCP/REST.
+type NodeKind string
+
+const (
+	KindInternet                       NodeKind = "Internet"
+	KindIngress                        NodeKind = "Ingress"
+	KindGateway                        NodeKind = "Gateway"
+	KindHTTPRoute                      NodeKind = "HTTPRoute"
+	KindGRPCRoute                      NodeKind = "GRPCRoute"
+	KindTCPRoute                       NodeKind = "TCPRoute"
+	KindUDPRoute                       NodeKind = "UDPRoute"
+	KindTLSRoute                       NodeKind = "TLSRoute"
+	KindService                        NodeKind = "Service"
+	KindDeployment                     NodeKind = "Deployment"
+	KindRollout                        NodeKind = "Rollout"
+	KindApplication                    NodeKind = "Application"          // ArgoCD Application
+	KindKustomization                  NodeKind = "Kustomization"        // FluxCD Kustomization
+	KindHelmRelease                    NodeKind = "HelmRelease"          // FluxCD HelmRelease (Flux, not native Helm)
+	KindGitRepository                  NodeKind = "GitRepository"        // FluxCD GitRepository
+	KindCertificate                    NodeKind = "Certificate"          // cert-manager Certificate
+	KindNode                           NodeKind = "Node"                 // Kubernetes Node (only shown when Karpenter-managed)
+	KindNodePool                       NodeKind = "NodePool"             // Karpenter NodePool
+	KindNodeClaim                      NodeKind = "NodeClaim"            // Karpenter NodeClaim
+	KindNodeClass                      NodeKind = "NodeClass"            // Karpenter NodeClass (EC2NodeClass, AKSNodeClass, etc.)
+	KindScaledObject                   NodeKind = "ScaledObject"         // KEDA ScaledObject
+	KindScaledJob                      NodeKind = "ScaledJob"            // KEDA ScaledJob
+	KindGatewayClass                   NodeKind = "GatewayClass"         // Gateway API GatewayClass
+	KindVirtualService                 NodeKind = "VirtualService"       // Istio VirtualService
+	KindDestinationRule                NodeKind = "DestinationRule"      // Istio DestinationRule
+	KindIstioGateway                   NodeKind = "IstioGateway"         // Istio Gateway (networking.istio.io, NOT Gateway API)
+	KindServiceEntry                   NodeKind = "ServiceEntry"         // Istio ServiceEntry
+	KindPeerAuthentication             NodeKind = "PeerAuthentication"   // Istio PeerAuthentication
+	KindAuthorizationPolicy            NodeKind = "AuthorizationPolicy"  // Istio AuthorizationPolicy
+	KindKnativeService                 NodeKind = "KnativeService"       // KNative Serving Service
+	KindKnativeConfiguration           NodeKind = "KnativeConfiguration" // KNative Serving Configuration
+	KindKnativeRevision                NodeKind = "KnativeRevision"      // KNative Serving Revision
+	KindKnativeRoute                   NodeKind = "KnativeRoute"         // KNative Serving Route
+	KindBroker                         NodeKind = "Broker"               // KNative Eventing Broker
+	KindTrigger                        NodeKind = "Trigger"              // KNative Eventing Trigger
+	KindPingSource                     NodeKind = "PingSource"           // KNative Eventing PingSource
+	KindApiServerSource                NodeKind = "ApiServerSource"      // KNative Eventing ApiServerSource
+	KindContainerSource                NodeKind = "ContainerSource"      // KNative Eventing ContainerSource
+	KindSinkBinding                    NodeKind = "SinkBinding"          // KNative Eventing SinkBinding
+	KindChannel                        NodeKind = "Channel"              // KNative Messaging Channel
+	KindIngressRoute                   NodeKind = "IngressRoute"         // Traefik IngressRoute
+	KindIngressRouteTCP                NodeKind = "IngressRouteTCP"      // Traefik IngressRouteTCP
+	KindIngressRouteUDP                NodeKind = "IngressRouteUDP"      // Traefik IngressRouteUDP
+	KindMiddleware                     NodeKind = "Middleware"           // Traefik Middleware
+	KindMiddlewareTCP                  NodeKind = "MiddlewareTCP"        // Traefik MiddlewareTCP
+	KindTraefikService                 NodeKind = "TraefikService"       // Traefik TraefikService (advanced LB)
+	KindServersTransport               NodeKind = "ServersTransport"     // Traefik ServersTransport
+	KindServersTransportTCP            NodeKind = "ServersTransportTCP"  // Traefik ServersTransportTCP
+	KindTLSOption                      NodeKind = "TLSOption"            // Traefik TLSOption
+	KindTLSStore                       NodeKind = "TLSStore"             // Traefik TLSStore
+	KindHTTPProxy                      NodeKind = "HTTPProxy"            // Contour HTTPProxy
+	KindDaemonSet                      NodeKind = "DaemonSet"
+	KindStatefulSet                    NodeKind = "StatefulSet"
+	KindReplicaSet                     NodeKind = "ReplicaSet"
+	KindPod                            NodeKind = "Pod"
+	KindPodGroup                       NodeKind = "PodGroup"
+	KindConfigMap                      NodeKind = "ConfigMap"
+	KindSecret                         NodeKind = "Secret"
+	KindServiceAccount                 NodeKind = "ServiceAccount"
+	KindSealedSecret                   NodeKind = "SealedSecret"
+	KindServiceMonitor                 NodeKind = "ServiceMonitor"
+	KindPodMonitor                     NodeKind = "PodMonitor"
+	KindHPA                            NodeKind = "HorizontalPodAutoscaler"
+	KindJob                            NodeKind = "Job"
+	KindCronJob                        NodeKind = "CronJob"
+	KindWorkflow                       NodeKind = "Workflow"
+	KindCronWorkflow                   NodeKind = "CronWorkflow"
+	KindWorkflowTemplate               NodeKind = "WorkflowTemplate"
+	KindClusterWorkflowTemplate        NodeKind = "ClusterWorkflowTemplate"
+	KindPVC                            NodeKind = "PersistentVolumeClaim"
+	KindPV                             NodeKind = "PersistentVolume"
+	KindStorageClass                   NodeKind = "StorageClass"
+	KindPDB                            NodeKind = "PodDisruptionBudget"
+	KindNetworkPolicy                  NodeKind = "NetworkPolicy"
+	KindCiliumNetworkPolicy            NodeKind = "CiliumNetworkPolicy"
+	KindCiliumClusterwideNetworkPolicy NodeKind = "CiliumClusterwideNetworkPolicy"
+	KindClusterNetworkPolicy           NodeKind = "ClusterNetworkPolicy"
+	KindVPA                            NodeKind = "VerticalPodAutoscaler"
+	KindNamespace                      NodeKind = "Namespace"
+	KindCAPICluster                    NodeKind = "CAPICluster"         // Cluster API Cluster
+	KindMachineDeployment              NodeKind = "MachineDeployment"   // Cluster API MachineDeployment
+	KindMachineSet                     NodeKind = "MachineSet"          // Cluster API MachineSet
+	KindMachine                        NodeKind = "Machine"             // Cluster API Machine
+	KindMachinePool                    NodeKind = "MachinePool"         // Cluster API MachinePool
+	KindKubeadmControlPlane            NodeKind = "KubeadmControlPlane" // Cluster API KubeadmControlPlane
+	KindClusterClass                   NodeKind = "ClusterClass"        // Cluster API ClusterClass
+	KindMachineHealthCheck             NodeKind = "MachineHealthCheck"  // Cluster API MachineHealthCheck
+)
+
+const (
+	KindCalicoNetworkPolicy                 NodeKind = "CalicoNetworkPolicy"
+	KindCalicoGlobalNetworkPolicy           NodeKind = "CalicoGlobalNetworkPolicy"
+	KindCalicoStagedNetworkPolicy           NodeKind = "CalicoStagedNetworkPolicy"
+	KindCalicoStagedGlobalNetworkPolicy     NodeKind = "CalicoStagedGlobalNetworkPolicy"
+	KindCalicoStagedKubernetesNetworkPolicy NodeKind = "CalicoStagedKubernetesNetworkPolicy"
+)
+
+// HealthStatus represents the health status of a node
+type HealthStatus string
+
+const (
+	StatusHealthy   HealthStatus = "healthy"
+	StatusDegraded  HealthStatus = "degraded"
+	StatusUnhealthy HealthStatus = "unhealthy"
+	// StatusNeutral = intentional/idle (suspended, scaled-to-0, completed) —
+	// renders sky on the frontend, distinct from StatusUnknown (gray).
+	StatusNeutral HealthStatus = "neutral"
+	StatusUnknown HealthStatus = "unknown"
+)
+
+// EdgeType represents the type of connection between nodes
+type EdgeType string
+
+const (
+	EdgeRoutesTo   EdgeType = "routes-to"
+	EdgeExposes    EdgeType = "exposes"
+	EdgeManages    EdgeType = "manages"
+	EdgeUses       EdgeType = "uses"
+	EdgeProtects   EdgeType = "protects"
+	EdgeConfigures EdgeType = "configures"
+)
+
+// Node represents a node in the topology graph
+type Node struct {
+	ID     string         `json:"id"`
+	Kind   NodeKind       `json:"kind"`
+	Name   string         `json:"name"`
+	Status HealthStatus   `json:"status"`
+	Data   map[string]any `json:"data"`
+}
+
+// Edge represents a connection between two nodes
+type Edge struct {
+	ID                string   `json:"id"`
+	Source            string   `json:"source"`
+	Target            string   `json:"target"`
+	Type              EdgeType `json:"type"`
+	Label             string   `json:"label,omitempty"`
+	Partial           bool     `json:"partial,omitempty"`
+	SkipIfKindVisible string   `json:"skipIfKindVisible,omitempty"` // Hide this edge if this kind is visible (for shortcut edges)
+	PolicyEffect      string   `json:"policyEffect,omitempty"`      // "allowed", "blocked", or "unprotected" — set when ShowPolicyEffect is true
+}
+
+// PolicyEffect constants for edge annotation
+const (
+	PolicyEffectAllowed     = "allowed"     // Traffic explicitly allowed by a NetworkPolicy ingress rule
+	PolicyEffectBlocked     = "blocked"     // Target has a selecting policy but source is not in any allow list
+	PolicyEffectUnprotected = "unprotected" // Target has no selecting NetworkPolicy (default-allow)
+)
+
+// Topology represents the complete graph
+type Topology struct {
+	podConsumers            map[string][]ResourceRef
+	Nodes                   []Node   `json:"nodes"`
+	Edges                   []Edge   `json:"edges"`
+	Warnings                []string `json:"warnings,omitempty"`                // Warnings about resources that failed to load
+	LargeCluster            bool     `json:"largeCluster,omitempty"`            // True if cluster exceeds large cluster threshold
+	HiddenKinds             []string `json:"hiddenKinds,omitempty"`             // Resource kinds auto-hidden for performance
+	RequiresNamespaceFilter bool     `json:"requiresNamespaceFilter,omitempty"` // True if cluster is too large for all-namespace topology
+	CRDDiscoveryStatus      string   `json:"crdDiscoveryStatus,omitempty"`      // CRD discovery status: idle, discovering, ready
+	EstimatedNodes          int      `json:"estimatedNodes,omitempty"`          // Pre-build node count estimate from the large-cluster optimizer; exposed so SSE / UI can tune debounce + render mode off the same signal
+	SummaryMode             bool     `json:"summaryMode,omitempty"`             // True when the pod tier was collapsed into per-workload/service counts (see SummaryModeThreshold)
+}
+
+// MarshalJSON guarantees the wire contract the frontend types promise:
+// nodes and edges are arrays, never null. Producers reintroduce nil slices
+// too easily (an append-based clone of an empty topology, a strip that
+// drops everything), so the contract is enforced at the marshal boundary
+// rather than per producer.
+func (t Topology) MarshalJSON() ([]byte, error) {
+	type wireTopology Topology
+	out := wireTopology(t)
+	if out.Nodes == nil {
+		out.Nodes = []Node{}
+	}
+	if out.Edges == nil {
+		out.Edges = []Edge{}
+	}
+	return json.Marshal(out)
+}
+
+// StripNodeKinds removes nodes whose Kind is in deny, plus every edge that
+// references one of the dropped node IDs. Used to hide cluster-scoped
+// resources (Nodes, Karpenter NodePool, GatewayClass, …) from users who
+// lack the per-kind RBAC to list them — the topology builder pulls those
+// from the SA-populated cache regardless of the caller's namespace scope.
+func (t *Topology) StripNodeKinds(deny map[NodeKind]bool) {
+	if t == nil || len(deny) == 0 {
+		return
+	}
+	dropped := make(map[string]bool)
+	for _, n := range t.Nodes {
+		if deny[n.Kind] {
+			dropped[n.ID] = true
+		}
+	}
+	t.StripNodeIDs(dropped)
+}
+
+// StripNodeIDs removes exact nodes plus every edge that references them.
+// Exact-ID filtering is required for topology pseudo-kinds such as NodeClass,
+// where one NodeKind can contain independently authorized provider APIs.
+func (t *Topology) StripNodeIDs(deny map[string]bool) {
+	if t == nil || len(deny) == 0 {
+		return
+	}
+	kept := t.Nodes[:0]
+	hiddenPolicyNamespaces := map[string]bool{}
+	for _, n := range t.Nodes {
+		if deny[n.ID] {
+			if n.Kind == KindNetworkPolicy || n.Kind == KindCiliumNetworkPolicy || n.Kind == KindCiliumClusterwideNetworkPolicy || IsCalicoPolicyKind(n.Kind) {
+				ns, _ := n.Data["namespace"].(string)
+				hiddenPolicyNamespaces[ns] = true
+			}
+			continue
+		}
+		kept = append(kept, n)
+	}
+	t.Nodes = kept
+
+	keptEdges := t.Edges[:0]
+	for _, e := range t.Edges {
+		if deny[e.Source] || deny[e.Target] {
+			continue
+		}
+		keptEdges = append(keptEdges, e)
+	}
+	t.Edges = keptEdges
+	// Coverage metadata also contains graph references. Do not serialize names
+	// of hidden workloads through a readable clusterwide policy's Data.
+	for i := range t.Nodes {
+		node := &t.Nodes[i]
+		ns, _ := node.Data["namespace"].(string)
+		_, hasPolicyStatus := node.Data["policyStatus"]
+		if node.Data["policyCoverageWorkloads"] != nil || (hiddenPolicyNamespaces[""] || hiddenPolicyNamespaces[ns]) && hasPolicyStatus {
+			// Topology clones share node Data until a consumer modifies it.
+			node.Data = maps.Clone(node.Data)
+		}
+		for _, field := range []string{"policyCoverageWorkloads"} {
+			if refs, ok := node.Data[field].([]string); ok {
+				visible := make([]string, 0, len(refs))
+				for _, id := range refs {
+					if !deny[id] {
+						visible = append(visible, id)
+					}
+				}
+				node.Data[field] = visible
+			}
+		}
+		if hasPolicyStatus && (hiddenPolicyNamespaces[""] || hiddenPolicyNamespaces[ns]) {
+			// The annotation was computed before filtering. Withhold it when
+			// its evidence may include policies the caller cannot see.
+			delete(node.Data, "policyStatus")
+		}
+	}
+}
+
+// NodeClassRBACTuples returns the distinct exact provider resources present
+// in the graph. A malformed NodeClass node is omitted here and will still be
+// removed by StripNodeClassesExcept.
+func (t *Topology) NodeClassRBACTuples() []SARTuple {
+	if t == nil {
+		return nil
+	}
+	seen := make(map[SARTuple]bool)
+	var tuples []SARTuple
+	for i := range t.Nodes {
+		n := &t.Nodes[i]
+		if n.Kind != KindNodeClass {
+			continue
+		}
+		decision, candidates := RBACTuplesForNode(n, nil)
+		if decision != NodeRBACCheckTuples {
+			continue
+		}
+		for _, candidate := range candidates {
+			if seen[candidate] {
+				continue
+			}
+			seen[candidate] = true
+			tuples = append(tuples, candidate)
+		}
+	}
+	return tuples
+}
+
+// StripNodeClassesExcept keeps only NodeClass nodes whose exact provider
+// resource is present in allowed. Unknown or malformed identities fail closed.
+func (t *Topology) StripNodeClassesExcept(allowed map[SARTuple]bool) {
+	if t == nil {
+		return
+	}
+	deny := make(map[string]bool)
+	for i := range t.Nodes {
+		n := &t.Nodes[i]
+		if n.Kind != KindNodeClass {
+			continue
+		}
+		decision, tuples := RBACTuplesForNode(n, nil)
+		authorized := decision == NodeRBACCheckTuples
+		if authorized {
+			authorized = false
+			for _, tuple := range tuples {
+				if allowed[tuple] {
+					authorized = true
+					break
+				}
+			}
+		}
+		if !authorized {
+			deny[n.ID] = true
+		}
+	}
+	t.StripNodeIDs(deny)
+}
+
+// ViewMode determines how the topology is built
+type ViewMode string
+
+const (
+	ViewModeTraffic   ViewMode = "traffic"   // Network-focused (Ingress/Gateway -> Service -> Pod)
+	ViewModeResources ViewMode = "resources" // Comprehensive tree
+)
+
+// Large cluster threshold - when pre-grouped node count exceeds this, apply optimizations
+// (aggressive pod grouping + auto-hide ConfigMaps/PVCs).
+const LargeClusterThreshold = 1000
+
+// Summary mode threshold - a second, higher tier above LargeClusterThreshold.
+// When a namespace-filtered build's estimated node count crosses this, the
+// builder drops the entire pod tier (no Pod / PodGroup nodes) and instead
+// rolls pod health up onto the owning workload (resources view) or routing
+// Service (traffic view) as a PodSummary. This bounds rendered nodes to
+// workloads + networking regardless of pod count — the fix for tabs hanging
+// on namespaces with thousands of pods.
+const SummaryModeThreshold = 2000
+
+// PodSummary aggregates pod health for a workload or service in summary mode,
+// stamped onto the owning node's Data as "podSummary". Invariant maintained by
+// addPodHealth: Total == Healthy + Degraded + Unhealthy. Unknown-phase pods are
+// counted as Unhealthy (matching the bucketing GroupPods uses for PodGroups).
+type PodSummary struct {
+	Total     int `json:"total"`
+	Healthy   int `json:"healthy"`
+	Degraded  int `json:"degraded"`
+	Unhealthy int `json:"unhealthy"`
+}
+
+// BuildOptions configures topology building
+type BuildOptions struct {
+	Namespaces           []string // Filter to specific namespaces (empty = all)
+	ViewMode             ViewMode // How to display topology
+	MaxIndividualPods    int      // Above this, pods are grouped (default: 5)
+	IncludeSecrets       bool     // Include Secret nodes
+	IncludeConfigMaps    bool     // Include ConfigMap nodes
+	IncludePVCs          bool     // Include PersistentVolumeClaim nodes
+	IncludeReplicaSets   bool     // Include ReplicaSet nodes (noisy intermediate objects)
+	IncludeGenericCRDs   bool     // Include CRDs with owner refs to topology nodes (default: true)
+	ForRelationshipCache bool     // Retain full template/Pod facts and skip the large-cluster guard for resource reads
+	ShowPolicyEffect     bool     // Evaluate NetworkPolicies and annotate edges with allow/block/unprotected
+	SummaryMode          bool     // Collapse the pod tier into per-workload/service counts (set by Build when estimate ≥ SummaryModeThreshold)
+}
+
+// MatchesNamespace returns true if ns is in the allowed list.
+// nil means no filter (all namespaces match). An explicit empty slice means nothing matches.
+// This is a standalone function that can be used by any code needing namespace filtering.
+func MatchesNamespace(namespaces []string, ns string) bool {
+	if namespaces == nil {
+		return true
+	}
+	return slices.Contains(namespaces, ns)
+}
+
+// MatchesNamespaceFilter returns true if the given namespace matches the filter.
+// An empty filter means all namespaces match.
+func (opts BuildOptions) MatchesNamespaceFilter(ns string) bool {
+	return MatchesNamespace(opts.Namespaces, ns)
+}
+
+// RelationshipBuildOptions retains the complete cached graph for relationship
+// projection. A root's namespace is not a visibility boundary: controllers may
+// explicitly reference another namespace. Callers must authorize emitted refs.
+func RelationshipBuildOptions() BuildOptions {
+	opts := DefaultBuildOptions()
+	opts.IncludeReplicaSets = true
+	opts.ForRelationshipCache = true
+	return opts
+}
+
+// DefaultBuildOptions returns sensible defaults
+func DefaultBuildOptions() BuildOptions {
+	return BuildOptions{
+		Namespaces:         nil, // Empty = all namespaces
+		ViewMode:           ViewModeResources,
+		MaxIndividualPods:  5,
+		IncludeSecrets:     false, // Secrets are sensitive
+		IncludeConfigMaps:  true,
+		IncludePVCs:        true,
+		IncludeReplicaSets: false, // Hidden by default - noisy intermediate between Deployment and Pod
+		IncludeGenericCRDs: true,  // Show CRDs with owner refs to topology nodes
+	}
+}
+
+// ResourceRef is a reference to a related K8s resource
+type ResourceRef struct {
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
+	Group     string `json:"group,omitempty"` // API group for CRDs (e.g., "cert-manager.io")
+}
+
+type ReflectionRelationships struct {
+	Source                *ResourceRef  `json:"source,omitempty"`
+	SourceResourceVersion string        `json:"sourceResourceVersion,omitempty"`
+	Mirrors               []ResourceRef `json:"mirrors,omitempty"`
+}
+
+// Relationships holds computed relationships for a resource
+type Relationships struct {
+	// PodPlacementObserved and PodPlacementUnavailable carry in-process lookup
+	// state for context builders. They are not transport fields or cached counts.
+	PodPlacementObserved    bool `json:"-"`
+	PodPlacementUnavailable bool `json:"-"`
+
+	// IstioServiceDomain is the configured registry domain or upstream default; omitted when unknown.
+	IstioServiceDomain string `json:"istioServiceDomain,omitempty"`
+	// Reflection distinguishes reflection links also retained in ConfigRefs/Consumers.
+	Reflection *ReflectionRelationships `json:"reflection,omitempty"`
+
+	// Owner is the owner Kubernetes acts through: the controller reference,
+	// else the only reference. Owners are every owner reference that resolves
+	// to an existing owner, Children every object whose owner reference
+	// resolves to this one. With Ownership set they come from owner
+	// references; without it, from the topology's manages edges.
+	Owner      *ResourceRef  `json:"owner,omitempty"`
+	Owners     []ResourceRef `json:"owners,omitempty"`
+	Deployment *ResourceRef  `json:"deployment,omitempty"` // Grandparent Deployment (for Pods owned by ReplicaSets)
+	Children   []ResourceRef `json:"children,omitempty"`
+	// OlderRevisions are Children kept apart because they only keep
+	// history: ReplicaSets that run no Pods and aren't their owner's current
+	// revision. See SplitOlderRevisions.
+	OlderRevisions []ResourceRef `json:"olderRevisions,omitempty"`
+	// Managers and Manages are management without an owner reference: GitOps
+	// member lists, class bindings, spec and status references. They never
+	// mean garbage collection. Set only with Ownership.
+	Managers []ResourceRef `json:"managers,omitempty"`
+	Manages  []ResourceRef `json:"manages,omitempty"`
+	// Ownership says how complete the owner-reference answers are.
+	Ownership *OwnershipCoverage `json:"ownership,omitempty"`
+	// manageSources and manageTargets are the resources this one's manages
+	// edges come from and go to, which ApplyOwnership sorts into ownership,
+	// management and display shortcuts.
+	manageSources, manageTargets []ResourceRef
+
+	Services        []ResourceRef `json:"services,omitempty"`   // Core Services selecting/exposing this
+	Ingresses       []ResourceRef `json:"ingresses,omitempty"`  // Ingresses routing to this
+	Gateways        []ResourceRef `json:"gateways,omitempty"`   // Gateway API Gateways routing to this
+	Routes          []ResourceRef `json:"routes,omitempty"`     // Recognized upstream routes routing to this
+	ConfigRefs      []ResourceRef `json:"configRefs,omitempty"` // ConfigMaps/Secrets used by this
+	Consumers       []ResourceRef `json:"consumers,omitempty"`  // For ConfigMap/Secret: workloads that reference this
+	Dependencies    []ResourceRef `json:"dependencies,omitempty"`
+	Dependents      []ResourceRef `json:"dependents,omitempty"`
+	Scalers         []ResourceRef `json:"scalers,omitempty"`         // HPA/ScaledObject/ScaledJob scaling this
+	StorageRefs     []ResourceRef `json:"storageRefs,omitempty"`     // PersistentVolumeClaims used by this workload
+	ScaleTarget     *ResourceRef  `json:"scaleTarget,omitempty"`     // For HPA/ScaledObject: what it scales
+	PDBs            []ResourceRef `json:"pdbs,omitempty"`            // PodDisruptionBudgets protecting this workload
+	NetworkPolicies []ResourceRef `json:"networkPolicies,omitempty"` // NetworkPolicy / CiliumNetworkPolicy / ClusterNetworkPolicy / CiliumClusterwideNetworkPolicy selecting this workload
+	Pods            []ResourceRef `json:"pods,omitempty"`            // Core Pods routed to, or reached through Deployment/Node shortcuts
+
+	// Monitors are Prometheus Operator resources scraping this target.
+	Monitors []ResourceRef `json:"monitors,omitempty"`
+
+	// MonitorTargets are the resources this Prometheus Operator monitor scrapes.
+	MonitorTargets []ResourceRef `json:"monitorTargets,omitempty"`
+
+	// Backends are non-Pod targets this resource routes to or exposes.
+	Backends []ResourceRef `json:"backends,omitempty"`
+
+	// RoutedFrom are upstream exposing resources other than core Services and recognized routes.
+	RoutedFrom []ResourceRef `json:"routedFrom,omitempty"`
+
+	// Protects are the resources selected by this disruption budget or network policy.
+	Protects []ResourceRef `json:"protects,omitempty"`
+
+	// HealthChecks are Cluster API MachineHealthChecks associated with this Cluster.
+	HealthChecks []ResourceRef `json:"healthChecks,omitempty"`
+
+	// StagedPolicies select this resource without enforcing policy.
+	StagedPolicies []ResourceRef `json:"stagedPolicies,omitempty"`
+
+	// ServiceAccount is the ServiceAccount selected by this Pod or workload.
+	ServiceAccount *ResourceRef `json:"serviceAccount,omitempty"`
+	// Node is the Node associated through Pod.spec.nodeName or a resource-specific node reference.
+	Node *ResourceRef `json:"node,omitempty"`
+	// ResourceClaims are the DRA ResourceClaims this Pod references (Pod-only
+	// field). Direct claims come from pod.Spec.ResourceClaims; template-generated
+	// claim names resolve via pod.Status.ResourceClaimStatuses.
+	ResourceClaims []ResourceRef `json:"resourceClaims,omitempty"`
+	// ManagedBy walks the owner-ref chain up to the topmost meaningful manager
+	// — ArgoCD Application > Flux Kustomization/HelmRelease > Helm release >
+	// topmost K8s owner (Deployment > ReplicaSet > Pod). Empty when no
+	// meaningful manager is detectable.
+	ManagedBy []ResourceRef `json:"managedBy,omitempty"`
+}
+
+// CertificateInfo holds parsed X.509 certificate metadata for a single certificate.
+type CertificateInfo struct {
+	Subject      string   `json:"subject"`
+	SANs         []string `json:"sans,omitempty"`
+	Issuer       string   `json:"issuer"`
+	SelfSigned   bool     `json:"selfSigned,omitempty"`
+	KeyType      string   `json:"keyType"`
+	SerialNumber string   `json:"serialNumber"`
+	NotBefore    string   `json:"notBefore"`
+	NotAfter     string   `json:"notAfter"`
+	DaysLeft     int      `json:"daysLeft"`
+	Expired      bool     `json:"expired,omitempty"`
+}
+
+// SecretCertificateInfo holds parsed certificate data for a TLS secret.
+// Certificates are in PEM order (leaf-first: index 0 is the server cert, subsequent entries are intermediates/root).
+type SecretCertificateInfo struct {
+	Certificates []CertificateInfo `json:"certificates"`
+}
+
+// CascadeDeletePreview reports deletion evidence. Basis ownerReferences marks
+// the cache-backed projection; without it Dependents are legacy graph links.
+// Coverage is absent when no ownership projection was possible. NotEnumerated
+// names deletion mechanisms outside the projection, never empty sets of objects.
+type CascadeDeletePreview struct {
+	MayReclaimStorage bool `json:"-"`
+	// Propagation is the normal-delete policy. Dependents project cascading
+	// collection; Orphan preserves them unless force removes the orphan finalizer.
+	Propagation        string              `json:"propagation,omitempty"`
+	Root               ResourceRef         `json:"root"`
+	RootResolved       bool                `json:"rootResolved"`
+	Dependents         []ResourceRef       `json:"dependents"`
+	Basis              string              `json:"basis,omitempty"`
+	PossibleDependents []ResourceRef       `json:"possibleDependents,omitempty"`
+	Coverage           *ChildrenCoverage   `json:"coverage,omitempty"`
+	UnavailableReason  string              `json:"unavailableReason,omitempty"`
+	ControllerTeardown *ControllerTeardown `json:"controllerTeardown,omitempty"`
+	NotEnumerated      []string            `json:"notEnumerated,omitempty"`
+}
+
+// OwnershipCoverage says how complete a resource's owner-reference and
+// recorded-membership answers are. With UnavailableReason set nothing else is
+// answered, so an empty field there says nothing. Otherwise an omitted count
+// or flag is zero, and an omitted Manages or Managers means there was nothing
+// to qualify.
+type OwnershipCoverage struct {
+	// PrimaryOwnerState is the state of the owner reference when Owner is empty:
+	// "gone" or "replaced" when it names a deleted owner, "withheld" when the
+	// caller may not read the owner, "unknown", "unresolvable", "excluded"
+	// when it names an Event, or "several" when there are several references
+	// and none is a controller. Empty when there is no owner reference, or
+	// Owner is set.
+	PrimaryOwnerState string `json:"primaryOwnerState,omitempty"`
+	// OwnerRef is the owner the reference names when it is gone, replaced or
+	// unknown: the object's own metadata names it.
+	OwnerRef *ResourceRef `json:"ownerRef,omitempty"`
+	// OwnerReason is a readreason code saying why an "unknown" owner couldn't
+	// be checked.
+	OwnerReason string `json:"ownerReason,omitempty"`
+	// Children says how complete Children and OlderRevisions are together.
+	Children ChildrenCoverage `json:"children"`
+	// Manages is set for a GitOps manager kind whose status lists its
+	// members, whether or not that list could be read.
+	Manages *MembersCoverage `json:"manages,omitempty"`
+	// Managers is set when the search for the GitOps managers whose status
+	// lists the resource, for Managers, couldn't settle every one the caller
+	// may read.
+	Managers *ManagersCoverage `json:"managers,omitempty"`
+	// Manager is what manages the resource, from the evidence on it or, when
+	// that doesn't settle it, on its nearest controller ancestor. Absent means
+	// no answer (an older Radar, or UnavailableReason), never "none".
+	Manager *ManagerAnswer `json:"manager,omitempty"`
+	// UnavailableReason is a reason code when Radar couldn't answer at all.
+	UnavailableReason string `json:"unavailableReason,omitempty"`
+}
+
+// ChildrenCoverage says how complete a resource's Children and
+// OlderRevisions are, together: OlderRevisions only sets some of them apart.
+type ChildrenCoverage struct {
+	// Complete: Children and OlderRevisions are every child the caller may
+	// read.
+	Complete bool `json:"complete"`
+	// NotChecked are the kinds and namespaces Radar couldn't search, and why.
+	NotChecked []OwnershipGap `json:"notChecked,omitempty"`
+	// Truncated: there were more children than the response lists; the cap
+	// applies before OlderRevisions are set apart.
+	Truncated bool `json:"truncated,omitempty"`
+	// Narrowed: the caller wasn't known to read everywhere children could be,
+	// so Children are the ones it may read.
+	Narrowed bool `json:"narrowed,omitempty"`
+}
+
+// OwnershipGap is a kind that Radar couldn't read, with a readreason code
+// saying why, from Radar's caches or the caller's access: in Namespace, or
+// with no Namespace in several namespaces, every one, or the cluster for a
+// cluster-scoped kind. An empty Kind stands for kinds discovery didn't list;
+// an empty Group is the core group.
+type OwnershipGap struct {
+	Group     string `json:"group,omitempty"`
+	Kind      string `json:"kind,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Reason    string `json:"reason"`
+}
+
+// ManagersCoverage says which GitOps managers the search for the resource's
+// Managers couldn't settle.
+type ManagersCoverage struct {
+	// Unreadable managers have a member list Radar can't read, so any of them
+	// may list the resource.
+	Unreadable int `json:"unreadable,omitempty"`
+	// Remote managers list an object at the resource's coordinates, in a
+	// cluster Radar can't confirm is this one.
+	Remote int `json:"remote,omitempty"`
+	// NotChecked are the manager kinds and namespaces Radar couldn't search,
+	// and why.
+	NotChecked []OwnershipGap `json:"notChecked,omitempty"`
+}
+
+// ManagerAnswer is what manages a resource: the managers whose status lists
+// name it and what its own metadata claims. It names no winner the evidence
+// doesn't support: a disagreement stays one.
+type ManagerAnswer struct {
+	// State sums up the evidence, counting claims as docs/ownership.md says
+	// (never a copied one; a native Helm release's only without other
+	// evidence): "agree" (one list names it and every claim names that
+	// manager), "listed" (one list names it, no claim counts),
+	// "disagree" (one list names it and a claim names another manager),
+	// "shared" (several lists name it), "claimed" (only claims name a
+	// manager), "unknown" (no evidence, and Radar couldn't look everywhere)
+	// or "none" (no evidence in what Radar collects and the caller may read;
+	// not a statement that nothing manages it).
+	State string `json:"state"`
+	// Lead is the manager to show first, never a verdict: the recorder for
+	// "agree" and "listed"; for "shared", the one recorder a claim names, if
+	// exactly one; for "claimed", the manager every claim names, if they
+	// agree; absent otherwise. Its namespace is empty when it comes from a
+	// claim that names none.
+	Lead *ResourceRef `json:"lead,omitempty"`
+	// Direct is the evidence on the resource itself.
+	Direct ManagerEvidence `json:"direct"`
+	// Via is the evidence on the nearest controller ancestor that settles the
+	// question when the resource's own doesn't, or, when nothing on the chain
+	// does and the resource makes no claim that isn't copied, on the nearest
+	// ancestor that makes one; State and Lead then come from it.
+	Via *ManagerEvidence `json:"via,omitempty"`
+	// Between is the evidence of other objects the walk passed that make
+	// claims, in chain order. When Via is a fallback to the nearest claim,
+	// claims farther up the chain stay here.
+	Between []ManagerEvidence `json:"between,omitempty"`
+	// ChainEnd is why a walk that found no settling evidence stopped short:
+	// "unfollowed", "cycle" or "truncated". Absent when evidence settled it
+	// first, whatever lies above, or when the walk reached the chain's top.
+	ChainEnd string `json:"chainEnd,omitempty"`
+	// Stop is the controller reference the walk couldn't follow, when
+	// ChainEnd is "unfollowed".
+	Stop *ManagerChainStop `json:"stop,omitempty"`
+	// Narrowed: the caller's access is restricted, so the evidence is the part
+	// it may read.
+	Narrowed bool `json:"narrowed,omitempty"`
+}
+
+// ManagerChainStop is a controller reference a walk up the chain couldn't
+// follow.
+type ManagerChainStop struct {
+	// At is the last object the walk reached, whose reference it is.
+	At ResourceRef `json:"at"`
+	// State is the reference's: "gone", "replaced", "withheld", "unknown",
+	// "unresolvable" or "excluded", as for primaryOwnerState.
+	State string `json:"state"`
+	// Owner is the owner the reference names when it is gone, replaced or
+	// unknown.
+	Owner *ResourceRef `json:"owner,omitempty"`
+	// Reason is a readreason code saying why an "unknown" owner couldn't be
+	// checked.
+	Reason string `json:"reason,omitempty"`
+}
+
+// ManagerEvidence is what names the managers of one object. Which managers
+// Radar couldn't search is not part of it: State says whether that left the
+// answer unknown, and for the resource itself OwnershipCoverage.Managers says
+// what its own search missed.
+type ManagerEvidence struct {
+	Object ResourceRef `json:"object"`
+	// Recorders are the local managers whose status lists name it.
+	Recorders []ResourceRef `json:"recorders,omitempty"`
+	// Claims are the managers its own metadata names.
+	Claims []ManagerClaim `json:"claims,omitempty"`
+}
+
+// ManagerClaim is a manager an object's metadata names, and what checking it
+// found.
+type ManagerClaim struct {
+	// Manager is the manager named; its namespace is empty when the metadata
+	// doesn't say.
+	Manager ResourceRef `json:"manager"`
+	// Source is the metadata: "flux-helm-labels", "flux-kustomize-labels",
+	// "argo-tracking-id", "argo-instance-label" or "helm-release". Source,
+	// Check and the answer's State and ChainEnd may gain values: a reader
+	// shows an unfamiliar one generically and never treats it as confirming.
+	Source string `json:"source"`
+	// Check is what checking the claim found: "recorded" (its list names
+	// the object), "omitted" (its list, read, doesn't), "unreadable" (its list
+	// can't be read), "remote" (it applies to a cluster Radar can't confirm
+	// is this one), "missing" (no such manager here), "not-recording" (a
+	// native Helm release, which keeps no list), "unresolved" (no namespace,
+	// and no listing manager has its name), "withheld" (the caller may not
+	// read it) or "unchecked" (Radar couldn't establish what its list says).
+	Check string `json:"check"`
+	// Copied: an Argo CD tracking ID naming another object.
+	Copied bool `json:"copied,omitempty"`
+	// Weak: the claim doesn't stop the walk up the controller chain, being
+	// copied, or an instance label or Helm release annotation on an object a
+	// controller owns. One that isn't copied can still answer when nothing
+	// on the chain settles it.
+	Weak bool `json:"weak,omitempty"`
+}
+
+// MembersCoverage says what a GitOps manager's status records of its
+// members beyond those Manages lists.
+type MembersCoverage struct {
+	// Membership is "recorded", "remote" (its destination isn't confirmed to
+	// be this cluster, so its members aren't listed) or "unreadable" (the
+	// status lists none Radar can read).
+	Membership string `json:"membership"`
+	// UnavailableReason is a readreason code when the member list couldn't be read,
+	// as opposed to the status recording none.
+	UnavailableReason string `json:"unavailableReason,omitempty"`
+	// Missing members Radar doesn't hold, Withheld ones the caller may not
+	// read, Unknown ones Radar can't say whether it holds.
+	Missing  int `json:"missing,omitempty"`
+	Withheld int `json:"withheld,omitempty"`
+	Unknown  int `json:"unknown,omitempty"`
+	// Truncated: there were more members than the response lists.
+	Truncated bool `json:"truncated,omitempty"`
+}
+
+// ResourceWithRelationships wraps a K8s resource with computed relationships
+type ResourceWithRelationships struct {
+	Resource        any                    `json:"resource"`
+	Relationships   *Relationships         `json:"relationships,omitempty"`
+	CertificateInfo *SecretCertificateInfo `json:"certificateInfo,omitempty"`
+	HPADiagnosis    *hpadiag.Diagnosis     `json:"hpaDiagnosis,omitempty"`
+}
+
+// ResourceStatus holds computed status for a resource.
+type ResourceStatus struct {
+	Status  string
+	Ready   string
+	Message string
+	Summary string
+	Issue   string
+}
+
+// ResourceProvider is the data source for the topology builder.
+// internal/k8s.ResourceCache implements this via topologyAdapter.
+type ResourceProvider interface {
+	Pods() ([]*corev1.Pod, error)
+	Services() ([]*corev1.Service, error)
+	Deployments() ([]*appsv1.Deployment, error)
+	DaemonSets() ([]*appsv1.DaemonSet, error)
+	StatefulSets() ([]*appsv1.StatefulSet, error)
+	ReplicaSets() ([]*appsv1.ReplicaSet, error)
+	Jobs() ([]*batchv1.Job, error)
+	CronJobs() ([]*batchv1.CronJob, error)
+	Ingresses() ([]*networkingv1.Ingress, error)
+	ConfigMaps() ([]*corev1.ConfigMap, error)
+	Secrets() ([]*corev1.Secret, error)
+	PersistentVolumeClaims() ([]*corev1.PersistentVolumeClaim, error)
+	PersistentVolumes() ([]*corev1.PersistentVolume, error)
+	HorizontalPodAutoscalers() ([]*autoscalingv2.HorizontalPodAutoscaler, error)
+	PodDisruptionBudgets() ([]*policyv1.PodDisruptionBudget, error)
+	NetworkPolicies() ([]*networkingv1.NetworkPolicy, error)
+	Nodes() ([]*corev1.Node, error)
+	// GetResourceStatus returns health status for a resource; nil if unknown.
+	GetResourceStatus(kind, namespace, name string) *ResourceStatus
+}
+
+// ServiceAccountProvider is implemented by providers that can expose workload identities.
+type ServiceAccountProvider interface {
+	ServiceAccounts() ([]*corev1.ServiceAccount, error)
+}
+
+// NamespaceProvider is optional. Calico global-policy namespace selectors can
+// only be evaluated when namespace labels are available; callers that do not
+// implement it fail closed for those selectors.
+type NamespaceProvider interface {
+	Namespaces() ([]*corev1.Namespace, error)
+}
+
+// DynamicProvider adds CRD/dynamic resource support (pass nil to skip CRD nodes).
+// It combines DynamicResourceCache + ResourceDiscovery methods.
+type DynamicProvider interface {
+	List(gvr schema.GroupVersionResource, namespace string) ([]*unstructured.Unstructured, error)
+	// ListNamespaces unions a GVR across an explicit namespace set (or reads
+	// cluster-wide for an empty set / cluster-scoped resource). Topology uses
+	// this instead of List(gvr, "") so namespace-restricted users with several
+	// allowed namespaces still see CRD nodes from all of them.
+	ListNamespaces(gvr schema.GroupVersionResource, namespaces []string) ([]*unstructured.Unstructured, error)
+	Get(gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, error)
+	GetWatchedResources() []schema.GroupVersionResource
+	GetDiscoveryStatus() k8score.CRDDiscoveryStatus
+	GetGVR(kindOrName string) (schema.GroupVersionResource, bool)
+	GetGVRWithGroup(kindOrName, group string) (schema.GroupVersionResource, bool)
+	GetKindForGVR(gvr schema.GroupVersionResource) string
+	IsCRD(kind string) bool
+}

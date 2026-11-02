@@ -1,0 +1,74 @@
+# @maomada/kubeatlas-app
+
+Radar's web UI, shared by the OSS binary and Radar Hub.
+
+This package is source-only — it ships TypeScript + TSX files under `src/`. Consumers need a bundler that transpiles TSX (Vite, Next.js, esbuild, etc.).
+
+## Install
+
+```sh
+npm install @maomada/kubeatlas-app
+```
+
+Peer deps: `react >=19`, `react-dom >=19`, `react-router-dom >=7`, `@tanstack/react-query >=5`, `@maomada/k8s-ui >=1.17.1`, plus `clsx`, `tailwind-merge`, `lucide-react`, `@xyflow/react`, `elkjs`.
+
+## Use
+
+```tsx
+import { RadarApp, setApiBase, setAuthHeadersProvider } from '@maomada/kubeatlas-app';
+import '@maomada/kubeatlas-app/style.css';
+
+setAuthHeadersProvider(() => ({ Authorization: `Bearer ${myToken()}` }));
+
+export function ClusterPage({ clusterId }: { clusterId: string }) {
+  return (
+    <RadarApp
+      apiBase={`/c/${clusterId}/api`}
+      basename={`/c/${clusterId}`}
+      navSlots={{
+        embedded: true,
+      }}
+    />
+  );
+}
+```
+
+See `RadarAppProps` + `NavCustomization` in the type declarations for the full surface.
+
+## Embedding notes
+
+When `navSlots.embedded` is true, Radar sizes itself to the host container (`height: 100%`) instead of owning the browser viewport. Mount it inside a container with a definite height so the host chrome owns the page scrollbar.
+
+Embedded mode renders only the active view. Radar Hub owns the sidebar, top bar, cluster selector, and navigation. `onClusterLoadStateChange` supplies the loading status for Hub's top bar.
+
+The package can be newer than the Radar it talks to. Features that need a newer Radar show an inline "needs Radar vX or newer" note instead of an error. Radar decides this from the `features` block of `/api/capabilities`, or from the Radar's version when it predates a flag. Pass `radarVersion` so Radar can skip those calls before `/api/version-check` answers. Pass `onRequestRadarUpgrade` to run your own upgrade flow from the note's "Upgrade Radar" button. Without it, the note links to the upgrade instructions.
+
+## Tailwind
+
+Radar uses Tailwind v4 classes throughout. Your app's Tailwind config must scan Radar's source:
+
+```js
+// tailwind.config.js or equivalent
+content: [
+  './src/**/*.{ts,tsx}',
+  './node_modules/@maomada/kubeatlas-app/src/**/*.{ts,tsx}',
+  './node_modules/@maomada/k8s-ui/src/**/*.{ts,tsx}',
+],
+```
+
+## Runtime config
+
+Host apps can override Radar's runtime behavior without passing props:
+
+- `setApiBase(url)` — base URL for REST/SSE/WS requests. Default `/api`.
+- `setBasename(value)` — React Router basename. Default `''`.
+- `setAuthHeadersProvider(fn)` — returns headers (e.g. `Authorization`) to attach to every request.
+- `setCredentialsMode(mode)` — fetch credentials mode (`same-origin` | `include` | `omit`).
+
+Call these before mounting `<RadarApp>`.
+
+## Resource list responses
+
+New Radar instances advertise `features.resourceReadCoverage` and return `{items, coverage, kind, group}` for resource lists, with `columns`/`cells` when table mode is requested. `coverage` describes the scope the answer covers, what Radar read of it, and coded gaps; namespace sets are `{count, names?}`, listing every member or none, and a gap's set may instead be `{"extent": "all"}` or `{"extent": "unknown"}`. A failed read answers `{error, error_code, coverage?}`. Lists fail when there is no usable inventory: nothing readable, an oversized result, or a changed connection. Partial lists with loading gaps refetch with 5s, 10s, 20s, then 30s delays; complete coverage or a changed query resets the backoff.
+
+Hosts making their own requests can call `normalizeResourceList(body)` from this package. It reads the body by its shape, so it needs no capabilities: a bare array or a table envelope without `coverage` (an older instance) produces `coverage.status: 'unknown'`, which cannot establish absence. The adapter returns `{items, coverage, printerTable}`. `fetchResourceList(kind, options)` uses Radar's configured API base/authentication and applies a server list budget, which older instances ignore.

@@ -1,0 +1,8 @@
+releases:
+  - chart: ./kubeatlas/
+    name: radar
+    namespace: radar
+    values:
+      - ./kubeatlas/tests/ci/values.yaml
+    unitTests:
+      - ./tests/*_test.yaml

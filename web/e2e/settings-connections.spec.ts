@@ -1,0 +1,1837 @@
+import { expect, test, type Page } from '@playwright/test'
+import type { ConnectionResponse, IntegrationKind, IntegrationProfile, IntegrationProfiles } from '../src/components/settings/LocalConnectionSettings'
+
+const integrations = [
+  { kind: 'metrics', tab: '指标', field: '指标后端 URL', apply: '保存更改', reset: '使用自动发现', notice: /^保存后将为此集群切换到自动发现/ },
+  { kind: 'argocd', tab: 'Argo CD', field: 'Argo CD 服务器 URL', apply: '保存更改', reset: '使用自动发现', notice: /^保存后将为此集群切换到自动发现/ },
+  { kind: 'cost', tab: '成本', field: 'Kubecost Aggregator URL', apply: '保存更改', reset: '重置为自动', notice: /^保存后将把此集群的成本来源重置为“自动”/ },
+] as const
+
+for (const [width, height] of [[1280, 800], [1366, 768], [1440, 900], [1920, 1080]]) {
+  test(`Overview fits ${width}x${height} with one version and an update link in the header`, async ({ page }) => {
+    const state = await fixture(page)
+    state.failStatus()
+    await page.route('**/api/version-check', route => route.fulfill({ json: { currentVersion: 'v1.14.1-test', latestVersion: '1.14.2', updateAvailable: true, releaseUrl: 'https://github.com/maomada/KubeAtlas/releases/tag/v1.14.2' } }))
+    await page.setViewportSize({ width, height })
+    const dialog = await openSettings(page, 'Overview')
+    await expect(page.getByRole('button', { name: '配置文件', exact: true })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: 'Update available', exact: true })).toBeVisible()
+    await expect(dialog.getByText(/KubeAtlas v1\.14\.1-test/)).toHaveCount(1)
+    await expect(dialog.getByText(/KubeAtlas vv/)).toHaveCount(0)
+    await expect(dialog.getByText(/you're on/)).toHaveCount(0)
+    await dialog.evaluate(async el => { await Promise.all(el.getAnimations({ subtree: true }).filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {}))) })
+    const layout = await dialog.evaluate(el => {
+      const rect = el.getBoundingClientRect()
+      const content = el.querySelector<HTMLElement>('div.overflow-y-auto.p-4')!
+      return { width: rect.width, height: rect.height, top: rect.top, bottom: rect.bottom, overflow: content.scrollHeight - content.clientHeight }
+    })
+    expect(layout.width).toBe(1024)
+    expect(layout.height).toBe(Math.min(800, height - 64))
+    expect(layout.top).toBeGreaterThanOrEqual(32)
+    expect(layout.bottom).toBeLessThanOrEqual(height - 32)
+    expect(layout.overflow).toBeLessThanOrEqual(1)
+    const label = dialog.getByRole('tabpanel').getByText('AI 调查', { exact: true })
+    expect(await label.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true)
+  })
+}
+
+for (const mode of ['in-cluster', 'cloud']) {
+  test(`${mode} header preserves the deployment-specific update behavior`, async ({ page }) => {
+    await fixture(page)
+    await page.route('**/api/capabilities', async route => {
+      const capabilities = await (await route.fetch()).json()
+      await route.fulfill({ json: { ...capabilities, deployment: { ...capabilities.deployment, mode } } })
+    })
+    await page.route('**/api/version-check', route => route.fulfill({ json: { currentVersion: '1.14.1', latestVersion: '1.14.2', updateAvailable: true, releaseUrl: 'https://github.com/maomada/KubeAtlas/releases/tag/v1.14.2' } }))
+    const dialog = await openSettings(page, 'Overview')
+    if (mode === 'cloud') {
+      await expect(dialog.getByRole('link', { name: 'Update available', exact: true })).toHaveCount(0)
+      await expect(dialog.getByRole('button', { name: 'Update available', exact: true })).toHaveCount(0)
+    }
+    else await expect(dialog.getByRole('link', { name: 'Update available', exact: true })).toHaveAttribute('href', 'https://github.com/maomada/KubeAtlas/blob/main/docs/in-cluster.md')
+  })
+}
+
+for (const installMethod of ['homebrew', 'krew', 'direct', 'desktop']) {
+  test(`Settings shows the ${installMethod} update path without leaving the dialog`, async ({ page }) => {
+    await fixture(page)
+    const command = installMethod === 'direct' ? 'curl -fsSL https://raw.githubusercontent.com/maomada/KubeAtlas/main/install.sh | sh' : undefined
+    await page.route('**/api/version-check', route => route.fulfill({ json: {
+      currentVersion: '1.14.1', latestVersion: '1.14.2', updateAvailable: true, installMethod,
+      updateCommand: command,
+      releaseUrl: 'https://github.com/maomada/KubeAtlas/releases/tag/v1.14.2',
+    } }))
+    await page.addInitScript(() => localStorage.setItem('radar-update-dismissed', '1.14.2'))
+    const dialog = await openSettings(page, 'Metrics')
+    const trigger = dialog.getByRole('button', { name: 'Update available', exact: true })
+    await trigger.click()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'true')
+    if (installMethod === 'desktop') await expect(dialog.getByRole('button', { name: 'Update Now', exact: true })).toBeVisible()
+    else if (command) await expect(dialog.getByRole('button', { name: command, exact: true })).toBeVisible()
+    else await expect(dialog.getByRole('link', { name: 'Download from GitHub →', exact: true })).toHaveAttribute('href', 'https://github.com/maomada/KubeAtlas/releases/tag/v1.14.2')
+    await expect(dialog.getByText(/You're on/)).toHaveCount(0)
+    if (installMethod === 'direct') await expect(dialog.getByRole('link', { name: 'or download from GitHub' })).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+    await expect(trigger).toBeFocused()
+    await expect(dialog).toBeVisible()
+    await trigger.click()
+    await dialog.getByRole('tab', { name: '总览', exact: true }).click()
+    await expect(trigger).toHaveAttribute('aria-expanded', 'false')
+  })
+}
+
+function profile(kind: IntegrationKind): IntegrationProfile {
+  return {
+    target: { binding: 'development', context: 'development', source: '/test/kubeconfig', inFileName: 'development', fingerprint: 'target', clientGeneration: 1, operationGeneration: 1,
+      identity: { server: 'https://cluster.example', user: 'developer', trust: 'test', insecureTls: false } },
+    revision: '1', state: 'saved', mode: kind === 'cost' ? 'kubecost' : 'auto',
+    url: `https://${kind}.example`, headerKeys: kind === 'metrics' ? ['Authorization'] : [], envHeaderKeys: [], headersManaged: false,
+    secretSet: kind !== 'metrics', insecureTls: false, clusterId: '',
+  }
+}
+
+const discoverySettings = { mode: 'auto', url: '', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false, clusterId: '' }
+
+async function fixture(page: Page) {
+  const profiles: IntegrationProfiles = { metrics: profile('metrics'), argocd: profile('argocd'), cost: profile('cost') }
+  let file: Record<string, unknown> = {}
+  const writes: Record<string, unknown>[] = []
+  let waitForApply: Promise<void> | undefined
+  let releaseApply: (() => void) | undefined
+  let statusFailure = false
+  let preserveRevision = false
+  let failNextCopy = false
+  let applyError = ''
+  let catalogFailure = false
+  const connections: ConnectionResponse['connections'] = []
+  await page.route('**/api/capabilities', async route => {
+    const response = await route.fetch()
+    const capabilities = await response.json()
+    await route.fulfill({ json: { ...capabilities, configManagement: 'local', deployment: { ...capabilities.deployment, mode: 'local' } } })
+  })
+  await page.route('**/api/config', async route => {
+    if (route.request().method() === 'PUT') {
+      file = route.request().postDataJSON()
+      return route.fulfill({ json: file })
+    }
+    return route.fulfill({ json: { management: 'local', file, effective: file, isDesktop: false, integrationProfiles: profiles } })
+  })
+  await page.route('**/api/prometheus/status', route => route.fulfill({ json: { connected: !statusFailure, available: true, discovering: false, address: profiles.metrics.url, ...(statusFailure ? { error: 'Backend unavailable' } : {}) } }))
+  await page.route('**/api/integrations/argocd/status', route => route.fulfill({ json: { connected: true, configured: true, address: profiles.argocd.url } }))
+  await page.route('**/api/opencost/summary', route => route.fulfill({ json: { available: true, source: 'kubecost' } }))
+  await page.route('**/api/integrations/connections', async route => {
+    if (route.request().method() === 'GET' && catalogFailure)
+      return route.fulfill({ status: 503, json: { error: 'Catalog unavailable' } })
+    if (route.request().method() === 'PUT') {
+      const update = route.request().postDataJSON()
+      writes.push(update)
+      if (update.action === 'copy' && failNextCopy) {
+        failNextCopy = false
+        connections[0].revision = 'refreshed-source'
+        return route.fulfill({ status: 409, json: { error: 'Source settings changed' } })
+      }
+      await waitForApply
+      if (update.action === 'forget') {
+        for (let index = connections.length - 1; index >= 0; index--) {
+          const entry = connections[index]
+          if (entry.binding === update.binding && entry.integration === update.kind) connections.splice(index, 1)
+        }
+        return route.fulfill({ json: { profiles, connections, checked: false, connected: false } })
+      }
+      if (update.action === 'dismiss_previous_notice') {
+        for (const profile of Object.values(profiles)) if (profile.legacy) profile.legacy.noticeDismissed = true
+        return route.fulfill({ json: { profiles, connections, checked: false, connected: false } })
+      }
+      const current = profiles[update.kind as IntegrationKind]
+      if (update.action === 'adopt') {
+        Object.assign(current, current.legacy)
+        delete current.legacy
+      }
+      if (update.action === 'copy') {
+        const source = connections.find(connection => connection.binding === update.binding && connection.integration === update.kind)!
+        Object.assign(current, { url: source.url, headerKeys: [...source.headerKeys], envHeaderKeys: [...source.envHeaderKeys], secretSet: source.secretSet, insecureTls: source.insecureTls })
+      }
+      if (update.action === 'replace') Object.assign(current, { headerKeys: [], secretSet: false, insecureTls: false, clusterId: '' })
+      if (!preserveRevision) current.revision = String(Number(current.revision) + 1)
+      if (update.action === 'reconfirm') {
+        for (const kind of update.kinds as IntegrationKind[]) profiles[kind].state = 'saved'
+      }
+      if (update.url !== undefined) current.url = update.url
+      if (update.mode !== undefined) current.mode = update.mode
+      if (update.clusterId !== undefined) current.clusterId = update.clusterId
+      if (update.secret?.action === 'set') current.secretSet = true
+      if (update.secret?.action === 'clear') current.secretSet = false
+      if (update.headers) {
+        const keys = new Set(current.headerKeys)
+        for (const header of update.headers) {
+          if (header.action === 'set') keys.add(header.key)
+          if (header.action === 'clear') keys.delete(header.key)
+        }
+        current.headerKeys = [...keys]
+      }
+      current.state = 'saved'
+      // Production keeps an empty saved record, runs no connection check, and
+      // leaves the catalog entry in place.
+      if (update.action === 'auto') {
+        Object.assign(current, { state: 'saved', mode: update.mode || 'auto', url: '', headerKeys: [], envHeaderKeys: [], headersManaged: false, secretSet: false, insecureTls: false, clusterId: '' })
+        for (const entry of connections) {
+          if (entry.binding === current.target.binding && entry.integration === update.kind)
+            Object.assign(entry, { url: '', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false })
+        }
+        return route.fulfill({ json: { profiles, connections, checked: false, connected: false } })
+      }
+    }
+    return route.fulfill({ json: { profiles, connections, checked: true, connected: !applyError, ...(route.request().method() === 'PUT' && applyError ? { error: applyError } : {}) } })
+  })
+  return {
+    profiles, writes, connections, file: () => file,
+    delayApply() { waitForApply = new Promise<void>(resolve => { releaseApply = resolve }) },
+    releaseApply() { releaseApply?.(); waitForApply = undefined },
+    failStatus() { statusFailure = true },
+    recoverStatus() { statusFailure = false },
+    preserveRevision() { preserveRevision = true },
+    failNextCopy() { failNextCopy = true },
+    failCatalog() { catalogFailure = true },
+    recoverCatalog() { catalogFailure = false },
+    failConnectionCheck() { applyError = 'Saved, but the metrics backend could not be reached. Check its URL, authentication, network access and TLS configuration.' },
+  }
+}
+
+for (const integration of integrations) {
+  test(`${integration.tab}: previous settings are discoverable, editable drafts until Save`, async ({ page }, testInfo) => {
+    const state = await fixture(page)
+    const current = state.profiles[integration.kind]
+    Object.assign(current, discoverySettings, { state: 'auto', mode: 'auto', legacy: {
+      url: 'https://previous.example', headerKeys: integration.kind === 'metrics' ? ['Authorization'] : [],
+      envHeaderKeys: [], secretSet: integration.kind !== 'metrics', insecureTls: integration.kind === 'argocd',
+      clusterId: integration.kind === 'cost' ? 'development-cost' : '', mode: integration.kind === 'cost' ? 'kubecost' : 'connection', revision: 'previous-revision', omitted: [], noticeDismissed: false,
+    } })
+    const dialog = await openSettings(page, 'Overview')
+    const notice = dialog.getByRole('region', { name: '之前的集成设置', exact: true })
+    await expect(notice).toBeVisible()
+    await expect(notice.getByRole('button')).toHaveCount(2)
+    if (integration.kind === 'metrics') await page.screenshot({ path: testInfo.outputPath('previous-settings-overview.png') })
+    await notice.getByRole('button', { name: `查看 ${integration.tab}`, exact: true }).click()
+    await expect(dialog.getByRole('tab', { name: integration.tab, exact: true })).toHaveAttribute('aria-selected', 'true')
+    const usePrevious = async () => {
+      await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+      await dialog.getByRole('option', { name: /之前的全局设置/ }).click()
+    }
+    await usePrevious()
+    const field = dialog.getByRole('textbox', { name: integration.field, exact: true })
+    await expect(field).toHaveValue('https://previous.example')
+    await expect(dialog.getByText(/已从.*之前的全局设置.*复制/)).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeEnabled()
+    expect(state.writes).toHaveLength(0)
+    if (integration.kind === 'metrics') {
+      await expect(dialog.getByLabel('Authorization的值', { exact: true })).toBeVisible()
+      await page.screenshot({ path: testInfo.outputPath('previous-settings-draft.png') })
+    }
+    await dialog.getByRole('button', { name: '放弃', exact: true }).click()
+    await expect(field).toHaveValue('')
+    expect(state.writes).toHaveLength(0)
+    await usePrevious()
+    await field.fill('https://previous.example/edited')
+    await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    expect(state.writes[0]).toMatchObject({ action: 'adopt', kind: integration.kind, url: 'https://previous.example/edited', legacyRevision: 'previous-revision' })
+    await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+    await dialog.getByRole('tab', { name: '总览', exact: true }).click()
+    await expect(notice).toHaveCount(0)
+  })
+
+  test(`${integration.tab}: silencing the previous-settings notice keeps them available to copy`, async ({ page }) => {
+    const state = await fixture(page)
+    Object.assign(state.profiles[integration.kind], discoverySettings, { state: 'auto', mode: 'auto', legacy: {
+      url: 'https://previous.example', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false,
+      clusterId: '', mode: 'auto', revision: 'previous-revision', omitted: [], noticeDismissed: false,
+    } })
+    const dialog = await openSettings(page, 'Overview')
+    await dialog.getByRole('button', { name: '不再显示', exact: true }).click()
+    await expect(dialog.getByRole('region', { name: '之前的集成设置', exact: true })).toHaveCount(0)
+    expect(state.writes).toHaveLength(1)
+    expect(state.writes[0]).toEqual({ action: 'dismiss_previous_notice' })
+    expect(state.profiles[integration.kind].url).toBe('')
+    await dialog.getByRole('tab', { name: integration.tab, exact: true }).click()
+    await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+    await expect(dialog.getByRole('option', { name: /之前的全局设置/ })).toBeEnabled()
+  })
+
+  test(`${integration.tab}: clearing a copied credentialed URL is guarded before confirmation`, async ({ page }) => {
+    const state = await fixture(page)
+    Object.assign(state.profiles[integration.kind], { headerKeys: [], secretSet: false })
+    state.connections.push({ url: 'https://source.example', headerKeys: integration.kind === 'metrics' ? ['Authorization'] : [], envHeaderKeys: [], secretSet: integration.kind !== 'metrics', insecureTls: false,
+      binding: 'source', integration: integration.kind, context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: '1' })
+    const dialog = await openSettings(page, integration.tab)
+    await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+    await dialog.getByRole('option', { name: /staging/ }).click()
+    await dialog.getByRole('textbox', { name: integration.field, exact: true }).fill('')
+    await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+    await expect(dialog.getByRole('alert')).toContainText(
+      `请移除或替换已保存的凭据，或选择“${integration.reset}”以清除此连接。`,
+    )
+    await expect(page.getByRole('heading', { name: '替换已保存的连接？', exact: true })).toHaveCount(0)
+    expect(state.writes).toHaveLength(0)
+  })
+
+  test(`${integration.tab}: catalog recovery preserves the copied draft`, async ({ page }) => {
+    const state = await fixture(page)
+    state.connections.push({ url: 'https://source.example', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false,
+      binding: 'source', integration: integration.kind, context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: '1' })
+    const dialog = await openSettings(page, integration.tab)
+    await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+    state.failCatalog()
+    await dialog.getByRole('option', { name: /staging/ }).click()
+    const field = dialog.getByRole('textbox', { name: integration.field, exact: true })
+    await field.fill('https://source.example/draft')
+    await expect(dialog.getByText('无法加载其他集群。', { exact: false })).toBeVisible()
+    await expect(dialog.getByRole('button', { name: '放弃草稿并重新加载', exact: true })).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeEnabled()
+    state.recoverCatalog()
+    await dialog.getByRole('button', { name: '重试', exact: true }).click()
+    await expect(dialog.getByText('无法加载其他集群。', { exact: false })).toHaveCount(0)
+    await expect(field).toHaveValue('https://source.example/draft')
+    await expect(dialog.getByText(/已从 staging 复制/)).toBeVisible()
+    expect(state.writes).toHaveLength(0)
+  })
+
+  test(`${integration.tab}: clearing a credentialed URL offers discovery, which saves without a second confirmation`, async ({ page }) => {
+    const state = await fixture(page)
+    await openSettings(page, integration.tab)
+    await page.getByRole('textbox', { name: integration.field, exact: true }).fill('')
+    await page.getByRole('button', { name: '保存更改', exact: true }).click()
+    await expect(page.getByRole('alert')).toHaveText(`请移除或替换已保存的凭据，或选择“${integration.reset}”以清除此连接。`)
+    expect(state.writes).toHaveLength(0)
+    await page.getByRole('button', { name: integration.reset, exact: true }).click()
+    await expect(page.getByRole('alert')).toHaveCount(0)
+    await page.getByRole('button', { name: '保存更改', exact: true }).click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    expect(state.writes[0]).toMatchObject({ action: 'auto', confirmRemoval: true })
+    await expect(page.getByRole('heading', { name: '替换已保存的连接？', exact: true })).toHaveCount(0)
+  })
+
+  test(`${integration.tab}: editing a staged discovery draft does not reuse removed credentials`, async ({ page }) => {
+    const state = await fixture(page)
+    await openSettings(page, integration.tab)
+    await page.getByRole('button', { name: integration.reset, exact: true }).click()
+    await page.getByRole('tab', { name: '总览', exact: true }).click()
+    await page.getByRole('tab', { name: integration.tab, exact: true }).click()
+    if (integration.kind === 'cost') await chooseCostSource(page, 'Kubecost')
+    await page.getByRole('textbox', { name: integration.field, exact: true }).fill('https://replacement.example')
+    await page.getByRole('button', { name: '保存更改', exact: true }).click()
+    const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '替换已保存的连接？', exact: true }) })
+    await confirmation.getByRole('button', { name: '替换连接', exact: true }).click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    expect(state.writes[0]).toMatchObject({ action: 'replace', confirmRemoval: true, url: 'https://replacement.example' })
+    if (integration.kind === 'metrics') expect(state.writes[0].headers).toEqual([])
+    else expect(state.writes[0].secret).toEqual({ action: 'keep' })
+  })
+
+  for (const stateName of ['auto', 'saved'] as const) {
+    test(`${integration.tab}: disables discovery for ${stateName} automatic settings`, async ({ page }) => {
+      const state = await fixture(page)
+      Object.assign(state.profiles[integration.kind], {
+        state: stateName, mode: 'auto', url: '', secretSet: false, headerKeys: [], clusterId: ''
+      })
+      await openSettings(page, integration.tab)
+      await expect(page.getByRole('button', { name: integration.reset, exact: true })).toBeDisabled()
+      expect(state.writes).toHaveLength(0)
+    })
+  }
+
+  test(`${integration.tab}: saving keeps the sidebar and form anchored`, async ({ page }) => {
+    const state = await fixture(page)
+    await page.setViewportSize({ width: 1920, height: 1080 })
+    await openSettings(page, integration.tab)
+    const nav = page.getByRole('tab', { name: '指标', exact: true })
+    const field = page.getByRole('textbox', { name: integration.field, exact: true })
+    await field.fill(`https://${integration.kind}.example/new`)
+    await page.getByRole('button', { name: '保存更改', exact: true }).scrollIntoViewIfNeeded()
+    await page.getByRole('dialog').evaluate(async el => {
+      await Promise.all(el.getAnimations({ subtree: true }).filter(animation => animation.effect?.getTiming().iterations !== Infinity).map(animation => animation.finished.catch(() => {})))
+    })
+    const navBefore = await nav.boundingBox()
+    // Ignore native click-to-focus scrolling; measure movement within the content.
+    const fieldLayout = () => field.evaluate(el => {
+      const { x, y, width, height } = el.getBoundingClientRect()
+      let scroller = el.parentElement
+      while (scroller && getComputedStyle(scroller).overflowY !== 'auto') scroller = scroller.parentElement
+      return { x, y: y + (scroller?.scrollTop ?? 0), width, height }
+    })
+    const fieldBefore = await fieldLayout()
+    state.delayApply()
+    await page.getByRole('button', { name: '保存更改', exact: true }).click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    expect(await nav.boundingBox()).toEqual(navBefore)
+    expect(await fieldLayout()).toEqual(fieldBefore)
+    state.releaseApply()
+    await expect(page.getByText('已保存 · 已连接', { exact: true })).toBeVisible()
+    expect(await nav.boundingBox()).toEqual(navBefore)
+    expect(await fieldLayout()).toEqual(fieldBefore)
+    const save = await page.getByRole('button', { name: '保存更改', exact: true }).boundingBox()
+    const feedback = await page.getByText('已保存 · 已连接', { exact: true }).boundingBox()
+    expect(feedback!.x).toBeGreaterThan(save!.x + save!.width)
+    expect(Math.abs(feedback!.y + feedback!.height / 2 - save!.y - save!.height / 2)).toBeLessThan(2)
+  })
+
+  test(`${integration.tab}: hides copy when no other cluster has this integration`, async ({ page }) => {
+    const state = await fixture(page)
+    const otherKind = integration.kind === 'metrics' ? 'cost' : 'metrics'
+    state.connections.push({ url: 'https://other.example', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false,
+      binding: 'other', integration: otherKind, context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: '1' })
+    await openSettings(page, integration.tab)
+    await expect(page.getByRole('button', { name: '复制设置自…', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+  })
+
+  test(`${integration.tab}: copy stages an editable draft and saves an independent source snapshot`, async ({ page }) => {
+    const state = await fixture(page)
+    state.profiles[integration.kind].secretSet = true
+    if (integration.kind === 'cost') state.profiles.cost.clusterId = 'destination-cluster'
+    state.connections.push({
+      url: 'https://source.example', headerKeys: ['Authorization', 'X-Scope-OrgID'], envHeaderKeys: [], secretSet: true, insecureTls: false,
+      binding: 'source-binding', integration: integration.kind, context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: 'source-snapshot'
+    })
+    await openSettings(page, integration.tab)
+    const field = page.getByRole('textbox', { name: integration.field, exact: true })
+    const fieldNode = await field.elementHandle()
+    await page.getByRole('button', { name: '复制设置自…', exact: true }).click()
+    await expect(field).toBeVisible()
+    expect(await fieldNode!.evaluate(el => el.isConnected)).toBe(true)
+    await page.getByRole('option', { name: /staging https:\/\/source.example/ }).click()
+    await expect(field).toHaveValue('https://source.example')
+    await expect(page.getByText(/已从 staging 复制 · 未保存/)).toBeVisible()
+    await expect(page.getByRole('listbox')).toHaveCount(0)
+    expect(state.writes).toHaveLength(0)
+    await field.fill('https://source.example/destination')
+    if (integration.kind === 'cost') {
+      await expect(page.getByRole('textbox', { name: 'Kubecost 集群 ID' })).toHaveValue('destination-cluster')
+    }
+    await page.getByRole('button', { name: '保存更改', exact: true }).click()
+    expect(state.writes).toHaveLength(0)
+    await page.getByRole('button', { name: '替换连接', exact: true }).click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    expect(state.writes[0]).toMatchObject({ action: 'copy', binding: 'source-binding', sourceRevision: 'source-snapshot', revision: '1', confirmRemoval: true })
+    expect(state.writes[0].url).toBe('https://source.example/destination')
+    if (integration.kind === 'metrics') expect(state.writes[0].headers).toEqual([])
+    else expect(state.writes[0].secret).toEqual({ action: 'keep' })
+    if (integration.kind === 'cost') expect(state.writes[0].clusterId).toBe('destination-cluster')
+    await expect(page.getByRole('textbox', { name: integration.field, exact: true })).toBeVisible()
+  })
+}
+
+test('connection warning sits directly below Save, not below a blank feedback row', async ({ page }) => {
+  const state = await fixture(page)
+  state.failConnectionCheck()
+  await page.setViewportSize({ width: 1440, height: 1080 })
+  await openSettings(page, 'Metrics')
+  await page.getByRole('textbox', { name: '指标后端 URL' }).fill('https://metrics.example/unreachable')
+  const save = page.getByRole('button', { name: '保存更改', exact: true })
+  await save.click()
+  const warning = page.getByRole('status').filter({ hasText: 'Saved, but the metrics backend could not be reached.' })
+  await expect(warning).toBeVisible()
+  const textTop = await warning.evaluate(el => {
+    const range = document.createRange()
+    range.selectNodeContents(el)
+    return range.getBoundingClientRect().top
+  })
+  const button = await save.boundingBox()
+  expect(textTop - button!.y - button!.height).toBeGreaterThanOrEqual(0)
+  expect(textTop - button!.y - button!.height).toBeLessThanOrEqual(12)
+})
+
+for (const integration of integrations) {
+  test(`${integration.tab}: copied draft is discarded without saving and picker keeps form visible`, async ({ page }) => {
+    const state = await fixture(page)
+    state.connections.push({ url: 'https://other.example', headerKeys: ['X-Scope-OrgID'], envHeaderKeys: [], secretSet: true, insecureTls: true,
+      binding: 'other', integration: integration.kind, context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: '1' })
+    const dialog = await openSettings(page, integration.tab)
+    const field = dialog.getByRole('textbox', { name: integration.field, exact: true })
+    const copy = dialog.getByRole('button', { name: '复制设置自…', exact: true })
+    const discovery = dialog.getByRole('button', { name: integration.reset, exact: true })
+    const fieldBox = (await field.boundingBox())!
+    const copyBox = (await copy.boundingBox())!
+    const discoveryBox = (await discovery.boundingBox())!
+    expect(copyBox.y).toBeGreaterThanOrEqual(fieldBox.y + fieldBox.height)
+    expect(Math.abs(copyBox.y - discoveryBox.y)).toBeLessThan(3)
+    expect(copyBox.width).toBeLessThan(240)
+    await expect(copy).toHaveCSS('border-top-width', '0px')
+    await expect(copy).toHaveCSS('background-color', 'rgba(0, 0, 0, 0)')
+    await copy.click()
+    await expect(field).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(copy).toBeFocused()
+    await expect(dialog).toBeVisible()
+    await copy.click()
+    await dialog.getByRole('combobox', { name: '搜索集群或 URL' }).fill('other.example')
+    await dialog.getByRole('option', { name: /staging/ }).click()
+    await expect(field).toHaveValue('https://other.example')
+    await expect(field).toBeFocused()
+    await expect(copy).toHaveText('复制设置自…')
+    await expect(copy).toBeEnabled()
+    await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeEnabled()
+    if (integration.kind === 'metrics') {
+      await expect(dialog.getByRole('textbox', { name: 'X-Scope-OrgID的值', exact: true })).toHaveValue('')
+      await expect(dialog.getByRole('textbox', { name: 'Authorization的值', exact: true })).toHaveCount(0)
+      await dialog.getByRole('textbox', { name: 'X-Scope-OrgID的值', exact: true }).fill('edited-copy')
+    }
+    await dialog.getByRole('button', { name: '放弃', exact: true }).click()
+    await expect(field).toHaveValue(`https://${integration.kind}.example`)
+    await expect(dialog.getByText(/已从 .* 复制/)).toHaveCount(0)
+    await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+    if (integration.kind === 'metrics') {
+      await expect(dialog.getByRole('textbox', { name: 'Authorization的值', exact: true })).toHaveValue('')
+      await expect(dialog.getByRole('textbox', { name: 'X-Scope-OrgID的值', exact: true })).toHaveCount(0)
+    }
+    expect(state.writes).toHaveLength(0)
+  })
+}
+
+test('copy picker distinguishes duplicate context names and supports empty search', async ({ page }) => {
+  const state = await fixture(page)
+  for (const source of ['one', 'two']) state.connections.push({ url: `https://${source}.example`, headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false,
+    binding: source, integration: 'metrics', context: 'staging', source: `/test/${source}`, inFileName: 'staging', availability: 'available', revision: '1' })
+  const dialog = await openSettings(page, 'Metrics')
+  await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+  const search = dialog.getByRole('combobox', { name: '搜索集群或 URL' })
+  await search.fill('no such cluster')
+  await expect(dialog.getByText('No matches.', { exact: true }).last()).toBeVisible()
+  await search.fill('/test/two')
+  await expect(dialog.getByRole('option')).toHaveCount(1)
+  await search.press('Enter')
+  await expect(dialog.getByRole('textbox', { name: '指标后端 URL', exact: true })).toHaveValue('https://two.example')
+  expect(state.writes).toHaveLength(0)
+})
+
+test('copy into an unconfigured cluster saves edited headers without an intermediate write', async ({ page }) => {
+  const state = await fixture(page)
+  Object.assign(state.profiles.metrics, { url: '', headerKeys: [], state: 'auto' })
+  state.connections.push({ url: 'https://source.example', headerKeys: ['Authorization', 'X-Scope-OrgID'], envHeaderKeys: [], secretSet: false, insecureTls: false,
+    binding: 'source', integration: 'metrics', context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: 'source-revision' })
+  const dialog = await openSettings(page, 'Metrics')
+  await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+  // Focus has to reach the copied form before the next frame; a later move can
+  // take a keystroke meant for another field.
+  const focusedBeforeFrame = await dialog.getByRole('option', { name: /staging/ }).evaluate(async option => {
+    (option as HTMLElement).click()
+    await Promise.resolve()
+    return (document.activeElement as HTMLElement | null)?.labels?.[0]?.textContent
+  })
+  expect(focusedBeforeFrame).toBe('指标后端 URL')
+  await dialog.getByRole('textbox', { name: 'X-Scope-OrgID的值', exact: true }).fill('new-tenant')
+  await dialog.getByRole('textbox', { name: '指标后端 URL', exact: true }).fill('https://source.example/query')
+  expect(state.writes).toHaveLength(0)
+  await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0]).toMatchObject({ action: 'copy', url: 'https://source.example/query', sourceRevision: 'source-revision', headers: [{ key: 'Authorization', action: 'keep' }, { key: 'X-Scope-OrgID', action: 'set', value: 'new-tenant' }] })
+  await expect(dialog.getByText(/已从 .* 复制/)).toHaveCount(0)
+  await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+})
+
+test('new header names stay editable and duplicates fail before sending', async ({ page }) => {
+  const state = await fixture(page)
+  const dialog = await openSettings(page, 'Metrics')
+  await dialog.getByRole('button', { name: '添加请求头', exact: true }).click()
+  const name = dialog.getByRole('textbox', { name: '第 2 个请求头名称', exact: true })
+  await name.fill('authorization')
+  await expect(name).toBeEnabled()
+  await dialog.getByRole('textbox', { name: 'authorization的值', exact: true }).fill('replacement')
+  await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Header names must be unique')
+  expect(state.writes).toHaveLength(0)
+  await name.fill('X-Tenant')
+  await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0].headers).toEqual([{ key: 'Authorization', action: 'keep' }, { key: 'X-Tenant', action: 'set', value: 'replacement' }])
+})
+
+test('blank new header rows do not block a URL-only save or clear saved headers', async ({ page }) => {
+  const state = await fixture(page)
+  const dialog = await openSettings(page, 'Metrics')
+  await dialog.getByRole('button', { name: '添加请求头', exact: true }).click()
+  await dialog.getByRole('textbox', { name: '指标后端 URL', exact: true }).fill('https://metrics.example/query')
+  await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0].headers).toEqual([{ key: 'Authorization', action: 'keep' }])
+})
+
+test('a named new header needs a value before saving', async ({ page }) => {
+  const state = await fixture(page)
+  const dialog = await openSettings(page, 'Metrics')
+  await dialog.getByRole('button', { name: '添加请求头', exact: true }).click()
+  await dialog.getByRole('textbox', { name: '第 2 个请求头名称', exact: true }).fill('X-Tenant')
+  await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(dialog.getByRole('alert')).toContainText('Enter a value for X-Tenant.')
+  expect(state.writes).toHaveLength(0)
+})
+
+test('Cost explains query failures beside the connection status', async ({ page }) => {
+  await fixture(page)
+  await page.route('**/api/opencost/summary', route => route.fulfill({ json: { available: false, source: 'kubecost', reason: 'query_error' } }))
+  const dialog = await openSettings(page, 'Cost')
+  await expect(dialog.getByText('使用此集群指标连接中的 OpenCost 指标，或连接 Kubecost Aggregator。', { exact: true })).toBeVisible()
+  await dialog.getByRole('tab', { name: '我的权限', exact: true }).click()
+  await expect(dialog.getByText('查看当前身份在此集群中可以执行的操作，包括绑定的角色及汇总后的有效权限。', { exact: true })).toBeVisible()
+  await dialog.getByRole('tab', { name: '成本', exact: true }).click()
+  await expect(dialog.getByRole('group', { name: '当前连接', exact: true })).toContainText('The selected cost source could not provide data.')
+})
+
+for (const integration of integrations) {
+  test(`${integration.tab}: keyboard focus returns to settings after a plain save`, async ({ page }) => {
+    const state = await fixture(page)
+    state.delayApply()
+    const dialog = await openSettings(page, integration.tab)
+    await dialog.getByRole('textbox', { name: integration.field, exact: true }).fill(`https://${integration.kind}.example/query`)
+    const save = dialog.getByRole('button', { name: '保存更改', exact: true })
+    await save.focus()
+    await page.keyboard.press('Enter')
+    await expect.poll(() => state.writes.length).toBe(1)
+    state.releaseApply()
+    await expect(save).toBeDisabled()
+    await expect.poll(() => dialog.evaluate(el => el.contains(document.activeElement))).toBe(true)
+  })
+}
+
+test('auto-discovery replaces a copied draft and Discard restores the saved connection', async ({ page }) => {
+  const state = await fixture(page)
+  state.connections.push({ url: 'https://source.example', headerKeys: ['X-Scope-OrgID'], envHeaderKeys: [], secretSet: false, insecureTls: false,
+    binding: 'source', integration: 'metrics', context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: '1' })
+  const dialog = await openSettings(page, 'Metrics')
+  await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+  await dialog.getByRole('option', { name: /staging/ }).click()
+  await dialog.getByRole('button', { name: '使用自动发现', exact: true }).click()
+  await expect(dialog.getByText(/已从 .* 复制/)).toHaveCount(0)
+  await expect(dialog.getByRole('textbox', { name: '指标后端 URL', exact: true })).toHaveValue('')
+  await expect(dialog.getByRole('textbox', { name: 'X-Scope-OrgID的值', exact: true })).toHaveCount(0)
+  await dialog.getByRole('button', { name: '放弃', exact: true }).click()
+  await expect(dialog.getByRole('textbox', { name: '指标后端 URL', exact: true })).toHaveValue('https://metrics.example')
+  expect(state.writes).toHaveLength(0)
+})
+
+for (const integration of integrations) {
+  test(`${integration.tab}: copy replaces edited drafts and allows choosing another source`, async ({ page }) => {
+    const state = await fixture(page)
+    for (const context of ['staging', 'testing']) state.connections.push({
+      url: `https://${context}.example`,
+      headerKeys: integration.kind === 'metrics' ? ['Authorization'] : [], envHeaderKeys: [], secretSet: integration.kind !== 'metrics', insecureTls: false,
+      binding: context, integration: integration.kind, context, source: `/test/${context}`, inFileName: context, availability: 'available', revision: '1',
+    })
+    const dialog = await openSettings(page, integration.tab)
+    const field = dialog.getByRole('textbox', { name: integration.field, exact: true })
+    const credential = dialog.getByRole('textbox', { name: integration.kind === 'metrics' ? 'Authorization的值' : integration.kind === 'argocd' ? 'API 令牌' : 'API 密钥', exact: true })
+    const copy = dialog.getByRole('button', { name: '复制设置自…', exact: true })
+    for (const context of ['staging', 'testing']) {
+      await field.fill('https://unsaved.example')
+      await credential.fill('unsaved-secret')
+      await copy.click()
+      await dialog.getByRole('option', { name: new RegExp(context) }).click()
+      await expect(field).toHaveValue(`https://${context}.example`)
+      await expect(credential).toHaveValue('')
+      await expect(copy).toBeEnabled()
+      await expect(dialog.getByText(`已从 ${context} 复制`, { exact: false })).toBeVisible()
+      expect(state.writes).toHaveLength(0)
+    }
+    await dialog.getByRole('button', { name: '放弃', exact: true }).click()
+    await expect(field).toHaveValue(`https://${integration.kind}.example`)
+    await expect(credential).toHaveValue('')
+    expect(state.writes).toHaveLength(0)
+  })
+}
+
+test('copy after a target change warns before replacement and reload clears stale selection', async ({ page }) => {
+  const state = await fixture(page)
+  state.profiles.metrics.state = 'target_changed'
+  state.profiles.metrics.secretSet = true
+  state.profiles.metrics.error = 'Cluster connection changed'
+  state.connections.push({
+    url: 'https://source.example', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false,
+    binding: 'source', integration: 'metrics', context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: 'old-source'
+  })
+  state.failNextCopy()
+  await openSettings(page, 'Metrics')
+  await page.getByRole('button', { name: '复制设置自…', exact: true }).click()
+  await page.getByRole('option', { name: /staging https:\/\/source.example/ }).click()
+  await expect(page.getByRole('textbox', { name: '指标后端 URL' })).toHaveValue('https://source.example')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await page.getByRole('button', { name: '替换连接', exact: true }).click()
+  await expect(page.getByText(/Source settings changed/)).toBeVisible()
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('button', { name: '放弃草稿并重新加载', exact: true }).click()
+  await page.getByRole('button', { name: '复制设置自…', exact: true }).click()
+  await expect(page.getByText(/已从 staging 复制/)).toHaveCount(0)
+  await page.getByRole('option', { name: /staging https:\/\/source.example/ }).click()
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await page.getByRole('button', { name: '替换连接', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(2)
+  expect(state.writes[1].sourceRevision).toBe('refreshed-source')
+  expect(state.writes[1].confirmRemoval).toBe(true)
+})
+
+async function chooseCostSource(page: Page, label: '自动' | 'OpenCost 指标' | 'Kubecost') {
+  await page.getByRole('button', { name: /^成本来源:/ }).click()
+  await page.getByRole('option', { name: new RegExp(`^${label}`) }).click()
+}
+
+async function openSettings(page: Page, tab: string) {
+  await page.goto('/')
+  await expect.poll(() => page.evaluate(() => document.documentElement.lang)).toBe('zh-CN')
+  await expect(page.getByRole('button', { name: '设置', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '设置', exact: true }).click()
+  const tabLabels: Record<string, string> = {
+    Overview: '总览',
+    Connection: '连接',
+    Metrics: '指标',
+    Cost: '成本',
+    Privacy: '隐私',
+    Advanced: '高级',
+    'AI investigations': 'AI调查',
+  }
+  await page.getByRole('tab', { name: tabLabels[tab] ?? tab, exact: true }).click()
+  return page.getByRole('dialog', { name: '设置', exact: true })
+}
+
+test('MCP mode uses the running read-only endpoint when saved defaults differ', async ({ page }) => {
+  const state = await fixture(page)
+  await page.route('**/api/capabilities', async route => {
+    const capabilities = await (await route.fetch()).json()
+    await route.fulfill({ json: { ...capabilities, mcpEnabled: true, mcpReadOnly: true, configManagement: 'local' } })
+  })
+  const dialog = await openSettings(page, 'Advanced')
+  await expect(dialog.getByRole('switch', { name: '只读 MCP', exact: true })).not.toBeChecked()
+  await expect(dialog.locator('code').filter({ hasText: '/mcp-readonly' })).toBeVisible()
+  await dialog.getByRole('switch', { name: '只读 MCP', exact: true }).click()
+  await dialog.getByRole('button', { name: '保存启动设置', exact: true }).click()
+  await expect.poll(() => state.file().mcpReadOnly).toBe(true)
+  await dialog.getByRole('switch', { name: 'MCP 服务', exact: true }).click()
+  await dialog.getByRole('button', { name: '保存启动设置', exact: true }).click()
+  await expect.poll(() => state.file().mcp).toBe(false)
+  expect(state.file().mcpReadOnly).toBe(false)
+})
+
+test('MCP mode does not offer an endpoint before a disabled server restarts', async ({ page }) => {
+  await fixture(page)
+  await page.route('**/api/capabilities', async route => {
+    const capabilities = await (await route.fetch()).json()
+    await route.fulfill({ json: { ...capabilities, mcpEnabled: false, mcpReadOnly: false, configManagement: 'local' } })
+  })
+  const dialog = await openSettings(page, 'Advanced')
+  await expect(dialog.getByRole('switch', { name: 'MCP 服务', exact: true })).toBeChecked()
+  await expect(dialog.getByText('运行中的 MCP 端点', { exact: true })).toHaveCount(0)
+})
+
+test('headers edit directly, preserve untouched values, and support undo and discard', async ({ page }) => {
+  const state = await fixture(page)
+  state.profiles.metrics.headerKeys = ['Authorization', 'X-Scope-OrgID']
+  await openSettings(page, 'Metrics')
+  const secret = page.getByRole('textbox', { name: 'Authorization的值', exact: true })
+  const save = page.getByRole('button', { name: '保存更改', exact: true })
+  await expect(secret).toHaveAttribute('placeholder', '已保存的值')
+  await expect(save).toBeDisabled()
+  await secret.fill('replacement')
+  await expect(save).toBeEnabled()
+  await secret.fill('')
+  await expect(save).toBeDisabled()
+  await page.getByRole('button', { name: '移除 Authorization', exact: true }).click()
+  await expect(secret).toHaveAttribute('placeholder', '将被移除')
+  await page.getByRole('button', { name: '撤销移除 Authorization', exact: true }).click()
+  await expect(save).toBeDisabled()
+  await secret.fill('discard-this')
+  await page.getByRole('button', { name: '放弃', exact: true }).click()
+  await expect(secret).toHaveValue('')
+  await expect(save).toBeDisabled()
+  await secret.fill('replacement')
+  await save.click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0].headers).toEqual([{ key: 'Authorization', action: 'set', value: 'replacement' }, { key: 'X-Scope-OrgID', action: 'keep' }])
+  await expect(secret).toHaveValue('')
+  await expect(save).toBeDisabled()
+})
+
+test('old context cleanup lives in Connection and clearly scopes credential removal', async ({ page }) => {
+  const state = await fixture(page)
+  state.connections.push({ url: 'https://old.example', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false,
+    binding: 'old', integration: 'metrics', context: 'old-cluster', source: '/test/old', inFileName: 'old-cluster', availability: 'removed', revision: 'old-revision' })
+  await openSettings(page, 'Metrics')
+  await page.getByRole('tab', { name: '连接', exact: true }).click()
+  await expect(page.getByRole('heading', { name: '各集群的集成设置', exact: true })).toBeVisible()
+  await expect(page.getByText('不在 kubeconfig 中', { exact: true })).toBeVisible()
+  const remove = page.getByRole('button', { name: '移除 old-cluster 的已保存 指标 设置', exact: true })
+  await remove.click()
+  await expect(page.getByText('移除 old-cluster 的已保存 指标 设置和凭据？', { exact: false })).toBeVisible()
+  await expect(page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '移除已保存的设置？' }) })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(remove).toBeFocused()
+  await remove.click()
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(remove).toBeFocused()
+  await expect(page.getByRole('dialog', { name: '设置', exact: true })).toBeVisible()
+  expect(state.writes).toHaveLength(0)
+})
+
+test('Connection groups stale integrations by context and removes only the confirmed entry without losing drafts', async ({ page }) => {
+  const state = await fixture(page)
+  state.connections.push(...(['metrics', 'argocd', 'cost'] as const).map(integration => ({ ...discoverySettings, binding: 'old', integration, context: 'old-cluster', source: '/test/old', inFileName: 'old-cluster', availability: 'removed' as const, revision: `old-${integration}` })))
+  await openSettings(page, 'Metrics')
+  await page.getByRole('textbox', { name: '指标后端 URL' }).fill('https://metrics.example/draft')
+  await page.getByRole('tab', { name: '连接', exact: true }).click()
+  await expect(page.getByText('old-cluster', { exact: true })).toHaveCount(1)
+  await page.getByRole('button', { name: '移除 old-cluster 的已保存 成本 设置', exact: true }).click()
+  await page.getByRole('button', { name: '移除设置', exact: true }).click()
+  await expect(page.getByText('已移除 old-cluster 的已保存 成本 设置。', { exact: true })).toBeVisible()
+  expect(state.writes).toEqual([{ action: 'forget', kind: 'cost', binding: 'old', sourceRevision: 'old-cost', confirmRemoval: true }])
+  await expect(page.getByRole('button', { name: '移除 old-cluster 的已保存 成本 设置', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '移除 old-cluster 的已保存 Argo CD 设置', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: '指标', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: '指标后端 URL' })).toHaveValue('https://metrics.example/draft')
+})
+
+test('Connection preserves the removed-versus-unavailable distinction and cannot remove the active entry', async ({ page }) => {
+  const state = await fixture(page)
+  state.connections.push(
+    { ...discoverySettings, binding: 'development', integration: 'metrics', context: 'development', source: '/test/kubeconfig', inFileName: 'development', availability: 'unavailable', revision: 'active' },
+    { ...discoverySettings, binding: 'missing-file', integration: 'cost', context: 'staging', source: '/test/offline', inFileName: 'staging', availability: 'unavailable', revision: 'offline' },
+  )
+  await openSettings(page, 'Overview')
+  await expect(page.getByRole('button', { name: '配置文件', exact: true })).toHaveAttribute('aria-expanded', 'false')
+  await expect(page.getByRole('heading', { name: '各集群的集成设置', exact: true })).not.toBeVisible()
+  await page.getByRole('button', { name: '配置文件', exact: true }).click()
+  await expect(page.getByText('config.json', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: '连接', exact: true }).click()
+  await expect(page.getByText('未加载此 kubeconfig', { exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: '移除 development 的已保存 指标 设置', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '移除 staging 的已保存 成本 设置', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '移除 staging 的已保存 成本 设置', exact: true }).click()
+  await expect(page.getByText(/此条目可能仍存在于其他 kubeconfig/)).toBeVisible()
+})
+
+test('the cluster list separates auto-discovery from saved settings', async ({ page }) => {
+  const state = await fixture(page)
+  const current = { binding: 'development', context: 'development', source: '/test/kubeconfig', inFileName: 'development', availability: 'available' as const }
+  const staging = { binding: 'staging', context: 'staging', source: '/test/kubeconfig', inFileName: 'staging', availability: 'available' as const }
+  state.connections.push(
+    { ...discoverySettings, ...current, integration: 'argocd', secretSet: true, revision: 'argocd' },
+    { ...discoverySettings, ...current, integration: 'cost', revision: 'cost' },
+    { ...discoverySettings, ...current, integration: 'metrics', revision: 'metrics' },
+    { ...discoverySettings, ...staging, integration: 'cost', clusterId: 'cluster-a', revision: 'staging-cost' },
+    { ...discoverySettings, ...staging, integration: 'metrics', error: 'metrics settings use only a URL and optional headers', revision: 'staging-metrics' },
+  )
+  await openSettings(page, 'Connection')
+  await expect(page.getByText('Argo CD: 已保存 · 成本: 自动 · 指标: 自动发现', { exact: true })).toBeVisible()
+  await expect(page.getByText('成本: 已保存 · 指标: 已保存', { exact: true })).toBeVisible()
+})
+
+test('saved settings load failure offers recovery rather than an empty-state claim', async ({ page }) => {
+  await fixture(page)
+  let fail = true
+  await page.route('**/api/integrations/connections', route => fail ? route.fulfill({ status: 500, json: { error: 'Could not read saved settings.' } }) : route.fallback())
+  await openSettings(page, 'Connection')
+  await expect(page.getByRole('alert')).toContainText('Could not read saved settings.')
+  await expect(page.getByText('尚未保存任何集成设置。', { exact: true })).toHaveCount(0)
+  fail = false
+  await page.getByRole('button', { name: '重新加载集成设置', exact: true }).click()
+  await expect(page.getByText('尚未保存任何集成设置。', { exact: true })).toBeVisible()
+})
+
+test('cleanup blocks close while committing and keeps remaining cards mounted without a refetch', async ({ page }) => {
+  const state = await fixture(page)
+  state.connections.push(...(['metrics', 'cost'] as const).map(integration => ({ ...discoverySettings, binding: 'old', integration, context: 'old-cluster', source: '/test/old', inFileName: 'old-cluster', availability: 'removed' as const, revision: `old-${integration}` })))
+  await openSettings(page, 'Connection')
+  const remaining = page.getByRole('button', { name: '移除 old-cluster 的已保存 成本 设置', exact: true })
+  const node = await remaining.elementHandle()
+  await page.getByRole('button', { name: '移除 old-cluster 的已保存 指标 设置', exact: true }).click()
+  const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '移除已保存的设置？', exact: true }) })
+  state.delayApply()
+  await confirmation.getByRole('button', { name: '移除设置', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  await expect(page.getByRole('button', { name: '关闭设置', exact: true })).toBeDisabled()
+  await expect(confirmation.getByRole('button', { name: '取消', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(confirmation).toBeVisible()
+  // Hold catalog refreshes so a redundant reload cannot hide the row unnoticed.
+  await page.route('**/api/integrations/connections', async route => { if (route.request().method() === 'GET') return; await route.fallback() })
+  state.releaseApply()
+  await expect(page.getByText('已移除 old-cluster 的已保存 指标 设置。', { exact: true })).toBeVisible()
+  await expect(remaining).toBeVisible()
+  expect(await node!.evaluate(el => el.isConnected)).toBe(true)
+  await expect(page.getByRole('heading', { name: '各集群的集成设置', exact: true })).toBeFocused()
+  await expect(page.getByRole('button', { name: '关闭设置', exact: true })).toBeEnabled()
+})
+
+test('stale cleanup revisions require reload and keep keyboard focus in the confirmation', async ({ page }) => {
+  const state = await fixture(page)
+  state.connections.push({ ...discoverySettings, binding: 'old', integration: 'metrics', context: 'old-cluster', source: '/test/old', inFileName: 'old-cluster', availability: 'removed', revision: 'old-revision' })
+  await page.route('**/api/integrations/connections', route => route.request().method() === 'PUT'
+    ? route.fulfill({ status: 409, json: { error: 'Settings changed; reload latest settings.' } })
+    : route.fallback())
+  await openSettings(page, 'Connection')
+  await page.getByRole('button', { name: '移除 old-cluster 的已保存 指标 设置', exact: true }).click()
+  const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '移除已保存的设置？', exact: true }) })
+  await confirmation.getByRole('button', { name: '移除设置', exact: true }).click()
+  await expect(confirmation.getByRole('alert')).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect.poll(() => confirmation.evaluate(el => el.contains(document.activeElement))).toBe(true)
+  await expect(confirmation.getByRole('button', { name: '移除设置', exact: true })).toBeDisabled()
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+  await page.getByRole('button', { name: '重新加载集成设置', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: '移除 old-cluster 的已保存 指标 设置', exact: true })).toBeVisible()
+})
+
+for (const management of ['operator', 'cloud']) {
+  test(`${management} settings do not show local files or saved-cluster cleanup`, async ({ page }) => {
+    await fixture(page)
+    await page.route('**/api/config', route => route.fulfill({ json: { management, file: {}, effective: {}, isDesktop: false } }))
+    await openSettings(page, 'Overview')
+    await expect(page.getByRole('button', { name: '配置文件', exact: true })).toHaveCount(0)
+    await page.getByRole('tab', { name: '连接', exact: true }).click()
+    await expect(page.getByRole('heading', { name: '各集群的集成设置', exact: true })).toHaveCount(0)
+    if (management === 'operator') await expect(page.getByText(/Helm/).first()).toBeVisible()
+  })
+}
+
+test('replacement confirmation keeps Tab inside and returns focus to Save', async ({ page }) => {
+  const state = await fixture(page)
+  const settings = await openSettings(page, 'Metrics')
+  const save = settings.getByRole('button', { name: '保存更改', exact: true })
+  await settings.getByRole('button', { name: '使用自动发现', exact: true }).click()
+  await settings.getByRole('textbox', { name: '指标后端 URL', exact: true }).fill('https://new.example')
+  await save.click()
+  const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '替换已保存的连接？', exact: true }) })
+  await expect(confirmation).toBeVisible()
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(save).toBeFocused()
+  await save.click()
+  await confirmation.getByRole('button', { name: '替换连接', exact: true }).focus()
+  await page.keyboard.press('Tab')
+  await expect.poll(() => confirmation.evaluate(el => el.contains(document.activeElement))).toBe(true)
+  await page.keyboard.press('Escape')
+  await expect(save).toBeFocused()
+  await expect(settings).toBeVisible()
+  expect(state.writes).toHaveLength(0)
+  await save.click()
+  await confirmation.getByRole('button', { name: '替换连接', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  await expect(settings.getByRole('group', { name: '指标连接设置', exact: true })).toBeFocused()
+})
+
+for (const integration of integrations) {
+  test(`${integration.tab}: discovery is a discardable draft and only commits through Save changes`, async ({ page }) => {
+    const state = await fixture(page)
+    const settings = await openSettings(page, integration.tab)
+    const trigger = settings.getByRole('button', { name: integration.reset, exact: true })
+    const field = settings.getByRole('textbox', { name: integration.field, exact: true })
+    const fieldBox = await field.boundingBox()
+    const triggerBox = await trigger.boundingBox()
+    expect(Math.abs(triggerBox!.y - fieldBox!.y)).toBeLessThan(70)
+    await trigger.click()
+    const save = settings.getByRole('button', { name: '保存更改', exact: true })
+    await expect(settings.getByText(integration.notice)).toBeVisible()
+    await expect(field).toHaveValue('')
+    await expect(trigger).toBeDisabled()
+    await expect(save).toBeEnabled()
+    expect(state.writes).toHaveLength(0)
+    await settings.getByRole('button', { name: '放弃', exact: true }).click()
+    await expect(field).toHaveValue(`https://${integration.kind}.example`)
+    if (integration.kind === 'metrics') await expect(page.getByRole('textbox', { name: 'Authorization的值', exact: true })).toHaveAttribute('placeholder', '已保存的值')
+    else await expect(page.getByRole('textbox', { name: integration.kind === 'argocd' ? 'API 令牌' : 'API 密钥', exact: true })).toHaveAttribute('placeholder', '已保存的值')
+    await expect(save).toBeDisabled()
+    await trigger.click()
+    state.delayApply()
+    await save.click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    await expect(page.getByRole('heading', { name: '替换已保存的连接？', exact: true })).toHaveCount(0)
+    await expect(page.getByRole('button', { name: /^Back to/ })).toHaveCount(0)
+    await page.keyboard.press('Escape')
+    await expect(settings).toBeVisible()
+    state.releaseApply()
+    await expect(field).toHaveValue('')
+    await expect(trigger).toBeDisabled()
+    await expect(save).toBeDisabled()
+    expect(state.writes[0]).toMatchObject({ action: 'auto', confirmRemoval: true, kind: integration.kind })
+    await expect(settings).toBeVisible()
+  })
+}
+
+test('cancelling replacement preserves URL and credential drafts, with no fake error', async ({ page }) => {
+  const state = await fixture(page)
+
+  await openSettings(page, 'Metrics')
+  await page.getByRole('button', { name: '使用自动发现', exact: true }).click()
+  await page.getByRole('button', { name: '添加请求头', exact: true }).click()
+  await page.getByRole('textbox', { name: '第 1 个请求头名称', exact: true }).fill('Authorization')
+  await page.getByRole('textbox', { name: 'Authorization的值', exact: true }).fill('draft-secret')
+  await page.getByRole('textbox', { name: '指标后端 URL', exact: true }).fill('https://new.example')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '替换已保存的连接？', exact: true }) })
+  await expect(confirmation).toBeVisible()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Authorization的值', exact: true })).toHaveValue('draft-secret')
+  await expect(page.getByRole('textbox', { name: '指标后端 URL', exact: true })).toHaveValue('https://new.example')
+  await expect(page.getByRole('button', { name: '保存更改', exact: true })).toBeEnabled()
+  expect(state.writes).toHaveLength(0)
+})
+
+test('failed confirmation keeps keyboard focus and exposes stale-settings recovery after cancel', async ({ page }) => {
+  const state = await fixture(page)
+  await openSettings(page, 'Metrics')
+  await page.route('**/api/integrations/connections', async route => {
+    if (route.request().method() !== 'PUT') return route.fallback()
+    await route.fulfill({ status: 409, json: { error: 'Settings changed; reload latest settings.' } })
+  })
+  await page.getByRole('button', { name: '使用自动发现', exact: true }).click()
+  await page.getByRole('textbox', { name: '指标后端 URL', exact: true }).fill('https://new.example')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '替换已保存的连接？', exact: true }) })
+  await confirmation.getByRole('button', { name: '替换连接', exact: true }).click()
+  await expect(confirmation.getByRole('alert')).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect.poll(() => confirmation.evaluate(el => el.contains(document.activeElement))).toBe(true)
+  await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+  await expect(page.getByRole('button', { name: '放弃草稿并重新加载', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: '放弃草稿并重新加载', exact: true }).click()
+  await expect(page.getByRole('alert')).toHaveCount(0)
+  expect(state.writes).toHaveLength(0)
+})
+
+for (const integration of integrations) {
+  test(`${integration.tab}: a conflicting direct save offers reload and keeps the draft until then`, async ({ page }) => {
+    const state = await fixture(page)
+    await openSettings(page, integration.tab)
+    await page.route('**/api/integrations/connections', async route => {
+      if (route.request().method() !== 'PUT') return route.fallback()
+      state.writes.push(route.request().postDataJSON())
+      await route.fulfill({ status: 409, json: { error: 'Settings changed; reload latest settings.' } })
+    })
+    const field = page.getByRole('textbox', { name: integration.field, exact: true })
+    await field.fill(`https://${integration.kind}.example/v2`)
+    await page.getByRole('button', { name: '保存更改', exact: true }).click()
+    const reload = page.getByRole('button', { name: '放弃草稿并重新加载', exact: true })
+    await expect(reload).toBeVisible()
+    await expect(field).toHaveValue(`https://${integration.kind}.example/v2`)
+    await reload.click()
+    await expect(reload).toHaveCount(0)
+    await expect(field).toHaveValue(`https://${integration.kind}.example`)
+    expect(state.writes).toHaveLength(1)
+  })
+}
+
+test('a busy save that succeeds on retry clears the conflict alert', async ({ page }) => {
+  const state = await fixture(page)
+  await openSettings(page, 'Metrics')
+  let busy = true
+  await page.route('**/api/integrations/connections', async route => {
+    if (route.request().method() !== 'PUT' || !busy) return route.fallback()
+    busy = false
+    await route.fulfill({ status: 409, json: { error: 'cluster settings are busy; try again' } })
+  })
+  await page.getByRole('textbox', { name: '指标后端 URL', exact: true }).fill('https://metrics.example/v2')
+  const save = page.getByRole('button', { name: '保存更改', exact: true })
+  await save.click()
+  await expect(page.getByText('cluster settings are busy; try again')).toBeVisible()
+  await save.click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  await expect(page.getByText('cluster settings are busy; try again')).toHaveCount(0)
+})
+
+test('invalid previous settings stay visible with their error but cannot be copied', async ({ page }) => {
+  const state = await fixture(page)
+  Object.assign(state.profiles.cost, discoverySettings, { state: 'auto', mode: 'auto', legacy: {
+    url: '', headerKeys: [], envHeaderKeys: [], secretSet: true, insecureTls: false, clusterId: '', mode: 'auto', revision: 'previous-revision',
+    omitted: ['Kubecost cluster mapping'], noticeDismissed: false, error: 'Kubecost URL must be an HTTP(S) base URL.',
+  } })
+  state.connections.push({ url: 'https://source.example', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false,
+    binding: 'source', integration: 'cost', context: 'staging', source: '/test/staging', inFileName: 'staging', availability: 'available', revision: '1' })
+  const dialog = await openSettings(page, 'Cost')
+  await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+  const option = dialog.getByRole('option', { name: /之前的全局设置/ })
+  await expect(option).toContainText('Fix it in ~/.kubeatlas/config.json')
+  await expect(option).toHaveAttribute('aria-disabled', 'true')
+  await page.keyboard.press('Enter')
+  await expect(dialog.getByText(/已从 .* 复制/)).toHaveCount(0)
+  await page.keyboard.press('ArrowDown')
+  await expect(option).toBeFocused()
+  await page.keyboard.press('ArrowDown')
+  await expect(dialog.getByRole('option', { name: /staging/ })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(dialog.getByText(/已从 staging 复制/)).toBeVisible()
+  expect(state.writes).toHaveLength(0)
+})
+
+test('previous settings describe URL-less sources and name what was left behind', async ({ page }) => {
+  const state = await fixture(page)
+  Object.assign(state.profiles.cost, discoverySettings, { state: 'auto', mode: 'auto', legacy: {
+    url: '', headerKeys: [], envHeaderKeys: [], secretSet: true, insecureTls: false, clusterId: '', mode: 'auto', revision: 'previous-revision',
+    omitted: ['Kubecost cluster mapping'], noticeDismissed: false,
+  } })
+  const dialog = await openSettings(page, 'Cost')
+  await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+  await dialog.getByRole('option', { name: /自动发现（使用已保存的API 密钥）/ }).click()
+  await expect(dialog.getByText('未复制：Kubecost 集群映射；这些设置属于其他集群。', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0]).toMatchObject({ action: 'adopt', legacyRevision: 'previous-revision' })
+})
+
+for (const integration of integrations.filter(item => item.kind !== 'metrics')) {
+  test(`${integration.tab}: paused discovery credentials can be removed without accepting them`, async ({ page }) => {
+    const state = await fixture(page)
+    Object.assign(state.profiles[integration.kind], discoverySettings, { state: 'target_changed', mode: 'auto', secretSet: true, error: 'The cluster behind this context changed' })
+    await openSettings(page, integration.tab)
+    await page.getByRole('button', { name: '使用其他连接', exact: true }).click()
+    await page.getByRole('button', { name: integration.reset, exact: true }).click()
+    await expect(page.getByText(integration.notice)).toBeVisible()
+    await page.getByRole('button', { name: '保存更改', exact: true }).click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    expect(state.writes[0]).toMatchObject({ action: 'auto', confirmRemoval: true })
+    expect(state.writes[0]).not.toHaveProperty('secret')
+  })
+}
+
+const declineCases = [
+  { kind: 'metrics', tab: 'Metrics', action: '改用自动发现', confirm: '使用自动发现', title: '改用自动发现？', removed: '指标端点和请求头', paused: { url: 'https://metrics.example', headerKeys: ['Authorization'], secretSet: false } },
+  { kind: 'argocd', tab: 'Argo CD', action: '改用自动发现', confirm: '使用自动发现', title: '改用自动发现？', removed: 'Argo CDAPI 令牌', paused: { ...discoverySettings, secretSet: true } },
+  { kind: 'cost', tab: 'Cost', action: '重置为自动', confirm: '重置为自动', title: '将成本来源重置为“自动”？', removed: 'Kubecost 端点、API 密钥和Kubecost 集群映射', paused: { url: 'https://cost.example', secretSet: true, clusterId: 'cluster-a' } },
+] as const
+
+for (const item of declineCases) {
+  test(`${item.tab}: paused settings can be declined in one step`, async ({ page }) => {
+    const state = await fixture(page)
+    Object.assign(state.profiles[item.kind], item.paused, { state: 'target_changed', mode: item.kind === 'cost' ? 'kubecost' : 'auto', error: 'The cluster behind this context changed' })
+    state.connections.push({ ...discoverySettings, url: 'url' in item.paused ? item.paused.url : '', secretSet: item.paused.secretSet,
+      binding: 'development', integration: item.kind, context: 'development', source: '/test/kubeconfig', inFileName: 'development', availability: 'available', revision: '1' })
+    const dialog = await openSettings(page, item.tab)
+    await expect(dialog.getByText('集群已更改', { exact: true })).toBeVisible()
+    const decline = dialog.getByRole('button', { name: item.action, exact: true })
+    const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: item.title, exact: true }) })
+
+    await decline.click()
+    await expect(confirmation).toContainText(
+      `移除 development 已保存的${item.removed}，并${item.kind === 'cost' ? '将成本来源重置为“自动”' : '改用自动发现'}？其他集群不受影响。`
+    )
+    await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(decline).toBeFocused()
+    expect(state.writes).toHaveLength(0)
+
+    await decline.click()
+    await confirmation.getByRole('button', { name: item.confirm, exact: true }).click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    expect(state.writes[0]).toMatchObject({ action: 'auto', kind: item.kind, confirmRemoval: true })
+    if (item.kind === 'cost') expect(state.writes[0].mode).toBe('auto')
+    else expect(state.writes[0]).not.toHaveProperty('mode')
+    await expect(dialog.getByText('集群已更改', { exact: true })).toHaveCount(0)
+    await expect(dialog.getByText('已保存', { exact: true })).toBeVisible()
+    await expect(dialog.getByText('已保存 · 已连接', { exact: true })).toHaveCount(0)
+    expect(state.profiles[item.kind]).toMatchObject({ state: 'saved', url: '', secretSet: false, headerKeys: [], clusterId: '' })
+    expect(state.connections).toContainEqual(expect.objectContaining({ binding: 'development', integration: item.kind, url: '', secretSet: false }))
+  })
+}
+
+for (const integration of integrations.filter(item => item.kind !== 'metrics')) {
+  test(`${integration.tab}: replacement cancellation preserves the typed credential`, async ({ page }) => {
+    const state = await fixture(page)
+
+    await openSettings(page, integration.tab)
+    const credential = page.getByRole('textbox', { name: integration.kind === 'argocd' ? 'API 令牌' : 'API 密钥', exact: true })
+    await credential.fill('draft-secret')
+    await page.getByRole('textbox', { name: integration.field, exact: true }).fill('')
+    await page.getByRole('button', { name: '保存更改', exact: true }).click()
+    const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '替换已保存的连接？', exact: true }) })
+    await expect(confirmation).toBeVisible()
+    await confirmation.getByRole('button', { name: '取消', exact: true }).click()
+    await expect(credential).toHaveValue('draft-secret')
+    await expect(page.getByRole('button', { name: '保存更改', exact: true })).toBeEnabled()
+    expect(state.writes).toHaveLength(0)
+  })
+}
+
+for (const [tab, field] of [['Argo CD', 'API 令牌'], ['Cost', 'API 密钥']]) {
+  test(`${tab}: erasing a new credential restores a clean draft`, async ({ page }) => {
+    const state = await fixture(page)
+    state.profiles.argocd.secretSet = false
+    state.profiles.cost.secretSet = false
+    await openSettings(page, tab)
+    const input = page.getByRole('textbox', { name: field, exact: true })
+    await input.fill('temporary')
+    await expect(page.getByRole('button', { name: '保存更改', exact: true })).toBeEnabled()
+    await input.fill('')
+    await expect(page.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+    expect(state.writes).toHaveLength(0)
+  })
+}
+
+for (const integration of integrations) {
+  test(`${integration.tab}: save startup changes without dropping the integration draft`, async ({ page }) => {
+    const state = await fixture(page)
+    const dialog = await openSettings(page, integration.tab)
+    const field = page.getByRole('textbox', { name: integration.field, exact: true })
+    await field.fill('https://draft.example')
+    await page.getByRole('tab', { name: '连接', exact: true }).click()
+    await page.getByPlaceholder('系统默认', { exact: true }).fill('Safari')
+    await page.keyboard.press('Escape')
+    await dialog.getByRole('button', { name: '保存启动设置', exact: true }).click()
+    await expect.poll(() => state.file().browser).toBe('Safari')
+    await expect(dialog.getByText('已保存。重启 KubeAtlas 后生效。', { exact: true })).toBeVisible()
+    await expect(dialog).toBeVisible()
+    const reviewLabel = integration.kind === 'metrics' ? '查看指标' : integration.kind === 'cost' ? '查看成本' : '查看Argo CD'
+    await dialog.getByRole('button', { name: reviewLabel, exact: true }).click()
+    await expect(field).toHaveValue('https://draft.example')
+    expect(state.writes).toHaveLength(0)
+    await dialog.getByRole('button', { name: '放弃', exact: true }).click()
+    await expect(field).toHaveValue(`https://${integration.kind}.example`)
+    await page.keyboard.press('Escape')
+    await expect(dialog).toBeHidden()
+  })
+
+  test(`${integration.tab}: discard only the newer draft after applying`, async ({ page }) => {
+    const state = await fixture(page)
+    const dialog = await openSettings(page, integration.tab)
+    const field = page.getByRole('textbox', { name: integration.field, exact: true })
+    await field.fill(`https://${integration.kind}.example/applied`)
+    await page.getByRole('button', { name: integration.apply, exact: true }).click()
+    await expect.poll(() => state.writes.length).toBe(1)
+    await expect(page.getByText('已保存 · 已连接', { exact: true })).toBeVisible()
+    await field.fill(`https://${integration.kind}.example/draft`)
+    await expect(dialog.getByRole('button', { name: '放弃更改', exact: true })).toBeHidden()
+    await dialog.getByRole('button', { name: '放弃', exact: true }).click()
+    await expect(field).toHaveValue(`https://${integration.kind}.example/applied`)
+    await expect(page.getByText('已保存 · 已连接', { exact: true })).toBeHidden()
+    await expect(page.getByText('已保存', { exact: true })).toBeHidden()
+    expect(state.writes).toHaveLength(1)
+  })
+}
+
+test('discard clears drafts in all integration editors, including credentials and mapping', async ({ page }) => {
+  const state = await fixture(page)
+  const dialog = await openSettings(page, 'Metrics')
+  await page.getByRole('textbox', { name: 'Authorization的值' }).fill('draft-secret')
+  await page.getByRole('tab', { name: 'Argo CD', exact: true }).click()
+  await page.getByRole('textbox', { name: 'API 令牌', exact: true }).fill('draft-token')
+  await page.getByRole('tab', { name: '成本', exact: true }).click()
+  await page.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('draft-key')
+  await page.getByRole('textbox', { name: 'Kubecost 集群 ID', exact: true }).fill('draft-cluster')
+  await dialog.getByRole('button', { name: '放弃所有更改', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'API 密钥', exact: true })).toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Kubecost 集群 ID', exact: true })).toHaveValue('')
+  await page.getByRole('tab', { name: 'Argo CD', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'API 令牌', exact: true })).toHaveValue('')
+  await page.getByRole('tab', { name: '指标', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: 'Authorization的值' })).toHaveValue('')
+  await expect(page.getByRole('textbox', { name: 'Authorization的值' })).toHaveAttribute('placeholder', '已保存的值')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+  expect(state.writes).toHaveLength(0)
+})
+
+test('applying one integration preserves another integration draft for its own apply', async ({ page }) => {
+  const state = await fixture(page)
+  await openSettings(page, 'Metrics')
+  await page.getByRole('textbox', { name: '指标后端 URL' }).fill('https://metrics.example/draft')
+  await page.getByRole('tab', { name: 'Argo CD', exact: true }).click()
+  await page.getByRole('textbox', { name: 'Argo CD 服务器 URL' }).fill('https://argocd.example/applied')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(page.getByRole('tabpanel').getByText('已保存 · 已连接', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: '指标', exact: true }).click()
+  await expect(page.getByRole('textbox', { name: '指标后端 URL' })).toHaveValue('https://metrics.example/draft')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(page.getByRole('tabpanel').getByText('已保存 · 已连接', { exact: true })).toBeVisible()
+  expect(state.writes.map(write => write.kind)).toEqual(['argocd', 'metrics'])
+})
+
+test('an in-flight apply cannot be discarded or closed as though it were cancelled', async ({ page }) => {
+  const state = await fixture(page)
+  state.delayApply()
+  const dialog = await openSettings(page, 'Argo CD')
+  await page.getByRole('textbox', { name: 'Argo CD 服务器 URL' }).fill('https://argocd.example/applied')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  await expect(dialog.getByRole('button', { name: '放弃', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: '关闭设置', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  state.releaseApply()
+  await expect(page.getByText('已保存 · 已连接', { exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})
+
+test('Cost Auto hides optional overrides, but keeps entered credentials when collapsed', async ({ page }) => {
+  const state = await fixture(page)
+  Object.assign(state.profiles.cost, { state: 'auto', mode: 'auto', url: '', secretSet: false })
+  await openSettings(page, 'Cost')
+  const disclosure = page.getByRole('button', { name: /^Kubecost 连接覆盖设置/ })
+  const url = page.getByRole('textbox', { name: 'Kubecost Aggregator URL' })
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+  await expect.poll(() => url.evaluate(el => !!el.closest('[inert]'))).toBe(true)
+  await expect(page.getByRole('heading', { name: '此集群', exact: true })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '所有集群', exact: true })).toBeVisible()
+  await expect(page.getByText('自动保存。', { exact: true })).toBeVisible()
+  await disclosure.click()
+  await url.fill('https://cost.example')
+  await page.getByRole('textbox', { name: 'API 密钥', exact: true }).fill('new-key')
+  await disclosure.click()
+  await disclosure.click()
+  await expect(url).toHaveValue('https://cost.example')
+  await expect(page.getByRole('textbox', { name: 'API 密钥', exact: true })).toHaveValue('new-key')
+  await chooseCostSource(page, 'Kubecost')
+  await expect(disclosure).toBeHidden()
+  await expect(url).toBeVisible()
+  await chooseCostSource(page, '自动')
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'true')
+  await expect(url).toHaveValue('https://cost.example')
+  await disclosure.click()
+  await expect(disclosure).toContainText('已配置')
+  await expect(disclosure).toHaveAttribute('aria-expanded', 'false')
+})
+
+test('unchanged settings cannot be saved, and a credential edit shows one success result', async ({ page }) => {
+  const state = await fixture(page)
+  state.preserveRevision()
+  await openSettings(page, 'Metrics')
+  await expect(page.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+  await page.getByRole('textbox', { name: 'Authorization的值' }).fill('replacement')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(page.getByRole('tabpanel').getByText('已保存 · 已连接', { exact: true })).toBeVisible()
+  await expect(page.getByRole('tabpanel').getByText(/Connected to .*applied, no restart needed/)).toHaveCount(0)
+})
+
+test('confirming one changed integration removes it from the sibling review picker', async ({ page }) => {
+  const state = await fixture(page)
+  state.profiles.metrics.state = 'target_changed'
+  state.profiles.cost.state = 'target_changed'
+  await openSettings(page, 'Cost')
+  await page.getByRole('button', { name: '查看更改', exact: true }).click()
+  await expect(page.getByText('指标 需要在各自的设置页中单独确认。', { exact: true })).toBeVisible()
+  await page.getByRole('checkbox', { name: /成本/ }).check()
+  await page.getByRole('button', { name: '在此集群保留所选设置', exact: true }).click()
+  await expect(page.getByRole('tabpanel').getByText('已保存 · 已连接', { exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: '指标', exact: true }).click()
+  await page.getByRole('button', { name: '查看更改', exact: true }).click()
+  await expect(page.getByRole('checkbox', { name: /成本/ })).toHaveCount(0)
+  await expect(page.getByText(/此前已保存到其他集群/)).toHaveCount(0)
+  await page.getByRole('checkbox', { name: /指标/ }).check()
+  await page.getByRole('button', { name: '在此集群保留所选设置', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(2)
+  expect(state.writes[1].kinds).toEqual(['metrics'])
+  expect(state.writes[1].revisions).toEqual({ metrics: '1' })
+})
+
+test('legacy metrics apply also blocks closing or discarding while committing', async ({ page }) => {
+  await fixture(page)
+  await page.route('**/api/config', route => route.fulfill({ json: { management: 'local', file: {}, effective: {}, isDesktop: false } }))
+  let release: (() => void) | undefined
+  const held = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/integrations/prometheus', async route => {
+    await held
+    await route.fulfill({ json: { connected: true, address: 'https://metrics.example' } })
+  })
+  const dialog = await openSettings(page, 'Metrics')
+  await page.getByRole('textbox', { name: '指标后端 URL' }).fill('https://metrics.example')
+  await page.getByRole('button', { name: 'Apply now', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '关闭设置', exact: true })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: '放弃更改', exact: true })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeVisible()
+  release?.()
+  await expect(page.getByText('Connected to https://metrics.example — applied, no restart needed', { exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})
+
+test('Cost source changes confirm removal only when a saved connection exists', async ({ page }) => {
+  const state = await fixture(page)
+  await openSettings(page, 'Cost')
+  await page.getByRole('textbox', { name: 'Kubecost Aggregator URL', exact: true }).fill('')
+  await chooseCostSource(page, 'OpenCost 指标')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  const confirmation = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: '使用指标作为成本数据来源？', exact: true }) })
+  await confirmation.getByRole('button', { name: '使用指标连接', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(1)
+  expect(state.writes[0]).toMatchObject({ action: 'auto', mode: 'prometheus', confirmRemoval: true })
+  await expect(confirmation).toBeHidden()
+  await page.getByRole('button', { name: '重置为自动', exact: true }).click()
+  await expect(page.getByText(/^保存后将把此集群的成本来源重置为“自动”/)).toHaveCount(0)
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect.poll(() => state.writes.length).toBe(2)
+  expect(state.writes[1]).toMatchObject({ action: 'auto' })
+  expect(state.writes[1].confirmRemoval).toBeUndefined()
+})
+
+for (const integration of integrations) {
+  for (const credentials of [false, true]) {
+    test(`${integration.tab}: discovery notice names what saving removes (credentials: ${credentials})`, async ({ page }) => {
+      const state = await fixture(page)
+      state.profiles[integration.kind].secretSet = credentials && integration.kind !== 'metrics'
+      state.profiles[integration.kind].headerKeys = credentials && integration.kind === 'metrics' ? ['Authorization'] : []
+      const dialog = await openSettings(page, integration.tab)
+      await dialog.getByRole('button', { name: integration.reset, exact: true }).click()
+      const warning = dialog.getByText(integration.notice)
+      const credential = integration.kind === 'metrics' ? '请求头' : integration.kind === 'argocd' ? 'API 令牌' : 'API 密钥'
+      await expect(warning).toContainText('端点')
+      if (credentials) await expect(warning).toContainText(credential)
+      else await expect(warning).not.toContainText(credential)
+      await dialog.getByRole('button', { name: '放弃', exact: true }).click()
+      await expect(warning).toBeHidden()
+      expect(state.writes).toHaveLength(0)
+    })
+  }
+}
+
+test('resolved status detail does not reopen an empty row on the next save', async ({ page }) => {
+  const state = await fixture(page)
+  state.failStatus()
+  await openSettings(page, 'Metrics')
+  const current = page.getByLabel('当前连接', { exact: true })
+  await expect(current).toContainText('Backend unavailable')
+  state.recoverStatus()
+  const field = page.getByRole('textbox', { name: '指标后端 URL', exact: true })
+  await field.fill('https://metrics.example/recovered')
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(current).toContainText('已连接')
+  const detailHeight = () => current.getByText('Backend unavailable', { exact: true }).evaluate(el => el.closest('.grid')!.getBoundingClientRect().height)
+  await expect.poll(detailHeight).toBe(0)
+  await field.fill('https://metrics.example/again')
+  state.delayApply()
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(current).toContainText('检查中…')
+  await expect.poll(detailHeight).toBe(0)
+  state.releaseApply()
+})
+
+test('a saved-to-discovery refresh never labels the old configured URL as discovered', async ({ page }) => {
+  await fixture(page)
+  await openSettings(page, 'Metrics')
+  const current = page.getByLabel('当前连接', { exact: true })
+  await expect(current).toContainText('已连接')
+  let release: (() => void) | undefined
+  const held = new Promise<void>(resolve => { release = resolve })
+  await page.route('**/api/prometheus/status', async route => {
+    await held
+    await route.fulfill({ json: { connected: true, discovering: false, address: 'http://discovered.example' } })
+  })
+  await page.getByRole('button', { name: '使用自动发现', exact: true }).click()
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(current).toContainText('检查中…')
+  await expect(current).not.toContainText('已发现：https://metrics.example')
+  await expect(current.getByText('已连接', { exact: true })).toHaveCount(0)
+  release?.()
+  await expect(current).toContainText('已发现：http://discovered.example')
+})
+
+test('current connection does not describe a draft URL, and refreshes after apply', async ({ page }) => {
+  const state = await fixture(page)
+  await openSettings(page, 'Metrics')
+  const current = page.getByLabel('当前连接', { exact: true })
+  await expect(current).toContainText('已连接')
+  await expect(current).not.toContainText('https://metrics.example')
+  await page.getByRole('textbox', { name: '指标后端 URL' }).fill('https://metrics.example/new')
+  await expect(current).not.toContainText('https://metrics.example/new')
+  state.failStatus()
+  await page.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(current).toContainText('未连接')
+  await expect(current).toContainText('Backend unavailable')
+  await expect(current).not.toContainText('https://metrics.example')
+})
+
+async function contextualFixture(page: Page) {
+  const state = await fixture(page)
+  for (const kind of ['metrics', 'argocd', 'cost'] as const) {
+    const current = state.profiles[kind]
+    current.target.context = 'fake-test'
+    Object.assign(current, discoverySettings, { state: 'auto', mode: 'auto', legacy: {
+      url: `https://previous-${kind}.example`, headerKeys: [], envHeaderKeys: [],
+      secretSet: false, insecureTls: false, clusterId: '', mode: 'auto', revision: 'previous', omitted: [], noticeDismissed: false,
+    } })
+  }
+  state.failStatus()
+  await page.route('**/api/prometheus/connect', route => route.fulfill({ json: { connected: false, available: false } }))
+  return state
+}
+
+const previousHint = /now saved per cluster/
+
+for (const operation of ['dismiss', 'import'] as const) {
+  test(`contextual metrics: ${operation} removes the hint without reload; opening and drafting never writes`, async ({ page }) => {
+    const state = await contextualFixture(page)
+    await page.goto('/workload/deployments/default/nginx?tab=metrics')
+    await expect(page.getByText(previousHint)).toBeVisible()
+    await page.getByRole('button', { name: 'Configure metrics', exact: true }).click()
+    const dialog = page.getByRole('dialog', { name: '设置', exact: true })
+    await expect(dialog.getByRole('tab', { name: '指标', exact: true })).toHaveAttribute('aria-selected', 'true')
+    await expect(dialog.getByRole('textbox', { name: '指标后端 URL', exact: true })).toHaveValue('')
+    expect(state.writes).toHaveLength(0)
+    if (operation === 'dismiss') {
+      await dialog.getByRole('tab', { name: '总览', exact: true }).click()
+      await dialog.getByRole('button', { name: '不再显示', exact: true }).click()
+    } else {
+      await dialog.getByRole('button', { name: '复制设置自…', exact: true }).click()
+      await dialog.getByRole('option', { name: /之前的全局设置/ }).click()
+      await expect(dialog.getByRole('textbox', { name: '指标后端 URL', exact: true })).toHaveValue('https://previous-metrics.example')
+      expect(state.writes).toHaveLength(0)
+      await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+      await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+    }
+    await expect.poll(() => state.writes.length).toBe(1)
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(page.getByText(previousHint)).toHaveCount(0)
+    await expect(page.getByRole('button', { name: 'Configure metrics', exact: true })).toBeVisible()
+  })
+}
+
+test('contextual metrics: failed offer GET retains ordinary setup and the original failure', async ({ page }) => {
+  await contextualFixture(page)
+  await page.route('**/api/config', route => route.fulfill({ status: 403, json: { error: 'forbidden' } }))
+  await page.goto('/workload/deployments/default/nginx?tab=metrics')
+  await expect(page.getByRole('button', { name: 'Configure metrics', exact: true })).toBeVisible()
+  await expect(page.getByText('Backend unavailable', { exact: true })).toBeVisible()
+  await expect(page.getByText(previousHint)).toHaveCount(0)
+})
+
+test('contextual metrics: no previous-context offer', async ({ page }) => {
+  const state = await contextualFixture(page)
+  state.profiles.metrics.target.context = 'other-cluster'
+  await page.goto('/workload/deployments/default/nginx?tab=metrics')
+  await expect(page.getByRole('button', { name: 'Configure metrics', exact: true })).toBeVisible()
+  await expect(page.getByText(previousHint)).toHaveCount(0)
+})
+
+for (const mode of ['healthy', 'operator', 'cloud'] as const) {
+  test(`contextual metrics: ${mode} makes no offer GET`, async ({ page }) => {
+    const state = await contextualFixture(page)
+    if (mode === 'healthy') state.recoverStatus()
+    else await page.route('**/api/capabilities', async route => {
+      const response = await route.fetch()
+      await route.fulfill({ json: { ...await response.json(), configManagement: mode } })
+    })
+    let reads = 0
+    page.on('request', request => { if (new URL(request.url()).pathname === '/api/config') reads++ })
+    const startupConfig = page.waitForResponse(response => new URL(response.url()).pathname === '/api/config')
+    await page.goto('/workload/deployments/default/nginx?tab=metrics')
+    await startupConfig
+    if (mode === 'healthy') await expect(page.getByLabel('Metrics time range')).toBeVisible()
+    else await expect(page.getByRole('button', { name: 'Configure metrics', exact: true })).toBeVisible()
+    // The app's pre-existing Desktop detection reads /config once at startup.
+    expect(reads).toBe(1)
+    await expect(page.getByText(previousHint)).toHaveCount(0)
+  })
+}
+
+for (const surface of ['overview', 'workload', 'application'] as const) {
+  test(`contextual cost: ${surface} preserves the error and opens Cost settings without writing`, async ({ page }) => {
+    const state = await contextualFixture(page)
+    await page.route('**/api/opencost/**', route => route.fulfill({ json: { available: false, reason: 'source_unavailable' } }))
+    if (surface === 'application') await page.route('**/api/applications*', async route => {
+      const response = await route.fetch()
+      const data = await response.json()
+      const app = data.applications[0]
+      app.workloads.push({ ...app.workloads[0], name: 'worker' })
+      await route.fulfill({ json: data })
+    })
+    await page.goto(surface === 'overview' ? '/cost' : surface === 'application'
+      ? '/applications?app=default%2FDeployment%2Fnginx&view=cost'
+      : '/workload/deployments/default/nginx?tab=cost')
+    await expect(page.getByText(/Kubecost Aggregator is unavailable/)).toBeVisible()
+    await expect(page.getByText(previousHint).first()).toBeVisible()
+    await page.getByRole('button', { name: 'Configure cost source', exact: true }).first().click()
+    await expect(page.getByRole('dialog', { name: '设置', exact: true }).getByRole('tab', { name: '成本', exact: true })).toHaveAttribute('aria-selected', 'true')
+    expect(state.writes).toHaveLength(0)
+  })
+}
+
+test('contextual rightsizing opens Metrics settings', async ({ page }) => {
+  await contextualFixture(page)
+  await page.goto('/cost/rightsizing')
+  await expect(page.getByText(previousHint)).toBeVisible()
+  await page.getByRole('button', { name: 'Configure metrics', exact: true }).click()
+  await expect(page.getByRole('tab', { name: '指标', exact: true })).toHaveAttribute('aria-selected', 'true')
+})
+
+test('contextual Argo health and diff preserve benefits and open Argo settings', async ({ page }) => {
+  const state = await contextualFixture(page)
+  const resource = { apiVersion: 'argoproj.io/v1alpha1', kind: 'Application', metadata: { name: 'storefront', namespace: 'argocd' }, spec: { destination: { namespace: 'default' } }, status: { health: { status: 'Degraded' }, sync: { status: 'OutOfSync' } } }
+  const root = { id: 'app/storefront', ref: { kind: 'Application', namespace: 'argocd', name: 'storefront' }, role: 'root', tool: 'argocd', resource }
+  await page.route('**/api/resources/applications/argocd/storefront*', route => route.fulfill({ json: { resource, relationships: {} } }))
+  await page.route('**/api/gitops/tree/applications/argocd/storefront*', route => route.fulfill({ json: { root, nodes: [root], edges: [] } }))
+  await page.route('**/api/gitops/insights/applications/argocd/storefront*', route => route.fulfill({ json: {
+    summary: { tool: 'argocd', kind: 'Application', namespace: 'argocd', name: 'storefront', health: 'Degraded', resourceHealthMode: 'appTree' },
+    changes: [{ ref: { kind: 'Deployment', namespace: 'default', name: 'nginx' }, category: 'OutOfSync', sync: 'OutOfSync', hasDesired: true, hasLive: true }],
+    capabilities: { argoConfigured: false, argoDiffAvailable: false },
+  } }))
+  await page.goto('/gitops/detail/applications/argocd/storefront')
+  await expect(page.getByRole('note')).toContainText(previousHint)
+  await expect(page.getByRole('note').getByRole('button', { name: 'connect Radar to your Argo CD server', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'Resources', exact: true }).last().click()
+  await expect(page.getByText('for the full Git-rendered diff.')).toBeVisible()
+  await expect(page.getByText(previousHint)).toHaveCount(1)
+  await page.getByRole('button', { name: 'Connect Argo CD', exact: true }).click()
+  const dialog = page.getByRole('dialog', { name: '设置', exact: true })
+  await expect(dialog.getByRole('tab', { name: 'Argo CD', exact: true })).toHaveAttribute('aria-selected', 'true')
+  await expect(dialog.getByText(/比较 Git 配置与实时资源/)).toBeVisible()
+  expect(state.writes).toHaveLength(0)
+})
+
+const aiAgents = {
+  enabled: true, eligible: true, consented: { claude: { safeguarded: true, 'full-local': true } },
+  agents: [{ name: 'claude', label: 'Claude Code', path: '/usr/local/bin/claude', version: '2.1.0', present: true, supported: true,
+    profiles: ['safeguarded', 'full-local'], consentSurfaces: { safeguarded: 'v1', 'full-local': 'v1' } }],
+}
+
+async function mockAgents(page: Page, held?: Promise<void>) {
+  await page.route('**/api/agents', async route => {
+    await held
+    await route.fulfill({ json: aiAgents })
+  })
+}
+
+test('Cost reset focuses the source picker, which works from the keyboard', async ({ page }) => {
+  const state = await fixture(page)
+  await openSettings(page, 'Cost')
+  const reset = page.getByRole('button', { name: '重置为自动', exact: true })
+  const source = page.getByRole('button', { name: /^成本来源:/ })
+  await reset.focus()
+  await page.keyboard.press('Enter')
+  await expect(source).toBeFocused()
+  await expect(source).toContainText('自动')
+  await page.keyboard.press('ArrowDown')
+  await expect(page.getByRole('option', { name: /^自动/ })).toBeFocused()
+  await page.keyboard.press('End')
+  await expect(page.getByRole('option', { name: /^Kubecost/ })).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(source).toBeFocused()
+  await expect(source).toHaveAccessibleName('成本来源: Kubecost')
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('option', { name: /^Kubecost/ })).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(page.getByRole('option', { name: /^OpenCost 指标/ })).toBeFocused()
+  await page.keyboard.press('Tab')
+  await expect(page.getByRole('option', { name: /^Kubecost/ })).not.toBeFocused()
+  await expect(source).toHaveAttribute('aria-expanded', 'false')
+  await expect(source).toHaveAccessibleName('成本来源: Kubecost')
+  await source.focus()
+  await page.keyboard.press('Enter')
+  await expect(page.getByRole('option', { name: /^Kubecost/ })).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(source).toBeFocused()
+  await expect(source).toHaveAttribute('aria-expanded', 'false')
+  await source.click()
+  await expect(source).toBeFocused()
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '放弃', exact: true }).click()
+  expect(state.writes).toHaveLength(0)
+})
+
+test('the paused-settings review names only what changed', async ({ page }) => {
+  const state = await fixture(page)
+  const identity = state.profiles.metrics.target.identity
+  Object.assign(state.profiles.metrics, { state: 'target_changed', previousIdentity: { ...identity, server: 'https://old.example' } })
+  Object.assign(state.profiles.argocd, { state: 'target_changed', previousIdentity: { ...identity, trust: 'old-ca', proxy: 'http://proxy.example' } })
+  Object.assign(state.profiles.cost, { state: 'target_changed', previousIdentity: { ...identity, server: 'https://old.example' } })
+  const dialog = await openSettings(page, 'Metrics')
+  await dialog.getByRole('button', { name: '查看更改', exact: true }).click()
+  const rows = dialog.getByRole('tabpanel').locator('dl')
+  await expect(rows).toContainText('之前的服务器')
+  await expect(rows).toContainText('https://old.example')
+  await expect(rows).toContainText('developer（未更改）')
+  await expect(rows).toContainText('未更改')
+  await expect(dialog.getByRole('checkbox', { name: /Argo CD/ })).toHaveCount(0)
+  await expect(dialog.getByRole('checkbox', { name: /成本/ })).toBeVisible()
+  await expect(dialog.getByText('Argo CD 此前已保存到其他集群，请在各自的设置页中查看。', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '返回指标', exact: true }).click()
+  await dialog.getByRole('tab', { name: 'Argo CD', exact: true }).click()
+  await dialog.getByRole('button', { name: '查看更改', exact: true }).click()
+  await expect(rows).toContainText('https://cluster.example（未更改）')
+  await expect(rows).not.toContainText('之前的服务器')
+  await expect(rows).toContainText('CA 信任已更改 · 代理已更改')
+  await expect(dialog.getByText('指标和成本 此前已保存到其他集群，请在各自的设置页中查看。', { exact: true })).toBeVisible()
+})
+
+test('an unrecorded previous identity is reviewed separately without claiming a different cluster', async ({ page }) => {
+  const state = await fixture(page)
+  const identity = state.profiles.metrics.target.identity
+  Object.assign(state.profiles.metrics, { state: 'target_changed', previousIdentity: { ...identity, server: 'https://old.example' } })
+  Object.assign(state.profiles.cost, { state: 'target_changed' })
+  const dialog = await openSettings(page, 'Metrics')
+  await dialog.getByRole('button', { name: '查看更改', exact: true }).click()
+  await expect(dialog.getByRole('checkbox', { name: /成本/ })).toHaveCount(0)
+  await expect(dialog.getByText('成本 需要在各自的设置页中单独确认。', { exact: true })).toBeVisible()
+})
+
+test('AI investigations saves through the shared row and is guarded on close', async ({ page }) => {
+  await fixture(page)
+  await mockAgents(page)
+  const dialog = await openSettings(page, 'AI investigations')
+  const save = dialog.getByRole('button', { name: '保存更改', exact: true })
+  await expect(save).toBeDisabled()
+  await dialog.getByRole('button', { name: 'Your Claude Code setup', exact: true }).click()
+  await expect(save).toBeEnabled()
+  await expect(dialog.getByText('尚未保存的更改', { exact: true })).toBeVisible()
+
+  await dialog.getByRole('tab', { name: '指标', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '查看AI 调查', exact: true })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog.getByText('AI 调查更改尚未保存。', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '查看AI 调查', exact: true }).click()
+  await expect(dialog.getByRole('tab', { name: 'AI调查', exact: true })).toHaveAttribute('aria-selected', 'true')
+
+  await save.click()
+  await expect(dialog.getByText('已保存', { exact: true })).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('radar-ai-profile'))).toBe('full-local')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})
+
+test('a late agent list is not an unsaved AI edit', async ({ page }) => {
+  await fixture(page)
+  let release: (() => void) | undefined
+  await mockAgents(page, new Promise<void>(resolve => { release = resolve }))
+  await page.addInitScript(() => localStorage.setItem('radar-ai-agent', 'codex'))
+  const dialog = await openSettings(page, 'AI investigations')
+  release?.()
+  await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+  await expect(dialog.getByText('尚未保存的更改', { exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})
+
+test('an agent CLI installed while Settings is open is picked up without a restart', async ({ page }) => {
+  await fixture(page)
+  let installed = false
+  await page.route('**/api/agents', route => route.fulfill({
+    json: installed ? aiAgents : { agents: [], enabled: false, eligible: true, consented: {} },
+  }))
+  const dialog = await openSettings(page, 'AI investigations')
+  await expect(dialog.getByText('未找到受支持的 Agent CLI', { exact: true })).toBeVisible()
+  await expect(dialog.getByText(/then restart Radar/)).toHaveCount(0)
+  await expect(dialog.getByText(/KUBEATLAS_AI_CLI_BIN/)).toHaveCount(0)
+
+  await dialog.getByRole('button', { name: '重新检查', exact: true }).click()
+  await expect(dialog.getByText(/仍未找到。/)).toBeVisible()
+
+  installed = true
+  await dialog.getByRole('button', { name: '重新检查', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: 'Your Claude Code setup', exact: true })).toBeVisible()
+  await expect(dialog.getByText('未找到受支持的 Agent CLI', { exact: true })).toHaveCount(0)
+})
+
+test('a failed agent check says so and can be retried', async ({ page }) => {
+  await fixture(page)
+  let reachable = false
+  await page.route('**/api/agents', route => reachable ? route.fulfill({ json: aiAgents }) : route.abort())
+  const dialog = await openSettings(page, 'AI investigations')
+  await expect(dialog.getByText('无法检查 Agent CLI', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('未找到受支持的 Agent CLI', { exact: true })).toHaveCount(0)
+
+  reachable = true
+  await dialog.getByRole('button', { name: '重新检查', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: 'Your Claude Code setup', exact: true })).toBeVisible()
+})
+
+test('a pinned KUBEATLAS_AI_CLI_BIN that works again is picked up from Check again', async ({ page }) => {
+  await fixture(page)
+  let fixed = false
+  await page.route('**/api/agents', route => route.fulfill({
+    json: fixed ? { ...aiAgents, cliOverride: true } : { agents: [], enabled: true, eligible: true, cliOverride: true, consented: {} },
+  }))
+  const dialog = await openSettings(page, 'AI investigations')
+  await expect(dialog.getByText('KubeAtlas 无法运行 KUBEATLAS_AI_CLI_BIN', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('未找到受支持的 Agent CLI', { exact: true })).toHaveCount(0)
+
+  fixed = true
+  await dialog.getByRole('button', { name: '重新检查', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: 'Your Claude Code setup', exact: true })).toBeVisible()
+})
+
+test('coming back to the window re-checks for an agent CLI', async ({ page }) => {
+  await fixture(page)
+  let installed = false
+  await page.route('**/api/agents', route => route.fulfill({
+    json: installed ? aiAgents : { agents: [], enabled: false, eligible: true, consented: {} },
+  }))
+  const dialog = await openSettings(page, 'Overview')
+  const aiRow = dialog.getByRole('button', { name: /^AI 调查/ })
+  await expect(aiRow).toContainText('无 Agent CLI')
+
+  installed = true
+  await page.evaluate(() => window.dispatchEvent(new Event('focus')))
+  await expect(aiRow).toContainText('已就绪')
+})
+
+test('AI drafts are guarded for non-owners and discardable when configuration fails to load', async ({ page }) => {
+  await fixture(page)
+  await mockAgents(page)
+  await page.route('**/api/auth/me', route => route.fulfill({ json: { authEnabled: true, username: 'viewer', cloudRole: 'viewer' } }))
+  await page.route('**/api/config', route => route.fulfill({ status: 500, json: { error: 'unavailable' } }))
+  const dialog = await openSettings(page, 'AI investigations')
+  await dialog.getByRole('button', { name: 'Your Claude Code setup', exact: true }).click()
+  await dialog.getByRole('tab', { name: '总览', exact: true }).click()
+  const discard = dialog.getByRole('button', { name: '放弃更改', exact: true })
+  await expect(discard).toBeEnabled()
+  await page.keyboard.press('Escape')
+  await expect(dialog.getByText('AI 调查更改尚未保存。', { exact: true })).toBeVisible()
+  await dialog.getByRole('button', { name: '继续编辑', exact: true }).click()
+  await discard.click()
+  await dialog.getByRole('tab', { name: 'AI调查', exact: true }).click()
+  await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
+  expect(await page.evaluate(() => localStorage.getItem('radar-ai-profile'))).not.toBe('full-local')
+})
+
+test('Overview links to the per-cluster settings list at the end of Connection', async ({ page }) => {
+  const state = await fixture(page)
+  state.connections.push({ url: 'https://old.example', headerKeys: [], envHeaderKeys: [], secretSet: false, insecureTls: false,
+    binding: 'old', integration: 'metrics', context: 'old-cluster', source: '/test/old', inFileName: 'old-cluster', availability: 'removed', revision: 'old-revision' })
+  const dialog = await openSettings(page, 'Overview')
+  await dialog.getByRole('button', { name: '配置文件', exact: true }).click()
+  await dialog.getByRole('button', { name: '查看各集群的集成设置', exact: true }).click()
+  const heading = dialog.getByRole('heading', { name: '各集群的集成设置', exact: true })
+  await expect(heading).toBeFocused()
+  const server = await dialog.getByRole('heading', { name: '服务器', exact: true }).boundingBox()
+  expect((await heading.boundingBox())!.y).toBeGreaterThan(server!.y)
+})
+
+test('saving the last draft from its tab answers a pending close prompt', async ({ page }) => {
+  await fixture(page)
+  await mockAgents(page)
+  const dialog = await openSettings(page, 'AI investigations')
+  await dialog.getByRole('button', { name: 'Your Claude Code setup', exact: true }).click()
+  await page.keyboard.press('Escape')
+  const prompt = dialog.getByText('AI 调查更改尚未保存。', { exact: true })
+  await expect(prompt).toBeVisible()
+  await dialog.getByRole('button', { name: '保存更改', exact: true }).click()
+  await expect(prompt).toHaveCount(0)
+  await expect(dialog.getByText('尚未保存的更改', { exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})
+
+test('a failed investigation start keeps the model and effort set for the agent in use', async ({ page }) => {
+  await fixture(page)
+  await page.route('**/api/agents', route => route.fulfill({ json: {
+    enabled: true, eligible: true, consented: { 'claude:safeguarded': true },
+    agents: [{ name: 'claude', label: 'Claude Code', path: '/usr/local/bin/claude', present: true, supported: true,
+      profiles: ['safeguarded', 'full-local'], consentSurfaces: { safeguarded: 'claude:safeguarded', 'full-local': 'claude:full-local' } }],
+  } }))
+  let starts = 0
+  await page.route('**/api/diagnose/runs', route => {
+    if (route.request().method() !== 'POST') return route.fulfill({ json: { runs: [] } })
+    starts++
+    return route.fulfill({ status: 409, json: { error: 'too many investigations running — stop or finish one first' } })
+  })
+  // The agent was never picked by hand; a model and effort are set for it.
+  await page.goto('/resources/pods')
+  await page.locator('table tbody tr').first().click()
+  const ask = page.getByRole('button', { name: 'Ask AI about this resource', exact: true })
+  await expect(ask).toBeVisible()
+  await page.evaluate(() => {
+    localStorage.setItem('radar-ai-model', 'opus')
+    localStorage.setItem('radar-ai-effort', 'high')
+  })
+  await ask.click()
+  await expect(page.getByText(/too many investigations running/)).toBeVisible()
+  expect(starts).toBe(1)
+  await expect.poll(() => page.evaluate(() => [localStorage.getItem('radar-ai-model'), localStorage.getItem('radar-ai-effort')]))
+    .toEqual(['opus', 'high'])
+  // The default pick isn't saved as a choice, so a later default still applies.
+  expect(await page.evaluate(() => localStorage.getItem('radar-ai-agent'))).toBeNull()
+})

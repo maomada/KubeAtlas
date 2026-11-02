@@ -1,0 +1,46 @@
+package main
+
+import (
+	"testing"
+
+	"github.com/maomada/KubeAtlas/internal/reachability"
+	versionpkg "github.com/maomada/KubeAtlas/internal/version"
+)
+
+func TestReachabilityImagesWithVersionChecksDisabled(t *testing.T) {
+	t.Setenv("KUBEATLAS_DISABLE_VERSION_CHECK", "")
+	t.Setenv("KUBEATLAS_IMAGE", "")
+	previousVersion := versionpkg.Current
+	previousDisabled := versionpkg.IsDisabled()
+	previousImage := reachability.DefaultImageRef
+	previousLatest := reachability.LatestReleaseImage
+	t.Cleanup(func() {
+		versionpkg.SetCurrent(previousVersion)
+		versionpkg.SetDisabled(previousDisabled)
+		reachability.DefaultImageRef = previousImage
+		reachability.LatestReleaseImage = previousLatest
+	})
+	versionpkg.SetDisabled(true)
+
+	for _, tc := range []struct {
+		version string
+		wantTag string
+	}{
+		{"1.6.0", "1.6.0"},
+		{"1.6.0-rc.1", "1.6.0-rc.1"},
+		{"1.6.0-beta.2", "1.6.0-beta.2"},
+		{"1.6.0-vendor.1", "1.6.0-vendor.1"},
+		{"dev", "dev"},
+		{"1.6.0-37-g8b325b372", "1.6.0-37-g8b325b372"},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			versionpkg.SetCurrent(tc.version)
+			reachability.LatestReleaseImage = nil
+			configureReachabilityImages()
+
+			if got, want := reachability.DefaultImage(), "ghcr.io/maomada/kubeatlas:"+tc.wantTag; got != want {
+				t.Errorf("probe image = %q, want %q", got, want)
+			}
+		})
+	}
+}

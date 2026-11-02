@@ -1,0 +1,183 @@
+import { useState } from 'react'
+import { ShieldOff, AlertTriangle, ServerCrash, LogIn, Copy, Check, RefreshCw, type LucideIcon } from 'lucide-react'
+import { clsx } from 'clsx'
+import { PaneLoader } from './PaneLoader'
+import { isFetchError } from '../../types/fetch-error'
+import { readActionFor, canonicalReadCode } from '../../utils/read-actions'
+
+// FetchResult collapses (loading, error, no-data) into one rendered outcome:
+// loader while loading, a typed error surface when the fetch threw, or the
+// notFoundMessage when neither — matching the prior plain-text "Resource not
+// found" so a disabled React Query (loading=false, data=undefined, error=null
+// under v5) still renders a sane fallback rather than going blank.
+//
+// Decision tree:
+//   loading                  → <PaneLoader/>
+//   error (403)              → "Access denied"            + error.message
+//   error (404)              → notFoundMessage            + error.message
+//   error (503 sync failed)  → "Couldn't load this view"  + error.message
+//   error (503 collector)    → "Radar can't read this"    + error.message
+//   error (503)              → "Cluster unavailable"      + error.message
+//   error (401)              → "Sign-in required"         (apiFetch redirects; fallback)
+//   error (other / no shape) → "Couldn't load this view"  + error.message
+//   no loading, no error     → notFoundMessage            (headline only, no detail)
+//
+// Separate from EmptyState (which conveys "no data here" with
+// healthy/filtered/neutral tones) because HTTP-level fetch failures need
+// distinct visual and informational semantics — error vs absence.
+//
+// The error contract is duck-typed via FetchErrorShape so this stays in
+// @maomada/k8s-ui without importing ApiError from either web/ (OSS)
+// or radar-hub-web.
+
+interface FetchResultProps {
+  loading: boolean
+  error?: unknown
+  /** Body line for 404 (resource fetched, server says missing). */
+  notFoundMessage?: string
+  /** Pin to parent height. Existing call sites use "h-32" or "h-full". */
+  className?: string
+  /** Renders a Retry button on the error surface. */
+  onRetry?: () => void
+}
+
+export function FetchResult({
+  loading,
+  error,
+  notFoundMessage = '未找到资源',
+  className = 'h-32',
+  onRetry,
+}: FetchResultProps) {
+  if (loading) {
+    return <PaneLoader className={className} />
+  }
+  if (error === undefined || error === null) {
+    // No loading + no error = the query is disabled or returned no data.
+    // Render the headline-only "not found" state so callers gated on `!data`
+    // don't end up with a blank body when React Query v5 leaves isLoading=false.
+    return (
+      <div className={clsx('flex items-center justify-center text-theme-text-tertiary', className)}>
+        {notFoundMessage}
+      </div>
+    )
+  }
+  return <ErrorSurface error={error} notFoundMessage={notFoundMessage} className={className} onRetry={onRetry} />
+}
+
+interface ErrorSurfaceProps {
+  error: unknown
+  notFoundMessage: string
+  className: string
+  onRetry?: () => void
+}
+
+function ErrorSurface({ error, notFoundMessage, className, onRetry }: ErrorSurfaceProps) {
+  const classified = classify(error, notFoundMessage)
+  const Icon = classified.icon
+
+  return (
+    <div
+      role="status"
+      className={clsx('flex flex-col items-center justify-center gap-2 px-6 text-center', className)}
+    >
+      <Icon className="h-5 w-5 text-theme-text-tertiary" aria-hidden />
+      <div className="text-sm font-medium text-theme-text-secondary">{classified.headline}</div>
+      {classified.detail && (
+        <div className="flex items-center gap-2 max-w-md">
+          <span className="text-xs text-theme-text-tertiary break-words">{classified.detail}</span>
+          <CopyErrorButton text={classified.detail} />
+        </div>
+      )}
+      {onRetry && (
+        <button
+          type="button"
+          onClick={onRetry}
+          className="mt-1 flex items-center gap-1.5 rounded-md border border-theme-border bg-theme-elevated px-3 py-1.5 text-xs text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary"
+        >
+          <RefreshCw className="h-3.5 w-3.5" aria-hidden />
+          重试
+        </button>
+      )}
+    </div>
+  )
+}
+
+interface Classified {
+  headline: string
+  detail: string | null
+  icon: LucideIcon
+}
+
+function classify(error: unknown, notFoundMessage: string): Classified {
+  if (isFetchError(error)) {
+    switch (error.status) {
+      case 403:
+        return { headline: '无权访问', detail: error.message, icon: ShieldOff }
+      case 404:
+        return { headline: notFoundMessage, detail: error.message, icon: AlertTriangle }
+      case 401:
+        return { headline: '需要登录', detail: error.message, icon: LogIn }
+      case 503:
+        // The cluster is connected; one kind's informer missed its sync
+        // deadline, so "Cluster unavailable" would send the reader the wrong way.
+        if (canonicalReadCode(errorCodeOf(error)) === 'kind_sync_timed_out') {
+          return { headline: "无法加载此视图", detail: error.message, icon: AlertTriangle }
+        }
+        // Shares the collector's action, but it is the cluster connection
+        // that is down rather than one read.
+        if (errorCodeOf(error) === 'cluster_disconnected') {
+          return { headline: '集群不可用', detail: error.message, icon: ServerCrash }
+        }
+        // Radar's own identity or collection can't serve the read: neither
+        // the cluster being down nor the reader's access.
+        if (readActionFor(errorCodeOf(error)) === 'radar_config') {
+          return { headline: "Radar 无法读取此内容", detail: error.message, icon: ShieldOff }
+        }
+        // The cluster is healthy and still loading — the retry policies keep
+        // these surfaces polling, but a caller without one must not tell the
+        // user a connecting cluster is down.
+        if (errorCodeOf(error) === 'cluster_connecting' || errorCodeOf(error) === 'kind_sync_pending') {
+          return { headline: '集群仍在加载', detail: error.message, icon: AlertTriangle }
+        }
+        return { headline: '集群不可用', detail: error.message, icon: ServerCrash }
+      default:
+        return { headline: "无法加载此视图", detail: error.message, icon: AlertTriangle }
+    }
+  }
+  // Network failures (no .status), DOMException for AbortError, anything thrown without our shape.
+  return { headline: "无法加载此视图", detail: errorMessageOf(error), icon: AlertTriangle }
+}
+
+function errorCodeOf(error: unknown): unknown {
+  return (error as { data?: { error_code?: unknown } }).data?.error_code
+}
+
+function errorMessageOf(error: unknown): string | null {
+  if (error instanceof Error && error.message) return error.message
+  if (typeof error === 'string') return error
+  return null
+}
+
+function CopyErrorButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const onCopy = () => {
+    navigator.clipboard.writeText(text).then(
+      () => {
+        setCopied(true)
+        window.setTimeout(() => setCopied(false), 1500)
+      },
+      () => { /* best-effort */ },
+    )
+  }
+  return (
+    <button
+      type="button"
+      onClick={onCopy}
+      className="flex-shrink-0 p-1 rounded text-theme-text-tertiary hover:text-theme-text-secondary hover:bg-theme-hover"
+      title={copied ? '已复制' : '复制错误'}
+      aria-label={copied ? '已复制' : '复制错误'}
+    >
+      {copied ? <Check className="h-3 w-3" aria-hidden /> : <Copy className="h-3 w-3" aria-hidden />}
+    </button>
+  )
+}

@@ -1,0 +1,908 @@
+package mcp
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"regexp"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/client-go/dynamic"
+
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/podlogs"
+	aicontext "github.com/maomada/KubeAtlas/pkg/ai/context"
+	"github.com/maomada/KubeAtlas/pkg/k8score"
+	"github.com/maomada/KubeAtlas/pkg/rollouts"
+)
+
+// Workload tool input types
+
+type manageWorkloadInput struct {
+	Action    string `json:"action" jsonschema:"action to perform: restart, scale, or rollback"`
+	Kind      string `json:"kind" jsonschema:"workload kind: deployment, statefulset, daemonset, or rollout"`
+	Namespace string `json:"namespace" jsonschema:"workload namespace"`
+	Name      string `json:"name" jsonschema:"workload name"`
+	Replicas  *int32 `json:"replicas,omitempty" jsonschema:"target replica count (required for scale)"`
+	Revision  *int64 `json:"revision,omitempty" jsonschema:"target revision number (required for rollback); enumerate valid values with get_resource include=revisions"`
+}
+
+type manageRolloutInput struct {
+	Action    string `json:"action" jsonschema:"action to perform: abort (revert traffic to stable now), retry (clear an abort), promote (advance one step), promote-full (skip all remaining steps/pauses/analysis), or skip-step (advance exactly one canary step)"`
+	Namespace string `json:"namespace" jsonschema:"rollout namespace"`
+	Name      string `json:"name" jsonschema:"rollout name"`
+}
+
+var rolloutActions = map[string]func(context.Context, dynamic.Interface, string, string) (rollouts.OperationResult, error){
+	"abort":        rollouts.Abort,
+	"retry":        rollouts.Retry,
+	"promote":      rollouts.Promote,
+	"promote-full": rollouts.PromoteFull,
+	"skip-step":    rollouts.SkipCurrentStep,
+}
+
+type manageCronJobInput struct {
+	Action    string `json:"action" jsonschema:"action to perform: trigger, suspend, or resume"`
+	Namespace string `json:"namespace" jsonschema:"cronjob namespace"`
+	Name      string `json:"name" jsonschema:"cronjob name"`
+}
+
+type getWorkloadLogsInput struct {
+	Kind      string `json:"kind,omitempty" jsonschema:"workload kind: deployment, statefulset, daemonset, job, or workflow. Defaults to deployment when omitted."`
+	Namespace string `json:"namespace" jsonschema:"workload namespace"`
+	Name      string `json:"name" jsonschema:"workload name"`
+	Container string `json:"container,omitempty" jsonschema:"specific container name, defaults to all containers"`
+	TailLines int    `json:"tail_lines,omitempty" jsonschema:"lines per pod (default 100)"`
+	Grep      string `json:"grep,omitempty" jsonschema:"optional regex; when set, only matching timestamp-prefixed lines are returned, like kubectl logs --timestamps | grep PATTERN; when omitted, lines are auto-filtered for diagnostic relevance"`
+	Since     string `json:"since,omitempty" jsonschema:"only return logs newer than this duration (e.g. 30s, 10m, 1h), like kubectl logs --since"`
+	Previous  bool   `json:"previous,omitempty" jsonschema:"return logs from the previous terminated container instance (e.g. for CrashLoopBackOff diagnosis), like kubectl logs -p"`
+}
+
+// parseLogsSince converts a relative duration string like "30s"/"10m"/"1h"
+// into seconds for corev1.PodLogOptions.SinceSeconds. Empty input returns
+// (nil, nil) so the caller can leave SinceSeconds unset. Negative or zero
+// durations are rejected — kubectl's behavior on these is implementation-
+// dependent and not useful for diagnosis.
+func parseLogsSince(s string) (*int64, error) {
+	if strings.TrimSpace(s) == "" {
+		return nil, nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil {
+		return nil, fmt.Errorf("invalid since duration %q: %w (expected e.g. 30s, 10m, 1h)", s, err)
+	}
+	if d <= 0 {
+		return nil, fmt.Errorf("invalid since duration %q: must be positive", s)
+	}
+	secs := int64(d.Seconds())
+	if secs < 1 {
+		secs = 1
+	}
+	return &secs, nil
+}
+
+// Workload tool handlers
+
+func handleManageWorkload(ctx context.Context, req *mcp.CallToolRequest, input manageWorkloadInput) (*mcp.CallToolResult, any, error) {
+	kind := normalizeWorkloadKind(input.Kind)
+	if kind == "" {
+		return nil, nil, fmt.Errorf("invalid kind %q: must be deployment, statefulset, daemonset, or rollout", input.Kind)
+	}
+
+	dynClient := k8s.DynamicClientFromContext(ctx)
+	if dynClient == nil {
+		return nil, nil, errNotConnected()
+	}
+
+	switch strings.ToLower(input.Action) {
+	case "restart":
+		warnings := schedulingBlockerWarnings(ctx, kind, input.Namespace, input.Name)
+		if err := k8s.RestartWorkloadWithClient(ctx, kind, input.Namespace, input.Name, dynClient); err != nil {
+			return nil, nil, fmt.Errorf("restart failed: %w", err)
+		}
+		resp := map[string]any{
+			"next":    fmt.Sprintf("wait_for %s %s in %s to see it finish", k8s.CanonicalWorkloadKind(kind), input.Name, input.Namespace),
+			"status":  "ok",
+			"message": fmt.Sprintf("Rolling restart initiated for %s %s/%s", kind, input.Namespace, input.Name),
+		}
+		if len(warnings) > 0 {
+			resp["warnings"] = warnings
+		}
+		return toJSONResult(resp)
+
+	case "scale":
+		if input.Replicas == nil {
+			return nil, nil, fmt.Errorf("replicas is required for scale action")
+		}
+		if kind == "daemonsets" {
+			return nil, nil, fmt.Errorf("scaling is not supported for DaemonSets (only Deployments and StatefulSets)")
+		}
+		if err := k8s.ScaleWorkloadWithClient(ctx, kind, input.Namespace, input.Name, *input.Replicas, dynClient); err != nil {
+			return nil, nil, fmt.Errorf("scale failed: %w", err)
+		}
+		return toJSONResult(map[string]any{
+			"next":     fmt.Sprintf("wait_for %s %s in %s to see it finish", k8s.CanonicalWorkloadKind(kind), input.Name, input.Namespace),
+			"status":   "ok",
+			"message":  fmt.Sprintf("Scaled %s %s/%s to %d replicas", kind, input.Namespace, input.Name, *input.Replicas),
+			"replicas": *input.Replicas,
+		})
+
+	case "rollback":
+		if input.Revision == nil {
+			return nil, nil, fmt.Errorf("revision is required for rollback action (list valid numbers with get_resource include=revisions)")
+		}
+		if err := k8s.RollbackWorkloadWithClient(ctx, kind, input.Namespace, input.Name, *input.Revision, dynClient); err != nil {
+			return nil, nil, fmt.Errorf("rollback failed: %w", err)
+		}
+		resp := map[string]any{
+			"next":     fmt.Sprintf("wait_for %s %s in %s to see it finish", k8s.CanonicalWorkloadKind(kind), input.Name, input.Namespace),
+			"status":   "ok",
+			"message":  fmt.Sprintf("Rollback of %s %s/%s to revision %d initiated — the controller applies it", kind, input.Namespace, input.Name, *input.Revision),
+			"revision": *input.Revision,
+		}
+		if kind == "rollouts" {
+			resp["note"] = "This starts a new rollout of the old template — every canary step, pause, and analysis re-runs. " +
+				"Use manage_rollout action=promote-full to skip them, or action=abort to revert traffic immediately instead."
+		}
+		return toJSONResult(resp)
+
+	default:
+		return nil, nil, fmt.Errorf("unknown action %q: must be restart, scale, or rollback", input.Action)
+	}
+}
+
+func handleManageRollout(ctx context.Context, req *mcp.CallToolRequest, input manageRolloutInput) (*mcp.CallToolResult, any, error) {
+	dynClient := k8s.DynamicClientFromContext(ctx)
+	if dynClient == nil {
+		return nil, nil, errNotConnected()
+	}
+
+	action := strings.ToLower(strings.TrimSpace(input.Action))
+	op, ok := rolloutActions[action]
+	if !ok {
+		return nil, nil, fmt.Errorf("unknown action %q: must be abort, retry, promote, promote-full, or skip-step", input.Action)
+	}
+
+	result, err := op(ctx, dynClient, input.Namespace, input.Name)
+	if err != nil {
+		return nil, nil, fmt.Errorf("%s failed: %w", action, err)
+	}
+
+	resp := map[string]any{
+		"status":    "ok",
+		"message":   result.Message,
+		"operation": result.Operation,
+	}
+	if result.StepIndex != nil {
+		resp["stepIndex"] = *result.StepIndex
+	}
+	if result.NoChange {
+		resp["noChange"] = true
+	}
+	if action == "abort" {
+		resp["note"] = "The Rollout stays aborted until manage_rollout action=retry, or a new revision is pushed."
+	}
+	return toJSONResult(resp)
+}
+
+func handleManageCronJob(ctx context.Context, req *mcp.CallToolRequest, input manageCronJobInput) (*mcp.CallToolResult, any, error) {
+	dynClient := k8s.DynamicClientFromContext(ctx)
+	if dynClient == nil {
+		return nil, nil, errNotConnected()
+	}
+
+	switch strings.ToLower(input.Action) {
+	case "trigger":
+		job, err := k8s.TriggerCronJobWithClient(ctx, input.Namespace, input.Name, dynClient)
+		if err != nil {
+			return nil, nil, fmt.Errorf("trigger failed: %w", err)
+		}
+		return toJSONResult(map[string]string{
+			"status":  "ok",
+			"message": fmt.Sprintf("Triggered manual job from CronJob %s/%s", input.Namespace, input.Name),
+			"jobName": job.GetName(),
+		})
+
+	case "suspend":
+		if err := k8s.SetCronJobSuspendWithClient(ctx, input.Namespace, input.Name, true, dynClient); err != nil {
+			return nil, nil, fmt.Errorf("suspend failed: %w", err)
+		}
+		return toJSONResult(map[string]string{
+			"status":  "ok",
+			"message": fmt.Sprintf("Suspended CronJob %s/%s", input.Namespace, input.Name),
+		})
+
+	case "resume":
+		if err := k8s.SetCronJobSuspendWithClient(ctx, input.Namespace, input.Name, false, dynClient); err != nil {
+			return nil, nil, fmt.Errorf("resume failed: %w", err)
+		}
+		return toJSONResult(map[string]string{
+			"status":  "ok",
+			"message": fmt.Sprintf("Resumed CronJob %s/%s", input.Namespace, input.Name),
+		})
+
+	default:
+		return nil, nil, fmt.Errorf("unknown action %q: must be trigger, suspend, or resume", input.Action)
+	}
+}
+
+func handleGetWorkloadLogs(ctx context.Context, req *mcp.CallToolRequest, input getWorkloadLogsInput) (*mcp.CallToolResult, any, error) {
+	kind := normalizeWorkloadLogsKind(input.Kind)
+	if kind == "" {
+		return nil, nil, fmt.Errorf("invalid kind %q: must be deployment, statefulset, daemonset, job, or workflow", input.Kind)
+	}
+
+	if !checkNamespaceAccess(ctx, input.Namespace) {
+		return nil, nil, fmt.Errorf("forbidden: no access to namespace %q", input.Namespace)
+	}
+
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return nil, nil, errNotConnected()
+	}
+
+	client := k8s.ClientFromContext(ctx)
+	if client == nil {
+		return nil, nil, errNotConnected()
+	}
+
+	// The workload's own pods, by controller ownership: a label selector also
+	// matches a bare debug pod or, during a Rollout workloadRef migration,
+	// the referenced Deployment's pods, and their logs would then read as
+	// this workload's.
+	pods, err := k8s.WorkloadPods(ctx, cache, kind, input.Namespace, input.Name)
+	if err != nil {
+		return nil, nil, workloadSelectorMCPError(ctx, err, kind, input.Namespace, input.Name)
+	}
+	if len(pods) == 0 {
+		empty := describeMCPWorkloadLogEmpty(ctx, kind, input.Namespace, input.Name)
+		response := map[string]any{
+			"workload": fmt.Sprintf("%s/%s/%s", kind, input.Namespace, input.Name),
+			"pods":     0,
+			"logs":     empty.Message,
+		}
+		addMCPWorkloadLogEmptyMetadata(response, empty)
+		return toJSONResult(response)
+	}
+
+	tailLines := int64(100)
+	if input.TailLines > 0 {
+		tailLines = int64(input.TailLines)
+	}
+	if strings.TrimSpace(input.Grep) != "" {
+		if _, err := regexp.Compile(input.Grep); err != nil {
+			return nil, nil, fmt.Errorf("invalid grep regex: %w", err)
+		}
+	}
+	sinceSeconds, err := parseLogsSince(input.Since)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Validate container name if specified
+	if input.Container != "" {
+		found := false
+		for _, pod := range pods {
+			for _, c := range pod.Spec.Containers {
+				if c.Name == input.Container {
+					found = true
+					break
+				}
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			return nil, nil, fmt.Errorf("container %q not found in any pod of %s %s/%s", input.Container, kind, input.Namespace, input.Name)
+		}
+	}
+
+	// Mirror diagnose's logsError contract: surface a missing kube client
+	// distinctly from an empty pod set, so agents don't read "no log lines"
+	// as truth when we couldn't even try to fetch.
+	if k8s.ClientFromContext(ctx) == nil {
+		return toJSONResult(map[string]any{
+			"workload":  fmt.Sprintf("%s/%s/%s", kind, input.Namespace, input.Name),
+			"pods":      len(pods),
+			"logsError": "no kube client in request context",
+		})
+	}
+
+	allLogs := fetchPodLogs(ctx, pods, input.Namespace, input.Container, input.Grep, tailLines, sinceSeconds, input.Previous)
+	var narrowHint string
+	// Steering hint when any pod's stream hit its tail cap. Compare against
+	// RawLines (pre-grep) so grep-filtered streams still surface the hint.
+	// Heuristic mirrors handleGetPodLogs.
+	for _, e := range allLogs {
+		if int64(e.RawLines) >= tailLines {
+			narrowHint = fmt.Sprintf(
+				"at least one pod's log stream tailed to %d lines (cap reached) — narrow with since= (e.g. 10m), grep= regex, container=, or raise tail_lines",
+				tailLines,
+			)
+			break
+		}
+	}
+	capped, capStats := capMultiPodLogBundles(allLogs)
+	allLogs = capped[0]
+	if capStats.Truncated {
+		// Raising tail_lines cannot recover aggregate-truncated output, so the
+		// bundle-cap guidance supersedes the per-stream tail hint.
+		narrowHint = multiPodLogBundleNarrowHint(input.Namespace, capStats, input.Previous)
+	}
+
+	resp := map[string]any{
+		"workload": fmt.Sprintf("%s/%s/%s", kind, input.Namespace, input.Name),
+		"pods":     len(pods),
+		"logs":     allLogs,
+	}
+	if narrowHint != "" {
+		resp["narrowHint"] = narrowHint
+	}
+	if w := computeWorkloadLogsWarnings(pods, allLogs, input.Previous); len(w) > 0 {
+		resp["warnings"] = w
+	}
+	return toJSONResult(resp)
+}
+
+func workloadSelectorMCPError(ctx context.Context, err error, kind, namespace, name string) error {
+	if errors.Is(err, k8s.ErrWorkloadCacheWarming) {
+		return fmt.Errorf("%s %s/%s is not readable yet: %w. Retry in a moment", kind, namespace, name, err)
+	}
+	if errors.Is(err, k8s.ErrWorkloadAccessDenied) || apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+		return fmt.Errorf("forbidden: cannot access %s %s/%s: %w", kind, namespace, name, err)
+	}
+	if apierrors.IsNotFound(err) || errors.Is(err, k8score.ErrResourceNotFound) || errors.Is(err, k8s.ErrWorkloadNotFound) {
+		return notFoundError(ctx, err, kind, namespace, name)
+	}
+	if errors.Is(err, k8s.ErrUnknownDynamicKind) {
+		return fmt.Errorf("%s (argoproj.io) is not installed or not yet discovered in this cluster", k8s.CanonicalWorkloadKind(kind))
+	}
+	if errors.Is(err, k8s.ErrWorkloadSelectorUnavailable) || errors.Is(err, rollouts.ErrWorkloadRefUnsupported) {
+		return fmt.Errorf("invalid %s %s/%s: %w", kind, namespace, name, err)
+	}
+	return fmt.Errorf("get %s %s/%s: %w", kind, namespace, name, err)
+}
+
+type mcpWorkloadLogEmptyMetadata struct {
+	Reason  string
+	Message string
+	Command string
+}
+
+func describeMCPWorkloadLogEmpty(ctx context.Context, kind, namespace, name string) mcpWorkloadLogEmptyMetadata {
+	switch kind {
+	case "jobs":
+		return describeMCPJobLogEmpty(namespace, name)
+	case "workflows":
+		return describeMCPWorkflowLogEmpty(ctx, namespace, name)
+	default:
+		return mcpWorkloadLogEmptyMetadata{
+			Reason:  "no-pods",
+			Message: "no pods found for this workload",
+		}
+	}
+}
+
+func describeMCPJobLogEmpty(namespace, name string) mcpWorkloadLogEmptyMetadata {
+	metadata := mcpWorkloadLogEmptyMetadata{
+		Reason:  "no-pods",
+		Message: "No pods found for this Job yet. Check scheduling, admission, or controller events.",
+		Command: "kubectl logs job/" + name + " -n " + namespace,
+	}
+	cache := k8s.GetResourceCache()
+	if cache == nil || cache.Jobs() == nil {
+		return metadata
+	}
+	job, err := cache.Jobs().Jobs(namespace).Get(name)
+	if err != nil {
+		return metadata
+	}
+	applyMCPTerminalJobEmptyState(&metadata, job, namespace, name)
+	return metadata
+}
+
+func applyMCPTerminalJobEmptyState(metadata *mcpWorkloadLogEmptyMetadata, job *batchv1.Job, namespace, name string) {
+	if !k8s.IsJobTerminal(job) {
+		return
+	}
+	metadata.Reason = "pods-gone"
+	metadata.Message = "This Job has finished, but its pods are no longer present in Kubernetes. If logs were retained externally, use your logging system; otherwise inspect the Job conditions and events."
+	metadata.Command = "kubectl describe job/" + name + " -n " + namespace
+}
+
+func describeMCPWorkflowLogEmpty(ctx context.Context, namespace, name string) mcpWorkloadLogEmptyMetadata {
+	metadata := mcpWorkloadLogEmptyMetadata{
+		Reason:  "no-pods",
+		Message: "No Workflow pods found yet. Check scheduling, admission, or controller events.",
+		Command: "argo logs " + name + " -n " + namespace,
+	}
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return metadata
+	}
+	workflow, err := cache.GetDynamicWithGroup(ctx, "Workflow", namespace, name, "argoproj.io")
+	if err != nil {
+		return metadata
+	}
+	applyMCPTerminalWorkflowEmptyState(&metadata, workflow.Object, namespace, name)
+	return metadata
+}
+
+func applyMCPTerminalWorkflowEmptyState(metadata *mcpWorkloadLogEmptyMetadata, workflow map[string]any, namespace, name string) {
+	if !k8s.IsWorkflowTerminal(workflow) {
+		return
+	}
+	metadata.Reason = "pods-gone"
+	if k8s.WorkflowArchiveLogsConfigured(workflow) {
+		metadata.Message = "This Workflow has finished and its pods are no longer present. Archived logs appear to be enabled; use the configured Argo or logging UI, or try argo logs " + name + " -n " + namespace + "."
+	} else {
+		metadata.Message = "This Workflow has finished and its pods are no longer present. Argo may have garbage-collected them; Kubernetes pod logs are no longer available here."
+	}
+}
+
+func addMCPWorkloadLogEmptyMetadata(response map[string]any, metadata mcpWorkloadLogEmptyMetadata) {
+	if metadata.Reason != "" {
+		response["emptyReason"] = metadata.Reason
+	}
+	if metadata.Message != "" {
+		response["emptyMessage"] = metadata.Message
+	}
+	if metadata.Command != "" {
+		response["command"] = metadata.Command
+	}
+}
+
+const schedulingBlockerReadBudget = 250 * time.Millisecond
+
+// schedulingBlockerWarnings detects when a restart won't accomplish what the
+// agent likely wants: if the workload currently has Pending pods blocked on
+// scheduling or post-bind (CNI/volume) issues, a rolling restart just creates
+// more pods that hit the same wall. The agent should fix the underlying
+// constraint instead (taints/affinity/capacity/CNI/storage). Best-effort:
+// membership gets schedulingBlockerReadBudget, so a Rollout inventory that is
+// not watched yet delays the restart by at most that and skips the hint.
+//
+// Admission failures (quota/PSA/webhook) are intentionally out of scope: they
+// block pod creation entirely, so there are no Pending pods to key on, and the
+// FailedCreate event names the controller rather than a Pod.
+func schedulingBlockerWarnings(ctx context.Context, kind, namespace, name string) []string {
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, schedulingBlockerReadBudget)
+	defer cancel()
+	pods, err := k8s.WorkloadPods(ctx, cache, kind, namespace, name)
+	if err != nil || len(pods) == 0 {
+		return nil
+	}
+
+	var pendingCount int
+	podNames := make(map[string]bool, len(pods))
+	for _, p := range pods {
+		if p.Status.Phase == corev1.PodPending {
+			pendingCount++
+		}
+		podNames[p.Name] = true
+	}
+	if pendingCount == 0 {
+		return nil
+	}
+
+	all := k8s.DetectSchedulingProblems(cache, namespace)
+	all = append(all, k8s.DetectPostBindProblems(cache, namespace)...)
+
+	reasons := map[string]struct{}{}
+	for _, p := range all {
+		if p.Kind != "Pod" || !podNames[p.Name] {
+			continue
+		}
+		if p.Reason != "" {
+			reasons[p.Reason] = struct{}{}
+		}
+	}
+	if len(reasons) == 0 {
+		// Pending pods exist but with no detected scheduling/admission cause —
+		// could be initial pull or short transient. Skip the warning rather
+		// than surface a generic "pending" note that the agent will ignore.
+		return nil
+	}
+
+	rs := make([]string, 0, len(reasons))
+	for r := range reasons {
+		rs = append(rs, r)
+	}
+	sort.Strings(rs)
+	return []string{fmt.Sprintf(
+		"%d of %d pod(s) are currently `Pending` with cause(s): %s. A rolling restart replaces existing pods with new ones that face the same constraint — fix the underlying issue (taints/affinity/resources/quota/PSA) before restarting.",
+		pendingCount, len(pods), strings.Join(rs, ", "),
+	)}
+}
+
+// computeWorkloadLogsWarnings aggregates the not-Running, crashloop, and empty
+// previous-log hints that get_pod_logs surfaces across the workload.
+func computeWorkloadLogsWarnings(pods []*corev1.Pod, logs []podLogEntry, previous bool) []string {
+	var notRunning, crashloop int
+	podsByName := make(map[string]*corev1.Pod, len(pods))
+	for _, p := range pods {
+		podsByName[p.Name] = p
+		if p.Status.Phase != corev1.PodRunning && p.Status.Phase != corev1.PodSucceeded {
+			notRunning++
+		}
+		if !previous && pickCrashIndicator(p.Status.ContainerStatuses) != nil {
+			crashloop++
+		}
+	}
+	var out []string
+	if notRunning > 0 {
+		out = append(out, fmt.Sprintf(
+			"%d of %d pod(s) are not in `Running` phase; their containers haven't produced application logs yet. Inspect scheduling/pull state via `diagnose` or `get_resource` with include=events.",
+			notRunning, len(pods),
+		))
+	}
+	if crashloop > 0 {
+		out = append(out, fmt.Sprintf(
+			"%d of %d pod(s) have container restarts on record; the error(s) that killed prior containers are in the previous instance's logs — call again with `previous: true` to see them.",
+			crashloop, len(pods),
+		))
+	}
+	if previous {
+		var emptyCrashLogs int
+		var examplePod string
+		var exampleStatus *corev1.ContainerStatus
+		for _, entry := range logs {
+			if entry.RawLines != 0 || entry.Error != "" {
+				continue
+			}
+			pod := podsByName[entry.Pod]
+			if pod == nil {
+				continue
+			}
+			statuses := filterContainerStatuses(pod.Status.ContainerStatuses, entry.Container)
+			if cs := pickCrashIndicator(statuses); cs != nil {
+				emptyCrashLogs++
+				if exampleStatus == nil {
+					examplePod = entry.Pod
+					exampleStatus = cs
+				}
+			}
+		}
+		if emptyCrashLogs > 0 {
+			reason := exampleStatus.LastTerminationState.Terminated.Reason
+			if reason == "" {
+				reason = "(reason unset)"
+			}
+			out = append(out, fmt.Sprintf(
+				"No crash log was captured for %d previous pod/container instance(s) (for example, `%s/%s`; last recorded termination: `%s`, exit code %d). This is an absence of evidence, not evidence of health — do NOT infer a root cause from the empty log. Inspect `get_events`, `diagnose` (recent spec changes), and pod conditions instead.",
+				emptyCrashLogs,
+				examplePod,
+				exampleStatus.Name,
+				reason,
+				exampleStatus.LastTerminationState.Terminated.ExitCode,
+			))
+		}
+	}
+	return out
+}
+
+// podLogEntry is the per-pod-per-container log row returned by fetchPodLogs.
+//
+// RawLines lets workload-logs detect upstream truncation independently of
+// response filtering.
+type podLogEntry struct {
+	Pod       string                 `json:"pod"`
+	Container string                 `json:"container"`
+	RawLines  int                    `json:"-"`
+	Logs      aicontext.FilteredLogs `json:"logs,omitempty"`
+	Error     string                 `json:"error,omitempty"`
+	// expectedPreviousAbsence is captured from this pod/container's status,
+	// never from an apiserver error string. It stays private on each row; the
+	// semantic diagnose response promotes only matching pod/container references.
+	expectedPreviousAbsence bool
+	// previousLogNotFound distinguishes the specific kubelet absence response
+	// from denied, unavailable, or interrupted reads. Never serialized.
+	previousLogNotFound bool
+}
+
+// expectedPreviousLogAbsence reports when captured Kubernetes status proves
+// this container had no prior instance. A missing status is unknown, while a
+// zero restart count with no last termination covers both an apiserver
+// "not found" response and an empty successful previous-log stream.
+func expectedPreviousLogAbsence(pod *corev1.Pod, container string) bool {
+	had, known := podlogs.EarlierRun(pod, container)
+	return known && !had
+}
+
+// fetchPodLogs fans out kubectl-logs requests across the given pods x containers.
+// containerFilter "" includes every container; non-empty restricts to that name.
+// grep replaces diagnostic filtering when set. previous=true
+// fetches the prior terminated container instance (CrashLoopBackOff diagnosis).
+// Returns entries sorted by (pod, container) for deterministic output.
+// Resolves the kube client from ctx so the call still honors per-request RBAC.
+func fetchPodLogs(ctx context.Context, pods []*corev1.Pod, namespace, containerFilter, grep string, tailLines int64, sinceSeconds *int64, previous bool) []podLogEntry {
+	client := k8s.ClientFromContext(ctx)
+	if client == nil {
+		return nil
+	}
+
+	var allLogs []podLogEntry
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, pod := range pods {
+		containers := k8s.GetContainersForPod(pod, containerFilter, true)
+		for _, c := range containers {
+			expectedAbsence := previous && expectedPreviousLogAbsence(pod, c)
+			wg.Add(1)
+			go func(podName, containerName string, expectedPreviousAbsence bool) {
+				defer wg.Done()
+
+				opts := &corev1.PodLogOptions{
+					Container:    containerName,
+					TailLines:    &tailLines,
+					SinceSeconds: sinceSeconds,
+					Previous:     previous,
+					Timestamps:   true,
+				}
+
+				entry := podLogEntry{
+					Pod:                     podName,
+					Container:               containerName,
+					expectedPreviousAbsence: expectedPreviousAbsence,
+				}
+
+				stream, err := client.CoreV1().Pods(namespace).GetLogs(podName, opts).Stream(ctx)
+				if err != nil {
+					log.Printf("[mcp] Failed to get logs for %s/%s: %v", podName, containerName, err)
+					entry.Error = fmt.Sprintf("failed to get logs: %v", err)
+					entry.previousLogNotFound = previous && podlogs.IsNoPreviousRun(err)
+					mu.Lock()
+					allLogs = append(allLogs, entry)
+					mu.Unlock()
+					return
+				}
+				defer stream.Close()
+
+				data, err := io.ReadAll(stream)
+				if err != nil {
+					log.Printf("[mcp] Failed to read logs for %s/%s: %v", podName, containerName, err)
+					entry.Error = fmt.Sprintf("failed to read logs: %v", err)
+					mu.Lock()
+					allLogs = append(allLogs, entry)
+					mu.Unlock()
+					return
+				}
+				if k8score.IsLogsUnavailableNotice(string(data)) {
+					entry.Error = k8score.ErrLogsUnavailable.Error()
+					mu.Lock()
+					allLogs = append(allLogs, entry)
+					mu.Unlock()
+					return
+				}
+
+				// Capture pre-grep line count so callers can detect upstream
+				// truncation even when grep filters heavily — see RawLines.
+				entry.RawLines = countLines(string(data))
+				// handleGetWorkloadLogs pre-validates the regex, but this
+				// helper is exported within the package — propagate any
+				// filter error per-entry so a future caller that skips
+				// pre-validation doesn't silently lose log lines.
+				filtered, filterErr := aicontext.FilterLogsByPattern(string(data), grep)
+				if filterErr != nil {
+					entry.Error = fmt.Sprintf("filter error: %v", filterErr)
+				} else {
+					entry.Logs = filtered
+				}
+
+				mu.Lock()
+				allLogs = append(allLogs, entry)
+				mu.Unlock()
+			}(pod.Name, c, expectedAbsence)
+		}
+	}
+
+	wg.Wait()
+
+	sort.Slice(allLogs, func(i, j int) bool {
+		if allLogs[i].Pod != allLogs[j].Pod {
+			return allLogs[i].Pod < allLogs[j].Pod
+		}
+		return allLogs[i].Container < allLogs[j].Container
+	})
+	return allLogs
+}
+
+// Node tool input and handler
+
+type manageNodeInput struct {
+	Action             string `json:"action" jsonschema:"action to perform: cordon, uncordon, or drain"`
+	Name               string `json:"name" jsonschema:"node name"`
+	DeleteEmptyDirData *bool  `json:"delete_empty_dir_data,omitempty" jsonschema:"evict pods with emptyDir volumes (default true, set false to skip them)"`
+	Force              bool   `json:"force,omitempty" jsonschema:"force evict pods not managed by a controller (default false)"`
+	WaitForDeletion    *bool  `json:"wait_for_deletion,omitempty" jsonschema:"default true; false returns once evictions are accepted (pods may still be terminating)"`
+	Timeout            int    `json:"timeout,omitempty" jsonschema:"drain deadline in seconds; 0 = server default (2m when waiting)"`
+}
+
+func handleManageNode(ctx context.Context, req *mcp.CallToolRequest, input manageNodeInput) (*mcp.CallToolResult, any, error) {
+	if input.Name == "" {
+		return nil, nil, fmt.Errorf("node name is required")
+	}
+
+	client := k8s.ClientFromContext(ctx)
+	if client == nil {
+		return nil, nil, errNotConnected()
+	}
+
+	switch strings.ToLower(input.Action) {
+	case "cordon":
+		if err := k8s.CordonNodeWithClient(ctx, input.Name, client); err != nil {
+			return nil, nil, fmt.Errorf("cordon failed: %w", err)
+		}
+		return toJSONResult(map[string]string{
+			"status":  "ok",
+			"message": fmt.Sprintf("Node %s cordoned (marked unschedulable)", input.Name),
+		})
+
+	case "uncordon":
+		if err := k8s.UncordonNodeWithClient(ctx, input.Name, client); err != nil {
+			return nil, nil, fmt.Errorf("uncordon failed: %w", err)
+		}
+		return toJSONResult(map[string]string{
+			"status":  "ok",
+			"message": fmt.Sprintf("Node %s uncordoned (marked schedulable)", input.Name),
+		})
+
+	case "drain":
+		// Default deleteEmptyDirData to true (most pods use emptyDir for tmp/caches)
+		deleteLocal := true
+		if input.DeleteEmptyDirData != nil {
+			deleteLocal = *input.DeleteEmptyDirData
+		}
+		opts := k8s.DrainOptions{
+			IgnoreDaemonSets:   true,
+			DeleteEmptyDirData: deleteLocal,
+			Force:              input.Force,
+			// An accepted eviction does not establish that the workload has left.
+			WaitForDeletion: input.WaitForDeletion == nil || *input.WaitForDeletion,
+		}
+		// Timeout left at 0 lets DrainNode pick a default sized for the operation.
+		if input.Timeout > 0 {
+			opts.Timeout = time.Duration(input.Timeout) * time.Second
+		}
+		result, err := k8s.DrainNodeWithClient(ctx, input.Name, opts, client)
+		if err != nil {
+			return nil, nil, fmt.Errorf("drain failed: %w", err)
+		}
+		status, msg := describeNodeDrain(input.Name, result)
+		return toJSONResult(map[string]any{
+			"status":            status,
+			"message":           msg,
+			"evictedPods":       result.EvictedPods,
+			"skippedPods":       skippedPodsForMCP(result.SkippedPods),
+			"pendingPods":       result.PendingPods,
+			"waitedForDeletion": result.WaitedForDeletion,
+			"outcome":           result.CompletionOutcome(),
+			"unconfirmedPods":   result.UnconfirmedPods,
+			"verificationError": result.VerificationError,
+			"errors":            result.Errors,
+		})
+
+	default:
+		return nil, nil, fmt.Errorf("unknown action %q: must be cordon, uncordon, or drain", input.Action)
+	}
+}
+
+type mcpSkippedPod struct {
+	Pod          string `json:"pod"`
+	Reason       string `json:"reason"`
+	ExpectedSkip bool   `json:"expectedSkip"`
+}
+
+func skippedPodsForMCP(skipped []k8score.PodDrainDecision) []mcpSkippedPod {
+	out := make([]mcpSkippedPod, 0, len(skipped))
+	for _, d := range skipped {
+		out = append(out, mcpSkippedPod{Pod: d.Namespace + "/" + d.Name, Reason: d.Reason, ExpectedSkip: d.ExpectedSkip})
+	}
+	return out
+}
+
+func describeNodeDrain(name string, result *k8s.DrainResult) (status, message string) {
+	outcome := result.CompletionOutcome()
+	var details []string
+	blocking, expected := 0, 0
+	for _, pod := range result.SkippedPods {
+		if pod.BlocksDrain() {
+			blocking++
+		} else {
+			expected++
+		}
+	}
+	if len(result.Errors) > 0 {
+		details = append(details, fmt.Sprintf("Failed evictions: %d (see errors)", len(result.Errors)))
+	}
+	if len(result.PendingPods) > 0 {
+		details = append(details, fmt.Sprintf("Evicted pods still on the node: %d (see pendingPods)", len(result.PendingPods)))
+	}
+	if blocking > 0 {
+		details = append(details, fmt.Sprintf("Skipped pods requiring attention: %d (see skippedPods for reasons)", blocking))
+	}
+	if len(result.UnconfirmedPods) > 0 {
+		details = append(details, fmt.Sprintf("Pods with unconfirmed deletion: %d (see unconfirmedPods)", len(result.UnconfirmedPods)))
+	}
+	if result.VerificationError != "" {
+		details = append(details, "could not verify pod deletion: "+result.VerificationError)
+	}
+	if expected > 0 {
+		details = append(details, fmt.Sprintf("Pods left in place by design: %d (see skippedPods)", expected))
+	}
+	status = "ok"
+	switch outcome {
+	case k8score.DrainIncomplete:
+		status, message = "partial", "Drain incomplete on node "+name
+	case k8score.DrainUnconfirmed:
+		status, message = "partial", "Could not confirm drain completion on node "+name
+	case k8score.DrainStarted:
+		message = fmt.Sprintf("Evictions started on node %s: %d accepted; pod deletion has not been confirmed", name, len(result.EvictedPods))
+	default:
+		if len(result.EvictedPods) == 0 {
+			message = "Drain complete on node " + name + ": nothing to evict"
+		} else {
+			podLabel := "pods"
+			if len(result.EvictedPods) == 1 {
+				podLabel = "pod"
+			}
+			message = fmt.Sprintf("Drain complete on node %s: %d %s removed and confirmed gone", name, len(result.EvictedPods), podLabel)
+		}
+	}
+	if len(details) > 0 {
+		message += "; " + strings.Join(details, "; ")
+	}
+	message += ". The node remains cordoned."
+	if status == "partial" {
+		if blocking > 0 {
+			message += " Review skipped workloads and drain options before retrying."
+		}
+		message += " Do not take the node down until required workloads are removed."
+	}
+	return status, message
+}
+
+// normalizeWorkloadKind converts various kind formats to the plural lowercase form.
+func normalizeWorkloadKind(kind string) string {
+	switch strings.ToLower(kind) {
+	case "deployment", "deployments":
+		return "deployments"
+	case "statefulset", "statefulsets":
+		return "statefulsets"
+	case "daemonset", "daemonsets":
+		return "daemonsets"
+	case "rollout", "rollouts":
+		return "rollouts"
+	default:
+		return ""
+	}
+}
+
+func normalizeWorkloadLogsKind(kind string) string {
+	if strings.TrimSpace(kind) == "" {
+		return "deployments"
+	}
+	switch strings.ToLower(kind) {
+	case "job", "jobs":
+		return "jobs"
+	case "workflow", "workflows":
+		return "workflows"
+	default:
+		return normalizeWorkloadKind(kind)
+	}
+}

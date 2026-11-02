@@ -1,0 +1,53 @@
+import { useCallback } from 'react'
+import { fetchJSON, createLogStream } from '../../api/client'
+import { LogsViewer as SharedLogsViewer } from '@maomada/k8s-ui'
+import type { LogsFetchParams } from '@maomada/k8s-ui'
+import { useDesktopDownload } from '../../hooks/useDesktopDownload'
+import { useTheme } from '../../context/ThemeContext'
+
+interface LogsViewerProps {
+  namespace: string
+  podName: string
+  containers: string[]
+  initialContainer?: string
+  /** Start streaming on mount. Default true — callers pass false for terminal (completed/failed) pods. */
+  autoStream?: boolean
+}
+
+export function LogsViewer({ namespace, podName, containers, initialContainer, autoStream = true }: LogsViewerProps) {
+  const desktopDownload = useDesktopDownload()
+  const { theme } = useTheme()
+
+  const fetchLogs = useCallback(async (params: LogsFetchParams) => {
+    const query = new URLSearchParams()
+    query.set('container', params.container)
+    if (params.tailLines) query.set('tailLines', String(params.tailLines))
+    if (params.sinceSeconds) query.set('sinceSeconds', String(params.sinceSeconds))
+    if (params.previous) query.set('previous', 'true')
+    const data = await fetchJSON<{ logs: { [container: string]: string } }>(
+      `/pods/${namespace}/${podName}/logs?${query}`
+    )
+    return data.logs
+  }, [namespace, podName])
+
+  const makeStream = useCallback((params: Omit<LogsFetchParams, 'previous'>) => {
+    return createLogStream(namespace, podName, params)
+  }, [namespace, podName])
+
+  return (
+    <SharedLogsViewer
+      namespace={namespace}
+      podName={podName}
+      containers={containers}
+      initialContainer={initialContainer}
+      fetchLogs={fetchLogs}
+      createStream={makeStream}
+      overrideDownload={desktopDownload}
+      // Light logs on a dark app are never wanted: dark theme pins the palette,
+      // light theme only sets where it starts and leaves the toggle available.
+      forceDark={theme === 'dark' ? true : undefined}
+      defaultDark={false}
+      autoStream={autoStream}
+    />
+  )
+}

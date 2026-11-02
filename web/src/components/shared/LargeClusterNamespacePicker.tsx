@@ -1,0 +1,76 @@
+import { useState, useRef, useEffect, useMemo, type ReactNode } from 'react'
+import { Search } from 'lucide-react'
+import { Input } from '@maomada/k8s-ui'
+
+export function LargeClusterNamespacePicker({ namespaces, onSelect, ranked = false, renderMeta }: {
+  namespaces: { name: string }[] | undefined
+  onSelect: (ns: string) => void
+  /** Keep the given order (already ranked) instead of sorting by name. */
+  ranked?: boolean
+  /** Extra detail shown at the end of a namespace's row. */
+  renderMeta?: (name: string) => ReactNode
+}) {
+  const [search, setSearch] = useState('')
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    inputRef.current?.focus()
+  }, [])
+
+  const sorted = useMemo(() => {
+    if (!namespaces) return []
+    if (ranked) return namespaces
+    return [...namespaces].sort((a, b) => a.name.localeCompare(b.name))
+  }, [namespaces, ranked])
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return sorted
+    const q = search.toLowerCase()
+    return sorted.filter(ns => ns.name.toLowerCase().includes(q))
+  }, [sorted, search])
+
+  return (
+    <div className="text-left">
+      <div className="relative mb-2">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-theme-text-tertiary" />
+        <Input
+          ref={inputRef}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="搜索命名空间…"
+          className="w-full bg-theme-base text-theme-text-primary text-sm rounded-lg px-3 py-2 pl-9 border border-theme-border-light focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 placeholder:text-theme-text-tertiary"
+        />
+      </div>
+      <div className="max-h-[240px] overflow-y-auto rounded-lg border border-theme-border bg-theme-base">
+        {!namespaces ? (
+          <div className="px-3 py-6 text-center text-sm text-theme-text-tertiary">
+            正在加载命名空间…
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="px-3 py-6 text-center text-sm text-theme-text-tertiary">
+            没有与“{search}”匹配的命名空间
+          </div>
+        ) : (
+          filtered.map((ns) => (
+            <button
+              key={ns.name}
+              type="button"
+              onClick={() => onSelect(ns.name)}
+              className="w-full flex items-center justify-between gap-3 text-left px-3 py-2 text-sm text-theme-text-primary hover:bg-theme-hover transition-colors border-b border-theme-border last:border-b-0"
+            >
+              <span className="truncate">{ns.name}</span>
+              {renderMeta?.(ns.name)}
+            </button>
+          ))
+        )}
+      </div>
+      {sorted.length > 0 && (
+        <p className="mt-2 text-xs text-theme-text-tertiary text-center">
+          {filtered.length === sorted.length
+            ? `${sorted.length} 个命名空间`
+            : `${filtered.length} / ${sorted.length} 个命名空间`}
+        </p>
+      )}
+    </div>
+  )
+}

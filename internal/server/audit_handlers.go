@@ -1,0 +1,267 @@
+package server
+
+import (
+	"encoding/json"
+	"log"
+	"net/http"
+	"slices"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+
+	"github.com/maomada/KubeAtlas/internal/audit"
+	"github.com/maomada/KubeAtlas/internal/auth"
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/readscope"
+	"github.com/maomada/KubeAtlas/internal/settings"
+	bp "github.com/maomada/KubeAtlas/pkg/audit"
+	chk "github.com/maomada/KubeAtlas/pkg/checks"
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+)
+
+// apiResourceKindMap maps lowercase plural API resource names to Go Kind names
+// for the resource types that the audit scanner checks.
+var apiResourceKindMap = map[string]string{
+	"pods":         "Pod",
+	"deployments":  "Deployment",
+	"statefulsets": "StatefulSet",
+	"daemonsets":   "DaemonSet",
+	"services":     "Service",
+	"ingresses":    "Ingress",
+	"configmaps":   "ConfigMap",
+	"secrets":      "Secret",
+}
+
+func apiResourceToKind(resource string) string {
+	if kind, ok := apiResourceKindMap[resource]; ok {
+		return kind
+	}
+	return resource
+}
+
+// auditCache caches scan results for a short TTL so that
+// dashboard polls and per-resource lookups share the same scan.
+var auditCache struct {
+	mu        sync.RWMutex
+	results   *bp.ScanResults
+	key       auditResultKey
+	expiresAt time.Time
+}
+
+type auditResultKey struct {
+	cache   *k8s.ResourceCache
+	dynamic *k8s.DynamicResourceCache
+	options string
+}
+
+func auditKey(cache *k8s.ResourceCache, namespaces []string, opts *audit.RunOptions) auditResultKey {
+	selected := slices.Clone(namespaces)
+	slices.Sort(selected)
+	encoded, _ := json.Marshal(struct {
+		Namespaces []string
+		Options    *audit.RunOptions
+	}{selected, opts})
+	return auditResultKey{cache, k8s.GetDynamicResourceCache(), string(encoded)}
+}
+
+func invalidateAuditCache() {
+	auditCache.mu.Lock()
+	auditCache.results = nil
+	auditCache.mu.Unlock()
+}
+
+const auditCacheTTL = 5 * time.Second
+
+// getCachedResults returns cached scan results if fresh, or runs a new scan.
+func getCachedResults(cache *k8s.ResourceCache, namespaces []string, opts *audit.RunOptions) *bp.ScanResults {
+	key := auditKey(cache, namespaces, opts)
+
+	auditCache.mu.RLock()
+	if auditCache.results != nil && auditCache.key == key && time.Now().Before(auditCache.expiresAt) {
+		r := auditCache.results
+		auditCache.mu.RUnlock()
+		return r
+	}
+	auditCache.mu.RUnlock()
+
+	results := audit.RunFromCache(cache, namespaces, opts)
+
+	auditCache.mu.Lock()
+	auditCache.results = results
+	auditCache.key = key
+	auditCache.expiresAt = time.Now().Add(auditCacheTTL)
+	auditCache.mu.Unlock()
+
+	return results
+}
+
+// applyAuditSettings filters results based on user settings.
+func applyAuditSettings(results *bp.ScanResults, cfg settings.AuditConfig) *bp.ScanResults {
+	return bp.ApplySettings(results, cfg.IgnoredNamespaces, cfg.DisabledChecks)
+}
+
+// getAuditConfig returns the current audit config with defaults applied.
+func getAuditConfig() settings.AuditConfig {
+	return settings.EffectiveAudit()
+}
+
+// handleAudit returns full audit scan results.
+// GET /api/audit?namespace=X&namespaces=X,Y
+func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConnected(w) {
+		return
+	}
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "Cache not initialized")
+		return
+	}
+	namespaces := s.parseNamespacesForUser(r)
+	if readscope.NoNamespaceAccess(namespaces) {
+		s.writeJSON(w, &bp.ScanResults{Summary: bp.ScanSummary{Categories: map[string]bp.CategorySummary{}}})
+		return
+	}
+	results := getCachedResults(cache, namespaces, s.auditOptions(r))
+	// `?raw=true` returns the unfiltered scan, skipping the local
+	// ~/.kubeatlas/settings.json audit filters. Radar Cloud's Hub requests raw so
+	// it can own the effective Checks config (org policy) centrally rather than
+	// inheriting each cluster's local settings as if they were team policy.
+	// Standalone Radar and the embedded per-cluster audit view omit the param
+	// and keep applying local settings.
+	if queryTrue(r, "raw") {
+		// This mixed-version Hub boundary deliberately preserves the scanner's
+		// raw danger/warning provenance. Existing audit transport fields remain
+		// compatible, while Checks and agent surfaces use the canonical
+		// critical/high/medium/low ladder.
+		s.writeJSON(w, results)
+		return
+	}
+	results = applyAuditSettings(results, getAuditConfig())
+	// Attach the remediation-queue rollup for standalone + embedded per-cluster
+	// views. Build on a shallow copy: applyAuditSettings returns the shared
+	// cache object verbatim when no settings filter, so mutating it would race
+	// concurrent readers. clusterID/env are empty — single-cluster, and the web
+	// supplies cluster context from the URL when embedded.
+	resp := *results
+	resp.GroupedChecks = chk.BuildChecks(bp.EffectiveFindings(results.Findings, ""), results.Checks, "", "")
+	s.writeJSON(w, &resp)
+}
+
+// queryTrue reports whether a query param parses as a truthy boolean. Tolerant
+// of the usual forms (true/1/t); anything else (incl. absent) reads false.
+func queryTrue(r *http.Request, key string) bool {
+	switch strings.ToLower(r.URL.Query().Get(key)) {
+	case "true", "1", "t", "yes":
+		return true
+	}
+	return false
+}
+
+// handleAuditResource returns findings for a specific resource.
+// GET /api/audit/resource/{kind}/{namespace}/{name}
+func (s *Server) handleAuditResource(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConnected(w) {
+		return
+	}
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "Cache not initialized")
+		return
+	}
+
+	kind := chi.URLParam(r, "kind")
+	namespace := normalizeNamespaceParam(chi.URLParam(r, "namespace"))
+	name := chi.URLParam(r, "name")
+
+	// A namespaced subject is audited in its own namespace unless the request
+	// names a scope. Evidence that crosses namespaces (Reflector consumers,
+	// Traefik targets, cert-manager issuers) is read cluster-wide either way,
+	// so a full scan would find nothing more and would evict the shared memo.
+	scopeReq := r
+	if namespace != "" && parseNamespaces(r.URL.Query()) == nil {
+		scopeReq = withNamespaceFilter(r, namespace)
+	}
+	namespaces := s.parseNamespacesForUser(scopeReq)
+	if readscope.NoNamespaceAccess(namespaces) {
+		s.writeJSON(w, []bp.Finding{})
+		return
+	}
+	results := getCachedResults(cache, namespaces, s.auditOptions(r))
+	// Honor ?raw=true here too (mirrors handleAudit), so the per-resource
+	// drill-down and the list endpoint can't drift on the raw contract: Radar
+	// Cloud's Hub owns effective Checks config, standalone keeps local settings.
+	if !queryTrue(r, "raw") {
+		results = applyAuditSettings(results, getAuditConfig())
+	}
+	index := bp.IndexByResource(results.Findings)
+
+	goKind := apiResourceToKind(kind)
+	group := r.URL.Query().Get("group")
+	if builtinKind, ok := k8s.BuiltinKindForResource(kind); ok {
+		goKind = builtinKind
+	}
+	if discovery := k8s.GetResourceDiscovery(); discovery != nil && group != "" {
+		if resource, ok := discovery.GetResourceWithGroup(kind, group); ok {
+			goKind = resource.Kind
+		}
+	}
+	if group == "" {
+		if builtinGroup, builtin := resourceid.BuiltinGroup(goKind); builtin {
+			group = builtinGroup
+		} else {
+			found := false
+			for _, finding := range results.Findings {
+				if finding.Kind != goKind || finding.Namespace != namespace || finding.Name != name {
+					continue
+				}
+				if found && group != finding.Group {
+					s.writeError(w, http.StatusBadRequest, "resource kind is ambiguous; provide group")
+					return
+				}
+				group, found = finding.Group, true
+			}
+		}
+	}
+	findings := index[bp.ResourceKey(group, goKind, namespace, name)]
+	if findings == nil {
+		findings = []bp.Finding{}
+	}
+	s.writeJSON(w, findings)
+}
+
+// handleGetAuditSettings returns the current audit configuration.
+// GET /api/settings/audit
+func (s *Server) handleGetAuditSettings(w http.ResponseWriter, r *http.Request) {
+	s.writeJSON(w, getAuditConfig())
+}
+
+// handlePutAuditSettings updates the audit configuration.
+// PUT /api/settings/audit
+func (s *Server) handlePutAuditSettings(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConfigEditable(w, r) {
+		return
+	}
+	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify audit settings") {
+		return
+	}
+	var cfg settings.AuditConfig
+	if err := json.NewDecoder(r.Body).Decode(&cfg); err != nil {
+		s.writeError(w, http.StatusBadRequest, "Invalid JSON: "+err.Error())
+		return
+	}
+	updated, err := settings.Update(func(s *settings.Settings) {
+		s.Audit = &cfg
+	})
+	if err != nil {
+		log.Printf("[audit] Failed to save audit settings: %v", err)
+		s.writeError(w, http.StatusInternalServerError, "Failed to save settings: "+err.Error())
+		return
+	}
+	if updated.Audit != nil {
+		s.writeJSON(w, *updated.Audit)
+	} else {
+		s.writeJSON(w, settings.DefaultAuditConfig())
+	}
+}

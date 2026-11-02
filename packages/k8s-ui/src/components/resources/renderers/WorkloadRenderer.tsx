@@ -1,0 +1,580 @@
+import { useState, useEffect, useId } from 'react'
+import { Server, ExternalLink, Scale, Minus, Plus, Shield } from 'lucide-react'
+import { clsx } from 'clsx'
+import { PolicySection } from './PolicySection'
+import type { PolicyResourceResponse } from '../../../types/policy'
+import { Section, PropertyList, Property, ConditionsSection, PodTemplateSection, AlertBanner, ResourceLink, ResourceRefBadge, useOperationalIssuesShown } from '../../ui/drawer-components'
+import { DialogPortal } from '../../ui/DialogPortal'
+import { Tooltip } from '../../ui/Tooltip'
+import { Badge } from '../../ui/Badge'
+import type { RBACSubjectResponse, RBACPolicyRule, ResourceRef, HPADiagnosis, WorkloadPodInfo } from '../../../types'
+import { detectBlastRadius, rulePermissivenessScore } from '../../../utils/rbac-blast-radius'
+import { RBACErrorSection, isRBACUnavailable } from './RBACErrorSection'
+import { NamespaceLimitRangeLink } from './LimitRangeRenderer'
+import { hpaStateLabel } from '../resource-utils-hpa'
+import { hpaBadgeSeverity } from '../HPADiagnosisSummary'
+import {
+  rbacVerbBadgeClass,
+  rbacResourceBadgeClass,
+  rbacApiGroupBadgeClass,
+} from '../../../utils/rbac-badges'
+import { getWorkloadRolloutActivity } from '../../../utils/workload-rollout'
+import { useProgressiveRefresh } from '../../../hooks/useProgressiveRefresh'
+import { WorkloadRolloutNotice } from '../../workload/WorkloadRolloutNotice'
+
+export interface ScalerDiagnosis {
+  ref: ResourceRef
+  diagnosis?: HPADiagnosis
+  loading?: boolean
+  error?: string
+}
+
+interface WorkloadRendererProps {
+  kind: string
+  data: any
+  onNavigate?: (ref: { kind: string; namespace: string; name: string }) => void
+  onViewPods?: () => void
+  onScale?: (replicas: number) => Promise<void>
+  isScalePending?: boolean
+  scaleBlockedBy?: ResourceRef[]
+  scalerDiagnostics?: ScalerDiagnosis[]
+  workloadPods?: WorkloadPodInfo[]
+  onRequestRefresh?: () => void
+  /**
+   * RBAC reverse-lookup for the workload's pod-template ServiceAccount.
+   * Undefined means the host didn't wire the fetch (Permissions section is
+   * omitted). Null means the fetch failed.
+   */
+  rbacData?: RBACSubjectResponse | null
+  rbacLoading?: boolean
+  rbacError?: Error | null
+  /**
+   * Policy findings for this workload. Undefined means the host didn't wire the
+   * fetch, so the section is omitted entirely — consumers that skip it get the
+   * original sections and nothing breaks.
+   */
+  policyData?: PolicyResourceResponse | null
+  policyLoading?: boolean
+  policyError?: Error | null
+  /** Names of the LimitRanges in this workload's namespace. Absent while the
+   *  lookup is pending or unreadable, which leaves the link unrendered. */
+  namespaceLimitRangeNames?: string[] | null
+}
+
+// Extract real problems from workload status (excludes normal rollout progress)
+function getWorkloadProblems(status: any, spec: any, kind: string, rolloutExplainsShortfall: boolean): string[] {
+  const problems: string[] = []
+  const isDaemonSet = kind === 'daemonsets'
+
+  // Check replica/pod counts — only flag as problem if NOT actively progressing
+  if (!rolloutExplainsShortfall) {
+    if (isDaemonSet) {
+      const ready = status.numberReady || 0
+      const desired = status.desiredNumberScheduled || 0
+      if (desired > 0 && ready < desired) {
+        problems.push(`${desired - ready} of ${desired} pods are not ready`)
+      }
+      if (status.numberUnavailable > 0) {
+        problems.push(`${status.numberUnavailable} pods are unavailable`)
+      }
+    } else {
+      const ready = status.readyReplicas || 0
+      const desired = spec.replicas ?? 1
+      if (desired > 0 && ready < desired) {
+        problems.push(`${desired - ready} of ${desired} replicas are not ready`)
+      }
+      if (status.unavailableReplicas > 0) {
+        problems.push(`${status.unavailableReplicas} replicas are unavailable`)
+      }
+    }
+  }
+
+  // Check conditions — real failures always shown
+  const conditions = status.conditions || []
+  for (const cond of conditions) {
+    if (cond.status === 'True' && cond.type === 'ReplicaFailure' && cond.message) {
+      problems.push(cond.message)
+    }
+    // Show condition failures, but skip Available=False during active rollout (that's expected)
+    if (cond.status === 'False' && cond.message) {
+      if (rolloutExplainsShortfall && cond.type === 'Available') continue
+      problems.push(`${cond.type}: ${cond.message}`)
+    }
+  }
+
+  return problems
+}
+
+function formatScalerLabel(ref: ResourceRef): string {
+  const prefix = ref.namespace ? `${ref.namespace}/` : ''
+  return `${ref.kind} ${prefix}${ref.name}`
+}
+
+function compactHPASummary(diagnosis: HPADiagnosis): string {
+  if (diagnosis.state === 'limited_max') {
+    return `Wants more; capped at maxReplicas=${diagnosis.bounds.max}`
+  }
+  if (diagnosis.state === 'pinned') {
+    return `Fixed at ${diagnosis.bounds.current} replicas`
+  }
+  if (diagnosis.state === 'metrics_unavailable' || diagnosis.state === 'metrics_incomplete') {
+    const missingMetric = diagnosis.metrics?.find((metric) => metric.status !== 'ok')
+    if (missingMetric?.type === 'Resource' && missingMetric.name) {
+      return `Add ${missingMetric.name} requests; HPA cannot compute replicas`
+    }
+    if (missingMetric?.name) {
+      return `${missingMetric.name} metric unavailable; HPA cannot compute replicas`
+    }
+    return '指标不可用；HPA 无法计算副本数'
+  }
+  return diagnosis.summary
+}
+
+export function WorkloadRenderer({ kind, data, onNavigate, onViewPods, onScale, isScalePending, scaleBlockedBy, scalerDiagnostics, workloadPods, onRequestRefresh, rbacData, rbacLoading, rbacError, policyData, policyLoading, policyError, namespaceLimitRangeNames }: WorkloadRendererProps) {
+  const titleId = useId()
+  const status = data.status || {}
+  const spec = data.spec || {}
+  const metadata = data.metadata || {}
+
+  const isDaemonSet = kind === 'daemonsets'
+  const isStatefulSet = kind === 'statefulsets'
+  const isScalableKind = kind === 'deployments' || kind === 'statefulsets'
+  const isScaleBlocked = !!scaleBlockedBy?.length
+  const isScalable = isScalableKind && !!onScale && !isScaleBlocked
+  const scaleBlockedLabel = scaleBlockedBy?.map(formatScalerLabel).join(', ')
+  const scaleBlockedReason = `无法手动调整副本数，因为副本由 ${scaleBlockedLabel} 控制。请在对应资源中管理副本数。`
+
+  // Scale dialog state
+  const [showScaleDialog, setShowScaleDialog] = useState(false)
+  const [targetReplicas, setTargetReplicas] = useState(spec.replicas ?? 1)
+  const [scaledTo, setScaledTo] = useState<number | null>(null)
+
+  // Clear scaledTo once the backend data catches up
+  useEffect(() => {
+    if (scaledTo !== null && spec.replicas === scaledTo) {
+      setScaledTo(null)
+    }
+  }, [spec.replicas, scaledTo])
+
+  // Check for problems and progress. Suppressed when the dedicated Operational
+  // Issues section is shown — it carries the workload's own issues plus its pods'
+  // (richer, with cause/action), so the workload-status problems would duplicate.
+  const operationalIssuesShown = useOperationalIssuesShown()
+  const rolloutActivity = getWorkloadRolloutActivity(data, kind, workloadPods)
+  const rolloutExplainsShortfall = rolloutActivity.phase === 'applying' || rolloutActivity.phase === 'progressing'
+  const problems = operationalIssuesShown ? [] : getWorkloadProblems(status, spec, kind, rolloutExplainsShortfall)
+  const hasProblems = problems.length > 0
+  const displayedActivity = scaledTo !== null && rolloutActivity.phase === 'idle'
+    ? { ...rolloutActivity, phase: 'applying' as const, active: true, label: '正在调整工作负载副本数', detail: `等待控制器应用 ${scaledTo} 个副本` }
+    : rolloutActivity
+
+  useProgressiveRefresh(scaledTo !== null, onRequestRefresh)
+
+  useEffect(() => {
+    if (isScaleBlocked) {
+      setShowScaleDialog(false)
+    }
+  }, [isScaleBlocked])
+
+  const handleScale = async () => {
+    if (!onScale || isScaleBlocked) return
+    try {
+      await onScale(targetReplicas)
+      setScaledTo(targetReplicas)
+      setShowScaleDialog(false)
+    } catch {
+      // Stay on the dialog if scale failed
+    }
+  }
+
+  const openScaleDialog = () => {
+    setTargetReplicas(spec.replicas ?? 1)
+    setShowScaleDialog(true)
+  }
+
+  return (
+    <>
+      {(!hasProblems || displayedActivity.phase === 'stalled') && <WorkloadRolloutNotice activity={displayedActivity} className="mb-4" />}
+
+      {/* Problems alert - shown at top when there are real issues */}
+      {hasProblems && (
+        <AlertBanner variant="error" title="检测到问题" items={problems}>
+          <div className="flex items-center justify-between mt-2">
+            <div className="text-xs text-red-400/60">
+              Check Events below for details, or view individual pods for logs.
+            </div>
+            {onViewPods && (
+              <button
+                onClick={onViewPods}
+                className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 rounded transition-colors"
+              >
+                <ExternalLink className="w-3 h-3" />
+                View Pods
+              </button>
+            )}
+          </div>
+        </AlertBanner>
+      )}
+
+      <Section title="状态" icon={Server}>
+        <PropertyList>
+          {isDaemonSet ? (
+            <>
+              <Property label="期望数量" value={status.desiredNumberScheduled} />
+              <Property label="当前数量" value={status.currentNumberScheduled} />
+              <Property label="就绪数量" value={status.numberReady} />
+              <Property label="最新版本数量" value={status.updatedNumberScheduled} />
+              <Property label="可用数量" value={status.numberAvailable} />
+            </>
+          ) : (
+            <>
+              <Property label="副本数" value={`${status.readyReplicas || 0}/${spec.replicas ?? 1}`} />
+              {scaleBlockedBy && scaleBlockedBy.length > 0 && (
+                <Property
+                  label="控制者"
+                  value={
+                    <div className="flex flex-wrap gap-1">
+                      {scaleBlockedBy.map((ref) => (
+                        <ResourceRefBadge key={`${ref.kind}/${ref.namespace}/${ref.name}`} resourceRef={ref} onClick={onNavigate} wrapAtSeparator />
+                      ))}
+                      {scalerDiagnostics && scalerDiagnostics.length > 0 && (
+                        <div className="mt-1 w-full space-y-1">
+                          {scalerDiagnostics.map((entry) => (
+                            <ScalerDiagnosisRow key={`${entry.ref.kind}/${entry.ref.namespace}/${entry.ref.name}`} entry={entry} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  }
+                />
+              )}
+              <Property label="已更新" value={status.updatedReplicas} />
+              <Property label="可用" value={status.availableReplicas} />
+              <Property label="不可用" value={status.unavailableReplicas} />
+            </>
+          )}
+        </PropertyList>
+        <div className="mt-3 pt-3 border-t border-theme-border flex items-center gap-2">
+          {onViewPods && (
+            <button
+              onClick={onViewPods}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/30 rounded transition-colors"
+            >
+              <ExternalLink className="w-3 h-3" />
+              查看受管 Pod
+            </button>
+          )}
+          {isScalable ? (
+            <button
+              onClick={openScaleDialog}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 rounded transition-colors"
+            >
+              <Scale className="w-3 h-3" />
+              调整副本数
+            </button>
+          ) : isScalableKind && !!onScale && isScaleBlocked ? (
+            <Tooltip content={scaleBlockedReason}>
+              <button
+                type="button"
+                disabled
+                aria-label={scaleBlockedReason}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-theme-text-tertiary bg-theme-elevated border border-theme-border rounded cursor-not-allowed"
+              >
+                <Scale className="w-3 h-3" />
+                调整副本数
+              </button>
+            </Tooltip>
+          ) : null}
+        </div>
+      </Section>
+
+      {/* Scale Dialog */}
+      <DialogPortal ariaLabelledBy={titleId} open={showScaleDialog} onClose={() => setShowScaleDialog(false)} className="w-80 p-4">
+        <h3 id={titleId} className="text-sm font-medium text-theme-text-primary mb-4">
+          调整副本数：{metadata.name}
+        </h3>
+
+        <div className="flex items-center justify-center gap-4 mb-4">
+          <button
+            aria-label="减少副本数"
+            onClick={() => setTargetReplicas(Math.max(0, targetReplicas - 1))}
+            className="p-2 rounded-lg bg-theme-elevated hover:bg-theme-hover text-theme-text-secondary hover:text-theme-text-primary transition-colors"
+            disabled={targetReplicas <= 0}
+          >
+            <Minus className="w-5 h-5" />
+          </button>
+
+          <input
+            type="number"
+            min="0"
+            max="10000"
+            value={targetReplicas}
+            aria-label="副本数"
+            onChange={(e) => setTargetReplicas(Math.min(10000, Math.max(0, parseInt(e.target.value) || 0)))}
+            className="w-20 text-center text-2xl font-semibold bg-theme-elevated border border-theme-border rounded-lg py-2 text-theme-text-primary focus:outline-none focus:border-blue-500"
+            autoFocus
+          />
+
+          <button
+            aria-label="增加副本数"
+            onClick={() => setTargetReplicas(Math.min(10000, targetReplicas + 1))}
+            disabled={targetReplicas >= 10000}
+            className="p-2 rounded-lg bg-theme-elevated hover:bg-theme-hover text-theme-text-secondary hover:text-theme-text-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <Plus className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="text-xs text-theme-text-tertiary text-center mb-4">
+          当前副本数：{spec.replicas ?? 1}
+          {targetReplicas !== (spec.replicas ?? 1) && (
+            <span className="text-theme-text-secondary">
+              {' '}→ {targetReplicas}
+            </span>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <button
+            onClick={() => setShowScaleDialog(false)}
+            className="flex-1 px-3 py-2 text-sm text-theme-text-secondary hover:text-theme-text-primary bg-theme-elevated hover:bg-theme-hover border border-theme-border rounded-lg transition-colors"
+          >
+            取消
+          </button>
+          <button
+            onClick={handleScale}
+            disabled={isScalePending || targetReplicas === (spec.replicas ?? 1)}
+            className="flex-1 px-3 py-2 text-sm btn-brand disabled:cursor-not-allowed rounded-lg"
+          >
+            {isScalePending ? '正在调整…' : '应用'}
+          </button>
+        </div>
+      </DialogPortal>
+
+      {policyData !== undefined && (
+        <PolicySection data={policyData} loading={policyLoading} error={policyError} />
+      )}
+
+      <Section title="更新策略">
+        <PropertyList>
+          {isDaemonSet || isStatefulSet ? (
+            <Property label="更新策略" value={spec.updateStrategy?.type} />
+          ) : (
+            <>
+              <Property label="策略" value={spec.strategy?.type} />
+              {spec.strategy?.rollingUpdate && (
+                <>
+                  <Property label="最大超出数量" value={spec.strategy.rollingUpdate.maxSurge} />
+                  <Property label="最大不可用数量" value={spec.strategy.rollingUpdate.maxUnavailable} />
+                </>
+              )}
+            </>
+          )}
+          {isStatefulSet && (
+            <>
+              <Property label="服务名称" value={
+                spec.serviceName ? <ResourceLink name={spec.serviceName} kind="services" namespace={data.metadata?.namespace || ''} onNavigate={onNavigate} /> : undefined
+              } />
+              <Property label="Pod 管理策略" value={spec.podManagementPolicy || 'OrderedReady'} />
+            </>
+          )}
+        </PropertyList>
+      </Section>
+
+      <Section title="Pod 模板" defaultExpanded={false}>
+        <PodTemplateSection template={spec.template} />
+        <NamespaceLimitRangeLink
+          namespace={metadata.namespace || ''}
+          names={namespaceLimitRangeNames}
+          scope="workload"
+          onNavigate={onNavigate}
+        />
+      </Section>
+
+      <ConditionsSection conditions={status.conditions} />
+
+      {/* Permissions — same shape as PodPermissionsSection but framed for a
+       *  workload (Pods this workload spawns inherit the SA). Placed below
+       *  the diagnostic-signal sections because it answers an incident/audit
+       *  question, not a daily-browsing one. Only renders when the host
+       *  wired the RBAC fetch. */}
+      {rbacData !== undefined && (
+        <WorkloadPermissionsSection
+          saName={spec.template?.spec?.serviceAccountName || 'default'}
+          namespace={metadata.namespace || ''}
+          rbacData={rbacData}
+          loading={!!rbacLoading}
+          error={rbacError ?? null}
+          onNavigate={onNavigate}
+        />
+      )}
+    </>
+  )
+}
+
+function ScalerDiagnosisRow({ entry }: { entry: ScalerDiagnosis }) {
+  if (entry.loading) {
+    return <div className="text-xs text-theme-text-tertiary">正在加载自动伸缩器诊断…</div>
+  }
+  if (entry.error) {
+    return <div className="text-xs text-theme-text-tertiary">自动扩缩容诊断不可用</div>
+  }
+  if (!entry.diagnosis) return null
+  return (
+    <div className="rounded border border-theme-border bg-theme-surface px-2 py-1.5 text-xs leading-6 text-theme-text-secondary whitespace-normal break-normal">
+      <Badge severity={hpaBadgeSeverity(entry.diagnosis.state)} size="sm" className="mr-1.5 align-middle">{hpaStateLabel(entry.diagnosis.state)}</Badge>
+      <span className="align-middle whitespace-normal break-normal">{compactHPASummary(entry.diagnosis)}</span>
+    </div>
+  )
+}
+
+// ============================================================================
+// WORKLOAD PERMISSIONS SECTION
+// ============================================================================
+// Mirror of PodPermissionsSection but framed at the workload level: "Pods
+// this workload spawns inherit these permissions". A compromise of any
+// replica gives the attacker the same SA. Detection criteria match Pod's —
+// verb wildcards, escalation verbs (escalate/bind/impersonate), cluster-
+// admin, cluster-wide create pods. Resource-only wildcards do NOT trigger
+// (would fire on every authenticated SA via inherited `view`).
+
+// Blast-radius detection and scoring is shared with Pod / ServiceAccount
+// renderers — see utils/rbac-blast-radius.ts.
+
+interface WorkloadPermissionsSectionProps {
+  saName: string
+  namespace: string
+  rbacData: RBACSubjectResponse | null
+  loading: boolean
+  error: Error | null
+  onNavigate?: (ref: { kind: string; namespace: string; name: string }) => void
+}
+
+function WorkloadPermissionsSection({
+  saName,
+  namespace,
+  rbacData,
+  loading,
+  error,
+  onNavigate,
+}: WorkloadPermissionsSectionProps) {
+  const title = `通过ServiceAccount获得的权限：${saName}`
+  if (loading) {
+    return (
+      <Section title={title} icon={Shield}>
+        <div className="text-sm text-theme-text-secondary">正在加载 RBAC 关系图…</div>
+      </Section>
+    )
+  }
+  if (error) {
+    // Permissions is a bonus section here; when RBAC is simply not available
+    // (cluster-static) or forbidden, hide it rather than repeat a note on every
+    // workload. Genuine faults still surface.
+    if (isRBACUnavailable(error)) return null
+    return <RBACErrorSection title={title} error={error} />
+  }
+  if (!rbacData) return null
+
+  const blast = detectBlastRadius(rbacData)
+  const sorted = [...(rbacData.flat ?? [])].sort(
+    (a, b) => rulePermissivenessScore(b) - rulePermissivenessScore(a),
+  )
+  const preview = sorted.slice(0, 5)
+  const more = Math.max(0, sorted.length - preview.length)
+  const directCount = rbacData.direct?.length ?? 0
+  const inheritedCount = (rbacData.inheritedFromGroups ?? []).reduce((n, g) => n + g.bindings.length, 0)
+  const ruleCount = rbacData.flat?.length ?? 0
+
+  // Default collapsed unless the Pod's permissions are genuinely risky —
+  // workload-detail pages are most-often opened for "is this rolling out
+  // OK / why is it crashing", not "audit the SA". Auto-expanding only on
+  // blast-radius hits keeps the noisy case quiet without burying real
+  // alarms.
+  const hasBlastRadius = blast.length > 0
+  return (
+    <Section title={title} icon={Shield} defaultExpanded={hasBlastRadius}>
+      {blast.length > 0 && (
+        <AlertBanner variant="warning" title="影响范围">
+          <div className="text-xs">
+            此工作负载创建的每个 Pod 都会继承 ServiceAccount 的权限。若任一副本遭到入侵，攻击者将获得：
+          </div>
+          <ul className="mt-1.5 text-xs space-y-1">
+            {blast.map((r, i) => (
+              <li key={i}>
+                <span className="text-theme-text-secondary">
+                  {r.binding.binding.kind} <span className="font-medium">{r.binding.binding.name}</span>
+                </span>{' '}
+                <span className="text-theme-text-tertiary">{r.reason}</span>
+              </li>
+            ))}
+          </ul>
+        </AlertBanner>
+      )}
+
+      <div className="text-xs text-theme-text-tertiary mb-3">
+        {directCount} 个直接绑定 · {inheritedCount} 个通过组继承 · {ruleCount} 条不同规则
+        {rbacData.truncated && <span className="text-orange-400">（已截断）</span>}
+      </div>
+
+      {preview.length === 0 ? (
+        <div className="text-sm text-theme-text-secondary">
+          此 ServiceAccount 在集群中没有有效权限。
+        </div>
+      ) : (
+        <div className="space-y-1">
+          {preview.map((r, i) => (
+            <WorkloadRulePreviewLine key={i} rule={r} />
+          ))}
+          {more > 0 && (
+            <div className="text-xs text-theme-text-tertiary">
+              另有 {more} 条规则 — 打开 ServiceAccount 查看完整授权来源。
+            </div>
+          )}
+        </div>
+      )}
+
+      <div className="mt-3 text-xs">
+        <ResourceLink
+          name={saName}
+          kind="serviceaccounts"
+          namespace={namespace}
+          label="查看完整权限 →"
+          onNavigate={onNavigate}
+        />
+      </div>
+    </Section>
+  )
+}
+
+function WorkloadRulePreviewLine({ rule }: { rule: RBACPolicyRule }) {
+  const verbs = rule.verbs ?? []
+  const resources = rule.resources ?? []
+  const nonResourceURLs = rule.nonResourceURLs ?? []
+  const groups = rule.apiGroups ?? []
+  const isNonResource = resources.length === 0 && nonResourceURLs.length > 0
+  return (
+    <div className="flex items-center gap-1 flex-wrap text-xs">
+      {verbs.map((v) => (
+        <span key={v} className={clsx('badge', rbacVerbBadgeClass(v))}>{v}</span>
+      ))}
+      <span className="text-theme-text-secondary">作用于</span>
+      {isNonResource ? (
+        nonResourceURLs.map((u) => (
+          <span key={u} className="badge font-mono bg-theme-elevated text-theme-text-secondary">{u}</span>
+        ))
+      ) : (
+        resources.map((r) => (
+          <span key={r} className={clsx('badge', rbacResourceBadgeClass)}>{r === '*' ? '*' : r}</span>
+        ))
+      )}
+      {!isNonResource && groups.length > 0 && groups.some((g) => g !== '') && (
+        <>
+          <span className="text-theme-text-secondary">位于</span>
+          {groups.map((g) => (
+            <span key={g} className={clsx('badge', rbacApiGroupBadgeClass)}>{g === '' ? 'core' : g}</span>
+          ))}
+        </>
+      )}
+    </div>
+  )
+}

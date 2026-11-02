@@ -1,0 +1,1445 @@
+import { useRef, useCallback, useState, useMemo, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
+import { Play, Square, Download, FileDown, Search, X, Terminal, RotateCcw, ChevronUp, ChevronDown, ChevronRight, CaseSensitive, Regex, WrapText, Clock, Copy, Trash2, Filter, EyeOff, Highlighter, Braces, Palette, ListCollapse, Sun, Moon } from 'lucide-react'
+import type { LogEntry, LogLevel } from './useLogBuffer'
+import { useLogSearch, type LogSearchMode } from './useLogSearch'
+import { StructuredLogLine } from './StructuredLogLine'
+import { Tooltip } from '../ui/Tooltip'
+import { Input } from '../ui/Input'
+import { showApiError, showApiSuccess } from '../ui/Toast'
+import {
+  formatLogTimestamp,
+  highlightSearchMatches,
+  stripAnsi,
+  ansiToHtml,
+  type TimestampFormat,
+  TIMESTAMP_FORMAT_LABELS,
+} from '../../utils/log-format'
+import { getLogPalette, getLogLevelColor, type LogPalette } from './log-palette'
+import { associateContinuations, groupContinuations, type LogGroup } from '../../utils/log-level'
+import { copyText } from '../../utils/clipboard'
+import { useAnimatedUnmount } from '../../hooks/useAnimatedUnmount'
+import { TRANSITION_MENU, overlayExitMs, overlayTransitionStyle } from '../../utils/animation'
+import {
+  LOG_EXPORT_FORMAT_LABELS,
+  LOG_EXPORT_FORMATS,
+  previewLogExport,
+  serializeLogEntries,
+  type LogExportFormat,
+  type LogExportPayload,
+} from '../../utils/log-export'
+
+/** Retained for consumers that already import it; the export module owns the definition. */
+export type DownloadFormat = LogExportFormat
+
+/**
+ * `toolbarExtra` may be a plain ReactNode, or a function that receives the
+ * current dark/light context so wrappers can produce palette-matched controls.
+ */
+export type ToolbarExtraRenderer =
+  | ReactNode
+  | ((ctx: { isDark: boolean; palette: LogPalette }) => ReactNode)
+
+interface LogCoreProps {
+  entries: LogEntry[]
+  isFollowing?: boolean
+  onFollowingChange?: (following: boolean) => void
+  pendingLineCount?: number
+  retainedLineCount?: number
+  missingLineCount?: number
+  getRetainedEntries?: () => LogEntry[]
+  /**
+   * The unfiltered buffer, when the host filters `entries` before passing them
+   * (the workload viewer's pod picker), so that export's "All" describes the
+   * real buffer rather than the slice currently on screen.
+   */
+  allEntries?: LogEntry[]
+  isLoading: boolean
+  isStreaming: boolean
+  onStartStream?: () => void
+  onStopStream: () => void
+  onRefresh: () => void
+  /** Receives a finished payload — the viewer owns serialization so copy and download cannot diverge. */
+  onDownload: (payload: LogExportPayload) => void
+  onClear?: () => void
+  toolbarExtra?: ToolbarExtraRenderer
+  showPodName?: boolean
+  emptyMessage?: ReactNode
+  sourceUnavailable?: boolean
+  emptyCommand?: string | null
+  errorMessage?: string | null
+  /**
+   * Hard override for the viewer palette. When set, the viewer stays pinned to
+   * that mode and hides the in-viewer dark/light toggle. When undefined,
+   * the viewer manages its own palette via localStorage and the Sun/Moon button.
+   */
+  forceDark?: boolean
+  /**
+   * Palette to use when the user hasn't picked one with the Sun/Moon toggle
+   * (e.g. the host app's theme). Unlike `forceDark`, the toggle stays visible.
+   * Defaults to dark.
+   */
+  defaultDark?: boolean
+}
+
+interface LevelOption {
+  level: LogLevel
+  label: string
+  /** What the chip's lines are called in its tooltip */
+  noun: string
+}
+
+const LEVEL_OPTIONS: LevelOption[] = [
+  { level: 'error', label: 'ERR', noun: 'error logs' },
+  { level: 'warn', label: 'WARN', noun: 'warning logs' },
+  { level: 'info', label: 'INFO', noun: 'info logs' },
+  { level: 'debug', label: 'DBG', noun: 'debug logs' },
+  { level: 'unknown', label: 'OTHER', noun: 'lines with no level' },
+]
+
+function getLevelActiveColor(level: LogLevel, palette: LogPalette): string {
+  switch (level) {
+    case 'error': return palette.levelActiveError
+    case 'warn': return palette.levelActiveWarn
+    case 'info': return palette.levelActiveInfo
+    case 'debug': return palette.levelActiveDebug
+    default: return palette.levelActiveOther
+  }
+}
+
+const TIMESTAMP_FORMAT_ORDER: TimestampFormat[] = [
+  'time-local', 'time-utc', 'iso-local', 'iso-utc', 'relative', 'epoch',
+]
+
+export type StructuredMode = 'compact' | 'expanded' | 'raw'
+
+const STRUCTURED_MODE_ORDER: StructuredMode[] = ['compact', 'expanded', 'raw']
+
+const STRUCTURED_MODE_LABELS: Record<StructuredMode, string> = {
+  compact: 'Compact',
+  expanded: 'Expanded',
+  raw: 'Raw',
+}
+
+const STRUCTURED_MODE_DESCRIPTIONS: Record<StructuredMode, string> = {
+  compact: 'Summary line with field count',
+  expanded: 'All fields shown as a tree',
+  raw: 'Original log line, unparsed',
+}
+
+const EMPTY_STATE_CLASS = 'flex-1 flex flex-col items-center justify-center gap-2 px-4 text-center'
+
+const TIMESTAMP_FORMAT_SHORT_LABELS: Record<TimestampFormat, string> = {
+  'time-local': 'Local time',
+  'time-utc': 'UTC time',
+  'iso-local': 'Full date',
+  'iso-utc': 'UTC date',
+  'relative': 'Relative',
+  'epoch': 'Unix time',
+}
+
+const TIP_DELAY = 150
+
+export function LogCore({
+  entries,
+  isFollowing: controlledFollowing,
+  onFollowingChange,
+  pendingLineCount = 0,
+  retainedLineCount,
+  missingLineCount = 0,
+  getRetainedEntries,
+  allEntries,
+  isLoading,
+  isStreaming,
+  onStartStream,
+  onStopStream,
+  onRefresh,
+  onDownload,
+  onClear,
+  toolbarExtra,
+  showPodName = false,
+  emptyMessage = 'No logs available',
+  sourceUnavailable = false,
+  emptyCommand,
+  errorMessage,
+  forceDark,
+  defaultDark = true,
+}: LogCoreProps) {
+  const virtuosoRef = useRef<VirtuosoHandle>(null)
+  const [localFollowing, setLocalFollowing] = useState(true)
+  const isFollowing = controlledFollowing ?? localFollowing
+  const followingRef = useRef(isFollowing)
+  const scrollerRef = useRef<HTMLElement | null>(null)
+  const resumeAtBottom = useRef(false)
+  const scrollbarDragging = useRef(false)
+  const scrollPosition = useRef<number | null>(null)
+  const setFollowing = useCallback((following: boolean) => {
+    followingRef.current = following
+    resumeAtBottom.current = false
+    setLocalFollowing(following)
+    onFollowingChange?.(following)
+  }, [onFollowingChange])
+  const touchY = useRef<number | null>(null)
+  const pauseFollowing = useCallback(() => setFollowing(false), [setFollowing])
+  useEffect(() => {
+    const handleSelectionChange = () => {
+      const selection = document.getSelection()
+      if (!followingRef.current || !selection || selection.isCollapsed || !selection.anchorNode || !scrollerRef.current?.contains(selection.anchorNode)) return
+      pauseFollowing()
+      const anchor = selection.anchorNode
+      const element = anchor instanceof Element ? anchor : anchor.parentElement
+      element?.closest('[data-index]')?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    }
+    document.addEventListener('selectionchange', handleSelectionChange)
+    return () => document.removeEventListener('selectionchange', handleSelectionChange)
+  }, [pauseFollowing])
+  const themeLocked = typeof forceDark === 'boolean'
+  // Seed isDark: forceDark prop wins; else localStorage['radar-logs-dark'];
+  // else defaultDark (the host app's theme, dark if not given). See
+  // log-palette.ts for why the viewer is palette-driven
+  // instead of theme-token-driven.
+  const [isDark, setIsDark] = useState<boolean>(() => {
+    if (typeof forceDark === 'boolean') return forceDark
+    try {
+      const v = localStorage.getItem('radar-logs-dark')
+      if (v === 'false') return false
+      if (v === 'true') return true
+    } catch {}
+    return defaultDark
+  })
+  useEffect(() => {
+    if (typeof forceDark === 'boolean') {
+      setIsDark(forceDark)
+    }
+  }, [forceDark])
+  // Re-resolve whenever the host's hint changes, including when a forceDark pin
+  // is lifted: the user's saved pick wins, otherwise the host default.
+  useEffect(() => {
+    if (typeof forceDark === 'boolean') return
+    try {
+      const v = localStorage.getItem('radar-logs-dark')
+      if (v === 'true' || v === 'false') {
+        setIsDark(v === 'true')
+        return
+      }
+    } catch {}
+    setIsDark(defaultDark)
+  }, [defaultDark, forceDark])
+  const palette = useMemo(() => getLogPalette(isDark), [isDark])
+  const toggleDark = useCallback(() => {
+    if (themeLocked) return
+    setIsDark(prev => {
+      const next = !prev
+      try { localStorage.setItem('radar-logs-dark', String(next)) } catch {}
+      return next
+    })
+  }, [themeLocked])
+  const [wordWrap, setWordWrap] = useState(() => {
+    try { return localStorage.getItem('radar-logs-wrap') !== 'false' } catch { return true }
+  })
+  const [showTimestamps, setShowTimestamps] = useState(() => {
+    try { return localStorage.getItem('radar-logs-timestamps') !== 'false' } catch { return true }
+  })
+  const [tsFormat, setTsFormat] = useState<TimestampFormat>(() => {
+    try {
+      const v = localStorage.getItem('radar-logs-ts-format') as TimestampFormat | null
+      return v && TIMESTAMP_FORMAT_ORDER.includes(v) ? v : 'time-local'
+    } catch { return 'time-local' }
+  })
+  const [ansiEnabled, setAnsiEnabled] = useState(() => {
+    try { return localStorage.getItem('radar-logs-ansi') !== 'false' } catch { return true }
+  })
+  const [collapseStacks, setCollapseStacks] = useState(() => {
+    try { return localStorage.getItem('radar-logs-collapse-stacks') !== 'false' } catch { return true }
+  })
+  const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(
+    new Set(['error', 'warn', 'info', 'debug', 'unknown'])
+  )
+  const [showDownloadMenu, setShowDownloadMenu] = useState(false)
+  const downloadMenu = useAnimatedUnmount(showDownloadMenu, overlayExitMs('menu'))
+  const [exportScope, setExportScope] = useState<'visible' | 'all'>('visible')
+  const [exportFormat, setExportFormat] = useState<LogExportFormat>(() => {
+    try {
+      const v = localStorage.getItem('radar-logs-export-format') as LogExportFormat | null
+      return v === 'txt' || v === 'json' || v === 'csv' ? v : 'txt'
+    } catch { return 'txt' }
+  })
+  const [showTsMenu, setShowTsMenu] = useState(false)
+  const tsMenu = useAnimatedUnmount(showTsMenu, overlayExitMs('menu'))
+  const [showStructuredMenu, setShowStructuredMenu] = useState(false)
+  const structuredMenu = useAnimatedUnmount(showStructuredMenu, overlayExitMs('menu'))
+  const [structuredMode, setStructuredMode] = useState<StructuredMode>(() => {
+    try {
+      const v = localStorage.getItem('radar-logs-structured-mode') as StructuredMode | null
+      return v && STRUCTURED_MODE_ORDER.includes(v) ? v : 'compact'
+    } catch { return 'compact' }
+  })
+  const [expandedStacks, setExpandedStacks] = useState<Set<number>>(() => new Set())
+
+  // Re-render every 15s so "relative" timestamps tick forward during idle viewing.
+  const [, setNowTick] = useState(0)
+  useEffect(() => {
+    if (tsFormat !== 'relative' || !showTimestamps) return
+    const id = setInterval(() => setNowTick(n => n + 1), 15_000)
+    return () => clearInterval(id)
+  }, [tsFormat, showTimestamps])
+
+  // One membership rule for filtering, counting and grouping: a stack-trace
+  // line belongs to the record its own pod and container started.
+  const association = useMemo(() => {
+    const { headOf, effectiveLevel } = associateContinuations(entries)
+    const headIdById = new Map<number, number>()
+    for (let i = 0; i < entries.length; i++) {
+      if (headOf[i] !== i) headIdById.set(entries[i].id, entries[headOf[i]].id)
+    }
+    return { headOf, effectiveLevel, headIdById }
+  }, [entries])
+
+  // Frames take their record's level so they filter and render as part of it.
+  const recordEntries = useMemo(
+    () => entries.map((e, i) => (association.effectiveLevel[i] === e.level ? e : { ...e, level: association.effectiveLevel[i] })),
+    [entries, association],
+  )
+
+  const levelFilteredEntries = useMemo(() => {
+    const allEnabled = LEVEL_OPTIONS.every(opt => enabledLevels.has(opt.level))
+    if (allEnabled) return recordEntries
+    return recordEntries.filter(e => enabledLevels.has(e.level))
+  }, [recordEntries, enabledLevels])
+
+  // Chip counts count records, so a 40-frame stack trace is one error.
+  const levelCounts = useMemo(() => {
+    const counts: Record<LogLevel, number> = { error: 0, warn: 0, info: 0, debug: 0, unknown: 0 }
+    for (let i = 0; i < entries.length; i++) {
+      if (association.headOf[i] === i) counts[entries[i].level]++
+    }
+    return counts
+  }, [entries, association])
+
+  const hasStructuredEntries = useMemo(() => entries.some(e => e.isJson || e.isLogfmt), [entries])
+
+  const recordIdOf = useCallback(
+    (e: LogEntry) => association.headIdById.get(e.id) ?? e.id,
+    [association],
+  )
+  const search = useLogSearch(levelFilteredEntries, virtuosoRef, recordIdOf, pauseFollowing)
+
+  const displayEntries = search.isFiltering ? search.filteredEntries : levelFilteredEntries
+  const hiddenCount = levelFilteredEntries.length - displayEntries.length
+  // Hidden lines leave nothing to highlight, so Hide keeps normal rendering and stack grouping.
+  const highlightQuery = search.mode === 'hide' ? '' : search.query
+
+  const exportTriggerRef = useRef<HTMLButtonElement>(null)
+  const closeExportMenu = useCallback(() => {
+    setShowDownloadMenu(false)
+    exportTriggerRef.current?.focus()
+  }, [])
+
+  // Close download menu on next click anywhere (deferred so current click doesn't trigger it)
+  const downloadMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showDownloadMenu) return
+    const handleClick = (e: MouseEvent) => {
+      if (downloadMenuRef.current?.contains(e.target as Node)) return
+      setShowDownloadMenu(false)
+    }
+    window.addEventListener('click', handleClick)
+    return () => window.removeEventListener('click', handleClick)
+  }, [showDownloadMenu])
+
+  useEffect(() => {
+    if (!showDownloadMenu) return
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      // Capture phase + stopImmediatePropagation: the host's drawer listens for
+      // Escape on window too, and a bubble-phase stopPropagation would not stop
+      // a sibling listener on the same target — dismissing the popover would
+      // close the drawer behind it in the same keystroke.
+      e.stopImmediatePropagation()
+      e.preventDefault()
+      closeExportMenu()
+    }
+    window.addEventListener('keydown', handleKey, true)
+    return () => window.removeEventListener('keydown', handleKey, true)
+  }, [showDownloadMenu, closeExportMenu])
+
+  // Scope and format are the only export decisions the viewer cannot already
+  // express on screen: everything else (timestamps, ANSI, level, search) has a
+  // toolbar control, and the popover's preview shows where those land.
+  const bufferEntries = allEntries ?? entries
+  const bufferLineCount = retainedLineCount ?? bufferEntries.length
+  const retainedExportEntries = useMemo(
+    () => downloadMenu.shouldRender ? getRetainedEntries?.() ?? bufferEntries : bufferEntries,
+    [downloadMenu.shouldRender, getRetainedEntries, bufferEntries],
+  )
+  const exportHasGap = exportScope === 'all' && missingLineCount > 0
+  const gapNotice = 'Some logs between your saved view and the latest logs are no longer available.'
+  const exportEntries = exportScope === 'all' ? retainedExportEntries : displayEntries
+  const exportOptions = useMemo(
+    () => ({ format: exportFormat, showTimestamps, showPodName }),
+    [exportFormat, showTimestamps, showPodName],
+  )
+  // Keyed on presence, not logical open, so the preview doesn't flip to
+  // "nothing to export" while the popover is still fading out.
+  const exportPreview = useMemo(
+    () => downloadMenu.shouldRender ? previewLogExport(exportEntries, exportOptions) : [],
+    [downloadMenu.shouldRender, exportEntries, exportOptions],
+  )
+  // Offering a scope that resolves to the same lines is a choice about nothing.
+  const scopeIsMeaningful = displayEntries.length !== bufferLineCount
+
+  // Scope describes the filters in play at the moment of asking, not a lasting
+  // intent, so it starts over at the narrower option every time rather than
+  // silently exporting the whole buffer on a later visit.
+  const toggleExportMenu = useCallback(() => {
+    setShowDownloadMenu(prev => !prev)
+  }, [])
+  // The reset lands once the popover has left the DOM, not at logical close,
+  // so the preview doesn't re-scope while the popover is still fading out.
+  useEffect(() => {
+    if (!downloadMenu.shouldRender) setExportScope('visible')
+  }, [downloadMenu.shouldRender])
+
+  const handleExportCopy = useCallback(() => {
+    closeExportMenu()
+    const count = exportEntries.length
+    const failed = () => showApiError('Failed to copy logs', 'The browser blocked clipboard access.')
+    copyText(serializeLogEntries(exportEntries, exportOptions).content).then(
+      ok => ok ? showApiSuccess('Copied to clipboard', `${count} log line${count === 1 ? '' : 's'} copied.${exportHasGap ? ` ${gapNotice}` : ''}`) : failed(),
+      failed,
+    )
+  }, [closeExportMenu, exportEntries, exportOptions, exportHasGap])
+
+  const handleExportDownload = useCallback(() => {
+    closeExportMenu()
+    onDownload(serializeLogEntries(exportEntries, exportOptions))
+    if (exportHasGap) showApiSuccess('Some logs were unavailable', gapNotice)
+  }, [closeExportMenu, onDownload, exportEntries, exportOptions, exportHasGap])
+
+  // Same close-on-outside-click for the timestamp format menu.
+  const tsMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showTsMenu) return
+    const handleClick = (e: MouseEvent) => {
+      if (tsMenuRef.current?.contains(e.target as Node)) return
+      setShowTsMenu(false)
+    }
+    window.addEventListener('click', handleClick)
+    return () => window.removeEventListener('click', handleClick)
+  }, [showTsMenu])
+
+  const structuredMenuRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!showStructuredMenu) return
+    const handleClick = (e: MouseEvent) => {
+      if (structuredMenuRef.current?.contains(e.target as Node)) return
+      setShowStructuredMenu(false)
+    }
+    window.addEventListener('click', handleClick)
+    return () => window.removeEventListener('click', handleClick)
+  }, [showStructuredMenu])
+
+  const pickExportFormat = useCallback((fmt: LogExportFormat) => {
+    setExportFormat(fmt)
+    try { localStorage.setItem('radar-logs-export-format', fmt) } catch {}
+  }, [])
+
+  const pickStructuredMode = useCallback((mode: StructuredMode) => {
+    setStructuredMode(mode)
+    try { localStorage.setItem('radar-logs-structured-mode', mode) } catch {}
+    setShowStructuredMenu(false)
+  }, [])
+
+  // Icon click cycles through the three modes; chevron exposes the explicit picker.
+  const cycleStructuredMode = useCallback(() => {
+    setStructuredMode(prev => {
+      const idx = STRUCTURED_MODE_ORDER.indexOf(prev)
+      const next = STRUCTURED_MODE_ORDER[(idx + 1) % STRUCTURED_MODE_ORDER.length]
+      try { localStorage.setItem('radar-logs-structured-mode', next) } catch {}
+      return next
+    })
+  }, [])
+
+  // Keyboard shortcuts: Ctrl+F opens search; bare 's' toggles streaming
+  // (matches k9s). 's' is ignored while typing in a field so it doesn't
+  // hijack search input or other text entry.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
+        e.preventDefault()
+        search.open()
+        return
+      }
+      if (e.key === 's' && !e.ctrlKey && !e.metaKey && !e.altKey && onStartStream && (isStreaming || !sourceUnavailable)) {
+        const target = e.target as HTMLElement | null
+        if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return
+        e.preventDefault()
+        if (isStreaming) onStopStream()
+        else onStartStream()
+      }
+    }
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [search.open, onStartStream, onStopStream, isStreaming, sourceUnavailable])
+
+  const handleAtBottomStateChange = useCallback((bottom: boolean) => {
+    if (bottom && resumeAtBottom.current && pendingLineCount === 0) setFollowing(true)
+  }, [setFollowing, pendingLineCount])
+
+  const toggleWrap = useCallback(() => {
+    setWordWrap(prev => {
+      const next = !prev
+      try { localStorage.setItem('radar-logs-wrap', String(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  const toggleTimestamps = useCallback(() => {
+    setShowTimestamps(prev => {
+      const next = !prev
+      try { localStorage.setItem('radar-logs-timestamps', String(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  const pickTsFormat = useCallback((fmt: TimestampFormat) => {
+    setTsFormat(fmt)
+    try { localStorage.setItem('radar-logs-ts-format', fmt) } catch {}
+    // Auto-show timestamps when user picks a format — otherwise the change isn't visible.
+    setShowTimestamps(true)
+    try { localStorage.setItem('radar-logs-timestamps', 'true') } catch {}
+    setShowTsMenu(false)
+  }, [])
+
+  const toggleAnsi = useCallback(() => {
+    setAnsiEnabled(prev => {
+      const next = !prev
+      try { localStorage.setItem('radar-logs-ansi', String(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  const toggleCollapseStacks = useCallback(() => {
+    setCollapseStacks(prev => {
+      const next = !prev
+      try { localStorage.setItem('radar-logs-collapse-stacks', String(next)) } catch {}
+      return next
+    })
+  }, [])
+
+  const toggleStackExpanded = useCallback((id: number) => {
+    setExpandedStacks(prev => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }, [])
+
+  // Clicking a filter chip in a structured log value pushes the value into the
+  // log search and shows only the lines that match it.
+  const handleFilterValue = useCallback((value: string) => {
+    search.setQuery(value)
+    // Values often contain regex metacharacters — force literal-substring matching.
+    search.setIsRegex(false)
+    search.setMode('only')
+    if (!search.isOpen) search.open()
+  }, [search])
+
+  const toggleLevel = useCallback((level: LogLevel) => {
+    setEnabledLevels(prev => {
+      const next = new Set(prev)
+      if (next.has(level)) {
+        next.delete(level)
+      } else {
+        next.add(level)
+      }
+      return next
+    })
+  }, [])
+
+  // Highlight set for current match
+  const currentHighlightId = search.matchIndices.length === 0 || search.mode === 'hide'
+    ? -1
+    : levelFilteredEntries[search.matchIndices[search.currentMatch]]?.id
+
+  // Group stack-trace lines under the line that started their record. Disabled
+  // while highlighting so matches inside stack frames remain visible. A line
+  // whose record start is filtered out stays on its own row.
+  const groupedEntries = useMemo<LogGroup[]>(() => {
+    if (!collapseStacks || highlightQuery) {
+      return displayEntries.map(e => ({ head: e, continuations: [] }))
+    }
+    return groupContinuations(displayEntries, association.headIdById)
+  }, [displayEntries, collapseStacks, highlightQuery, association])
+
+  const pinToBottom = useCallback(() => {
+    const scroller = scrollerRef.current
+    if (!followingRef.current || !scroller || scroller.scrollHeight - scroller.clientHeight - scroller.scrollTop <= 1) return
+    scroller.scrollTop = scroller.scrollHeight
+  }, [])
+  useLayoutEffect(() => {
+    followingRef.current = isFollowing
+    pinToBottom()
+  }, [groupedEntries, isFollowing, pinToBottom])
+  const pinFrame = useRef<number | null>(null)
+  const viewportObserver = useRef<ResizeObserver | null>(null)
+  const schedulePinToBottom = useCallback(() => {
+    if (!followingRef.current || !scrollerRef.current || pinFrame.current !== null) return
+    pinFrame.current = requestAnimationFrame(() => {
+      pinFrame.current = null
+      pinToBottom()
+    })
+  }, [pinToBottom])
+  const handleScrollerRef = useCallback((element: HTMLElement | Window | null) => {
+    viewportObserver.current?.disconnect()
+    const scroller = element instanceof HTMLElement ? element : null
+    scrollerRef.current = scroller
+    if (scroller && typeof ResizeObserver !== 'undefined') {
+      viewportObserver.current = new ResizeObserver(schedulePinToBottom)
+      viewportObserver.current.observe(scroller)
+      const list = scroller.querySelector('[data-testid="virtuoso-item-list"]')
+      if (list) viewportObserver.current.observe(list, { box: 'border-box' })
+    }
+    schedulePinToBottom()
+  }, [schedulePinToBottom])
+  useEffect(() => () => {
+    if (pinFrame.current !== null) cancelAnimationFrame(pinFrame.current)
+    pinFrame.current = null
+    viewportObserver.current?.disconnect()
+  }, [])
+
+  const scrollToBottom = useCallback(() => {
+    setFollowing(true)
+  }, [setFollowing])
+
+  const returnToLiveButton = !isFollowing && (
+    <Tooltip content={missingLineCount > 0 ? `${gapNotice} Jump to the live stream.` : pendingLineCount > 0 ? 'Your place is held while new logs arrive across collected sources. Jump to the live stream.' : 'Scroll to bottom'} wrapperClassName="absolute bottom-4 right-14 z-10" position="top">
+      <button onClick={scrollToBottom} aria-label="Scroll to bottom" className="px-3 py-1.5 btn-brand text-xs rounded-full shadow-lg">
+        Scroll to bottom
+        {pendingLineCount > 0 && ` · ${pendingLineCount >= 20_000 ? '20K+' : pendingLineCount.toLocaleString()} new ${pendingLineCount === 1 ? 'line' : 'lines'}`}
+      </button>
+    </Tooltip>
+  )
+
+  const toolbarExtraNode = typeof toolbarExtra === 'function'
+    ? toolbarExtra({ isDark, palette })
+    : toolbarExtra
+
+  // Composite "inactive toolbar button" classes — static literals so
+  // Tailwind's class scanner picks them up. Two variants for secondary
+  // vs tertiary default text color.
+  const iconBtnInactive = isDark
+    ? 'p-1.5 rounded transition-colors text-slate-400 hover:text-slate-100 hover:bg-slate-800'
+    : 'p-1.5 rounded transition-colors text-slate-600 hover:text-slate-900 hover:bg-slate-200'
+  const iconBtnInactiveTertiary = isDark
+    ? 'p-1.5 rounded transition-colors text-slate-500 hover:text-slate-100 hover:bg-slate-800'
+    : 'p-1.5 rounded transition-colors text-slate-400 hover:text-slate-900 hover:bg-slate-200'
+  // Export popover: house style for a group label, plus the two equal-weight
+  // actions the scope and format rows above them both apply to.
+  const exportLabelCls = `w-12 shrink-0 text-[10px] font-semibold uppercase tracking-wide ${palette.textTertiary}`
+  const exportActionCls = isDark
+    ? 'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition-colors border border-slate-700 text-slate-200 hover:bg-slate-800 disabled:opacity-40 disabled:pointer-events-none'
+    : 'flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 rounded text-xs font-medium transition-colors border border-slate-300 text-slate-700 hover:bg-slate-200 disabled:opacity-40 disabled:pointer-events-none'
+  // "disabled → tertiary on hover" for inactive level filter chips.
+  const levelChipInactive = isDark
+    ? 'border-transparent text-slate-600 hover:text-slate-500'
+    : 'border-transparent text-slate-300 hover:text-slate-400'
+
+  return (
+    <div
+      className={`flex flex-col h-full ${palette.containerBg}`}
+      style={{ colorScheme: isDark ? 'dark' : 'light', fontFamily: "'SF Mono', 'Cascadia Code', 'Fira Code', Menlo, Consolas, 'DejaVu Sans Mono', monospace" }}
+    >
+      {/* Toolbar */}
+      <div className={`flex flex-wrap items-center gap-2 px-3 py-2 border-b ${palette.border} ${palette.toolbarBg}`}>
+        {toolbarExtraNode}
+
+        {/* Stream / Stop toggle — only shown when streaming is supported */}
+        {onStartStream && (
+          <Tooltip content={isStreaming ? 'Stop streaming' : sourceUnavailable ? 'Available once an instance is running' : 'Start streaming'} delay={TIP_DELAY} position="bottom">
+            <button
+              onClick={isStreaming ? onStopStream : onStartStream}
+              disabled={sourceUnavailable && !isStreaming}
+              className={`flex items-center gap-1.5 px-2 py-1.5 text-xs rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                isStreaming
+                  ? 'bg-green-600 text-white hover:bg-green-700'
+                  : `${palette.elevatedBg} ${palette.textSecondary} ${palette.hoverBg}`
+              }`}
+            >
+              {isStreaming ? <Square className="w-3 h-3" /> : <Play className="w-3 h-3" />}
+              <span className="hidden sm:inline">{isStreaming ? 'Stop' : 'Stream'}</span>
+            </button>
+          </Tooltip>
+        )}
+
+        {/* Refresh */}
+        <Tooltip content="Refresh logs" delay={TIP_DELAY} position="bottom">
+          <button
+            onClick={onRefresh}
+            aria-label="Refresh logs"
+            disabled={isLoading || isStreaming}
+            className={`flex items-center gap-1.5 px-2 py-1.5 text-xs rounded ${palette.elevatedBg} ${palette.textSecondary} ${palette.hoverBg} disabled:opacity-50 disabled:cursor-not-allowed`}
+          >
+            <RotateCcw className={`w-3 h-3 ${isLoading ? 'animate-spin' : ''}`} />
+          </button>
+        </Tooltip>
+
+        {/* Level filter toggles */}
+        <div className="flex items-center gap-1 ml-1">
+          {LEVEL_OPTIONS.map(opt => {
+            const active = enabledLevels.has(opt.level)
+            const count = levelCounts[opt.level]
+            return (
+              <Tooltip key={opt.level} content={`${active ? 'Hide' : 'Show'} ${opt.noun}`} delay={TIP_DELAY} position="bottom">
+                <button
+                  onClick={() => toggleLevel(opt.level)}
+                  className={`px-1.5 py-0.5 text-[10px] font-medium rounded border whitespace-nowrap transition-colors ${
+                    active
+                      ? getLevelActiveColor(opt.level, palette)
+                      : levelChipInactive
+                  }`}
+                >
+                  {opt.label}{count > 0 ? ` ${count}` : ''}
+                </button>
+              </Tooltip>
+            )
+          })}
+        </div>
+
+        <div role="group" aria-label="Log display and utilities" className="ml-auto flex shrink-0 flex-nowrap items-center gap-2">
+
+        {/* Structured-log display mode: icon cycles compact→expanded→raw, chevron picks explicitly. */}
+        {hasStructuredEntries && (
+          <div className="flex items-center">
+            <Tooltip content={`Structured: ${STRUCTURED_MODE_LABELS[structuredMode]} — click to cycle`} delay={TIP_DELAY} position="bottom">
+              <button
+                onClick={cycleStructuredMode}
+                className={`p-1.5 rounded-l transition-colors ${
+                  structuredMode === 'compact' ? iconBtnInactive : palette.toolbarActive
+                }`}
+                aria-label={`Structured log display mode: ${STRUCTURED_MODE_LABELS[structuredMode]}`}
+              >
+                <Braces className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <div className="relative" ref={structuredMenuRef}>
+              <Tooltip content="Pick structured display mode" delay={TIP_DELAY} position="bottom">
+                <button
+                  onClick={() => setShowStructuredMenu(prev => !prev)}
+                  className={`px-2 py-1.5 rounded-r text-[10px] font-medium transition-colors whitespace-nowrap ${
+                    structuredMode === 'compact' ? iconBtnInactiveTertiary : palette.toolbarActive
+                  }`}
+                  aria-label="Pick structured log display mode"
+                >
+                  <span className="inline-flex items-center gap-1">
+                    <span>{STRUCTURED_MODE_LABELS[structuredMode]}</span>
+                    <ChevronDown className="w-3 h-3" />
+                  </span>
+                </button>
+              </Tooltip>
+              {structuredMenu.shouldRender && (
+                <div
+                  inert={!showStructuredMenu}
+                  className={`absolute top-full right-0 mt-1 w-56 origin-top-right ${palette.menuBg} border ${palette.border} rounded-lg shadow-lg z-50 ${TRANSITION_MENU} ${
+                    structuredMenu.isOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-1 scale-[0.97]'
+                  } ${showStructuredMenu ? '' : 'pointer-events-none'}`}
+                  style={overlayTransitionStyle(structuredMenu.isOpen, 'menu')}
+                >
+                  <div className={`px-3 py-1.5 text-[10px] uppercase tracking-wide ${palette.textTertiary} border-b ${palette.border}`}>
+                    Structured display
+                  </div>
+                  {STRUCTURED_MODE_ORDER.map(mode => (
+                    <button
+                      key={mode}
+                      onClick={() => pickStructuredMode(mode)}
+                      className={`w-full text-left px-3 py-1.5 text-xs ${palette.hoverBg} flex items-start justify-between gap-2 ${
+                        structuredMode === mode ? palette.textPrimary : palette.textSecondary
+                      }`}
+                    >
+                      <span className="flex flex-col">
+                        <span>{STRUCTURED_MODE_LABELS[mode]}</span>
+                        <span className={`text-[10px] ${palette.textTertiary}`}>{STRUCTURED_MODE_DESCRIPTIONS[mode]}</span>
+                      </span>
+                      {structuredMode === mode && <span className={`text-[10px] ${palette.textAccent} mt-0.5`}>✓</span>}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Timestamp toggle + format picker */}
+        <div className="flex items-center">
+          <Tooltip content={showTimestamps ? 'Hide timestamps' : 'Show timestamps'} delay={TIP_DELAY} position="bottom">
+            <button
+              onClick={toggleTimestamps}
+              className={`p-1.5 rounded-l transition-colors ${
+                showTimestamps ? palette.toolbarActive : iconBtnInactive
+              }`}
+            >
+              <Clock className="w-4 h-4" />
+            </button>
+          </Tooltip>
+          <div className="relative" ref={tsMenuRef}>
+            <Tooltip content={`Timestamp format: ${TIMESTAMP_FORMAT_LABELS[tsFormat]}`} delay={TIP_DELAY} position="bottom">
+              <button
+                onClick={() => setShowTsMenu(prev => !prev)}
+                className={`px-2 py-1.5 rounded-r text-[10px] font-medium transition-colors whitespace-nowrap ${
+                  showTimestamps ? palette.toolbarActive : iconBtnInactiveTertiary
+                }`}
+                aria-label="Pick timestamp format"
+              >
+                <span className="inline-flex items-center gap-1">
+                  <span>{TIMESTAMP_FORMAT_SHORT_LABELS[tsFormat]}</span>
+                  <ChevronDown className="w-3 h-3" />
+                </span>
+              </button>
+            </Tooltip>
+            {tsMenu.shouldRender && (
+              <div
+                inert={!showTsMenu}
+                className={`absolute top-full right-0 mt-1 w-44 origin-top-right ${palette.menuBg} border ${palette.border} rounded-lg shadow-lg z-50 ${TRANSITION_MENU} ${
+                  tsMenu.isOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-1 scale-[0.97]'
+                } ${showTsMenu ? '' : 'pointer-events-none'}`}
+                style={overlayTransitionStyle(tsMenu.isOpen, 'menu')}
+              >
+                <div className={`px-3 py-1.5 text-[10px] uppercase tracking-wide ${palette.textTertiary} border-b ${palette.border}`}>
+                  Timestamp format
+                </div>
+                {TIMESTAMP_FORMAT_ORDER.map(fmt => (
+                  <button
+                    key={fmt}
+                    onClick={() => pickTsFormat(fmt)}
+                    className={`w-full text-left px-3 py-1.5 text-xs ${palette.hoverBg} flex items-center justify-between ${
+                      tsFormat === fmt ? palette.textPrimary : palette.textSecondary
+                    }`}
+                  >
+                    <span>{TIMESTAMP_FORMAT_LABELS[fmt]}</span>
+                    {tsFormat === fmt && <span className={`text-[10px] ${palette.textAccent}`}>✓</span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Collapse stack-trace continuations toggle */}
+        <Tooltip content={collapseStacks ? 'Stop grouping stack traces' : 'Group stack-trace lines'} delay={TIP_DELAY} position="bottom">
+          <button
+            onClick={toggleCollapseStacks}
+            className={`p-1.5 rounded transition-colors ${
+              collapseStacks ? palette.toolbarActive : iconBtnInactive
+            }`}
+          >
+            <ListCollapse className="w-4 h-4" />
+          </button>
+        </Tooltip>
+
+        {/* ANSI color rendering toggle */}
+        <Tooltip content={ansiEnabled ? 'Hide ANSI colors' : 'Render ANSI colors'} delay={TIP_DELAY} position="bottom">
+          <button
+            onClick={toggleAnsi}
+            className={`p-1.5 rounded transition-colors ${
+              ansiEnabled ? palette.toolbarActive : iconBtnInactive
+            }`}
+          >
+            <Palette className="w-4 h-4" />
+          </button>
+        </Tooltip>
+
+        {/* Wrap toggle */}
+        <Tooltip content={wordWrap ? 'Disable word wrap' : 'Enable word wrap'} delay={TIP_DELAY} position="bottom">
+          <button
+            onClick={toggleWrap}
+            className={`p-1.5 rounded transition-colors ${
+              wordWrap ? palette.toolbarActive : iconBtnInactive
+            }`}
+          >
+            <WrapText className="w-4 h-4" />
+          </button>
+        </Tooltip>
+
+        {/* Search toggle */}
+        <Tooltip content="Search (Ctrl+F)" delay={TIP_DELAY} position="bottom">
+          <button
+            onClick={() => search.isOpen ? search.close() : search.open()}
+            className={`p-1.5 rounded transition-colors ${
+              search.isOpen ? palette.toolbarActive : iconBtnInactive
+            }`}
+          >
+            <Search className="w-4 h-4" />
+          </button>
+        </Tooltip>
+
+        {!themeLocked && (
+          <Tooltip content={isDark ? 'Switch to light mode' : 'Switch to dark mode'} delay={TIP_DELAY} position="bottom">
+            <button
+              onClick={toggleDark}
+              className={iconBtnInactive}
+              aria-label={isDark ? 'Switch log viewer to light mode' : 'Switch log viewer to dark mode'}
+            >
+              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+          </Tooltip>
+        )}
+
+        {/* Export */}
+        <div className="relative flex items-center" ref={downloadMenuRef}>
+          <Tooltip content={bufferLineCount === 0 ? 'No logs loaded' : 'Export logs'} delay={TIP_DELAY} position="bottom" disabled={showDownloadMenu} preserveWrapperWhenDisabled>
+            <button
+              ref={exportTriggerRef}
+              disabled={bufferLineCount === 0}
+              onClick={toggleExportMenu}
+              aria-label="Export logs"
+              aria-haspopup="dialog"
+              aria-expanded={showDownloadMenu}
+              className={`${iconBtnInactive} disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <Download className="w-4 h-4" />
+            </button>
+          </Tooltip>
+          {downloadMenu.shouldRender && (
+            <div
+              role="dialog"
+              aria-label="Export logs"
+              inert={!showDownloadMenu}
+              className={`absolute top-full right-0 mt-1 w-[23rem] origin-top-right ${palette.menuBg} border ${palette.border} rounded-lg shadow-lg z-50 p-3 space-y-2.5 ${TRANSITION_MENU} ${
+                downloadMenu.isOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 -translate-y-1 scale-[0.97]'
+              } ${showDownloadMenu ? '' : 'pointer-events-none'}`}
+              style={overlayTransitionStyle(downloadMenu.isOpen, 'menu')}
+            >
+              <div className="flex items-center gap-3">
+                <span id="log-export-scope-label" className={exportLabelCls}>Lines</span>
+                {scopeIsMeaningful ? (
+                  <div role="radiogroup" aria-labelledby="log-export-scope-label" className="flex items-center gap-1">
+                    <ExportChoice active={exportScope === 'visible'} onClick={() => setExportScope('visible')} palette={palette}>
+                      Filtered {displayEntries.length.toLocaleString()}
+                    </ExportChoice>
+                    <ExportChoice active={exportScope === 'all'} onClick={() => setExportScope('all')} palette={palette}>
+                      All {bufferLineCount.toLocaleString()}
+                    </ExportChoice>
+                  </div>
+                ) : (
+                  <span className={`text-[11px] ${palette.textSecondary}`}>
+                    {bufferLineCount.toLocaleString()} line{bufferLineCount === 1 ? '' : 's'}
+                  </span>
+                )}
+              </div>
+
+              {exportHasGap && <p className={`text-xs ${palette.textSecondary}`}>{gapNotice}</p>}
+              <div className="flex items-center gap-3">
+                <span id="log-export-format-label" className={exportLabelCls}>Format</span>
+                <div role="radiogroup" aria-labelledby="log-export-format-label" className="flex items-center gap-1">
+                  {LOG_EXPORT_FORMATS.map(fmt => (
+                    <ExportChoice key={fmt} active={exportFormat === fmt} onClick={() => pickExportFormat(fmt)} palette={palette}>
+                      {LOG_EXPORT_FORMAT_LABELS[fmt]}
+                    </ExportChoice>
+                  ))}
+                </div>
+              </div>
+
+              {/* Shows the shape of the real output, so no caption has to claim
+                  which fields ride along or that the toolbar toggles reach it. */}
+              <div className={`rounded border ${palette.border} ${palette.toolbarBg} px-2 py-1.5 font-mono text-[10px] leading-relaxed min-h-[44px] ${palette.textSecondary}`}>
+                {exportPreview.length > 0
+                  ? exportPreview.map((line, i) => <div key={i} className="truncate">{line}</div>)
+                  : <div className={palette.textTertiary}>Nothing to export.</div>}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleExportCopy}
+                  disabled={exportEntries.length === 0}
+                  className={exportActionCls}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Copy
+                </button>
+                <button
+                  onClick={handleExportDownload}
+                  disabled={exportEntries.length === 0}
+                  className={exportActionCls}
+                >
+                  <FileDown className="w-3.5 h-3.5" />
+                  Download
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Clear */}
+        {onClear && (
+          <Tooltip content={bufferLineCount === 0 ? 'No logs loaded' : 'Clear logs'} delay={TIP_DELAY} position="bottom">
+            <button
+              onClick={onClear}
+              aria-label="Clear logs"
+              disabled={bufferLineCount === 0}
+              className={`${iconBtnInactive} disabled:opacity-50 disabled:cursor-not-allowed`}
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </Tooltip>
+        )}
+        </div>
+      </div>
+
+      {/* Search bar */}
+      {search.isOpen && (
+        <div className={`@container/logsearch flex items-center gap-2 px-3 py-2 border-b ${palette.border} ${palette.toolbarBgMuted}`}>
+          <Search className={`w-4 h-4 ${palette.textSecondary} shrink-0`} />
+          <Input
+            value={search.query}
+            onChange={(e) => search.setQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                search.close()
+              } else if (e.key === 'Enter') {
+                if (e.shiftKey) {
+                  search.goToPrev()
+                } else {
+                  search.goToNext()
+                }
+              }
+            }}
+            placeholder="Search logs..."
+            className={`flex-1 bg-transparent ${palette.textPrimary} text-sm ${palette.placeholder} focus:outline-none min-w-0`}
+            autoFocus
+          />
+
+          {/* Regex toggle */}
+          <Tooltip content="Regex" delay={TIP_DELAY} position="bottom">
+            <button
+              onClick={search.toggleRegex}
+              className={`p-1 rounded transition-colors ${
+                search.isRegex ? palette.toolbarActive : `${palette.textTertiary} ${palette.hoverText}`
+              }`}
+            >
+              <Regex className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
+
+          {/* Case sensitivity toggle */}
+          <Tooltip content="Match case" delay={TIP_DELAY} position="bottom">
+            <button
+              onClick={search.toggleCaseSensitive}
+              className={`p-1 rounded transition-colors ${
+                search.isCaseSensitive ? palette.toolbarActive : `${palette.textTertiary} ${palette.hoverText}`
+              }`}
+            >
+              <CaseSensitive className="w-3.5 h-3.5" />
+            </button>
+          </Tooltip>
+
+          <SearchModeControl mode={search.mode} onChange={search.setMode} palette={palette} />
+
+          {search.query && (
+            <>
+              <span className={`text-xs whitespace-nowrap ${search.regexError ? palette.textError : palette.textTertiary}`}>
+                {search.regexError
+                  ? 'Invalid regex'
+                  : search.mode === 'hide'
+                    ? `${hiddenCount.toLocaleString()} hidden`
+                    : search.matchCount > 0
+                      ? `${search.currentMatch + 1} / ${search.matchCount}`
+                      : '0 results'}
+              </span>
+
+              {/* Matches are off screen in Hide mode, so there is nothing to step through */}
+              {search.mode !== 'hide' && (
+                <>
+                  <Tooltip content="Previous (Shift+Enter)" delay={TIP_DELAY} position="bottom">
+                    <button
+                      onClick={search.goToPrev}
+                      disabled={search.matchCount === 0}
+                      className={`p-1 rounded ${palette.textSecondary} ${palette.hoverText} disabled:opacity-30`}
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                  <Tooltip content="Next (Enter)" delay={TIP_DELAY} position="bottom">
+                    <button
+                      onClick={search.goToNext}
+                      disabled={search.matchCount === 0}
+                      className={`p-1 rounded ${palette.textSecondary} ${palette.hoverText} disabled:opacity-30`}
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" />
+                    </button>
+                  </Tooltip>
+                </>
+              )}
+
+              <button
+                onClick={() => search.setQuery('')}
+                className={`p-1 rounded ${palette.textSecondary} ${palette.hoverText}`}
+              >
+                <X className="w-3 h-3" />
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Log content */}
+      {isLoading && entries.length === 0 ? (
+        <div className={`flex-1 flex items-center justify-center ${palette.textTertiary}`}>
+          <div className="flex items-center gap-2">
+            <RotateCcw className="w-4 h-4 animate-spin" />
+            <span>Loading logs…</span>
+          </div>
+        </div>
+      ) : errorMessage ? (
+        <div className={`${EMPTY_STATE_CLASS} ${palette.textError}`}>
+          <Terminal className="w-8 h-8" />
+          <span>{errorMessage}</span>
+        </div>
+      ) : groupedEntries.length === 0 ? (
+        <div className={`${EMPTY_STATE_CLASS} relative ${palette.textTertiary}`}>
+          <Terminal className="w-8 h-8" />
+          <div>{entries.length > 0 ? `Filters hide all ${entries.length.toLocaleString()} loaded lines` : emptyMessage}</div>
+          {returnToLiveButton}
+          {entries.length === 0 && emptyCommand && (
+            <button type="button" onClick={() => { void copyText(emptyCommand) }} className={`mt-2 inline-flex max-w-[80%] items-center gap-2 rounded border px-3 py-2 font-mono text-xs ${palette.border} ${palette.toolbarBg}`} title="Copy recovery command">
+              <code className="truncate">{emptyCommand}</code>
+              <Copy className="h-3.5 w-3.5 shrink-0" />
+            </button>
+          )}
+        </div>
+      ) : (
+        <div
+          className="flex-1 relative min-h-0"
+          tabIndex={0}
+          onFocusCapture={event => {
+            const target = event.target
+            if (!(target instanceof HTMLElement) || !target.closest('[data-virtuoso-scroller]')) return
+            if (!target.closest('button, a, input, select, textarea, [role="button"]')) return
+            setFollowing(false)
+            target.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+          }}
+          onWheelCapture={event => {
+            if (event.deltaY < 0) setFollowing(false)
+            if (event.deltaY > 0) resumeAtBottom.current = true
+          }}
+          onScrollCapture={event => {
+            const scroller = event.target
+            if (!(scroller instanceof HTMLElement) || !scroller.hasAttribute('data-virtuoso-scroller')) return
+            const previous = scrollPosition.current
+            if (previous !== null && scroller.scrollTop > previous && scrollbarDragging.current && !followingRef.current) resumeAtBottom.current = true
+            scrollPosition.current = scroller.scrollTop
+          }}
+          onKeyDownCapture={event => {
+            if (['ArrowUp', 'PageUp', 'Home'].includes(event.key) || (event.key === ' ' && event.shiftKey)) setFollowing(false)
+            if (['ArrowDown', 'PageDown', 'End'].includes(event.key) || (event.key === ' ' && !event.shiftKey)) resumeAtBottom.current = true
+          }}
+          onTouchStartCapture={event => { touchY.current = event.touches[0]?.clientY ?? null }}
+          onTouchMoveCapture={event => {
+            const y = event.touches[0]?.clientY
+            if (y !== undefined && touchY.current !== null && y > touchY.current) setFollowing(false)
+            if (y !== undefined && touchY.current !== null && y < touchY.current) resumeAtBottom.current = true
+            touchY.current = y ?? null
+          }}
+          onPointerDownCapture={event => {
+            const scroller = event.currentTarget.querySelector('[data-virtuoso-scroller]')
+            scrollbarDragging.current = !!scroller && event.clientX >= scroller.getBoundingClientRect().right - 20
+            const target = event.target
+            const interactingWithLogs = target instanceof Element && !!target.closest('[data-virtuoso-scroller]')
+            if (scrollbarDragging.current || (interactingWithLogs && (event.button === 0 || event.button === 1))) setFollowing(false)
+          }}
+          onPointerUpCapture={() => { scrollbarDragging.current = false }}
+          onPointerCancelCapture={() => { scrollbarDragging.current = false }}
+        >
+          <Virtuoso
+            ref={virtuosoRef}
+            data={groupedEntries}
+            scrollerRef={handleScrollerRef}
+            computeItemKey={(_index, group) => group.head.id}
+            totalListHeightChanged={schedulePinToBottom}
+            atBottomStateChange={handleAtBottomStateChange}
+            atBottomThreshold={50}
+            increaseViewportBy={200}
+            itemContent={(_index, group) => (
+              <LogGroupItem
+                group={group}
+                searchQuery={highlightQuery}
+                searchIsRegex={search.isRegex}
+                searchIsCaseSensitive={search.isCaseSensitive}
+                showPodName={showPodName}
+                showTimestamp={showTimestamps}
+                tsFormat={tsFormat}
+                ansiEnabled={ansiEnabled}
+                isCurrentMatch={group.head.id === currentHighlightId}
+                wordWrap={wordWrap}
+                defaultExpanded={structuredMode === 'expanded'}
+                rawStructured={structuredMode === 'raw'}
+                onFilterValue={handleFilterValue}
+                isStackExpanded={expandedStacks.has(group.head.id)}
+                onToggleStack={toggleStackExpanded}
+                isDark={isDark}
+                palette={palette}
+              />
+            )}
+            className="h-full font-mono text-xs"
+          />
+          {/* Scroll-to-bottom button */}
+          {returnToLiveButton}
+        </div>
+      )}
+
+      {/* Keyboard shortcut hints */}
+      <div className={`flex items-center gap-4 px-3 py-1 border-t ${palette.border} ${palette.toolbarBg} text-[10px] ${palette.textDisabled}`}>
+        {onStartStream && (!sourceUnavailable || isStreaming) && <Shortcut keys="S" label={isStreaming ? 'Stop stream' : 'Stream'} palette={palette} />}
+        <Shortcut keys="Ctrl+F" label="Search" palette={palette} />
+        {search.mode !== 'hide' && (
+          <>
+            <Shortcut keys="Enter" label="Next match" palette={palette} />
+            <Shortcut keys="Shift+Enter" label="Prev match" palette={palette} />
+          </>
+        )}
+        <Shortcut keys="Esc" label="Close search" palette={palette} />
+      </div>
+    </div>
+  )
+}
+
+const SEARCH_MODES: { mode: LogSearchMode; label: string; tip: string; Icon: typeof Filter }[] = [
+  { mode: 'highlight', label: 'Highlight', tip: 'Show all lines and highlight matches', Icon: Highlighter },
+  { mode: 'only', label: 'Only matching', tip: 'Show only matching lines, with their stack traces', Icon: Filter },
+  { mode: 'hide', label: 'Hide matching', tip: 'Hide matching lines and their stack traces, like grep -v', Icon: EyeOff },
+]
+
+/** What the search query does to the list. Labels collapse to icons when the search row is narrow. */
+function SearchModeControl({ mode, onChange, palette }: {
+  mode: LogSearchMode
+  onChange: (mode: LogSearchMode) => void
+  palette: LogPalette
+}) {
+  return (
+    <div role="radiogroup" aria-label="Search mode" className={`flex items-center shrink-0 rounded border ${palette.border}`}>
+      {SEARCH_MODES.map(({ mode: m, label, tip, Icon }) => (
+        <Tooltip key={m} content={tip} delay={TIP_DELAY} position="bottom">
+          <button
+            role="radio"
+            aria-checked={mode === m}
+            aria-label={label}
+            onClick={() => onChange(m)}
+            className={`flex items-center gap-1 px-1.5 py-0.5 text-[11px] whitespace-nowrap transition-colors ${
+              mode === m ? palette.toolbarActive : `${palette.textTertiary} ${palette.hoverText}`
+            }`}
+          >
+            <Icon className="w-3.5 h-3.5" />
+            <span className="hidden @xl/logsearch:inline">{label}</span>
+          </button>
+        </Tooltip>
+      ))}
+    </div>
+  )
+}
+
+/** One pill in the export popover's scope and format rows. */
+function ExportChoice({ active, onClick, palette, children }: {
+  active: boolean
+  onClick: () => void
+  palette: LogPalette
+  children: ReactNode
+}) {
+  return (
+    <button
+      onClick={onClick}
+      role="radio"
+      aria-checked={active}
+      className={`px-2 py-1 rounded text-[11px] transition-colors ${active ? palette.toolbarActive : `${palette.textSecondary} ${palette.hoverBg}`}`}
+    >
+      {children}
+    </button>
+  )
+}
+
+function Shortcut({ keys, label, palette }: { keys: string; label: string; palette: LogPalette }) {
+  return (
+    <span className="flex items-center gap-1">
+      <kbd className={`px-1 py-px rounded ${palette.elevatedBg} border ${palette.borderLight} font-mono`}>{keys}</kbd>
+      <span>{label}</span>
+    </span>
+  )
+}
+
+interface LogLineProps {
+  entry: LogEntry
+  searchQuery: string
+  searchIsRegex: boolean
+  searchIsCaseSensitive: boolean
+  showPodName: boolean
+  showTimestamp: boolean
+  tsFormat: TimestampFormat
+  ansiEnabled: boolean
+  isCurrentMatch: boolean
+  wordWrap: boolean
+  defaultExpanded: boolean
+  /** When true, JSON/logfmt entries render as plain raw text instead of via StructuredLogLine. */
+  rawStructured: boolean
+  onFilterValue?: (value: string) => void
+  /** Optional lead element rendered at the start of the row (e.g. stack-trace toggle). */
+  leadSlot?: ReactNode
+  isDark: boolean
+  palette: LogPalette
+}
+
+function LogLine({
+  entry,
+  searchQuery,
+  searchIsRegex,
+  searchIsCaseSensitive,
+  showPodName,
+  showTimestamp,
+  tsFormat,
+  ansiEnabled,
+  isCurrentMatch,
+  wordWrap,
+  defaultExpanded,
+  rawStructured,
+  onFilterValue,
+  leadSlot,
+  isDark,
+  palette,
+}: LogLineProps) {
+  const levelColor = getLogLevelColor(entry.level, isDark)
+  const podTextColor = entry.podColorIndex !== undefined
+    ? palette.podColors[entry.podColorIndex % palette.podColors.length].text
+    : palette.textPrimary
+
+  // Determine content rendering. Priority: search highlight > structured > ANSI/plain.
+  let contentElement: React.ReactNode
+  if (searchQuery) {
+    const plain = stripAnsi(entry.content)
+    const highlighted = highlightSearchMatches(plain, searchQuery, searchIsRegex, searchIsCaseSensitive)
+    contentElement = (
+      <span
+        className={`${wordWrap ? 'whitespace-pre-wrap [overflow-wrap:anywhere]' : 'whitespace-pre'} ${levelColor}`}
+        dangerouslySetInnerHTML={{ __html: highlighted }}
+      />
+    )
+  } else if ((entry.isJson || entry.isLogfmt) && !rawStructured) {
+    contentElement = (
+      <StructuredLogLine
+        content={entry.content}
+        level={entry.level}
+        wordWrap={wordWrap}
+        isLogfmt={entry.isLogfmt}
+        defaultExpanded={defaultExpanded}
+        onFilterValue={onFilterValue}
+        isDark={isDark}
+      />
+    )
+  } else if (ansiEnabled) {
+    const html = ansiToHtml(entry.content)
+    contentElement = (
+      <span
+        className={`${wordWrap ? 'whitespace-pre-wrap [overflow-wrap:anywhere]' : 'whitespace-pre'} ${levelColor}`}
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    )
+  } else {
+    contentElement = (
+      <span className={`${wordWrap ? 'whitespace-pre-wrap [overflow-wrap:anywhere]' : 'whitespace-pre'} ${levelColor}`}>
+        {stripAnsi(entry.content)}
+      </span>
+    )
+  }
+
+  const handleCopy = () => {
+    void copyText(stripAnsi(entry.content))
+  }
+
+  return (
+    <div className={`flex ${palette.hoverSurface} group leading-5 px-2 ${isCurrentMatch ? palette.currentMatchBg : ''}`}>
+      {leadSlot}
+      {showTimestamp && entry.timestamp && (
+        <span
+          className={`${palette.textTertiary} select-none pr-2 whitespace-nowrap`}
+          title={entry.timestamp}
+        >
+          {formatLogTimestamp(entry.timestamp, tsFormat)}
+        </span>
+      )}
+      {showPodName && entry.pod && (
+        <span
+          className={`${podTextColor} select-none pr-2 whitespace-nowrap min-w-[80px] max-w-[220px] truncate`}
+          title={entry.sourceLabel || entry.pod}
+        >
+          [{entry.sourceLabel || entry.pod.split('-').slice(-2).join('-')}]
+        </span>
+      )}
+      <span className="flex-1 min-w-0">{contentElement}</span>
+      <button
+        onClick={handleCopy}
+        className={`opacity-0 group-hover:opacity-100 focus-visible:opacity-100 ml-1 p-0.5 rounded ${palette.textTertiary} ${palette.hoverText} shrink-0 transition-opacity`}
+        title="Copy line"
+      >
+        <Copy className="w-3 h-3" />
+      </button>
+    </div>
+  )
+}
+
+interface LogGroupItemProps {
+  group: LogGroup
+  searchQuery: string
+  searchIsRegex: boolean
+  searchIsCaseSensitive: boolean
+  showPodName: boolean
+  showTimestamp: boolean
+  tsFormat: TimestampFormat
+  ansiEnabled: boolean
+  isCurrentMatch: boolean
+  wordWrap: boolean
+  defaultExpanded: boolean
+  rawStructured: boolean
+  onFilterValue: (value: string) => void
+  isStackExpanded: boolean
+  onToggleStack: (id: number) => void
+  isDark: boolean
+  palette: LogPalette
+}
+
+function LogGroupItem(props: LogGroupItemProps) {
+  const { group, isStackExpanded, onToggleStack, palette, ...rest } = props
+  const hasStack = group.continuations.length > 0
+
+  const stackToggle = hasStack ? (
+    <button
+      onClick={() => onToggleStack(group.head.id)}
+      className={`mr-1 self-start p-0.5 rounded ${palette.textTertiary} ${palette.hoverText} ${palette.hoverSurface} shrink-0`}
+      title={isStackExpanded ? 'Collapse stack trace' : `Expand ${group.continuations.length} stack frames`}
+    >
+      {isStackExpanded
+        ? <ChevronDown className="w-3 h-3" />
+        : <ChevronRight className="w-3 h-3" />}
+    </button>
+  ) : null
+
+  return (
+    <div>
+      <LogLine
+        entry={group.head}
+        {...rest}
+        palette={palette}
+        leadSlot={stackToggle}
+      />
+      {hasStack && !isStackExpanded && (
+        <button
+          onClick={() => onToggleStack(group.head.id)}
+          className={`block w-full text-left pl-6 pr-2 py-0 text-[10px] ${palette.textTertiary} ${palette.hoverText} ${palette.hoverSurface}`}
+        >
+          [+{group.continuations.length} stack {group.continuations.length === 1 ? 'line' : 'lines'}]
+        </button>
+      )}
+      {hasStack && isStackExpanded && group.continuations.map(cont => (
+        <div key={cont.id} className="pl-4">
+          <LogLine entry={cont} {...rest} palette={palette} isCurrentMatch={false} />
+        </div>
+      ))}
+    </div>
+  )
+}

@@ -1,0 +1,1367 @@
+package server
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log"
+	"net/http"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
+
+	"github.com/maomada/KubeAtlas/internal/argocd"
+	"github.com/maomada/KubeAtlas/internal/auth"
+	"github.com/maomada/KubeAtlas/internal/connections"
+	"github.com/maomada/KubeAtlas/internal/issues"
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/readscope"
+	"github.com/maomada/KubeAtlas/pkg/argoapi"
+	"github.com/maomada/KubeAtlas/pkg/finalizers"
+	gitopsinsights "github.com/maomada/KubeAtlas/pkg/gitops/insights"
+	gitopstree "github.com/maomada/KubeAtlas/pkg/gitops/tree"
+	"github.com/maomada/KubeAtlas/pkg/health"
+	"github.com/maomada/KubeAtlas/pkg/k8score"
+	"github.com/maomada/KubeAtlas/pkg/topology"
+)
+
+// gitopsRequest is the parsed identity of a single GitOps tree/insights
+// request, with the namespace allowlist already resolved against RBAC.
+type gitopsRequest struct {
+	Kind, Namespace, Name, Group string
+	Cache                        *k8s.ResourceCache
+	AllowedNamespaces            []string
+}
+
+// HasNamespaceAccess reports whether the caller is allowed to inspect any
+// namespace's resources. False means handlers should short-circuit with an
+// empty success response (see the per-handler empty value).
+func (g *gitopsRequest) HasNamespaceAccess() bool {
+	return !readscope.NoNamespaceAccess(g.AllowedNamespaces)
+}
+
+// parseGitOpsRequest pulls the GitOps URL params and runs the namespace
+// access check shared by /api/gitops/{tree,insights}/.... Returns ok=false
+// after writing an error response (caller must return immediately).
+func (s *Server) parseGitOpsRequest(w http.ResponseWriter, r *http.Request) (*gitopsRequest, bool) {
+	kind := normalizeKind(chi.URLParam(r, "kind"))
+	namespace := chi.URLParam(r, "namespace")
+	name := chi.URLParam(r, "name")
+	group := r.URL.Query().Get("group")
+	if namespace == "_" {
+		namespace = ""
+	}
+	if namespace != "" {
+		allowed := s.getUserNamespaces(r, []string{namespace})
+		if readscope.NoNamespaceAccess(allowed) {
+			s.writeError(w, http.StatusForbidden, fmt.Sprintf("no access to namespace %q", namespace))
+			return nil, false
+		}
+	}
+
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "Resource cache not available")
+		return nil, false
+	}
+
+	// Detail endpoints intentionally use the user's full RBAC ceiling rather
+	// than the active UI namespace filter. The root resource (e.g. an Argo
+	// Application in `argocd`) commonly manages workloads in *other*
+	// namespaces; if we honored the UI filter, the tree would be empty
+	// whenever the user has narrowed Radar to a different namespace than the
+	// managed ones. The root namespace itself is still RBAC-checked above
+	// (s.getUserNamespaces with the namespace param).
+	return &gitopsRequest{
+		Kind:              kind,
+		Namespace:         namespace,
+		Name:              name,
+		Group:             group,
+		Cache:             cache,
+		AllowedNamespaces: s.getUserNamespaces(r, nil),
+	}, true
+}
+
+// buildGitOpsTree constructs the topology + GitOps resource tree for a
+// parsed request. The live root unstructured is returned alongside the tree
+// so downstream consumers (insights) can derive views without re-fetching.
+//
+// The topology build itself is the dominant cost — it walks every cached
+// resource of every kind. We route it through s.topoMemo so a page-load
+// firing /tree + /insights, or the in-flight 2s polling, all share a single
+// build. Topology is a deterministic projection of the informer cache, so
+// the short TTL has no semantic effect.
+func (s *Server) buildGitOpsTree(r *http.Request, req *gitopsRequest) (*gitopstree.ResourceTree, *unstructured.Unstructured, error) {
+	opts := topology.DefaultBuildOptions()
+	opts.Namespaces = req.AllowedNamespaces
+	opts.IncludeReplicaSets = true
+	opts.ForRelationshipCache = true
+
+	topo, err := s.topoMemo.GetScoped(req.Cache.Generation(), opts, func() (*topology.Topology, error) {
+		return topology.NewBuilder(k8s.NewTopologyResourceProvider(req.Cache)).
+			WithDynamic(k8s.NewTopologyDynamicProvider(k8s.GetDynamicResourceCache(), k8s.GetResourceDiscovery())).
+			Build(opts)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return gitopstree.NewBuilder(req.Cache, topo).
+		WithAllowedNamespaces(req.AllowedNamespaces).
+		WithReadCheck(func(ref gitopstree.ResourceRef) bool {
+			return s.canAccessGitOpsRef(r, req, ref.Group, ref.Kind, ref.Namespace, ref.Name, false)
+		}).
+		WithUnknownKindMatcher(func(err error) bool { return errors.Is(err, k8s.ErrUnknownDynamicKind) }).
+		Build(r.Context(), req.Kind, req.Namespace, req.Name, req.Group)
+}
+
+// writeGitOpsBuildError maps tree-build errors to HTTP status codes.
+// Uses errors.Is on typed sentinels rather than string matching so the HTTP
+// status doesn't drift if an upstream error message gets reworded.
+func (s *Server) writeGitOpsBuildError(w http.ResponseWriter, req *gitopsRequest, err error) {
+	switch {
+	case errors.Is(err, k8s.ErrUnknownDynamicKind), errors.Is(err, gitopstree.ErrNotGitOpsResource):
+		s.writeError(w, http.StatusBadRequest, err.Error())
+	case apierrors.IsNotFound(err):
+		s.writeError(w, http.StatusNotFound, err.Error())
+	default:
+		log.Printf("[gitops] Failed to build tree for %s %s/%s (group=%q): %v", sanitizeForLog(req.Kind), sanitizeForLog(req.Namespace), sanitizeForLog(req.Name), sanitizeForLog(req.Group), err)
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+	}
+}
+
+func (s *Server) handleGitOpsTree(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConnected(w) {
+		return
+	}
+	req, ok := s.parseGitOpsRequest(w, r)
+	if !ok {
+		return
+	}
+	if !req.HasNamespaceAccess() {
+		s.writeJSON(w, &gitopstree.ResourceTree{
+			Nodes:    []gitopstree.Node{},
+			Edges:    []gitopstree.Edge{},
+			Warnings: []string{"You do not have access to any namespace; managed resources are filtered out."},
+		})
+		return
+	}
+	tree, _, _, err := s.resolveGitOpsTree(r, req)
+	if err != nil {
+		s.writeGitOpsBuildError(w, req, err)
+		return
+	}
+	s.writeJSON(w, tree)
+}
+
+// resolveGitOpsTree is the one path both detail endpoints take from a parsed
+// request to a servable tree: build, overlay Radar's own health where the
+// controller's isn't in the CR, drop what the user may not see, then count
+// what's left. The tree and insights endpoints are separate requests; sharing
+// this keeps a node's health identical in both responses. The returned
+// resolver already carries this request's access gate so insights can reuse
+// it (and its once-per-request issue-engine composition) instead of building
+// a second one.
+func (s *Server) resolveGitOpsTree(r *http.Request, req *gitopsRequest) (*gitopstree.ResourceTree, *unstructured.Unstructured, *insightsResolver, error) {
+	tree, root, err := s.buildGitOpsTree(r, req)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	canAccess := func(group, kind, namespace, name string) bool {
+		return s.canAccessGitOpsRef(r, req, group, kind, namespace, name, false)
+	}
+	resolver := newInsightsResolver(r.Context(), req.Cache, req.AllowedNamespaces, canAccess)
+	resolver.canReadClusterScoped = s.issueClusterScopedAccess(r)
+	resolver.canReadSubject = s.issueSubjectAccess(r)
+	resolver.canReadEvidence = s.issueEvidenceAccess(r)
+	memoKey := gitopsIssuesMemoKey(auth.UserFromContext(r.Context()), req.AllowedNamespaces)
+	resolver.composed = func() ([]issues.Issue, []issues.Issue) {
+		return s.gitopsIssuesMemo.load(memoKey, resolver.composeIssues)
+	}
+	if !overlayArgoAPIHealth(r.Context(), tree, root, s.argoAPIHealth) {
+		overlayRadarHealth(tree, root, resolver.ResourceProblems)
+	}
+	tree = s.filterGitOpsTreeForUser(r, req, tree)
+	tree.Summary = gitopstree.Summarize(tree.Nodes)
+	return tree, root, resolver, nil
+}
+
+// argoAPIHealth asks argocd-server for an Application's per-resource health.
+// Only meaningful in appTree mode. Cached and throttled by the manager. A
+// nil health with a nil error is "no answer and nothing to tell the user":
+// nothing is configured and the install doesn't serve anonymous reads, so
+// the caller falls through to Radar's own read quietly. While a connection
+// is being made it returns *argoHealthPending (with no notice when nothing
+// is configured), so the page asks again. With the
+// integration configured, the failure comes back in the user's words — they
+// set the connection up for this, and the page should say it isn't
+// delivering rather than silently show Radar's read.
+func (s *Server) argoAPIHealth(ctx context.Context, appNamespace, appName string) (*argoapi.ApplicationHealth, error) {
+	health, err := argocd.ApplicationHealthCached(ctx, argoapi.ApplicationQuery{AppNamespace: appNamespace, AppName: appName})
+	if err == nil {
+		return health, nil
+	}
+	// A settings failure leaves the manager unconfigured, so without this the
+	// page would silently fall back to Radar's read instead of saying why.
+	var settingsErr *connections.SettingsError
+	if errors.As(err, &settingsErr) {
+		if settingsErr.Launch {
+			return nil, errors.New("its startup configuration for this launch is invalid; check Radar's logs")
+		}
+		return nil, errors.New("this cluster's saved integration settings need review in Settings")
+	}
+	if errors.Is(err, argocd.ErrConnecting) {
+		pending := &argoHealthPending{}
+		if argocd.IsConfigured() {
+			pending.notice = argoAPIHealthFailure(err, argocd.TokenSet())
+		}
+		return nil, pending
+	}
+	if !argocd.IsConfigured() {
+		return nil, nil
+	}
+	// A read that got no answer (possibly served from the failure cache) will
+	// be retried even if another read has since cleared the shared failure
+	// flag, so this page asks again too.
+	if argocd.ReadMayRecover(err) {
+		// Say why it failed, and have the page ask again so it recovers
+		// when the retry connects.
+		return nil, &argoHealthPending{notice: argoAPIHealthFailure(err, argocd.TokenSet()), retrying: true}
+	}
+	return nil, errors.New(argoAPIHealthFailure(err, argocd.TokenSet()))
+}
+
+// argoHealthPending: Radar is connecting to argocd-server in the background,
+// and the page should ask again. notice is what to tell a user who
+// configured the integration (empty when they didn't, since they set
+// nothing up to wait for). retrying: a connect failed and is being retried;
+// notice is that failure, shown as one.
+type argoHealthPending struct {
+	notice   string
+	retrying bool
+}
+
+func (p *argoHealthPending) Error() string { return p.notice }
+
+// argoAPIHealthFailure is the clause the notice appends to "Radar couldn't
+// read Argo's per-resource health from your Argo CD server".
+func argoAPIHealthFailure(err error, tokenSet bool) string {
+	switch {
+	case errors.Is(err, argocd.ErrTokenInvalid), errors.Is(err, argoapi.ErrUnauthorized):
+		if tokenSet {
+			return "the token isn't accepted for this application"
+		}
+		return "it requires a token"
+	case errors.Is(err, argocd.ErrConnecting):
+		return "the connection is still being set up"
+	case errors.Is(err, context.DeadlineExceeded):
+		return "the request timed out"
+	case errors.Is(err, argocd.ErrUnreachable):
+		// Before ErrNotFound: a URL that 404s on /api/version is not an Argo
+		// CD server, which is not the same as Argo not knowing the app.
+		return "the server couldn't be reached"
+	case errors.Is(err, argoapi.ErrNotFound):
+		return "it doesn't know this application"
+	}
+	// Anything else (a 500, a body that didn't parse) is still a configured
+	// connection that didn't deliver; an empty clause would read as nothing
+	// configured and offer the connect remedy to someone who already did.
+	return "it didn't answer"
+}
+
+// overlayArgoAPIHealth fills per-resource health from the controller's own
+// API server when the CR doesn't carry it (appTree mode). Argo's verdicts
+// are authoritative for the whole app, including "no check for this kind",
+// so a successful overlay returns true and Radar's own read does not run.
+// The answer must be about THIS Application: argocd-server is a configured
+// URL, and a different install could serve a same-named app, so the UID has
+// to match. Remote-destination apps are skipped for the same reason the
+// diff endpoint refuses them: local SARs can't authorize data about another
+// cluster's resources.
+func overlayArgoAPIHealth(ctx context.Context, tree *gitopstree.ResourceTree, root *unstructured.Unstructured, fetch func(ctx context.Context, appNamespace, appName string) (*argoapi.ApplicationHealth, error)) bool {
+	if tree == nil || root == nil || fetch == nil {
+		return false
+	}
+	if tree.HealthMode != gitopstree.HealthModeAppTree || tree.RemoteDestination {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	health, err := fetch(ctx, root.GetNamespace(), root.GetName())
+	var pending *argoHealthPending
+	if errors.As(err, &pending) {
+		tree.HealthAPIError = pending.notice
+		if pending.retrying {
+			tree.HealthAPIRetrying = true
+		} else {
+			tree.HealthAPIPending = true
+		}
+		return false
+	}
+	if err != nil {
+		tree.HealthAPIError = err.Error()
+		return false
+	}
+	if health == nil {
+		return false
+	}
+	// Identity must be established, not merely not contradicted: an answer
+	// with no UID is not accepted for a local Application that has one.
+	if uid := string(root.GetUID()); uid != "" && health.UID != uid {
+		log.Printf("[gitops] argocd-server answer for %s/%s is not this Application (uid %q, local %q); ignoring", sanitizeForLog(root.GetNamespace()), sanitizeForLog(root.GetName()), sanitizeForLog(health.UID), sanitizeForLog(uid))
+		tree.HealthAPIError = "it isn't the server managing this application"
+		return false
+	}
+	byRef := make(map[string]argoapi.ResourceHealth, len(health.Resources))
+	for _, rh := range health.Resources {
+		if rh.Health == "" {
+			continue
+		}
+		byRef[apiHealthKey(rh.Group, rh.Kind, rh.Namespace, rh.Name)] = rh
+	}
+	for i := range tree.Nodes {
+		n := &tree.Nodes[i]
+		if n.Role != gitopstree.RoleDeclared {
+			continue
+		}
+		rh, ok := byRef[apiHealthKey(n.Ref.Group, n.Ref.Kind, n.Ref.Namespace, n.Ref.Name)]
+		if !ok {
+			// Argo has no verdict for this resource now: clear whatever the
+			// node carried — Radar's topology fill, or a value the CR still
+			// held from before — so the page shows exactly what the
+			// controller says today.
+			n.Health, n.HealthSource, n.HealthReason, n.HealthMessage, n.HealthSeverity = "", "", "", "", ""
+			n.TopologyStatus = "unknown"
+			continue
+		}
+		n.Health = gitopstree.NormalizeHealth(rh.Health)
+		n.HealthSource = gitopstree.HealthSourceControllerAPI
+		n.HealthReason, n.HealthSeverity = "", ""
+		n.HealthMessage = rh.Message
+		n.TopologyStatus = gitopstree.HealthToTopology(n.Health)
+	}
+	tree.HealthFromAPI = true
+	return true
+}
+
+func apiHealthKey(group, kind, namespace, name string) string {
+	return group + "|" + kind + "|" + namespace + "|" + name
+}
+
+// overlayRadarHealth fills per-resource health from Radar's issues engine
+// when the Argo Application doesn't carry the controller's own
+// (status.resourceHealthSource=appTree, the Argo CD 3 default). It only
+// ever adds problems: a node the engine has nothing on keeps no health, so
+// nothing here claims a resource is Healthy on Argo's behalf. Skipped for a
+// remote destination (Radar's engine reads the local cluster, which could
+// hold an unrelated same-named object) and for an app Argo calls Healthy
+// (the engine may still hold a warning; contradicting the controller's
+// verdict on a node, and composing the cluster's issues on every poll of a
+// healthy app, are both worse than leaving it). A node whose health is
+// Radar's own topology read (Progressing at 1/2 replicas, say) is still a
+// candidate: the engine's classified finding is the more specific Radar
+// answer and replaces it. Controller-sourced health is final. problems is
+// the resolver's ResourceProblems, which applies the request's per-user
+// access gate.
+func overlayRadarHealth(tree *gitopstree.ResourceTree, root *unstructured.Unstructured, problems func(group, kind, namespace, name string) []gitopsinsights.ResourceProblem) {
+	if tree == nil || root == nil || problems == nil {
+		return
+	}
+	if tree.HealthMode != gitopstree.HealthModeAppTree || tree.RemoteDestination {
+		return
+	}
+	if appHealth, _, _ := unstructured.NestedString(root.Object, "status", "health", "status"); appHealth == "Healthy" {
+		return
+	}
+	for i := range tree.Nodes {
+		n := &tree.Nodes[i]
+		if n.Role != gitopstree.RoleDeclared {
+			continue
+		}
+		if n.Health != "" && n.HealthSource != gitopstree.HealthSourceRadar {
+			continue
+		}
+		problem, ok := gitopsinsights.WorstResourceProblem(problems(n.Ref.Group, n.Ref.Kind, n.Ref.Namespace, n.Ref.Name))
+		if !ok {
+			continue
+		}
+		n.Health = "Degraded"
+		n.HealthSource = gitopstree.HealthSourceRadar
+		n.HealthReason = problem.Reason
+		n.HealthMessage = problem.Message
+		n.HealthSeverity = problem.Severity
+		n.TopologyStatus = "unhealthy"
+	}
+}
+
+func (s *Server) handleGitOpsInsights(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConnected(w) {
+		return
+	}
+	req, ok := s.parseGitOpsRequest(w, r)
+	if !ok {
+		return
+	}
+	if !req.HasNamespaceAccess() {
+		s.writeJSON(w, gitopsinsights.Insight{
+			Warnings: []string{"You do not have access to any namespace; insights are filtered out."},
+		})
+		return
+	}
+	tree, root, resolver, err := s.resolveGitOpsTree(r, req)
+	if err != nil {
+		s.writeGitOpsBuildError(w, req, err)
+		return
+	}
+	// A remote-destination app's resources aren't in this cluster; the
+	// insights builder won't ask for them, so don't fan out GETs for
+	// same-named local objects either.
+	if !tree.RemoteDestination {
+		resolver.prefetchLive(gitopsinsights.ManagedResourceRows(root), gitopsinsights.OperationPhase(root))
+	}
+	insight := gitopsinsights.Build(root, tree, resolver)
+	insight.Warnings = appendWarnings(insight.Warnings, tree.Warnings...)
+	insight = s.filterGitOpsInsightForUser(r, req, insight, tree)
+	if insight.Summary.Tool == "argocd" {
+		setArgoCapabilities(r.Context(), req.Namespace, req.Name, root, &insight.Capabilities)
+		if insight.Capabilities.ArgoConfigured {
+			// Best-effort: surface a broken Git repo connection (a top hidden cause
+			// of stuck syncs) as an Issue. Never fails insights if the Argo call errors.
+			s.enrichArgoRepoHealth(root, &insight)
+		}
+	}
+	s.writeJSON(w, insight)
+}
+
+// setArgoCapabilities fills the Argo CD API affordances of an Argo root's
+// insight. The resource-diff / revision-metadata affordances pull manifests
+// from the Argo CD API server. Offer them only for Argo roots where a diff can
+// actually be served — gate on the app's managed-resources call (the diff's
+// own data source, 15s-cached and shared with the diff endpoint), NOT just
+// IsConfigured() or the userinfo probe. A configured-but-rejected token, or a
+// scope-limited token that authenticates yet 403s on managed-resources, would
+// otherwise advertise per-row diffs that all fail — one integration problem
+// rendered as N dead-ends. ArgoConfigured is surfaced separately so the UI can
+// offer Connect vs. check Settings. Cost: one managed-resources round-trip per
+// viewed app per 15s cache window, whose result the per-row diffs then reuse.
+func setArgoCapabilities(ctx context.Context, namespace, name string, root *unstructured.Unstructured, caps *gitopsinsights.Capabilities) {
+	caps.ArgoConfigured = argocd.IsConfigured()
+	diffReady := false
+	if _, connected := argocd.Get(); connected {
+		if _, err := argocd.ManagedResourcesCached(ctx, argoapi.ManagedResourcesQuery{
+			AppNamespace: namespace,
+			AppName:      name,
+		}); err == nil {
+			diffReady = true
+			// Revision metadata is about the Git source, so it's available for
+			// any connected app. The deep diff reads destination-cluster
+			// manifests, which Radar's local SARs can only authorize when the
+			// Application deploys in-cluster — a remote hub-spoke destination is
+			// gated off here (and refused by the diff endpoint) so we never
+			// offer a diff Radar can't authorize.
+			caps.RevisionMetadataAvailable = true
+			caps.ArgoDiffAvailable = isInClusterDestination(root)
+		}
+	}
+	// Read after the managed-resources call: a failure there may just have
+	// started a re-check the page should wait out. Retrying is process-wide
+	// (another app's failed read sets it too), so only a page whose own diff
+	// isn't ready is asked to poll for it.
+	caps.ArgoConnecting = argocd.Connecting()
+	caps.ArgoRetrying = caps.ArgoConfigured && !diffReady && argocd.Retrying()
+}
+
+// managedScanKinds is the set of K8s kinds /api/gitops/managed-resources
+// iterates when discovering resources tagged with Argo's tracking
+// annotation/label.
+//
+// Scope: controller-level kinds Argo CD typically declares directly in
+// manifests (Deployments, Services, ConfigMaps, RBAC, …). Pods and
+// ReplicaSets are deliberately excluded — they're created by their owning
+// workload (Deployment → ReplicaSet → Pod) and don't carry Argo's
+// tracking annotation. Including them would scan thousands of cache
+// entries per request without adding signal.
+//
+// Subtree expansion (showing the Pods owned by a matched Deployment) is
+// a future enhancement that would walk the topology graph rather than the
+// flat annotation index — keep that out of the hot per-request scan.
+//
+// CRDs managed by Argo Apps aren't iterated here. Real-world need would
+// drive adding e.g. cert-manager Certificates, KEDA ScaledObjects, etc.
+type managedScanKind struct {
+	Kind  string
+	Group string
+}
+
+// managedScanDenyList is the set of Kinds we skip when scanning for
+// resources with Argo's tracking annotation. Two reasons a Kind belongs
+// here:
+//
+//  1. Descendants of Argo-managed resources that are owned, not declared.
+//     Argo never stamps the tracking annotation on Pods/ReplicaSets/etc.
+//     — those are walked from the matched owners by the tree builder
+//     (see pkg/gitops/tree.expandSubtree). Including them in the scan
+//     produces double-counting + a slower scan.
+//
+//  2. Platform-internal noise that's never user-managed:
+//     Events (ephemeral), Leases (controller heartbeats), Endpoints /
+//     EndpointSlice (Service shadow), FlowSchema / PriorityLevelConfiguration
+//     (API priority internals), {Local,Self,}SubjectAccessReview /
+//     TokenRequest / TokenReview (subject-action stubs, not stored).
+//
+// NOT a security boundary — the per-node RBAC filter (filterGitOpsTreeForUser)
+// is what gates what each caller sees. This list just keeps the scan
+// focused on Kinds Argo realistically manages.
+var managedScanDenyList = map[string]bool{
+	"Pod":                        true,
+	"ReplicaSet":                 true,
+	"ControllerRevision":         true,
+	"Endpoints":                  true,
+	"EndpointSlice":              true,
+	"Event":                      true,
+	"Lease":                      true,
+	"FlowSchema":                 true,
+	"PriorityLevelConfiguration": true,
+	"TokenRequest":               true,
+	"TokenReview":                true,
+	"SubjectAccessReview":        true,
+	"SelfSubjectAccessReview":    true,
+	"LocalSubjectAccessReview":   true,
+	"SelfSubjectRulesReview":     true,
+	"Binding":                    true,
+}
+
+// managedScanKindsFromDiscovery builds the kind list for the managed-
+// resources scan by asking radar's existing APIResources discovery what
+// the cluster actually has. Filters out:
+//
+//   - kinds in managedScanDenyList (see above)
+//   - kinds whose verbs don't include `list` (we can't scan them anyway)
+//
+// Returns the full list — CRDs included. This is the architectural lever
+// that makes the managed-resources endpoint complete: cert-manager
+// Certificates, Argo Rollouts, Gateway API HTTPRoutes, KEDA ScaledObjects,
+// operator CRs — all show up in the tree without anyone editing this file.
+//
+// Empty discovery (boot-time race or a degraded cluster) returns nil;
+// caller surfaces it as "discovery unavailable" rather than silently
+// scanning nothing.
+func managedScanKindsFromDiscovery() []managedScanKind {
+	disc := k8s.GetResourceDiscovery()
+	if disc == nil {
+		return nil
+	}
+	resources, err := disc.GetAPIResources()
+	if err != nil || len(resources) == 0 {
+		return nil
+	}
+	out := make([]managedScanKind, 0, len(resources))
+	for _, r := range resources {
+		if managedScanDenyList[r.Kind] {
+			continue
+		}
+		hasList := false
+		for _, v := range r.Verbs {
+			if v == "list" {
+				hasList = true
+				break
+			}
+		}
+		if !hasList {
+			continue
+		}
+		out = append(out, managedScanKind{Kind: r.Kind, Group: r.Group})
+	}
+	return out
+}
+
+// handleGitOpsManagedResources discovers resources in THIS cluster that are
+// managed by the named Argo Application, returning them as a synthetic
+// ResourceTree the frontend can render with the existing GitOpsTreeGraph
+// component.
+//
+// The endpoint is the destination-side companion to /api/gitops/tree —
+// the latter is controller-side (walks live ownership from the Application
+// CRD outward, only works when controller + workloads share a cluster);
+// this one is destination-side (matches by Argo's tracking annotation,
+// works regardless of where the controller lives). Used by Radar Hub's
+// fleet GitOps detail page to render the workload graph for cross-cluster
+// Argo apps; also useful for single-cluster Radar users connected to a
+// destination cluster who want to see "what's managed here by app X".
+//
+// Query params:
+//   - app       (required): Argo Application name. Resources are matched
+//     when annotation argocd.argoproj.io/tracking-id starts with
+//     "<app>:" OR label app.kubernetes.io/instance=<app>.
+//   - namespace (optional): restrict the synthetic root's display ns +
+//     filter matched resources to this namespace.
+func (s *Server) handleGitOpsManagedResources(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConnected(w) {
+		return
+	}
+	app := strings.TrimSpace(r.URL.Query().Get("app"))
+	if app == "" {
+		s.writeError(w, http.StatusBadRequest, "app query parameter is required")
+		return
+	}
+	nsFilter := strings.TrimSpace(r.URL.Query().Get("namespace"))
+
+	allowedNamespaces := s.getUserNamespaces(r, nil)
+	if readscope.NoNamespaceAccess(allowedNamespaces) {
+		// Caller has no namespace access — return a tree with just the
+		// synthetic root + a warning. Mirrors handleGitOpsTree's behavior
+		// rather than 403'ing so the frontend can render an honest empty state.
+		empty := gitopstree.BuildManagedTree(app, nsFilter, nil)
+		empty.Warnings = []string{"You do not have access to any namespace; managed resources are filtered out."}
+		s.writeJSON(w, empty)
+		return
+	}
+
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "Resource cache not available")
+		return
+	}
+
+	// Discover what Kinds the cluster actually has — CRDs included —
+	// instead of relying on a static list. Customers using cert-manager,
+	// Argo Rollouts, Gateway API, KEDA, External Secrets, etc. all get
+	// their resources in the tree without any code change here. The
+	// scan deny-list keeps the list focused (drops descendants like
+	// Pod/ReplicaSet that are walked from owners separately, and
+	// platform-internal noise like Events/Leases).
+	scanKinds := managedScanKindsFromDiscovery()
+	if len(scanKinds) == 0 {
+		// Discovery is unavailable (boot-time race or degraded cluster).
+		// Surface to caller rather than scanning nothing silently.
+		empty := gitopstree.BuildManagedTree(app, nsFilter, nil)
+		empty.Warnings = []string{"API resource discovery is not available yet — managed resources can't be enumerated until discovery completes."}
+		s.writeJSON(w, empty)
+		return
+	}
+
+	matched := make([]*unstructured.Unstructured, 0, 32)
+	// kindErrors accumulates per-kind list failures so a kind-class
+	// blackout (informer-sync stuck post-restart, cluster-wide RBAC
+	// denial) is visible to the caller as a warning rather than
+	// indistinguishable from "this app legitimately manages 0
+	// resources." A single-kind failure (CRD not installed, narrow
+	// RBAC) is expected and the scan continues; if every kind fails,
+	// the warning surfaces in the response so the frontend can render an
+	// inline note.
+	var kindErrors []string
+	for _, mk := range scanKinds {
+		// Empty namespace = list across all namespaces from the cache.
+		// We rely on filterGitOpsTreeForUser below for per-resource RBAC
+		// (matching the contract handleGitOpsTree uses) — including the
+		// per-kind canRead check for cluster-scoped resources that the
+		// previous inline namespace-only filter was missing.
+		objs, err := cache.ListDynamicWithGroup(r.Context(), mk.Kind, "", mk.Group)
+		if err != nil {
+			kindErrors = append(kindErrors, mk.Kind+": "+err.Error())
+			continue
+		}
+		for _, obj := range objs {
+			ns := obj.GetNamespace()
+			// `ns == ""` means cluster-scoped; let it pass nsFilter so apps that manage
+			// ClusterRole/ClusterRoleBinding/Namespace alongside namespaced workloads
+			// still show those resources. filterGitOpsTreeForUser enforces per-kind canRead.
+			if nsFilter != "" && ns != "" && ns != nsFilter {
+				continue
+			}
+			if !gitopstree.ArgoTrackingMatches(obj, app) {
+				continue
+			}
+			matched = append(matched, obj)
+		}
+	}
+
+	tree := gitopstree.BuildManagedTree(app, nsFilter, matched)
+	if len(kindErrors) > 0 {
+		// Log when more than a couple of kinds failed — single-kind
+		// errors (one CRD missing) are noise; a widespread blackout is
+		// a real operator signal. ≥3 means "the informer cache or RBAC
+		// is broken across most kinds," not "this cluster is missing
+		// some optional CRDs."
+		if len(kindErrors) >= 3 {
+			// Sanitize each kind-error string before logging — k8s API
+			// errors echo CRD names + resource fields that, while not
+			// directly user-controlled, could carry CR/LF and forge
+			// log lines on aggregators.
+			safeErrors := make([]string, len(kindErrors))
+			for i, e := range kindErrors {
+				safeErrors[i] = sanitizeForLog(e)
+			}
+			log.Printf("[gitops] managed-resources: %d/%d kinds failed to list for app=%s: %v",
+				len(kindErrors), len(scanKinds), sanitizeForLog(app), safeErrors)
+		}
+		tree.Warnings = append(tree.Warnings,
+			fmt.Sprintf("Some resource kinds couldn't be scanned (%d of %d failed); the list may be incomplete.",
+				len(kindErrors), len(scanKinds)))
+	}
+
+	// Apply the existing per-resource RBAC filter — same gate
+	// handleGitOpsTree uses for its tree, so cross-cluster discovery
+	// can't expose more than the controller-side endpoint already would.
+	// Critically, this calls canRead for cluster-scoped Kinds (e.g.
+	// ClusterRole), closing the gap where the previous namespace-only
+	// gate let any authenticated namespace user see cluster-scoped
+	// Argo-managed resources.
+	req := &gitopsRequest{
+		Kind:              "applications",
+		Namespace:         nsFilter,
+		Name:              app,
+		Group:             "argoproj.io",
+		Cache:             cache,
+		AllowedNamespaces: allowedNamespaces,
+	}
+	tree = s.filterGitOpsTreeForUser(r, req, tree)
+	s.writeJSON(w, tree)
+}
+
+func (s *Server) filterGitOpsTreeForUser(r *http.Request, req *gitopsRequest, tree *gitopstree.ResourceTree) *gitopstree.ResourceTree {
+	if tree == nil || auth.UserFromContext(r.Context()) == nil {
+		return tree
+	}
+	keep := make(map[string]bool, len(tree.Nodes))
+	for _, node := range tree.Nodes {
+		allowed := node.Role == gitopstree.RoleRoot || node.Remote && node.Role == gitopstree.RoleDeclared || s.canAccessGitOpsRef(r, req, node.Ref.Group, node.Ref.Kind, node.Ref.Namespace, node.Ref.Name, false)
+		keep[node.ID] = allowed
+	}
+	filteredNodes := make([]gitopstree.Node, 0, len(tree.Nodes))
+	for _, node := range tree.Nodes {
+		if !keep[node.ID] {
+			continue
+		}
+		if len(node.GroupedNodeIDs) > 0 {
+			grouped := make([]string, 0, len(node.GroupedNodeIDs))
+			for _, id := range node.GroupedNodeIDs {
+				if keep[id] {
+					grouped = append(grouped, id)
+				}
+			}
+			node.GroupedNodeIDs = grouped
+			node.Count = len(grouped)
+		}
+		filteredNodes = append(filteredNodes, node)
+	}
+	if len(filteredNodes) == len(tree.Nodes) {
+		return tree
+	}
+
+	filteredEdges := make([]gitopstree.Edge, 0, len(tree.Edges))
+	for _, edge := range tree.Edges {
+		if keep[edge.Source] && keep[edge.Target] {
+			filteredEdges = append(filteredEdges, edge)
+		}
+	}
+	out := *tree
+	out.Nodes = filteredNodes
+	out.Edges = filteredEdges
+	if keep[tree.Root.ID] {
+		out.Root = tree.Root
+	}
+	out.Summary = gitopstree.Summarize(filteredNodes)
+	out.Warnings = appendWarnings(append([]string{}, tree.Warnings...), "Some managed resources are hidden by RBAC.")
+	return &out
+}
+
+func (s *Server) filterGitOpsInsightForUser(r *http.Request, req *gitopsRequest, insight gitopsinsights.Insight, tree *gitopstree.ResourceTree) gitopsinsights.Insight {
+	if auth.UserFromContext(r.Context()) == nil {
+		return insight
+	}
+	changed := false
+	remoteDeclarations := make(map[gitopsinsights.Ref]bool)
+	if tree != nil {
+		for _, node := range tree.Nodes {
+			if node.Remote && node.Role == gitopstree.RoleDeclared {
+				remoteDeclarations[gitopsinsights.Ref{Group: node.Ref.Group, Kind: node.Ref.Kind, Namespace: node.Ref.Namespace, Name: node.Ref.Name}] = true
+			}
+		}
+	}
+	canAccess := func(ref gitopsinsights.Ref) bool {
+		return remoteDeclarations[ref] || s.canAccessGitOpsRef(r, req, ref.Group, ref.Kind, ref.Namespace, ref.Name, false)
+	}
+
+	// Allocate fresh slices rather than the `[:0]` in-place pattern.
+	// `insight` is value-received, so its slice *headers* are local copies,
+	// but the backing arrays still alias the caller's data — if gitopsinsights.Build
+	// ever caches its return value (memoization, pooling) or shares it across
+	// requests, filtering in-place would corrupt other callers. The allocation
+	// cost is negligible compared to the JSON encode that follows.
+	changes := make([]gitopsinsights.Change, 0, len(insight.Changes))
+	for _, change := range insight.Changes {
+		if canAccess(change.Ref) {
+			changes = append(changes, change)
+		} else {
+			changed = true
+		}
+	}
+	insight.Changes = changes
+
+	plan := make([]gitopsinsights.PlanItem, 0, len(insight.Plan))
+	for _, item := range insight.Plan {
+		if !canAccess(item.Ref) {
+			changed = true
+			continue
+		}
+		blockedBy := make([]gitopsinsights.Ref, 0, len(item.BlockedBy))
+		for _, ref := range item.BlockedBy {
+			if canAccess(ref) {
+				blockedBy = append(blockedBy, ref)
+			} else {
+				changed = true
+			}
+		}
+		item.BlockedBy = blockedBy
+		plan = append(plan, item)
+	}
+	insight.Plan = plan
+
+	issues := make([]gitopsinsights.Issue, 0, len(insight.Issues))
+	for _, issue := range insight.Issues {
+		if len(issue.Refs) == 0 {
+			issues = append(issues, issue)
+			continue
+		}
+		refs := make([]gitopsinsights.Ref, 0, len(issue.Refs))
+		for _, ref := range issue.Refs {
+			if canAccess(ref) {
+				refs = append(refs, ref)
+			} else {
+				changed = true
+			}
+		}
+		if len(refs) < len(issue.Refs) && gitopsinsights.IsFluxBlockerCondition(issue) {
+			// The root's own condition stays; the cause was quoted from the
+			// object the caller can't read.
+			issue.Cause = ""
+			if len(refs) == 0 {
+				issue.Refs = nil
+				issues = append(issues, issue)
+				continue
+			}
+		}
+		if len(refs) == 0 {
+			changed = true
+			continue
+		}
+		issue.Refs = refs
+		issues = append(issues, issue)
+	}
+	insight.Issues = issues
+
+	if changed {
+		insight.Warnings = appendWarnings(insight.Warnings, "Some managed resources are hidden by RBAC.")
+	}
+	return insight
+}
+
+func appendWarnings(existing []string, warnings ...string) []string {
+	for _, warning := range warnings {
+		if warning == "" {
+			continue
+		}
+		seen := false
+		for _, existingWarning := range existing {
+			if existingWarning == warning {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			existing = append(existing, warning)
+		}
+	}
+	return existing
+}
+
+func (s *Server) canAccessGitOpsRef(r *http.Request, req *gitopsRequest, group, kind, namespace, name string, root bool) bool {
+	if auth.UserFromContext(r.Context()) == nil {
+		return true
+	}
+	if root {
+		return true
+	}
+	if strings.EqualFold(kind, "Namespace") || strings.EqualFold(kind, "namespaces") {
+		if s.canRead(r, "", "namespaces", "", "list") {
+			return true
+		}
+		if name == "" {
+			return false
+		}
+		allowed := s.getUserNamespaces(r, []string{name})
+		return !readscope.NoNamespaceAccess(allowed)
+	}
+	if namespace != "" {
+		if !namespaceAllowedForGitOps(req.AllowedNamespaces, namespace) {
+			return false
+		}
+		if kind == "PodGroup" && group == "" {
+			return s.canRead(r, "", "pods", namespace, "get")
+		}
+		gvrGroup, resource := k8s.LookupResourceGVR(kind, group)
+		// Unknown discovery is not a permission denial. The dynamic getter
+		// returns unknown-kind rather than local metadata for an unserved kind,
+		// and remote inventory declarations must remain available for Hub merge.
+		return resource == "" || s.canRead(r, gvrGroup, resource, namespace, "get")
+	}
+	if clusterScoped, gvrGroup, gvrResource := k8s.ClassifyKindScope(kind, group); clusterScoped {
+		return s.canRead(r, gvrGroup, gvrResource, "", "list")
+	}
+	return false
+}
+
+func namespaceAllowedForGitOps(allowed []string, namespace string) bool {
+	if allowed == nil {
+		return true
+	}
+	for _, ns := range allowed {
+		if ns == namespace {
+			return true
+		}
+	}
+	return false
+}
+
+// insightsResolver wires the dynamic cache + event lister into the
+// gitopsinsights package without exposing internal/k8s types to the public
+// pkg/gitops/insights API. Per-request: ctx + namespace allowlist captured
+// once at construction; lookups are namespace-filtered to enforce RBAC.
+type insightsResolver struct {
+	ctx                  context.Context
+	cache                *k8s.ResourceCache
+	allowedNamespaces    []string
+	canAccess            func(group, kind, namespace, name string) bool
+	canReadClusterScoped func(kind, group string) bool
+	canReadSubject       func(issues.Ref) bool
+	canReadEvidence      func(issues.EvidenceRead) bool
+
+	// The cluster-wide issue set is composed at most once per insights request
+	// (lazily, only if a degraded managed resource asks for it) and reused
+	// across every ResourceProblems lookup — a full Compose per managed
+	// resource on a 2s-polling detail page would be O(resources × cluster).
+	composeOnce     sync.Once
+	composedFlat    []issues.Issue
+	composedGrouped []issues.Issue
+	// composed, when set by the host, supplies the composition (memoized
+	// across requests); nil composes inline, which tests and other hosts use.
+	composed func() ([]issues.Issue, []issues.Issue)
+
+	// livePrefetched flips GetLive into map-only mode: prefetchLive resolved
+	// (or deliberately skipped) every ref the Changes builder will ask for,
+	// so a map miss means gated-out or failed — never "fetch it now". The
+	// per-call direct-GET path survives only for resolvers that never ran
+	// prefetch (tests, future hosts).
+	livePrefetched bool
+	liveObjects    map[string]*unstructured.Unstructured
+
+	// eventIndex replaces the per-resource namespace scan: one pass over the
+	// event lister per request, buckets keyed kind|ns|name. Group filtering
+	// stays at lookup time (eventMatchesGroup) so colliding kinds (core
+	// Service vs Knative Service) don't cross-contaminate buckets.
+	eventsOnce sync.Once
+	eventIndex map[string][]*corev1.Event
+}
+
+func newInsightsResolver(ctx context.Context, cache *k8s.ResourceCache, allowed []string, canAccess func(group, kind, namespace, name string) bool) *insightsResolver {
+	return &insightsResolver{ctx: ctx, cache: cache, allowedNamespaces: allowed, canAccess: canAccess}
+}
+
+// gitopsLiveGETConcurrency bounds process-wide concurrency of the drift
+// live-state GETs (GetDynamicWithGroupPreserveLastApplied is a direct
+// apiserver round-trip by design — caches strip last-applied). Process-wide
+// rather than per-request so N users on N apps can't multiply the fan-out;
+// the rest client's QPS=50/Burst=100 is the second backstop.
+const gitopsLiveGETConcurrency = 16
+
+var gitopsLiveGETSem = make(chan struct{}, gitopsLiveGETConcurrency)
+
+func liveObjectKey(group, kind, namespace, name string) string {
+	return group + "|" + kind + "|" + namespace + "|" + name
+}
+
+// prefetchLive resolves live objects for the rows the Changes builder will
+// request, then flips GetLive to map-only mode. Two gates decide what is
+// fetched at all:
+//
+//   - operation phase: while a sync runs (Running/Terminating — the UI polls
+//     at 2s exactly then), no live state is fetched. Mid-apply drift is
+//     churn, and the poll must stay a pure cache read.
+//   - row state: only rows the controller reports as not cleanly Synced (or
+//     carrying a sync error) are fetched. Drift on a Synced row is the
+//     false-positive class Argo itself suppresses via normalization +
+//     ignoreDifferences.
+//
+// RBAC gates (namespace allowlist + per-ref access) run serially BEFORE any
+// fetch is scheduled — same checks GetLive applied per-call, same caches
+// behind them — so parallelism never widens what a user can read.
+func (r *insightsResolver) prefetchLive(rows []gitopsinsights.ManagedResourceRow, operationPhase string) {
+	r.liveObjects = make(map[string]*unstructured.Unstructured, len(rows))
+	r.livePrefetched = true
+	if operationPhase == "Running" || operationPhase == "Terminating" {
+		return
+	}
+	targets := make([]gitopsinsights.Ref, 0, len(rows))
+	seen := make(map[string]struct{}, len(rows))
+	for _, row := range rows {
+		if row.Sync == "Synced" && !row.HasSyncError {
+			continue
+		}
+		if !r.namespaceAllowed(row.Ref.Namespace) {
+			continue
+		}
+		if r.canAccess != nil && !r.canAccess(row.Ref.Group, row.Ref.Kind, row.Ref.Namespace, row.Ref.Name) {
+			continue
+		}
+		key := liveObjectKey(row.Ref.Group, row.Ref.Kind, row.Ref.Namespace, row.Ref.Name)
+		if _, dup := seen[key]; dup {
+			continue
+		}
+		seen[key] = struct{}{}
+		targets = append(targets, row.Ref)
+	}
+	if len(targets) == 0 {
+		return
+	}
+
+	// Fixed worker pool, not goroutine-per-ref, so a huge app costs at most
+	// gitopsLiveGETConcurrency goroutines per request. Each unit of work
+	// still acquires the process-wide semaphore (shared across requests),
+	// respecting request cancellation while it waits.
+	workers := gitopsLiveGETConcurrency
+	if len(targets) < workers {
+		workers = len(targets)
+	}
+	work := make(chan gitopsinsights.Ref)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for ref := range work {
+				select {
+				case gitopsLiveGETSem <- struct{}{}:
+				case <-r.ctx.Done():
+					return
+				}
+				obj, err := r.cache.GetDynamicWithGroupPreserveLastApplied(r.ctx, ref.Kind, ref.Namespace, ref.Name, ref.Group)
+				<-gitopsLiveGETSem
+				if err != nil {
+					// Unknown-kind misses were already surfaced by the tree
+					// build's response warning; NotFound is a normal state for
+					// Missing resources. Everything else is worth one line.
+					if !apierrors.IsNotFound(err) && !errors.Is(err, k8score.ErrResourceNotFound) && !errors.Is(err, k8s.ErrUnknownDynamicKind) {
+						log.Printf("[gitops] insights live prefetch %s/%s %s/%s failed: %v", ref.Group, ref.Kind, ref.Namespace, ref.Name, err)
+					}
+					continue
+				}
+				mu.Lock()
+				r.liveObjects[liveObjectKey(ref.Group, ref.Kind, ref.Namespace, ref.Name)] = obj
+				mu.Unlock()
+			}
+		}()
+	}
+	for _, ref := range targets {
+		select {
+		case work <- ref:
+		case <-r.ctx.Done():
+		}
+	}
+	close(work)
+	wg.Wait()
+}
+
+// recentEventsCap bounds events returned per resource. Beyond ~5 the user
+// is better served opening the standard drawer; this is meant to surface
+// the headline cause inline, not be a full event log.
+const recentEventsCap = 5
+
+func (r *insightsResolver) GetLive(group, kind, namespace, name string) *unstructured.Unstructured {
+	if r == nil || r.cache == nil || name == "" || kind == "" {
+		return nil
+	}
+	if r.livePrefetched {
+		// Map-only: prefetchLive already resolved (or deliberately gated
+		// out) every ref the Changes builder asks for. Falling back to a
+		// direct GET here would silently rebuild the serial per-resource
+		// fan-out this path exists to remove.
+		return r.liveObjects[liveObjectKey(group, kind, namespace, name)]
+	}
+	if !r.namespaceAllowed(namespace) {
+		return nil
+	}
+	if r.canAccess != nil && !r.canAccess(group, kind, namespace, name) {
+		return nil
+	}
+	obj, err := r.cache.GetDynamicWithGroupPreserveLastApplied(r.ctx, kind, namespace, name, group)
+	if err != nil {
+		if !apierrors.IsNotFound(err) {
+			log.Printf("[gitops] insights GetLive %s/%s %s/%s failed: %v", group, kind, namespace, name, err)
+		}
+		return nil
+	}
+	return obj
+}
+
+// ResourceProblems implements gitopsinsights.Resolver. It returns the workload
+// "why" (crashloop / oom / image-pull / unschedulable / pvc-pending) the
+// cluster-wide issues engine already classified for a managed resource, so the
+// detail page can show it inline behind Argo's coarse Degraded/Missing. Scoped
+// to the same namespace allowlist + per-resource access gate as GetLive; an
+// RBAC-blocked lookup returns empty, which the caller renders as generic
+// "go inspect" guidance rather than implying the resource is healthy.
+func (r *insightsResolver) ResourceProblems(group, kind, namespace, name string) []gitopsinsights.ResourceProblem {
+	if r == nil || r.cache == nil {
+		return nil
+	}
+	if !r.namespaceAllowed(namespace) {
+		return nil
+	}
+	if r.canAccess != nil && !r.canAccess(group, kind, namespace, name) {
+		return nil
+	}
+	r.composeOnce.Do(func() {
+		if r.composed != nil {
+			r.composedFlat, r.composedGrouped = r.composed()
+			return
+		}
+		r.composedFlat, r.composedGrouped = r.composeIssues()
+	})
+	related := issues.RelatedIssuesFrom(r.composedFlat, r.composedGrouped, issues.RelatedIssueOptions{
+		CanReadClusterScoped: r.canReadClusterScoped,
+		CanReadSubject:       r.canReadSubject,
+		CanReadEvidence:      r.canReadEvidence,
+		CanReadRelated: func(ref issues.Ref) bool {
+			return r.canAccess != nil && r.canAccess(ref.Group, ref.Kind, ref.Namespace, ref.Name)
+		},
+	}, group, kind, namespace, name)
+	out := make([]gitopsinsights.ResourceProblem, 0, len(related))
+	for _, iss := range related {
+		out = append(out, gitopsinsights.ResourceProblem{
+			Reason:   iss.Reason,
+			Message:  iss.Message,
+			Category: string(iss.Category),
+			Severity: string(iss.Severity),
+		})
+	}
+	return out
+}
+
+// buildEventIndex runs once per resolver: a single pass over the event
+// lister into buckets. The previous shape listed and scanned the
+// namespace's full event set once per managed resource — O(resources ×
+// events) per request, which becomes the dominant CPU cost once the
+// live-GET fan-out is gone.
+func (r *insightsResolver) buildEventIndex() {
+	items, err := r.cache.Events().List(labels.Everything())
+	if err != nil {
+		log.Printf("[gitops] insights event index build failed: %v", err)
+		r.eventIndex = map[string][]*corev1.Event{}
+		return
+	}
+	r.eventIndex = indexEventsByInvolvedObject(items)
+}
+
+// indexEventsByInvolvedObject buckets events by involvedObject kind|name
+// ONLY. Namespace filtering happens at lookup time against the EVENT's own
+// namespace — matching the old per-resource scan, which listed the
+// resource's namespace (event.Namespace scoping) and matched involvedObject
+// by kind+name alone. Keying on involvedObject.Namespace instead would drop
+// events from controllers that leave it empty; the group stays out of the
+// key for the same reason (some informers strip apiVersion).
+func indexEventsByInvolvedObject(items []*corev1.Event) map[string][]*corev1.Event {
+	idx := make(map[string][]*corev1.Event, len(items))
+	for _, e := range items {
+		key := e.InvolvedObject.Kind + "|" + e.InvolvedObject.Name
+		idx[key] = append(idx[key], e)
+	}
+	return idx
+}
+
+// matchIndexedEvents reproduces the old scan's semantics over a bucket:
+// namespace != "" keeps only events living in that namespace (the old code
+// used a namespace-scoped lister); namespace == "" (cluster-scoped ref)
+// matches across all namespaces; group filters via eventMatchesGroup.
+func matchIndexedEvents(index map[string][]*corev1.Event, group, kind, namespace, name string) []*corev1.Event {
+	bucket := index[kind+"|"+name]
+	matched := make([]*corev1.Event, 0, len(bucket))
+	for _, e := range bucket {
+		if namespace != "" && e.Namespace != namespace {
+			continue
+		}
+		if !eventMatchesGroup(group, e.InvolvedObject.APIVersion) {
+			continue
+		}
+		matched = append(matched, e)
+	}
+	return matched
+}
+
+func (r *insightsResolver) RecentEvents(group, kind, namespace, name string) []gitopsinsights.EventSummary {
+	if r == nil || r.cache == nil || r.cache.Events() == nil {
+		return nil
+	}
+	if !r.namespaceAllowed(namespace) {
+		return nil
+	}
+	if r.canAccess != nil && !r.canAccess(group, kind, namespace, name) {
+		return nil
+	}
+	r.eventsOnce.Do(r.buildEventIndex)
+	matched := matchIndexedEvents(r.eventIndex, group, kind, namespace, name)
+	// Newest-first by lastTimestamp (falls back to eventTime / firstTimestamp
+	// for events that don't fill it). Cap to recentEventsCap after sort so
+	// we always return the most recent ones.
+	sort.SliceStable(matched, func(i, j int) bool {
+		return eventTime(matched[i]).After(eventTime(matched[j]))
+	})
+	if len(matched) > recentEventsCap {
+		matched = matched[:recentEventsCap]
+	}
+	out := make([]gitopsinsights.EventSummary, 0, len(matched))
+	for _, e := range matched {
+		out = append(out, gitopsinsights.EventSummary{
+			Type:               e.Type,
+			Reason:             e.Reason,
+			Message:            e.Message,
+			Count:              e.Count,
+			LastTimestamp:      eventTime(e).Format("2006-01-02T15:04:05Z07:00"),
+			ReportingComponent: e.ReportingController,
+		})
+	}
+	return out
+}
+
+// composeIssues runs the cluster-wide issues engine for this request's
+// namespaces, redacting related refs the caller can't read.
+func (r *insightsResolver) composeIssues() ([]issues.Issue, []issues.Issue) {
+	flat := issues.Compose(issues.NewCacheProvider(), issues.Filters{
+		SkipPodTemplateContext: true,
+		Namespaces:             r.allowedNamespaces,
+		Limit:                  issues.NoLimit,
+		CanReadClusterScoped:   r.canReadClusterScoped,
+		CanReadSubject:         r.canReadSubject,
+		CanReadEvidence:        r.canReadEvidence,
+		CanReadRelated: func(ref issues.Ref) bool {
+			return r.canAccess != nil && r.canAccess(ref.Group, ref.Kind, ref.Namespace, ref.Name)
+		},
+	})
+	return flat, issues.GroupIssues(flat)
+}
+
+// FinalizerOwnerStatus implements gitopsinsights.Resolver.
+//
+// Looks up the controller responsible for a finalizer (via the static
+// catalog in pkg/finalizers/catalog.go) and reports the
+// aggregate health of its pods in the install namespace. Returns ""
+// when the finalizer isn't recognized, the install namespace is empty
+// (e.g. operator deployed Flux into a non-default namespace), or the
+// pod-list lookup itself fails — caller treats empty as "no signal".
+//
+// The format embeds both the controller name and a short status verb
+// so the calling Issue's Cause text reads naturally when surfaced.
+// Actual outputs (kept in sync with summarizeControllerHealth):
+//
+//	"argocd-application-controller is CrashLoopBackOff (2/2 pods)"
+//	"kustomize-controller is healthy (1 pod ready)"
+//	"source-controller is degraded (1/2 pods ready)"
+//	"helm-controller is not running in namespace flux-system (controller may not be installed, or runs under a different namespace)"
+func (r *insightsResolver) FinalizerOwnerStatus(finalizer string, root *unstructured.Unstructured) string {
+	owner := finalizers.ResolveOwner(finalizer, root)
+	if owner == nil || owner.Namespace == "" {
+		return ""
+	}
+	if r.cache == nil || r.cache.Pods() == nil {
+		return ""
+	}
+	if !r.namespaceAllowed(owner.Namespace) {
+		return ""
+	}
+	if r.canReadEvidence != nil && !r.canReadEvidence(issues.EvidenceRead{Resource: "pods", Namespace: owner.Namespace, Verb: "list"}) {
+		return ""
+	}
+	if r.canAccess != nil && !r.canAccess("", "Pod", owner.Namespace, "") {
+		return ""
+	}
+	pods, err := r.cache.Pods().Pods(owner.Namespace).List(labels.Everything())
+	if err != nil {
+		log.Printf("[gitops] insights FinalizerOwnerStatus pods list ns=%s controller=%s failed: %v", owner.Namespace, owner.Controller, err)
+		return ""
+	}
+	var matched []*corev1.Pod
+	for _, p := range pods {
+		if p.Labels[owner.SelectorKey] == owner.SelectorValue {
+			matched = append(matched, p)
+		}
+	}
+	if len(matched) == 0 {
+		// Could be: operator changed the namespace, or the controller
+		// isn't installed (broken finalizer-only state). Either way,
+		// the user needs to know "the controller isn't where I expect"
+		// to start debugging.
+		if owner.OffClusterOfferings != "" {
+			return owner.Controller + " has no pods in namespace " + owner.Namespace + " (it may run outside the cluster under " + owner.OffClusterOfferings + ", not be installed, or run under a different namespace)"
+		}
+		return owner.Controller + " is not running in namespace " + owner.Namespace + " (controller may not be installed, or runs under a different namespace)"
+	}
+	return health.SummarizeControllerHealth(owner.Controller, matched)
+}
+
+func (r *insightsResolver) namespaceAllowed(namespace string) bool {
+	if r.allowedNamespaces == nil {
+		return true
+	}
+	if namespace == "" {
+		// Cluster-scoped resources are visible to anyone with any
+		// namespace access; gating them on namespace allowlist would
+		// hide things like Namespaces, ClusterRoles from every user.
+		return true
+	}
+	for _, ns := range r.allowedNamespaces {
+		if ns == namespace {
+			return true
+		}
+	}
+	return false
+}
+
+// eventMatchesGroup decides whether an event's involvedObject.apiVersion
+// matches the requested group. apiVersion is "group/version" for grouped
+// kinds or just "version" for core resources; either side being empty is
+// treated as a match so informers that strip apiVersion still surface
+// events alongside the resource they belong to.
+func eventMatchesGroup(group, apiVersion string) bool {
+	if group == "" || apiVersion == "" {
+		return true
+	}
+	ig := apiVersion
+	if i := strings.IndexByte(ig, '/'); i > 0 {
+		ig = ig[:i]
+	}
+	if ig == "" {
+		return true
+	}
+	return ig == group
+}
+
+// eventTime returns the most useful timestamp from an Event. Modern events
+// (eventTime non-zero) prefer that; legacy events fall back to
+// lastTimestamp then firstTimestamp.
+func eventTime(e *corev1.Event) time.Time {
+	if !e.EventTime.IsZero() {
+		return e.EventTime.Time
+	}
+	if !e.LastTimestamp.IsZero() {
+		return e.LastTimestamp.Time
+	}
+	return e.FirstTimestamp.Time
+}

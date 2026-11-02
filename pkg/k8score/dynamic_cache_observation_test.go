@@ -1,0 +1,788 @@
+package k8score
+
+import (
+	"context"
+	"errors"
+	"reflect"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	k8stesting "k8s.io/client-go/testing"
+)
+
+func TestDynamicResourceObservationUnwatchedAndUnsupported(t *testing.T) {
+	watchable := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	unsupported := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "summaries"}
+	discovery := &ResourceDiscovery{
+		resourceMap: make(map[string]APIResource),
+		gvrMap:      make(map[string]schema.GroupVersionResource),
+	}
+	discovery.AddAPIResource(APIResource{
+		Group: watchable.Group, Version: watchable.Version, Kind: "Widget", Name: watchable.Resource,
+		IsCRD: true, Verbs: []string{"get", "list", "watch"},
+	})
+	discovery.AddAPIResource(APIResource{
+		Group: unsupported.Group, Version: unsupported.Version, Kind: "Summary", Name: unsupported.Resource,
+		IsCRD: true, Verbs: []string{"get", "list"},
+	})
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		watchable: "WidgetList",
+	})
+	cache, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn, Discovery: discovery})
+	if err != nil {
+		t.Fatalf("NewDynamicResourceCache: %v", err)
+	}
+	t.Cleanup(cache.Stop)
+
+	for _, test := range []struct {
+		name   string
+		gvr    schema.GroupVersionResource
+		state  DynamicObservationState
+		reason string
+	}{
+		{name: "unwatched", gvr: watchable, state: DynamicObservationUnwatched, reason: "not_observed"},
+		{name: "unsupported", gvr: unsupported, state: DynamicObservationUnsupported, reason: "list_watch_unsupported"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got := cache.Observation(test.gvr)
+			if got.State != test.state || got.ReasonCode != test.reason {
+				t.Fatalf("observation = %+v, want state=%s reason=%s", got, test.state, test.reason)
+			}
+		})
+	}
+	if err := cache.EnsureWatching(unsupported); !errors.Is(err, ErrCollectionNotSupported) {
+		t.Fatalf("unsupported GVR cause = %v", err)
+	}
+	discovery.AddAPIResource(APIResource{
+		Group: unsupported.Group, Version: unsupported.Version, Kind: "Summary", Name: unsupported.Resource,
+		IsCRD: true, Verbs: []string{"get", "list", "watch"},
+	})
+	if got := cache.Observation(unsupported); got.State != DynamicObservationUnwatched || got.ReasonCode != "not_observed" {
+		t.Fatalf("refreshed watchable GVR retained unsupported state: %+v", got)
+	}
+	if actions := dyn.Actions(); len(actions) != 0 {
+		t.Fatalf("read-only observations touched the API server: %v", actions)
+	}
+}
+
+func TestDynamicResourceObservationTracksOnDemandSyncAndExactGVR(t *testing.T) {
+	observed := schema.GroupVersionResource{Group: "gateway.networking.k8s.io", Version: "v1", Resource: "gateways"}
+	colliding := schema.GroupVersionResource{Group: "networking.istio.io", Version: "v1", Resource: "gateways"}
+	discovery := &ResourceDiscovery{
+		resourceMap: make(map[string]APIResource),
+		gvrMap:      make(map[string]schema.GroupVersionResource),
+	}
+	for _, gvr := range []schema.GroupVersionResource{observed, colliding} {
+		discovery.AddAPIResource(APIResource{
+			Group: gvr.Group, Version: gvr.Version, Kind: "Gateway", Name: gvr.Resource,
+			Namespaced: true, IsCRD: true, Verbs: []string{"get", "list", "watch"},
+		})
+	}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{
+		observed:  "GatewayList",
+		colliding: "GatewayList",
+	})
+	releaseSync := make(chan struct{})
+	var observedLists atomic.Int32
+	dyn.PrependReactor("list", "gateways", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		if action.GetResource() != observed {
+			return false, nil, nil
+		}
+		if observedLists.Add(1) > 1 {
+			<-releaseSync
+		}
+		return false, nil, nil
+	})
+	cache, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn, Discovery: discovery})
+	if err != nil {
+		t.Fatalf("NewDynamicResourceCache: %v", err)
+	}
+	t.Cleanup(cache.Stop)
+
+	if err := cache.EnsureWatching(observed); err != nil {
+		t.Fatalf("EnsureWatching: %v", err)
+	}
+	syncing := cache.Observation(observed)
+	if syncing.State != DynamicObservationSyncing {
+		t.Fatalf("syncing observation = %+v", syncing)
+	}
+	if syncing.Scope != DynamicObservationScopeCluster || syncing.ReasonCode != "initial_sync" {
+		t.Fatalf("syncing scope/reason = %+v", syncing)
+	}
+	if got := cache.Observation(colliding); got.State != DynamicObservationUnwatched {
+		t.Fatalf("same-named GVR inherited observation from another group: %+v", got)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	started := time.Now()
+	_, waitErr := cache.ListBlockingContext(ctx, observed, "", 3*time.Second)
+	cancel()
+	if waitErr != nil && !errors.Is(waitErr, context.DeadlineExceeded) {
+		t.Fatalf("cancelled caller wait: %v", waitErr)
+	}
+	if time.Since(started) > 2*time.Second || cache.Observation(observed).State != DynamicObservationSyncing {
+		t.Fatal("caller cancellation did not bound the wait independently of the shared watch")
+	}
+
+	close(releaseSync)
+	if !cache.WaitForSync(observed, 3*time.Second) {
+		t.Fatal("on-demand informer did not sync")
+	}
+	watched := cache.Observation(observed)
+	if watched.State != DynamicObservationSynced || watched.ReasonCode != "informer_synced" {
+		t.Fatalf("watched observation = %+v", watched)
+	}
+	if cache.IsStopped() {
+		t.Fatal("running cache reported stopped")
+	}
+	cache.Stop()
+	if !cache.IsStopped() {
+		t.Fatal("stopped cache reported running")
+	}
+	if got := cache.Observation(observed); got.State != DynamicObservationUnwatched || got.ReasonCode != "cache_stopped" {
+		t.Fatalf("stopped cache retained active observation: %+v", got)
+	}
+}
+
+func TestDynamicResourceObservationRetainsDeniedAndDeferredOutcomes(t *testing.T) {
+	deniedGVR := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "deniedwidgets"}
+	deniedDiscovery := &ResourceDiscovery{
+		resourceMap: make(map[string]APIResource),
+		gvrMap:      make(map[string]schema.GroupVersionResource),
+		lastRefresh: time.Now(),
+		cacheTTL:    time.Hour,
+	}
+	deniedDiscovery.AddAPIResource(APIResource{
+		Group: deniedGVR.Group, Version: deniedGVR.Version, Kind: "DeniedWidget", Name: deniedGVR.Resource,
+		Namespaced: true, IsCRD: true, Verbs: []string{"get", "list", "watch"},
+	})
+	deniedClient := fakeDynamicForListAccess(t, map[schema.GroupVersionResource]string{deniedGVR: "DeniedWidgetList"}, func(schema.GroupVersionResource, string) bool {
+		return false
+	})
+	deniedCache, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: deniedClient, Discovery: deniedDiscovery})
+	if err != nil {
+		t.Fatalf("NewDynamicResourceCache denied: %v", err)
+	}
+	t.Cleanup(deniedCache.Stop)
+	if err := deniedCache.EnsureWatching(deniedGVR); err == nil {
+		t.Fatal("EnsureWatching denied GVR succeeded")
+	}
+	denied := deniedCache.Observation(deniedGVR)
+	if denied.State != DynamicObservationDenied || denied.ReasonCode != "access_denied" {
+		t.Fatalf("denied observation = %+v", denied)
+	}
+
+	truncatedClient := fakeDynamicForListAccess(t, map[schema.GroupVersionResource]string{deniedGVR: "DeniedWidgetList"}, func(schema.GroupVersionResource, string) bool {
+		return false
+	})
+	truncatedCache, err := NewDynamicResourceCache(DynamicCacheConfig{
+		DynamicClient:               truncatedClient,
+		Discovery:                   deniedDiscovery,
+		NamespaceFallbacks:          []string{"team-a"},
+		NamespaceFallbacksTruncated: true,
+	})
+	if err != nil {
+		t.Fatalf("NewDynamicResourceCache truncated denial: %v", err)
+	}
+	t.Cleanup(truncatedCache.Stop)
+	if err := truncatedCache.EnsureWatching(deniedGVR); err == nil {
+		t.Fatal("EnsureWatching truncated denied GVR succeeded")
+	}
+	truncatedDenied := truncatedCache.Observation(deniedGVR)
+	if truncatedDenied.State != DynamicObservationDenied || !truncatedDenied.Truncated || truncatedDenied.ReasonCode != "access_denied_partial_probe" {
+		t.Fatalf("truncated denied observation = %+v", truncatedDenied)
+	}
+
+	incompleteCandidatesClient := fakeDynamicForListAccess(t, map[schema.GroupVersionResource]string{deniedGVR: "DeniedWidgetList"}, func(schema.GroupVersionResource, string) bool {
+		return false
+	})
+	incompleteCandidatesCache, err := NewDynamicResourceCache(DynamicCacheConfig{
+		DynamicClient:               incompleteCandidatesClient,
+		Discovery:                   deniedDiscovery,
+		NamespaceFallbacksTruncated: true,
+	})
+	if err != nil {
+		t.Fatalf("NewDynamicResourceCache incomplete candidates: %v", err)
+	}
+	t.Cleanup(incompleteCandidatesCache.Stop)
+	if err := incompleteCandidatesCache.EnsureWatching(deniedGVR); err == nil {
+		t.Fatal("EnsureWatching incomplete-candidate denied GVR succeeded")
+	}
+	incompleteDenied := incompleteCandidatesCache.Observation(deniedGVR)
+	if incompleteDenied.State != DynamicObservationDenied || !incompleteDenied.Truncated || incompleteDenied.ReasonCode != "access_denied_partial_probe" {
+		t.Fatalf("incomplete-candidate denied observation = %+v", incompleteDenied)
+	}
+
+	clusterScopedGVR := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "clustersummaries"}
+	clusterScopedDiscovery := &ResourceDiscovery{
+		resourceMap: make(map[string]APIResource),
+		gvrMap:      make(map[string]schema.GroupVersionResource),
+		lastRefresh: time.Now(),
+		cacheTTL:    time.Hour,
+	}
+	clusterScopedDiscovery.AddAPIResource(APIResource{
+		Group: clusterScopedGVR.Group, Version: clusterScopedGVR.Version, Kind: "ClusterSummary", Name: clusterScopedGVR.Resource,
+		IsCRD: true, Verbs: []string{"get", "list", "watch"},
+	})
+	clusterScopedClient := fakeDynamicForListAccess(t, map[schema.GroupVersionResource]string{clusterScopedGVR: "ClusterSummaryList"}, func(schema.GroupVersionResource, string) bool {
+		return false
+	})
+	clusterScopedCache, err := NewDynamicResourceCache(DynamicCacheConfig{
+		DynamicClient:               clusterScopedClient,
+		Discovery:                   clusterScopedDiscovery,
+		NamespaceFallbacks:          []string{"team-a"},
+		NamespaceFallbacksTruncated: true,
+	})
+	if err != nil {
+		t.Fatalf("NewDynamicResourceCache cluster-scoped denial: %v", err)
+	}
+	t.Cleanup(clusterScopedCache.Stop)
+	if err := clusterScopedCache.EnsureWatching(clusterScopedGVR); err == nil {
+		t.Fatal("EnsureWatching denied cluster-scoped GVR succeeded")
+	}
+	clusterScopedDenied := clusterScopedCache.Observation(clusterScopedGVR)
+	if clusterScopedDenied.State != DynamicObservationDenied || clusterScopedDenied.Truncated || clusterScopedDenied.ReasonCode != "access_denied" {
+		t.Fatalf("cluster-scoped denied observation = %+v", clusterScopedDenied)
+	}
+
+	for _, test := range []struct {
+		name       string
+		probeError error
+		panicProbe bool
+		remaining  int64
+		reason     string
+	}{
+		{name: "probe failed", probeError: errors.New("temporary proxy failure"), reason: "resource_count_probe_failed"},
+		{name: "probe panicked", panicProbe: true, reason: "resource_count_probe_failed"},
+		{name: "large resource", remaining: 101, reason: "resource_count_exceeds_eager_limit"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+			discovery := &ResourceDiscovery{
+				resources: []APIResource{{
+					Group: gvr.Group, Version: gvr.Version, Kind: "Widget", Name: gvr.Resource,
+					Namespaced: true, IsCRD: true, Verbs: []string{"get", "list", "watch"},
+				}},
+				resourceMap: make(map[string]APIResource),
+				gvrMap:      make(map[string]schema.GroupVersionResource),
+				lastRefresh: time.Now(),
+				cacheTTL:    time.Hour,
+			}
+			dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"})
+			dyn.PrependReactor("list", "widgets", func(k8stesting.Action) (bool, runtime.Object, error) {
+				if test.panicProbe {
+					panic("probe panic")
+				}
+				if test.probeError != nil {
+					return true, nil, test.probeError
+				}
+				list := &unstructured.UnstructuredList{}
+				list.SetRemainingItemCount(&test.remaining)
+				return true, list, nil
+			})
+			cache, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn, Discovery: discovery})
+			if err != nil {
+				t.Fatalf("NewDynamicResourceCache: %v", err)
+			}
+			t.Cleanup(cache.Stop)
+			cache.DiscoverAllCRDs()
+			select {
+			case <-cache.discoveryDone:
+			case <-time.After(3 * time.Second):
+				t.Fatal("DiscoverAllCRDs did not complete")
+			}
+
+			got := cache.Observation(gvr)
+			if got.State != DynamicObservationDeferred || got.ReasonCode != test.reason {
+				t.Fatalf("deferred observation = %+v, want reason=%s", got, test.reason)
+			}
+			if test.name == "large resource" {
+				if err := cache.EnsureWatching(gvr); err != nil {
+					t.Fatalf("EnsureWatching deferred GVR: %v", err)
+				}
+				cache.mu.Lock()
+				for key, entry := range cache.informers {
+					if key.gvr == gvr {
+						entry.cancel()
+						delete(cache.informers, key)
+					}
+				}
+				cache.mu.Unlock()
+				if after := cache.Observation(gvr); after.State != DynamicObservationUnwatched {
+					t.Fatalf("successful watch retained stale deferred decision after informer removal: %+v", after)
+				}
+			}
+		})
+	}
+}
+
+func TestDynamicResourceObservationPreferredNamespaceDenialDoesNotOverwriteGVRState(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	discovery := &ResourceDiscovery{
+		resourceMap: make(map[string]APIResource),
+		gvrMap:      make(map[string]schema.GroupVersionResource),
+		lastRefresh: time.Now(),
+		cacheTTL:    time.Hour,
+	}
+	discovery.AddAPIResource(APIResource{
+		Group: gvr.Group, Version: gvr.Version, Kind: "Widget", Name: gvr.Resource,
+		Namespaced: true, IsCRD: true, Verbs: []string{"get", "list", "watch"},
+	})
+	dyn := fakeDynamicForListAccess(t, map[schema.GroupVersionResource]string{gvr: "WidgetList"}, func(schema.GroupVersionResource, string) bool {
+		return false
+	})
+	cache, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn, Discovery: discovery})
+	if err != nil {
+		t.Fatalf("NewDynamicResourceCache: %v", err)
+	}
+	t.Cleanup(cache.Stop)
+	cache.retainObservation(gvr, DynamicObservationDeferred, "prior_global_state", false)
+
+	if err := cache.ensureWatching(gvr, "team-a"); err == nil {
+		t.Fatal("ensureWatching denied preferred namespace succeeded")
+	}
+	got := cache.Observation(gvr)
+	if got.State != DynamicObservationDeferred || got.ReasonCode != "prior_global_state" {
+		t.Fatalf("preferred-namespace denial overwrote GVR observation: %+v", got)
+	}
+}
+
+func TestDynamicResourceObservationTracksWarmupEagerAndNamespaceFanout(t *testing.T) {
+	t.Run("warmup", func(t *testing.T) {
+		gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+		dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"})
+		cache, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn})
+		if err != nil {
+			t.Fatalf("NewDynamicResourceCache: %v", err)
+		}
+		t.Cleanup(cache.Stop)
+		cache.WarmupParallel([]schema.GroupVersionResource{gvr}, 3*time.Second)
+		got := cache.Observation(gvr)
+		if got.State != DynamicObservationSynced {
+			t.Fatalf("warmup observation = %+v", got)
+		}
+	})
+
+	t.Run("small eager", func(t *testing.T) {
+		gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+		discovery := &ResourceDiscovery{
+			resources: []APIResource{{
+				Group: gvr.Group, Version: gvr.Version, Kind: "Widget", Name: gvr.Resource,
+				Namespaced: true, IsCRD: true, Verbs: []string{"get", "list", "watch"},
+			}},
+			resourceMap: make(map[string]APIResource),
+			gvrMap:      make(map[string]schema.GroupVersionResource),
+			lastRefresh: time.Now(),
+			cacheTTL:    time.Hour,
+		}
+		dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"})
+		cache, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn, Discovery: discovery})
+		if err != nil {
+			t.Fatalf("NewDynamicResourceCache: %v", err)
+		}
+		t.Cleanup(cache.Stop)
+		cache.DiscoverAllCRDs()
+		select {
+		case <-cache.discoveryDone:
+		case <-time.After(3 * time.Second):
+			t.Fatal("DiscoverAllCRDs did not complete")
+		}
+		got := cache.Observation(gvr)
+		if got.State != DynamicObservationSynced {
+			t.Fatalf("small-eager observation = %+v", got)
+		}
+	})
+
+	t.Run("namespace partial truncated", func(t *testing.T) {
+		gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+		dyn := fakeDynamicForListAccess(t, map[schema.GroupVersionResource]string{gvr: "WidgetList"}, func(_ schema.GroupVersionResource, namespace string) bool {
+			return namespace == "team-a" || namespace == "team-b"
+		})
+		cache, err := NewDynamicResourceCache(DynamicCacheConfig{
+			DynamicClient:               dyn,
+			NamespaceFallbacks:          []string{"team-b", "team-a"},
+			NamespaceFallbacksTruncated: true,
+		})
+		if err != nil {
+			t.Fatalf("NewDynamicResourceCache: %v", err)
+		}
+		t.Cleanup(cache.Stop)
+		if err := cache.EnsureWatching(gvr); err != nil {
+			t.Fatalf("EnsureWatching: %v", err)
+		}
+		if !cache.WaitForSync(gvr, 3*time.Second) {
+			t.Fatal("namespace-scoped informers did not sync")
+		}
+		got := cache.Observation(gvr)
+		if got.State != DynamicObservationSynced || got.Scope != DynamicObservationScopeExplicitNamespaces {
+			t.Fatalf("namespace observation = %+v", got)
+		}
+		if !got.Truncated || got.ReasonCode != "namespace_fanout_truncated" {
+			t.Fatalf("namespace bounds = %+v", got)
+		}
+		if !reflect.DeepEqual(got.Namespaces, []string{"team-a", "team-b"}) {
+			t.Fatalf("namespaces = %v", got.Namespaces)
+		}
+	})
+}
+
+func TestDynamicObservationTimeoutDoesNotProveDenial(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"})
+	dyn.PrependReactor("list", "widgets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetNamespace() == "" {
+			return true, nil, apierrors.NewForbidden(gvr.GroupResource(), "", errors.New("cluster denied"))
+		}
+		return true, nil, context.DeadlineExceeded
+	})
+	discovery := &ResourceDiscovery{resourceMap: make(map[string]APIResource), gvrMap: make(map[string]schema.GroupVersionResource)}
+	discovery.AddAPIResource(APIResource{Group: gvr.Group, Version: gvr.Version, Name: gvr.Resource, Kind: "Widget", Namespaced: true, IsCRD: true, Verbs: []string{"list", "watch"}})
+	d, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn, Discovery: discovery, NamespaceFallbacks: []string{"slow"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Stop)
+	if err := d.EnsureWatching(gvr); err == nil {
+		t.Fatal("incomplete probe unexpectedly succeeded")
+	}
+	got := d.Observation(gvr)
+	if got.State != DynamicObservationDeferred || got.ReasonCode != "scope_probe_incomplete" || !got.Truncated || got.ObservedAt == nil {
+		t.Fatalf("timeout became denial: %+v", got)
+	}
+}
+
+func TestDynamicObservationStalledNamespaceIsNotHiddenByNewerInformer(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"})
+	release := make(chan struct{})
+	defer close(release)
+	dyn.PrependReactor("list", "widgets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetNamespace() == "old" {
+			<-release
+		}
+		return false, nil, nil
+	})
+	d, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Stop)
+	if err := d.startWatching(gvr, "new"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !d.IsNamespaceSynced(gvr, "new") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !d.IsNamespaceSynced(gvr, "new") {
+		t.Fatal("new namespace did not sync")
+	}
+	if err := d.startWatching(gvr, "old"); err != nil {
+		t.Fatal(err)
+	}
+	d.mu.Lock()
+	oldStart := time.Now().Add(-time.Minute)
+	d.informers[informerKey{gvr: gvr, ns: "old"}].startedAt = oldStart
+	d.mu.Unlock()
+	got := d.Observation(gvr)
+	if got.State != DynamicObservationSyncing || got.ReasonCode != "sync_stalled" {
+		t.Fatalf("old stalled namespace masked: %+v", got)
+	}
+}
+
+// Per-namespace informers sync independently, so a namespace's observation
+// comes from its own informer, never from another namespace's.
+func TestNamespaceObservationReadsOnlyTheServingInformer(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"})
+	release := make(chan struct{})
+	defer close(release)
+	dyn.PrependReactor("list", "widgets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetNamespace() != "synced" {
+			<-release
+		}
+		return false, nil, nil
+	})
+	d, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn, SyncStallAfter: 45 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Stop)
+	if err := d.startWatching(gvr, "synced"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !d.IsNamespaceSynced(gvr, "synced") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if !d.IsNamespaceSynced(gvr, "synced") {
+		t.Fatal("synced namespace did not sync")
+	}
+	for _, ns := range []string{"stalled", "slow", "fresh"} {
+		if err := d.startWatching(gvr, ns); err != nil {
+			t.Fatal(err)
+		}
+	}
+	d.mu.Lock()
+	d.informers[informerKey{gvr: gvr, ns: "stalled"}].startedAt = time.Now().Add(-time.Minute)
+	// Past the 30-second default, inside the configured SyncStallAfter.
+	d.informers[informerKey{gvr: gvr, ns: "slow"}].startedAt = time.Now().Add(-40 * time.Second)
+	d.mu.Unlock()
+
+	watched := []string{"fresh", "slow", "stalled", "synced"}
+	for _, tc := range []struct {
+		namespace string
+		state     DynamicObservationState
+		reason    string
+	}{
+		{"synced", DynamicObservationSynced, "namespace_partial"},
+		{"stalled", DynamicObservationSyncing, "sync_stalled"},
+		{"slow", DynamicObservationSyncing, "initial_sync"},
+		{"fresh", DynamicObservationSyncing, "initial_sync"},
+		{"unwatched", DynamicObservationUnwatched, "not_observed"},
+	} {
+		got := d.NamespaceObservation(gvr, tc.namespace)
+		if got.State != tc.state || got.ReasonCode != tc.reason || got.Scope != DynamicObservationScopeExplicitNamespaces || !reflect.DeepEqual(got.Namespaces, watched) {
+			t.Errorf("%s: %+v, want state=%s reason=%s over the kind's namespaces", tc.namespace, got, tc.state, tc.reason)
+		}
+	}
+	whole := d.Observation(gvr)
+	if whole.State != DynamicObservationSyncing || whole.ReasonCode != "sync_stalled" {
+		t.Fatalf("kind observation must still report its stalled namespace: %+v", whole)
+	}
+	if got := d.NamespaceObservation(gvr, ""); !reflect.DeepEqual(got, whole) {
+		t.Fatalf("all-namespaces observation %+v differs from the kind's %+v", got, whole)
+	}
+
+	clusterGVR := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "gadgets"}
+	clusterWide, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{clusterGVR: "GadgetList"})})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(clusterWide.Stop)
+	if err := clusterWide.startWatching(clusterGVR, ""); err != nil {
+		t.Fatal(err)
+	}
+	if !clusterWide.WaitForSync(clusterGVR, 3*time.Second) {
+		t.Fatal("cluster-wide informer did not sync")
+	}
+	if got, want := clusterWide.NamespaceObservation(clusterGVR, "any"), clusterWide.Observation(clusterGVR); !reflect.DeepEqual(got, want) || got.ReasonCode != "informer_synced" {
+		t.Fatalf("a cluster-wide informer serves every namespace: %+v, want %+v", got, want)
+	}
+}
+
+func TestServedEntriesFollowAClusterWideInformerReplacingNamespaceOnes(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"})
+	release := make(chan struct{})
+	defer close(release)
+	dyn.PrependReactor("list", "widgets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetNamespace() == "" {
+			<-release
+		}
+		return false, nil, nil
+	})
+	d, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Stop)
+	if err := d.startWatching(gvr, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !d.IsNamespaceSynced(gvr, "alpha") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, synced := d.servedEntries(gvr, "alpha"); !synced {
+		t.Fatal("alpha's informer did not sync")
+	}
+	if _, synced := d.servedEntries(gvr, ""); synced {
+		t.Fatal("namespace informers must not answer a cluster-wide read")
+	}
+	// The cluster-wide informer replaces alpha's; its initial list is held.
+	if err := d.startWatching(gvr, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, synced := d.servedEntries(gvr, "alpha"); synced {
+		t.Fatal("after the replacement, alpha is served by the cluster-wide informer, which hasn't loaded")
+	}
+}
+
+// A 401 rejects Radar's credentials, not one scope, so every probe stops on it
+// instead of narrowing the kind to the namespaces that answered, and each path
+// that records a failed probe says credentials were rejected, not access denied.
+func TestProbesStopOnRejectedCredentials(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	for name, rejected := range map[string]string{"cluster-wide probe": "", "a fallback namespace": "beta"} {
+		newCache := func(t *testing.T, fallbacks ...string) *DynamicResourceCache {
+			dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"})
+			dyn.PrependReactor("list", "widgets", func(action k8stesting.Action) (bool, runtime.Object, error) {
+				switch ns := action.GetNamespace(); {
+				case ns == rejected:
+					return true, nil, apierrors.NewUnauthorized("token rejected")
+				case ns == "":
+					return true, nil, apierrors.NewForbidden(gvr.GroupResource(), "", errors.New("cluster-wide list denied"))
+				}
+				return false, nil, nil
+			})
+			if len(fallbacks) == 0 {
+				fallbacks = []string{"alpha", "beta"}
+			}
+			cache, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn, NamespaceFallbacks: fallbacks})
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(cache.Stop)
+			return cache
+		}
+		rejectedCredentials := func(t *testing.T, cache *DynamicResourceCache) {
+			t.Helper()
+			if got := cache.Observation(gvr); got.State != DynamicObservationDenied || got.ReasonCode != "credentials_rejected" {
+				t.Fatalf("observation=%+v, want a credential rejection, not an access denial", got)
+			}
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Run("probeScopes", func(t *testing.T) {
+				scopes, _, err := newCache(t).probeScopes(gvr, "")
+				if !apierrors.IsUnauthorized(err) || scopes != nil {
+					t.Fatalf("scopes=%v err=%v, want the credential rejection", scopes, err)
+				}
+			})
+			t.Run("EnsureWatching", func(t *testing.T) {
+				cache := newCache(t)
+				if err := cache.EnsureWatching(gvr); !apierrors.IsUnauthorized(err) {
+					t.Fatalf("EnsureWatching err=%v, want the credential rejection", err)
+				}
+				rejectedCredentials(t, cache)
+			})
+			t.Run("WarmupParallel", func(t *testing.T) {
+				cache := newCache(t)
+				cache.WarmupParallel([]schema.GroupVersionResource{gvr}, time.Second)
+				rejectedCredentials(t, cache)
+			})
+			t.Run("probeCount", func(t *testing.T) {
+				// The count probe samples the first fallback namespace that
+				// answers, so the rejected one comes first here.
+				cache := newCache(t, "beta", "alpha")
+				count, err := cache.probeCount(gvr)
+				if count != -1 || !apierrors.IsUnauthorized(err) {
+					t.Fatalf("count=%d err=%v, want -1 with the credential rejection", count, err)
+				}
+				if !cache.retainAuthProbeFailure(gvr, "", true, err) {
+					t.Fatal("the count probe's rejection was not recorded")
+				}
+				rejectedCredentials(t, cache)
+			})
+		})
+	}
+}
+
+// Stop keeps the informers, which go on reporting synced; nothing that vouches
+// for an answer may do so once the cache has stopped.
+func TestStoppedCacheVouchesForNothing(t *testing.T) {
+	widgets := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	gizmos := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "gizmos"}
+	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{widgets: "WidgetList", gizmos: "GizmoList"})
+	d, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Stop)
+	if err := d.startWatching(widgets, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.startWatching(gizmos, ""); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !(d.IsNamespaceSynced(widgets, "alpha") && d.IsClusterWideSynced(gizmos)) && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if _, synced := d.servedEntries(widgets, "alpha"); !synced {
+		t.Fatal("alpha's informer did not sync")
+	}
+	if _, synced := d.servedEntries(gizmos, ""); !synced {
+		t.Fatal("the cluster-wide informer did not sync")
+	}
+
+	d.Stop()
+
+	if _, synced := d.servedEntries(widgets, "alpha"); synced {
+		t.Error("a namespace informer of a stopped cache vouches for reads")
+	}
+	if _, synced := d.servedEntries(gizmos, ""); synced {
+		t.Error("a cluster-wide informer of a stopped cache vouches for reads")
+	}
+	if d.IsNamespaceSynced(widgets, "alpha") || d.IsClusterWideSynced(gizmos) || d.IsSynced(gizmos) {
+		t.Error("a stopped cache reports synced")
+	}
+	if _, ok := d.WatchedSince(gizmos); ok {
+		t.Error("WatchedSince vouches for a stopped cache")
+	}
+	if _, err := d.Count(gizmos, nil); err == nil {
+		t.Error("Count answers for a stopped cache")
+	}
+	if counts := d.CountWatched(nil); counts != nil {
+		t.Errorf("CountWatched answers for a stopped cache: %v", counts)
+	}
+}
+
+func newWidgetDynamicClient(objects ...runtime.Object) *dynamicfake.FakeDynamicClient {
+	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	return dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"}, objects...)
+}
+
+func TestDynamicReadableObjectAnswersOnlyFromSyncedServingInformers(t *testing.T) {
+	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
+	dyn := newWidgetDynamicClient(&unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "example.io/v1", "kind": "Widget",
+		"metadata": map[string]any{"name": "present", "namespace": "alpha"},
+	}})
+	release := make(chan struct{})
+	defer close(release)
+	dyn.PrependReactor("list", "widgets", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetNamespace() == "" {
+			<-release
+		}
+		return false, nil, nil
+	})
+	d, err := NewDynamicResourceCache(DynamicCacheConfig{DynamicClient: dyn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(d.Stop)
+	if _, found, ok := d.ReadableObject(gvr, "alpha", "present"); found || ok {
+		t.Fatal("with no informer, a read must prove nothing")
+	}
+	if err := d.startWatching(gvr, "alpha"); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for !d.IsNamespaceSynced(gvr, "alpha") && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	obj, found, ok := d.ReadableObject(gvr, "alpha", "present")
+	if !found || !ok || obj.GetName() != "present" {
+		t.Fatalf("synced read: found=%v ok=%v", found, ok)
+	}
+	if _, found, ok := d.ReadableObject(gvr, "alpha", "missing"); found || !ok {
+		t.Fatalf("a synced store's miss: found=%v ok=%v; want an established absence", found, ok)
+	}
+	if _, _, ok := d.ReadableObject(gvr, "beta", "present"); ok {
+		t.Fatal("no informer serves beta, so the read proves nothing")
+	}
+	// A cluster-wide informer replaces alpha's; its initial list is held.
+	if err := d.startWatching(gvr, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, found, ok := d.ReadableObject(gvr, "alpha", "present"); found || ok {
+		t.Fatalf("after the replacement: found=%v ok=%v; want the unloaded cluster-wide informer to prove nothing", found, ok)
+	}
+}

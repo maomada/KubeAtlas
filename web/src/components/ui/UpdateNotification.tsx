@@ -1,0 +1,404 @@
+import { useState, useEffect, useRef, useId } from 'react'
+import { clsx } from 'clsx'
+import { Download, X, Copy, Check, RotateCw, ArrowDownToLine, Loader2 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import {
+  useVersionCheck,
+  useCapabilities,
+  useStartDesktopUpdate,
+  useDesktopUpdateStatus,
+  useApplyDesktopUpdate,
+} from '../../api/client'
+import type { DesktopUpdateState, VersionInfo } from '../../api/client'
+import { getApiBase } from '../../api/config'
+import { useToast } from './Toast'
+import { WithTooltip } from './Tooltip'
+import { TRANSITION_MENU, overlayExitMs, overlayTransitionStyle } from '../../utils/animation'
+import { useAnimatedUnmount } from '../../hooks/useAnimatedUnmount'
+import { IN_CLUSTER_UPGRADE_URL } from '../../utils/version'
+
+const DISMISSED_KEY = 'radar-update-dismissed'
+
+// Whether the notice for this release was dismissed. The usage-data card
+// shares the corner and waits for it.
+export function isUpdateDismissed(latestVersion: string): boolean {
+  try {
+    return localStorage.getItem(DISMISSED_KEY) === latestVersion
+  } catch {
+    // localStorage unavailable (e.g. Safari private mode)
+    return false
+  }
+}
+
+export function UpdateNotification({ placement = 'floating' }: { placement?: 'floating' | 'settings' }) {
+  const inSettings = placement === 'settings'
+  const [expanded, setExpanded] = useState(false)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
+  const panelId = useId()
+  const queryClient = useQueryClient()
+  const { showToast } = useToast()
+  const { data: capabilities } = useCapabilities()
+  const deploymentMode = capabilities ? (capabilities.deployment?.mode ?? 'local') : undefined
+  const { data: versionInfo } = useVersionCheck()
+  const [dismissed, setDismissed] = useState(false)
+  const [copied, setCopied] = useState(false)
+  const [copyFailed, setCopyFailed] = useState(false)
+
+  // Desktop update state
+  const [desktopUpdating, setDesktopUpdating] = useState(false)
+  const startUpdate = useStartDesktopUpdate()
+  const applyUpdate = useApplyDesktopUpdate()
+  const isDesktop = versionInfo?.installMethod === 'desktop'
+  const { data: updateStatus } = useDesktopUpdateStatus(desktopUpdating || (inSettings && expanded && isDesktop))
+
+  useEffect(() => {
+    if (!expanded) return
+    const closeOutside = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) setExpanded(false)
+    }
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [expanded])
+
+  useEffect(() => {
+    if (inSettings) return
+    const id = 'radar-manual-update-check'
+    const handler = () => {
+      showToast('Checking for updates…', { id, type: 'info', duration: 0 })
+    }
+    const resultHandler = (event: Event) => {
+      const info = (event as CustomEvent<VersionInfo>).detail
+      if (info.error) {
+        showToast('Could not check for updates', { id, type: 'error', detail: info.error })
+        return
+      }
+      void queryClient.cancelQueries({ queryKey: ['version-check', getApiBase()], exact: true })
+      setDismissed(false)
+      try { localStorage.removeItem(DISMISSED_KEY) } catch { /* ignore */ }
+      queryClient.setQueryData(['version-check', getApiBase()], info)
+      if (info.updateAvailable) {
+        showToast(`KubeAtlas ${info.latestVersion} is available`, { id, type: 'info' })
+      } else if (info.buildChannel === 'development') {
+        showToast(`Latest KubeAtlas release: ${info.latestVersion}`, { id, type: 'info', detail: 'You are running a development build.' })
+      } else {
+        showToast("You're up to date", { id, type: 'success', detail: `KubeAtlas ${info.currentVersion}` })
+      }
+    }
+
+    window.addEventListener('radar:check-for-updates', handler)
+    window.addEventListener('radar:update-check-result', resultHandler)
+    return () => {
+      window.removeEventListener('radar:check-for-updates', handler)
+      window.removeEventListener('radar:update-check-result', resultHandler)
+    }
+  }, [queryClient, inSettings, showToast])
+
+  // Log version check errors for debugging
+  useEffect(() => {
+    if (versionInfo?.error) {
+      console.debug('[radar] Version check failed:', versionInfo.error)
+    }
+  }, [versionInfo?.error])
+
+  // Check if this version was already dismissed
+  useEffect(() => {
+    if (versionInfo?.latestVersion && isUpdateDismissed(versionInfo.latestVersion)) {
+      setDismissed(true)
+    }
+  }, [versionInfo?.latestVersion])
+
+  // Stop polling when update reaches a terminal state
+  useEffect(() => {
+    if (updateStatus?.state === 'error' || updateStatus?.state === 'idle') {
+      setDesktopUpdating(false)
+    }
+  }, [updateStatus?.state])
+
+  const handleDismiss = () => {
+    try {
+      if (versionInfo?.latestVersion) {
+        localStorage.setItem(DISMISSED_KEY, versionInfo.latestVersion)
+      }
+    } catch {
+      // localStorage unavailable — dismiss in-memory only
+    }
+    setDismissed(true)
+  }
+
+  const handleCopyCommand = async () => {
+    if (versionInfo?.updateCommand) {
+      try {
+        await navigator.clipboard.writeText(versionInfo.updateCommand)
+        setCopied(true)
+        setTimeout(() => setCopied(false), 2000)
+      } catch (err) {
+        console.debug('[radar] Clipboard write failed:', err)
+        setCopyFailed(true)
+        setTimeout(() => setCopyFailed(false), 2000)
+      }
+    }
+  }
+
+  const handleStartDesktopUpdate = () => {
+    startUpdate.mutate(undefined, {
+      onSuccess: () => setDesktopUpdating(true),
+    })
+  }
+
+  // Shared in-cluster viewers get a persistent Home notice instead of a
+  // floating action prompt they may not be able to act on.
+  const available = !!versionInfo?.updateAvailable && deploymentMode !== undefined && deploymentMode !== 'cloud'
+  const show = available && deploymentMode !== 'in-cluster' && (inSettings ? expanded : !dismissed)
+  // Presence outlives `show` by the menu exit so a dismiss fades the chip out
+  // instead of snapping it away; the enter runs the same transition in reverse.
+  const { shouldRender, isOpen } = useAnimatedUnmount(show, overlayExitMs('menu'))
+  if ((!inSettings && !shouldRender) || (inSettings && !available) || !versionInfo) {
+    return null
+  }
+
+  // Determine what the current effective state is
+  const effectiveState: DesktopUpdateState = updateStatus?.state ?? 'idle'
+
+  const panel = shouldRender && (
+    <div
+      id={panelId}
+      inert={!show || undefined}
+      className={clsx(
+        'bg-theme-surface border border-accent/50 rounded-lg shadow-theme-lg p-4',
+        inSettings ? 'absolute top-full left-0 mt-2 z-10 w-[28rem] max-sm:left-4 max-sm:right-4 max-sm:w-auto origin-top-left' : 'fixed bottom-4 right-4 z-50 max-w-sm origin-bottom-right',
+        TRANSITION_MENU,
+        isOpen ? 'opacity-100 translate-y-0 scale-100' : 'opacity-0 translate-y-1 scale-[0.97]',
+        !show && 'pointer-events-none',
+      )}
+      style={overlayTransitionStyle(isOpen, 'menu')}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex items-center justify-center w-8 h-8 bg-accent-muted rounded-full shrink-0">
+          <UpdateIcon state={effectiveState} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <h4 className="text-sm font-medium text-theme-text-primary pr-6">
+            <UpdateTitle state={effectiveState} />
+          </h4>
+          <p className="text-xs text-theme-text-secondary mt-1">
+            KubeAtlas {versionInfo.latestVersion} is available.{' '}
+            {!inSettings && <>You're on {versionInfo.currentVersion}.</>}
+          </p>
+
+          {/* Desktop: in-app update flow */}
+          {isDesktop && (
+            <DesktopUpdateControls
+              state={effectiveState}
+              progress={updateStatus?.progress}
+              error={updateStatus?.error}
+              starting={startUpdate.isPending}
+              onStart={handleStartDesktopUpdate}
+              onApply={() => applyUpdate.mutate()}
+              onRetry={handleStartDesktopUpdate}
+            />
+          )}
+
+          {/* CLI: show update command with copy button for package managers */}
+          {!isDesktop && versionInfo.updateCommand ? (
+            <>
+              <WithTooltip tip={versionInfo.updateCommand} delay={100}>
+                <button
+                  onClick={handleCopyCommand}
+                  className="flex items-center gap-2 mt-2 px-2 py-1.5 bg-theme-elevated rounded font-mono text-theme-text-primary hover:bg-theme-surface-hover transition-colors w-full"
+                >
+                  <code className={clsx('inline-code flex-1 text-left text-[11px]', inSettings ? 'whitespace-pre-wrap break-all' : 'truncate')}>{versionInfo.updateCommand}</code>
+                  <CopyIcon copied={copied} failed={copyFailed} />
+                </button>
+              </WithTooltip>
+              {/* Direct installs may have placed the binary somewhere the install
+                  script won't touch — surface a download link as a fallback. */}
+              {versionInfo.installMethod === 'direct' && versionInfo.releaseUrl && (
+                <a
+                  href={versionInfo.releaseUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 mt-1.5 text-xs text-theme-text-tertiary hover:text-theme-text-secondary hover:underline"
+                >
+                  or download from GitHub →
+                </a>
+              )}
+            </>
+          ) : (
+            !isDesktop && versionInfo.releaseUrl && (
+              <a
+                href={versionInfo.releaseUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 mt-2 text-xs font-medium text-accent-text hover:underline"
+              >
+                Download from GitHub →
+              </a>
+            )
+          )}
+        </div>
+      </div>
+      {/* Dismiss is absolute so it doesn't compress the chip's width.
+          fixed on the parent already establishes the positioning context. */}
+      {effectiveState !== 'downloading' && effectiveState !== 'applying' && (
+        <button
+          onClick={inSettings ? () => { setExpanded(false); triggerRef.current?.focus() } : handleDismiss}
+          className="absolute top-2 right-2 p-1 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded"
+          aria-label={inSettings ? '关闭更新详情' : '关闭通知'}
+        >
+          <X className="w-4 h-4" />
+        </button>
+      )}
+    </div>
+  )
+
+  if (!inSettings) return panel
+
+  const triggerClass = 'inline-flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent-muted px-2.5 py-1.5 text-xs font-semibold text-accent-text hover:bg-theme-hover'
+  if (deploymentMode === 'in-cluster') return (
+    <a href={IN_CLUSTER_UPGRADE_URL} target="_blank" rel="noreferrer" className={triggerClass}>
+      <Download aria-hidden="true" className="h-4 w-4" />
+      Update available
+    </a>
+  )
+
+  return (
+    <div ref={containerRef} className="sm:relative" onBlur={event => {
+      if (!event.currentTarget.contains(event.relatedTarget)) setExpanded(false)
+    }} onKeyDown={event => {
+      if (event.key !== 'Escape' || !expanded) return
+      event.preventDefault()
+      event.stopPropagation()
+      setExpanded(false)
+      triggerRef.current?.focus()
+    }}>
+      <button ref={triggerRef} type="button" className={triggerClass} aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(value => !value)}>
+        <Download aria-hidden="true" className="h-4 w-4" />
+        Update available
+      </button>
+      {panel}
+    </div>
+  )
+}
+
+function CopyIcon({ copied, failed }: { copied: boolean; failed: boolean }) {
+  if (copied) return <Check className="w-3.5 h-3.5 text-green-400 shrink-0" />
+  if (failed) return <X className="w-3.5 h-3.5 text-red-400 shrink-0" />
+  return <Copy className="w-3.5 h-3.5 text-theme-text-tertiary shrink-0" />
+}
+
+function UpdateIcon({ state }: { state: DesktopUpdateState }) {
+  switch (state) {
+    case 'downloading':
+    case 'applying':
+      return <Loader2 className="w-4 h-4 text-accent animate-spin" />
+    case 'ready':
+      return <ArrowDownToLine className="w-4 h-4 text-green-400" />
+    default:
+      return <Download className="w-4 h-4 text-accent" />
+  }
+}
+
+function UpdateTitle({ state }: { state: DesktopUpdateState }) {
+  switch (state) {
+    case 'ready':
+      return <>更新已就绪</>
+    case 'applying':
+      return <>正在应用更新…</>
+    default:
+      return <>有可用更新</>
+  }
+}
+
+// DesktopUpdateControls renders the update action area for desktop installs.
+function DesktopUpdateControls({
+  state,
+  progress,
+  error,
+  starting,
+  onStart,
+  onApply,
+  onRetry,
+}: {
+  state: DesktopUpdateState
+  progress?: number
+  error?: string
+  starting?: boolean
+  onStart: () => void
+  onApply: () => void
+  onRetry: () => void
+}) {
+  switch (state) {
+    case 'idle':
+      return (
+        <button
+          onClick={onStart}
+          disabled={starting}
+          className="mt-2 px-3 py-1.5 btn-brand text-xs font-medium rounded"
+        >
+          {starting ? (
+            <span className="inline-flex items-center gap-1.5">
+              <Loader2 className="w-3 h-3 animate-spin" />
+              Starting...
+            </span>
+          ) : (
+            'Update Now'
+          )}
+        </button>
+      )
+
+    case 'downloading':
+      return (
+        <div className="mt-2 space-y-1">
+          <div className="w-full bg-theme-elevated rounded-full h-1.5 overflow-hidden">
+            <div
+              className="bg-accent h-full rounded-full transition-all duration-300"
+              style={{ width: `${Math.round((progress ?? 0) * 100)}%` }}
+            />
+          </div>
+          <p className="text-xs text-theme-text-tertiary">
+            Downloading... {Math.round((progress ?? 0) * 100)}%
+          </p>
+        </div>
+      )
+
+    case 'ready':
+      return (
+        <div className="mt-2 flex gap-2">
+          <button
+            onClick={onApply}
+            className="px-3 py-1.5 bg-green-600 hover:bg-green-500 text-white text-xs font-medium rounded transition-colors"
+          >
+            Restart Now
+          </button>
+        </div>
+      )
+
+    case 'applying':
+      return (
+        <div className="mt-2 flex items-center gap-2">
+          <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
+          <p className="text-xs text-theme-text-secondary">正在应用更新…</p>
+        </div>
+      )
+
+    case 'error':
+      return (
+        <div className="mt-2 space-y-1.5">
+          {!starting && <p className="text-xs text-red-400">{error || 'Update failed'}</p>}
+          <button
+            onClick={onRetry}
+            disabled={starting}
+            className="inline-flex items-center gap-1 px-3 py-1.5 bg-theme-elevated hover:bg-theme-surface-hover text-xs font-medium text-theme-text-primary rounded transition-colors disabled:opacity-50"
+          >
+            {starting ? (
+              <Loader2 className="w-3 h-3 animate-spin" />
+            ) : (
+              <RotateCw className="w-3 h-3" />
+            )}
+            {starting ? 'Starting...' : 'Retry'}
+          </button>
+        </div>
+      )
+  }
+}

@@ -1,0 +1,394 @@
+import {
+  type IssueRecentChange,
+  displayKind,
+  englishPlural,
+  kindToPlural,
+} from "@maomada/k8s-ui";
+import { apiVersionToGroup } from "../../../../utils/navigation";
+import {
+  ProjectionBuilder,
+  addChanges,
+  addEvents,
+  addNarrowHint,
+  addResourceObservation,
+  contextFrom,
+  invalidPayload,
+  relevanceForResource,
+  scopeFromArgs,
+} from "../observations";
+import {
+  event,
+  kubernetesResource,
+  nonEmptyString,
+  parseJSON,
+  recentChange,
+  record,
+  resourceSummary,
+  stringArray,
+} from "../parse";
+import {
+  type InvestigationEventEvidence,
+  type InvestigationEvidenceSource,
+  type InvestigationResourceSummary,
+} from "../types";
+
+export function adaptGetResource(
+  builder: ProjectionBuilder,
+  source: InvestigationEvidenceSource,
+  payload: unknown,
+): void {
+  // Current producer modes are discriminated by the resource's own identity,
+  // never by guessing an undocumented legacy wrapper:
+  //   1. bare Kubernetes resource
+  //   2. {resource, resourceContext, warnings}
+  //   3. the same wrapper with requested extras.
+  // Core Secrets use the producer's deliberately value-free detail shape,
+  // normalized by kubernetesResource above.
+  const bare = kubernetesResource(payload);
+  const wrapper = record(payload);
+  const resource = bare ?? kubernetesResource(wrapper?.resource);
+  if (!resource) {
+    invalidPayload(builder, source);
+    return;
+  }
+  const value = bare ? undefined : wrapper;
+  const context = value ? contextFrom(value.resourceContext) : undefined;
+  if (value?.resourceContext !== undefined && !context) {
+    invalidPayload(builder, source, "Resource context");
+  }
+  const warnings = stringArray(value?.warnings) ?? [];
+  const relevance = relevanceForResource(builder, {
+    kind: resource.kind,
+    group: apiVersionToGroup(resource.apiVersion),
+    namespace: resource.metadata.namespace,
+    name: resource.metadata.name,
+  });
+  addResourceObservation(
+    builder,
+    source,
+    resource,
+    context,
+    warnings,
+    undefined,
+    false,
+    relevance,
+  );
+  if (!value) return;
+  addNarrowHint(builder, source, value);
+
+  const errors: Array<[string, string]> = [
+    ["eventsError", "Events"],
+    ["recentChangesError", "Recent changes"],
+    ["metricsError", "Metrics"],
+    ["revisionsError", "Revisions"],
+    ["includeError", "Requested include"],
+  ];
+  for (const [field, label] of errors) {
+    if (nonEmptyString(value[field])) {
+      builder.limit(source, label, value[field] as string, "error");
+    }
+  }
+
+  if (Array.isArray(value.events)) {
+    const events = value.events
+      .map(event)
+      .filter((item): item is InvestigationEventEvidence => Boolean(item));
+    if (events.length === value.events.length) {
+      addEvents(
+        builder,
+        source,
+        events,
+        `events:get-resource:${scopeFromArgs(source)}`,
+        (typeof value.eventsTotalGroups !== "number" ||
+          value.eventsTotalGroups <= events.length) &&
+          !nonEmptyString(value.eventsError),
+        true,
+        relevance,
+      );
+      if (
+        typeof value.eventsTotalGroups === "number" &&
+        value.eventsTotalGroups > events.length
+      ) {
+        builder.limit(
+          source,
+          "Events",
+          `KubeAtlas received ${events.length} of ${value.eventsTotalGroups} event groups.`,
+          "truncated",
+        );
+      }
+    } else {
+      invalidPayload(builder, source, "Events");
+    }
+  }
+  const resourceChangesSubject = {
+    kind: resource.kind,
+    namespace: resource.metadata.namespace,
+    name: resource.metadata.name,
+  };
+  const recentChangesRaw = value.recentChanges;
+  const recentChangesSaturatedRaw = value.recentChangesSaturated;
+  const recentChangesCoverageLimitedRaw = value.recentChangesCoverageLimited;
+  const hasRecentChangesResult =
+    recentChangesRaw !== undefined ||
+    recentChangesSaturatedRaw !== undefined ||
+    recentChangesCoverageLimitedRaw !== undefined;
+  const recentChangesMetadataValid =
+    typeof recentChangesSaturatedRaw === "boolean" &&
+    typeof recentChangesCoverageLimitedRaw === "boolean";
+  if (hasRecentChangesResult && !recentChangesMetadataValid) {
+    invalidPayload(builder, source, "Recent changes");
+  }
+  if (Array.isArray(recentChangesRaw)) {
+    const changes = recentChangesRaw
+      .map(recentChange)
+      .filter((item): item is IssueRecentChange => Boolean(item));
+    if (changes.length === recentChangesRaw.length) {
+      addChanges(
+        builder,
+        source,
+        changes,
+        `changes:get-resource:${scopeFromArgs(source)}`,
+        undefined,
+        recentChangesMetadataValid &&
+          recentChangesSaturatedRaw === false &&
+          recentChangesCoverageLimitedRaw === false &&
+          !nonEmptyString(value.recentChangesError),
+        true,
+        relevance,
+        resourceChangesSubject,
+      );
+    } else {
+      invalidPayload(builder, source, "Recent changes");
+    }
+  } else if (
+    recentChangesRaw === undefined &&
+    recentChangesMetadataValid &&
+    !nonEmptyString(value.recentChangesError)
+  ) {
+    addChanges(
+      builder,
+      source,
+      [],
+      `changes:get-resource:${scopeFromArgs(source)}`,
+      undefined,
+      recentChangesSaturatedRaw === false &&
+        recentChangesCoverageLimitedRaw === false,
+      true,
+      relevance,
+      resourceChangesSubject,
+    );
+  } else if (recentChangesRaw !== undefined) {
+    invalidPayload(builder, source, "Recent changes");
+  }
+  if (recentChangesSaturatedRaw === true) {
+    builder.limit(
+      source,
+      "Recent changes",
+      "The recent-change result limit was reached; additional changes may exist in the requested window.",
+      "truncated",
+    );
+  }
+  if (recentChangesCoverageLimitedRaw === true) {
+    builder.limit(
+      source,
+      "Recent changes",
+      `Change history for ${scopeFromArgs(source)} is incomplete.`,
+      "unknown",
+      "history",
+    );
+  }
+}
+// A namespace listing is an inventory like any other; its entries carry no
+// kind of their own, so the card gets one.
+export function adaptListNamespaces(
+  builder: ProjectionBuilder,
+  source: InvestigationEvidenceSource,
+  payload: unknown,
+): void {
+  if (!Array.isArray(payload)) {
+    invalidPayload(builder, source);
+    return;
+  }
+  adaptListResources(
+    builder,
+    source,
+    payload.map((entry) => {
+      const item = record(entry);
+      return item
+        ? {
+            kind: "Namespace",
+            name: item.name,
+            status: item.status,
+            terminating: item.status === "Terminating",
+          }
+        : entry;
+    }),
+  );
+}
+
+// list_resources arrives as `{summary, coverage, items}`. summary says in
+// words what the rows cover and what was not read; coverage.read names the
+// namespaces KubeAtlas read when that is a namespace set. A bare array is an older
+// KubeAtlas's list (or a run recorded from one): it carries no coverage, so
+// nothing about it may read as complete.
+type ListCoverage = {
+  partial: boolean;
+  narrowed: boolean;
+  /** Set when KubeAtlas read a finite namespace set: rows prove nothing outside it. */
+  namespacesRead?: string[];
+  namespacesReadOmitted: number;
+  summary: string;
+};
+
+function listedRows(
+  payload: unknown,
+): { rows: unknown[]; coverage?: ListCoverage } | undefined {
+  if (Array.isArray(payload)) return { rows: payload };
+  const value = record(payload);
+  const coverage = record(value?.coverage);
+  const status = coverage?.status;
+  if (
+    !value ||
+    !Array.isArray(value.items) ||
+    !nonEmptyString(value.summary) ||
+    (status !== "complete" && status !== "partial")
+  ) {
+    return undefined;
+  }
+  const summary = value.summary;
+  const read = record(coverage?.read);
+  const narrowed =
+    Array.isArray(coverage?.narrowedBy) && coverage.narrowedBy.length > 0;
+  if (read?.type !== "namespaces") {
+    return {
+      rows: value.items,
+      coverage: {
+        partial: status === "partial",
+        narrowed,
+        namespacesReadOmitted: 0,
+        summary,
+      },
+    };
+  }
+  // A set lists every name or, when it is too large, none: then which
+  // namespaces were read is unknown and only the count is.
+  const set = record(read.namespaces);
+  const count = set?.count;
+  const names = set?.names === undefined ? [] : stringArray(set.names);
+  if (
+    !names ||
+    typeof count !== "number" ||
+    !Number.isInteger(count) ||
+    (set?.names !== undefined && names.length !== count)
+  ) {
+    return undefined;
+  }
+  return {
+    rows: value.items,
+    coverage: {
+      partial: status === "partial",
+      narrowed,
+      namespacesRead: names,
+      namespacesReadOmitted: count - names.length,
+      summary,
+    },
+  };
+}
+
+export function adaptListResources(
+  builder: ProjectionBuilder,
+  source: InvestigationEvidenceSource,
+  payload: unknown,
+  options: { title?: string } = {},
+): void {
+  const listed = listedRows(payload);
+  if (!listed) {
+    invalidPayload(builder, source);
+    return;
+  }
+  const { rows, coverage } = listed;
+  const namespacesRead = coverage?.namespacesRead;
+  const namespacesReadCount =
+    (namespacesRead?.length ?? 0) + (coverage?.namespacesReadOmitted ?? 0);
+  const resources = rows
+    .map(resourceSummary)
+    .filter((item): item is InvestigationResourceSummary => Boolean(item));
+  if (resources.length !== rows.length) {
+    invalidPayload(builder, source);
+    return;
+  }
+  const scope = scopeFromArgs(source);
+  const args = record(parseJSON(source.args ?? ""));
+  const kinds = [...new Set(resources.map((resource) => resource.kind))];
+  const noun =
+    kinds.length === 1
+      ? kindToPlural(kinds[0]) === kinds[0].toLowerCase()
+        ? displayKind(kinds[0])
+        : englishPlural(displayKind(kinds[0]))
+      : "Resources";
+  const namespace = nonEmptyString(args?.namespace)
+    ? args.namespace
+    : undefined;
+  const title = options.title ?? (namespace ? `${noun} in ${namespace}` : noun);
+  if (resources.length === 0) {
+    // An older KubeAtlas returns [] for some RBAC-filtered reads, so a bare array
+    // cannot prove absence. Otherwise the copy is the server's summary: the
+    // requested kind may be an alias ("svc"), and the summary names the
+    // resource it resolved.
+    builder.limit(
+      source,
+      "Resource inventory",
+      !coverage
+        ? `KubeAtlas found no matching resources for ${scope}. Anything you do not have permission to read was not searched.`
+        : coverage.summary,
+      "unknown",
+    );
+    return;
+  }
+  const hasAdverseResource = resources.some((resource) => {
+    const health = resource.summaryContext?.health?.toLowerCase();
+    return (
+      health === "unhealthy" ||
+      health === "degraded" ||
+      (resource.summaryContext?.issueCount ?? 0) > 0 ||
+      nonEmptyString(resource.issue)
+    );
+  });
+  // Listings of different things share an argument shape (a cluster-wide
+  // package list and a cluster-wide Helm list are both "{}"), so the tool is
+  // part of what makes one listing the same card as an earlier read.
+  builder.observe(
+    `inventory:${source.tool}:${source.args ?? scope}`,
+    "inventory",
+    source,
+    {
+      tier: "context",
+      relevance: "broader",
+      tone: hasAdverseResource ? "warning" : "neutral",
+      title,
+      summary: [
+        `${resources.length} returned`,
+        nonEmptyString(args?.group) ? args.group : undefined,
+        namespacesRead && (coverage?.partial || coverage?.narrowed)
+          ? `only ${namespacesReadCount > 2 ? `${namespacesReadCount} namespaces` : namespacesRead.join(", ")} read`
+          : undefined,
+      ]
+        .filter(Boolean)
+        .join(" · "),
+      data: {
+        type: "inventory",
+        resources,
+        scope,
+        ...(namespacesRead
+          ? {
+              namespacesRead,
+              namespacesReadOmitted: coverage!.namespacesReadOmitted,
+            }
+          : {}),
+        ...(coverage && (coverage.partial || coverage.narrowed)
+          ? { coverageNote: coverage.summary }
+          : {}),
+      },
+    },
+  );
+}

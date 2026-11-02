@@ -1,0 +1,169 @@
+import type { ReactNode } from 'react'
+import { Activity, Cpu } from 'lucide-react'
+import { clsx } from 'clsx'
+import { Section, PropertyList, Property, ConditionsSection, ResourceLink, LabelSelectorDisplay, type ConditionTone } from '../../ui/drawer-components'
+import { Badge } from '../../ui/Badge'
+import { objectReferenceToResourceRef, apiVersionToGroup } from '../../../utils/navigation'
+import type { ResourceRef } from '../../../types'
+import { TimeValue } from '../../ui/ScheduleValue'
+import { HPADiagnosisSummary } from '../HPADiagnosisSummary'
+import type { HPADiagnosis } from '../../../types'
+
+interface HPARendererProps {
+  data: any
+  onNavigate?: (ref: ResourceRef) => void
+  hpaDiagnosis?: HPADiagnosis
+  /** Optional host-provided section rendered after Conditions — used to inject Prometheus-backed charts. */
+  extraSections?: ReactNode
+}
+
+function hpaConditionTone(condition: any): ConditionTone | undefined {
+  if (condition?.type === 'ScaledToZero') {
+    if (condition.status === 'False') return 'ok'
+    if (condition.status === 'True') return 'unknown'
+    return 'unknown'
+  }
+  if (condition?.type !== 'ScalingLimited') return undefined
+  if (condition.status === 'False') return 'ok'
+  if (condition.status !== 'True') return 'unknown'
+
+  const reason = String(condition.reason ?? '').toLowerCase()
+  const message = String(condition.message ?? '').toLowerCase()
+  if (reason.includes('toomany') || message.includes('maximum')) return 'warning'
+  if (reason.includes('toofew') || message.includes('minimum')) return 'ok'
+  return 'warning'
+}
+
+export function HPARenderer({ data, onNavigate, hpaDiagnosis, extraSections }: HPARendererProps) {
+  const status = data.status || {}
+  const spec = data.spec || {}
+  const metrics = status.currentMetrics || []
+  const namespace = data.metadata?.namespace
+  const targetRef = spec.scaleTargetRef || {}
+  const target = objectReferenceToResourceRef({ ...targetRef, namespace })
+  const hasDiagnosisMetrics = !!hpaDiagnosis?.metrics?.length
+  const objectMetrics = (spec.metrics || []).filter((metric: any) => metric.type === 'Object' && metric.object)
+
+  return (
+    <>
+      {hpaDiagnosis && (
+        <Section title="诊断" icon={Activity}>
+          <HPADiagnosisSummary diagnosis={hpaDiagnosis} variant="detail" />
+        </Section>
+      )}
+
+      <Section title="扩缩容" icon={Cpu}>
+        <PropertyList>
+          <Property label="目标" value={
+            targetRef.name ? (target ? (
+              <ResourceLink {...target} label={`${targetRef.kind}/${targetRef.name}`} onNavigate={onNavigate} />
+            ) : `${targetRef.kind || 'Unknown kind'}/${targetRef.name}`) : undefined
+          } />
+          <Property label="当前副本数" value={status.currentReplicas} />
+          <Property label="期望副本数" value={status.desiredReplicas} />
+          <Property label="最小值" value={spec.minReplicas ?? 1} />
+          <Property label="最大值" value={spec.maxReplicas} />
+          {status.lastScaleTime && <Property label="上次扩缩容" value={<TimeValue timestamp={status.lastScaleTime} />} />}
+        </PropertyList>
+      </Section>
+
+      {hpaDiagnosis?.metrics && hpaDiagnosis.metrics.length > 0 && (
+        <Section title="指标" defaultExpanded>
+          <div className="space-y-2">
+            {hpaDiagnosis.metrics.map((metric, index) => (
+              <div key={`${metric.type}-${metric.name}-${index}`} className="card-inner">
+                <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                  <div>
+                    <div className="font-medium text-theme-text-primary break-words">{spec.metrics?.[index]?.type === 'Object' ? spec.metrics[index].object.metric.name : metric.name}</div>
+                    <div className="text-xs text-theme-text-tertiary">{metric.type}</div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2 text-xs text-theme-text-secondary">
+                    {metric.current && <span>当前值 {metric.current}</span>}
+                    {metric.target && <span>目标值 {metric.target}</span>}
+                    <Badge severity={metric.status === 'ok' ? 'success' : metric.status === 'missing' ? 'warning' : 'neutral'} size="sm">
+                      {metric.status.replace(/_/g, ' ')}
+                    </Badge>
+                  </div>
+                </div>
+                {spec.metrics?.[index]?.type === 'Object' && (
+                  <div className="mt-2">
+                    <HPAObjectMetricSource object={spec.metrics[index].object} namespace={namespace} onNavigate={onNavigate} />
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      {!hpaDiagnosis?.metrics?.length && metrics.length > 0 && (
+        <Section title="指标" defaultExpanded>
+          <div className="space-y-3">
+            {metrics.map((metric: any, i: number) => {
+              const current = metric.resource?.current?.averageUtilization || metric.resource?.current?.averageValue
+              const target = spec.metrics?.[i]?.resource?.target?.averageUtilization || spec.metrics?.[i]?.resource?.target?.averageValue
+              return (
+                <div key={i} className="card-inner">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-theme-text-primary">{metric.resource?.name || metric.type}</span>
+                    <span className="text-theme-text-secondary">{current}{typeof current === 'number' ? '%' : ''} / {target}{typeof target === 'number' ? '%' : ''}</span>
+                  </div>
+                  {typeof current === 'number' && typeof target === 'number' && (
+                    <div className="mt-2 h-2 bg-theme-hover rounded overflow-hidden">
+                      <div
+                        className={clsx(
+                          'h-full transition-all',
+                          current > target ? 'bg-red-500' : current > target * 0.8 ? 'bg-yellow-500' : 'bg-green-500'
+                        )}
+                        style={{ width: `${Math.min(100, (current / target) * 100)}%` }}
+                      />
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </Section>
+      )}
+
+      {!hasDiagnosisMetrics && objectMetrics.length > 0 && (
+        <Section title="对象指标来源" defaultExpanded>
+          <div className="space-y-3">
+            {objectMetrics.map((metric: any, i: number) => (
+              <div key={`${metric.object.metric.name}-${i}`} className="card-inner">
+                <HPAObjectMetricSource object={metric.object} namespace={namespace} onNavigate={onNavigate} showMetric />
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
+      <ConditionsSection conditions={status.conditions} getConditionTone={hpaConditionTone} />
+
+      {extraSections}
+    </>
+  )
+}
+
+function HPAObjectMetricSource({ object, namespace, onNavigate, showMetric = false }: {
+  object: any
+  namespace?: string
+  onNavigate?: (ref: ResourceRef) => void
+  showMetric?: boolean
+}) {
+  const described = object.describedObject || {}
+  const namespaceMetric = described.kind === 'Namespace' && apiVersionToGroup(described.apiVersion) === ''
+  const name = namespaceMetric ? namespace : described.name
+  const source = objectReferenceToResourceRef({ ...described, name, namespace })
+  return (
+    <PropertyList>
+      {showMetric && <Property label="指标" value={object.metric.name} />}
+      <Property label="Object" value={source ? (
+        <ResourceLink {...source} label={`${described.kind}/${name}`} onNavigate={onNavigate} />
+      ) : described.name ? `${described.kind || 'Unknown kind'}/${described.name}` : undefined} />
+      {source?.group && <Property label="API Group" value={source.group} />}
+      {object.metric.selector && <Property label="选择器" value={<LabelSelectorDisplay selector={object.metric.selector} />} />}
+      {namespaceMetric && <Property label="范围" value="此 HPA 的命名空间" />}
+    </PropertyList>
+  )
+}

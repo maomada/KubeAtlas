@@ -1,0 +1,234 @@
+package k8score
+
+import (
+	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
+
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+	policyv1 "k8s.io/api/policy/v1"
+	storagev1 "k8s.io/api/storage/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+)
+
+const lastAppliedAnnotation = "kubectl.kubernetes.io/last-applied-configuration"
+
+// HelmReleaseSecretType is the type Helm gives the Secrets that store
+// releases, one Secret per revision.
+const HelmReleaseSecretType corev1.SecretType = "helm.sh/release.v1"
+
+// DropManagedFields is a SharedInformer transform that reduces memory usage
+// by removing managedFields and heavy annotations from cached objects.
+// This is the union of transforms used by both Radar and skyhook-connector.
+//
+// It also replaces each value of a Helm release Secret (see
+// IsHelmReleaseSecret) with a digest of it. Each value is a full encoded
+// release, typically 30-400KB, and Helm keeps up to 10 revisions per release
+// by default, so on a Helm-heavy cluster they are most of the cache. Keys stay,
+// so key counts and key names are unchanged, and a changed value still
+// compares as changed. The digests are not Secret data: anything that serves
+// a cached Helm release Secret must use WithoutHelmReleaseValues, and
+// anything that needs a value must read the Secret from the API server.
+func DropManagedFields(obj any) (any, error) {
+	if meta, ok := obj.(metav1.Object); ok {
+		meta.SetManagedFields(nil)
+	}
+
+	if secret, ok := obj.(*corev1.Secret); ok && IsHelmReleaseSecret(secret) {
+		for key, value := range secret.Data {
+			// Watch-list informers run the transform twice on objects present
+			// at startup, so a value may already be a digest.
+			if !isHelmReleaseValueDigest(value) {
+				secret.Data[key] = helmReleaseValueDigest(value)
+			}
+		}
+	}
+
+	// Special handling for Events — aggressively strip to essentials
+	if event, ok := obj.(*corev1.Event); ok {
+		return &corev1.Event{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:              event.Name,
+				Namespace:         event.Namespace,
+				UID:               event.UID,
+				ResourceVersion:   event.ResourceVersion,
+				CreationTimestamp: event.CreationTimestamp,
+			},
+			InvolvedObject: event.InvolvedObject,
+			Reason:         event.Reason,
+			Message:        event.Message,
+			Type:           event.Type,
+			Count:          event.Count,
+			FirstTimestamp: event.FirstTimestamp,
+			LastTimestamp:  event.LastTimestamp,
+			// Events recorded through events.k8s.io carry their times here
+			// instead of in First/LastTimestamp.
+			EventTime: event.EventTime,
+			Series:    event.Series,
+		}, nil
+	}
+
+	// Drop heavy annotations from common resources
+	switch obj.(type) {
+	case *corev1.Pod, *corev1.Service, *corev1.Node, *corev1.Namespace,
+		*corev1.PersistentVolumeClaim, *corev1.PersistentVolume,
+		*corev1.ConfigMap, *corev1.Secret, *corev1.ServiceAccount,
+		*appsv1.Deployment, *appsv1.DaemonSet, *appsv1.StatefulSet, *appsv1.ReplicaSet,
+		*networkingv1.Ingress, *networkingv1.IngressClass,
+		*batchv1.Job, *batchv1.CronJob,
+		*autoscalingv2.HorizontalPodAutoscaler,
+		*policyv1.PodDisruptionBudget, *storagev1.StorageClass:
+		if meta, ok := obj.(metav1.Object); ok && meta.GetAnnotations() != nil {
+			delete(meta.GetAnnotations(), lastAppliedAnnotation)
+		}
+	}
+
+	return obj, nil
+}
+
+// IsHelmReleaseSecret reports whether secret is a Helm release Secret. The
+// informer cache holds these with digests in place of their values (see
+// DropManagedFields).
+func IsHelmReleaseSecret(secret *corev1.Secret) bool {
+	return secret != nil && secret.Type == HelmReleaseSecretType
+}
+
+// WithoutHelmReleaseValues returns secret as it may be served from the
+// cache: for a Helm release Secret, a copy whose keys have no values; any
+// other Secret unchanged. It never modifies secret.
+func WithoutHelmReleaseValues(secret *corev1.Secret) *corev1.Secret {
+	if !IsHelmReleaseSecret(secret) || len(secret.Data) == 0 {
+		return secret
+	}
+	out := *secret
+	out.Data = make(map[string][]byte, len(secret.Data))
+	for key := range secret.Data {
+		out.Data[key] = nil
+	}
+	return &out
+}
+
+const helmReleaseDigestPrefix = "radar-cache-digest:sha256:"
+
+func helmReleaseValueDigest(value []byte) []byte {
+	sum := sha256.Sum256(value)
+	return []byte(helmReleaseDigestPrefix + hex.EncodeToString(sum[:]))
+}
+
+func isHelmReleaseValueDigest(value []byte) bool {
+	return len(value) == len(helmReleaseDigestPrefix)+2*sha256.Size && bytes.HasPrefix(value, []byte(helmReleaseDigestPrefix))
+}
+
+// DropUnstructuredManagedFields is the dynamic-cache counterpart of
+// DropManagedFields. It's the SharedInformer transform for dynamic
+// informers — which carry *unstructured.Unstructured — and mirrors the
+// typed-cache transform's intent: shrink cached objects before they hit
+// the store.
+//
+// Mutates in-place. This is correct here: SharedInformer transforms run
+// exactly once per object before the cache stores it, and the object is
+// not visible to any other reader until after the transform returns. Do
+// NOT call this from places that hand you an object off the cache —
+// those need StripUnstructuredFields which deep-copies.
+//
+// Always strips:
+//   - metadata.managedFields
+//   - kubectl.kubernetes.io/last-applied-configuration. GitOps drift
+//     detection needs this annotation, but it pulls live objects via a
+//     dedicated direct-GET path (DynamicResourceCache.GetDirectPreserveLastApplied)
+//     so the informer cache never has to retain it — which matters
+//     because the dynamic cache can host core kinds (apps/Deployment,
+//     /v1/Service, etc.) referenced from an Argo Application's
+//     status.resources, where retaining last-applied across every object
+//     cluster-wide would be a meaningful memory regression to power a
+//     per-page diagnostic.
+//
+// For CustomResourceDefinitions specifically, also strips:
+//   - spec.versions[].schema — the OpenAPI v3 schema. On operator-heavy
+//     clusters a single CRD's schema is 50-100KB (ArgoCD, cert-manager,
+//     Istio) and 100+ CRDs easily produce a multi-MB list response.
+//     Radar doesn't render CRD schemas; a future "inspect CRD schema"
+//     feature should fetch fresh from the API server.
+//   - spec.conversion — webhook config. Not rendered.
+//
+// Explicitly preserves:
+//   - spec.versions[].name and served/storage/deprecated flags
+//   - spec.versions[].additionalPrinterColumns — drives column hints
+//   - spec.group, spec.names, spec.scope, status.*
+func DropUnstructuredManagedFields(obj any) (any, error) {
+	u, ok := obj.(*unstructured.Unstructured)
+	if !ok {
+		// Dynamic informer should never hand us anything else, but be
+		// defensive — return the object unchanged rather than erroring,
+		// because a transform error is fatal for the informer.
+		return obj, nil
+	}
+
+	unstructured.RemoveNestedField(u.Object, "metadata", "managedFields")
+	unstructured.RemoveNestedField(u.Object, "metadata", "annotations", lastAppliedAnnotation)
+
+	if u.GetKind() == "CustomResourceDefinition" {
+		// Strip .schema from each version entry. Preserve everything
+		// else (name, served, storage, deprecated, additionalPrinterColumns).
+		if versions, found, _ := unstructured.NestedSlice(u.Object, "spec", "versions"); found {
+			for i, v := range versions {
+				vm, ok := v.(map[string]any)
+				if !ok {
+					continue
+				}
+				delete(vm, "schema")
+				versions[i] = vm
+			}
+			// SetNestedSlice can only fail on non-serializable types; slices
+			// of map[string]any are always fine. Ignoring the error is safe.
+			_ = unstructured.SetNestedSlice(u.Object, versions, "spec", "versions")
+		}
+
+		// spec.conversion holds the webhook clientConfig (caBundle + URL)
+		// for conversion webhooks. Not rendered by Radar.
+		unstructured.RemoveNestedField(u.Object, "spec", "conversion")
+	}
+
+	return u, nil
+}
+
+// StripUnstructuredFields removes managedFields and heavy internal annotations
+// from a deep copy of an unstructured object, so outward readers never leak a
+// full desired manifest through last-applied. The informer transform already
+// drops it from cached objects; GitOps drift reads it through
+// GetDirectPreserveLastApplied instead.
+func StripUnstructuredFields(u *unstructured.Unstructured) *unstructured.Unstructured {
+	return stripUnstructuredFields(u, false)
+}
+
+// StripUnstructuredFieldsPreserveLastApplied removes managedFields from a deep
+// copy while preserving kubectl last-applied. Use only for internal drift
+// computation paths; API/UI/MCP payloads should call StripUnstructuredFields.
+func StripUnstructuredFieldsPreserveLastApplied(u *unstructured.Unstructured) *unstructured.Unstructured {
+	return stripUnstructuredFields(u, true)
+}
+
+func stripUnstructuredFields(u *unstructured.Unstructured, preserveLastApplied bool) *unstructured.Unstructured {
+	if u == nil {
+		return nil
+	}
+
+	cp := u.DeepCopy()
+	unstructured.RemoveNestedField(cp.Object, "metadata", "managedFields")
+	if !preserveLastApplied {
+		if annotations := cp.GetAnnotations(); annotations != nil {
+			delete(annotations, lastAppliedAnnotation)
+			if len(annotations) == 0 {
+				cp.SetAnnotations(nil)
+			} else {
+				cp.SetAnnotations(annotations)
+			}
+		}
+	}
+	return cp
+}

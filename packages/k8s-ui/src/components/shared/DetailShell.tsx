@@ -1,0 +1,191 @@
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { clsx } from 'clsx'
+
+// Shared tabbed detail chrome. Hosts provide all data-aware pieces; this owns
+// only the header, tab strip, optional controls, overlay, and content frame.
+export interface DetailShellTab<TId extends string = string> {
+  id: TId
+  label: string
+  icon?: ReactNode
+  /** Trailing adornment after the label, e.g. an event count badge. */
+  badge?: ReactNode
+  /** Omit the tab from the strip without disturbing the others' identity. */
+  hidden?: boolean
+}
+
+export interface DetailShellProps<TId extends string = string> {
+  /**
+   * A thin breadcrumb line above the identity header (the parent path —
+   * ends at the current entity's parent, since the identity title already
+   * names the entity). Hosted surfaces use this instead of `nav`.
+   */
+  breadcrumb?: ReactNode
+  /** Inline leading control on the identity row — a back button in standalone Radar. */
+  nav?: ReactNode
+  identity: ReactNode
+  headerActions?: ReactNode
+  /** A line under the identity row, above the tabs — e.g. a status summary that holds on every tab. */
+  subheader?: ReactNode
+  scopeControls?: ReactNode
+  tabs: DetailShellTab<TId>[]
+  activeTab: TId
+  onTabChange: (id: TId) => void
+  tabStripEnd?: ReactNode
+  overlay?: ReactNode
+  /** Hide breadcrumb/identity/header actions when a host page already owns that chrome. */
+  compactHeader?: boolean
+  /**
+   * Let the header actions wrap below the identity, as one group, when both
+   * do not fit — for an identity that packs a lot onto its title line.
+   */
+  wrapHeader?: boolean
+  children: ReactNode
+}
+
+export function DetailShell<TId extends string = string>({
+  breadcrumb,
+  nav,
+  identity,
+  headerActions,
+  subheader,
+  scopeControls,
+  tabs,
+  activeTab,
+  onTabChange,
+  tabStripEnd,
+  overlay,
+  compactHeader = false,
+  wrapHeader = false,
+  children,
+}: DetailShellProps<TId>) {
+  const visibleTabs = tabs.filter((t) => !t.hidden)
+  const { stripRef, compact } = useCompactTabs(visibleTabs.map((t) => `${t.id}:${t.label}:${!!t.badge}`).join('|'))
+
+  useLayoutEffect(() => {
+    const strip = stripRef.current
+    const active = strip?.querySelector<HTMLElement>('[aria-selected="true"]')
+    if (strip && active) {
+      const left = active.offsetLeft - strip.offsetLeft
+      if (left < strip.scrollLeft) strip.scrollLeft = left
+      else if (left + active.offsetWidth > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = left + active.offsetWidth - strip.clientWidth
+    }
+  }, [activeTab, compact])
+
+  return (
+    <div className="flex flex-col h-full w-full bg-theme-base">
+      {/* Header */}
+      <div className="shrink-0 border-b border-theme-border bg-theme-base">
+        {!compactHeader && (
+          <>
+            {breadcrumb && <div className="px-6 pt-2.5 phone:px-4">{breadcrumb}</div>}
+            {/* Phones always wrap: the identity takes the row beside the back
+                button and the actions drop below it. */}
+            <div className={clsx('px-6 flex items-start gap-4 phone:px-4 phone:flex-wrap phone:gap-x-3 phone:gap-y-2', wrapHeader && 'flex-wrap gap-y-2', breadcrumb ? 'pb-3 pt-1.5' : 'py-3')}>
+              {nav}
+              {/* Wrapping on, the identity's basis is its one-line width, so the
+                  actions move below whenever the whole title line would not fit
+                  beside them — never squeezing the name to keep them up. */}
+              <div className={clsx('min-w-0 phone:basis-[calc(100%-3rem)]', wrapHeader ? 'flex-auto' : 'flex-1')}>{identity}</div>
+              {wrapHeader ? <div className="ml-auto flex shrink-0 items-start gap-4">{headerActions}</div> : headerActions}
+            </div>
+            {subheader && <div className="-mt-1 px-6 pb-3 phone:px-4">{subheader}</div>}
+          </>
+        )}
+
+        {/* Tabs (left) + scope controls / actions (right) */}
+        <div className={clsx('flex items-center phone:flex-wrap', compactHeader ? 'px-0' : 'border-t border-theme-border px-6 phone:px-4')}>
+          <div ref={stripRef} className={clsx('flex min-w-0 flex-auto overflow-x-auto phone:basis-full', compact ? 'gap-0' : 'gap-1')} role="tablist">
+            {visibleTabs.map((t) => (
+              <DetailShellTabButton key={t.id} active={activeTab === t.id} compact={compact} onClick={() => onTabChange(t.id)}>
+                {!compact && t.icon}
+                {t.label}
+                {t.badge}
+              </DetailShellTabButton>
+            ))}
+          </div>
+          {(scopeControls || tabStripEnd) && (
+            <div className="ml-auto flex min-w-0 flex-wrap items-center justify-end gap-2 pl-2 phone:py-2">
+              {scopeControls}
+              {tabStripEnd}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {overlay}
+
+      {/* Tab content */}
+      <div className="flex-1 overflow-hidden relative">{children}</div>
+    </div>
+  )
+}
+
+/**
+ * Drops the tab icons and tightens spacing only while the full strip does not
+ * fit, so a page with many tabs stays on one line at laptop widths and others
+ * keep their look. The width the strip needs with icons is measured while it
+ * shows them, so toggling cannot oscillate.
+ */
+function useCompactTabs(tabsKey: string) {
+  const stripRef = useRef<HTMLDivElement>(null)
+  const needed = useRef(0)
+  const [compact, setCompact] = useState(false)
+  useLayoutEffect(() => {
+    needed.current = 0
+    setCompact(false)
+  }, [tabsKey])
+  useLayoutEffect(() => {
+    const el = stripRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const childWidth = () => [...el.children].reduce((sum, child) => sum + child.getBoundingClientRect().width, 0)
+    let previousWidth = childWidth()
+    let followActive = true
+    const onScroll = () => {
+      const active = el.querySelector<HTMLElement>('[aria-selected="true"]')
+      if (!active) return
+      const left = active.offsetLeft - el.offsetLeft
+      followActive = left >= el.scrollLeft && left + active.offsetWidth <= el.scrollLeft + el.clientWidth
+    }
+    const measure = () => {
+      const width = childWidth()
+      if (compact) needed.current += width - previousWidth
+      previousWidth = width
+      if (!compact) needed.current = el.scrollWidth
+      const next = needed.current > el.clientWidth + 1
+      setCompact((prev) => (prev === next ? prev : next))
+      const active = el.querySelector<HTMLElement>('[aria-selected="true"]')
+      if (active && followActive) {
+        const left = active.offsetLeft - el.offsetLeft
+        if (left < el.scrollLeft) el.scrollLeft = left
+        else if (left + active.offsetWidth > el.scrollLeft + el.clientWidth) el.scrollLeft = left + active.offsetWidth - el.clientWidth
+      }
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    for (const child of el.children) ro.observe(child)
+    el.addEventListener('scroll', onScroll)
+    return () => { ro.disconnect(); el.removeEventListener('scroll', onScroll) }
+  }, [compact, tabsKey])
+  return { stripRef, compact }
+}
+
+function DetailShellTabButton({ active, compact, onClick, children }: { active: boolean; compact: boolean; onClick: () => void; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onClick}
+      className={clsx(
+        'flex shrink-0 items-center gap-1.5 whitespace-nowrap py-2 text-sm font-medium border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
+        compact ? 'px-2' : 'px-3',
+        active
+          ? 'text-theme-text-primary border-skyhook-500'
+          : 'text-theme-text-secondary border-transparent hover:text-theme-text-primary hover:border-theme-border-light',
+      )}
+    >
+      {children}
+    </button>
+  )
+}

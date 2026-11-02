@@ -1,0 +1,360 @@
+package main
+
+import (
+	"context"
+	"flag"
+	"fmt"
+	"log"
+	"net"
+	"os"
+	goruntime "runtime"
+	"strconv"
+	"time"
+
+	"github.com/maomada/KubeAtlas/internal/app"
+	"github.com/maomada/KubeAtlas/internal/cloud"
+	"github.com/maomada/KubeAtlas/internal/config"
+	"github.com/maomada/KubeAtlas/internal/desktopenv"
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/updater"
+	versionpkg "github.com/maomada/KubeAtlas/internal/version"
+	"github.com/wailsapp/wails/v2"
+	"github.com/wailsapp/wails/v2/pkg/options"
+	"github.com/wailsapp/wails/v2/pkg/options/assetserver"
+	"github.com/wailsapp/wails/v2/pkg/options/linux"
+	"github.com/wailsapp/wails/v2/pkg/options/mac"
+
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
+	"k8s.io/klog/v2"
+)
+
+var (
+	version = "dev"
+)
+
+// linuxGPUPolicy is declared once so the value the webview is configured with
+// and the value diagnostics reports can never drift apart.
+const linuxGPUPolicy = linux.WebviewGpuPolicyOnDemand
+
+func gpuPolicyName(p linux.WebviewGpuPolicy) string {
+	switch p {
+	case linux.WebviewGpuPolicyAlways:
+		return "always"
+	case linux.WebviewGpuPolicyOnDemand:
+		return "on-demand"
+	case linux.WebviewGpuPolicyNever:
+		return "never"
+	default:
+		return "unknown"
+	}
+}
+
+func main() {
+	// Load persistent config (~/.kubeatlas/config.json) for flag defaults.
+	fileCfg, err := config.LoadForStartup()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Parse flags (defaults come from config file, falling back to hardcoded values)
+	kubeconfig := flag.String("kubeconfig", fileCfg.Kubeconfig, "Path to primary kubeconfig file (default: ~/.kube/config)")
+	kubeconfigDir := flag.String("kubeconfig-dir", fileCfg.KubeconfigDirsFlag(), "Comma-separated directories containing additional kubeconfig files")
+	namespace := flag.String("namespace", fileCfg.Namespace, "Initial namespace filter (empty = all namespaces)")
+	namespaces := flag.String("namespaces", fileCfg.NamespacesFlag(), "Initial namespace filters as a comma-separated list (e.g. ns1,ns2,ns3). Use this when you can list resources in specific namespaces but cannot list namespaces cluster-wide.")
+	showVersion := flag.Bool("version", false, "Show version and exit")
+	historyLimit := flag.Int("history-limit", fileCfg.HistoryLimitOr(10000), "Maximum number of events to retain in timeline")
+	debugEvents := flag.Bool("debug-events", false, "Enable verbose event debugging")
+	fakeInCluster := flag.Bool("fake-in-cluster", false, "Simulate in-cluster mode for testing")
+	disableHelmWrite := flag.Bool("disable-helm-write", false, "Simulate restricted Helm permissions")
+	disableExec := flag.Bool("disable-exec", false, "Disable pod exec: terminal, debug shells and pod file browsing")
+	podShellDefault := flag.String("pod-shell-default", "", "Override the default pod exec shell command (runs as 'sh -c <value>'; empty = built-in bash -il → ash → sh cascade)")
+	timelineStorage := flag.String("timeline-storage", fileCfg.TimelineStorageOr("memory"), "Timeline storage backend: memory, sqlite, or postgres")
+	timelineDBPath := flag.String("timeline-db", fileCfg.TimelineDBPath, "Path to timeline database file (default: ~/.kubeatlas/timeline.db)")
+	timelineRetention := flag.Duration("timeline-retention", fileCfg.TimelineRetentionOr(7*24*time.Hour), "How long to retain timeline events when --timeline-storage=sqlite or postgres (e.g. 168h, 720h). 0 disables age-based cleanup.")
+	timelineMaxSize := flag.String("timeline-max-size", fileCfg.TimelineMaxSizeOr("1Gi"), "Maximum SQLite timeline storage size before pruning oldest events (e.g. 800Mi, 8Gi). 0 disables size-based pruning.")
+	prometheusURL := flag.String("prometheus-url", fileCfg.PrometheusURL, "Manual Prometheus/VictoriaMetrics URL (skips auto-discovery)")
+	openCostCurrency := flag.String("opencost-currency", fileCfg.OpenCostCurrency, "Override the ISO 4217 currency label for OpenCost values (empty: auto-detect, then USD)")
+	mcpFlags := config.RegisterMCPFlags(flag.CommandLine, fileCfg)
+	noVersionCheck := flag.Bool("no-version-check", fileCfg.NoVersionCheck, "Disable automatic checks for newer KubeAtlas versions and releases; manual Desktop checks remain available (also enabled via KUBEATLAS_DISABLE_VERSION_CHECK=1)")
+	flag.Parse()
+
+	if *noVersionCheck {
+		versionpkg.SetDisabled(true)
+	}
+
+	if *showVersion {
+		fmt.Printf("kubeatlas-desktop %s\n", version)
+		os.Exit(0)
+	}
+
+	mcpMode, err := mcpFlags.Resolve()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Suppress verbose client-go logs
+	klog.InitFlags(nil)
+	_ = flag.Set("v", "0")
+	_ = flag.Set("logtostderr", "false")
+	_ = flag.Set("alsologtostderr", "false")
+	klog.SetOutput(os.Stderr)
+
+	log.Printf("KubeAtlas Desktop %s starting...", version)
+
+	// Log Linux desktop environment (session type, render overrides) so bug
+	// reports for startup failures include the diagnostic context by default.
+	// No-op on macOS/Windows.
+	logBootEnv()
+
+	// Default WebKit on Linux to shared-memory buffers — DMABUF buffers
+	// produce blank windows on Wayland+KDE/NVIDIA. Must run before Wails
+	// initializes WebKit.
+	applyWebKitDefaults()
+
+	// GUI apps (macOS .app, Linux .desktop) get a minimal PATH that
+	// doesn't include user-installed tools like gke-gcloud-auth-plugin,
+	// gcloud, aws CLI, etc. Enrich PATH from the user's login shell.
+	enrichEnv()
+
+	// On Linux, detect system dark mode via xdg-desktop-portal D-Bus and
+	// set GTK_THEME so WebKitGTK's prefers-color-scheme media query works.
+	applySystemTheme()
+
+	kubeconfigFlagSet := false
+	kubeconfigDirsFlagSet := false
+	namespaceFlagSet := false
+	namespacesFlagSet := false
+	openCostCurrencyFlagSet := false
+	prometheusURLFlagSet := false
+	flag.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "kubeconfig":
+			kubeconfigFlagSet = true
+		case "kubeconfig-dir":
+			kubeconfigDirsFlagSet = true
+		case "namespace":
+			namespaceFlagSet = true
+		case "namespaces":
+			namespacesFlagSet = true
+		case "opencost-currency":
+			openCostCurrencyFlagSet = true
+		case "prometheus-url":
+			prometheusURLFlagSet = true
+		}
+	})
+	timelineMaxSizeBytes, err := config.ParseByteSize(*timelineMaxSize)
+	if err != nil {
+		log.Printf("ERROR: invalid --timeline-max-size %q: %v", *timelineMaxSize, err)
+		os.Exit(1)
+	}
+	normalizedOpenCostCurrency, err := config.NormalizeOpenCostCurrency(*openCostCurrency)
+	if err != nil {
+		log.Printf("ERROR: invalid --opencost-currency %q: %v", *openCostCurrency, err)
+		os.Exit(1)
+	}
+	enablePprof, err := config.PprofOverrideFromEnv()
+	if err != nil {
+		log.Fatal(err)
+	}
+	resolvedNamespace, resolvedNamespaces, err := app.ResolveNamespaceSelection(*namespace, *namespaces, namespaceFlagSet, namespacesFlagSet)
+	if err != nil {
+		log.Printf("ERROR: %v", err)
+		os.Exit(1)
+	}
+	if len(resolvedNamespaces) > k8s.MaxScopeCandidates {
+		log.Printf("ERROR: --namespaces lists %d namespaces but the RBAC probe fanout cap is %d", len(resolvedNamespaces), k8s.MaxScopeCandidates)
+		os.Exit(1)
+	}
+	resolvedKubeconfig, resolvedKubeconfigDirs := app.ResolveKubeconfigSelection(
+		*kubeconfig, *kubeconfigDir, kubeconfigFlagSet, kubeconfigDirsFlagSet,
+	)
+
+	// The device flow and consent page must identify this build and target the
+	// same control plane the CLI would — Desktop starts the same shared server.
+	cloud.Version = version
+	hubAPIURL, hubAppURL, err := cloud.ResolveHubOriginsFromEnv()
+	if err != nil {
+		log.Printf("ERROR: %v", err)
+		os.Exit(1)
+	}
+
+	// A configured port is honored as-is. Otherwise reuse the last launch's
+	// port, so the webview keeps its origin and storage.
+	desktopPort := fileCfg.PortOr(0)
+	desktopPortRemembered := desktopPort == 0
+	if desktopPortRemembered {
+		desktopPort = lastDesktopPort(desktopPortPath())
+	}
+
+	cfg := app.AppConfig{
+		Kubeconfig:                resolvedKubeconfig,
+		KubeconfigDirs:            resolvedKubeconfigDirs,
+		RestoreLastDesktopContext: fileCfg.RestoreLastDesktopContextOr(true),
+		Namespace:                 resolvedNamespace,
+		Namespaces:                resolvedNamespaces,
+		Port:                      desktopPort,
+		PortFallback:              desktopPortRemembered,
+		ListenAddress:             "127.0.0.1",
+		DevMode:                   false,
+		EnablePprof:               enablePprof,
+		HistoryLimit:              *historyLimit,
+		DebugEvents:               *debugEvents,
+		FakeInCluster:             *fakeInCluster,
+		DisableHelmWrite:          *disableHelmWrite,
+		DisableExec:               *disableExec,
+		PodShellDefault:           *podShellDefault,
+		TimelineStorage:           *timelineStorage,
+		TimelineDBPath:            *timelineDBPath,
+		TimelinePostgresDSN:       os.Getenv("KUBEATLAS_TIMELINE_POSTGRES_DSN"),
+		TimelineRetention:         *timelineRetention,
+		TimelineMaxSizeBytes:      timelineMaxSizeBytes,
+		PrometheusURL:             *prometheusURL,
+		PrometheusURLFlag:         prometheusURLFlagSet,
+		OpenCostCurrency:          normalizedOpenCostCurrency,
+		CostSource:                fileCfg.CostSource,
+		KubecostURL:               fileCfg.KubecostURL,
+		KubecostAPIKey:            fileCfg.KubecostAPIKey,
+		KubecostAPIKeyContext:     fileCfg.KubecostAPIKeyContext,
+		KubecostClusterID:         fileCfg.KubecostClusterID,
+		KubecostClusterIDContext:  fileCfg.KubecostClusterIDContext,
+		OpenCostFlagSet:           openCostCurrencyFlagSet,
+		PrometheusHeaders:         fileCfg.PrometheusHeaders,
+		PrometheusSavedURL:        fileCfg.PrometheusURL,
+		PrometheusHeadersFromEnv:  fileCfg.PrometheusHeadersFromEnv,
+		Version:                   version,
+		HubAPIURL:                 hubAPIURL,
+		HubAppURL:                 hubAppURL,
+		MCPEnabled:                mcpMode.Enabled,
+		MCPReadOnly:               mcpMode.ReadOnly,
+		MCPExecTools:              mcpFlags.ExecToolsEnabled(),
+		AIHistory:                 fileCfg.AIHistoryOr(true),
+		AIHistoryDBPath:           fileCfg.AIHistoryDBPath,
+	}
+
+	if !cfg.RestoreLastDesktopContext {
+		app.ForgetLastContext()
+	}
+
+	app.SetGlobals(cfg)
+	versionpkg.SetDesktop(true)
+	desktopenv.SetGPUPolicy(gpuPolicyName(linuxGPUPolicy))
+
+	// Clean up leftover files from previous update
+	updater.CleanupOldUpdate()
+
+	// Initialize K8s client — if this fails (e.g., no kubeconfig found),
+	// still start the UI so the user sees the error instead of a silent exit.
+	k8sInitErr := app.InitializeK8s(cfg)
+	if k8sInitErr != nil {
+		log.Printf("K8s init failed (will show in UI): %v", k8sInitErr)
+		k8s.SetConnectionStatus(k8s.ConnectionStatus{
+			State:     k8s.StateDisconnected,
+			Context:   k8s.GetContextName(),
+			Error:     k8sInitErr.Error(),
+			ErrorType: "config",
+		})
+	}
+
+	timelineStoreCfg, err := app.BuildTimelineStoreConfig(cfg)
+	if err != nil {
+		log.Fatalf("Invalid timeline configuration: %v", err)
+	}
+	cfg = app.RegisterCallbacks(cfg, timelineStoreCfg)
+
+	// Create server and attach desktop updater
+	srv := app.CreateServer(cfg)
+	desktopUpdater := updater.New()
+	srv.SetUpdater(desktopUpdater)
+
+	// Start server and wait until it's accepting connections
+	ready := make(chan struct{})
+	go func() {
+		if err := srv.StartWithReady(ready); err != nil {
+			log.Printf("Server error: %v", err)
+			os.Exit(1)
+		}
+	}()
+	<-ready
+
+	reporterCtx, cancelReporter := context.WithCancel(context.Background())
+	defer cancelReporter()
+	app.StartPortalReporter(reporterCtx, cfg)
+
+	// Write port file so MCP clients can discover the running server
+	app.WriteMCPPortFile(srv.ActualAddr(), srv.BasePath())
+
+	// Initialize cluster in background (browser will see progress via SSE)
+	if k8sInitErr == nil {
+		go app.InitializeCluster()
+	}
+
+	// Track opens and maybe prompt to star (non-blocking)
+	app.MaybePromptGitHubStar()
+
+	windowTitle := formatWindowTitle(k8s.GetContextName())
+
+	desktopApp := NewDesktopApp(srv, timelineStoreCfg)
+	if desktopPortRemembered {
+		desktopApp.onWindowReady = func() {
+			go rememberDesktopPort(desktopPortPath(), desktopPort, srv.ActualPort(), portOwner, loopbackPortBindable)
+		}
+	}
+	// macOS only. Wails maps this to `[NSApp hide:]`, which leaves the dock icon
+	// in place, so a dock click or Cmd+Tab brings the window back. The other
+	// platforms have no such affordance: GTK hides the window on delete-event and
+	// Windows drops the taskbar entry, and Wails v2 ships no tray icon, so a
+	// hidden window there is only recoverable by killing the process.
+	hideOnClose := goruntime.GOOS == "darwin"
+
+	// Run Wails application
+	err = wails.Run(&options.App{
+		Title:            windowTitle,
+		Width:            1440,
+		Height:           900,
+		MinWidth:         800,
+		MinHeight:        600,
+		MaxWidth:         7680,
+		MaxHeight:        4320,
+		WindowStartState: options.Maximised,
+
+		// Closing the window leaves the server running. Quit is explicit
+		// (Cmd+Q / File → Quit).
+		HideWindowOnClose: hideOnClose,
+
+		AssetServer: &assetserver.Options{
+			// The address actually bound, not "localhost", which may resolve to
+			// [::1] where another service can hold the same port.
+			Handler: NewRedirectHandler(net.JoinHostPort("127.0.0.1", strconv.Itoa(srv.ActualPort())), cfg.Namespace, cfg.Namespaces),
+		},
+
+		Menu: createMenu(desktopApp, version, goruntime.GOOS),
+
+		BackgroundColour: options.NewRGBA(10, 10, 15, 255),
+
+		OnStartup:     desktopApp.startup,
+		OnDomReady:    desktopApp.domReady,
+		OnBeforeClose: desktopApp.beforeClose,
+		OnShutdown:    desktopApp.shutdown,
+
+		Bind: []any{
+			desktopApp,
+		},
+
+		Mac: &mac.Options{
+			TitleBar: mac.TitleBarDefault(),
+			About: &mac.AboutInfo{
+				Title:   "KubeAtlas",
+				Message: "KubeAtlas — Kubernetes Visibility Tool\nIndependently maintained by maomada\nDerived from Radar; see NOTICE\n\nVersion: " + version + "\n\nhttps://github.com/maomada/KubeAtlas",
+			},
+		},
+
+		Linux: &linux.Options{
+			ProgramName:      "kubeatlas",
+			WebviewGpuPolicy: linuxGPUPolicy,
+		},
+	})
+
+	if err != nil {
+		log.Fatalf("Wails error: %v", err)
+	}
+}

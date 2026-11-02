@@ -1,0 +1,1519 @@
+package timeline
+
+import (
+	"context"
+	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	_ "modernc.org/sqlite" // Pure Go SQLite driver
+
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+	pkgtimeline "github.com/maomada/KubeAtlas/pkg/timeline"
+)
+
+// sqliteTimeLayout is the storage format for timestamp columns compared
+// lexically by ORDER BY and range filters. RFC3339Nano is unsuitable: it
+// strips trailing fraction zeros, and '.' sorts before 'Z', so a
+// second-aligned stamp ("...T00:00:00Z") sorts lexically AFTER a sub-second
+// one in the same second ("...T00:00:00.5Z"). A fixed-width 9-digit fraction
+// on UTC ('Z') makes lexical order match chronological order. Reads still
+// parse with RFC3339Nano, which accepts any fraction width — required for
+// rows written before normalizeTimestamps ran.
+const sqliteTimeLayout = "2006-01-02T15:04:05.000000000Z07:00"
+
+// SQLiteStore is a persistent implementation of EventStore using SQLite.
+// Suitable for local development with persistence and in-cluster use with PVC.
+type SQLiteStore struct {
+	db            *sql.DB
+	seenResources map[string]bool
+	seenMu        sync.RWMutex
+	filterCache   map[string]*CompiledFilter
+	cacheMu       sync.RWMutex
+	path          string
+	quit          chan struct{}
+	wg            sync.WaitGroup
+	closeOnce     sync.Once
+
+	cleanupMu     sync.RWMutex
+	retentionAge  time.Duration
+	maxStorage    int64
+	lastCleanupAt time.Time
+	lastCleanupN  int64
+	lastCleanupEr string
+	// evictedRows is process-lifetime: whether any retention/size pruning has
+	// deleted rows since this store opened. Cursor-eviction detection needs a
+	// sticky flag, not just the last sweep's count — an "older" cursor issued
+	// before a prune must read as a gap, not a clean end of history. Restart
+	// amnesia is fine: the activity epoch changes with the process, so stale
+	// cursors already get an epoch-changed gap.
+	evictedRows bool
+	// prunedThrough is the newest event time among rows deleted by Cleanup or
+	// size pruning; see EvictedThrough.
+	prunedThrough time.Time
+
+	// nextSeq is a process-lifetime monotonic arrival counter, seeded from
+	// MAX(seq) at open. It survives retention emptying the table, so a new
+	// insert's seq always exceeds any previously issued seq while the store
+	// lives — an in-flight delta cursor can't be silently overtaken by a
+	// rewound seq.
+	nextSeq atomic.Int64
+}
+
+// NewSQLiteStore creates a new SQLite-backed event store.
+func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
+	// Ensure directory exists
+	dir := filepath.Dir(dbPath)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return nil, fmt.Errorf("failed to create directory: %w", err)
+		}
+	}
+
+	db, err := sql.Open("sqlite", dbPath)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database: %w", err)
+	}
+
+	// SQLite only supports one writer at a time - limit connections
+	db.SetMaxOpenConns(1)
+	db.SetMaxIdleConns(1)
+
+	// Configure SQLite for performance
+	pragmas := []string{
+		"PRAGMA journal_mode=WAL",
+		"PRAGMA synchronous=NORMAL",
+		"PRAGMA cache_size=-64000",  // 64MB cache
+		"PRAGMA busy_timeout=10000", // 10 second timeout
+		"PRAGMA temp_store=MEMORY",
+	}
+	for _, pragma := range pragmas {
+		if _, err := db.Exec(pragma); err != nil {
+			log.Printf("Warning: failed to set %s: %v", pragma, err)
+		}
+	}
+
+	store := &SQLiteStore{
+		db:            db,
+		seenResources: make(map[string]bool),
+		filterCache:   make(map[string]*CompiledFilter),
+		path:          dbPath,
+		quit:          make(chan struct{}),
+	}
+
+	if err := store.initSchema(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to initialize schema: %w", err)
+	}
+
+	// Hydrate the in-memory seenResources map from the persisted table so
+	// that on restart, informer Add events for previously-seen resources
+	// short-circuit in IsResourceSeen instead of re-running historical-event
+	// extraction for every resource. Best-effort: a query failure means we
+	// behave like a fresh store, not a fatal error.
+	store.hydrateSeenResources()
+
+	// Seed the monotonic seq counter from the persisted high-water mark so
+	// arrival numbers continue above the last issued value across restarts.
+	if err := store.seedSeq(); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("failed to seed seq counter: %w", err)
+	}
+
+	return store, nil
+}
+
+// seedSeq initializes nextSeq to the current MAX(seq). A failure must fail the
+// open: seeding at 0 would issue seqs below rows already in the table, and a
+// delta client's cursor (the old high-water mark) would then read every new
+// event as already-seen — a live-looking timeline that only refreshes on the
+// periodic full resync.
+func (s *SQLiteStore) seedSeq() error {
+	var maxSeq int64
+	if err := s.db.QueryRow("SELECT COALESCE(MAX(seq), 0) FROM events").Scan(&maxSeq); err != nil {
+		return err
+	}
+	s.nextSeq.Store(maxSeq)
+	return nil
+}
+
+// initSchema creates the database tables if they don't exist
+func (s *SQLiteStore) initSchema() error {
+	schema := `
+	CREATE TABLE IF NOT EXISTS events (
+		id TEXT PRIMARY KEY,
+		timestamp TEXT NOT NULL,
+		source TEXT NOT NULL,
+		kind TEXT NOT NULL,
+		namespace TEXT,
+		name TEXT NOT NULL,
+		uid TEXT,
+		event_type TEXT NOT NULL,
+		reason TEXT,
+		message TEXT,
+		diff_json TEXT,
+		health_state TEXT,
+		owner_kind TEXT,
+		owner_name TEXT,
+		owner_api_version TEXT,
+		owner_uid TEXT,
+		owner_evidence TEXT,
+		labels_json TEXT,
+		count INTEGER DEFAULT 0,
+		correlation_id TEXT,
+		created_at TEXT DEFAULT (datetime('now')),
+		cluster_context TEXT NOT NULL DEFAULT '',
+		resource_created_at TEXT,
+		seq INTEGER NOT NULL DEFAULT 0
+	);
+
+	CREATE INDEX IF NOT EXISTS idx_events_timestamp ON events(timestamp DESC);
+	CREATE INDEX IF NOT EXISTS idx_events_kind ON events(kind);
+	CREATE INDEX IF NOT EXISTS idx_events_namespace ON events(namespace);
+	CREATE INDEX IF NOT EXISTS idx_events_name ON events(name);
+	CREATE INDEX IF NOT EXISTS idx_events_source ON events(source);
+	CREATE INDEX IF NOT EXISTS idx_events_owner ON events(owner_kind, owner_name, namespace);
+	CREATE INDEX IF NOT EXISTS idx_events_kind_ns_name ON events(kind, namespace, name);
+
+	CREATE TABLE IF NOT EXISTS seen_resources (
+		resource_key TEXT PRIMARY KEY,
+		seen_at TEXT DEFAULT (datetime('now'))
+	);
+	`
+
+	if _, err := s.db.Exec(schema); err != nil {
+		return err
+	}
+
+	// SQLite's ALTER TABLE ADD COLUMN errors with "duplicate column" when the
+	// schema is already current; PRAGMA-detect before adding.
+	rows, err := s.db.Query("PRAGMA table_info(events)")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	hasAPIVersion := false
+	hasClusterContext := false
+	hasResourceCreatedAt := false
+	hasSeq := false
+	hasOwnerColumn := map[string]bool{}
+	for rows.Next() {
+		var cid int
+		var name, ctype string
+		var notnull, pk int
+		var dfltValue sql.NullString
+		if err := rows.Scan(&cid, &name, &ctype, &notnull, &dfltValue, &pk); err != nil {
+			return err
+		}
+		switch name {
+		case "api_version":
+			hasAPIVersion = true
+		case "cluster_context":
+			hasClusterContext = true
+		case "resource_created_at":
+			hasResourceCreatedAt = true
+		case "seq":
+			hasSeq = true
+		case "owner_api_version", "owner_uid", "owner_evidence":
+			hasOwnerColumn[name] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if !hasAPIVersion {
+		if _, err := s.db.Exec("ALTER TABLE events ADD COLUMN api_version TEXT"); err != nil {
+			return err
+		}
+	}
+	if !hasClusterContext {
+		// Pre-existing rows keep '' — their cluster is unknowable (recorded
+		// before provenance was tracked), and context-scoped queries
+		// deliberately exclude them rather than guess.
+		if _, err := s.db.Exec("ALTER TABLE events ADD COLUMN cluster_context TEXT NOT NULL DEFAULT ''"); err != nil {
+			return err
+		}
+	}
+	// NULL in these columns means unknown owner reference fields and evidence.
+	for _, column := range []string{"owner_api_version", "owner_uid", "owner_evidence"} {
+		if !hasOwnerColumn[column] {
+			if _, err := s.db.Exec("ALTER TABLE events ADD COLUMN " + column + " TEXT"); err != nil {
+				return err
+			}
+		}
+	}
+	if !hasResourceCreatedAt {
+		if _, err := s.db.Exec("ALTER TABLE events ADD COLUMN resource_created_at TEXT"); err != nil {
+			return err
+		}
+	}
+	if !hasSeq {
+		if _, err := s.db.Exec("ALTER TABLE events ADD COLUMN seq INTEGER NOT NULL DEFAULT 0"); err != nil {
+			return err
+		}
+		// Backfill arrival numbers from rowid — insertion order, which is what
+		// seq means. New appends continue above MAX(seq).
+		if _, err := s.db.Exec("UPDATE events SET seq = rowid WHERE seq = 0"); err != nil {
+			return err
+		}
+	}
+	if err := s.normalizeTimestamps(); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec("CREATE INDEX IF NOT EXISTS idx_events_cluster_ts ON events(cluster_context, timestamp DESC)"); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec("CREATE INDEX IF NOT EXISTS idx_events_seq ON events(seq)"); err != nil {
+		return err
+	}
+	// Scoped history walks ownership by UID and selects rows by subject UID.
+	if _, err := s.db.Exec("CREATE INDEX IF NOT EXISTS idx_events_uid ON events(uid)"); err != nil {
+		return err
+	}
+	if _, err := s.db.Exec("CREATE INDEX IF NOT EXISTS idx_events_owner_uid ON events(owner_uid)"); err != nil {
+		return err
+	}
+	// Without table statistics the planner reaches for idx_events_cluster_ts,
+	// which narrows nothing when every row shares one cluster, and scans the
+	// table instead of using the UID indexes. The mask analyzes every table
+	// whose statistics are missing or stale. It is deliberately unbounded
+	// (no 0x10): sampled statistics leave the planner on the scan. The first
+	// open of a large database pays seconds once; the statistics persist in
+	// the file, so later opens are near free. Run here rather than in the
+	// background: the store has one connection.
+	if _, err := s.db.Exec(sqliteOptimize); err != nil {
+		log.Printf("[timeline] Failed to gather query planner statistics for %s: %v", s.path, err)
+	}
+
+	return nil
+}
+
+// normalizeTimestamps rewrites rows whose timestamp doesn't match
+// sqliteTimeLayout. Older builds stored RFC3339Nano in the host's local zone;
+// both the zone offset and the variable fraction width break the
+// lexical-order-is-chronological invariant the layout exists for. One pass per
+// legacy row: rewritten rows match the GLOB and are skipped on later opens.
+func (s *SQLiteStore) normalizeTimestamps() error {
+	rows, err := s.db.Query(`SELECT id, timestamp FROM events WHERE timestamp NOT GLOB '????-??-??T??:??:??.?????????Z'`)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type fixup struct{ id, ts string }
+	var fixups []fixup
+	unparseable := 0
+	for rows.Next() {
+		var id, ts string
+		if err := rows.Scan(&id, &ts); err != nil {
+			return err
+		}
+		t, err := time.Parse(time.RFC3339Nano, ts)
+		if err != nil {
+			unparseable++
+			continue
+		}
+		fixups = append(fixups, fixup{id: id, ts: t.UTC().Format(sqliteTimeLayout)})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if unparseable > 0 {
+		log.Printf("[timeline] %d timeline rows have unparseable timestamps; left as-is", unparseable)
+	}
+	if len(fixups) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return err
+	}
+	stmt, err := tx.Prepare("UPDATE events SET timestamp = ? WHERE id = ?")
+	if err != nil {
+		tx.Rollback()
+		return err
+	}
+	defer stmt.Close()
+	for _, f := range fixups {
+		if _, err := stmt.Exec(f.ts, f.id); err != nil {
+			tx.Rollback()
+			return err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	log.Printf("[timeline] normalized %d legacy timeline timestamps to fixed-width UTC", len(fixups))
+	return nil
+}
+
+// Append adds a single event to the store
+func (s *SQLiteStore) Append(ctx context.Context, event TimelineEvent) error {
+	return s.AppendBatch(ctx, []TimelineEvent{event})
+}
+
+// AppendBatch adds multiple events atomically
+func (s *SQLiteStore) AppendBatch(ctx context.Context, events []TimelineEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// A K8s Event mutates count/message/lastTimestamp in place on the same uid;
+	// the id is the uid, so a bump re-arrives as a conflict. Upsert those mutable
+	// fields for k8s_event rows — mirroring MemoryStore.appendLocked — so the row
+	// reflects the latest revision instead of dropping the bump. The WHERE gates
+	// the update to k8s_event conflicts whose incoming revision is not older, so
+	// an out-of-order relay can't clobber a newer row. For informer/historical
+	// ids the WHERE is false, leaving the original row untouched — the same
+	// no-op an INSERT OR IGNORE gives for a relist dupe.
+	//
+	// Enrichment (owner/labels/createdAt) upserts asymmetrically: a bump that
+	// carries it wins (fresher truth), a bump that lost it (tombstone expired,
+	// object gone from the live cache) keeps what the row already knows.
+	// seq is the arrival number, taken from the process-lifetime nextSeq counter
+	// rather than MAX(seq)+1 per insert: retention emptying the table can't then
+	// rewind seq and strand a live client's delta cursor. The upsert takes
+	// excluded.seq — the freshly issued value — so a count bump re-arrives at the
+	// cursor frontier instead of staying buried at its original arrival position,
+	// mirroring MemoryStore's vacate-and-re-append-at-head.
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO events (
+			id, timestamp, source, kind, api_version, namespace, name, uid, event_type,
+			reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence,
+			labels_json, count, correlation_id, cluster_context, resource_created_at, seq
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT(id) DO UPDATE SET
+			timestamp = excluded.timestamp,
+			event_type = excluded.event_type,
+			reason = excluded.reason,
+			message = excluded.message,
+			health_state = excluded.health_state,
+			count = excluded.count,
+			seq = excluded.seq,
+			namespace = excluded.namespace,
+			uid = excluded.uid,
+			resource_created_at = COALESCE(excluded.resource_created_at, events.resource_created_at),
+			-- The owner tuple moves as one; OwnerReplacesOnUpsert states the rule.
+			owner_kind = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_kind ELSE events.owner_kind END,
+			owner_name = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_name ELSE events.owner_name END,
+			owner_api_version = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_api_version ELSE events.owner_api_version END,
+			owner_uid = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_uid ELSE events.owner_uid END,
+			owner_evidence = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_evidence ELSE events.owner_evidence END,
+			labels_json = CASE WHEN excluded.labels_json != '' THEN excluded.labels_json ELSE events.labels_json END
+		WHERE events.source = 'k8s_event'
+			AND excluded.source = 'k8s_event'
+			AND excluded.timestamp >= events.timestamp
+	`)
+	if err != nil {
+		return fmt.Errorf("failed to prepare statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, event := range events {
+		var diffJSON, labelsJSON []byte
+		var ownerKind, ownerName, ownerAPIVersion, ownerUID string
+		var err error
+
+		if event.Diff != nil {
+			diffJSON, err = json.Marshal(event.Diff)
+			if err != nil {
+				log.Printf("Warning: failed to marshal diff for event %s: %v", event.ID, err)
+				// Continue without diff - it's not critical
+				diffJSON = nil
+			}
+		}
+		if event.Labels != nil {
+			labelsJSON, err = json.Marshal(event.Labels)
+			if err != nil {
+				log.Printf("Warning: failed to marshal labels for event %s: %v", event.ID, err)
+				// Continue without labels - it's not critical
+				labelsJSON = nil
+			}
+		}
+		if event.Owner != nil {
+			ownerKind = event.Owner.Kind
+			ownerName = event.Owner.Name
+			ownerAPIVersion = event.Owner.APIVersion
+			ownerUID = event.Owner.UID
+		}
+		var resourceCreatedAt any
+		if event.CreatedAt != nil {
+			resourceCreatedAt = event.CreatedAt.UTC().Format(sqliteTimeLayout)
+		}
+
+		// Timestamps hit a TEXT column compared lexically by ORDER BY / range
+		// filters; sqliteTimeLayout (fixed-width UTC) keeps lexical order
+		// chronological.
+		_, err = stmt.ExecContext(ctx,
+			event.ID,
+			event.Timestamp.UTC().Format(sqliteTimeLayout),
+			string(event.Source),
+			event.Kind,
+			event.APIVersion,
+			event.Namespace,
+			event.Name,
+			event.UID,
+			string(event.EventType),
+			event.Reason,
+			event.Message,
+			string(diffJSON),
+			string(event.HealthState),
+			ownerKind,
+			ownerName,
+			ownerAPIVersion,
+			ownerUID,
+			string(event.OwnerEvidence),
+			string(labelsJSON),
+			event.Count,
+			event.CorrelationID,
+			event.ClusterContext,
+			resourceCreatedAt,
+			s.nextSeq.Add(1),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to insert event: %w", err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+func sqliteScopeClause(scope ResourceScope) (string, []any) {
+	var parts []string
+	var args []any
+	in := func(column string, values []string) {
+		values = nonEmpty(values)
+		if len(values) == 0 {
+			return
+		}
+		parts = append(parts, column+" IN ("+strings.TrimSuffix(strings.Repeat("?,", len(values)), ",")+")")
+		for _, v := range values {
+			args = append(args, v)
+		}
+	}
+	in("uid", scope.UIDs)
+	in("owner_uid", scope.OwnerUIDs)
+	refs := func(list []resourceid.Ref, extra string) {
+		// One branch per kind, not per resource: SQLite caps expression
+		// depth, and a scope can name thousands of resources.
+		for _, g := range groupRefs(list) {
+			parts = append(parts, "(kind = ? AND namespace = ? AND name IN ("+strings.TrimSuffix(strings.Repeat("?,", len(g.names)), ",")+
+				") AND (COALESCE(api_version, '') = '' OR "+sqliteAPIGroupExpr+" = ?)"+extra+")")
+			args = append(args, g.kind, g.namespace)
+			for _, name := range g.names {
+				args = append(args, name)
+			}
+			args = append(args, g.group)
+		}
+	}
+	refs(scope.Refs, "")
+	refs(scope.OwnerlessRefs, ownerUnknownSQL)
+	if len(parts) == 0 {
+		return " AND 0", nil
+	}
+	return " AND (" + strings.Join(parts, " OR ") + ")", args
+}
+
+// nonEmpty drops empty UIDs: compared against a column, one would match every
+// row that recorded no UID at all.
+func nonEmpty(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, v := range values {
+		if v != "" {
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+// sqliteOptimize gathers planner statistics for tables whose statistics are
+// missing or stale, without SQLite's analysis bound (SQLite's default
+// optimize mask bounds it, which would replace full statistics with sampled
+// ones).
+const sqliteOptimize = "PRAGMA optimize=0x10002"
+
+// ownerUnknownSQL is pkgtimeline.OwnerUnknown as a SQL condition, shared by
+// the SQLite and Postgres stores.
+const ownerUnknownSQL = " AND COALESCE(owner_uid, '') = '' AND COALESCE(owner_evidence, '') NOT IN ('observed', 'enriched', 'reconstructed')"
+
+const sqliteAPIGroupExpr = "CASE WHEN instr(api_version, '/') > 0 THEN substr(api_version, 1, instr(api_version, '/') - 1) ELSE '' END"
+
+type refGroup struct {
+	group, kind, namespace string
+	names                  []string
+}
+
+// groupRefs gathers refs that share a group, kind and namespace, in first-seen order.
+func groupRefs(refs []resourceid.Ref) []*refGroup {
+	var out []*refGroup
+	index := map[[3]string]*refGroup{}
+	for _, ref := range refs {
+		k := [3]string{ref.Group, ref.Kind, ref.Namespace}
+		g := index[k]
+		if g == nil {
+			g = &refGroup{group: ref.Group, kind: ref.Kind, namespace: ref.Namespace}
+			index[k] = g
+			out = append(out, g)
+		}
+		g.names = append(g.names, ref.Name)
+	}
+	return out
+}
+
+// Identities returns the distinct resources the rows matching q were about.
+func (s *SQLiteStore) Identities(ctx context.Context, q IdentityQuery, limit int) ([]Identity, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	query := "SELECT DISTINCT COALESCE(api_version, ''), kind, name, COALESCE(uid, ''), COALESCE(owner_uid, '') FROM events WHERE 1=1"
+	var args []any
+	if q.ClusterContext != "" {
+		query += " AND cluster_context = ?"
+		args = append(args, q.ClusterContext)
+	}
+	if q.Namespace != "" {
+		query += " AND namespace = ?"
+		args = append(args, q.Namespace)
+	}
+	if q.Ref != nil {
+		query += " AND kind = ? AND namespace = ? AND name = ? AND (COALESCE(api_version, '') = '' OR " + sqliteAPIGroupExpr + " = ?)"
+		args = append(args, q.Ref.Kind, q.Ref.Namespace, q.Ref.Name, q.Ref.Group)
+	}
+	if len(q.Kinds) > 0 {
+		query += " AND kind IN (" + strings.TrimSuffix(strings.Repeat("?,", len(q.Kinds)), ",") + ")"
+		for _, k := range q.Kinds {
+			args = append(args, k)
+		}
+	}
+	if q.NamePrefix != "" {
+		// substr compares exactly; LIKE would fold ASCII case and need escaping.
+		query += " AND substr(name, 1, ?) = ?"
+		args = append(args, len(q.NamePrefix), q.NamePrefix)
+	}
+	if q.OwnerUnknown {
+		query += ownerUnknownSQL
+	}
+	query += " LIMIT ?"
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query identities: %w", err)
+	}
+	defer rows.Close()
+	var out []Identity
+	for rows.Next() {
+		var id Identity
+		if err := rows.Scan(&id.APIVersion, &id.Kind, &id.Name, &id.UID, &id.OwnerUID); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// OwnedUIDs returns the distinct UIDs of resources whose rows name one of
+// ownerUIDs as their owner.
+func (s *SQLiteStore) OwnedUIDs(ctx context.Context, clusterContext string, ownerUIDs []string, limit int) ([]string, error) {
+	ownerUIDs = nonEmpty(ownerUIDs)
+	if len(ownerUIDs) == 0 || limit <= 0 {
+		return nil, nil
+	}
+	query := "SELECT DISTINCT uid FROM events WHERE COALESCE(uid, '') <> '' AND owner_uid IN (" +
+		strings.TrimSuffix(strings.Repeat("?,", len(ownerUIDs)), ",") + ")"
+	args := make([]any, 0, len(ownerUIDs)+2)
+	for _, uid := range ownerUIDs {
+		args = append(args, uid)
+	}
+	if clusterContext != "" {
+		query += " AND cluster_context = ?"
+		args = append(args, clusterContext)
+	}
+	query += " LIMIT ?"
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query owned uids: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		out = append(out, uid)
+	}
+	return out, rows.Err()
+}
+
+// unmanagedRowsSQL is TimelineEvent.IsManaged negated, for both SQL stores:
+// the scanner sets Owner exactly when owner_kind is non-empty.
+const unmanagedRowsSQL = "COALESCE(owner_kind, '') = '' AND kind NOT IN ('ReplicaSet', 'Pod', 'Event')"
+
+// Query retrieves events matching the given options
+func (s *SQLiteStore) Query(ctx context.Context, opts QueryOptions) ([]TimelineEvent, error) {
+	// Resolve the preset first: whether it admits managed rows decides the
+	// SQL below.
+	var cf *CompiledFilter
+	if opts.FilterPreset != "" {
+		var filterErr error
+		cf, filterErr = s.getOrCompileFilter(opts.FilterPreset)
+		if filterErr != nil {
+			log.Printf("Warning: failed to compile filter preset %q: %v", opts.FilterPreset, filterErr)
+			// Continue without filtering - caller asked for this preset but we can't apply it
+		}
+	}
+
+	// Build query
+	query := strings.Builder{}
+	query.WriteString("SELECT id, timestamp, source, kind, api_version, namespace, name, uid, event_type, ")
+	query.WriteString("reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence, ")
+	query.WriteString("labels_json, count, correlation_id, cluster_context, resource_created_at, seq FROM events WHERE 1=1")
+
+	var args []any
+
+	// Apply filters
+	if len(opts.Namespaces) > 0 {
+		query.WriteString(" AND namespace IN (")
+		for i, ns := range opts.Namespaces {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString("?")
+			args = append(args, ns)
+		}
+		query.WriteString(")")
+	}
+
+	if len(opts.Kinds) > 0 {
+		query.WriteString(" AND kind IN (")
+		for i, k := range opts.Kinds {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString("?")
+			args = append(args, k)
+		}
+		query.WriteString(")")
+	}
+
+	if opts.RequireAPIVersion {
+		query.WriteString(" AND COALESCE(api_version, '') <> ''")
+	}
+	if len(opts.APIGroups) > 0 {
+		// Keep rows whose emitter did not record apiVersion: they are unknown,
+		// not evidence of a group mismatch. For known versions, extract the
+		// group in SQL so collisions cannot consume the bounded result window.
+		query.WriteString(" AND (COALESCE(api_version, '') = '' OR CASE WHEN instr(api_version, '/') > 0 THEN substr(api_version, 1, instr(api_version, '/') - 1) ELSE '' END IN (")
+		for i, group := range opts.APIGroups {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString("?")
+			args = append(args, group)
+		}
+		query.WriteString("))")
+	}
+
+	if len(opts.Names) > 0 {
+		query.WriteString(" AND name IN (")
+		for i, name := range opts.Names {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString("?")
+			args = append(args, name)
+		}
+		query.WriteString(")")
+	}
+
+	if !opts.Since.IsZero() {
+		query.WriteString(" AND timestamp >= ?")
+		args = append(args, opts.Since.UTC().Format(sqliteTimeLayout))
+	}
+
+	if !opts.Until.IsZero() {
+		query.WriteString(" AND timestamp <= ?")
+		args = append(args, opts.Until.UTC().Format(sqliteTimeLayout))
+	}
+
+	if len(opts.Sources) > 0 {
+		query.WriteString(" AND source IN (")
+		for i, src := range opts.Sources {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString("?")
+			args = append(args, string(src))
+		}
+		query.WriteString(")")
+	}
+
+	if len(opts.EventTypes) > 0 {
+		query.WriteString(" AND event_type IN (")
+		for i, et := range opts.EventTypes {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString("?")
+			args = append(args, string(et))
+		}
+		query.WriteString(")")
+	}
+
+	// Filter deletes in SQL (before ORDER/LIMIT) so hiding them can't under-fill
+	// the page when the newest rows happen to be deletes.
+	if opts.ExcludeDeleted {
+		query.WriteString(" AND event_type != ?")
+		args = append(args, string(EventTypeDelete))
+	}
+	// Same reason for managed rows and K8s Events: filtered after LIMIT, they
+	// would fill the limit and leave the page short with nothing counting them.
+	if !opts.IncludeManaged && !cf.IncludesManaged() {
+		query.WriteString(" AND " + unmanagedRowsSQL)
+	}
+	if !opts.IncludeK8sEvents {
+		query.WriteString(" AND source != ?")
+		args = append(args, string(SourceK8sEvent))
+	}
+
+	if opts.ClusterContext != "" {
+		query.WriteString(" AND cluster_context = ?")
+		args = append(args, opts.ClusterContext)
+	}
+
+	if !opts.Scope.IsZero() {
+		clause, scopeArgs := sqliteScopeClause(opts.Scope)
+		query.WriteString(clause)
+		args = append(args, scopeArgs...)
+	}
+
+	seqPaging := opts.SeqPaging || opts.SinceSeq > 0
+	if seqPaging {
+		query.WriteString(" AND seq > ?")
+		args = append(args, opts.SinceSeq)
+	}
+	if opts.UntilSeq > 0 {
+		query.WriteString(" AND seq < ?")
+		args = append(args, opts.UntilSeq)
+	}
+
+	// Delta reads (seq paging) page by ascending arrival order: the server
+	// advances the client cursor by the max seq in the page, so a burst larger
+	// than the limit must resume from the lowest unseen seq — timestamp DESC
+	// would return the newest matches and silently drop the mid-seq ones. The
+	// client merges by id, so ascending is fine. Sequence snapshots and backwards
+	// pages are newest-arrival-first; ordinary timeline reads remain newest-time-first.
+	if seqPaging || opts.SequenceOrder == pkgtimeline.SequenceOrderAscending {
+		query.WriteString(" ORDER BY seq ASC")
+	} else if opts.UntilSeq > 0 || opts.SequenceOrder == pkgtimeline.SequenceOrderDescending {
+		query.WriteString(" ORDER BY seq DESC")
+	} else {
+		query.WriteString(" ORDER BY timestamp DESC")
+	}
+
+	// Apply limit
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 10000 {
+		limit = 10000
+	}
+	query.WriteString(fmt.Sprintf(" LIMIT %d", limit))
+
+	if opts.Offset > 0 {
+		query.WriteString(fmt.Sprintf(" OFFSET %d", opts.Offset))
+	}
+
+	// Execute query
+	rows, err := s.db.QueryContext(ctx, query.String(), args...)
+	if err != nil {
+		return nil, fmt.Errorf("query failed: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]TimelineEvent, 0)
+	for rows.Next() {
+		event, err := s.scanEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		// Apply post-filters (for complex filters not handled in SQL)
+		if cf != nil && !cf.Matches(&event) {
+			continue
+		}
+
+		// IncludeManaged and IncludeK8sEvents are applied in SQL above; these
+		// checks stay as a guard.
+		// opts.IncludeManaged takes precedence; the preset can also allow managed resources.
+		if event.IsManaged() && !opts.IncludeManaged && !cf.IncludesManaged() {
+			continue
+		}
+
+		if !opts.IncludeK8sEvents && event.Source == SourceK8sEvent {
+			continue
+		}
+
+		events = append(events, event)
+	}
+
+	return events, rows.Err()
+}
+
+// GetEvent retrieves a single event by ID
+func (s *SQLiteStore) GetEvent(ctx context.Context, id string) (*TimelineEvent, error) {
+	query := `SELECT id, timestamp, source, kind, api_version, namespace, name, uid, event_type,
+		reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence,
+		labels_json, count, correlation_id, cluster_context, resource_created_at, seq FROM events WHERE id = ?`
+
+	row := s.db.QueryRowContext(ctx, query, id)
+	event, err := s.scanEventRow(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
+// MarkResourceSeen records that a resource has been seen. The key is
+// cluster- and API-group-qualified: this store outlives kubeconfig context
+// switches and distinct groups can define the same kind/namespace/name.
+func (s *SQLiteStore) MarkResourceSeen(clusterContext, group, kind, namespace, name string) {
+	key := SeenResourceKey(clusterContext, group, kind, namespace, name)
+
+	s.seenMu.Lock()
+	s.seenResources[key] = true
+	s.seenMu.Unlock()
+
+	// Persist to database (best effort)
+	_, _ = s.db.Exec("INSERT OR REPLACE INTO seen_resources (resource_key) VALUES (?)", key)
+}
+
+// IsResourceSeen checks if a resource has been seen before in the given cluster
+// context and API group.
+func (s *SQLiteStore) IsResourceSeen(clusterContext, group, kind, namespace, name string) bool {
+	s.seenMu.RLock()
+	defer s.seenMu.RUnlock()
+	return s.seenResources[SeenResourceKey(clusterContext, group, kind, namespace, name)]
+}
+
+// ClearResourceSeen removes a resource from the seen set
+func (s *SQLiteStore) ClearResourceSeen(clusterContext, group, kind, namespace, name string) {
+	key := SeenResourceKey(clusterContext, group, kind, namespace, name)
+
+	s.seenMu.Lock()
+	delete(s.seenResources, key)
+	s.seenMu.Unlock()
+
+	// Remove from database (best effort)
+	_, _ = s.db.Exec("DELETE FROM seen_resources WHERE resource_key = ?", key)
+}
+
+// Stats returns storage statistics
+func (s *SQLiteStore) Stats() StoreStats {
+	var stats StoreStats
+
+	// Get total events
+	row := s.db.QueryRow("SELECT COUNT(*) FROM events")
+	row.Scan(&stats.TotalEvents)
+
+	// Get oldest and newest timestamps
+	row = s.db.QueryRow("SELECT MIN(timestamp), MAX(timestamp) FROM events")
+	var oldest, newest sql.NullString
+	row.Scan(&oldest, &newest)
+	if oldest.Valid {
+		stats.OldestEvent, _ = time.Parse(time.RFC3339Nano, oldest.String)
+	}
+	if newest.Valid {
+		stats.NewestEvent, _ = time.Parse(time.RFC3339Nano, newest.String)
+	}
+	row = s.db.QueryRow("SELECT COALESCE(MIN(seq), 0), COALESCE(MAX(seq), 0) FROM events")
+	_ = row.Scan(&stats.OldestSeq, &stats.NewestSeq)
+
+	// Get database file size
+	stats.StorageBytes = s.storageBytes()
+
+	s.seenMu.RLock()
+	stats.SeenResources = len(s.seenResources)
+	s.seenMu.RUnlock()
+
+	s.cleanupMu.RLock()
+	stats.RetentionAge = s.retentionAge
+	stats.MaxStorageBytes = s.maxStorage
+	stats.LastCleanupAt = s.lastCleanupAt
+	stats.LastCleanupDeletedRows = s.lastCleanupN
+	stats.LastCleanupError = s.lastCleanupEr
+	stats.EventsEvicted = s.evictedRows
+	s.cleanupMu.RUnlock()
+
+	return stats
+}
+
+// Close releases any resources held by the store. Safe to call multiple times.
+func (s *SQLiteStore) Close() error {
+	s.closeOnce.Do(func() {
+		close(s.quit)
+		s.wg.Wait()
+	})
+	return s.db.Close()
+}
+
+// Cleanup removes events older than the given duration
+func (s *SQLiteStore) Cleanup(ctx context.Context, maxAge time.Duration) (int64, error) {
+	cutoff := time.Now().Add(-maxAge).UTC().Format(sqliteTimeLayout)
+	result, err := s.db.ExecContext(ctx, "DELETE FROM events WHERE timestamp < ?", cutoff)
+	if err != nil {
+		return 0, err
+	}
+	n, err := result.RowsAffected()
+	s.recordEviction(n)
+	if n > 0 {
+		s.recordPrunedThrough(time.Now().Add(-maxAge))
+	}
+	return n, err
+}
+
+// recordEviction stickies the fact that rows were pruned — cursor-eviction
+// detection must survive later sweeps that delete nothing.
+func (s *SQLiteStore) recordEviction(rows int64) {
+	if rows <= 0 {
+		return
+	}
+	s.cleanupMu.Lock()
+	s.evictedRows = true
+	s.cleanupMu.Unlock()
+}
+
+func (s *SQLiteStore) recordPrunedThrough(t time.Time) {
+	s.cleanupMu.Lock()
+	if t.After(s.prunedThrough) {
+		s.prunedThrough = t
+	}
+	s.cleanupMu.Unlock()
+}
+
+// EvictedThrough implements EvictionBoundary. With retention configured it is
+// at least the retention cutoff, whether or not a sweep has run yet, since
+// rows older than that may already be gone. Restart gaps are not tracked here:
+// callers also bound history by when this process started observing.
+func (s *SQLiteStore) EvictedThrough() time.Time {
+	s.cleanupMu.RLock()
+	defer s.cleanupMu.RUnlock()
+	through := s.prunedThrough
+	if s.retentionAge > 0 {
+		if cutoff := time.Now().Add(-s.retentionAge); cutoff.After(through) {
+			through = cutoff
+		}
+	}
+	return through
+}
+
+func (s *SQLiteStore) PruneToMaxSize(ctx context.Context, maxBytes int64) (totalDeletedOut int64, errOut error) {
+	if maxBytes <= 0 {
+		return 0, nil
+	}
+	defer func() { s.recordEviction(totalDeletedOut) }()
+	if current := s.storageBytes(); current <= maxBytes {
+		return 0, nil
+	}
+	if err := s.checkpointWAL(ctx); err != nil {
+		return 0, err
+	}
+	if current := s.storageBytes(); current <= maxBytes {
+		return 0, nil
+	}
+
+	target := maxBytes * 85 / 100
+	if target <= 0 {
+		target = maxBytes
+	}
+
+	var totalDeleted int64
+	for attempts := 0; attempts < 5; attempts++ {
+		current := s.storageBytes()
+		if current <= maxBytes {
+			return totalDeleted, nil
+		}
+
+		count, err := s.countEvents(ctx)
+		if err != nil {
+			return totalDeleted, err
+		}
+		if count == 0 {
+			if err := s.reclaimStorage(ctx); err != nil {
+				return totalDeleted, err
+			}
+			break
+		}
+		if count == 1 {
+			deleted, err := s.deleteOldestEvents(ctx, 1)
+			totalDeleted += deleted
+			if err != nil {
+				return totalDeleted, err
+			}
+			if err := s.reclaimStorage(ctx); err != nil {
+				return totalDeleted, err
+			}
+			continue
+		}
+
+		avgBytes := current / count
+		if avgBytes < 1 {
+			avgBytes = 1
+		}
+		toDelete := ((current - target) / avgBytes) + 1
+		if toDelete < 1000 && count > 1000 {
+			toDelete = 1000
+		}
+		if toDelete < 1 {
+			toDelete = 1
+		}
+		if toDelete >= count {
+			toDelete = count - 1
+		}
+
+		deleted, err := s.deleteOldestEvents(ctx, toDelete)
+		totalDeleted += deleted
+		if err != nil {
+			return totalDeleted, err
+		}
+		if deleted == 0 {
+			break
+		}
+		if err := s.reclaimStorage(ctx); err != nil {
+			return totalDeleted, err
+		}
+	}
+
+	if current := s.storageBytes(); current > maxBytes {
+		return totalDeleted, fmt.Errorf("timeline storage still above max size after pruning (%d > %d bytes)", current, maxBytes)
+	}
+	return totalDeleted, nil
+}
+
+// StartCleanupLoop spawns a goroutine that periodically deletes events older
+// than retention and prunes oldest events when the DB exceeds maxStorageBytes.
+// Runs once immediately so post-upgrade users with bloated DBs don't wait an
+// hour for the first cleanup. The loop exits when Close is called. Both
+// retention <= 0 and maxStorageBytes <= 0 together disable cleanup entirely.
+func (s *SQLiteStore) StartCleanupLoop(retention, interval time.Duration, maxStorageBytes int64) {
+	if interval <= 0 || (retention <= 0 && maxStorageBytes <= 0) {
+		return
+	}
+	s.cleanupMu.Lock()
+	s.retentionAge = retention
+	s.maxStorage = maxStorageBytes
+	s.cleanupMu.Unlock()
+	s.wg.Go(func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		s.runCleanup(retention, maxStorageBytes)
+		for {
+			select {
+			case <-s.quit:
+				return
+			case <-ticker.C:
+				s.runCleanup(retention, maxStorageBytes)
+			}
+		}
+	})
+}
+
+// hydrateSeenResources populates the in-memory seenResources map from the
+// persisted table. Best-effort: any error leaves the map in whatever state it
+// reached, which is no worse than a fresh store. Safe to call only from the
+// constructor — no locking, since no other goroutine has the store yet.
+func (s *SQLiteStore) hydrateSeenResources() {
+	rows, err := s.db.Query("SELECT resource_key FROM seen_resources")
+	if err != nil {
+		log.Printf("[timeline] failed to load seen resources from %s: %v", s.path, err)
+		return
+	}
+	defer rows.Close()
+
+	var loaded, skipped, obsolete int
+	for rows.Next() {
+		var key string
+		if err := rows.Scan(&key); err != nil {
+			skipped++
+			continue
+		}
+		if !isGroupAwareSeenResourceKey(key) {
+			obsolete++
+			continue
+		}
+		s.seenResources[key] = true
+		loaded++
+	}
+	if err := rows.Err(); err != nil {
+		log.Printf("[timeline] seen_resources iteration ended with error after %d rows: %v", loaded, err)
+	}
+	if skipped > 0 {
+		log.Printf("[timeline] skipped %d unreadable seen_resources rows in %s (loaded %d)", skipped, s.path, loaded)
+	}
+	if obsolete > 0 {
+		log.Printf("[timeline] ignored %d obsolete seen_resources rows in %s", obsolete, s.path)
+	}
+	if loaded > 0 {
+		log.Printf("[timeline] loaded %d seen resources from %s", loaded, s.path)
+	}
+}
+
+func isGroupAwareSeenResourceKey(key string) bool {
+	_, resourceKey, ok := strings.Cut(key, "\x00")
+	return ok && strings.Count(resourceKey, "|") == 3
+}
+
+// runCleanup deletes events older than retention and truncates the WAL so the
+// sidecar file stays bounded. WAL truncation is best-effort. Records outcome
+// (timestamp, deleted count, last error) so it's surfaceable via Stats() and
+// /api/diagnostics — operators shouldn't need to tail logs to know retention
+// is working.
+func (s *SQLiteStore) runCleanup(retention time.Duration, maxStorageBytes int64) {
+	var n int64
+	var cleanupErr error
+	var checkpointErr error
+	var pruneErr error
+	ctx := context.Background()
+	// Keeps planner statistics current as the table turns over; re-analyzes
+	// only tables that changed enough to need it. Before the checkpoint, so
+	// the statistics it writes don't land back in a just-truncated WAL.
+	refreshStats := func() {
+		if _, err := s.db.ExecContext(ctx, sqliteOptimize); err != nil {
+			log.Printf("[timeline] Failed to refresh query planner statistics for %s: %v", s.path, err)
+		}
+	}
+	if retention > 0 {
+		n, cleanupErr = s.Cleanup(ctx, retention)
+		if cleanupErr == nil {
+			refreshStats()
+			checkpointErr = s.checkpointWAL(ctx)
+		}
+	}
+	if maxStorageBytes > 0 {
+		var pruned int64
+		pruned, pruneErr = s.PruneToMaxSize(ctx, maxStorageBytes)
+		n += pruned
+	}
+	if retention <= 0 {
+		refreshStats()
+	}
+	err := errors.Join(cleanupErr, checkpointErr, pruneErr)
+	now := time.Now()
+	s.cleanupMu.Lock()
+	s.lastCleanupAt = now
+	s.lastCleanupN = n
+	if err != nil {
+		s.lastCleanupEr = err.Error()
+	} else {
+		s.lastCleanupEr = ""
+	}
+	s.cleanupMu.Unlock()
+
+	if err != nil {
+		log.Printf("[timeline] cleanup failed for %s: %v", s.path, err)
+		return
+	}
+	if n > 0 {
+		log.Printf("[timeline] cleanup: deleted %d events from %s", n, s.path)
+	}
+}
+
+func (s *SQLiteStore) storageBytes() int64 {
+	var total int64
+	for _, path := range []string{s.path, s.path + "-wal"} {
+		if info, err := os.Stat(path); err == nil {
+			total += info.Size()
+		}
+	}
+	return total
+}
+
+func (s *SQLiteStore) countEvents(ctx context.Context) (int64, error) {
+	var count int64
+	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM events").Scan(&count); err != nil {
+		return 0, err
+	}
+	return count, nil
+}
+
+func (s *SQLiteStore) deleteOldestEvents(ctx context.Context, limit int64) (int64, error) {
+	// The boundary comes from the rows this statement deleted. Reading it in
+	// a separate query would race a K8s Event upsert that moves a selected
+	// row forward and pulls a newer row into the batch.
+	rows, err := s.db.QueryContext(ctx, `
+		DELETE FROM events
+		WHERE id IN (
+			SELECT id FROM events
+			ORDER BY timestamp ASC, created_at ASC
+			LIMIT ?
+		)
+		RETURNING timestamp
+	`, limit)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	var n int64
+	var newest time.Time
+	for rows.Next() {
+		var ts string
+		if err := rows.Scan(&ts); err != nil {
+			return n, err
+		}
+		n++
+		if t, parseErr := time.Parse(time.RFC3339Nano, ts); parseErr == nil && t.After(newest) {
+			newest = t
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return n, err
+	}
+	if !newest.IsZero() {
+		s.recordPrunedThrough(newest)
+	}
+	return n, nil
+}
+
+func (s *SQLiteStore) reclaimStorage(ctx context.Context) error {
+	if err := s.checkpointWAL(ctx); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, "VACUUM"); err != nil {
+		return fmt.Errorf("vacuum failed: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) checkpointWAL(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, "PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
+		return fmt.Errorf("wal checkpoint failed: %w", err)
+	}
+	return nil
+}
+
+// scanEvent scans a row into a TimelineEvent
+func (s *SQLiteStore) scanEvent(rows *sql.Rows) (TimelineEvent, error) {
+	var event TimelineEvent
+	var timestamp string
+	var source, eventType, healthState string
+	var apiVersion, uid, reason, message, diffJSON, labelsJSON sql.NullString
+	var ownerKind, ownerName, ownerAPIVersion, ownerUID, ownerEvidence sql.NullString
+	var correlationID, clusterContext, resourceCreatedAt sql.NullString
+
+	err := rows.Scan(
+		&event.ID,
+		&timestamp,
+		&source,
+		&event.Kind,
+		&apiVersion,
+		&event.Namespace,
+		&event.Name,
+		&uid,
+		&eventType,
+		&reason,
+		&message,
+		&diffJSON,
+		&healthState,
+		&ownerKind,
+		&ownerName,
+		&ownerAPIVersion,
+		&ownerUID,
+		&ownerEvidence,
+		&labelsJSON,
+		&event.Count,
+		&correlationID,
+		&clusterContext,
+		&resourceCreatedAt,
+		&event.Seq,
+	)
+	if err != nil {
+		return event, err
+	}
+	event.ClusterContext = clusterContext.String
+	if resourceCreatedAt.Valid && resourceCreatedAt.String != "" {
+		if t, err := time.Parse(time.RFC3339Nano, resourceCreatedAt.String); err == nil {
+			event.CreatedAt = &t
+		}
+	}
+
+	event.Timestamp, _ = time.Parse(time.RFC3339Nano, timestamp)
+	event.Source = EventSource(source)
+	event.EventType = EventType(eventType)
+	event.HealthState = HealthState(healthState)
+
+	if apiVersion.Valid {
+		event.APIVersion = apiVersion.String
+	}
+	if uid.Valid {
+		event.UID = uid.String
+	}
+	if reason.Valid {
+		event.Reason = reason.String
+	}
+	if message.Valid {
+		event.Message = message.String
+	}
+	if correlationID.Valid {
+		event.CorrelationID = correlationID.String
+	}
+
+	if diffJSON.Valid && diffJSON.String != "" {
+		var diff DiffInfo
+		if json.Unmarshal([]byte(diffJSON.String), &diff) == nil {
+			event.Diff = &diff
+		}
+	}
+
+	if ownerKind.Valid && ownerKind.String != "" {
+		event.Owner = &OwnerInfo{
+			Kind:       ownerKind.String,
+			Name:       ownerName.String,
+			APIVersion: ownerAPIVersion.String,
+			UID:        ownerUID.String,
+		}
+	}
+	event.OwnerEvidence = OwnerEvidence(ownerEvidence.String)
+
+	if labelsJSON.Valid && labelsJSON.String != "" {
+		json.Unmarshal([]byte(labelsJSON.String), &event.Labels)
+	}
+
+	return event, nil
+}
+
+// scanEventRow scans a single row into a TimelineEvent
+func (s *SQLiteStore) scanEventRow(row *sql.Row) (TimelineEvent, error) {
+	var event TimelineEvent
+	var timestamp string
+	var source, eventType, healthState string
+	var apiVersion, uid, reason, message, diffJSON, labelsJSON sql.NullString
+	var ownerKind, ownerName, ownerAPIVersion, ownerUID, ownerEvidence sql.NullString
+	var correlationID, clusterContext, resourceCreatedAt sql.NullString
+
+	err := row.Scan(
+		&event.ID,
+		&timestamp,
+		&source,
+		&event.Kind,
+		&apiVersion,
+		&event.Namespace,
+		&event.Name,
+		&uid,
+		&eventType,
+		&reason,
+		&message,
+		&diffJSON,
+		&healthState,
+		&ownerKind,
+		&ownerName,
+		&ownerAPIVersion,
+		&ownerUID,
+		&ownerEvidence,
+		&labelsJSON,
+		&event.Count,
+		&correlationID,
+		&clusterContext,
+		&resourceCreatedAt,
+		&event.Seq,
+	)
+	if err != nil {
+		return event, err
+	}
+	event.ClusterContext = clusterContext.String
+	if resourceCreatedAt.Valid && resourceCreatedAt.String != "" {
+		if t, err := time.Parse(time.RFC3339Nano, resourceCreatedAt.String); err == nil {
+			event.CreatedAt = &t
+		}
+	}
+
+	event.Timestamp, _ = time.Parse(time.RFC3339Nano, timestamp)
+	event.Source = EventSource(source)
+	event.EventType = EventType(eventType)
+	event.HealthState = HealthState(healthState)
+
+	if apiVersion.Valid {
+		event.APIVersion = apiVersion.String
+	}
+	if uid.Valid {
+		event.UID = uid.String
+	}
+	if reason.Valid {
+		event.Reason = reason.String
+	}
+	if message.Valid {
+		event.Message = message.String
+	}
+	if correlationID.Valid {
+		event.CorrelationID = correlationID.String
+	}
+
+	if diffJSON.Valid && diffJSON.String != "" {
+		var diff DiffInfo
+		if json.Unmarshal([]byte(diffJSON.String), &diff) == nil {
+			event.Diff = &diff
+		}
+	}
+
+	if ownerKind.Valid && ownerKind.String != "" {
+		event.Owner = &OwnerInfo{
+			Kind:       ownerKind.String,
+			Name:       ownerName.String,
+			APIVersion: ownerAPIVersion.String,
+			UID:        ownerUID.String,
+		}
+	}
+	event.OwnerEvidence = OwnerEvidence(ownerEvidence.String)
+
+	if labelsJSON.Valid && labelsJSON.String != "" {
+		json.Unmarshal([]byte(labelsJSON.String), &event.Labels)
+	}
+
+	return event, nil
+}
+
+// getOrCompileFilter returns a cached compiled filter or compiles a new one
+func (s *SQLiteStore) getOrCompileFilter(presetName string) (*CompiledFilter, error) {
+	s.cacheMu.RLock()
+	if cf, ok := s.filterCache[presetName]; ok {
+		s.cacheMu.RUnlock()
+		return cf, nil
+	}
+	s.cacheMu.RUnlock()
+
+	presets := DefaultFilterPresets()
+	preset, ok := presets[presetName]
+	if !ok {
+		return nil, nil
+	}
+
+	cf, err := CompileFilter(&preset)
+	if err != nil {
+		return nil, err
+	}
+
+	s.cacheMu.Lock()
+	s.filterCache[presetName] = cf
+	s.cacheMu.Unlock()
+
+	return cf, nil
+}

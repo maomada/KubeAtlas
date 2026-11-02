@@ -1,0 +1,26 @@
+# Failed-HelmRelease fixture — the version range matches no chart.
+# source-controller fails the generated HelmChart (flux-system-podinfo-broken)
+# and helm-controller reports SourceNotReady naming it, so the failure sits on
+# the middle hop of release → HelmChart → HelmRepository.
+apiVersion: helm.toolkit.fluxcd.io/v2
+kind: HelmRelease
+metadata:
+  name: podinfo-broken
+  namespace: flux-system
+spec:
+  interval: 1m
+  releaseName: podinfo-broken
+  targetNamespace: demo-flux-helm
+  chart:
+    spec:
+      chart: podinfo
+      version: '>=99.0.0'  # no such version exists → InstallFailed
+      sourceRef:
+        kind: HelmRepository
+        name: podinfo
+        namespace: flux-system
+      interval: 10m
+  install:
+    createNamespace: false
+    remediation:
+      retries: 3

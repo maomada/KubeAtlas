@@ -1,0 +1,1484 @@
+import { getNodeLifecycle } from '../../utils/node-lifecycle'
+import { resourceRefKey } from '../../utils/resource-refs'
+import { useEffect, useState, useRef, useId } from 'react'
+import {
+  RefreshCw,
+  Terminal,
+  FileText,
+  Trash2,
+  Play,
+  Pause,
+  Ban,
+  AlertTriangle,
+  Box,
+  ChevronDown,
+  History,
+  GitCompare,
+  Code,
+  FileCode2,
+  X,
+} from 'lucide-react'
+import { createTwoFilesPatch } from 'diff'
+import { clsx } from 'clsx'
+import { classifyDiffLine } from './UnifiedDiff'
+import { Tooltip } from '../ui/Tooltip'
+import { ForceDeleteConfirmDialog, type CascadeDependent, type CascadeDetail } from '../ui/ForceDeleteConfirmDialog'
+import { ConfirmDialog } from '../ui/ConfirmDialog'
+import { AlertBanner } from '../ui/drawer-components'
+import { DialogPortal } from '../ui/DialogPortal'
+import type { SelectedResource, WorkloadRevision } from '../../types'
+import type { RadarUpgradeRequirement } from '../../types/fetch-error'
+import { displayKindName } from '../ui/drawer-components'
+import { getDefaultContainerName, getExecContainerNames } from '../resources/resource-utils'
+import { SetImageDialog, type SetImageOwnership } from './SetImageDialog'
+import { DrainPlanDialog, DEFAULT_DRAIN_DIALOG_OPTIONS, type DrainDialogOptions, type DrainPlan } from './DrainPlanDialog'
+import type { WorkloadImageInventory, WorkloadImageUpdate } from '../../types/core'
+import { getGitOpsTool } from '../gitops/detail-helpers'
+import { apiVersionToGroup } from '../../utils/navigation'
+import { isApiGroup } from '../resources/resource-utils-cnpg'
+import { isArgoRolloutResource } from '../../utils/workload-rollout'
+import { isCoreBatchJob } from '../../utils/api-resources'
+import { formatRelativeAgeTime } from '../../utils/format'
+
+// ============================================================================
+// ACTIONS BAR - Interactive buttons that change based on resource kind
+// ============================================================================
+
+const FLUX_ACTION_KINDS = new Set(['gitrepositories', 'ocirepositories', 'helmrepositories', 'kustomizations', 'helmreleases', 'alerts'])
+
+interface ResourceActionsBarProps {
+  resource: SelectedResource
+  leadingActions?: React.ReactNode
+  data: any
+  onClose?: () => void
+  hideLogs?: boolean
+  showYaml?: boolean
+  onToggleYaml?: () => void
+
+  /** When provided, renders a "Compare" button that opens the compare picker. */
+  onCompareTo?: () => void
+
+  /**
+   * Host-supplied callback for cross-cluster compare. When set alongside
+   * onCompareTo, the Compare button becomes a small dropdown offering both
+   * scopes. When set alone, the button opens cross-cluster compare directly.
+   * Only embedded hosts (Radar Hub) wire this; standalone Radar leaves it
+   * undefined and the button stays single-cluster.
+   */
+  onCompareAcrossClusters?: () => void
+
+  // Capabilities (injected by platform)
+  canExec?: boolean
+  canViewLogs?: boolean
+  canPortForward?: boolean
+
+  // Dock actions (injected by platform)
+  onOpenTerminal?: (params: { namespace: string; podName: string; containerName: string; containers: string[] }) => void
+  onOpenLogs?: (params: { namespace: string; podName: string; containers: string[]; containerName?: string }) => void
+  onOpenWorkloadLogs?: (params: { namespace: string; workloadKind: string; workloadName: string }) => void
+  onCopyCommand?: (text: string, message: string, event: React.MouseEvent) => void
+
+  // Port forward render prop (injected by platform)
+  renderPortForward?: (props: { type: 'pod' | 'service'; namespace: string; name: string; className?: string }) => React.ReactNode
+
+  // Delete
+  onDelete?: (params: { kind: string; group?: string; namespace: string; name: string; force: boolean }, callbacks?: { onSuccess?: () => void; onError?: (err: unknown) => void }) => void
+  isDeleting?: boolean
+  cascadeDependents?: CascadeDependent[]
+  cascadeLoading?: boolean
+  onDeletePreviewOpenChange?: (open: boolean) => void
+  cascadeDetail?: CascadeDetail
+  cascadeRootResolved?: boolean
+  cascadePreviewFailed?: boolean
+
+  // Workload restart
+  onRestart?: (params: { kind: string; namespace: string; name: string }, callbacks?: { onSuccess?: () => void; onError?: (err: unknown) => void }) => void
+  isRestarting?: boolean
+
+  onLoadImages?: (params: { kind: string; namespace: string; name: string }) => Promise<WorkloadImageInventory>
+  onSetImages?: (params: { kind: string; namespace: string; name: string; updates: WorkloadImageUpdate[] }) => Promise<unknown>
+  isSettingImages?: boolean
+  imageOwnership?: SetImageOwnership
+
+  // Rollback
+  revisions?: WorkloadRevision[]
+  revisionsLoading?: boolean
+  revisionsError?: Error | null
+  onRollback?: (params: { kind: string; namespace: string; name: string; revision: number }, callbacks?: { onSuccess?: () => void; onError?: (err: unknown) => void }) => void
+  isRollingBack?: boolean
+  // A rolled-back Rollout re-enters its strategy: canary replays every step,
+  // blueGreen parks the revision in preview. Absent when promote-full is denied.
+  onRolloutPromoteFull?: (params: { namespace: string; name: string }) => void | Promise<unknown>
+
+  // CronJob actions
+  onTriggerCronJob?: (params: { namespace: string; name: string }) => void
+  isTriggeringCronJob?: boolean
+  onSuspendCronJob?: (params: { namespace: string; name: string }) => void
+  isSuspendingCronJob?: boolean
+  onResumeCronJob?: (params: { namespace: string; name: string }) => void
+  isResumingCronJob?: boolean
+
+  // Flux actions
+  onFluxReconcile?: (params: { kind: string; namespace: string; name: string }) => void
+  isFluxReconciling?: boolean
+  onFluxSyncWithSource?: (params: { kind: string; namespace: string; name: string }) => void
+  isFluxSyncing?: boolean
+  onFluxSuspend?: (params: { kind: string; namespace: string; name: string }) => void
+  isFluxSuspending?: boolean
+  onFluxResume?: (params: { kind: string; namespace: string; name: string }) => void
+  isFluxResuming?: boolean
+
+  // Argo actions
+  onArgoSync?: (params: { namespace: string; name: string }) => void
+  isArgoSyncing?: boolean
+  onArgoRefresh?: (params: { namespace: string; name: string; hard: boolean }) => void
+  isArgoRefreshing?: boolean
+  onArgoSuspend?: (params: { namespace: string; name: string }) => void
+  isArgoSuspending?: boolean
+  onArgoResume?: (params: { namespace: string; name: string }) => void
+  isArgoResuming?: boolean
+
+  // Node debug shell
+  onOpenNodeTerminal?: (params: { nodeName: string }) => void
+
+  // Node operations (cordon/uncordon/drain)
+  canNodeWrite?: boolean
+  onCordonNode?: (params: { name: string }) => void
+  isCordoningNode?: boolean
+  onUncordonNode?: (params: { name: string }) => void
+  isUncordoningNode?: boolean
+  onDrainNode?: (params: { name: string; options?: { deleteEmptyDirData?: boolean; force?: boolean } }) => void
+  isDrainingNode?: boolean
+  // Read-only drain plan (POST /nodes/{name}/drain-plan). When the host provides
+  // onPlanDrain, the drain dialog shows the plan before enabling the destructive action.
+  onPlanDrain?: (params: { name: string; options: DrainDialogOptions }) => void
+  onPlanDrainReset?: () => void   // forget the last plan when the dialog closes, so a re-open never shows a stale one
+  drainPlan?: DrainPlan | null
+  isPlanningDrain?: boolean
+  drainPlanError?: string | null
+  // The connected Radar predates the drain-plan endpoint (a newer frontend
+  // against an older Radar). The dialog falls back to the plan-less
+  // acknowledgement-only mode instead of keeping Drain disabled on a dead
+  // request, and names the Radar version that serves plans so the user knows a
+  // preview exists.
+  drainPlanUpgrade?: RadarUpgradeRequirement | null
+}
+
+export function ResourceActionsBar({
+  resource, data, leadingActions, onClose, hideLogs, showYaml, onToggleYaml,
+  onCompareTo,
+  onCompareAcrossClusters,
+  canExec, canViewLogs, canPortForward,
+  onOpenTerminal, onOpenLogs: openLogs, onOpenWorkloadLogs: openWorkloadLogs, onCopyCommand,
+  renderPortForward,
+  onDelete, isDeleting, onDeletePreviewOpenChange, cascadeDetail, cascadeDependents, cascadeLoading, cascadeRootResolved, cascadePreviewFailed,
+  onRestart, isRestarting,
+  onLoadImages, onSetImages, isSettingImages, imageOwnership,
+  revisions: revisionsList, revisionsLoading, revisionsError, onRollback, isRollingBack,
+  onRolloutPromoteFull,
+  onTriggerCronJob, isTriggeringCronJob,
+  onSuspendCronJob, isSuspendingCronJob,
+  onResumeCronJob, isResumingCronJob,
+  onFluxReconcile, isFluxReconciling,
+  onFluxSyncWithSource, isFluxSyncing,
+  onFluxSuspend, isFluxSuspending,
+  onFluxResume, isFluxResuming,
+  onArgoSync, isArgoSyncing,
+  onArgoRefresh, isArgoRefreshing,
+  onArgoSuspend, isArgoSuspending,
+  onArgoResume, isArgoResuming,
+  onOpenNodeTerminal,
+  canNodeWrite,
+  onCordonNode, isCordoningNode,
+  onUncordonNode, isUncordoningNode,
+  onDrainNode, isDrainingNode,
+  onPlanDrain, onPlanDrainReset, drainPlan, isPlanningDrain, drainPlanError, drainPlanUpgrade,
+}: ResourceActionsBarProps) {
+  const kind = resource.kind.toLowerCase()
+  const isFluxAction = FLUX_ACTION_KINDS.has(kind) && getGitOpsTool(kind, apiVersionToGroup(data?.apiVersion)) === 'flux'
+  const coreBatchJob = isCoreBatchJob(kind, resource.group)
+  const supportsWorkloadActions = ['deployments', 'statefulsets', 'daemonsets'].includes(kind) ||
+    (kind === 'rollouts' && isArgoRolloutResource(data))
+  const canOpenWorkloadLogs = Boolean(
+    canViewLogs &&
+    !hideLogs &&
+    openWorkloadLogs &&
+    (['deployments', 'statefulsets', 'daemonsets', 'workflows', 'cronjobs', 'cronworkflows', 'workflowtemplates', 'clusterworkflowtemplates', 'scaledjobs'].includes(kind) || coreBatchJob)
+  )
+
+  // Delete confirmation state
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false)
+  const deleteMounted = useRef(true)
+  useEffect(() => {
+    deleteMounted.current = true
+    return () => { deleteMounted.current = false }
+  }, [])
+  const currentDeleteTarget = useRef({ key: resourceRefKey(resource), uid: data?.metadata?.uid })
+  currentDeleteTarget.current = { key: resourceRefKey(resource), uid: data?.metadata?.uid }
+  useEffect(() => { onDeletePreviewOpenChange?.(showDeleteConfirm) }, [showDeleteConfirm, onDeletePreviewOpenChange])
+
+  // Node operation confirmation state
+  const [showCordonConfirm, setShowCordonConfirm] = useState(false)
+  const [showDrainConfirm, setShowDrainConfirm] = useState(false)
+  const [drainOptions, setDrainOptions] = useState<DrainDialogOptions>(DEFAULT_DRAIN_DIALOG_OPTIONS)
+
+  // A backend without the plan endpoint stays unsupported for as long as the dialog is
+  // open: the host reports it through a mutation error, which the next request clears,
+  // so without latching every option change would refire a request known to 404 and
+  // bounce the dialog out of its fallback mode.
+  const [planUpgrade, setPlanUpgrade] = useState<RadarUpgradeRequirement | null>(null)
+  useEffect(() => {
+    if (drainPlanUpgrade) setPlanUpgrade(drainPlanUpgrade)
+  }, [drainPlanUpgrade])
+  useEffect(() => {
+    if (!showDrainConfirm) setPlanUpgrade(null)
+  }, [showDrainConfirm])
+  const planUnsupported = planUpgrade !== null
+  const planSupported = Boolean(onPlanDrain) && !planUnsupported
+
+  // Fetch (and refetch on option changes) the read-only plan while the drain dialog is open.
+  useEffect(() => {
+    if (showDrainConfirm && onPlanDrain && !planUnsupported) {
+      onPlanDrain({ name: resource.name, options: drainOptions })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDrainConfirm, drainOptions.force, drainOptions.deleteEmptyDirData, resource.name, planUnsupported])
+
+  // Rollback dialog state
+  const [showRevisions, setShowRevisions] = useState(false)
+  const [showSetImage, setShowSetImage] = useState(false)
+  const isRollbackKind = ['deployments', 'statefulsets', 'daemonsets', 'rollouts'].includes(kind)
+  const hasMultipleRevisions = (revisionsList?.length ?? 0) > 1
+
+  function handleDeleteConfirm(force: boolean) {
+    const target = currentDeleteTarget.current
+    setShowDeleteConfirm(false)
+    onDelete?.(
+      { kind: resource.kind, group: resource.group, namespace: resource.namespace, name: resource.name, force },
+      {
+        onSuccess: () => {
+          if (deleteMounted.current && currentDeleteTarget.current.key === target.key && currentDeleteTarget.current.uid === target.uid) onClose?.()
+        },
+      }
+    )
+  }
+
+  const isRunning = kind === 'pods' ? data?.status?.phase === 'Running' : true
+  const containers = data?.spec?.containers?.map((c: any) => c.name) || []
+
+  const handleOpenTerminal = () => {
+    if (resource.namespace && resource.name && containers.length > 0) {
+      onOpenTerminal?.({
+        namespace: resource.namespace,
+        podName: resource.name,
+        containerName: getDefaultContainerName(data) || containers[0],
+        containers: getExecContainerNames(data),
+      })
+    }
+  }
+
+  const handleOpenLogs = (containerName?: string) => {
+    if (resource.namespace && resource.name && containers.length > 0) {
+      openLogs?.({
+        namespace: resource.namespace,
+        podName: resource.name,
+        containers,
+        containerName: containerName || getDefaultContainerName(data),
+      })
+    }
+  }
+
+  const [showLogsMenu, setShowLogsMenu] = useState(false)
+  const logsMenuTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const [showCompareMenu, setShowCompareMenu] = useState(false)
+  const compareMenuTimeout = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const handleCompareMouseEnter = () => {
+    if (compareMenuTimeout.current) clearTimeout(compareMenuTimeout.current)
+    if (onCompareTo && onCompareAcrossClusters) setShowCompareMenu(true)
+  }
+  const handleCompareMouseLeave = () => {
+    compareMenuTimeout.current = setTimeout(() => setShowCompareMenu(false), 150)
+  }
+
+  const handleLogsMouseEnter = () => {
+    if (logsMenuTimeout.current) clearTimeout(logsMenuTimeout.current)
+    if (containers.length > 1) setShowLogsMenu(true)
+  }
+  const handleLogsMouseLeave = () => {
+    logsMenuTimeout.current = setTimeout(() => setShowLogsMenu(false), 150)
+  }
+
+  return (
+    <div className="flex items-center gap-1.5 px-4 py-2 flex-wrap">
+      <div className="flex min-w-0 flex-wrap items-center gap-1.5 empty:hidden" data-action-group="object">
+      {leadingActions}
+      {/* Kind-specific actions (left) */}
+      {kind === 'pods' && (
+        <>
+          {isRunning && canExec && onOpenTerminal && (
+            <button
+              onClick={handleOpenTerminal}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand rounded-lg"
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              Terminal
+            </button>
+          )}
+          {canViewLogs && !hideLogs && openLogs && (
+            <div
+              className="relative"
+              onMouseEnter={handleLogsMouseEnter}
+              onMouseLeave={handleLogsMouseLeave}
+            >
+              <button
+                onClick={() => handleOpenLogs(containers.length === 1 ? containers[0] : undefined)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                日志
+                {containers.length > 1 && <ChevronDown className="w-3 h-3 ml-0.5" />}
+              </button>
+              {showLogsMenu && containers.length > 1 && (
+                <div className="absolute top-full left-0 mt-1 min-w-[160px] py-1 bg-theme-surface border border-theme-border rounded-lg shadow-lg z-50">
+                  {containers.map((container: string) => (
+                    <button
+                      key={container}
+                      onClick={() => {
+                        handleOpenLogs(container)
+                        setShowLogsMenu(false)
+                      }}
+                      className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-theme-text-primary hover:bg-theme-hover transition-colors text-left"
+                    >
+                      <Box className="w-3 h-3 text-theme-text-tertiary shrink-0" />
+                      <span className="truncate">{container}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+          {isRunning && canPortForward && resource.namespace && resource.name && renderPortForward && (
+            renderPortForward({
+              type: 'pod',
+              namespace: resource.namespace,
+              name: resource.name,
+              className: '!px-3 !py-1.5 !text-xs',
+            })
+          )}
+        </>
+      )}
+
+      {/* Node actions */}
+      {kind === 'nodes' && (
+        <>
+          {canExec && onOpenNodeTerminal && (
+            <button
+              onClick={() => onOpenNodeTerminal({ nodeName: resource.name })}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+            >
+              <Terminal className="w-3.5 h-3.5" />
+              Debug Shell
+            </button>
+          )}
+
+          {canNodeWrite && !getNodeLifecycle(data).removing && (
+            <>
+              {data?.spec?.unschedulable ? (
+                onUncordonNode && (
+                  <button
+                    onClick={() => onUncordonNode({ name: resource.name })}
+                    disabled={isUncordoningNode || isDrainingNode}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <Play className={`w-3.5 h-3.5 ${isUncordoningNode ? 'animate-pulse' : ''}`} />
+                    {isUncordoningNode ? 'Uncordoning...' : 'Uncordon'}
+                  </button>
+                )
+              ) : (
+                onCordonNode && (
+                  <button
+                    onClick={() => setShowCordonConfirm(true)}
+                    disabled={isCordoningNode}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded-lg transition-colors disabled:opacity-50"
+                  >
+                    <Ban className={`w-3.5 h-3.5 ${isCordoningNode ? 'animate-pulse' : ''}`} />
+                    {isCordoningNode ? 'Cordoning...' : 'Cordon'}
+                  </button>
+                )
+              )}
+
+              {onDrainNode && (
+                <button
+                  onClick={() => setShowDrainConfirm(true)}
+                  disabled={isDrainingNode}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors disabled:opacity-50"
+                >
+                  <AlertTriangle className={`w-3.5 h-3.5 ${isDrainingNode ? 'animate-pulse' : ''}`} />
+                  {isDrainingNode ? 'Draining...' : 'Drain'}
+                </button>
+              )}
+            </>
+          )}
+        </>
+      )}
+
+      {/* Service actions */}
+      {kind === 'services' && data?.apiVersion === 'v1' && canPortForward && resource.namespace && resource.name && renderPortForward && (
+        renderPortForward({
+          type: 'service',
+          namespace: resource.namespace,
+          name: resource.name,
+          className: '!px-3 !py-1.5 !text-xs',
+        })
+      )}
+
+      {/* Workload actions - restart, rollback, and logs */}
+      {supportsWorkloadActions && (
+        <>
+          {onLoadImages && onSetImages && !data?.metadata?.deletionTimestamp && (
+            <button
+              onClick={() => setShowSetImage(true)}
+              className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+            >
+              <Box className="w-3.5 h-3.5" />
+              设置镜像
+            </button>
+          )}
+          {onRestart && (
+            <>
+              <button
+                onClick={() => onRestart({
+                  kind: resource.kind,
+                  namespace: resource.namespace,
+                  name: resource.name,
+                })}
+                disabled={isRestarting}
+                aria-busy={isRestarting}
+                className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${isRestarting ? 'animate-spin' : ''}`} />
+                重启
+              </button>
+              <span className="sr-only" aria-live="polite">
+                {isRestarting ? '正在重启工作负载' : ''}
+              </span>
+            </>
+          )}
+          {isRollbackKind && onRollback && (
+            <Tooltip content={hasMultipleRevisions ? '查看修订历史并回滚' : '仅存在一个修订版本'} delay={150}>
+              <button
+                onClick={() => setShowRevisions(true)}
+                disabled={!hasMultipleRevisions}
+                className={clsx(
+                  "flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-lg transition-colors",
+                  hasMultipleRevisions
+                    ? "text-white bg-amber-600 hover:bg-amber-700"
+                    : "text-theme-text-disabled bg-theme-elevated"
+                )}
+              >
+                <History className="w-3.5 h-3.5" />
+                回滚
+              </button>
+            </Tooltip>
+          )}
+        </>
+      )}
+
+      {/* CronJob actions */}
+      {kind === 'cronjobs' && (
+        <>
+          {onTriggerCronJob && (
+            <button
+              onClick={() => onTriggerCronJob({
+                namespace: resource.namespace,
+                name: resource.name,
+              })}
+              disabled={isTriggeringCronJob}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand rounded-lg"
+            >
+              <Play className={`w-3.5 h-3.5 ${isTriggeringCronJob ? 'animate-pulse' : ''}`} />
+              {isTriggeringCronJob ? 'Triggering...' : 'Trigger'}
+            </button>
+          )}
+          {data?.spec?.suspend ? (
+            onResumeCronJob && (
+              <button
+                onClick={() => onResumeCronJob({
+                  namespace: resource.namespace,
+                  name: resource.name,
+                })}
+                disabled={isResumingCronJob}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50"
+              >
+                <Play className="w-3.5 h-3.5" />
+                {isResumingCronJob ? 'Resuming...' : 'Resume'}
+              </button>
+            )
+          ) : (
+            onSuspendCronJob && (
+              <button
+                onClick={() => onSuspendCronJob({
+                  namespace: resource.namespace,
+                  name: resource.name,
+                })}
+                disabled={isSuspendingCronJob}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+              >
+                <Pause className="w-3.5 h-3.5" />
+                {isSuspendingCronJob ? 'Suspending...' : 'Suspend'}
+              </button>
+            )
+          )}
+        </>
+      )}
+
+      {/* FluxCD actions */}
+      {isFluxAction && (
+        <FluxActions
+          resource={resource}
+          data={data}
+          onReconcile={onFluxReconcile}
+          isReconciling={isFluxReconciling}
+          onSyncWithSource={onFluxSyncWithSource}
+          isSyncing={isFluxSyncing}
+          onSuspend={onFluxSuspend}
+          isSuspending={isFluxSuspending}
+          onResume={onFluxResume}
+          isResuming={isFluxResuming}
+        />
+      )}
+
+      {/* ArgoCD actions */}
+      {kind === 'applications' && isApiGroup(data?.apiVersion, 'argoproj.io') && (
+        <ArgoActions
+          resource={resource}
+          data={data}
+          onSync={onArgoSync}
+          isSyncing={isArgoSyncing}
+          onRefresh={onArgoRefresh}
+          isRefreshing={isArgoRefreshing}
+          onSuspend={onArgoSuspend}
+          isSuspending={isArgoSuspending}
+          onResume={onArgoResume}
+          isResuming={isArgoResuming}
+        />
+      )}
+
+      {canOpenWorkloadLogs && (
+        <button
+          onClick={() => openWorkloadLogs?.({
+            namespace: resource.namespace,
+            workloadKind: kind,
+            workloadName: resource.name,
+          })}
+          className="flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          日志
+        </button>
+      )}
+
+      {/* Job logs */}
+      {coreBatchJob && onCopyCommand && (!canViewLogs || !openWorkloadLogs) && (
+        <button
+          onClick={(e) => onCopyCommand(
+            `kubectl logs job/${resource.name} -n ${resource.namespace} -f`,
+            '日志命令已复制',
+            e
+          )}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          日志
+        </button>
+      )}
+
+      {kind === 'workflows' && onCopyCommand && (!canViewLogs || !openWorkloadLogs) && (
+        <button
+          onClick={(e) => onCopyCommand(
+            `argo logs ${resource.name} -n ${resource.namespace}`,
+            '日志命令已复制',
+            e
+          )}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+        >
+          <FileText className="w-3.5 h-3.5" />
+          日志
+        </button>
+      )}
+
+      </div>
+      <div className="ml-auto flex flex-wrap items-center gap-1.5" data-action-group="utility">
+
+      {/* Universal actions (right-aligned). The AI/Diagnose action is NOT here — it
+          lives in the detail header chrome (see WorkloadView), set apart from these
+          imperative ops. */}
+      {onToggleYaml && (
+        <Tooltip content="Toggle YAML view" delay={150}>
+          <button
+            onClick={onToggleYaml}
+            className={clsx(
+              'flex items-center gap-1.5 px-2 py-1.5 text-xs font-medium rounded-lg transition-colors',
+              showYaml
+                ? 'btn-brand'
+                : 'text-theme-text-secondary hover:text-theme-text-primary border border-theme-border-light hover:bg-theme-elevated'
+            )}
+          >
+            <FileCode2 className="w-3.5 h-3.5" />
+            YAML
+          </button>
+        </Tooltip>
+      )}
+
+      {(onCompareTo || onCompareAcrossClusters) && (
+        <div
+          className="relative"
+          onMouseEnter={handleCompareMouseEnter}
+          onMouseLeave={handleCompareMouseLeave}
+        >
+          <Tooltip
+            content={
+              onCompareTo && onCompareAcrossClusters
+                ? `比较 ${displayKindName(resource.kind, data?.kind).toLowerCase()}`
+                : onCompareAcrossClusters
+                  ? `跨集群比较`
+                  : `与另一个 ${displayKindName(resource.kind, data?.kind).toLowerCase()} 比较`
+            }
+          >
+            <button
+              onClick={onCompareTo ?? onCompareAcrossClusters}
+              aria-label={
+                onCompareTo && onCompareAcrossClusters
+                  ? `比较 ${displayKindName(resource.kind, data?.kind).toLowerCase()}`
+                  : onCompareAcrossClusters
+                    ? `跨集群比较`
+                    : `与另一个 ${displayKindName(resource.kind, data?.kind).toLowerCase()} 比较`
+              }
+              className="p-1.5 text-theme-text-secondary border border-theme-border-light rounded-lg hover:text-theme-text-primary hover:bg-theme-elevated transition-colors flex items-center"
+            >
+              <GitCompare className="w-3.5 h-3.5" />
+              {onCompareTo && onCompareAcrossClusters && (
+                <ChevronDown className="w-3 h-3 ml-0.5" />
+              )}
+            </button>
+          </Tooltip>
+          {showCompareMenu && onCompareTo && onCompareAcrossClusters && (
+            <div className="absolute top-full right-0 mt-1 min-w-[220px] py-1 bg-theme-surface border border-theme-border rounded-lg shadow-theme-lg z-50">
+              <button
+                onClick={() => { onCompareTo(); setShowCompareMenu(false) }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-theme-text-primary hover:bg-theme-hover transition-colors text-left"
+              >
+                <GitCompare className="w-3 h-3 text-theme-text-tertiary shrink-0" />
+                <span>Compare in this cluster</span>
+              </button>
+              <button
+                onClick={() => { onCompareAcrossClusters(); setShowCompareMenu(false) }}
+                className="flex items-center gap-2 w-full px-3 py-1.5 text-xs text-theme-text-primary hover:bg-theme-hover transition-colors text-left"
+              >
+                <GitCompare className="w-3 h-3 text-theme-text-tertiary shrink-0" />
+                <span>Compare across clusters</span>
+              </button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {onDelete && !((kind === 'node' || kind === 'nodes') && data?.metadata?.deletionTimestamp) && (
+        <Tooltip content={isDeleting ? '正在删除资源' : '删除资源'}>
+          <button
+            aria-label={isDeleting ? '正在删除资源' : '删除资源'}
+            disabled={isDeleting}
+            onClick={() => setShowDeleteConfirm(true)}
+            className="p-1.5 text-theme-text-secondary border border-theme-border-light rounded-lg hover:text-red-400 hover:border-red-400/50 hover:bg-red-500/10 transition-colors"
+          >
+            {isDeleting ? <RefreshCw className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+          </button>
+        </Tooltip>
+      )}
+
+      </div>
+
+      <ForceDeleteConfirmDialog
+        open={showDeleteConfirm}
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={handleDeleteConfirm}
+        resourceName={resource.name}
+        resourceData={data}
+        resourceKind={displayKindName(resource.kind, data?.kind)}
+        namespaceName={resource.namespace}
+        isLoading={isDeleting ?? false}
+        cascadeDetail={cascadeDetail}
+        cascadeDependents={cascadeDependents}
+        cascadeLoading={cascadeLoading}
+        cascadeRootResolved={cascadeRootResolved}
+        cascadePreviewFailed={cascadePreviewFailed}
+      />
+
+      {onLoadImages && onSetImages && (
+        <SetImageDialog
+          open={showSetImage}
+          workloadLabel={`${displayKindName(resource.kind, data?.kind)} ${resource.namespace}/${resource.name}`}
+          workloadName={resource.name}
+          workloadResource={resource.kind}
+          ownership={imageOwnership}
+          pending={isSettingImages}
+          onClose={() => setShowSetImage(false)}
+          onLoad={() => onLoadImages({ kind: resource.kind, namespace: resource.namespace, name: resource.name })}
+          onConfirm={(updates) => onSetImages({ kind: resource.kind, namespace: resource.namespace, name: resource.name, updates })}
+        />
+      )}
+
+      {/* Node cordon confirmation */}
+      <ConfirmDialog
+        open={showCordonConfirm}
+        onClose={() => setShowCordonConfirm(false)}
+        onConfirm={() => {
+          onCordonNode?.({ name: resource.name })
+          setShowCordonConfirm(false)
+        }}
+        title="Cordon Node"
+        message={`Mark node "${resource.name}" as unschedulable? No new pods will be scheduled on this node.`}
+        confirmLabel="Cordon"
+        variant="warning"
+        isLoading={isCordoningNode}
+      />
+
+      {/* Node drain: read-only plan first, then the destructive action with explicit options */}
+      <DrainPlanDialog
+        open={showDrainConfirm}
+        nodeName={resource.name}
+        plan={drainPlan}
+        loading={Boolean(isPlanningDrain)}
+        error={planSupported ? drainPlanError : null}
+        options={drainOptions}
+        onOptionsChange={setDrainOptions}
+        planSupported={planSupported}
+        planUpgrade={planUpgrade}
+        onRefreshPlan={planSupported ? () => onPlanDrain?.({ name: resource.name, options: drainOptions }) : undefined}
+        isDraining={Boolean(isDrainingNode)}
+        onClose={() => {
+          setShowDrainConfirm(false)
+          setDrainOptions(DEFAULT_DRAIN_DIALOG_OPTIONS)
+          onPlanDrainReset?.()
+        }}
+        onConfirm={(opts) => {
+          onDrainNode?.({
+            name: resource.name,
+            options: { deleteEmptyDirData: opts.deleteEmptyDirData, force: opts.force },
+          })
+          setShowDrainConfirm(false)
+          setDrainOptions(DEFAULT_DRAIN_DIALOG_OPTIONS)
+          onPlanDrainReset?.()
+        }}
+      />
+
+      {showRevisions && isRollbackKind && (
+        <RevisionHistoryDialog
+          kind={resource.kind}
+          namespace={resource.namespace}
+          name={resource.name}
+          open={showRevisions}
+          onClose={() => setShowRevisions(false)}
+          revisions={revisionsList}
+          isLoading={revisionsLoading}
+          error={revisionsError}
+          onRollback={onRollback}
+          isRollingBack={isRollingBack}
+          onRolloutPromoteFull={onRolloutPromoteFull}
+        />
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
+// FLUX ACTIONS
+// ============================================================================
+
+function FluxActions({ resource, data, onReconcile, isReconciling, onSyncWithSource, isSyncing, onSuspend, isSuspending, onResume, isResuming }: {
+  resource: SelectedResource; data: any
+  onReconcile?: (params: { kind: string; namespace: string; name: string }) => void; isReconciling?: boolean
+  onSyncWithSource?: (params: { kind: string; namespace: string; name: string }) => void; isSyncing?: boolean
+  onSuspend?: (params: { kind: string; namespace: string; name: string }) => void; isSuspending?: boolean
+  onResume?: (params: { kind: string; namespace: string; name: string }) => void; isResuming?: boolean
+}) {
+  const isSuspended = data?.spec?.suspend === true
+  const hasSource = resource.kind === 'kustomizations' || resource.kind === 'helmreleases'
+
+  return (
+    <>
+      {onReconcile && (
+        <Tooltip content={isSuspended ? 'Cannot reconcile while suspended' : 'Trigger reconciliation'} delay={150}>
+          <button
+            onClick={() => onReconcile({
+              kind: resource.kind,
+              namespace: resource.namespace,
+              name: resource.name,
+            })}
+            disabled={isReconciling || isSuspended}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand rounded-lg"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isReconciling ? 'animate-spin' : ''}`} />
+            {isReconciling ? 'Reconciling...' : 'Reconcile'}
+          </button>
+        </Tooltip>
+      )}
+
+      {hasSource && onSyncWithSource && (
+        <Tooltip content={isSuspended ? 'Cannot sync while suspended' : 'Fetch latest from source, then reconcile'} delay={150}>
+          <button
+            onClick={() => onSyncWithSource({
+              kind: resource.kind,
+              namespace: resource.namespace,
+              name: resource.name,
+            })}
+            disabled={isSyncing || isSuspended}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : 'Sync with Source'}
+          </button>
+        </Tooltip>
+      )}
+
+      {isSuspended ? (
+        onResume && (
+          <button
+            onClick={() => onResume({
+              kind: resource.kind,
+              namespace: resource.namespace,
+              name: resource.name,
+            })}
+            disabled={isResuming}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Play className="w-3.5 h-3.5" />
+            {isResuming ? 'Resuming...' : 'Resume'}
+          </button>
+        )
+      ) : (
+        onSuspend && (
+          <button
+            onClick={() => onSuspend({
+              kind: resource.kind,
+              namespace: resource.namespace,
+              name: resource.name,
+            })}
+            disabled={isSuspending}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+          >
+            <Pause className="w-3.5 h-3.5" />
+            {isSuspending ? 'Suspending...' : 'Suspend'}
+          </button>
+        )
+      )}
+    </>
+  )
+}
+
+// ============================================================================
+// ARGO ACTIONS
+// ============================================================================
+
+function ArgoActions({ resource, data, onSync, isSyncing, onRefresh, isRefreshing, onSuspend, isSuspending, onResume, isResuming }: {
+  resource: SelectedResource; data: any
+  onSync?: (params: { namespace: string; name: string }) => void; isSyncing?: boolean
+  onRefresh?: (params: { namespace: string; name: string; hard: boolean }) => void; isRefreshing?: boolean
+  onSuspend?: (params: { namespace: string; name: string }) => void; isSuspending?: boolean
+  onResume?: (params: { namespace: string; name: string }) => void; isResuming?: boolean
+}) {
+  const hasAutomatedSync = !!data?.spec?.syncPolicy?.automated
+
+  return (
+    <>
+      {onSync && (
+        <Tooltip content="Sync application" delay={150}>
+          <button
+            onClick={() => onSync({
+              namespace: resource.namespace,
+              name: resource.name,
+            })}
+            disabled={isSyncing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand rounded-lg"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : 'Sync'}
+          </button>
+        </Tooltip>
+      )}
+
+      {onRefresh && (
+        <Tooltip content="Refresh (re-read from git)" delay={150}>
+          <button
+            onClick={() => onRefresh({
+              namespace: resource.namespace,
+              name: resource.name,
+              hard: false,
+            })}
+            disabled={isRefreshing}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
+            {isRefreshing ? 'Refreshing...' : 'Refresh'}
+          </button>
+        </Tooltip>
+      )}
+
+      {hasAutomatedSync ? (
+        onSuspend && (
+          <button
+            onClick={() => onSuspend({
+              namespace: resource.namespace,
+              name: resource.name,
+            })}
+            disabled={isSuspending}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand-muted rounded-lg"
+          >
+            <Pause className="w-3.5 h-3.5" />
+            {isSuspending ? 'Suspending...' : 'Suspend'}
+          </button>
+        )
+      ) : (
+        onResume && (
+          <button
+            onClick={() => onResume({
+              namespace: resource.namespace,
+              name: resource.name,
+            })}
+            disabled={isResuming}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-green-600 hover:bg-green-700 rounded-lg transition-colors disabled:opacity-50"
+          >
+            <Play className="w-3.5 h-3.5" />
+            {isResuming ? 'Enabling...' : 'Enable Auto-Sync'}
+          </button>
+        )
+      )}
+    </>
+  )
+}
+
+// ============================================================================
+// REVISION HISTORY DIALOG
+// ============================================================================
+
+function RevisionImage({ image, displayImage }: { image: string; displayImage: string }) {
+  const ref = useRef<HTMLSpanElement>(null)
+  const [isTruncated, setIsTruncated] = useState(false)
+
+  useEffect(() => {
+    const element = ref.current
+    if (!element) return
+
+    const measure = () => setIsTruncated(element.scrollWidth > element.clientWidth)
+    measure()
+
+    const observer = new ResizeObserver(measure)
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [displayImage])
+
+  return (
+    <Tooltip
+      content={image}
+      delay={300}
+      disabled={!isTruncated}
+      preserveWrapperWhenDisabled
+      wrapperClassName="w-full min-w-0"
+    >
+      <span ref={ref} className="block truncate">{displayImage}</span>
+    </Tooltip>
+  )
+}
+
+// Accepts both the singular Kind and the plural route segment.
+export function isRolloutKind(kind: string): boolean {
+  return kind.toLowerCase().startsWith('rollout')
+}
+
+// Deliberately not strategy-gated: canary replays its steps and blueGreen parks
+// the revision in preview, so both need promote-full to land a rollback.
+export function offersPromoteAfterRollback(kind: string, hasPromoteFull: boolean): boolean {
+  return isRolloutKind(kind) && hasPromoteFull
+}
+
+export interface RevisionRoleBadge {
+  label: 'Stable' | 'Current' | 'Rolling out'
+  tone: 'status-healthy' | 'status-degraded'
+  tip?: string
+}
+
+// Mid-canary a Rollout's current revision is not yet the stable one; for every
+// other workload kind the two always coincide.
+export function revisionRoleBadges(rev: WorkloadRevision, isRollout: boolean): RevisionRoleBadge[] {
+  const badges: RevisionRoleBadge[] = []
+  if (rev.isStable && !rev.isCurrent) {
+    badges.push({ label: 'Stable', tone: 'status-healthy', tip: 'Serving stable traffic — an abort reverts here' })
+  }
+  if (rev.isCurrent) {
+    const settled = rev.isStable || !isRollout
+    badges.push({ label: settled ? 'Current' : 'Rolling out', tone: settled ? 'status-healthy' : 'status-degraded' })
+  }
+  return badges
+}
+
+// Awaits promote-full so the dialog cannot close on a half-landed rollback, and reports
+// whether it landed: the rollback has already succeeded by this point, so a failure here
+// leaves the Rollout replaying its canary steps and the operator has to be told which
+// half of the pair still needs them.
+export interface PromoteFailure {
+  message: string
+  // Only a lagging controller clears on its own. The status cannot say that — a lost
+  // cluster connection also answers 503 — so this reads the error code the server sends.
+  controllerLagging: boolean
+}
+
+// What the operator is told when the rollback landed and the promotion did not. Kept
+// apart from the markup so the wording and the retry decision can be tested.
+export function promoteFailureGuidance(failure: PromoteFailure): {
+  body: string
+  canRetry: boolean
+} {
+  const shared =
+    'The rollback is live and is re-running the canary steps you asked to skip. ' +
+    'If any of them is a manual pause it will stop there until someone promotes it.'
+  if (failure.controllerLagging) {
+    return {
+      body: `${shared} The Argo Rollouts controller had not caught up yet, which usually clears within a few seconds.`,
+      canRetry: true,
+    }
+  }
+  return {
+    body: `${shared} Promote full is also available from the rollout page once this is resolved.`,
+    canRetry: false,
+  }
+}
+
+export async function completePromoteAfterRollback(
+  promote: () => void | Promise<unknown>,
+  setPending: (pending: boolean) => void,
+): Promise<{ promoted: boolean; error?: PromoteFailure }> {
+  setPending(true)
+  try {
+    await promote()
+    return { promoted: true }
+  } catch (err) {
+    const code = (err as { data?: { error_code?: string } })?.data?.error_code
+    return {
+      promoted: false,
+      error: {
+        message: err instanceof Error ? err.message : String(err),
+        controllerLagging: code === 'controller_not_caught_up',
+      },
+    }
+  } finally {
+    setPending(false)
+  }
+}
+
+export function RevisionHistoryDialog({ kind, namespace, name, open, onClose, revisions, isLoading, error, onRollback, isRollingBack, onRolloutPromoteFull }: {
+  kind: string
+  namespace: string
+  name: string
+  open: boolean
+  onClose: () => void
+  revisions?: WorkloadRevision[]
+  isLoading?: boolean
+  error?: Error | null
+  onRollback?: (params: { kind: string; namespace: string; name: string; revision: number }, callbacks?: { onSuccess?: () => void; onError?: (err: unknown) => void }) => void
+  isRollingBack?: boolean
+  onRolloutPromoteFull?: (params: { namespace: string; name: string }) => void | Promise<unknown>
+}) {
+  const titleId = useId()
+  const [confirmRevision, setConfirmRevision] = useState<number | null>(null)
+  const [diffRevision, setDiffRevision] = useState<number | null>(null)
+  const [promoteAfterRollback, setPromoteAfterRollback] = useState(false)
+  const [promotingFull, setPromotingFull] = useState(false)
+  const [promoteError, setPromoteError] = useState<PromoteFailure | null>(null)
+  const retryButtonRef = useRef<HTMLButtonElement>(null)
+
+  const handleClose = () => { setDiffRevision(null); onClose() }
+
+  // The dialog must not close while promote-full is still in flight, or a rollback
+  // that only half-landed reads as complete.
+  const busy = Boolean(isRollingBack) || promotingFull
+
+  const isRollout = isRolloutKind(kind)
+  const canPromoteAfterRollback = offersPromoteAfterRollback(kind, Boolean(onRolloutPromoteFull))
+
+  // The Confirm button unmounts when the panel appears, so focus would land on <body>
+  // and a keyboard user would have to tab the whole dialog to reach the retry.
+  useEffect(() => {
+    if (promoteError) retryButtonRef.current?.focus()
+  }, [promoteError])
+
+  const currentRevision = revisions?.find(r => r.isCurrent)
+  const selectedRevision = revisions?.find(r => r.number === diffRevision)
+  const hasDiffData = currentRevision?.template && selectedRevision?.template
+
+  function handleRollback(revision: number) {
+    setPromoteError(null)
+    onRollback?.(
+      { kind, namespace, name, revision },
+      {
+        onSuccess: async () => {
+          if (canPromoteAfterRollback && promoteAfterRollback && onRolloutPromoteFull) {
+            const outcome = await completePromoteAfterRollback(
+              () => onRolloutPromoteFull({ namespace, name }),
+              setPromotingFull,
+            )
+            if (!outcome.promoted) {
+              // Closing here would leave the operator with a green "rollback initiated"
+              // toast and a canary still running every step they asked to skip.
+              setPromoteError(outcome.error ?? { message: 'The promotion did not go through.', controllerLagging: false })
+              setConfirmRevision(null)
+              return
+            }
+          }
+          setConfirmRevision(null)
+          setDiffRevision(null)
+          onClose()
+        },
+      }
+    )
+  }
+
+  async function retryPromoteFull() {
+    if (!onRolloutPromoteFull) return
+    const outcome = await completePromoteAfterRollback(
+      () => onRolloutPromoteFull({ namespace, name }),
+      setPromotingFull,
+    )
+    if (outcome.promoted) {
+      setPromoteError(null)
+      setDiffRevision(null)
+      onClose()
+      return
+    }
+    setPromoteError(outcome.error ?? { message: 'The promotion did not go through.', controllerLagging: false })
+  }
+
+  function getImageTag(image: string): string {
+    if (!image) return '-'
+    const parts = image.split(':')
+    if (parts.length > 1) return parts[parts.length - 1]
+    const slashParts = image.split('/')
+    return slashParts[slashParts.length - 1]
+  }
+
+  return (
+    <DialogPortal
+      ariaLabelledBy={titleId}
+      open={open}
+      onClose={handleClose}
+      closable={!busy}
+      className="flex max-h-[85vh] w-[calc(100vw-2rem)] max-w-5xl flex-col"
+    >
+      <div className="flex items-center justify-between p-4 border-b border-theme-border shrink-0">
+        <div className="flex items-center gap-2">
+          <History className="w-5 h-5 text-amber-500" />
+          <h3 id={titleId} className="text-lg font-semibold text-theme-text-primary">Revision History</h3>
+          {diffRevision && currentRevision && (
+            <span className="badge ml-2 bg-blue-500/15 text-blue-400">
+              <GitCompare className="w-3 h-3" />
+              #{currentRevision.number} vs #{diffRevision}
+            </span>
+          )}
+        </div>
+        <Tooltip content="Close" delay={150}>
+          <button
+            onClick={handleClose}
+            disabled={busy}
+            aria-label="Close revision history"
+            className="p-1 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded disabled:opacity-50"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </Tooltip>
+      </div>
+
+      <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <div className={clsx("min-h-0 overflow-x-hidden overflow-y-auto p-4", diffRevision ? "max-h-48 shrink-0" : "max-h-[65vh]")}>
+          {isLoading && (
+            <div className="flex items-center justify-center py-8 text-theme-text-secondary text-sm">
+              Loading revisions…
+            </div>
+          )}
+
+          {error && (
+            <div className="flex items-center justify-center py-8 text-red-400 text-sm">
+              Failed to load revisions: {error instanceof Error ? error.message : 'Unknown error'}
+            </div>
+          )}
+
+          {revisions && revisions.length === 0 && (
+            <div className="flex items-center justify-center py-8 text-theme-text-secondary text-sm">
+              No revisions found
+            </div>
+          )}
+
+          {revisions && revisions.length > 0 && (
+            <table className="w-full table-fixed text-sm">
+              <colgroup>
+                <col className="w-16" />
+                <col />
+                <col className="w-24" />
+                <col className="w-44" />
+              </colgroup>
+              <thead>
+                <tr className="text-theme-text-secondary text-left text-xs uppercase tracking-wider">
+                  <th className="pb-2 pr-3 font-medium">Rev</th>
+                  <th className="pb-2 pr-3 font-medium">Image</th>
+                  <th className="pb-2 pr-3 font-medium">Age</th>
+                  <th className="pb-2 font-medium text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {revisions.map((rev: WorkloadRevision) => (
+                  <tr
+                    key={rev.number}
+                    className={clsx(
+                      "border-t border-theme-border/50",
+                      diffRevision === rev.number && "bg-blue-500/10"
+                    )}
+                  >
+                    <td className="py-2 pr-3 text-theme-text-primary font-mono">
+                      #{rev.number}
+                    </td>
+                    <td className="min-w-0 py-2 pr-3 text-theme-text-secondary font-mono">
+                      <RevisionImage image={rev.image} displayImage={getImageTag(rev.image)} />
+                    </td>
+                    <td className="py-2 pr-3 text-theme-text-secondary whitespace-nowrap">
+                      {formatRelativeAgeTime(rev.createdAt)}
+                    </td>
+                    <td className="py-2 text-right">
+                      <div className="flex items-center gap-1 justify-end">
+                        {!rev.isCurrent && confirmRevision !== rev.number && rev.template && currentRevision?.template && (
+                          <Tooltip content="Compare with current revision" delay={150}>
+                            <button
+                              onClick={() => setDiffRevision(diffRevision === rev.number ? null : rev.number)}
+                              className={clsx(
+                                "px-2 py-0.5 text-xs font-medium rounded transition-colors flex items-center gap-1",
+                                diffRevision === rev.number
+                                  ? "bg-blue-500/20 text-blue-400 border border-blue-400/50"
+                                  : "text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 border border-transparent"
+                              )}
+                            >
+                              <GitCompare className="w-3 h-3" />
+                              Diff
+                            </button>
+                          </Tooltip>
+                        )}
+                        {revisionRoleBadges(rev, isRollout).map(({ label, tone, tip }) =>
+                          tip ? (
+                            <Tooltip key={label} content={tip} delay={150}>
+                              <span className={clsx('badge', tone)}>{label}</span>
+                            </Tooltip>
+                          ) : (
+                            <span key={label} className={clsx('badge', tone)}>{label}</span>
+                          )
+                        )}
+                        {rev.isCurrent ? null : confirmRevision === rev.number ? (
+                          <>
+                            <button
+                              onClick={() => handleRollback(rev.number)}
+                              disabled={busy}
+                              className="px-2 py-0.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded transition-colors disabled:opacity-50"
+                            >
+                              {promotingFull
+                                ? 'Waiting for the controller…'
+                                : isRollingBack
+                                  ? 'Rolling back...'
+                                  : 'Confirm'}
+                            </button>
+                            <button
+                              onClick={() => setConfirmRevision(null)}
+                              disabled={busy}
+                              className="px-2 py-0.5 text-xs font-medium text-theme-text-secondary hover:text-theme-text-primary rounded transition-colors disabled:opacity-50"
+                            >
+                              Cancel
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            onClick={() => setConfirmRevision(rev.number)}
+                            className="px-2 py-0.5 text-xs font-medium text-amber-400 hover:text-white hover:bg-amber-600 border border-amber-400/50 hover:border-amber-600 rounded transition-colors"
+                          >
+                            回滚
+                          </button>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {diffRevision && hasDiffData && (
+          <RevisionDiffView
+            currentTemplate={currentRevision!.template!}
+            selectedTemplate={selectedRevision!.template!}
+            currentRevision={currentRevision!.number}
+            selectedRevision={diffRevision}
+          />
+        )}
+      </div>
+
+      {promoteError && (
+        <div className="mx-4 shrink-0" role="alert">
+          <AlertBanner
+            variant="warning"
+            title="Rolled back, but not promoted"
+            message={
+              <>
+                {promoteFailureGuidance(promoteError).body}
+                <span className="block mt-1 text-theme-text-tertiary break-words">
+                  {promoteError.message}
+                </span>
+              </>
+            }
+          >
+            {promoteFailureGuidance(promoteError).canRetry && (
+              <button
+                ref={retryButtonRef}
+                onClick={retryPromoteFull}
+                disabled={busy}
+                className="mt-2 px-2 py-0.5 text-xs font-medium text-white bg-amber-600 hover:bg-amber-700 rounded transition-colors disabled:opacity-50"
+              >
+                {promotingFull ? 'Waiting for the controller…' : 'Promote fully'}
+              </button>
+            )}
+          </AlertBanner>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between gap-4 p-4 border-t border-theme-border shrink-0">
+        {canPromoteAfterRollback ? (
+          <label className="flex items-center gap-2 text-sm text-theme-text-secondary">
+            <input
+              type="checkbox"
+              checked={promoteAfterRollback}
+              onChange={(e) => setPromoteAfterRollback(e.target.checked)}
+              disabled={busy}
+              className="rounded border-theme-border"
+            />
+            Promote fully after rollback — skip pauses, steps, and analysis (emergency hotfix)
+          </label>
+        ) : <span />}
+        <button
+          onClick={handleClose}
+          disabled={busy}
+          className="px-4 py-2 text-sm font-medium text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-lg transition-colors disabled:opacity-50"
+        >
+          Close
+        </button>
+      </div>
+    </DialogPortal>
+  )
+}
+
+// ============================================================================
+// REVISION DIFF VIEW
+// ============================================================================
+
+function stripAutoLabels(templateYaml: string): string {
+  return templateYaml
+    .split('\n')
+    .filter(line => !line.match(/^\s+pod-template-hash:/))
+    .join('\n')
+}
+
+function RevisionDiffView({ currentTemplate, selectedTemplate, currentRevision, selectedRevision }: {
+  currentTemplate: string
+  selectedTemplate: string
+  currentRevision: number
+  selectedRevision: number
+}) {
+  const [expanded, setExpanded] = useState(false)
+
+  const cleanCurrent = stripAutoLabels(currentTemplate)
+  const cleanSelected = stripAutoLabels(selectedTemplate)
+
+  const patch = createTwoFilesPatch(
+    `Revision #${currentRevision} (current)`,
+    `Revision #${selectedRevision}`,
+    cleanCurrent,
+    cleanSelected,
+    '', '',
+    expanded ? { context: 999999 } : { context: 3 }
+  )
+
+  const lines = patch.split('\n')
+  const diffLines = lines.filter(line =>
+    !line.startsWith('===') && !line.startsWith('Index:')
+  )
+
+  const hasChanges = diffLines.some(l => (l.startsWith('+') && !l.startsWith('+++')) || (l.startsWith('-') && !l.startsWith('---')))
+
+  return (
+    <div className="border-t border-theme-border flex flex-col shrink-0">
+      <div className="flex items-center justify-between px-4 py-2 bg-theme-elevated/50 text-xs text-theme-text-secondary shrink-0">
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 bg-red-500/20 border border-red-500/50 rounded" /> Revision #{currentRevision} (current)
+          </span>
+          <span className="flex items-center gap-1">
+            <span className="w-3 h-3 bg-green-500/20 border border-green-500/50 rounded" /> Revision #{selectedRevision}
+          </span>
+        </div>
+        {hasChanges && (
+          <button
+            onClick={() => setExpanded(!expanded)}
+            className="flex items-center gap-1 px-2 py-0.5 text-xs text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded transition-colors"
+          >
+            <Code className="w-3 h-3" />
+            {expanded ? 'Show changes only' : 'Show full spec'}
+          </button>
+        )}
+      </div>
+      <div className="overflow-auto max-h-[400px]">
+        {hasChanges ? (
+          <pre className="text-xs font-mono p-0 m-0">
+            {diffLines.map((line, index) => {
+              const { isAddition, isRemoval: isDeletion, isHeader } = classifyDiffLine(line)
+
+              return (
+                <div
+                  key={index}
+                  className={clsx(
+                    'flex',
+                    isAddition && 'bg-green-500/10',
+                    isDeletion && 'bg-red-500/10',
+                    isHeader && 'bg-blue-500/10'
+                  )}
+                >
+                  <span className="w-10 shrink-0 text-right pr-2 py-0.5 text-theme-text-disabled select-none border-r border-theme-border/50">
+                    {index + 1}
+                  </span>
+                  <span
+                    className={clsx(
+                      'flex-1 px-3 py-0.5 whitespace-pre',
+                      isAddition && 'text-green-400',
+                      isDeletion && 'text-red-400',
+                      isHeader && 'text-blue-400 font-medium',
+                      !isAddition && !isDeletion && !isHeader && 'text-theme-text-secondary'
+                    )}
+                  >
+                    {line || ' '}
+                  </span>
+                </div>
+              )
+            })}
+          </pre>
+        ) : (
+          <div className="flex flex-col items-center justify-center py-12 text-theme-text-tertiary">
+            <GitCompare className="w-8 h-8 mb-2 text-theme-text-disabled" />
+            <span className="text-sm">Templates are identical</span>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}

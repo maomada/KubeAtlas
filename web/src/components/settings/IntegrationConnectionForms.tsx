@@ -1,0 +1,385 @@
+import { useEffect, useId, useState, type ReactNode } from 'react'
+import { Input, Disclosure, SelectMenu } from '@maomada/k8s-ui'
+import { FormSaveActions, type FormFeedback } from './FormSaveActions'
+import { COST_SOURCE_OPTIONS } from '../cost/source'
+
+export interface SecretEdit {
+  action: 'keep' | 'set' | 'clear'
+  value?: string
+}
+export interface ArgoConnectionDraft {
+  url: string
+  insecureTls: boolean
+  secret?: SecretEdit
+  useCliToken?: boolean
+}
+export interface CostConnectionDraft {
+  url: string
+  mode: 'auto' | 'prometheus' | 'kubecost'
+  clusterId: string
+  secret?: SecretEdit
+}
+
+function CredentialField({
+  label,
+  saved,
+  value,
+  onChange
+}: {
+  label: string
+  saved: boolean
+  value: SecretEdit
+  onChange: (value: SecretEdit) => void
+}) {
+  const id = useId()
+  return (
+    <section className="space-y-2 border-t border-theme-border pt-4">
+      <label
+        htmlFor={id}
+        className="block text-sm font-medium text-theme-text-primary"
+      >
+        {label}
+      </label>
+      <div className="flex items-center gap-2">
+        <Input
+          id={id}
+          type="password"
+          autoComplete="new-password"
+          spellCheck={false}
+          value={value.value ?? ''}
+          onChange={(e) =>
+            onChange({
+              action: e.target.value ? 'set' : 'keep',
+              value: e.target.value || undefined
+            })
+          }
+          placeholder={
+            value.action === 'clear'
+              ? '将被移除'
+              : saved
+                ? '已保存的值'
+                : '可选'
+          }
+          className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500 flex-1"
+        />
+        {saved && (
+          <button
+            type="button"
+            className="text-xs text-accent-text hover:underline"
+            onClick={() =>
+              onChange(
+                value.action === 'keep'
+                  ? { action: 'clear' }
+                  : { action: 'keep' }
+              )
+            }
+          >
+            {value.action === 'keep' ? '移除' : '撤销'}
+          </button>
+        )}
+      </div>
+      <p className="text-xs text-theme-text-tertiary">
+        {value.action === 'clear'
+          ? '保存时将移除。'
+          : '保持不变即可保留已保存的值。'}
+      </p>
+    </section>
+  )
+}
+
+export function ArgoCDConnectionForm({
+  value,
+  secretSet,
+  cliSession,
+  onChange,
+  onApply,
+  dirty,
+  onDiscard,
+  connectionAction,
+  feedback,
+  onDirtyChange
+}: {
+  value: ArgoConnectionDraft
+  secretSet: boolean
+  cliSession?: { server: string; user: string; insecure?: boolean }
+  onChange: (value: ArgoConnectionDraft) => void
+  onApply: (value: ArgoConnectionDraft) => Promise<void | boolean>
+  dirty: boolean
+  onDiscard: () => void
+  connectionAction?: ReactNode
+  feedback?: FormFeedback
+  onDirtyChange?: (dirty: boolean) => void
+}) {
+  const id = useId()
+  const [secret, setSecret] = useState<SecretEdit>({ action: 'keep' })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  useEffect(
+    () => onDirtyChange?.(secret.action !== 'keep'),
+    [secret, onDirtyChange]
+  )
+  const apply = async (useCliToken = false) => {
+    setBusy(true)
+    setError('')
+    try {
+      const applied = await onApply({
+        ...value,
+        ...(useCliToken ? { useCliToken: true } : { secret })
+      })
+      if (applied === false) return
+      setSecret({ action: 'keep' })
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <fieldset disabled={busy} className="min-w-0 space-y-4">
+      <p className="text-sm text-theme-text-secondary">
+        比较 Git 配置与实时资源，并显示 Argo CD 健康状态。
+        在允许匿名读取的环境中，无需设置即可使用自动发现。
+      </p>
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label
+            htmlFor={id}
+            className="block text-sm font-medium text-theme-text-primary"
+          >
+            Argo CD 服务器 URL
+          </label>
+        </div>
+        <p className="text-xs text-theme-text-tertiary">
+          地址必须可从 KubeAtlas 访问。留空以自动发现此集群中的服务器。
+        </p>
+        <Input
+          className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+          id={id}
+          value={value.url}
+          onChange={(e) => onChange({ ...value, url: e.target.value })}
+          placeholder="自动发现，或填写 https://argocd.example.com"
+        />
+        {connectionAction}
+      </div>
+      <CredentialField
+        label="API 令牌"
+        saved={secretSet}
+        value={secret}
+        onChange={setSecret}
+      />
+      {cliSession && (
+        <div className="text-xs text-theme-text-secondary space-y-1">
+          <p>
+            可用 CLI 会话：{cliSession.user}，服务器：{cliSession.server}
+          </p>
+          <button
+            type="button"
+            disabled={!value.url.trim()}
+            onClick={() => void apply(true)}
+            className="text-accent-text hover:underline disabled:opacity-50"
+          >
+            使用 CLI 令牌连接
+          </button>
+        </div>
+      )}
+      <label className="flex items-center gap-2 text-xs text-theme-text-secondary">
+        <input
+          type="checkbox"
+          checked={value.insecureTls}
+          onChange={(e) =>
+            onChange({ ...value, insecureTls: e.target.checked })
+          }
+        />
+        跳过 TLS 验证（自签名服务器）
+      </label>
+      {value.insecureTls && (
+        <p className="text-xs text-warning-text">
+          不会验证服务器身份。仅用于受信任的服务器。
+        </p>
+      )}
+      {value.url.startsWith('http://') &&
+        (secretSet || secret.action === 'set') && (
+          <p className="text-xs text-warning-text">
+            凭据将通过未加密的 HTTP 传输。在受信任的私有网络之外，请优先使用 HTTPS。
+          </p>
+        )}
+      <FormSaveActions
+        dirty={dirty}
+        busy={busy}
+        onSave={() => void apply()}
+        onDiscard={onDiscard}
+        feedback={feedback}
+        error={error}
+      />
+    </fieldset>
+  )
+}
+
+export function CostConnectionForm({
+  value,
+  secretSet,
+  onChange,
+  onApply,
+  dirty,
+  onDiscard,
+  connectionAction,
+  feedback,
+  onDirtyChange
+}: {
+  value: CostConnectionDraft
+  secretSet: boolean
+  onChange: (value: CostConnectionDraft) => void
+  onApply: (value: CostConnectionDraft) => Promise<void | boolean>
+  dirty: boolean
+  onDiscard: () => void
+  connectionAction?: ReactNode
+  feedback?: FormFeedback
+  onDirtyChange?: (dirty: boolean) => void
+}) {
+  const id = useId()
+  const [secret, setSecret] = useState<SecretEdit>({ action: 'keep' })
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [overridesOpen, setOverridesOpen] = useState(
+    !!value.url || !!value.clusterId || secretSet
+  )
+  const automatic = value.mode === 'auto'
+  useEffect(
+    () => onDirtyChange?.(secret.action !== 'keep'),
+    [secret, onDirtyChange]
+  )
+  const apply = async () => {
+    setBusy(true)
+    setError('')
+    try {
+      const applied = await onApply({ ...value, secret })
+      if (applied === false) return
+      setSecret({ action: 'keep' })
+    } catch (error) {
+      setError(error instanceof Error ? error.message : String(error))
+      setOverridesOpen(true)
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <fieldset disabled={busy} className="min-w-0 space-y-4">
+      <p className="text-sm text-theme-text-secondary">
+        使用此集群指标连接中的 OpenCost 指标，或连接 Kubecost Aggregator。
+      </p>
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <label
+            htmlFor={`${id}-source`}
+            className="text-sm font-medium text-theme-text-primary"
+          >
+            成本来源
+          </label>
+        </div>
+        <SelectMenu
+          id={`${id}-source`}
+          ariaLabel="成本来源"
+          value={value.mode}
+          options={COST_SOURCE_OPTIONS}
+          onChange={(mode) => {
+            if (
+              mode === 'auto' &&
+              (value.url ||
+                value.clusterId ||
+                secretSet ||
+                secret.action !== 'keep')
+            )
+              setOverridesOpen(true)
+            onChange({
+              ...value,
+              mode: mode as CostConnectionDraft['mode']
+            })
+          }}
+          className="w-full"
+        />
+        {(value.mode === 'prometheus' || (automatic && !overridesOpen)) && connectionAction}
+      </div>
+      {value.mode !== 'prometheus' && (
+        <Disclosure
+          summary={
+            value.url ||
+            value.clusterId ||
+            secretSet ||
+            secret.action !== 'keep'
+              ? 'Kubecost 连接覆盖设置 · 已配置'
+              : 'Kubecost 连接覆盖设置（可选）'
+          }
+          summaryClassName={
+            automatic
+              ? 'text-sm font-medium text-theme-text-secondary'
+              : 'hidden'
+          }
+          open={!automatic || overridesOpen}
+          onOpenChange={setOverridesOpen}
+        >
+          <div className={automatic ? 'space-y-4 pt-3' : 'space-y-4'}>
+            <div className="space-y-1">
+              <label
+                htmlFor={id}
+                className="block text-sm font-medium text-theme-text-primary"
+              >
+                Kubecost Aggregator URL
+              </label>
+              <p className="text-xs text-theme-text-tertiary">
+                留空以自动发现此集群中的服务。联邦部署请使用中心 Aggregator URL。
+              </p>
+              <Input
+                className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                id={id}
+                value={value.url}
+                onChange={(e) => onChange({ ...value, url: e.target.value })}
+                placeholder="自动发现，或填写 https://kubecost.example.com"
+              />
+              {(!automatic || overridesOpen) && connectionAction}
+            </div>
+            <CredentialField
+              label="API 密钥"
+              saved={secretSet}
+              value={secret}
+              onChange={setSecret}
+            />
+            {value.url.startsWith('http://') &&
+              (secretSet || secret.action === 'set') && (
+                <p className="text-xs text-warning-text">
+                  API 密钥将通过未加密的 HTTP 传输。在受信任的私有网络之外，请优先使用 HTTPS。
+                </p>
+              )}
+            <section className="space-y-1 border-t border-theme-border pt-4">
+              <label
+                htmlFor={`${id}-cluster`}
+                className="block text-sm font-medium text-theme-text-primary"
+              >
+                Kubecost 集群 ID
+              </label>
+              <p className="text-xs text-theme-text-tertiary">
+                FinOps Agent 的 CLUSTER_ID，而非 kubeconfig context 名称。留空以自动检测，仅适用于此集群。
+              </p>
+              <Input
+                className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                id={`${id}-cluster`}
+                value={value.clusterId}
+                onChange={(e) =>
+                  onChange({ ...value, clusterId: e.target.value })
+                }
+                placeholder="自动检测"
+              />
+            </section>
+          </div>
+        </Disclosure>
+      )}
+      <FormSaveActions
+        dirty={dirty}
+        busy={busy}
+        onSave={() => void apply()}
+        onDiscard={onDiscard}
+        feedback={feedback}
+        error={error}
+      />
+    </fieldset>
+  )
+}

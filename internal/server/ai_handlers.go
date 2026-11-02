@@ -1,0 +1,778 @@
+// /api/ai/* is the REST mirror of the MCP agent surface. Both target AI
+// consumers (Claude, scripted agents) rather than the frontend, and both
+// intentionally evolve at agent-iteration speed.
+//
+// Unlike /api/* (consumed by the frontend via a generated TypeScript client),
+// the /api/ai/* surface is NOT specified in openapi.yaml. The original
+// motivation for OpenAPI-first in radar was frontend/backend type safety —
+// one spec, regenerated as Go server stubs + TS client. That value
+// proposition does not apply here: the agent consumer doesn't read
+// OpenAPI specs (it reads MCP tool descriptions or in-prompt instructions),
+// and the frontend doesn't call these endpoints at all.
+//
+// Wire shapes for the agent surface live in pkg/resourcecontext (typed
+// JSON DTOs) and pkg/topology. MCP tools document their wire via
+// jsonschema struct tags. /api/ai/* follows the same code-defined
+// discipline as MCP, treating them as one logical surface served over
+// two protocols.
+//
+// Revisit this opt-out when:
+//
+//	(a) the agent surface stabilizes (no major shape changes for two
+//	    release cycles), AND
+//	(b) Skyhook commits to a public customer-facing AI SDK that needs
+//	    generated bindings.
+//
+// Until both conditions are met, bringing /api/ai/* under openapi.yaml
+// is premature — it would pay the spec-authoring tax during evolution
+// without earning the SDK-generation benefit.
+package server
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"slices"
+	"sort"
+	"strings"
+	"time"
+
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+
+	"github.com/go-chi/chi/v5"
+	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+
+	"github.com/maomada/KubeAtlas/internal/auditcontext"
+	"github.com/maomada/KubeAtlas/internal/issues"
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/resourcecontextrefs"
+	"github.com/maomada/KubeAtlas/internal/summarycontext"
+	aicontext "github.com/maomada/KubeAtlas/pkg/ai/context"
+	bpaudit "github.com/maomada/KubeAtlas/pkg/audit"
+	"github.com/maomada/KubeAtlas/pkg/executioninsight"
+	"github.com/maomada/KubeAtlas/pkg/k8score"
+	"github.com/maomada/KubeAtlas/pkg/ownership"
+	"github.com/maomada/KubeAtlas/pkg/policyreports"
+	"github.com/maomada/KubeAtlas/pkg/readreason"
+	"github.com/maomada/KubeAtlas/pkg/resourceapi"
+	"github.com/maomada/KubeAtlas/pkg/resourcecontext"
+	"github.com/maomada/KubeAtlas/pkg/schedulinginsight"
+	"github.com/maomada/KubeAtlas/pkg/servinginsight"
+	"github.com/maomada/KubeAtlas/pkg/topology"
+)
+
+// policyReportLookupAdapter wraps internal/k8s.GetPolicyReportIndex() into
+// the resourcecontext.PolicyReportLookup interface, translating the
+// richer pkg/policyreports.Finding shape (which carries Severity +
+// Category) into the agent-facing resourcecontext.KyvernoFinding shape
+// (Policy / Rule / Result / Message only). Keeping the projection narrow
+// here lets unrelated changes to policyreports.Finding evolve without
+// perturbing the wire contract that downstream callers depend on.
+type policyReportLookupAdapter struct {
+	idx    *policyreports.Index
+	status k8s.PolicyReportStatus
+	// families this caller may read, by report API group. The UI withholds
+	// findings from the rest; an agent asking about the same resource has to be
+	// told the same thing, or the answer depends on which surface was used.
+	families map[string]bool
+}
+
+// Unavailable implements resourcecontext.PolicyReportAvailability so a
+// resource whose policy findings could not be read says so, instead of being
+// indistinguishable from a resource with no violations.
+func (a policyReportLookupAdapter) Unavailable() (resourcecontext.OmittedReason, bool) {
+	// Install status first. With no policy engine there is nothing to withhold,
+	// and the mapping above is deliberately silent there — a denial note on every
+	// resource of every non-Kyverno cluster is noise rather than honesty, and a
+	// restricted caller fails the family SARs on that cluster precisely because
+	// the report kinds do not exist.
+	if reason, unavailable := a.status.OmittedReason(); unavailable {
+		return reason, true
+	}
+	if a.status.Status != k8s.KyvernoStatusReady {
+		return "", false
+	}
+	if len(a.families) == 0 {
+		return resourcecontext.OmittedRBACDenied, true
+	}
+	return "", false
+}
+
+// WithheldFor implements resourcecontext.PolicyReportWithholding: this subject
+// has findings the caller may not read, so an empty summary is not an all-clear.
+func (a policyReportLookupAdapter) WithheldFor(group, kind, namespace, name string) bool {
+	return k8s.PolicyFindingsWithheld(a.idx, a.families, group, kind, namespace, name)
+}
+
+func (a policyReportLookupAdapter) FindingsFor(group, kind, namespace, name string) []resourcecontext.KyvernoFinding {
+	if a.idx == nil {
+		return nil
+	}
+	// Filtered, not FindingsFor: this projection fills `policySummary.kyverno`,
+	// and the index is shared with every other producer writing into the same
+	// report families — Trivy, Falco adapters, VAP evaluation. An unfiltered
+	// read would inflate the Kyverno rollup with enforcement Kyverno never did.
+	//
+	// Sourced, because the engine filter alone cannot tell which family an
+	// outcome was read from, and that is what this caller is authorized against.
+	findings := k8s.ReadableKyvernoFindings(a.idx, a.families, group, kind, namespace, name)
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]resourcecontext.KyvernoFinding, len(findings))
+	for i, f := range findings {
+		out[i] = resourcecontext.KyvernoFinding{
+			Policy:  f.Policy,
+			Rule:    f.Rule,
+			Result:  f.Result,
+			Message: f.Message,
+		}
+	}
+	return out
+}
+
+// parseVerbosity reads the ?verbosity= query parameter and returns the matching level.
+func parseVerbosity(r *http.Request, defaultLevel aicontext.VerbosityLevel) aicontext.VerbosityLevel {
+	switch r.URL.Query().Get("verbosity") {
+	case "summary":
+		return aicontext.LevelSummary
+	case "detail":
+		return aicontext.LevelDetail
+	case "compact":
+		return aicontext.LevelCompact
+	default:
+		return defaultLevel
+	}
+}
+
+// handleAIListResources returns a minified list of resources for AI consumption.
+// GET /api/ai/resources/{kind}?namespace=X&group=X&verbosity=summary|detail|compact&context=none
+//
+// summaryContext (managedBy + health + issueCount) is attached per row
+// at Summary verbosity by default. Pass ?context=none to opt out for a
+// bare list.
+func (s *Server) handleAIListResources(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConnected(w) {
+		return
+	}
+	started := readCache()
+	kind := normalizeKind(chi.URLParam(r, "kind"))
+	group := r.URL.Query().Get("group")
+	level := parseVerbosity(r, aicontext.LevelSummary)
+	skipContext := r.URL.Query().Get("context") == "none"
+
+	// parseNamespacesForUser primes the per-user perm cache. preflightResourceList
+	// then enforces the same RBAC gates as the REST list path (cluster-scoped
+	// SAR for cluster-only kinds, list-namespaces SAR for `kind=namespaces`,
+	// per-namespace and/or cluster-wide list-secrets SAR for `kind=secrets`).
+	// Caller denials stay explicit before reading or shaping any rows.
+	namespaces, accessCheckFailed := s.parseNamespacesForUserWithStatus(r)
+	clusterScoped, _, _ := k8s.ClassifyKindScope(kind, group)
+	authz, failure := s.preflightResourceList(r, kind, group, namespaces)
+	target := s.resourceListTarget(r, started, authz.gaps, clusterScoped)
+	if readCache() != started {
+		s.writeCollectionFailure(w, kind, errReadHandlesChanged)
+		return
+	}
+	if failure != nil {
+		s.writeReadFailure(w, kind, noAccessFailure(failure, target, accessCheckFailed), &target)
+		return
+	}
+	// A bare list can't say which named namespaces it left out or which ones
+	// exact kind authorization withheld, so this endpoint answers the whole
+	// request or nothing.
+	if len(target.gaps) > 0 {
+		s.writeIncompleteAIList(w, target, nil)
+		return
+	}
+	namespaces = authz.namespaces
+
+	cache, ok := s.gateResourceRead(w, kind, group)
+	if !ok {
+		return
+	}
+	if cache != started {
+		s.writeReadFailure(w, kind, errReadHandlesChanged, &target)
+		return
+	}
+	var partial []runtime.Object
+	fromStores := false
+	if key := informerKeyForKind(kind); key != "" && (group == "" || k8s.TypedKindOwnsGroup(kind, group)) {
+		plan, err := typedReadCoverage(cache, key, namespaces, clusterScoped, target.explicit)
+		if err != nil {
+			s.writeReadFailure(w, kind, err, &target)
+			return
+		}
+		// This agent endpoint still returns a bare list; partial scope cannot be
+		// represented by that contract, so require its entire requested scope.
+		// Nor can it say Radar's collection narrowed it, so that is refused too.
+		if plan.collected != nil {
+			s.writeIncompleteAIList(w, target, []resourceapi.Gap{{Code: readreason.RadarNamespaceNotCollected, Namespaces: resourceapi.UnknownNames()}})
+			return
+		}
+		if len(plan.gaps) > 0 {
+			s.writeIncompleteAIList(w, target, plan.gaps)
+			return
+		}
+		// A kind still loading elsewhere is listed from the stores of the
+		// requested namespaces, which have all loaded.
+		if !plan.wholeKindReady {
+			objs, ok := cache.ReadableObjects(key, plan.read)
+			if !ok {
+				s.writeIncompleteAIList(w, target, []resourceapi.Gap{{Code: readreason.KindSyncPending}})
+				return
+			}
+			for i, obj := range objs {
+				if secret, ok := obj.(*corev1.Secret); ok {
+					objs[i] = k8score.WithoutHelmReleaseValues(secret)
+				}
+			}
+			partial = objs
+			fromStores = true
+		}
+	}
+
+	// When a group is specified, route to the dynamic cache so CRDs whose
+	// plural collides with a core kind (e.g. Knative serving.knative.dev/Service
+	// vs corev1 ""/Service, KEDA's HPA-like kinds) reach the right resource.
+	// FetchResourceList is group-blind — it would silently return the core typed
+	// list, dropping the query's group filter. EXCEPT a built-in kind addressed
+	// by its own group (deployments?group=apps) is a typed lookup: the dynamic
+	// cache has no informer for built-ins, so it would 400. Mirrors the
+	// group-aware dispatch in handleGetResource.
+	if group != "" && !k8s.TypedKindOwnsGroup(kind, group) {
+		s.aiListDynamic(w, r, cache, kind, target, namespaces, group, level, skipContext)
+		return
+	}
+
+	// Try typed cache first (group=="" → core/built-in lookup).
+	objs, err := partial, error(nil)
+	if !fromStores {
+		objs, err = k8s.FetchResourceList(cache, kind, namespaces)
+	}
+	if err == k8s.ErrUnknownKind {
+		// Fall through to dynamic cache for CRDs
+		s.aiListDynamic(w, r, cache, kind, target, namespaces, group, level, skipContext)
+		return
+	}
+	if err != nil {
+		if strings.HasPrefix(err.Error(), "forbidden:") {
+			s.writeError(w, http.StatusForbidden, fmt.Sprintf("insufficient permissions to list %s", kind))
+			return
+		}
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if !s.checkResourceListSize(w, listSize(objs), resourceListHardLimit, target, nil) {
+		return
+	}
+	results, err := aicontext.MinifyList(objs, level)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	// Attach summaryContext per row at Summary verbosity. Compact/Detail
+	// already carry richer context on the get-resource path; the
+	// per-row attachment is specifically for cheap list triage.
+	//
+	// For cluster-scoped kinds (Node, PV, cluster-scoped CRDs) issues
+	// live at namespace="" — scoping the issue index to the user's
+	// namespace set would silently zero issueCount on every row. The
+	// preflight RBAC above has already authorized cluster-scoped reads,
+	// so we pass nil here to compose cluster-wide.
+	if !skipContext && level == aicontext.LevelSummary {
+		idxNamespaces := issueIndexNamespaces(namespaces, kind, group)
+		if builder := s.newResourceSummaryContextBuilder(r, idxNamespaces); builder != nil {
+			// Typed list resolves group from each object's TypeMeta —
+			// MinifyList sets it via SetTypeMeta before producing rows,
+			// so we can trust apiVersion on the typed source.
+			summarycontext.AttachToTypedList(results, objs, builder)
+		}
+	}
+	if readCache() != cache {
+		s.writeReadFailure(w, kind, errReadHandlesChanged, &target)
+		return
+	}
+
+	s.writeJSON(w, results)
+}
+
+// issueIndexNamespaces returns the namespace slice to scope the issue
+// index by. For cluster-scoped kinds (Node, PV, cluster-scoped CRDs)
+// returns nil so cluster-scoped issues (which live at namespace="") are
+// not filtered out by the user's namespace-restricted access set.
+// Namespaced kinds pass through unchanged.
+func issueIndexNamespaces(namespaces []string, kind, group string) []string {
+	clusterScoped, _, _ := k8s.ClassifyKindScope(kind, group)
+	if clusterScoped {
+		return nil
+	}
+	return namespaces
+}
+
+// aiListDynamic handles the CRD/dynamic fallback for AI list.
+func (s *Server) aiListDynamic(w http.ResponseWriter, r *http.Request, cache *k8s.ResourceCache, kind string, target listTarget, namespaces []string, group string, level aicontext.VerbosityLevel, skipContext bool) {
+	list, err := readDynamicResourceList(r, cache, kind, group, namespaces, target.explicit, resourceListHardLimit)
+	if err != nil {
+		s.writeReadFailure(w, kind, err, &target)
+		return
+	}
+	if list.narrowed {
+		s.writeIncompleteAIList(w, target, append(list.gaps, resourceapi.Gap{Code: readreason.RadarNamespaceNotCollected, Namespaces: resourceapi.UnknownNames()}))
+		return
+	}
+	if len(list.gaps) > 0 {
+		s.writeIncompleteAIList(w, target, list.gaps)
+		return
+	}
+	if readCache() != cache {
+		s.writeReadFailure(w, kind, errReadHandlesChanged, &target)
+		return
+	}
+	allItems := list.rows
+	if !s.checkResourceListSize(w, len(allItems), resourceListHardLimit, target, list.gaps) {
+		return
+	}
+
+	results := make([]any, 0, len(allItems))
+	for _, item := range allItems {
+		results = append(results, aicontext.MinifyUnstructured(item, level))
+	}
+
+	if !skipContext && level == aicontext.LevelSummary {
+		idxNamespaces := issueIndexNamespaces(namespaces, kind, group)
+		if builder := s.newResourceSummaryContextBuilder(r, idxNamespaces); builder != nil {
+			summarycontext.AttachToUnstructuredList(results, allItems, builder)
+		}
+	}
+
+	s.writeJSON(w, results)
+}
+
+// handleAIGetResource returns a single minified resource for AI consumption,
+// wrapped with a resourceContext enrichment block by default.
+//
+// GET /api/ai/resources/{kind}/{namespace}/{name}
+//
+// Query params:
+//   - group=X         API group disambiguator for CRDs.
+//   - verbosity=...   summary | detail | compact (default: detail).
+//   - context=none    Skip resourceContext build, return bare minified resource.
+//
+// Response shape (default):
+//
+//	{ "resource": <minified>, "resourceContext": { ...basic tier... } }
+//
+// Response shape (context=none):
+//
+//	<minified>
+func (s *Server) handleAIGetResource(w http.ResponseWriter, r *http.Request) {
+	if !s.requireConnected(w) {
+		return
+	}
+	kind := normalizeKind(chi.URLParam(r, "kind"))
+	namespace := chi.URLParam(r, "namespace")
+	name := chi.URLParam(r, "name")
+	group := r.URL.Query().Get("group")
+	level := parseVerbosity(r, aicontext.LevelDetail)
+	skipContext := r.URL.Query().Get("context") == "none"
+
+	// Handle cluster-scoped resources: "_" is used as placeholder for empty namespace
+	if namespace == "_" {
+		namespace = ""
+	}
+
+	started := readCache()
+
+	// Run the same RBAC preflight as handleGetResource — the AI endpoint
+	// returns the same resource bytes (just minified) and must gate on the
+	// same per-user SAR / namespace-access tuple. Without this, a user with
+	// no `get secrets` SAR could read Secret values via /api/ai/resources/…
+	// even though /api/resources/… correctly returns 403. Runs BEFORE the
+	// fetch so cluster-scoped denies don't leak existence by status code.
+	if failure := s.preflightResourceGetFrom(r, started, kind, namespace, name, group); failure != nil {
+		s.writeReadFailure(w, kind, failure, nil)
+		return
+	}
+	if failure := outsideNamespacePin(namespace); failure != nil {
+		if readCache() != started {
+			failure = readFailuref(readreason.ConnectionChanged, "%s", errReadHandlesChanged)
+		}
+		s.writeReadFailure(w, kind, failure, nil)
+		return
+	}
+
+	cache, ok := s.gateResourceRead(w, kind, group)
+	if !ok {
+		return
+	}
+	if cache != started {
+		s.writeCollectionFailure(w, kind, errReadHandlesChanged)
+		return
+	}
+	var readable runtime.Object
+	if key := informerKeyForKind(kind); key != "" && (group == "" || k8s.TypedKindOwnsGroup(kind, group)) {
+		clusterScoped, _, _ := k8s.ClassifyKindScope(kind, group)
+		target := []string{namespace}
+		if clusterScoped {
+			target = nil
+		}
+		if obj, found := cache.CachedObject(key, namespace, name); found {
+			readable = obj
+		} else {
+			plan, err := typedReadCoverage(cache, key, target, clusterScoped, true)
+			if err != nil {
+				s.writeCollectionFailure(w, kind, err)
+				return
+			}
+			if !plan.wholeKindReady {
+				obj, found, ok := cache.ReadableObject(key, namespace, name)
+				if !ok {
+					s.writeCollectionFailure(w, kind, readFailuref(readreason.KindSyncPending, "%s are still loading, please retry shortly", key))
+					return
+				}
+				if !found {
+					s.writeAIFetchError(w, kind, apierrors.NewNotFound(schema.GroupResource{Resource: key}, name))
+					return
+				}
+				readable = obj
+			}
+		}
+	}
+
+	obj, isUnstructured := readable, false
+	if obj == nil {
+		var err error
+		obj, isUnstructured, err = s.fetchAIResource(r.Context(), cache, kind, namespace, name, group)
+		if err != nil {
+			s.writeAIFetchError(w, kind, err)
+			return
+		}
+	}
+
+	if !isUnstructured {
+		k8s.SetTypeMeta(obj)
+	}
+
+	minified, err := minifyForAI(obj, isUnstructured, level)
+	if err != nil {
+		s.writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	if skipContext {
+		if readCache() != cache {
+			s.writeCollectionFailure(w, kind, errReadHandlesChanged)
+			return
+		}
+		s.writeJSON(w, minified)
+		return
+	}
+
+	rc := s.buildAIResourceContext(r, obj, kind, namespace, name)
+	if readCache() != cache {
+		s.writeCollectionFailure(w, kind, errReadHandlesChanged)
+		return
+	}
+	s.writeJSON(w, map[string]any{
+		"resource":        minified,
+		"resourceContext": rc,
+	})
+}
+
+// fetchAIResource resolves the resource from the typed cache or dynamic cache.
+// The bool reports whether the returned object is an unstructured (CRD) value.
+//
+// When a group is provided, the typed cache is skipped and the dynamic cache is
+// consulted with the group qualifier. This prevents kind collisions where a CRD
+// plural shadows a core kind (e.g., Knative serving.knative.dev/Service vs
+// core/v1 Service): without this branch, FetchResource("services", ...) would
+// return the core Service and the requested group would never be consulted,
+// leaking the wrong object via the AI surface. The exception is a built-in kind
+// addressed by its OWN group (deployments?group=apps) — that's a typed lookup;
+// the dynamic cache has no informer for built-ins. Mirrors handleGetResource.
+func (s *Server) fetchAIResource(ctx context.Context, cache *k8s.ResourceCache, kind, namespace, name, group string) (runtime.Object, bool, error) {
+	if group != "" && !k8s.TypedKindOwnsGroup(kind, group) {
+		u, err := readDynamicResourceGet(ctx, cache, kind, group, namespace, name)
+		if err != nil {
+			return nil, false, err
+		}
+		return u, true, nil
+	}
+	obj, err := k8s.FetchResource(cache, kind, namespace, name)
+	if err == nil {
+		return obj, false, nil
+	}
+	if err != k8s.ErrUnknownKind {
+		return nil, false, err
+	}
+	u, dynErr := readDynamicResourceGet(ctx, cache, kind, group, namespace, name)
+	if dynErr != nil {
+		return nil, false, dynErr
+	}
+	return u, true, nil
+}
+
+// writeAIFetchError maps fetch errors to HTTP status codes. Mirrors the
+// previous inline behavior so consumers don't see a status-code drift.
+func (s *Server) writeAIFetchError(w http.ResponseWriter, kind string, err error) {
+	switch {
+	case apierrors.IsNotFound(err), errors.Is(err, k8score.ErrResourceNotFound):
+		s.writeErrorCode(w, http.StatusNotFound, string(readreason.ObjectNotFound), err.Error())
+	case errors.Is(err, k8s.ErrUnknownDynamicKind):
+		s.writeErrorCode(w, http.StatusBadRequest, string(readreason.KindUnknown), err.Error())
+	case strings.HasPrefix(err.Error(), "forbidden:"):
+		s.writeErrorCode(w, readStatusFor(readreason.RadarForbidden), string(readreason.RadarForbidden), fmt.Sprintf("Radar's collector cannot read %s", kind))
+	default:
+		s.writeCollectionFailure(w, kind, err)
+	}
+
+}
+
+// minifyForAI dispatches to the right Minify variant based on whether the
+// resource is unstructured (CRD) or typed.
+func minifyForAI(obj runtime.Object, isUnstructured bool, level aicontext.VerbosityLevel) (any, error) {
+	if isUnstructured {
+		u, ok := obj.(*unstructured.Unstructured)
+		if !ok {
+			return nil, fmt.Errorf("internal: object marked unstructured but is %T", obj)
+		}
+		return aicontext.MinifyUnstructured(u, level), nil
+	}
+	return aicontext.Minify(obj, level)
+}
+
+// buildAIResourceContext assembles the Options struct and calls Build.
+// Returns the populated context — never nil unless obj is nil.
+func (s *Server) buildAIResourceContext(r *http.Request, obj runtime.Object, kind, namespace, name string) *resourcecontext.ResourceContext {
+	if obj == nil {
+		return nil
+	}
+	cache := k8s.GetResourceCache()
+
+	// Canonical kind from the resource's own TypeMeta (set at fetch). Pascal
+	// singular — matches what the audit check runner writes into Finding.Kind,
+	// so the audit index lookup keys correctly. Falls back to the URL kind
+	// only when TypeMeta is somehow empty; non-canonical input there would
+	// silently mis-key the audit lookup.
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	canonicalKind := gvk.Kind
+	if canonicalKind == "" {
+		canonicalKind = kind
+	}
+	canonicalGroup := gvk.Group
+
+	issueSum := computeIssueSummaryForResource(cache, s.issueClusterScopedAccess(r), s.issueRelatedResourceAccess(r), s.issueSubjectAccess(r), s.issueEvidenceAccess(r), canonicalGroup, canonicalKind, namespace, name)
+	auditSum := s.computeAuditSummaryForResource(r, cache, canonicalGroup, canonicalKind, namespace, name)
+
+	opts := resourcecontext.Options{
+		Reflections:   k8s.ReflectionLookup{Cache: cache},
+		Tier:          resourcecontext.TierBasic,
+		AccessChecker: s.newRequestScopedChecker(r),
+		IssueSummary:  issueSum,
+		AuditSummary:  auditSum,
+		Scheduling:    schedulinginsight.ForResource(obj, resourcecontext.TierBasic),
+		Execution:     executioninsight.ForResource(obj, resourcecontext.TierBasic),
+		Serving:       servinginsight.ForResource(obj),
+		AppReferences: resourcecontextrefs.AppReferencesFromEnvChecks(
+			k8s.FindEnvServiceRefChecksForObject(cache, obj),
+			k8s.FindDuplicateEnvVarsForObject(obj),
+			k8s.FindRemovedServiceEnvChecksForObject(r.Context(), cache, obj),
+			k8s.FindStaleSecretEnvChecksForObject(r.Context(), cache, obj),
+		),
+		ContainerCompletionSplit: resourcecontextrefs.ContainerCompletionSplitFromShape(
+			k8s.FindContainerCompletionSplitForObject(cache, obj, time.Now()),
+		),
+		ServiceBackends: k8s.ServiceBackendLookup{Cache: cache},
+		TemplateDivergence: issues.NewCacheProvider().TemplateDivergence(obj, s.issueClusterScopedAccess(r), s.issueRelatedResourceAccess(r), func(verb, group, resource, namespace string) bool {
+			return s.canRead(r, group, resource, namespace, verb)
+		}),
+	}
+
+	// Wire the PolicyReport index when Kyverno is installed. Build emits a
+	// counts-only `policySummary.kyverno` on the basic tier; diagnostic
+	// tier (T10) will surface the top[] findings.
+	// Wired unconditionally: a nil index is exactly the case that needs to
+	// report WHY it is nil.
+	opts.PolicyReports = policyReportLookupAdapter{
+		idx:    k8s.GetPolicyReportIndex(),
+		status: k8s.GetPolicyReportStatus(),
+		// Authorized at the subject's own scope, exactly as the UI does it: a
+		// cluster-scoped resource asks about the cluster-scoped report kind,
+		// which is a different grant from the namespaced one.
+		families: s.readablePolicyReportFamilies(r, namespace),
+	}
+
+	if topo, index, prov, dyn, ok := s.topologyForContext(); ok {
+		opts.RelIndex = index
+		opts.Topology = topo
+		opts.Provider = prov
+		opts.DynamicProv = dyn
+		// Relationships are computed inside Build via GetRelationshipsWithObject,
+		// which applies the same KindForGVK pseudo-kind remap we used to do
+		// here. Pre-computing in the handler doubled the work whenever the
+		// lookup returned nil (no edges): handler call returned nil, Build's
+		// `rel == nil && opts.Topology != nil` fallback re-ran the identical
+		// scan. Leaving opts.Relationships unset is the canonical path.
+	}
+	opts.Ownership = func(rel *topology.Relationships, fetched ownership.Observation) {
+		k8s.AnswerOwner(rel, fetched, func(c *ownership.Catalog) ownership.Access { return s.ownershipAccess(r, c) })
+	}
+
+	return resourcecontext.Build(r.Context(), obj, opts)
+}
+
+// topologyForContext uses the complete relationship graph the broadcaster
+// already keeps for drawer lookups, so resource context never holds a second
+// copy of the cluster. The resource context checker gates each target,
+// including other namespaces. Before that graph exists it builds one through
+// the memo. Returns ok=false when the cache is not available.
+func (s *Server) topologyForContext() (*topology.Topology, *topology.RelationshipsIndex, topology.ResourceProvider, topology.DynamicProvider, bool) {
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return nil, nil, nil, nil, false
+	}
+	provider := k8s.NewTopologyResourceProvider(cache)
+	dyn := k8s.NewTopologyDynamicProvider(k8s.GetDynamicResourceCache(), k8s.GetResourceDiscovery())
+	if topo, index := s.RelationshipTopology(); topo != nil {
+		return topo, index, provider, dyn, true
+	}
+	opts := topology.RelationshipBuildOptions()
+	opts.IncludeSecrets = true
+
+	topo, index, err := s.topoMemo.GetWithIndexScoped(cache.Generation(), opts, func() (*topology.Topology, error) {
+		return topology.NewBuilder(provider).WithDynamic(dyn).Build(opts)
+	})
+	if err != nil || topo == nil {
+		return nil, nil, nil, nil, false
+	}
+	return topo, index, provider, dyn, true
+}
+
+// RelationshipTopology returns the broadcaster's full relationship graph and
+// its index, or nil before it has been built.
+func (s *Server) RelationshipTopology() (*topology.Topology, *topology.RelationshipsIndex) {
+	if s == nil || s.broadcaster == nil {
+		return nil, nil
+	}
+	return s.broadcaster.GetCachedTopologyWithIndex()
+}
+
+// computeIssueSummaryForResource rolls up per-resource issue-composer rows
+// (problem + condition) into an IssueSummary.
+//
+// The composer is the canonical "what's wrong with this resource" surface —
+// it merges problem detection (Deployment/DS/etc.), pod-level conditions,
+// and generic CRD condition fallback. Filtering to a single (kind, name)
+// is done client-side; the composer's native namespace filter restricts the
+// scan to the resource's namespace so we don't walk the whole cluster.
+//
+// kind MUST be the Pascal singular form the issue composer writes into
+// Issue.Kind (e.g. "Deployment", "Pod") — the caller derives it from obj's
+// TypeMeta. The composer's Filters.Kinds matcher case-folds both sides, but
+// it does NOT plural-to-singular convert, so URL forms ("deployments",
+// "pods") drop every issue ("deployments" != lower("Deployment")) and the
+// summary silently collapses to nil.
+//
+// Returns nil when no issues match — Build then omits the IssueSummary field.
+func computeIssueSummaryForResource(cache *k8s.ResourceCache, canReadClusterScoped func(kind, group string) bool, canReadRelated func(issues.Ref) bool, canReadSubject func(issues.Ref) bool, canReadEvidence func(issues.EvidenceRead) bool, group, kind, namespace, name string) *resourcecontext.IssueSummary {
+	sum, _ := computeIssueSummaryAndRows(cache, canReadClusterScoped, canReadRelated, canReadSubject, canReadEvidence, group, kind, namespace, name, false)
+	return sum
+}
+
+// computeIssueSummaryAndRows additionally returns the matched rows sorted by
+// (severity desc, reason asc) — the diagnose health frame shows the actual
+// lines, not just the rollup.
+func computeIssueSummaryAndRows(cache *k8s.ResourceCache, canReadClusterScoped func(kind, group string) bool, canReadRelated func(issues.Ref) bool, canReadSubject func(issues.Ref) bool, canReadEvidence func(issues.EvidenceRead) bool, group, kind, namespace, name string, includeFacts bool) (*resourcecontext.IssueSummary, []issues.Issue) {
+	if cache == nil {
+		return nil, nil
+	}
+	provider := issues.NewCacheProvider()
+	if provider == nil {
+		return nil, nil
+	}
+	var namespaces []string
+	if namespace != "" {
+		namespaces = []string{namespace}
+	}
+	// Owner-aware + uncapped (issues.RelatedIssues): get_resource on a workload
+	// surfaces the grouped issues its pods are evidence for, and on a pod beyond
+	// the inline-Members cap too. The old flat-by-exact-resource match missed
+	// both (a Deployment matched no Kind=Pod evidence rows → empty summary).
+	matched := issues.RelatedIssues(provider, issues.RelatedIssueOptions{
+		SkipPodTemplateContext: !includeFacts,
+		Namespaces:             namespaces,
+		CanReadClusterScoped:   canReadClusterScoped,
+		CanReadRelated:         canReadRelated,
+		CanReadSubject:         canReadSubject,
+		CanReadEvidence:        canReadEvidence,
+	}, group, kind, namespace, name)
+	if len(matched) == 0 {
+		return nil, nil
+	}
+	bySource := make(map[string]int, len(matched))
+	for _, row := range matched {
+		bySource[string(row.Source)]++
+	}
+	// Sort by (severity desc, Reason asc) so TopReason is deterministic
+	// across runs even when multiple rows tie on severity. Mirrors the
+	// stable sort applied in auditcontext.SummarizeResource.
+	sort.Slice(matched, func(i, j int) bool {
+		ri, rj := issues.SeverityRank(matched[i].Severity), issues.SeverityRank(matched[j].Severity)
+		if ri != rj {
+			return ri > rj
+		}
+		return matched[i].Reason < matched[j].Reason
+	})
+	count := len(matched)
+	topSeverity := matched[0].Severity
+	topReason := matched[0].Reason
+	return &resourcecontext.IssueSummary{
+		Count:           count,
+		HighestSeverity: string(topSeverity),
+		TopReason:       topReason,
+		TopSubject:      issues.SummarySubject(matched[0], group, kind, namespace, name),
+		BySource:        bySource,
+	}, matched
+}
+
+func (s *Server) computeAuditSummaryForResource(r *http.Request, cache *k8s.ResourceCache, group, kind, namespace, name string) *resourcecontext.AuditSummary {
+	sum, _ := auditcontext.SummarizeResource(cache, group, kind, namespace, name, s.auditOptions(r))
+	return sum
+}
+
+func (s *Server) computeAuditSummaryAndRows(r *http.Request, cache *k8s.ResourceCache, group, kind, namespace, name string) (*resourcecontext.AuditSummary, []bpaudit.Finding) {
+	return auditcontext.SummarizeResource(cache, group, kind, namespace, name, s.auditOptions(r))
+}
+
+// writeIncompleteAIList refuses a list the agent endpoint can't return whole:
+// its bare array has no way to say what is missing, so the code is the most
+// actionable gap's and the gaps travel in the error's coverage.
+func (s *Server) writeIncompleteAIList(w http.ResponseWriter, target listTarget, gaps []resourceapi.Gap) {
+	gaps = append(slices.Clone(target.gaps), gaps...)
+	codes := make([]readreason.Code, 0, len(gaps))
+	for _, gap := range gaps {
+		codes = append(codes, gap.Code)
+	}
+	code := readreason.Primary(codes)
+	if code == "" {
+		code = readreason.KindSyncPending
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(readStatusFor(code))
+	message := "Radar cannot provide a complete list for the requested scope"
+	if code == readreason.RadarNamespaceNotCollected {
+		message = "Radar collects this kind only in some namespaces, which a bare list can't say; name a namespace, or use /api/resources/{kind}, whose coverage says what it read"
+	}
+	s.writeJSON(w, resourceapi.ReadError{
+		Error:     message,
+		ErrorCode: code,
+		Coverage:  &resourceapi.Coverage{Status: resourceapi.CoveragePartial, Scope: target.scope(), NarrowedBy: target.narrowedBy, Gaps: target.placeGaps(gaps, nil)},
+	})
+}

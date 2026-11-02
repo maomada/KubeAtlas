@@ -1,0 +1,370 @@
+import type { SelectedResource, ResourceRef, APIResource } from '../types/core'
+import { englishPlural, englishSingular, isEnglishPlural } from './pluralize'
+import { CORE_RESOURCES, isBuiltinCoreKind } from './api-resources'
+
+/**
+ * Canonical callback type for navigating to a resource.
+ * All components that trigger resource navigation should use this type.
+ */
+export type NavigateToResource = (resource: SelectedResource) => void
+
+// Fallback map for core K8s resources — used before API discovery completes.
+const BUILTIN_PLURAL_TO_KIND: Record<string, string> = {
+  pods: 'Pod',
+  services: 'Service',
+  endpoints: 'Endpoints', // already-plural resource name; englishPlural would yield "endpointses"
+  endpointslices: 'EndpointSlice',
+  deployments: 'Deployment',
+  daemonsets: 'DaemonSet',
+  statefulsets: 'StatefulSet',
+  replicasets: 'ReplicaSet',
+  ingresses: 'Ingress',
+  configmaps: 'ConfigMap',
+  secrets: 'Secret',
+  namespaces: 'Namespace',
+  events: 'Event',
+  nodes: 'Node',
+  jobs: 'Job',
+  cronjobs: 'CronJob',
+  workflows: 'Workflow',
+  cronworkflows: 'CronWorkflow',
+  workflowtemplates: 'WorkflowTemplate',
+  clusterworkflowtemplates: 'ClusterWorkflowTemplate',
+  horizontalpodautoscalers: 'HorizontalPodAutoscaler',
+  persistentvolumeclaims: 'PersistentVolumeClaim',
+  persistentvolumes: 'PersistentVolume',
+  storageclasses: 'StorageClass',
+  poddisruptionbudgets: 'PodDisruptionBudget',
+  roles: 'Role',
+  clusterroles: 'ClusterRole',
+  rolebindings: 'RoleBinding',
+  clusterrolebindings: 'ClusterRoleBinding',
+  serviceaccounts: 'ServiceAccount',
+  networkpolicies: 'NetworkPolicy',
+  // AWS Load Balancer Controller's IngressClass parameters. The Kind is
+  // singular and plural at once, so English rules cannot recover it in hosts
+  // that never load discovery.
+  ingressclassparams: 'IngressClassParams',
+}
+
+const BUILTIN_GROUP_KIND_TO_PLURAL: Record<string, string> = {
+  'scheduling.k8s.io/podgroup': 'podgroups',
+  'metrics.k8s.io/podmetrics': 'pods',
+  'metrics.k8s.io/nodemetrics': 'nodes',
+}
+
+const BUILTIN_GROUP_PLURAL_TO_KIND: Record<string, string> = {
+  ...Object.fromEntries(CORE_RESOURCES.map(r => [`${r.group}/${r.name}`, r.kind])),
+  'metrics.k8s.io/pods': 'PodMetrics',
+  'metrics.k8s.io/nodes': 'NodeMetrics',
+  'scheduling.k8s.io/podgroups': 'PodGroup',
+  'elbv2.k8s.aws/ingressclassparams': 'IngressClassParams',
+}
+
+// Dynamic map built from API discovery — populated by initNavigationMap().
+// Once populated, this is the source of truth for all kind↔plural lookups.
+let discoveredPluralToKind: Record<string, string> | null = null
+let discoveredKindToPlural: Record<string, string> | null = null
+let discoveredGroupKindToPlural: Record<string, string> | null = null
+let discoveredGroupPluralToKind: Record<string, string> | null = null
+let discoveredGroupKindNamespaced: Record<string, boolean> | null = null
+let discoveredCRDNames: Record<string, string> | null = null
+const crdDefinitionListeners = new Set<() => void>()
+
+export function subscribeCRDDefinitions(listener: () => void): () => void {
+  crdDefinitionListeners.add(listener)
+  return () => { crdDefinitionListeners.delete(listener) }
+}
+
+export function getCRDDefinitionsSnapshot(): Readonly<Record<string, string>> | null {
+  return discoveredCRDNames
+}
+
+/**
+ * Initialize navigation maps from discovered API resources.
+ * Call once when API resources are fetched. After this, kindToPlural/pluralToKind
+ * use the real cluster data instead of heuristics.
+ */
+export function initNavigationMap(resources: APIResource[]) {
+  const p2k: Record<string, string> = { ...BUILTIN_PLURAL_TO_KIND }
+  // Seeded from the built-in table so core protection survives partial
+  // discovery (the server forwards whatever groups it could list).
+  const k2p: Record<string, string> = Object.fromEntries(
+    CORE_RESOURCES.filter(r => r.group === '').map(r => [r.kind.toLowerCase(), r.name]),
+  )
+  const gk2p: Record<string, string> = {}
+  const gp2k: Record<string, string> = { ...BUILTIN_GROUP_PLURAL_TO_KIND }
+  const scopes: Record<string, boolean> = {}
+  const crdNames: Record<string, string> = {}
+  const coreKinds = new Set(Object.keys(k2p))
+  for (const r of resources) {
+    const plural = r.name.toLowerCase()
+    const kindLower = r.kind.toLowerCase()
+    if (r.definitionName) crdNames[`${r.group}/${r.kind}`] = r.definitionName
+    // First-wins on plurals: BUILTIN_PLURAL_TO_KIND seeds canonical core mappings
+    // (e.g. "pods" → "Pod") so a colliding API resource (metrics.k8s.io exposes
+    // "pods" with kind "PodMetrics") cannot hijack the core mapping.
+    if (!(plural in p2k)) p2k[plural] = r.kind
+    // Kind-only lookups (core links carry an empty group) likewise keep the core
+    // plural: a CRD that reuses a core Kind under another plural must not win
+    // just because discovery happened to list it later.
+    if (r.group === '') {
+      k2p[kindLower] = plural
+      coreKinds.add(kindLower)
+    } else if (!coreKinds.has(kindLower)) {
+      k2p[kindLower] = plural
+    }
+    gk2p[`${r.group}/${kindLower}`] = plural
+    scopes[`${r.group}/${kindLower}`] = r.namespaced
+    const groupPlural = `${r.group}/${plural}`
+    if (!(groupPlural in gp2k)) gp2k[groupPlural] = r.kind
+  }
+  discoveredPluralToKind = p2k
+  discoveredKindToPlural = k2p
+  discoveredGroupKindToPlural = gk2p
+  discoveredGroupPluralToKind = gp2k
+  discoveredGroupKindNamespaced = scopes
+  discoveredCRDNames = crdNames
+  crdDefinitionListeners.forEach(listener => listener())
+}
+
+/** Reset navigation maps to builtin-only state on cluster changes. */
+export function resetNavigationMap() {
+  discoveredPluralToKind = null
+  discoveredKindToPlural = null
+  discoveredGroupKindToPlural = null
+  discoveredGroupPluralToKind = null
+  discoveredGroupKindNamespaced = null
+  discoveredCRDNames = null
+  crdDefinitionListeners.forEach(listener => listener())
+}
+
+function getPluralToKind(): Record<string, string> {
+  return discoveredPluralToKind || BUILTIN_PLURAL_TO_KIND
+}
+
+/**
+ * Convert a singular kind (e.g., "Deployment") to plural API resource name (e.g., "deployments").
+ * Single source of truth — uses English pluralization rules with a small alias map for
+ * abbreviations and special mappings that aren't simple plurals.
+ * Idempotent: already-plural inputs (e.g., "secrets") are returned as-is.
+ */
+export function kindToPlural(kind: string): string {
+  const kindLower = kind.toLowerCase()
+  const pluralToKindMap = getPluralToKind()
+
+  // An exact core Kind (PascalCase, unlike plural slugs) keeps its core plural
+  // even when a CRD registered that word as its own plural.
+  const core = kind !== kindLower ? CORE_RESOURCES.find(r => r.group === '' && r.kind === kind) : undefined
+  if (core) return core.name
+
+  // Already a known plural — return as-is to prevent double-pluralization
+  if (kindLower in pluralToKindMap) return kindLower
+
+  if (kindLower === 'podgroup') return 'pods'
+
+  // Lookup from discovered API resources (singular kind → plural name)
+  if (discoveredKindToPlural && kindLower in discoveredKindToPlural) {
+    return discoveredKindToPlural[kindLower]
+  }
+
+  // Aliases: abbreviations or mappings to a different resource name
+  const aliases: Record<string, string> = {
+    horizontalpodautoscaler: 'horizontalpodautoscalers',
+    pvc: 'persistentvolumeclaims',
+    caliconetworkpolicy: 'networkpolicies',
+    calicoglobalnetworkpolicy: 'globalnetworkpolicies',
+    calicostagednetworkpolicy: 'stagednetworkpolicies',
+    calicostagedglobalnetworkpolicy: 'stagedglobalnetworkpolicies',
+    calicostagedkubernetesnetworkpolicy: 'stagedkubernetesnetworkpolicies',
+  }
+  if (aliases[kindLower]) return aliases[kindLower]
+
+  // Keep the idempotence contract alive for CRD plurals that neither map knows
+  // yet: the discovery map arrives one round-trip after a cold direct-URL load,
+  // and English-pluralizing an already-plural slug yields `scheduleses`. An
+  // all-lowercase input is an API resource name rather than a Kind (Kubernetes
+  // Kinds are PascalCase), and isEnglishPlural separates a real plural from a
+  // singular that merely ends in 's' — `ingress` and `nodeclass` must still be
+  // pluralized, `schedules` and `validatingpolicies` must not.
+  if (kind === kindLower && isEnglishPlural(kindLower)) return kindLower
+
+  // Fallback: English pluralization rules (shared with pluralize() in
+  // utils/pluralize.ts so a rule change updates both call paths).
+  return englishPlural(kindLower)
+}
+
+export function kindToPluralWithGroup(kind: string, group: string): string {
+  if (!group) return kindToPlural(kind)
+  const kindLower = kind.toLowerCase()
+  // The group's own plural, then its exact Kind, before the group-blind plural
+  // shortcut: a custom Kind spelled like a core plural (Endpoints) has its own
+  // resource, while a lowercase plural must not be read as another Kind.
+  if (kind === kindLower && discoveredGroupPluralToKind?.[`${group}/${kindLower}`]) return kindLower
+  const groupKind = `${group}/${kindLower}`
+  const exact = discoveredGroupKindToPlural?.[groupKind] ?? BUILTIN_GROUP_KIND_TO_PLURAL[groupKind]
+  if (exact) return exact
+  if (kindLower in getPluralToKind()) return kindLower
+  return kindToPlural(kind)
+}
+
+/**
+ * Convert a plural API resource name (e.g., "deployments") back to singular PascalCase kind (e.g., "Deployment").
+ * Inverse of kindToPlural. Converts plural API resource names from URLs back to
+ * singular PascalCase form for internal logic (health checks, badge colors, hierarchy matching).
+ */
+export function pluralToKind(plural: string): string {
+  // A saved investigation can carry an empty kind, and this runs over every
+  // row of the run list — indexing [0] of "" threw and took the whole panel
+  // down with it, making every other run unopenable.
+  if (!plural) return plural
+  const lower = plural.toLowerCase()
+  const pluralToKindMap = getPluralToKind()
+
+  if (pluralToKindMap[lower]) return pluralToKindMap[lower]
+
+  // If it already looks like a singular PascalCase kind (starts with uppercase), return as-is
+  if (plural[0] === plural[0].toUpperCase() && plural[0] !== plural[0].toLowerCase()) {
+    return plural
+  }
+
+  // Fallback: basic de-pluralization + capitalize first letter
+  const singular = englishSingular(lower)
+  return singular.charAt(0).toUpperCase() + singular.slice(1)
+}
+
+/** Return an exact Kind only when the input or group-qualified discovery proves it. */
+export function knownKindForPluralWithGroup(plural: string, group: string): string | undefined {
+  if (!plural) return undefined
+  if (plural[0] !== plural[0].toLowerCase()) return plural
+  const groupPlural = `${group}/${plural.toLowerCase()}`
+  return discoveredGroupPluralToKind?.[groupPlural]
+    ?? BUILTIN_GROUP_PLURAL_TO_KIND[groupPlural]
+}
+
+/** Return a CRD definition only when exact group/kind discovery identifies a CRD. */
+export function customResourceDefinitionRef(apiVersion: string | undefined, kind: string | undefined): ResourceRef | null {
+  if (!apiVersion || !kind) return null
+  const name = discoveredCRDNames?.[`${apiVersionToGroup(apiVersion)}/${kind}`]
+  return name ? { kind: 'CustomResourceDefinition', group: 'apiextensions.k8s.io', namespace: '', name } : null
+}
+
+/**
+ * Convert a ResourceRef (from backend relationships) to a SelectedResource (for navigation).
+ * Handles kind singular→plural conversion.
+ */
+export function refToSelectedResource(
+  ref: Pick<ResourceRef, 'kind' | 'name' | 'group'> & { namespace?: string },
+): SelectedResource {
+  return {
+    kind: kindToPluralWithGroup(ref.kind, ref.group ?? ''),
+    namespace: ref.namespace ?? '',
+    name: ref.name,
+    group: ref.group,
+  }
+}
+
+/**
+ * Extract the API group from an apiVersion string.
+ * Returns '' for core resources (e.g. "v1") and for missing/empty input.
+ * Examples:
+ *   "v1"                          → ""
+ *   "apps/v1"                     → "apps"
+ *   "cluster.x-k8s.io/v1beta1"    → "cluster.x-k8s.io"
+ */
+export function apiVersionToGroup(apiVersion?: string | null): string {
+  if (!apiVersion) return ''
+  const i = apiVersion.indexOf('/')
+  return i === -1 ? '' : apiVersion.slice(0, i)
+}
+
+/** A Kubernetes ObjectReference retains its own API identity and namespace.
+ * Cluster scope comes from exact group/kind discovery (or known built-ins).
+ * Core controllers omit apiVersion for core objects (the EndpointSlice
+ * controller writes Pod targets as kind/namespace/name/uid), so an omitted
+ * apiVersion means the core group only for a built-in core Kind. Any other
+ * missing identity or scope stays non-navigable rather than guessing an API
+ * or borrowing the referring object's namespace. UID is not a drawer locator.
+ */
+export function objectReferenceToResourceRef(ref: {
+  apiVersion?: string
+  kind?: string
+  namespace?: string
+  name?: string
+} | null | undefined): ResourceRef | null {
+  if (!ref?.kind || !ref.name) return null
+  const kindLower = ref.kind.toLowerCase()
+  if (!ref.apiVersion && !isBuiltinCoreKind(ref.kind)) return null
+  const group = apiVersionToGroup(ref.apiVersion)
+  const key = `${group}/${kindLower}`
+  const namespaced = discoveredGroupKindNamespaced?.[key]
+    ?? CORE_RESOURCES.find(r => r.group === group && r.kind.toLowerCase() === kindLower)?.namespaced
+  if (namespaced !== false && !ref.namespace) return null
+  return { kind: ref.kind, group, namespace: namespaced === false ? '' : ref.namespace!, name: ref.name }
+}
+
+// -----------------------------------------------------------------------------
+// Timeline lane identity. A lane's id includes the API group so two CRDs that
+// share a kind name across vendors (CAPI `Cluster` in cluster.x-k8s.io vs CNPG
+// `Cluster` in postgresql.cnpg.io) can never merge into one row. The group is an
+// INTERNAL identity component only — it never surfaces in the UI except the rare
+// on-screen collision chip (see collidingLaneKeys in resource-hierarchy).
+// -----------------------------------------------------------------------------
+
+// Built-in Kubernetes API groups. Their kind names are globally reserved and
+// never collide across vendors, so their lanes keep the bare `Kind/ns/name` id.
+// This keeps existing pins, ?event= URLs, and the applications byResource join
+// byte-stable for all core/built-in resources (Pod, Deployment, Job, …) — only
+// CRD-group lanes get a group-qualified id, so ONLY CRD pins are affected.
+const BUILTIN_API_GROUPS: ReadonlySet<string> = new Set([
+  '', // core (v1)
+  'apps', 'batch', 'autoscaling', 'policy',
+  'networking.k8s.io', 'storage.k8s.io', 'scheduling.k8s.io',
+  'coordination.k8s.io', 'node.k8s.io', 'discovery.k8s.io',
+  'rbac.authorization.k8s.io', 'admissionregistration.k8s.io',
+  'authentication.k8s.io', 'authorization.k8s.io', 'certificates.k8s.io',
+  'apiextensions.k8s.io', 'apiregistration.k8s.io', 'events.k8s.io',
+  'flowcontrol.apiserver.k8s.io', 'resource.k8s.io',
+])
+
+/** Whether a resource's API group must appear in its lane id to prevent a
+ *  cross-group merge. Built-in groups never collide, so they stay bare. */
+export function groupQualifiesLaneId(group: string | undefined): boolean {
+  return !!group && !BUILTIN_API_GROUPS.has(group)
+}
+
+/** Canonical timeline lane id. Group-qualified only for CRD groups
+ *  (`Cluster.postgresql.cnpg.io/prod/db`); bare for built-in/core groups
+ *  (`Pod/team-a/x`, `Deployment/ns/web`) so those ids stay exactly as before. */
+export function laneId(kind: string, group: string | undefined, namespace: string, name: string): string {
+  const g = groupQualifiesLaneId(group) ? `.${group}` : ''
+  return `${kind}${g}/${namespace}/${name}`
+}
+
+/** The group-less resource key (`Kind/ns/name`) — the join key for group-less
+ *  server payloads (applications byResource, AppRow workloads) and group-less
+ *  references (owner refs, K8s-event involvedObject, topology node ids). For a
+ *  built-in-group lane this equals its id; for a CRD lane it's the id minus the
+ *  `.group` segment. */
+export function laneResourceKey(kind: string, namespace: string, name: string): string {
+  return `${kind}/${namespace}/${name}`
+}
+
+/** Recover {kind, group, namespace, name} from a lane id. The kind segment may
+ *  carry a `.group` suffix (CRD lanes). Kind names never contain '.', and a
+ *  qualifying group always does, so the first '.' in the kind segment splits
+ *  them; ns and name never contain '/', so the first two '/' bound the rest. */
+export function parseLaneId(id: string): { kind: string; group: string; namespace: string; name: string } | null {
+  const s1 = id.indexOf('/')
+  if (s1 < 0) return null
+  const s2 = id.indexOf('/', s1 + 1)
+  if (s2 < 0) return null
+  const kindSeg = id.slice(0, s1)
+  const dot = kindSeg.indexOf('.')
+  return {
+    kind: dot < 0 ? kindSeg : kindSeg.slice(0, dot),
+    group: dot < 0 ? '' : kindSeg.slice(dot + 1),
+    namespace: id.slice(s1 + 1, s2),
+    name: id.slice(s2 + 1),
+  }
+}

@@ -1,0 +1,688 @@
+package timeline
+
+import (
+	"context"
+	"fmt"
+	"testing"
+	"time"
+)
+
+func TestMemoryStore_Append(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	event := TimelineEvent{
+		ID:        "test-1",
+		Timestamp: time.Now(),
+		Source:    SourceInformer,
+		Kind:      "Pod",
+		Namespace: "default",
+		Name:      "test-pod",
+		EventType: EventTypeAdd,
+	}
+
+	err := store.Append(ctx, event)
+	if err != nil {
+		t.Fatalf("Append failed: %v", err)
+	}
+
+	// Verify event was stored
+	events, err := store.Query(ctx, QueryOptions{Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(events) != 1 {
+		t.Errorf("Expected 1 event, got %d", len(events))
+	}
+	if events[0].ID != "test-1" {
+		t.Errorf("Expected event ID 'test-1', got '%s'", events[0].ID)
+	}
+}
+
+func TestMemoryStore_AppendBatch(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	events := []TimelineEvent{
+		{ID: "batch-1", Timestamp: time.Now(), Kind: "Pod", Namespace: "default", Name: "pod-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "batch-2", Timestamp: time.Now(), Kind: "Pod", Namespace: "default", Name: "pod-2", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "batch-3", Timestamp: time.Now(), Kind: "Pod", Namespace: "default", Name: "pod-3", EventType: EventTypeAdd, Source: SourceInformer},
+	}
+
+	err := store.AppendBatch(ctx, events)
+	if err != nil {
+		t.Fatalf("AppendBatch failed: %v", err)
+	}
+
+	// Verify all events were stored
+	result, err := store.Query(ctx, QueryOptions{Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 3 {
+		t.Errorf("Expected 3 events, got %d", len(result))
+	}
+}
+
+func TestMemoryStore_Query_Namespace(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	events := []TimelineEvent{
+		{ID: "ns-1", Timestamp: time.Now(), Kind: "Deployment", Namespace: "prod", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "ns-2", Timestamp: time.Now(), Kind: "Deployment", Namespace: "staging", Name: "deploy-2", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "ns-3", Timestamp: time.Now(), Kind: "Deployment", Namespace: "prod", Name: "deploy-3", EventType: EventTypeAdd, Source: SourceInformer},
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	// Query for prod namespace only
+	result, err := store.Query(ctx, QueryOptions{Namespaces: []string{"prod"}, Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("Expected 2 events for prod namespace, got %d", len(result))
+	}
+	for _, e := range result {
+		if e.Namespace != "prod" {
+			t.Errorf("Expected namespace 'prod', got '%s'", e.Namespace)
+		}
+	}
+}
+
+func TestMemoryStore_Query_Kinds(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	events := []TimelineEvent{
+		{ID: "kind-1", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "kind-2", Timestamp: time.Now(), Kind: "Service", Namespace: "default", Name: "svc-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "kind-3", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-2", EventType: EventTypeAdd, Source: SourceInformer},
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	// Query for Deployment kind only
+	result, err := store.Query(ctx, QueryOptions{Kinds: []string{"Deployment"}, Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("Expected 2 Deployment events, got %d", len(result))
+	}
+	for _, e := range result {
+		if e.Kind != "Deployment" {
+			t.Errorf("Expected kind 'Deployment', got '%s'", e.Kind)
+		}
+	}
+}
+
+func TestMemoryStore_Query_APIGroupsFiltersBeforeLimitAndKeepsUnknown(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+	now := time.Now()
+	events := []TimelineEvent{
+		{ID: "matching", Timestamp: now.Add(-3 * time.Minute), APIVersion: "apps/v1", Kind: "Deployment", Namespace: "default", Name: "web", EventType: EventTypeUpdate, Source: SourceInformer},
+		{ID: "unknown", Timestamp: now.Add(-2 * time.Minute), Kind: "Deployment", Namespace: "default", Name: "web", EventType: EventTypeUpdate, Source: SourceInformer},
+		{ID: "wrong-core", Timestamp: now.Add(-time.Minute), APIVersion: "v1", Kind: "Deployment", Namespace: "default", Name: "web", EventType: EventTypeUpdate, Source: SourceInformer},
+	}
+	for i := 0; i < 5; i++ {
+		events = append(events, TimelineEvent{
+			ID: fmt.Sprintf("wrong-%d", i), Timestamp: now.Add(time.Duration(i) * time.Second),
+			APIVersion: "other.example/v1", Kind: "Deployment", Namespace: "default", Name: "web",
+			EventType: EventTypeUpdate, Source: SourceInformer,
+		})
+	}
+	if err := store.AppendBatch(ctx, events); err != nil {
+		t.Fatalf("AppendBatch failed: %v", err)
+	}
+
+	result, err := store.Query(ctx, QueryOptions{
+		Kinds: []string{"Deployment"}, Names: []string{"web"}, APIGroups: []string{"apps"},
+		Limit: 2, IncludeManaged: true,
+	})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 2 || result[0].ID != "unknown" || result[1].ID != "matching" {
+		t.Fatalf("group-filtered result = %+v, want unknown then matching", result)
+	}
+
+	core, err := store.Query(ctx, QueryOptions{
+		Kinds: []string{"Deployment"}, Names: []string{"web"}, APIGroups: []string{""},
+		Limit: 10, IncludeManaged: true,
+	})
+	if err != nil {
+		t.Fatalf("core Query failed: %v", err)
+	}
+	if len(core) != 2 || core[0].ID != "wrong-core" || core[1].ID != "unknown" {
+		t.Fatalf("core-group result = %+v, want core then unknown", core)
+	}
+}
+
+func TestMemoryStore_Query_Names(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	events := []TimelineEvent{
+		{ID: "name-1", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "name-2", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-2", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "name-3", Timestamp: time.Now(), Kind: "Service", Namespace: "default", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer},
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	result, err := store.Query(ctx, QueryOptions{Names: []string{"deploy-1"}, Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("Expected 2 deploy-1 events, got %d", len(result))
+	}
+	for _, e := range result {
+		if e.Name != "deploy-1" {
+			t.Errorf("Expected name 'deploy-1', got %q", e.Name)
+		}
+	}
+}
+
+func TestMemoryStore_Query_EventTypes(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	events := []TimelineEvent{
+		{ID: "et-add", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer, Reason: ReasonRecreated},
+		{ID: "et-update", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-1", EventType: EventTypeUpdate, Source: SourceInformer},
+		{ID: "et-delete", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-2", EventType: EventTypeDelete, Source: SourceInformer},
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	result, err := store.Query(ctx, QueryOptions{EventTypes: []EventType{EventTypeAdd, EventTypeDelete}, Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("Expected 2 add/delete events, got %d", len(result))
+	}
+	for _, e := range result {
+		if e.EventType == EventTypeUpdate {
+			t.Errorf("update event %q leaked through the EventTypes filter", e.ID)
+		}
+		if e.ID == "et-add" && e.Reason != ReasonRecreated {
+			t.Errorf("Reason = %q, want %q", e.Reason, ReasonRecreated)
+		}
+	}
+}
+
+func TestMemoryStore_Query_Since(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	now := time.Now()
+	events := []TimelineEvent{
+		{ID: "since-1", Timestamp: now.Add(-2 * time.Hour), Kind: "Deployment", Namespace: "default", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "since-2", Timestamp: now.Add(-30 * time.Minute), Kind: "Deployment", Namespace: "default", Name: "deploy-2", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "since-3", Timestamp: now, Kind: "Deployment", Namespace: "default", Name: "deploy-3", EventType: EventTypeAdd, Source: SourceInformer},
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	// Query for events in the last hour
+	result, err := store.Query(ctx, QueryOptions{Since: now.Add(-1 * time.Hour), Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("Expected 2 events in last hour, got %d", len(result))
+	}
+}
+
+func TestMemoryStore_Query_Limit(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	// Add 10 events
+	events := make([]TimelineEvent, 10)
+	for i := range 10 {
+		events[i] = TimelineEvent{
+			ID:        "limit-" + string(rune('0'+i)),
+			Timestamp: time.Now(),
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "deploy-" + string(rune('0'+i)),
+			EventType: EventTypeAdd,
+			Source:    SourceInformer,
+		}
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	// Query with limit of 5
+	result, err := store.Query(ctx, QueryOptions{Limit: 5, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 5 {
+		t.Errorf("Expected 5 events with limit, got %d", len(result))
+	}
+}
+
+func TestMemoryStore_QueryExtremeLimitIsBounded(t *testing.T) {
+	store := NewMemoryStore(10001)
+	events := make([]TimelineEvent, 10001)
+	for i := range events {
+		events[i] = TimelineEvent{
+			ID: fmt.Sprintf("extreme-%d", i), Timestamp: time.Now(),
+			Kind: "Pod", Namespace: "default", Name: fmt.Sprintf("pod-%d", i),
+			EventType: EventTypeAdd, Source: SourceInformer,
+		}
+	}
+	if err := store.AppendBatch(context.Background(), events); err != nil {
+		t.Fatalf("AppendBatch: %v", err)
+	}
+	results, err := store.Query(context.Background(), QueryOptions{Limit: 1 << 30, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(results) != 10000 {
+		t.Fatalf("extreme limit returned %d results, want capped 10000", len(results))
+	}
+
+	empty := NewMemoryStore(1)
+	initial, err := empty.Query(context.Background(), QueryOptions{Limit: 10000, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("empty Query: %v", err)
+	}
+	if cap(initial) > 256 {
+		t.Fatalf("empty result initial capacity = %d, want at most 256", cap(initial))
+	}
+}
+
+func TestMemoryStore_ResourceSeen(t *testing.T) {
+	store := NewMemoryStore(100)
+
+	// Initially not seen
+	if store.IsResourceSeen("cluster-a", "", "Pod", "default", "test-pod") {
+		t.Error("Resource should not be seen initially")
+	}
+
+	// Mark as seen
+	store.MarkResourceSeen("cluster-a", "", "Pod", "default", "test-pod")
+
+	// Now should be seen
+	if !store.IsResourceSeen("cluster-a", "", "Pod", "default", "test-pod") {
+		t.Error("Resource should be seen after marking")
+	}
+
+	// Clear seen
+	store.ClearResourceSeen("cluster-a", "", "Pod", "default", "test-pod")
+
+	// Should not be seen again
+	if store.IsResourceSeen("cluster-a", "", "Pod", "default", "test-pod") {
+		t.Error("Resource should not be seen after clearing")
+	}
+}
+
+// A same-named resource in a different cluster must not read as already-seen:
+// the store is shared across kubeconfig context switches, and an unqualified
+// key would drop the add for the second cluster's resource.
+func TestMemoryStore_ResourceSeen_ClusterScoped(t *testing.T) {
+	store := NewMemoryStore(100)
+
+	store.MarkResourceSeen("cluster-a", "apps", "Deployment", "team-a", "web")
+
+	if !store.IsResourceSeen("cluster-a", "apps", "Deployment", "team-a", "web") {
+		t.Error("cluster-a/web should be seen after marking")
+	}
+	if store.IsResourceSeen("cluster-b", "apps", "Deployment", "team-a", "web") {
+		t.Error("cluster-b/web must NOT be suppressed by cluster-a's seen entry")
+	}
+}
+
+func TestMemoryStore_ResourceSeen_APIGroupScoped(t *testing.T) {
+	store := NewMemoryStore(100)
+
+	store.MarkResourceSeen("cluster-a", "", "Service", "shop", "api")
+	store.MarkResourceSeen("cluster-a", "serving.knative.dev", "Service", "shop", "api")
+
+	if !store.IsResourceSeen("cluster-a", "", "Service", "shop", "api") {
+		t.Fatal("core Service should be seen")
+	}
+	if !store.IsResourceSeen("cluster-a", "serving.knative.dev", "Service", "shop", "api") {
+		t.Fatal("Knative Service should be seen independently")
+	}
+
+	store.ClearResourceSeen("cluster-a", "", "Service", "shop", "api")
+	if store.IsResourceSeen("cluster-a", "", "Service", "shop", "api") {
+		t.Fatal("core Service should be cleared")
+	}
+	if !store.IsResourceSeen("cluster-a", "serving.knative.dev", "Service", "shop", "api") {
+		t.Fatal("clearing core Service must not clear Knative Service")
+	}
+}
+
+func TestSeenResourceKey_CanonicalGroupIdentity(t *testing.T) {
+	got := SeenResourceKey("cluster-a", "serving.knative.dev", "Service", "shop", "api")
+	want := "cluster-a\x00serving.knative.dev|Service|shop|api"
+	if got != want {
+		t.Fatalf("SeenResourceKey() = %q, want %q", got, want)
+	}
+}
+
+// A K8s Event count bump carries a fresh timestamp; queries iterate by ring
+// position, so the bumped event must move to the head of the recency order
+// instead of staying buried at its original insert position.
+func TestMemoryStore_K8sEventBumpMovesToRecency(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+	base := time.Now()
+
+	a := TimelineEvent{
+		ID: "a", Source: SourceK8sEvent, Kind: "Pod", Namespace: "ns", Name: "web-a",
+		EventType: EventTypeWarning, Reason: "BackOff", Count: 1, Timestamp: base,
+	}
+	b := TimelineEvent{
+		ID: "b", Source: SourceInformer, Kind: "Deployment", Namespace: "ns", Name: "web-b",
+		EventType: EventTypeUpdate, Timestamp: base.Add(time.Second),
+	}
+	_ = store.Append(ctx, a)
+	_ = store.Append(ctx, b)
+
+	q := func() []TimelineEvent {
+		got, err := store.Query(ctx, QueryOptions{Limit: 10, IncludeManaged: true, IncludeK8sEvents: true})
+		if err != nil {
+			t.Fatalf("Query: %v", err)
+		}
+		return got
+	}
+
+	// Before the bump, newest-first order is [b, a].
+	got := q()
+	if len(got) != 2 || got[0].ID != "b" || got[1].ID != "a" {
+		t.Fatalf("pre-bump order = %+v, want [b a]", got)
+	}
+
+	aBump := a
+	aBump.Count = 5
+	aBump.Timestamp = base.Add(2 * time.Second)
+	_ = store.Append(ctx, aBump)
+
+	// After the bump, a is newest → order flips to [a, b], still one row per id.
+	got = q()
+	if len(got) != 2 {
+		t.Fatalf("expected 2 rows after bump, got %d: %+v", len(got), got)
+	}
+	if got[0].ID != "a" || got[0].Count != 5 {
+		t.Fatalf("bumped event not at head with refreshed count, got %+v", got)
+	}
+	if got[1].ID != "b" {
+		t.Fatalf("second row = %s, want b", got[1].ID)
+	}
+	if store.Stats().TotalEvents != 2 {
+		t.Fatalf("Stats.TotalEvents = %d, want 2 (vacated slot must not count)", store.Stats().TotalEvents)
+	}
+}
+
+func TestMemoryStore_RingBufferOverflow(t *testing.T) {
+	// Create a small store that will overflow
+	store := NewMemoryStore(5)
+	ctx := context.Background()
+
+	// Add 10 events (more than buffer size)
+	for i := range 10 {
+		event := TimelineEvent{
+			ID:        "overflow-" + string(rune('0'+i)),
+			Timestamp: time.Now().Add(time.Duration(i) * time.Second),
+			Kind:      "Deployment",
+			Namespace: "default",
+			Name:      "deploy-" + string(rune('0'+i)),
+			EventType: EventTypeAdd,
+			Source:    SourceInformer,
+		}
+		_ = store.Append(ctx, event)
+	}
+
+	// Should only have 5 events (the most recent ones)
+	result, err := store.Query(ctx, QueryOptions{Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 5 {
+		t.Errorf("Expected 5 events after overflow, got %d", len(result))
+	}
+
+	// Verify stats
+	stats := store.Stats()
+	if stats.TotalEvents != 5 {
+		t.Errorf("Expected TotalEvents=5, got %d", stats.TotalEvents)
+	}
+	if stats.MaxEvents != 5 || !stats.EventsEvicted {
+		t.Errorf("Expected bounded, evicted memory stats, got %+v", stats)
+	}
+}
+
+func TestMemoryStore_StatsDistinguishesFullFromEvicted(t *testing.T) {
+	store := NewMemoryStore(3)
+	ctx := context.Background()
+	if stats := store.Stats(); stats.MaxEvents != 3 || stats.EventsEvicted {
+		t.Fatalf("empty stats = %+v, want maxEvents=3 without eviction", stats)
+	}
+	for index := range 3 {
+		_ = store.Append(ctx, TimelineEvent{ID: "full-" + string(rune('a'+index)), Timestamp: time.Now(), Kind: "Deployment", Name: "app", Source: SourceInformer})
+	}
+	if stats := store.Stats(); stats.TotalEvents != 3 || stats.EventsEvicted {
+		t.Fatalf("full stats = %+v, filling the ring must not count as eviction", stats)
+	}
+	_ = store.Append(ctx, TimelineEvent{ID: "overflow", Timestamp: time.Now(), Kind: "Deployment", Name: "app", Source: SourceInformer})
+	if stats := store.Stats(); stats.TotalEvents != 3 || !stats.EventsEvicted {
+		t.Fatalf("overflow stats = %+v, want eviction disclosure", stats)
+	}
+}
+
+func TestMemoryStore_GetEvent(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	event := TimelineEvent{
+		ID:        "get-test-1",
+		Timestamp: time.Now(),
+		Source:    SourceInformer,
+		Kind:      "Pod",
+		Namespace: "default",
+		Name:      "test-pod",
+		EventType: EventTypeAdd,
+	}
+	_ = store.Append(ctx, event)
+
+	// Get the event by ID
+	result, err := store.GetEvent(ctx, "get-test-1")
+	if err != nil {
+		t.Fatalf("GetEvent failed: %v", err)
+	}
+	if result == nil {
+		t.Fatal("GetEvent returned nil")
+	}
+	if result.ID != "get-test-1" {
+		t.Errorf("Expected ID 'get-test-1', got '%s'", result.ID)
+	}
+
+	// Try to get non-existent event
+	result, err = store.GetEvent(ctx, "non-existent")
+	if err != nil {
+		t.Fatalf("GetEvent failed: %v", err)
+	}
+	if result != nil {
+		t.Error("Expected nil for non-existent event")
+	}
+}
+
+func TestMemoryStore_IncludeManaged(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	events := []TimelineEvent{
+		{ID: "managed-1", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{
+			ID: "managed-2", Timestamp: time.Now(), Kind: "Pod", Namespace: "default", Name: "pod-1",
+			EventType: EventTypeAdd, Source: SourceInformer,
+			Owner: &OwnerInfo{Kind: "Deployment", Name: "deploy-1"},
+		},
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	// Without IncludeManaged - should only get Deployment
+	result, err := store.Query(ctx, QueryOptions{Limit: 10, IncludeManaged: false})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("Expected 1 event without IncludeManaged, got %d", len(result))
+	}
+	if result[0].Kind != "Deployment" {
+		t.Errorf("Expected Deployment, got %s", result[0].Kind)
+	}
+
+	// With IncludeManaged - should get both
+	result, err = store.Query(ctx, QueryOptions{Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Errorf("Expected 2 events with IncludeManaged, got %d", len(result))
+	}
+}
+
+func TestMemoryStore_DeletedFiltering(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+	now := time.Now()
+
+	events := []TimelineEvent{
+		{ID: "deploy-add", Timestamp: now, Kind: "Deployment", Namespace: "default", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "deploy-delete", Timestamp: now.Add(time.Second), Kind: "Deployment", Namespace: "default", Name: "deploy-2", EventType: EventTypeDelete, Source: SourceInformer},
+		{
+			ID: "pod-delete", Timestamp: now.Add(2 * time.Second), Kind: "Pod", Namespace: "default", Name: "pod-1",
+			EventType: EventTypeDelete, Source: SourceInformer,
+			Owner: &OwnerInfo{Kind: "ReplicaSet", Name: "deploy-1-abc"},
+		},
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	// Default: top-level deletes show, managed (Pod) deletes do not — they follow IncludeManaged.
+	result, err := store.Query(ctx, QueryOptions{Limit: 10})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 2 {
+		t.Fatalf("Expected Deployment add + Deployment delete, got %d: %+v", len(result), result)
+	}
+	if result[0].ID != "deploy-delete" || result[1].ID != "deploy-add" {
+		t.Fatalf("unexpected result order: %+v", result)
+	}
+
+	// ExcludeDeleted drops the top-level delete too.
+	result, err = store.Query(ctx, QueryOptions{Limit: 10, ExcludeDeleted: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 1 || result[0].ID != "deploy-add" {
+		t.Fatalf("Expected only Deployment add with ExcludeDeleted, got %+v", result)
+	}
+
+	// IncludeManaged surfaces the managed Pod delete alongside the rest.
+	result, err = store.Query(ctx, QueryOptions{Limit: 10, IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("Expected all 3 events with IncludeManaged, got %d: %+v", len(result), result)
+	}
+}
+
+func TestMemoryStore_FilterPreset(t *testing.T) {
+	store := NewMemoryStore(100)
+	ctx := context.Background()
+
+	events := []TimelineEvent{
+		{ID: "preset-1", Timestamp: time.Now(), Kind: "Deployment", Namespace: "default", Name: "deploy-1", EventType: EventTypeAdd, Source: SourceInformer},
+		{ID: "preset-2", Timestamp: time.Now(), Kind: "Lease", Namespace: "kube-system", Name: "lease-1", EventType: EventTypeUpdate, Source: SourceInformer},
+		{ID: "preset-3", Timestamp: time.Now(), Kind: "Endpoints", Namespace: "default", Name: "svc-1", EventType: EventTypeUpdate, Source: SourceInformer},
+	}
+	_ = store.AppendBatch(ctx, events)
+
+	// Query with default preset - should filter out Lease and Endpoints
+	result, err := store.Query(ctx, QueryOptions{Limit: 10, FilterPreset: "default", IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 1 {
+		t.Errorf("Expected 1 event with default preset, got %d", len(result))
+	}
+	if result[0].Kind != "Deployment" {
+		t.Errorf("Expected Deployment, got %s", result[0].Kind)
+	}
+
+	// Query with 'all' preset - should include everything
+	result, err = store.Query(ctx, QueryOptions{Limit: 10, FilterPreset: "all", IncludeManaged: true})
+	if err != nil {
+		t.Fatalf("Query failed: %v", err)
+	}
+	if len(result) != 3 {
+		t.Errorf("Expected 3 events with 'all' preset, got %d", len(result))
+	}
+}
+
+// A store standing in for a failed persistent backend reports itself degraded
+// through Stats so diagnostics can explain the missing persistence.
+func TestNewDegradedMemoryStore_ReportsDegraded(t *testing.T) {
+	degraded := NewDegradedMemoryStore(100, "SQLite unusable: boom")
+	stats := degraded.Stats()
+	if !stats.Degraded || stats.DegradedReason != "SQLite unusable: boom" {
+		t.Fatalf("expected degraded stats with reason, got %+v", stats)
+	}
+
+	healthy := NewMemoryStore(100)
+	if hs := healthy.Stats(); hs.Degraded || hs.DegradedReason != "" {
+		t.Fatalf("plain memory store must not report degraded, got %+v", hs)
+	}
+}
+
+// The ring evicts by arrival, not event time, so the boundary must be the
+// newest timestamp among evicted events: an event that arrived first but
+// carries a later timestamp keeps the boundary there after older-timestamped
+// events are evicted behind it.
+func TestMemoryStore_EvictedThroughIsNewestEvictedTimestamp(t *testing.T) {
+	store := NewMemoryStore(3)
+	ctx := context.Background()
+	base := time.Now().Add(-time.Hour)
+	appendAt := func(id string, offset time.Duration) {
+		t.Helper()
+		if err := store.Append(ctx, TimelineEvent{
+			ID: id, Timestamp: base.Add(offset), Source: SourceInformer,
+			Kind: "Deployment", Namespace: "default", Name: id, EventType: EventTypeUpdate,
+		}); err != nil {
+			t.Fatalf("Append %s: %v", id, err)
+		}
+	}
+
+	appendAt("late-stamp", 10*time.Second)
+	appendAt("a", 0)
+	appendAt("b", 5*time.Second)
+	if got := store.EvictedThrough(); !got.IsZero() {
+		t.Fatalf("EvictedThrough before any eviction = %v, want zero", got)
+	}
+
+	appendAt("c", time.Second) // evicts late-stamp
+	if got, want := store.EvictedThrough(), base.Add(10*time.Second); !got.Equal(want) {
+		t.Fatalf("EvictedThrough = %v, want the evicted event's time %v", got, want)
+	}
+	appendAt("d", 2*time.Second) // evicts a, an older timestamp
+	if got, want := store.EvictedThrough(), base.Add(10*time.Second); !got.Equal(want) {
+		t.Fatalf("EvictedThrough moved back to %v after evicting an older event, want %v", got, want)
+	}
+
+	// Every event newer than the boundary is still held.
+	events, err := store.Query(ctx, QueryOptions{Since: store.EvictedThrough(), Limit: 10})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(events) != 0 {
+		t.Fatalf("no held event is newer than the boundary here, got %+v", events)
+	}
+}

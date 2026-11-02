@@ -1,0 +1,36 @@
+apiVersion: v2
+name: kubeatlas
+description: KubeAtlas Kubernetes visibility - topology, traffic, Helm and GitOps management
+type: application
+version: 0.0.0-unreleased
+appVersion: "0.0.0-unreleased"
+keywords:
+  - kubernetes
+  - kubernetes-dashboard
+  - kubernetes-ui
+  - kubernetes-monitoring
+  - visualization
+  - topology
+  - helm
+  - gitops
+  - mcp
+home: https://github.com/maomada/KubeAtlas
+sources:
+  - https://github.com/maomada/KubeAtlas
+maintainers:
+  - name: maomada
+    url: https://github.com/maomada
+annotations:
+  category: monitoring-logging
+  artifacthub.io/license: Apache-2.0
+  artifacthub.io/links: |
+    - name: Website
+      url: https://github.com/maomada/KubeAtlas
+    - name: Documentation
+      url: https://github.com/maomada/KubeAtlas/tree/main/docs
+    - name: Source
+      url: https://github.com/maomada/KubeAtlas
+    - name: Releases
+      url: https://github.com/maomada/KubeAtlas/releases
+    - name: Issues
+      url: https://github.com/maomada/KubeAtlas/issues

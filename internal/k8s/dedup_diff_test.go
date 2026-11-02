@@ -1,0 +1,207 @@
+package k8s
+
+import (
+	"context"
+	"reflect"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/maomada/KubeAtlas/internal/timeline"
+	appsv1 "k8s.io/api/apps/v1"
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+// The cache layer computes the update diff once and hands it to
+// recordToTimelineStore (diffPrecomputed=true) instead of recomputing it. This
+// pins the invariant that the precomputed path produces a timeline entry
+// identical to the recompute path — i.e. reusing the diff changed nothing.
+func TestRecordToTimelineStore_PrecomputedDiffMatchesRecompute(t *testing.T) {
+	now := time.Now()
+	oldDep := testDeployment("uid-1", "nginx:1.0", now)
+	newDep := testDeployment("uid-1", "nginx:2.0", now)
+
+	pre := ComputeDiff("Deployment", oldDep, newDep)
+	if pre == nil {
+		t.Fatal("expected a non-nil diff for an image change")
+	}
+
+	record := func(precomputed *DiffInfo, diffPrecomputed bool) *timeline.DiffInfo {
+		t.Helper()
+		timeline.ResetStore()
+		if err := timeline.InitStore(timeline.StoreConfig{Type: timeline.StoreTypeMemory, MaxSize: 10}); err != nil {
+			t.Fatalf("InitStore: %v", err)
+		}
+		recordToTimelineStore(ActiveClusterContext(), "Deployment", "shop", "web", "uid-1", "update", oldDep, newDep, precomputed, diffPrecomputed)
+		events, err := timeline.GetStore().Query(context.Background(), timeline.QueryOptions{Kinds: []string{"Deployment"}})
+		if err != nil {
+			t.Fatalf("Query: %v", err)
+		}
+		if len(events) != 1 {
+			t.Fatalf("expected exactly 1 recorded event, got %d", len(events))
+		}
+		return events[0].Diff
+	}
+
+	got := record(pre, true)   // production path: reuse the cache-computed diff
+	want := record(nil, false) // fallback path: recompute in recordToTimelineStore
+	t.Cleanup(timeline.ResetStore)
+
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("precomputed-diff timeline output differs from recompute:\n got=%+v\nwant=%+v", got, want)
+	}
+}
+
+func TestRecordToTimelineStore_PreservesDNSFieldPath(t *testing.T) {
+	timeline.ResetStore()
+	if err := timeline.InitStore(timeline.StoreConfig{Type: timeline.StoreTypeMemory, MaxSize: 10}); err != nil {
+		t.Fatalf("InitStore: %v", err)
+	}
+	t.Cleanup(timeline.ResetStore)
+
+	oldDep := &appsv1.Deployment{Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{DNSPolicy: corev1.DNSClusterFirst}}}}
+	newDep := oldDep.DeepCopy()
+	newDep.Spec.Template.Spec.DNSPolicy = corev1.DNSNone
+	recordToTimelineStore(ActiveClusterContext(), "Deployment", "shop", "web", "uid-1", "update", oldDep, newDep, nil, false)
+
+	events, err := timeline.GetStore().Query(context.Background(), timeline.QueryOptions{Kinds: []string{"Deployment"}})
+	if err != nil {
+		t.Fatalf("Query: %v", err)
+	}
+	if len(events) != 1 || events[0].Diff == nil {
+		t.Fatalf("expected one timeline event with a diff, got %+v", events)
+	}
+	var dnsPolicyChange *timeline.FieldChange
+	for _, change := range events[0].Diff.Fields {
+		if change.Path == "spec.template.spec.dnsPolicy" {
+			changeCopy := change
+			dnsPolicyChange = &changeCopy
+			break
+		}
+	}
+	if dnsPolicyChange == nil {
+		t.Fatalf("timeline diff lost exact DNS field path: %+v", events[0].Diff.Fields)
+	}
+	if dnsPolicyChange.OldValue != "ClusterFirst" || dnsPolicyChange.NewValue != "None" {
+		t.Fatalf("timeline diff lost DNS values: %+v", *dnsPolicyChange)
+	}
+}
+
+func TestRecordToTimelineStore_DeploymentGenerationFallbackRequiresSpecChange(t *testing.T) {
+	tests := []struct {
+		name       string
+		mutate     func(*appsv1.Deployment)
+		wantEvents int
+	}{
+		{
+			name: "top-level annotation only",
+			mutate: func(deployment *appsv1.Deployment) {
+				deployment.Annotations = map[string]string{"example.com/revision": "2"}
+			},
+		},
+		{
+			name: "spec field",
+			mutate: func(deployment *appsv1.Deployment) {
+				deployment.Spec.MinReadySeconds = 5
+			},
+			wantEvents: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			now := time.Now()
+			oldDeployment := testDeployment("uid-1", "nginx:1.0", now)
+			oldDeployment.Generation = 1
+			newDeployment := oldDeployment.DeepCopy()
+			newDeployment.Generation = 2
+			tt.mutate(newDeployment)
+
+			timeline.ResetStore()
+			if err := timeline.InitStore(timeline.StoreConfig{Type: timeline.StoreTypeMemory, MaxSize: 10}); err != nil {
+				t.Fatalf("InitStore: %v", err)
+			}
+			t.Cleanup(timeline.ResetStore)
+
+			recordToTimelineStore(ActiveClusterContext(), "Deployment", "shop", "web", "uid-1", "update", oldDeployment, newDeployment, nil, false)
+			events, err := timeline.GetStore().Query(context.Background(), timeline.QueryOptions{Kinds: []string{"Deployment"}})
+			if err != nil {
+				t.Fatalf("Query: %v", err)
+			}
+			if len(events) != tt.wantEvents {
+				t.Fatalf("recorded %d events, want %d: %+v", len(events), tt.wantEvents, events)
+			}
+			if tt.wantEvents == 1 && (events[0].Diff == nil || len(events[0].Diff.Fields) != 1 || events[0].Diff.Fields[0].Path != "spec.minReadySeconds") {
+				t.Fatalf("expected the spec field change, got %+v", events[0].Diff)
+			}
+		})
+	}
+}
+
+// From Kubernetes 1.33 the API server bumps a Pod's generation when graceful
+// deletion sets deletionTimestamp. That is not a spec change.
+func TestRecordToTimelineStore_DeletionStartIsNotSpecChange(t *testing.T) {
+	deleting := metav1.NewTime(time.Now().Add(30 * time.Second))
+	deadline := int64(60)
+	tests := []struct {
+		name       string
+		oldGen     int64
+		newGen     int64
+		oldDeleted bool
+		mutate     func(*corev1.Pod)
+		wantEvents int
+	}{
+		{name: "graceful deletion", oldGen: 1, newGen: 2},
+		{
+			// A relist can fold a spec edit and the deletion into one update.
+			name: "spec edit folded into the deletion", oldGen: 1, newGen: 3,
+			mutate:     func(pod *corev1.Pod) { pod.Spec.ActiveDeadlineSeconds = &deadline },
+			wantEvents: 1,
+		},
+		{
+			name: "spec edit while terminating", oldGen: 2, newGen: 3, oldDeleted: true,
+			mutate:     func(pod *corev1.Pod) { pod.Spec.ActiveDeadlineSeconds = &deadline },
+			wantEvents: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			oldPod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "web-1", Namespace: "shop", UID: "uid-1", Generation: tt.oldGen},
+				Spec:       corev1.PodSpec{NodeName: "node-1", Containers: []corev1.Container{{Name: "web", Image: "nginx"}}},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning, PodIP: "10.0.0.1"},
+			}
+			if tt.oldDeleted {
+				oldPod.DeletionTimestamp = &deleting
+			}
+			newPod := oldPod.DeepCopy()
+			newPod.Generation = tt.newGen
+			newPod.DeletionTimestamp = &deleting
+			grace := int64(30)
+			newPod.DeletionGracePeriodSeconds = &grace
+			if tt.mutate != nil {
+				tt.mutate(newPod)
+			}
+
+			timeline.ResetStore()
+			if err := timeline.InitStore(timeline.StoreConfig{Type: timeline.StoreTypeMemory, MaxSize: 10}); err != nil {
+				t.Fatalf("InitStore: %v", err)
+			}
+			t.Cleanup(timeline.ResetStore)
+
+			recordToTimelineStore(ActiveClusterContext(), "Pod", "shop", "web-1", "uid-1", "update", oldPod, newPod, nil, false)
+			events, err := timeline.GetStore().Query(context.Background(), timeline.QueryOptions{Kinds: []string{"Pod"}, IncludeManaged: true})
+			if err != nil {
+				t.Fatalf("Query: %v", err)
+			}
+			if len(events) != tt.wantEvents {
+				t.Fatalf("recorded %d events, want %d: %+v", len(events), tt.wantEvents, events)
+			}
+			if tt.wantEvents == 1 && (events[0].Diff == nil || !strings.HasPrefix(events[0].Diff.Summary, "spec changed")) {
+				t.Fatalf("expected a spec change, got %+v", events[0].Diff)
+			}
+		})
+	}
+}

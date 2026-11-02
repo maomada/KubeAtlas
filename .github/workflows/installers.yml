@@ -1,0 +1,47 @@
+name: Installer smoke tests
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  posix:
+    name: POSIX installer
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check POSIX script
+        run: |
+          sh -n install.sh
+          sh -n scripts/test-installers.sh
+          shellcheck --shell=sh install.sh scripts/test-installers.sh
+
+      - name: Reject GitHub API discovery in installers
+        run: |
+          if grep -Fq 'api.github.com' install.sh install.ps1; then
+            echo "Installers must not use api.github.com for discovery" >&2
+            exit 1
+          fi
+
+      - name: Run deterministic local installer fixtures
+        run: sh scripts/test-installers.sh
+
+  windows:
+    name: Windows installers
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Run Windows PowerShell 5.1 fixtures
+        shell: powershell
+        run: ./scripts/test-installers.ps1
+
+      - name: Run PowerShell 7 fixtures
+        shell: pwsh
+        run: ./scripts/test-installers.ps1

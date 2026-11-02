@@ -1,0 +1,186 @@
+package search
+
+import (
+	"encoding/json"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	"github.com/maomada/KubeAtlas/internal/k8s"
+)
+
+func objectActivation(obj runtime.Object, kind string) (map[string]any, error) {
+	obj = obj.DeepCopyObject()
+	k8s.SetTypeMeta(obj)
+	raw, err := json.Marshal(obj)
+	if err != nil {
+		return nil, err
+	}
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	return sanitizedActivation(m, kind), nil
+}
+
+// unstructuredActivation builds the activation map for a CRD object.
+// We use a deep copy of u.Object so the in-place number normalization
+// doesn't mutate the cache-held unstructured.
+//
+// A Trivy report binds `report` to trivyReportProjection, and its raw report
+// is left out of the deep copy: it can hold thousands of entries the
+// projection drops anyway, and the projection is already a fresh copy.
+// complete is false when the findings limit kept the report from being
+// projected: the object can't be evaluated, and an empty report must not
+// stand in for it.
+func unstructuredActivation(u *unstructured.Unstructured, kind, group string, findings *findingsScan) (act map[string]any, complete bool) {
+	if u == nil || u.Object == nil {
+		return nil, true
+	}
+	if group != trivyGroup {
+		return sanitizedActivation(u.DeepCopy().Object, kind), true
+	}
+	if !findings.allow() {
+		return nil, false
+	}
+	rest := make(map[string]any, len(u.Object))
+	for k, v := range u.Object {
+		if k != "report" {
+			rest[k] = v
+		}
+	}
+	m := runtime.DeepCopyJSON(rest)
+	normalizeNumbers(m)
+	out := assembleActivation(m, kind)
+	projection, ok := trivyReportProjection(asMap(u.Object["report"]), findings)
+	if !ok {
+		return nil, false
+	}
+	out["report"] = normalizeNumbers(projection)
+	return out, true
+}
+
+// normalizeNumbers walks v and converts every whole-number float64 to
+// int64 in-place. CEL's int and double types don't share arithmetic
+// overloads, so a JSON-roundtripped `spec.replicas` (float64) errors
+// on `+ 1` (int literal) instead of evaluating. Recursion order
+// doesn't matter — we mutate slice elements and map values directly.
+func normalizeNumbers(v any) any {
+	switch x := v.(type) {
+	case map[string]any:
+		for k, vv := range x {
+			x[k] = normalizeNumbers(vv)
+		}
+		return x
+	case []any:
+		for i, vv := range x {
+			x[i] = normalizeNumbers(vv)
+		}
+		return x
+	case float64:
+		if x == float64(int64(x)) {
+			return int64(x)
+		}
+		return x
+	default:
+		return v
+	}
+}
+
+func sanitizedActivation(obj map[string]any, kind string) map[string]any {
+	if kind == "Secret" {
+		delete(obj, "data")
+		delete(obj, "stringData")
+	}
+	normalizeNumbers(obj)
+	return assembleActivation(obj, kind)
+}
+
+// assembleActivation projects the copied cached object into the CEL bindings.
+func assembleActivation(obj map[string]any, kind string) map[string]any {
+	obj["kind"] = firstString(obj["kind"], kind)
+	metadata := asMap(obj["metadata"])
+	if _, ok := metadata["namespace"]; !ok {
+		metadata["namespace"] = ""
+	}
+	obj["metadata"] = metadata
+	out := map[string]any{
+		"object":      obj,
+		"kind":        firstString(obj["kind"], kind),
+		"apiVersion":  asString(obj["apiVersion"]),
+		"metadata":    asMap(obj["metadata"]),
+		"spec":        asMap(obj["spec"]),
+		"status":      asMap(obj["status"]),
+		"labels":      asStringMap(getNested(obj, "metadata", "labels")),
+		"annotations": asStringMap(getNested(obj, "metadata", "annotations")),
+		"report":      map[string]any{},
+	}
+	return out
+}
+
+// issueActivation builds the activation for an Issue-row CEL filter.
+// Mirrors envIssue's variable declarations.
+func issueActivation(severity, source, kind, group, namespace, name, reason, message, cluster string, count int, lastSeenUnix int64) map[string]any {
+	return map[string]any{
+		"severity":  severity,
+		"source":    source,
+		"kind":      kind,
+		"group":     group,
+		"namespace": namespace,
+		"name":      name,
+		"reason":    reason,
+		"message":   message,
+		"count":     int64(count),
+		"cluster":   cluster,
+		"last_seen": lastSeenUnix,
+	}
+}
+
+func firstString(v any, fallback string) string {
+	if s, ok := v.(string); ok && s != "" {
+		return s
+	}
+	return fallback
+}
+
+func asString(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
+}
+
+func asMap(v any) map[string]any {
+	if m, ok := v.(map[string]any); ok {
+		return m
+	}
+	return map[string]any{}
+}
+
+func getNested(obj map[string]any, keys ...string) any {
+	cur := any(obj)
+	for _, k := range keys {
+		m, ok := cur.(map[string]any)
+		if !ok {
+			return nil
+		}
+		cur = m[k]
+	}
+	return cur
+}
+
+func asStringMap(v any) map[string]string {
+	switch m := v.(type) {
+	case map[string]any:
+		out := make(map[string]string, len(m))
+		for k, val := range m {
+			if s, ok := val.(string); ok {
+				out[k] = s
+			}
+		}
+		return out
+	case map[string]string:
+		return m
+	}
+	return map[string]string{}
+}

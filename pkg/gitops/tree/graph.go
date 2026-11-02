@@ -1,0 +1,527 @@
+package tree
+
+import (
+	"fmt"
+	"net/url"
+	"strings"
+	"time"
+
+	"github.com/maomada/KubeAtlas/pkg/gitops"
+	"github.com/maomada/KubeAtlas/pkg/prom"
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	"github.com/maomada/KubeAtlas/pkg/topology"
+)
+
+// nodeFromTopology builds a node for a managed resource Radar's topology
+// knows. A controller-supplied health wins and sets the node's tone; without
+// one, Radar's own topology status fills in as HealthSourceRadar. Either way
+// TopologyStatus is the tone of the resolved health, so the graph never
+// paints a controller-Degraded node green because Radar's live read
+// disagrees.
+func nodeFromTopology(n topology.Node, ref ResourceRef, role NodeRole, tool Tool, sync, health string, source HealthSource) Node {
+	data := map[string]any{}
+	for k, v := range n.Data {
+		data[k] = v
+	}
+	data["namespace"] = ref.Namespace
+	data["group"] = ref.Group
+	info := infoFromTopology(n)
+	if health == "" {
+		health = healthFromTopology(n.Status)
+		source = HealthSourceRadar
+	}
+	status := string(n.Status)
+	if health != "" {
+		status = healthToTopology(health)
+	}
+	return Node{
+		ID:             nodeID(ref),
+		Ref:            ref,
+		Role:           role,
+		Tool:           tool,
+		Sync:           sync,
+		Health:         health,
+		HealthSource:   healthSourceFor(health, source),
+		TopologyStatus: status,
+		Info:           info,
+		Data:           data,
+	}
+}
+
+func syntheticNode(ref ResourceRef, role NodeRole, tool Tool, sync, health string, source HealthSource) Node {
+	return Node{
+		ID:             nodeID(ref),
+		Ref:            ref,
+		Role:           role,
+		Tool:           tool,
+		Sync:           sync,
+		Health:         health,
+		HealthSource:   healthSourceFor(health, source),
+		TopologyStatus: healthToTopology(health),
+		Data:           map[string]any{"namespace": ref.Namespace, "group": ref.Group},
+	}
+}
+
+// healthSourceFor keeps HealthSource and Health consistent: no health, no
+// source; a health with no stated source is the controller's, which is what
+// every pre-provenance caller meant.
+func healthSourceFor(health string, source HealthSource) HealthSource {
+	if health == "" {
+		return ""
+	}
+	if source == "" {
+		return HealthSourceController
+	}
+	return source
+}
+
+func enrichNodeFromObject(node Node, obj *unstructured.Unstructured) Node {
+	if obj == nil {
+		return node
+	}
+	if node.Data == nil {
+		node.Data = map[string]any{}
+	}
+	node.Ref.UID = string(obj.GetUID())
+	createdAt := obj.GetCreationTimestamp()
+	if !createdAt.IsZero() {
+		node.Data["createdAt"] = createdAt.Format(time.RFC3339)
+	}
+	// Lifecycle: surface deletionTimestamp + finalizers on every node so the
+	// frontend graph renderer can paint a Terminating treatment on managed
+	// resources whose own controllers are mid-cleanup. Without these fields,
+	// a graph showing five nodes "OutOfSync · Degraded" would obscure that
+	// they're all being torn down — same false-signal class we removed from
+	// the title row badges. Both fields are emitted only when set so the
+	// payload doesn't grow for healthy resources.
+	if dt := obj.GetDeletionTimestamp(); dt != nil && !dt.IsZero() {
+		node.Data["deletionTimestamp"] = dt.UTC().Format(time.RFC3339)
+		if fin := obj.GetFinalizers(); len(fin) > 0 {
+			node.Data["finalizers"] = fin
+		}
+	}
+	// Tag nodes that are themselves GitOps detail-page CRs (Argo
+	// Application/ApplicationSet/AppProject, Flux Kustomization/HelmRelease/
+	// GitRepository/etc). The frontend uses these tags to render the node
+	// with a "this is a portal" treatment and route a click to its own
+	// GitOps detail page rather than the standard resource drawer. Doing
+	// the classification here (one place, sees the live object) avoids
+	// duplicating the kind list across the package + the frontend.
+	if tool, kind := classifyGitOpsKind(obj); tool != "" {
+		node.Data["gitopsTool"] = tool
+		node.Data["gitopsKind"] = kind
+	}
+	node.Data["labels"] = obj.GetLabels()
+	node.Data["annotations"] = obj.GetAnnotations()
+	if wave := obj.GetAnnotations()["argocd.argoproj.io/sync-wave"]; wave != "" {
+		node.Data["syncWave"] = wave
+	}
+	if hook := obj.GetAnnotations()["argocd.argoproj.io/hook"]; hook != "" {
+		node.Data["hook"] = hook
+	}
+	// "revision" is set by tool with the most authoritative source winning:
+	// Argo (status.sync.revision) → Flux Kustomization (status.lastAppliedRevision)
+	// → HelmRelease release number (status.lastReleaseRevision). The fields
+	// don't co-occur in practice (each kind sets one), so the later overwrites
+	// are no-ops; the order encodes intent if a future kind exposes multiple.
+	if rev, ok, _ := unstructured.NestedString(obj.Object, "status", "sync", "revision"); ok && rev != "" {
+		node.Data["revision"] = truncateRevision(rev)
+	}
+	if rev, ok, _ := unstructured.NestedString(obj.Object, "status", "operationState", "syncResult", "revision"); ok && rev != "" {
+		node.Data["lastSyncRevision"] = truncateRevision(rev)
+	}
+	if rev, ok, _ := unstructured.NestedString(obj.Object, "status", "lastAppliedRevision"); ok && rev != "" {
+		node.Data["revision"] = truncateRevision(rev)
+	}
+	if rev, ok, _ := unstructured.NestedString(obj.Object, "status", "lastAttemptedRevision"); ok && rev != "" {
+		node.Data["attemptedRevision"] = truncateRevision(rev)
+	}
+	if rev, ok, _ := unstructured.NestedInt64(obj.Object, "status", "lastReleaseRevision"); ok && rev > 0 {
+		node.Data["revision"] = fmt.Sprintf("rev:%d", rev)
+	}
+	// helm.toolkit.fluxcd.io/v2 dropped lastReleaseRevision. The newest
+	// deployed history entry is the installed chart, comparable with
+	// lastAttemptedRevision; a newer failed attempt must still show as attempted.
+	if history, ok, _ := unstructured.NestedSlice(obj.Object, "status", "history"); ok {
+		for _, raw := range history {
+			if entry, ok := raw.(map[string]any); ok && gitops.StringValue(entry["status"]) == "deployed" {
+				if version := gitops.StringValue(entry["chartVersion"]); version != "" {
+					node.Data["revision"] = version
+				}
+				break
+			}
+		}
+	}
+	if ts, ok, _ := unstructured.NestedString(obj.Object, "status", "lastHandledReconcileAt"); ok && ts != "" {
+		node.Data["lastReconciledAt"] = ts
+	}
+	if ts, ok, _ := unstructured.NestedString(obj.Object, "status", "reconciledAt"); ok && ts != "" {
+		node.Data["lastReconciledAt"] = ts
+	}
+	if strings.HasSuffix(apiGroup(obj), ".toolkit.fluxcd.io") {
+		recordFluxReady(node, obj)
+	}
+	return enrichFluxSource(node, obj)
+}
+
+// recordFluxReady keeps a Flux object's own Ready verdict on its node, so a
+// root blocked on it can quote why.
+func recordFluxReady(node Node, obj *unstructured.Unstructured) {
+	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	for _, raw := range conditions {
+		if condition, ok := raw.(map[string]any); ok && condition["type"] == "Ready" {
+			node.Data["readyStatus"] = gitops.StringValue(condition["status"])
+			node.Data["readyReason"] = gitops.StringValue(condition["reason"])
+			node.Data["readyMessage"] = gitops.StringValue(condition["message"])
+		}
+	}
+}
+
+func refFromTopologyNode(n topology.Node) ResourceRef {
+	ref := resourceid.ResolveCurrent(topology.NodeReference(&n), nil).Ref
+	return ResourceRef{Group: ref.Group, Kind: ref.Kind, Namespace: ref.Namespace, Name: ref.Name}
+}
+
+func infoFromTopology(n topology.Node) []InfoItem {
+	switch string(n.Kind) {
+	case "Deployment", "Rollout", "StatefulSet", "DaemonSet", "ReplicaSet":
+		if summary, ok := n.Data["statusSummary"].(string); ok && summary != "" {
+			return []InfoItem{{Name: "Status", Value: summary}}
+		}
+		return []InfoItem{{Name: "Ready", Value: fmt.Sprintf("%v/%v", n.Data["readyReplicas"], n.Data["totalReplicas"])}}
+	case "Pod":
+		if phase, ok := n.Data["phase"].(string); ok && phase != "" {
+			return []InfoItem{{Name: "Phase", Value: phase}}
+		}
+	case "Service":
+		if typ, ok := n.Data["type"].(string); ok && typ != "" {
+			if ports, ok := n.Data["ports"].([]map[string]any); ok && len(ports) > 0 {
+				value := fmt.Sprintf("%s :%v", typ, ports[0]["port"])
+				if len(ports) > 1 {
+					value = fmt.Sprintf("%s +%d more", value, len(ports)-1)
+				}
+				return []InfoItem{{Name: "Service", Value: value}}
+			}
+			return []InfoItem{{Name: "Service", Value: typ}}
+		}
+	case "Ingress":
+		if host, ok := n.Data["hostname"].(string); ok && host != "" {
+			return []InfoItem{{Name: "Host", Value: host}}
+		}
+	case "ConfigMap", "Secret":
+		if keys, ok := n.Data["keys"]; ok {
+			return []InfoItem{{Name: "Keys", Value: fmt.Sprintf("%v keys", keys)}}
+		}
+	}
+	return nil
+}
+
+func nodeID(ref ResourceRef) string {
+	return refKey(ref)
+}
+
+func refKey(ref ResourceRef) string {
+	return strings.Join([]string{
+		url.QueryEscape(ref.Group),
+		url.QueryEscape(ref.Kind),
+		url.QueryEscape(ref.Namespace),
+		url.QueryEscape(ref.Name),
+	}, "/")
+}
+
+func edgeKey(source, target string) string {
+	return source + "->" + target
+}
+
+func mergeData(node Node, data map[string]any) Node {
+	if len(data) == 0 {
+		return node
+	}
+	if node.Data == nil {
+		node.Data = map[string]any{}
+	}
+	for k, v := range data {
+		if s, ok := v.(string); ok && s == "" {
+			continue
+		}
+		node.Data[k] = v
+	}
+	return node
+}
+
+func apiGroup(obj *unstructured.Unstructured) string {
+	return resourceid.GroupFromAPIVersion(obj.GetAPIVersion())
+}
+
+// HealthToTopology maps a controller health vocabulary value to the graph's
+// tone (healthy / degraded / unhealthy / unknown).
+func HealthToTopology(health string) string { return healthToTopology(health) }
+
+func healthToTopology(health string) string {
+	switch health {
+	case "Healthy":
+		return "healthy"
+	case "Degraded", "Missing":
+		return "unhealthy"
+	case "Progressing", "Suspended":
+		return "degraded"
+	default:
+		return "unknown"
+	}
+}
+
+func healthFromTopology(status topology.HealthStatus) string {
+	switch status {
+	case topology.StatusHealthy:
+		return "Healthy"
+	case topology.StatusDegraded:
+		return "Progressing"
+	case topology.StatusUnhealthy:
+		return "Degraded"
+	default:
+		return "Unknown"
+	}
+}
+
+func truncateRevision(rev string) string {
+	if i := strings.LastIndex(rev, ":"); i >= 0 && i < len(rev)-1 {
+		rev = rev[i+1:]
+	}
+	if i := strings.LastIndex(rev, "@"); i >= 0 && i < len(rev)-1 {
+		rev = rev[i+1:]
+	}
+	if len(rev) > 12 {
+		return rev[:12]
+	}
+	return rev
+}
+
+func rolePriority(role NodeRole) int {
+	switch role {
+	case RoleRoot:
+		return 0
+	case RoleDeclared:
+		return 1
+	case RoleGenerated:
+		return 2
+	case RoleGroup:
+		return 3
+	default:
+		return 4
+	}
+}
+
+func kindPriority(kind string) int {
+	priorities := map[string]int{
+		"Namespace": 0, "AppProject": 1, "ServiceAccount": 2,
+		"Secret": 3, "SealedSecret": 3, "ConfigMap": 4,
+		"CustomResourceDefinition": 5,
+		"ClusterRole":              6, "ClusterRoleBinding": 7, "Role": 8, "RoleBinding": 9,
+		"Service":    10,
+		"Deployment": 11, "Rollout": 11, "StatefulSet": 11, "DaemonSet": 11,
+		"ReplicaSet": 12, "Pod": 13,
+		"Ingress": 14, "Gateway": 14, "HTTPRoute": 15,
+	}
+	if p, ok := priorities[kind]; ok {
+		return p
+	}
+	return 20
+}
+
+// Summarize tallies the tree's managed resources. Hosts that drop nodes
+// (per-user RBAC filtering) or overlay health after the build must call it
+// again on the final node list so the counts describe what is served.
+func Summarize(nodes []Node) Summary {
+	var s Summary
+	for _, n := range nodes {
+		if n.Dependency {
+			s.Dependencies++
+			continue
+		}
+		switch n.Role {
+		case RoleDeclared:
+			s.Declared++
+		case RoleGenerated:
+			s.Generated++
+		case RoleGroup:
+			s.Grouped += n.Count
+		}
+		// The root (the Application itself, whose health is a roll-up of its
+		// children) and synthetic group buckets are NOT managed resources, so
+		// they must not inflate the degraded/out-of-sync tallies that drive
+		// "N managed resources are degraded". The app's own health is shown
+		// separately in the header.
+		if n.Role == RoleRoot || n.Role == RoleGroup {
+			continue
+		}
+		if n.Health == "Degraded" || n.Health == "Missing" {
+			s.Degraded++
+		}
+		if n.Sync == "OutOfSync" {
+			s.OutOfSync++
+		}
+	}
+	return s
+}
+
+// classifyGitOpsKind returns (tool, kind) when the object is itself a
+// GitOps detail-page CR, or ("", "") otherwise. The kind list is the
+// authoritative source for "this node is a portal to its own GitOps
+// detail view" — keeping it here means the frontend doesn't need to
+// know which CRDs to special-case.
+//
+// The check uses the object's apiVersion (group prefix) rather than
+// kind alone because some kinds collide across groups (e.g. core Service
+// vs Knative Service). For nested cases — Argo app-of-apps Applications,
+// Flux Kustomizations applying further Kustomizations — these tags
+// drive the "→ Open" affordance + lineage breadcrumb on the child page.
+func classifyGitOpsKind(obj *unstructured.Unstructured) (tool, kind string) {
+	if obj == nil {
+		return "", ""
+	}
+	api := obj.GetAPIVersion()
+	k := obj.GetKind()
+	switch {
+	case strings.HasPrefix(api, "argoproj.io/"):
+		switch k {
+		case "Application", "ApplicationSet", "AppProject":
+			return "argocd", k
+		}
+	case strings.HasPrefix(api, "kustomize.toolkit.fluxcd.io/"):
+		if k == "Kustomization" {
+			return "fluxcd", k
+		}
+	case strings.HasPrefix(api, "helm.toolkit.fluxcd.io/"):
+		if k == "HelmRelease" {
+			return "fluxcd", k
+		}
+	}
+	// Flux source CRs (GitRepository/HelmRepository/OCIRepository/Bucket/HelmChart)
+	// are deliberately NOT classified as portals. They have no managed-resource
+	// tree of their own — they're config objects (URL, ref, interval, auth)
+	// consumed by Kustomizations/HelmReleases. Routing clicks to a GitOps detail
+	// page yielded a degenerate single-node view with no navigation value. The
+	// standard resource drawer surfaces their spec/status (lastFetchedRevision,
+	// conditions) more usefully.
+	return "", ""
+}
+
+func enrichFluxSource(node Node, obj *unstructured.Unstructured) Node {
+	if node.Tool != ToolFluxCD || apiGroup(obj) != "source.toolkit.fluxcd.io" {
+		return node
+	}
+	switch obj.GetKind() {
+	case "GitRepository", "OCIRepository", "HelmRepository", "Bucket", "HelmChart", "ExternalArtifact":
+	default:
+		return node
+	}
+	node.Sync = ""
+	state := gitops.FluxStatus(obj)
+	node.Health = state.Health
+	node.HealthSource = HealthSourceController
+	node.TopologyStatus = healthToTopology(state.Health)
+	node.Info = nil
+	sourceURL := ""
+	switch obj.GetKind() {
+	case "GitRepository", "OCIRepository", "HelmRepository":
+		sourceURL, _, _ = unstructured.NestedString(obj.Object, "spec", "url")
+	case "Bucket":
+		endpoint, _, _ := unstructured.NestedString(obj.Object, "spec", "endpoint")
+		bucket, _, _ := unstructured.NestedString(obj.Object, "spec", "bucketName")
+		if endpoint != "" && bucket != "" {
+			sourceURL = strings.TrimRight(endpoint, "/") + "/" + bucket
+		}
+	case "HelmChart":
+		chart, _, _ := unstructured.NestedString(obj.Object, "spec", "chart")
+		version, _, _ := unstructured.NestedString(obj.Object, "spec", "version")
+		node.Data["chart"], node.Data["requestedVersion"] = chart, version
+		if chart != "" {
+			display := chart
+			if version != "" {
+				display += "@" + version
+			}
+			node.Info = []InfoItem{{Name: "Chart", Value: display}}
+		}
+	}
+	if sourceURL != "" {
+		sourceURL = prom.SafeAddress(sourceURL)
+		node.Data["sourceURL"] = sourceURL
+		display := sourceURL
+		if _, rest, ok := strings.Cut(display, "://"); ok {
+			display = rest
+		}
+		node.Info = []InfoItem{{Name: "Source", Value: display}}
+	}
+	var refFields []string
+	switch obj.GetKind() {
+	case "GitRepository":
+		refFields = []string{"commit", "name", "semver", "tag", "branch"}
+	case "OCIRepository":
+		refFields = []string{"digest", "semver", "tag"}
+	}
+	for _, field := range refFields {
+		if value, _, _ := unstructured.NestedString(obj.Object, "spec", "ref", field); value != "" {
+			node.Data["requestedRef"] = field + ": " + value
+			break
+		}
+	}
+	artifact, present, _ := unstructured.NestedMap(obj.Object, "status", "artifact")
+	node.Data["artifact"] = present && artifact != nil
+	if revision := gitops.StringValue(artifact["revision"]); revision != "" {
+		node.Data["artifactRevision"] = revision
+		// A HelmRepository's revision is its index digest, which identifies
+		// nothing a user would look for; the chart carries the version.
+		if obj.GetKind() != "HelmRepository" {
+			node.Data["revision"] = sourceRevisionDisplay(obj.GetKind(), revision)
+		}
+	}
+	conditions, _, _ := unstructured.NestedSlice(obj.Object, "status", "conditions")
+	for _, raw := range conditions {
+		condition, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		switch condition["type"] {
+		case "Ready":
+			node.Data["readyStatus"] = gitops.StringValue(condition["status"])
+			node.Data["readyReason"] = gitops.StringValue(condition["reason"])
+			node.Data["readyMessage"] = gitops.StringValue(condition["message"])
+		case "Stalled":
+			node.Data["stalled"] = condition["status"] == "True"
+			node.Data["stalledMessage"] = gitops.StringValue(condition["message"])
+		case "FetchFailed":
+			node.Data["fetchFailed"] = condition["status"] == "True"
+			node.Data["fetchFailedMessage"] = gitops.StringValue(condition["message"])
+		}
+	}
+	return node
+}
+
+func sourceRevisionDisplay(kind, revision string) string {
+	if kind == "HelmChart" {
+		return revision
+	}
+	prefix, digest, ok := strings.Cut(revision, "@")
+	if !ok {
+		prefix, digest = "", revision
+	}
+	algorithm, hash, ok := strings.Cut(digest, ":")
+	if !ok || (algorithm != "sha1" && algorithm != "sha256" && algorithm != "sha512") {
+		return revision
+	}
+	if len(hash) > 7 {
+		hash = hash[:7]
+	}
+	if kind == "GitRepository" && algorithm == "sha1" {
+		digest = hash
+	} else {
+		digest = algorithm + ":" + hash
+	}
+	if prefix != "" {
+		return prefix + "@" + digest
+	}
+	return digest
+}

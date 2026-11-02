@@ -1,0 +1,611 @@
+package prometheus
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+
+	"github.com/maomada/KubeAtlas/internal/portforward"
+	"github.com/maomada/KubeAtlas/pkg/prom"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/client-go/rest"
+	ktesting "k8s.io/client-go/testing"
+)
+
+const healthyProbeBody = `{"status":"success","data":{"resultType":"vector","result":[{"metric":{"job":"prometheus"},"value":[1700000000,"1"]}]}}`
+
+func healthyServer(t *testing.T, delay time.Duration) *httptest.Server {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if delay > 0 {
+			time.Sleep(delay)
+		}
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(healthyProbeBody))
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+// deadURL returns the URL of a server that has already been closed, so probes
+// against it fail fast with connection-refused.
+func deadURL(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}))
+	url := srv.URL
+	srv.Close()
+	return url
+}
+
+func TestProbeCandidatesConcurrently(t *testing.T) {
+	c := &Client{httpClient: &http.Client{Timeout: 5 * time.Second}}
+
+	t.Run("no candidates respond returns -1", func(t *testing.T) {
+		cands := []prom.Candidate{
+			{ClusterAddr: deadURL(t)},
+			{ClusterAddr: deadURL(t)},
+		}
+		if got := c.probeCandidatesConcurrently(context.Background(), cands); got != -1 {
+			t.Fatalf("got %d, want -1", got)
+		}
+	})
+
+	t.Run("only later candidate responds returns its index", func(t *testing.T) {
+		cands := []prom.Candidate{
+			{ClusterAddr: deadURL(t)},
+			{ClusterAddr: healthyServer(t, 0).URL},
+		}
+		if got := c.probeCandidatesConcurrently(context.Background(), cands); got != 1 {
+			t.Fatalf("got %d, want 1", got)
+		}
+	})
+
+	t.Run("highest-priority candidate wins even when slower", func(t *testing.T) {
+		// Index 0 is a healthy but slow responder; index 1 is healthy and fast.
+		// Selection must be by priority order, not response latency.
+		cands := []prom.Candidate{
+			{ClusterAddr: healthyServer(t, 100*time.Millisecond).URL},
+			{ClusterAddr: healthyServer(t, 0).URL},
+		}
+		if got := c.probeCandidatesConcurrently(context.Background(), cands); got != 0 {
+			t.Fatalf("got %d, want 0 (priority order must beat latency)", got)
+		}
+	})
+}
+
+// TestEnsureConnected_CoalescesConcurrentDiscovery verifies that a burst of
+// concurrent EnsureConnected callers triggers exactly one discovery. Without
+// singleflight each caller would run its own discovery (and, in the real
+// system, clobber the shared port-forward). We observe the discovery count via
+// probe hits against the manual-URL endpoint, which discovery hits exactly once
+// per run.
+func TestEnsureConnected_CoalescesConcurrentDiscovery(t *testing.T) {
+	var probeHits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		probeHits.Add(1)
+		// Widen the in-flight window so all callers pile onto the singleflight
+		// leader rather than arriving after it has already connected.
+		time.Sleep(40 * time.Millisecond)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(healthyProbeBody))
+	}))
+	defer srv.Close()
+
+	c := &Client{
+		httpClient:  &http.Client{Timeout: 5 * time.Second},
+		manualURL:   srv.URL,
+		contextName: "ctx-A",
+	}
+
+	const n = 20
+	start := make(chan struct{})
+	var wg sync.WaitGroup
+	addrs := make([]string, n)
+	errs := make([]error, n)
+	for i := range n {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start // release all callers together
+			addrs[i], _, errs[i] = c.EnsureConnected(context.Background())
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i := range n {
+		if errs[i] != nil {
+			t.Fatalf("caller %d: unexpected error %v", i, errs[i])
+		}
+		if want := strings.TrimRight(srv.URL, "/"); addrs[i] != want {
+			t.Errorf("caller %d addr=%q, want %q", i, addrs[i], want)
+		}
+	}
+	if got := probeHits.Load(); got != 1 {
+		t.Fatalf("discovery ran %d times under %d concurrent callers, want 1 (singleflight should coalesce)", got, n)
+	}
+}
+
+// TestProbeCandidatesConcurrently_RespectsContextDeadline verifies the pass
+// returns at its context deadline (the caller's directProbeBudget) rather than
+// blocking on a probe that hangs — the case that matters off-cluster, where a
+// stuck cluster-DNS lookup can outlive its own timeout.
+func TestProbeCandidatesConcurrently_RespectsContextDeadline(t *testing.T) {
+	c := &Client{httpClient: &http.Client{Timeout: 30 * time.Second}}
+
+	blackhole := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer blackhole.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	start := time.Now()
+	got := c.probeCandidatesConcurrently(ctx, []prom.Candidate{{ClusterAddr: blackhole.URL}})
+	elapsed := time.Since(start)
+
+	if got != -1 {
+		t.Fatalf("got %d, want -1 (nothing reachable within the budget)", got)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("took %v — should return at the ~300ms deadline, not wait for the blackhole", elapsed)
+	}
+}
+
+// TestProbeCandidatesConcurrently_ReachableWinsDespiteStuckHigherPriority
+// verifies that when the budget expires while a higher-priority probe is stuck,
+// a lower-priority candidate that already succeeded is returned rather than
+// dropped — the case that matters over a VPN that routes only some Services.
+func TestProbeCandidatesConcurrently_ReachableWinsDespiteStuckHigherPriority(t *testing.T) {
+	c := &Client{httpClient: &http.Client{Timeout: 30 * time.Second}}
+
+	blackhole := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer blackhole.Close()
+
+	cands := []prom.Candidate{
+		{ClusterAddr: blackhole.URL},           // index 0: higher priority, wedged
+		{ClusterAddr: healthyServer(t, 0).URL}, // index 1: reachable
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	if got := c.probeCandidatesConcurrently(ctx, cands); got != 1 {
+		t.Fatalf("got %d, want 1 (reachable candidate must win when a higher-priority probe is stuck past the budget)", got)
+	}
+}
+
+// TestProbeCandidatesConcurrently_HighPrioritySuccessReturnsImmediately checks
+// that a fast top-priority hit returns without waiting for lower-priority probes
+// that have wedged the semaphore — collection runs concurrently with launching.
+func TestProbeCandidatesConcurrently_HighPrioritySuccessReturnsImmediately(t *testing.T) {
+	c := &Client{httpClient: &http.Client{Timeout: 30 * time.Second}}
+
+	blackhole := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer blackhole.Close()
+
+	cands := []prom.Candidate{{ClusterAddr: healthyServer(t, 0).URL}}
+	for range 7 {
+		cands = append(cands, prom.Candidate{ClusterAddr: blackhole.URL})
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second) // long budget
+	defer cancel()
+
+	start := time.Now()
+	got := c.probeCandidatesConcurrently(ctx, cands)
+	elapsed := time.Since(start)
+
+	if got != 0 {
+		t.Fatalf("got %d, want 0", got)
+	}
+	if elapsed > time.Second {
+		t.Fatalf("took %v — a fast index-0 hit must not wait on wedged lower-priority probes", elapsed)
+	}
+}
+
+// TestProbeCandidatesConcurrently_KeepsBufferedSuccessOnBudgetExpiry checks that
+// a probe which succeeded just before the deadline — but whose completion is
+// still buffered when the budget expires mid-launch — is not discarded into a
+// needless port-forward fallback. Looped because the collector's select between
+// the buffered completion and ctx.Done is a race; the drain must win either way.
+func TestProbeCandidatesConcurrently_KeepsBufferedSuccessOnBudgetExpiry(t *testing.T) {
+	c := &Client{httpClient: &http.Client{Timeout: 30 * time.Second}}
+
+	blackhole := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer blackhole.Close()
+	healthy := healthyServer(t, 0)
+
+	// More candidates than maxConcurrentProbes, so the launcher is still filling
+	// the semaphore (blocked behind wedged probes) when the budget expires and
+	// index 0's success sits buffered on the completion channel.
+	cands := []prom.Candidate{{ClusterAddr: healthy.URL}}
+	for range 7 {
+		cands = append(cands, prom.Candidate{ClusterAddr: blackhole.URL})
+	}
+
+	for iter := range 25 {
+		ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
+		got := c.probeCandidatesConcurrently(ctx, cands)
+		cancel()
+		if got != 0 {
+			t.Fatalf("iter %d: got %d, want 0 (a success buffered at budget expiry must not be dropped)", iter, got)
+		}
+	}
+}
+
+// TestDiscover_StaleFlightGenerationDoesNotCommit verifies discover commits
+// against the generation its flight was keyed with, not a freshly-read one: a
+// flight keyed before a Reset must not adopt the post-Reset generation and
+// publish an endpoint, undoing the reset.
+func TestDiscover_StaleFlightGenerationDoesNotCommit(t *testing.T) {
+	srv := healthyServer(t, 0) // would connect if the generation matched
+
+	c := &Client{
+		httpClient:   &http.Client{Timeout: 5 * time.Second},
+		manualURL:    srv.URL,
+		contextName:  "ctx",
+		discoveryGen: 5, // current generation (a Reset already bumped it)
+	}
+
+	// Flight was keyed at generation 4 (before the Reset).
+	_, _, err := c.discover(context.Background(), 4)
+	if !errors.Is(err, errDiscoverySuperseded) {
+		t.Fatalf("err = %v, want errDiscoverySuperseded", err)
+	}
+	if c.baseURL != "" {
+		t.Fatalf("stale-generation discovery published baseURL=%q", c.baseURL)
+	}
+}
+
+// In-cluster, pods/portforward is normally denied, so when no candidate answers
+// the direct Service-address probe discovery must fail closed rather than burn
+// ~10s per candidate on a port-forward it cannot open. A well-known Prometheus
+// exists (so enumeration yields a candidate) but its cluster address is
+// unreachable from the test.
+func TestDiscover_InClusterDoesNotFallBackToPortForward(t *testing.T) {
+	cs := fake.NewSimpleClientset(&corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Namespace: "monitoring", Name: "prometheus-server"},
+		Spec: corev1.ServiceSpec{
+			ClusterIP: "10.0.0.50",
+			Ports:     []corev1.ServicePort{{Name: "http", Port: 9090}},
+		},
+	})
+
+	c := &Client{
+		httpClient:  &http.Client{Timeout: time.Second},
+		k8sClient:   cs,
+		contextName: "in-cluster",
+		inCluster:   true,
+	}
+
+	_, _, err := c.discover(context.Background(), c.discoveryGen)
+	if !errors.Is(err, errPrometheusUnreachable) || errors.Is(err, ErrPrometheusNotFound) {
+		t.Fatalf("in-cluster discovery: err=%v, want unreachable without not-found", err)
+	}
+}
+
+// TestEnsureConnected_RetiredClientAborts verifies that a Client retired by
+// Reinitialize aborts discovery even when its singleflight goroutine starts
+// after the swap — it must not connect (and drive the shared port-forward) for
+// a context that has already been replaced.
+func TestEnsureConnected_RetiredClientAborts(t *testing.T) {
+	srv := healthyServer(t, 0) // would connect if the client weren't retired
+
+	c := &Client{
+		httpClient:  &http.Client{Timeout: 5 * time.Second},
+		manualURL:   srv.URL,
+		contextName: "ctx-retired",
+		retired:     true,
+	}
+
+	if _, _, err := c.EnsureConnected(context.Background()); err == nil {
+		t.Fatal("retired client connected instead of aborting discovery")
+	}
+}
+
+// A caller that captured the client before it was retired (a scan job, an MCP
+// call) must not keep sending the previous context's headers to its endpoint.
+func TestRetiredConnectedClientSendsNoQuery(t *testing.T) {
+	var requests atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests.Add(1)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte(healthyProbeBody))
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{
+		httpClient:  &http.Client{Timeout: 5 * time.Second},
+		manualURL:   srv.URL,
+		headers:     map[string]string{"Authorization": "previous-context"},
+		contextName: "ctx",
+	}
+	if _, _, err := c.EnsureConnected(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	c.mu.Lock()
+	c.retired = true
+	c.mu.Unlock()
+	requests.Store(0)
+	if _, err := c.Query(context.Background(), "up"); err == nil {
+		t.Fatal("retired client answered a query")
+	}
+	if n := requests.Load(); n != 0 {
+		t.Fatalf("retired client sent %d requests", n)
+	}
+}
+
+// TestMarkConnected_DropsStaleGeneration verifies the generation gate: a
+// discovery whose configuration was invalidated (Reset / SetManualURL /
+// SetHeaders bump discoveryGen) mid-flight must not publish its now-stale
+// endpoint over the newer configuration.
+func TestMarkConnected_DropsStaleGeneration(t *testing.T) {
+	c := &Client{discoveryGen: 5}
+
+	if c.markConnected("http://stale", "", "stale", 4) { // started under an older generation
+		t.Fatal("markConnected committed a stale-generation result")
+	}
+	if c.baseURL != "" {
+		t.Fatalf("stale-generation result was published: baseURL=%q", c.baseURL)
+	}
+
+	if !c.markConnected("http://fresh", "/bp", "fresh", 5) { // current generation
+		t.Fatal("markConnected rejected a current-generation result")
+	}
+	if c.baseURL != "http://fresh" || c.basePath != "/bp" {
+		t.Fatalf("current-generation result not published: baseURL=%q basePath=%q", c.baseURL, c.basePath)
+	}
+
+	// A client retired by Reinitialize must not commit, even at the current gen.
+	retiredC := &Client{discoveryGen: 5, retired: true}
+	if retiredC.markConnected("http://x", "", "x", 5) {
+		t.Fatal("retired client committed a result")
+	}
+	if retiredC.baseURL != "" {
+		t.Fatalf("retired client published baseURL=%q", retiredC.baseURL)
+	}
+}
+
+// TestConnectionLive rejects a stale or retired connection so discoverShared
+// can't report a hollow success for a superseded context.
+func TestConnectionLive(t *testing.T) {
+	live := &Client{baseURL: "http://p"}
+	if !live.connectionLive("http://p") {
+		t.Fatal("current connection reported not live")
+	}
+	if live.connectionLive("http://other") {
+		t.Fatal("mismatched address reported live (Reset cleared/changed baseURL)")
+	}
+
+	retired := &Client{baseURL: "http://p", retired: true}
+	if retired.connectionLive("http://p") {
+		t.Fatal("retired client reported live (would query the previous cluster)")
+	}
+}
+
+// TestReset_CancelsInFlightDiscovery verifies that Reset aborts a detached
+// in-flight discovery, so a superseded run (e.g. an old context's pre-warm after
+// a context switch) stops instead of holding the process discovery gate.
+func TestReset_CancelsInFlightDiscovery(t *testing.T) {
+	clientMu.Lock()
+	saved := globalClient
+	clientMu.Unlock()
+	t.Cleanup(func() { clientMu.Lock(); globalClient = saved; clientMu.Unlock() })
+
+	canceled := make(chan struct{})
+	clientMu.Lock()
+	globalClient = &Client{discoveryCancel: func() { close(canceled) }}
+	clientMu.Unlock()
+
+	Reset()
+
+	select {
+	case <-canceled:
+	case <-time.After(time.Second):
+		t.Fatal("Reset did not cancel the in-flight discovery")
+	}
+}
+
+// TestEnsureConnected_CanceledCallerReturnsPromptly verifies that a caller whose
+// request context is canceled returns immediately, rather than blocking on the
+// detached shared discovery until its 60s backstop.
+func TestEnsureConnected_CanceledCallerReturnsPromptly(t *testing.T) {
+	// A server that blocks the probe until its own (probe) context is canceled,
+	// keeping the shared discovery in-flight for the duration of the test.
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer srv.Close()
+
+	c := &Client{
+		httpClient:  &http.Client{Timeout: 30 * time.Second},
+		manualURL:   srv.URL,
+		contextName: "ctx-cancel",
+	}
+
+	// The caller abandons this run, but it continues detached; suppress
+	// diagnostics so its eventual (asynchronous) probe failure doesn't record a
+	// global errorlog entry that would pollute a later test.
+	ctx, cancel := context.WithCancel(withSuppressedDiscoveryDiagnostics(context.Background()))
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := c.EnsureConnected(ctx)
+		done <- err
+	}()
+
+	time.Sleep(50 * time.Millisecond) // let the flight start and block on the server
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("err = %v, want context.Canceled", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("caller did not return promptly after its context was canceled")
+	}
+
+	// Abort the detached run so it doesn't hold the discovery gate into later tests.
+	c.mu.Lock()
+	dcancel := c.discoveryCancel
+	c.mu.Unlock()
+	if dcancel != nil {
+		dcancel()
+	}
+}
+
+// A probe still hanging when the pass ends is what a packet-dropping policy
+// looks like; it must come back as a transport failure so attribution can
+// look at it, while a candidate the pass never reached stays unexplained.
+func TestProbeCandidatesWithReasons_DeadlineMarksLaunchedProbesAsTransportFailures(t *testing.T) {
+	c := &Client{httpClient: &http.Client{Timeout: 30 * time.Second}}
+	blackhole := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done()
+	}))
+	defer blackhole.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	cands := make([]prom.Candidate, maxConcurrentProbes+1)
+	for i := range cands {
+		cands[i] = prom.Candidate{ClusterAddr: blackhole.URL}
+	}
+	idx, reasons := c.probeCandidatesWithReasons(ctx, cands)
+	if idx != -1 {
+		t.Fatalf("idx = %d, want -1", idx)
+	}
+	for i := 0; i < maxConcurrentProbes; i++ {
+		if reasons[i] != prom.ProbeReasonTransportError {
+			t.Fatalf("reasons[%d] = %q, want transport_error for a probe that was launched and hung", i, reasons[i])
+		}
+	}
+	if reasons[maxConcurrentProbes] != "" {
+		t.Fatalf("reasons[%d] = %q, want empty for a probe the pass never launched", maxConcurrentProbes, reasons[maxConcurrentProbes])
+	}
+}
+
+func TestUnreachableErrorsAreOneSentenceAndKeepTheirSentinels(t *testing.T) {
+	for _, err := range []error{
+		errPrometheusUnreachable,
+		unreachableBecause(nil, "Radar found %d services that may be Prometheus but may not port-forward to them (needs create pods/portforward)", 2),
+	} {
+		if !errors.Is(err, errPrometheusUnreachable) || errors.Is(err, ErrPrometheusNotFound) {
+			t.Errorf("%v must be unreachable without not-found", err)
+		}
+		if strings.Contains(err.Error(), ErrPrometheusNotFound.Error()) {
+			t.Errorf("%q claims nothing was found", err)
+		}
+	}
+}
+
+func TestDeniedGrantNamesTheRefusedStep(t *testing.T) {
+	listPods := fmt.Errorf("failed to find pod for service prom: %w", errors.New(`pods is forbidden: User "u" cannot list resource "pods" in API group "" in the namespace "monitoring"`))
+	portForward := fmt.Errorf("port-forward failed: %w", errors.New(`pods "prom-0" is forbidden: User "u" cannot create resource "pods/portforward" in API group "" in the namespace "monitoring"`))
+	if got := deniedGrantsPhrase([]string{deniedGrant(listPods)}); got != "needs list pods" {
+		t.Errorf("list pods refusal = %q", got)
+	}
+	if got := deniedGrantsPhrase([]string{deniedGrant(portForward), deniedGrant(portForward), deniedGrant(listPods)}); got != "needs create pods/portforward, list pods" {
+		t.Errorf("mixed = %q", got)
+	}
+	if got := deniedGrantsPhrase([]string{deniedGrant(errors.New("forbidden"))}); got != "permission denied" {
+		t.Errorf("unnamed = %q", got)
+	}
+}
+
+func TestPrometheusRejectedCandidateWording(t *testing.T) {
+	err := prometheusCandidateProbeError("cert-manager", "cert-manager")
+	if !strings.HasPrefix(err.Error(), "No working Prometheus endpoint found") || !strings.Contains(err.Error(), "Candidate cert-manager/cert-manager") {
+		t.Fatal(err)
+	}
+	if strings.Contains(err.Error(), "Prometheus at cert-manager") {
+		t.Fatal(err)
+	}
+	if lines := strings.Split(err.Error(), "\n"); len(lines) != 2 || !strings.HasPrefix(lines[1], "Candidate cert-manager/cert-manager") {
+		t.Fatalf("candidate details must follow the heading: %q", err.Error())
+	}
+}
+
+func TestDiscoverCandidateFailuresAreNotAbsent(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		count  int
+		denied bool
+	}{
+		{"single candidate failure", 1, false},
+		{"multi-candidate failure", 2, false},
+		{"single denied candidate", 1, true},
+		{"multiple denied candidates", 2, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "unreachable", 503) }))
+			defer upstream.Close()
+			proxy, _ := url.Parse(upstream.URL)
+			transport := &http.Transport{Proxy: http.ProxyURL(proxy)}
+			defer transport.CloseIdleConnections()
+			objects := []runtime.Object{&corev1.Service{
+				ObjectMeta: metav1.ObjectMeta{Namespace: "monitoring", Name: "prometheus-server"},
+				Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "prometheus"}, Ports: []corev1.ServicePort{{Name: "http", Port: 9090}}},
+			}}
+			if tc.count == 2 {
+				objects = append(objects, &corev1.Service{
+					ObjectMeta: metav1.ObjectMeta{Namespace: "monitoring", Name: "prometheus-operated"},
+					Spec:       corev1.ServiceSpec{Selector: map[string]string{"app": "prometheus"}, Ports: []corev1.ServicePort{{Name: "http", Port: 9090}}},
+				})
+			}
+			cs := fake.NewSimpleClientset(objects...)
+			if tc.denied {
+				cs.PrependReactor("list", "pods", func(ktesting.Action) (bool, runtime.Object, error) {
+					return true, nil, apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "", errors.New(`cannot list resource "pods"`))
+				})
+			}
+			portforward.SetK8sClients(cs, &rest.Config{})
+			defer portforward.SetK8sClients(nil, nil)
+			c := &Client{k8sClient: cs, contextName: "test", httpClient: &http.Client{Transport: transport}}
+			_, _, err := c.discover(context.Background(), 0)
+			if err == nil || !errors.Is(err, errPrometheusUnreachable) || errors.Is(err, ErrPrometheusNotFound) {
+				t.Fatalf("failure classification: %v", err)
+			}
+			if !strings.Contains(err.Error(), "No working Prometheus endpoint found") {
+				t.Fatal(err)
+			}
+			if tc.denied && !strings.Contains(err.Error(), "needs list pods") {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestUnreachablePreservesCandidateCause(t *testing.T) {
+	cause := apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "", errors.New("denied"))
+	err := unreachableBecause(cause, "candidate could not be read")
+	if !IsUnreachable(err) || !apierrors.IsForbidden(err) || !errors.Is(err, cause) || errors.Is(err, ErrPrometheusNotFound) {
+		t.Fatalf("lost candidate failure classification: %v", err)
+	}
+	for _, err := range []error{ErrPrometheusNotFound, context.Canceled, context.DeadlineExceeded, errDiscoverySuperseded, errors.New("manual URL failed")} {
+		if IsUnreachable(err) {
+			t.Fatalf("classified incomplete discovery or configuration as unreachable: %v", err)
+		}
+	}
+}

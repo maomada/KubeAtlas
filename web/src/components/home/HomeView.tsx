@@ -1,0 +1,528 @@
+import { useMemo, type ReactNode } from 'react'
+import { useCloudConnectSelf, useDashboard, useDashboardCRDs, useDashboardHelm, useIssues, useVersionCheck, type IssuesResponse } from '../../api/client'
+import { useConnection } from '../../context/ConnectionContext'
+import type { ClusterLoadState } from '../../types/clusterLoadState'
+import type { ExtendedMainView, Topology, SelectedResource } from '../../types'
+import { TopologyPreview } from './TopologyPreview'
+import { HelmSummary } from './HelmSummary'
+import { ActivitySummary } from './ActivitySummary'
+import { TrafficSummary } from './TrafficSummary'
+import { CertificateHealthCard } from './CertificateHealthCard'
+import { NetworkPolicyCoverageCard } from './NetworkPolicyCoverageCard'
+import { CostCard } from './CostCard'
+import { GitOpsControllersCard } from './GitOpsControllersCard'
+import { CapacityCard } from './CapacityCard'
+import { useCapabilitiesContext } from '../../contexts/CapabilitiesContext'
+import { Tooltip } from '../ui/Tooltip'
+import { getNetworkPolicyResourceTarget } from '../../utils/navigation'
+import {
+  AuditCard,
+  FreshnessControl,
+  PaneLoader,
+  StatusDot,
+  issueTitle,
+  groupLabel,
+  issueFirstSeenTitle,
+  issueTimingForDisplay,
+  subjectRef,
+  type Issue,
+} from '@maomada/k8s-ui'
+import { formatCompactAge } from '@maomada/k8s-ui/utils/format'
+import { ClusterHealthCard } from './ClusterHealthCard'
+import { AlertTriangle, CheckCircle, Loader2, Shield } from 'lucide-react'
+import { uncheckedSourceLines } from '../issues/uncheckedSources'
+import { UncheckedSourceHelp } from '../issues/UncheckedSourceHelp'
+import { clsx } from 'clsx'
+import { getVersionUpdateStatus } from '../../utils/version'
+import { RadarVersionLine } from './RadarVersionLine'
+
+interface HomeViewProps {
+  namespaces: string[]
+  topology: Topology | null
+  onNavigateToView: (view: ExtendedMainView, params?: Record<string, string>) => void
+  onNavigateToResourceKind: (kind: string, group?: string, filters?: Record<string, string[]>) => void
+  onNavigateToResource: (resource: SelectedResource) => void
+  fallbackClusterLoadState?: ClusterLoadState
+  /**
+   * Optional override for the Certificate Health card's click. When an embedded
+   * host (upstream Cloud) takes Certs over with its own fleet page, it passes this
+   * to route there instead of KubeAtlas's TLS-secrets resource list. Omitted in
+   * standalone OSS → the card drills into secrets as before.
+   */
+  onNavigateToCerts?: () => void
+  // Omitted when an embedded host owns /checks, leaving the version as plain text.
+  onNavigateToUpgradeImpact?: () => void
+  onNavigateToHelmRelease?: (namespace: string, release: string) => void
+  onNavigateToManagerPath?: (path: string) => void
+  // Present only when release notes exist for this version.
+  onShowWhatsNew?: () => void
+}
+
+export function HomeView({ namespaces, topology, fallbackClusterLoadState, onNavigateToView, onNavigateToResourceKind, onNavigateToResource, onNavigateToCerts, onNavigateToUpgradeImpact, onNavigateToHelmRelease, onNavigateToManagerPath, onShowWhatsNew }: HomeViewProps) {
+  // The card itself decides whether the cluster has a capacity story
+  // (available, softened-denied, or karpenterless-with-managers/groups) and
+  // returns null otherwise — the outer gate only excludes states with nothing
+  // to fetch against.
+  const capabilities = useCapabilitiesContext()
+  const karpenterState = capabilities.karpenter?.state
+  const capacityCardPossible =
+    karpenterState === 'available' || karpenterState === 'denied' || karpenterState === 'not_detected'
+  const { data, isLoading, error, dataUpdatedAt, refetch } = useDashboard(namespaces)
+  const { connection } = useConnection()
+  const { data: issuesData, isLoading: issuesLoading, isFetching: issuesFetching, error: issuesError, refetch: refetchIssues } = useIssues(namespaces)
+  const issues = issuesData?.issues ?? []
+  const issueCount = issuesData?.total_matched ?? issuesData?.total ?? issues.length
+  const hasCriticalIssues = issues.some((issue) => issue.severity === 'critical')
+  const deploymentMode = capabilities.deployment?.mode ?? 'local'
+  const { data: versionInfo } = useVersionCheck()
+  const showHomeUpgrade = deploymentMode === 'in-cluster'
+    && !!versionInfo?.updateAvailable
+    && getVersionUpdateStatus(versionInfo.currentVersion, versionInfo.latestVersion).tier !== 'none'
+  const { data: installationManager, isLoading: installationManagerLoading } = useCloudConnectSelf(showHomeUpgrade)
+
+  // SSE is cluster-wide on small/medium clusters; the picker only narrows the
+  // dashboard summary, so re-apply the filter here or the legend disagrees.
+  const scopedTopology = useMemo<Topology | null>(() => {
+    if (!topology) return null
+    if (namespaces.length === 0) return topology
+    const nsSet = new Set(namespaces)
+    const nodes = topology.nodes.filter(n => {
+      const ns = n.data.namespace as string | undefined
+      return !ns || nsSet.has(ns)
+    })
+    const nodeIds = new Set(nodes.map(n => n.id))
+    const edges = topology.edges.filter(e => nodeIds.has(e.source) && nodeIds.has(e.target))
+    // Carry the frame's own flags through the filter. A large cluster serves an
+    // empty graph flagged requiresNamespaceFilter until SSE picks the pick up
+    // server-side, and a consumer that sees only nodes/edges reads that
+    // declined build as a namespace holding nothing.
+    return { ...topology, nodes, edges }
+  }, [topology, namespaces])
+  const networkPolicyTarget = getNetworkPolicyResourceTarget(scopedTopology)
+  // CRDs and Helm load lazily after main dashboard to keep initial load fast
+  const { data: crdsData } = useDashboardCRDs(namespaces)
+  const { data: helmData } = useDashboardHelm(namespaces)
+
+  if (isLoading) {
+    return <PaneLoader label="加载总览…" className="flex-1 min-h-0" />
+  }
+
+  if (error || !data) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-theme-text-secondary">
+        <p>无法加载总览数据</p>
+      </div>
+    )
+  }
+
+  if (data.accessRestricted) {
+    return (
+      <div className="flex-1 flex items-center justify-center bg-theme-base">
+        <div className="flex flex-col items-center gap-3 max-w-md text-center">
+          <div className="w-12 h-12 rounded-full bg-amber-500/10 flex items-center justify-center">
+            <Shield className="w-6 h-6 text-amber-500" />
+          </div>
+          <p className="text-lg font-medium text-theme-text-primary">无命名空间访问权限</p>
+          <p className="text-sm text-theme-text-secondary">
+            Your account does not have access to any namespaces in this cluster. Contact your administrator to add a Kubernetes RoleBinding or ClusterRoleBinding for your user.
+          </p>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto">
+      <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
+        {fallbackClusterLoadState?.loading && (
+          <div className="flex items-center gap-2 text-sm text-theme-text-tertiary">
+            <Loader2 className="h-4 w-4 animate-spin" />
+            <span>{fallbackClusterLoadState.message}</span>
+          </div>
+        )}
+        {/* Row 1: Cluster Health Card (combined health + resource counts) */}
+        <ClusterHealthCard
+          radarVersion={versionInfo && deploymentMode !== 'cloud' ? (
+            <RadarVersionLine
+              version={versionInfo}
+              showUpgrade={deploymentMode === 'in-cluster'}
+              onShowWhatsNew={onShowWhatsNew}
+              manager={installationManager}
+              managerLoading={installationManagerLoading}
+              onNavigateToHelmRelease={onNavigateToHelmRelease}
+              onNavigateToGitOps={onNavigateToManagerPath}
+            />
+          ) : undefined}
+          freshness={
+            <FreshnessControl
+              mode="auto"
+              dataUpdatedAt={dataUpdatedAt}
+              onRefresh={() => refetch()}
+              connectionState={connection.state}
+            />
+          }
+          health={data.health}
+          counts={data.resourceCounts}
+          cluster={data.cluster}
+          metrics={data.metrics}
+          metricsServerAvailable={data.metricsServerAvailable}
+          topCRDs={crdsData?.topCRDs}
+          issueCount={issueCount}
+          hasCriticalIssues={hasCriticalIssues}
+          nodeVersionSkew={data.nodeVersionSkew}
+          onNavigateToKind={onNavigateToResourceKind}
+          onNavigateToView={() => onNavigateToView('resources')}
+          onNavigateToUpgradeImpact={onNavigateToUpgradeImpact}
+          onWarningEventsClick={() => onNavigateToView('timeline', { view: 'list', filter: 'warnings', time: 'all' })}
+          onIssuesClick={() => onNavigateToView('issues')}
+        />
+
+        {/* Row 2: Main content columns - teasers left, issues right */}
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-[1fr_420px]">
+          {/* Left column: teaser cards */}
+          <div className="flex flex-col gap-6 auto-rows-min">
+            {/* Live band — Topology + Timeline always render, so a fixed 2-up never strands.
+                These are the richest visuals and the most-used live views, so they get the width. */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+              <TopologyPreview
+                topology={scopedTopology}
+                namespaceSelected={namespaces.length > 0}
+                onNavigate={() => onNavigateToView('topology')}
+              />
+              <ActivitySummary
+                namespaces={namespaces}
+                topology={scopedTopology}
+                onNavigate={() => onNavigateToView('timeline')}
+              />
+            </div>
+
+            {/* Explore band — flex-grow wrap so the row always fills. The conditional
+                Cost card self-hides via BandItem's empty:hidden when OpenCost is absent,
+                leaving Traffic + Helm to stretch rather than stranding an empty cell. */}
+            <div className="flex flex-wrap gap-6">
+              <BandItem>
+                <TrafficSummary
+                  data={data.trafficSummary}
+                  onNavigate={() => onNavigateToView('traffic')}
+                />
+              </BandItem>
+              <BandItem>
+                <HelmSummary
+                  data={helmData}
+                  onNavigate={() => onNavigateToView('helm')}
+                />
+              </BandItem>
+              <BandItem>
+                <CostCard namespaces={namespaces} onNavigate={() => onNavigateToView('cost')} />
+              </BandItem>
+            </div>
+
+            {/* Posture band — same flex-grow wrap so any subset of compliance cards
+                fills its row instead of stranding the last one (the old 3-col grid
+                left Cluster Audit alone with two empty cells beside it). */}
+            {(data.certificateHealth || data.networkPolicyCoverage || data.audit || data.gitopsControllers || capacityCardPossible) && (
+              <div className="flex flex-wrap gap-6">
+                {data.certificateHealth && (
+                  <BandItem>
+                    <CertificateHealthCard
+                      data={data.certificateHealth}
+                      onNavigate={onNavigateToCerts ?? (() => onNavigateToResourceKind('secrets', undefined, { type: ['TLS'] }))}
+                    />
+                  </BandItem>
+                )}
+                {data.networkPolicyCoverage && (
+                  <BandItem>
+                    <NetworkPolicyCoverageCard
+                      data={data.networkPolicyCoverage}
+                      onNavigate={() => {
+                        if (networkPolicyTarget) {
+                          onNavigateToResourceKind(networkPolicyTarget.kind, networkPolicyTarget.group)
+                        } else {
+                          onNavigateToView('resources')
+                        }
+                      }}
+                    />
+                  </BandItem>
+                )}
+                {data.gitopsControllers && (
+                  <BandItem>
+                    <GitOpsControllersCard
+                      data={data.gitopsControllers}
+                      onNavigate={() => onNavigateToView('gitops')}
+                    />
+                  </BandItem>
+                )}
+                {capacityCardPossible && (
+                  <BandItem>
+                    <CapacityCard onNavigate={() => onNavigateToView('capacity')} />
+                  </BandItem>
+                )}
+                {data.audit && (
+                  <BandItem>
+                    <AuditCard
+                      data={data.audit}
+                      onNavigate={() => onNavigateToView('checks')}
+                    />
+                  </BandItem>
+                )}
+              </div>
+            )}
+          </div>
+
+          <ProblemsPanel
+            issues={issues}
+            issueCount={issueCount}
+            visibility={issuesData?.visibility}
+            uncheckedLines={uncheckedSourceLines(issuesData?.unchecked_sources)}
+            onRetryIssues={() => { void refetchIssues({ cancelRefetch: false }) }}
+            hasData={!!issuesData}
+            isLoading={issuesLoading && !issuesData}
+            isRefreshing={issuesFetching && !!issuesData}
+            error={issuesError}
+            totalReturned={issues.length}
+            onNavigateToIssues={() => onNavigateToView('issues')}
+            onResourceClick={onNavigateToResource}
+          />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// A self-tiling flex item: grows to share the row, clamps to a sensible min
+// width, and removes itself (empty:hidden) when its card renders null — so a
+// data-gated card (e.g. Cost without OpenCost) can't leave a phantom column.
+function BandItem({ children }: { children: ReactNode }) {
+  return <div className="flex-1 min-w-[260px] empty:hidden [&>*]:w-full">{children}</div>
+}
+
+// ============================================================================
+// Problems Panel (right sidebar, scrollable)
+// ============================================================================
+
+interface ProblemsPanelProps {
+  issues: Issue[]
+  issueCount: number
+  visibility?: IssuesResponse['visibility']
+  /** One line per issue source KubeAtlas couldn't check. Any line means an
+   *  empty list isn't an all-clear. */
+  uncheckedLines?: string[]
+  onRetryIssues: () => void
+  hasData: boolean
+  isLoading: boolean
+  isRefreshing: boolean
+  error: unknown
+  totalReturned: number
+  onNavigateToIssues: () => void
+  onResourceClick: (resource: SelectedResource) => void
+}
+
+export function ProblemsPanel({
+  issues,
+  issueCount,
+  visibility,
+  uncheckedLines = [],
+  onRetryIssues,
+  hasData,
+  isLoading,
+  isRefreshing,
+  error,
+  totalReturned,
+  onNavigateToIssues,
+  onResourceClick,
+}: ProblemsPanelProps) {
+  const unchecked = uncheckedLines.length > 0
+  const hasCriticalIssues = issues.some((issue) => issue.severity === 'critical')
+  const hasIssues = issueCount > 0
+  const hasHardError = !!error && !hasData
+  const hasLimitedVisibility = !!visibility?.impact
+  const isTruncated = issueCount > totalReturned
+  const titleClass = hasCriticalIssues
+    ? 'text-red-500'
+    : hasIssues || hasHardError || hasLimitedVisibility || unchecked
+      ? 'text-amber-500'
+      : 'text-theme-text-secondary'
+  const countClass = hasHardError
+    ? 'status-unknown'
+    : hasCriticalIssues
+      ? 'status-unhealthy'
+      : hasIssues || hasLimitedVisibility || unchecked
+        ? 'status-degraded'
+        : 'status-healthy'
+  const countLabel = isLoading ? '...' : hasHardError ? 'error' : String(issueCount)
+
+  return (
+    <div className="rounded-xl bg-theme-surface shadow-theme-sm flex flex-col lg:max-h-[calc(100vh-280px)] lg:sticky lg:top-0">
+      <div className="flex items-center justify-between px-5 py-3 border-b border-theme-border/50 shrink-0">
+        <div className="flex items-center gap-2">
+          <AlertTriangle className={clsx('w-4 h-4', titleClass)} />
+          <span className={clsx('text-xs font-semibold uppercase tracking-wider', titleClass)}>活跃问题</span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            className="rounded-md px-2 py-1 text-xs font-medium text-accent-text transition-colors hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-radar-accent,var(--accent))]/40"
+            onClick={onNavigateToIssues}
+          >
+            查看全部
+          </button>
+          {isRefreshing && !isLoading && (
+            <Loader2 className="h-3.5 w-3.5 animate-spin text-theme-text-tertiary" aria-label="正在刷新问题" />
+          )}
+          <span className={clsx('badge rounded-full', countClass)}>{countLabel}</span>
+        </div>
+      </div>
+      <div className="overflow-y-auto flex-1 min-h-0">
+        {isLoading ? (
+          <ProblemsPanelState
+            icon={<Loader2 className="h-5 w-5 animate-spin text-theme-text-tertiary" />}
+            title="正在加载问题"
+            body="Checking live cluster issues for the selected scope."
+          />
+        ) : hasHardError ? (
+          <ProblemsPanelState
+            icon={<AlertTriangle className="h-5 w-5 text-amber-500" />}
+            title="问题不可用"
+            body={formatIssueError(error)}
+          />
+        ) : (
+          <>
+            {!!error && (
+              <ProblemsPanelNotice tone="warning">
+                问题刷新失败，显示上次成功的结果。
+              </ProblemsPanelNotice>
+            )}
+            {visibility?.impact && (
+              <ProblemsPanelNotice tone="warning">
+                Limited visibility - {visibility.impact} Results may be incomplete.
+              </ProblemsPanelNotice>
+            )}
+            {(issues.length > 0 || hasLimitedVisibility) && unchecked && (
+              <ProblemsPanelNotice tone="warning">
+                {uncheckedLines.map((line) => <p key={line}>{line}</p>)}
+                <UncheckedSourceHelp onRetry={onRetryIssues} isRefreshing={isRefreshing} />
+              </ProblemsPanelNotice>
+            )}
+            {isTruncated && (
+              <ProblemsPanelNotice tone="neutral">
+                Showing {totalReturned} of {issueCount} issues. Narrow by namespace to see the rest.
+              </ProblemsPanelNotice>
+            )}
+
+            {issues.length === 0 ? (
+              <ProblemsPanelState
+                icon={
+                  hasLimitedVisibility || unchecked
+                    ? <AlertTriangle className="h-5 w-5 text-amber-500" />
+                    : <CheckCircle className="h-5 w-5 text-green-500" />
+                }
+                title={hasLimitedVisibility ? '没有可见的活跃问题' : unchecked ? '未找到问题' : '没有活跃问题'}
+                body={
+                  hasLimitedVisibility
+                    ? 'KubeAtlas could not read every workload source in this scope.'
+                    : unchecked
+                      ? uncheckedLines.join(' ')
+                      : '所选范围内没有严重或警告问题。'
+                }
+                action={unchecked && !hasLimitedVisibility ? <UncheckedSourceHelp onRetry={onRetryIssues} isRefreshing={isRefreshing} /> : undefined}
+              />
+            ) : (
+              <div className="divide-y divide-theme-border">
+                {issues.map((issue) => {
+                  const ref = subjectRef(issue)
+                  const partialUnknown = issue.onset_coverage?.unknown ?? 0
+                  const partialOnset = Boolean(issue.first_seen && partialUnknown > 0)
+                  const age = issue.first_seen ? `${partialOnset ? '≥' : ''}${formatCompactAge(issue.first_seen)}` : ''
+                  const timing = issueTimingForDisplay(issue)
+
+                  return (
+                    <button
+                      key={issue.id}
+                      className="w-full flex items-center gap-2 px-3 py-1.5 hover:bg-theme-hover transition-colors text-left"
+                      onClick={() => onResourceClick({
+                        kind: ref.kind,
+                        namespace: ref.namespace ?? '',
+                        name: ref.name,
+                        group: ref.group ?? '',
+                      })}
+                    >
+                      <StatusDot tone={issue.severity === 'critical' ? 'unhealthy' : 'degraded'} className="shrink-0" />
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-theme-text-tertiary bg-theme-elevated px-1 py-0.5 rounded">{issue.kind}</span>
+                          <span className="text-xs text-theme-text-primary truncate font-medium">{issue.name}</span>
+                          {(age || timing) && (
+                            <span className="ml-auto flex shrink-0 items-center gap-1">
+                              {age && (
+                                <Tooltip content={issueFirstSeenTitle(issue)} delay={100}>
+                                  <span className="text-[10px] text-theme-text-tertiary tabular-nums">{age}</span>
+                                </Tooltip>
+                              )}
+                              {timing && (
+                                <Tooltip content={timing.tooltip} delay={100}>
+                                  <span className="badge-sm text-[10px] text-theme-text-secondary">{timing.chip}</span>
+                                </Tooltip>
+                              )}
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-1.5 mt-0.5">
+                          <span className="text-[11px] text-theme-text-secondary truncate">{issueTitle(issue)}</span>
+                          <span className="text-[10px] text-theme-text-tertiary shrink-0">{groupLabel(issue.category_group)}</span>
+                          {issue.namespace && <span className="text-[10px] text-theme-text-tertiary shrink-0">{issue.namespace}</span>}
+                        </div>
+                        {(issue.reason || issue.message) && (
+                          <div className="text-[10px] text-theme-text-tertiary truncate mt-0.5">
+                            {issue.reason}
+                            {issue.reason && issue.message ? ' - ' : ''}
+                            {issue.message}
+                          </div>
+                        )}
+                      </div>
+                    </button>
+                  )
+                })}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ProblemsPanelState({ icon, title, body, action }: { icon: ReactNode; title: string; body: string; action?: ReactNode }) {
+  return (
+    <div className="flex min-h-[220px] flex-col items-center justify-center gap-2 px-6 py-10 text-center">
+      <div className="flex h-9 w-9 items-center justify-center rounded-full bg-theme-elevated">
+        {icon}
+      </div>
+      <p className="text-sm font-medium text-theme-text-primary">{title}</p>
+      <p className="max-w-[280px] text-xs leading-5 text-theme-text-secondary">{body}</p>
+      {action && <div className="w-full max-w-[280px]">{action}</div>}
+    </div>
+  )
+}
+
+function ProblemsPanelNotice({ tone, children }: { tone: 'warning' | 'neutral'; children: ReactNode }) {
+  return (
+    <div className="px-3 pt-3">
+      <div
+        className={clsx(
+          'rounded-lg border px-3 py-2 text-xs leading-5',
+          tone === 'warning'
+            ? 'border-amber-500/20 bg-amber-500/10 text-theme-text-secondary'
+            : 'border-theme-border bg-theme-elevated text-theme-text-secondary',
+        )}
+      >
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function formatIssueError(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : '无法加载活跃问题。'
+}

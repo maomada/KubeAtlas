@@ -1,0 +1,1690 @@
+package timeline
+
+import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"embed"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"io/fs"
+	"log"
+	"net"
+	"net/url"
+	"path"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+	pkgtimeline "github.com/maomada/KubeAtlas/pkg/timeline"
+)
+
+const (
+	postgresMigrationTimeout = 30 * time.Second
+	postgresUnlockTimeout    = 5 * time.Second
+	postgresOperationTimeout = 30 * time.Second
+
+	postgresMigrationLockNamespace int32 = 0x52414452
+	postgresMigrationLockID        int32 = 1
+
+	postgresAppendLockNamespace int64 = 0x52414452
+	postgresAppendLockID        int64 = 2
+
+	postgresIndexBuildLockID  int32 = 3
+	postgresIndexBuildTimeout       = time.Hour
+)
+
+// postgresBackgroundIndexes are built after startup rather than by a
+// migration. A migration runs in one transaction under the startup deadline
+// and blocks writes while it builds: on a large retained table that stalls
+// startup, and during a rolling upgrade it stalls the older replicas'
+// appends. The queries these serve (scoped history by subject and owner UID)
+// work without them, only slower.
+var postgresBackgroundIndexes = []struct{ name, column string }{
+	{"radar_timeline_events_uid_idx", "uid"},
+	{"radar_timeline_events_owner_uid_idx", "owner_uid"},
+}
+
+var postgresPingTimeout = 10 * time.Second
+
+const (
+	// The informer add path calls MarkResourceSeen once per resource during the
+	// initial sync. On a large cluster that is tens of thousands of calls, and a
+	// synchronous round trip each would serialize the informer handler against
+	// the database's latency - negligible against a sidecar, tens of seconds
+	// against a managed database an availability zone away. The in-memory map is
+	// still updated synchronously, so IsResourceSeen is unaffected; only the
+	// durable copy is deferred.
+	seenWriteQueueDepth = 4096
+	seenWriteBatchSize  = 500
+	seenWriteInterval   = time.Second
+
+	// maxUnclearedSeen bounds the clears kept for a retry, as
+	// maxDeletedWhileUnavailable bounds the deletes kept while no store is
+	// installed.
+	maxUnclearedSeen = 100_000
+)
+
+// How often failed seen-mark clears are retried, backing off while they keep
+// failing. Variables so tests need not wait.
+var (
+	seenClearRetryInitialInterval = 5 * time.Second
+	seenClearRetryMaxInterval     = 5 * time.Minute
+)
+
+// seenResourceWrite is one ordered mutation of the seen set. Marks and clears
+// share a queue so a clear can never be applied before the mark it supersedes.
+type seenResourceWrite struct {
+	key    string
+	delete bool
+	// done, when non-nil, is closed once this mutation has been flushed (or
+	// dropped). Clears carry it and wait: MarkResourceSeen is the hot path and
+	// can be deferred, but ClearResourceSeen must be durable before it returns,
+	// or a process that dies in between keeps a stale mark and never reports the
+	// resource as newly seen again. Waiting also pins the ordering - the queue
+	// is drained in order, so a queued mark can never be applied after the clear
+	// that supersedes it.
+	done chan struct{}
+}
+
+func withPostgresOperationTimeout(ctx context.Context) (context.Context, context.CancelFunc) {
+	if _, ok := ctx.Deadline(); ok {
+		return ctx, func() {}
+	}
+	return context.WithTimeout(ctx, postgresOperationTimeout)
+}
+
+//go:embed migrations/postgres/*.sql
+var postgresMigrations embed.FS
+
+type PostgresStore struct {
+	db *sql.DB
+	// target names the database for log lines, without the password: a
+	// connection dropped mid-run fails with a bare EOF or timeout that does
+	// not say which database it was.
+	target string
+
+	seenResources map[string]bool
+	// Clears that did not reach the database. Their rows would make a resource
+	// recreated under the same name look already seen after the next restart,
+	// so they are applied again once the database answers. Guarded by seenMu,
+	// which a later mark of the same key also takes to remove it.
+	unclearedSeen map[string]struct{}
+	// Set once the backlog hit maxUnclearedSeen, so the loss is logged once.
+	unclearedOverflow bool
+	seenMu            sync.RWMutex
+
+	filterCache map[string]*CompiledFilter
+	cacheMu     sync.RWMutex
+
+	seenWrites  chan seenResourceWrite
+	seenDropped atomic.Int64
+
+	quit      chan struct{}
+	wg        sync.WaitGroup
+	closeOnce sync.Once
+	closeErr  error
+
+	cleanupMu     sync.RWMutex
+	retentionAge  time.Duration
+	lastCleanupAt time.Time
+	lastCleanupN  int64
+	lastCleanupEr string
+	// Sticky: once retention has deleted anything, a consumer paging forward
+	// from an old cursor can no longer assume an empty page means "end of
+	// history" — it may have fallen below the retained floor. Mirrors
+	// SQLiteStore.evictedRows.
+	evictedRows bool
+}
+
+// NewPostgresStore opens a PostgreSQL-backed timeline store and applies migrations.
+func NewPostgresStore(dsn string) (*PostgresStore, error) {
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, postgresConnectionError("open PostgreSQL timeline database", err, dsn)
+	}
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(2)
+	db.SetConnMaxLifetime(30 * time.Minute)
+
+	closeOnError := func(operation string, operationErr error) (*PostgresStore, error) {
+		_ = db.Close()
+		return nil, postgresConnectionError(operation, operationErr, dsn)
+	}
+
+	pingCtx, cancelPing := context.WithTimeout(context.Background(), postgresPingTimeout)
+	err = db.PingContext(pingCtx)
+	cancelPing()
+	if err != nil {
+		return closeOnError("connect to PostgreSQL timeline database", err)
+	}
+
+	migrationCtx, cancelMigrations := context.WithTimeout(
+		context.Background(),
+		postgresMigrationTimeout,
+	)
+	err = runPostgresMigrations(migrationCtx, db)
+	cancelMigrations()
+	if err != nil {
+		return closeOnError("migrate PostgreSQL timeline database", err)
+	}
+	validationCtx, cancelValidation := context.WithTimeout(
+		context.Background(),
+		postgresMigrationTimeout,
+	)
+	err = validatePostgresSchema(validationCtx, db)
+	cancelValidation()
+	if err != nil {
+		return closeOnError("validate PostgreSQL timeline schema", err)
+	}
+
+	store := &PostgresStore{
+		db:            db,
+		target:        postgresTarget(dsn),
+		seenResources: make(map[string]bool),
+		unclearedSeen: make(map[string]struct{}),
+		filterCache:   make(map[string]*CompiledFilter),
+		seenWrites:    make(chan seenResourceWrite, seenWriteQueueDepth),
+		quit:          make(chan struct{}),
+	}
+	hydrateCtx, cancelHydrate := context.WithTimeout(
+		context.Background(),
+		postgresPingTimeout,
+	)
+	err = store.hydrateSeenResources(hydrateCtx)
+	cancelHydrate()
+	if err != nil {
+		return closeOnError("hydrate PostgreSQL timeline seen resources", err)
+	}
+
+	store.wg.Add(3)
+	go func() {
+		defer store.wg.Done()
+		store.runSeenWriter()
+	}()
+	go func() {
+		defer store.wg.Done()
+		store.runSeenClearRetry(seenClearRetryInitialInterval, seenClearRetryMaxInterval)
+	}()
+	go func() {
+		defer store.wg.Done()
+		store.buildBackgroundIndexes()
+	}()
+
+	return store, nil
+}
+
+// buildBackgroundIndexes creates postgresBackgroundIndexes without blocking
+// writes. One replica builds at a time; the rest skip. An index an
+// interrupted build left invalid is dropped and rebuilt.
+func (s *PostgresStore) buildBackgroundIndexes() {
+	ctx, cancel := context.WithTimeout(context.Background(), postgresIndexBuildTimeout)
+	defer cancel()
+	go func() {
+		select {
+		case <-s.quit:
+			cancel()
+		case <-ctx.Done():
+		}
+	}()
+
+	conn, err := s.db.Conn(ctx)
+	if err != nil {
+		log.Printf("[timeline] Failed to build indexes: acquire connection: %v", err)
+		return
+	}
+	defer conn.Close()
+	var locked bool
+	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1, $2)",
+		postgresMigrationLockNamespace, postgresIndexBuildLockID).Scan(&locked); err != nil {
+		log.Printf("[timeline] Failed to build indexes: take build lock: %v", err)
+		return
+	}
+	if !locked {
+		return
+	}
+	defer func() {
+		unlockCtx, cancelUnlock := context.WithTimeout(context.Background(), postgresUnlockTimeout)
+		defer cancelUnlock()
+		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1, $2)",
+			postgresMigrationLockNamespace, postgresIndexBuildLockID)
+	}()
+
+	for _, index := range postgresBackgroundIndexes {
+		var valid bool
+		err := conn.QueryRowContext(ctx,
+			"SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid = to_regclass($1)", index.name).Scan(&valid)
+		switch {
+		case err == nil && valid:
+			continue
+		case err == nil:
+			if _, err := conn.ExecContext(ctx, "DROP INDEX CONCURRENTLY IF EXISTS "+index.name); err != nil {
+				log.Printf("[timeline] Failed to drop invalid index %s: %v", index.name, err)
+				return
+			}
+		case !errors.Is(err, sql.ErrNoRows):
+			log.Printf("[timeline] Failed to check index %s: %v", index.name, err)
+			return
+		}
+		if _, err := conn.ExecContext(ctx, "CREATE INDEX CONCURRENTLY IF NOT EXISTS "+index.name+
+			" ON radar_timeline_events ("+index.column+")"); err != nil {
+			log.Printf("[timeline] Failed to build index %s: %v", index.name, err)
+			return
+		}
+	}
+}
+
+func validatePostgresSchema(ctx context.Context, db *sql.DB) error {
+	for _, relation := range []string{
+		"radar_timeline_events",
+		"radar_timeline_event_seq",
+		"radar_timeline_seen_resources",
+	} {
+		var exists bool
+		if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", relation).Scan(&exists); err != nil {
+			return fmt.Errorf("check required relation %q: %w", relation, err)
+		}
+		if !exists {
+			return fmt.Errorf("required relation %q is missing", relation)
+		}
+	}
+	if _, err := db.ExecContext(ctx, `
+		SELECT id, timestamp, source, kind, api_version, namespace, name, uid,
+		       event_type, reason, message, diff_json, health_state, owner_kind,
+		       owner_name, owner_api_version, owner_uid, owner_evidence, labels_json, count, correlation_id, created_at,
+		       cluster_context, resource_created_at, seq
+		FROM radar_timeline_events
+		LIMIT 0
+	`); err != nil {
+		return fmt.Errorf("check timeline events schema: %w", err)
+	}
+	if _, err := db.ExecContext(ctx, "SELECT resource_key, seen_at FROM radar_timeline_seen_resources LIMIT 0"); err != nil {
+		return fmt.Errorf("check seen resources schema: %w", err)
+	}
+	return nil
+}
+
+// noteError hands a failed read or write to the outage check, so whichever
+// caller first meets a lost database (a page, an AI tool, the informers) starts
+// the outage log.
+func (s *PostgresStore) noteError(err error) error {
+	NoteDatabaseError(s, err)
+	return err
+}
+
+func (s *PostgresStore) Close() error {
+	s.closeOnce.Do(func() {
+		// Under seenMu, so a retry queueing clears either finishes before the
+		// writer is told to drain, or sees the store closing and leaves them
+		// for the last attempt below.
+		s.seenMu.Lock()
+		close(s.quit)
+		s.seenMu.Unlock()
+		s.wg.Wait()
+		s.applyUnclearedSeenBeforeClose()
+		s.closeErr = s.db.Close()
+	})
+	return s.closeErr
+}
+
+// applyUnclearedSeenBeforeClose makes one last attempt at the clears still
+// waiting for a retry, so a restart soon after an outage does not load their
+// stale marks. The writer has drained and stopped, so nothing queued can land
+// after this statement.
+func (s *PostgresStore) applyUnclearedSeenBeforeClose() {
+	s.seenMu.Lock()
+	keys := make([][]byte, 0, len(s.unclearedSeen))
+	for k := range s.unclearedSeen {
+		keys = append(keys, []byte(k))
+	}
+	s.unclearedSeen = make(map[string]struct{})
+	s.seenMu.Unlock()
+	if len(keys) == 0 {
+		return
+	}
+	// Short: a database that is still gone should not hold up shutdown or a
+	// context switch.
+	ctx, cancel := context.WithTimeout(context.Background(), postgresPingTimeout)
+	defer cancel()
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM radar_timeline_seen_resources WHERE resource_key = ANY($1)", keys); err != nil {
+		log.Printf("[timeline] %d seen-resource clear(s) could not be applied before closing: %v; "+
+			"after a restart, a resource among them recreated under the same name may not have its creation recorded", len(keys), err)
+	}
+}
+
+// Append adds a single event to the store.
+func (s *PostgresStore) Append(ctx context.Context, event TimelineEvent) error {
+	return s.AppendBatch(ctx, []TimelineEvent{event})
+}
+
+// AppendBatch adds multiple events atomically.
+//
+// All appends serialize through a transaction-scoped advisory lock so that a
+// reader cannot observe and advance past a higher committed sequence while a
+// lower sequence remains uncommitted. K8s Event rows upsert mutable fields
+// (count, message, timestamp, seq) when the incoming revision is not older,
+// mirroring the SQLite and memory stores.
+func (s *PostgresStore) AppendBatch(ctx context.Context, events []TimelineEvent) error {
+	return s.noteError(s.appendBatch(ctx, events))
+}
+
+func (s *PostgresStore) appendBatch(ctx context.Context, events []TimelineEvent) error {
+	if len(events) == 0 {
+		return nil
+	}
+	ctx, cancel := withPostgresOperationTimeout(ctx)
+	defer cancel()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin append transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	// Serialize all append transactions before sequence allocation. A PostgreSQL
+	// sequence is concurrent-safe but not commit-ordered; without this lock a
+	// reader could advance past a higher committed seq while a lower one was still
+	// in flight, permanently skipping the later event.
+	if _, err := tx.ExecContext(
+		ctx,
+		"SELECT pg_advisory_xact_lock($1, $2)",
+		postgresAppendLockNamespace,
+		postgresAppendLockID,
+	); err != nil {
+		return fmt.Errorf("acquire append lock: %w", err)
+	}
+
+	stmt, err := tx.PrepareContext(ctx, `
+		INSERT INTO radar_timeline_events (
+			id, timestamp, source, kind, api_version, namespace, name, uid, event_type,
+			reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence,
+			labels_json, count, correlation_id, cluster_context, resource_created_at, seq
+		) VALUES (
+			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
+			$16, $17, $18, $19, $20, $21, $22, $23, nextval('radar_timeline_event_seq')
+		)
+		ON CONFLICT(id) DO UPDATE SET
+			timestamp = excluded.timestamp,
+			event_type = excluded.event_type,
+			reason = excluded.reason,
+			message = excluded.message,
+			health_state = excluded.health_state,
+			count = excluded.count,
+			seq = excluded.seq,
+			namespace = excluded.namespace,
+			uid = excluded.uid,
+			resource_created_at = COALESCE(excluded.resource_created_at, radar_timeline_events.resource_created_at),
+			-- The owner tuple moves as one; OwnerReplacesOnUpsert states the rule.
+			owner_kind = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_kind ELSE radar_timeline_events.owner_kind END,
+			owner_name = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_name ELSE radar_timeline_events.owner_name END,
+			owner_api_version = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_api_version ELSE radar_timeline_events.owner_api_version END,
+			owner_uid = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_uid ELSE radar_timeline_events.owner_uid END,
+			owner_evidence = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_evidence ELSE radar_timeline_events.owner_evidence END,
+			labels_json = CASE WHEN excluded.labels_json IS NOT NULL THEN excluded.labels_json ELSE radar_timeline_events.labels_json END
+		WHERE radar_timeline_events.source = 'k8s_event'
+			AND excluded.source = 'k8s_event'
+			AND excluded.timestamp >= radar_timeline_events.timestamp
+	`)
+	if err != nil {
+		return fmt.Errorf("prepare append statement: %w", err)
+	}
+	defer stmt.Close()
+
+	for _, event := range events {
+		var diffJSON, labelsJSON any
+		var ownerKind, ownerName, ownerAPIVersion, ownerUID string
+
+		if event.Diff != nil {
+			b, err := json.Marshal(event.Diff)
+			if err != nil {
+				log.Printf("Warning: failed to marshal diff for event %s: %v", event.ID, err)
+			} else {
+				diffJSON = string(b)
+			}
+		}
+		if event.Labels != nil {
+			b, err := json.Marshal(event.Labels)
+			if err != nil {
+				log.Printf("Warning: failed to marshal labels for event %s: %v", event.ID, err)
+			} else {
+				labelsJSON = string(b)
+			}
+		}
+		if event.Owner != nil {
+			ownerKind = event.Owner.Kind
+			ownerName = event.Owner.Name
+			ownerAPIVersion = event.Owner.APIVersion
+			ownerUID = event.Owner.UID
+		}
+
+		var resourceCreatedAt any
+		if event.CreatedAt != nil {
+			resourceCreatedAt = event.CreatedAt.UTC().UnixNano()
+		}
+
+		_, err = stmt.ExecContext(ctx,
+			event.ID,
+			event.Timestamp.UTC().UnixNano(),
+			string(event.Source),
+			event.Kind,
+			event.APIVersion,
+			event.Namespace,
+			event.Name,
+			event.UID,
+			string(event.EventType),
+			event.Reason,
+			event.Message,
+			diffJSON,
+			string(event.HealthState),
+			ownerKind,
+			ownerName,
+			ownerAPIVersion,
+			ownerUID,
+			string(event.OwnerEvidence),
+			labelsJSON,
+			event.Count,
+			event.CorrelationID,
+			event.ClusterContext,
+			resourceCreatedAt,
+		)
+		if err != nil {
+			return fmt.Errorf("insert event %s: %w", event.ID, err)
+		}
+	}
+
+	return tx.Commit()
+}
+
+// Query retrieves events matching the given options.
+func (s *PostgresStore) Query(ctx context.Context, opts QueryOptions) ([]TimelineEvent, error) {
+	events, err := s.query(ctx, opts)
+	return events, s.noteError(err)
+}
+
+func (s *PostgresStore) query(ctx context.Context, opts QueryOptions) ([]TimelineEvent, error) {
+	ctx, cancel := withPostgresOperationTimeout(ctx)
+	defer cancel()
+	// Resolve the preset first: whether it admits managed rows decides the SQL.
+	var cf *CompiledFilter
+	if opts.FilterPreset != "" {
+		var filterErr error
+		cf, filterErr = s.getOrCompileFilter(opts.FilterPreset)
+		if filterErr != nil {
+			log.Printf("Warning: failed to compile filter preset %q: %v", opts.FilterPreset, filterErr)
+		}
+	}
+	q, args, err := s.buildQuery(opts, !opts.IncludeManaged && !cf.IncludesManaged())
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := s.db.QueryContext(ctx, q, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query events: %w", err)
+	}
+	defer rows.Close()
+
+	events := make([]TimelineEvent, 0)
+	for rows.Next() {
+		event, err := s.scanEvent(rows)
+		if err != nil {
+			return nil, err
+		}
+
+		if cf != nil && !cf.Matches(&event) {
+			continue
+		}
+
+		// Managed rows and K8s Events are excluded in SQL; these checks stay
+		// as a guard.
+		if event.IsManaged() && !opts.IncludeManaged && !cf.IncludesManaged() {
+			continue
+		}
+
+		if !opts.IncludeK8sEvents && event.Source == SourceK8sEvent {
+			continue
+		}
+
+		events = append(events, event)
+	}
+
+	return events, rows.Err()
+}
+
+// GetEvent retrieves a single event by ID.
+func (s *PostgresStore) GetEvent(ctx context.Context, id string) (*TimelineEvent, error) {
+	event, err := s.getEvent(ctx, id)
+	return event, s.noteError(err)
+}
+
+func (s *PostgresStore) getEvent(ctx context.Context, id string) (*TimelineEvent, error) {
+	ctx, cancel := withPostgresOperationTimeout(ctx)
+	defer cancel()
+	query := `SELECT id, timestamp, source, kind, api_version, namespace, name, uid, event_type,
+		reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence,
+		labels_json, count, correlation_id, cluster_context, resource_created_at, seq
+		FROM radar_timeline_events WHERE id = $1`
+
+	row := s.db.QueryRowContext(ctx, query, id)
+	event, err := s.scanEventRow(row)
+	if err == sql.ErrNoRows {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &event, nil
+}
+
+// MarkResourceSeen records that a resource has been seen.
+func (s *PostgresStore) MarkResourceSeen(clusterContext, group, kind, namespace, name string) {
+	key := SeenResourceKey(clusterContext, group, kind, namespace, name)
+
+	s.seenMu.Lock()
+	s.seenResources[key] = true
+	delete(s.unclearedSeen, key)
+	s.seenMu.Unlock()
+
+	s.enqueueSeenWrite(seenResourceWrite{key: key})
+}
+
+// IsResourceSeen checks if a resource has been seen before in the given cluster
+// context and API group.
+func (s *PostgresStore) IsResourceSeen(clusterContext, group, kind, namespace, name string) bool {
+	s.seenMu.RLock()
+	defer s.seenMu.RUnlock()
+	return s.seenResources[SeenResourceKey(clusterContext, group, kind, namespace, name)]
+}
+
+// ClearResourceSeen removes a resource from the seen set.
+func (s *PostgresStore) ClearResourceSeen(clusterContext, group, kind, namespace, name string) {
+	key := SeenResourceKey(clusterContext, group, kind, namespace, name)
+
+	s.seenMu.Lock()
+	delete(s.seenResources, key)
+	s.seenMu.Unlock()
+
+	// One deadline spans both reaching the queue and the flush that follows, so
+	// a clear can never hold the informer's delete handler longer than the
+	// single database round trip it replaced.
+	ctx, cancel := context.WithTimeout(context.Background(), postgresOperationTimeout)
+	defer cancel()
+
+	done := make(chan struct{})
+	if !s.enqueueSeenClear(ctx, seenResourceWrite{key: key, delete: true, done: done}) {
+		log.Printf("[timeline] seen-resource clear did not reach the write queue in %s; "+
+			"Radar retries it until it reaches the database", postgresOperationTimeout)
+		s.noteUncleared([]string{key})
+		s.noteError(context.DeadlineExceeded)
+		return
+	}
+	select {
+	case <-done:
+	case <-ctx.Done():
+		log.Printf("[timeline] timed out waiting for a seen-resource clear to persist")
+	}
+}
+
+// forgetSeen clears seen marks in memory and in the database, together with
+// any earlier clear that did not reach it. The in-memory set is cleared at
+// once, so this process records the next creation either way.
+func (s *PostgresStore) forgetSeen(keys []string) error {
+	s.seenMu.Lock()
+	for _, k := range keys {
+		delete(s.seenResources, k)
+	}
+	s.seenMu.Unlock()
+	s.noteUncleared(keys)
+	return s.applyUnclearedSeen()
+}
+
+// noteUncleared keeps clears that did not reach the database for the next
+// attempt. A key marked again in the meantime is skipped: the resource exists
+// again, and its row is wanted.
+func (s *PostgresStore) noteUncleared(keys []string) {
+	s.seenMu.Lock()
+	overflowed := false
+	for _, k := range keys {
+		if s.seenResources[k] {
+			continue
+		}
+		if _, kept := s.unclearedSeen[k]; !kept && len(s.unclearedSeen) >= maxUnclearedSeen {
+			overflowed = overflowed || !s.unclearedOverflow
+			s.unclearedOverflow = true
+			continue
+		}
+		s.unclearedSeen[k] = struct{}{}
+	}
+	s.seenMu.Unlock()
+	if overflowed {
+		log.Printf("[timeline] more than %d seen-resource clears are waiting for PostgreSQL; "+
+			"after a restart, a resource among the others recreated under the same name may not have its creation recorded", maxUnclearedSeen)
+	}
+}
+
+// runSeenClearRetry retries failed seen-mark clears on its own. The outage
+// watch retries them as soon as the database answers again, but a clear the
+// database rejected while still answering (a lock timeout, a deadlock) starts
+// no watch, and would otherwise wait for the next outage or restart.
+func (s *PostgresStore) runSeenClearRetry(initial, max time.Duration) {
+	interval := initial
+	for {
+		select {
+		case <-s.quit:
+			return
+		case <-time.After(interval):
+		}
+		s.seenMu.RLock()
+		waiting := len(s.unclearedSeen)
+		s.seenMu.RUnlock()
+		if waiting == 0 {
+			interval = initial
+			continue
+		}
+		_ = s.applyUnclearedSeen() // what fails again stays in the set
+		interval = min(interval*2, max)
+	}
+}
+
+// applyUnclearedSeen queues the clears that earlier failed. They go through
+// the writer, behind every mutation already queued, so a mark queued before
+// the outage cannot flush after them and bring a deleted resource's row back.
+// Each is queued under seenMu, which MarkResourceSeen takes before queueing its
+// mark: a mark made before is seen here and its clear dropped, and a mark made
+// after queues behind the clear. The send does not wait, since the informers
+// need seenMu; what a full queue leaves stays for the next retry, as does a
+// clear the writer fails to apply.
+func (s *PostgresStore) applyUnclearedSeen() error {
+	s.seenMu.Lock()
+	defer s.seenMu.Unlock()
+	select {
+	case <-s.quit:
+		return errors.New("the store is closing; its last attempt applies the clears")
+	default:
+	}
+	for k := range s.unclearedSeen {
+		if s.seenResources[k] {
+			delete(s.unclearedSeen, k)
+			continue
+		}
+		select {
+		case s.seenWrites <- seenResourceWrite{key: k, delete: true}:
+			delete(s.unclearedSeen, k)
+		default:
+			return fmt.Errorf("seen-resource write queue is full; %d clear(s) wait for the next retry", len(s.unclearedSeen))
+		}
+	}
+	s.unclearedOverflow = false
+	return nil
+}
+
+// enqueueSeenWrite hands one mutation to the background writer without
+// blocking the caller. A full queue means the database cannot keep up with
+// informer churn; the mutation is dropped rather than stalling the informer
+// handler, because the in-memory set is already correct and the only cost is
+// that the resource is reported as newly seen once after the next restart.
+// Drops are counted and reported once per flush rather than per event, which on
+// a large cluster would be its own flood.
+func (s *PostgresStore) enqueueSeenWrite(w seenResourceWrite) {
+	select {
+	case s.seenWrites <- w:
+	default:
+		s.seenDropped.Add(1)
+	}
+}
+
+// enqueueSeenClear waits for room rather than dropping, and reports whether the
+// mutation was queued. A dropped clear would return from ClearResourceSeen with
+// the row still present, and a mark already queued for the same key would then
+// flush on top of it - leaving the resource marked as seen so its next
+// appearance is suppressed. Waiting is bounded by ctx and by store shutdown;
+// the writer drains on a ticker regardless of database health, so a full queue
+// is transient.
+func (s *PostgresStore) enqueueSeenClear(ctx context.Context, w seenResourceWrite) bool {
+	select {
+	case s.seenWrites <- w:
+		return true
+	case <-ctx.Done():
+		return false
+	case <-s.quit:
+		return false
+	}
+}
+
+// runSeenWriter drains the queue into batched statements. Consecutive
+// mutations of the same kind collapse into one statement; a mark followed by a
+// clear of the same key stays ordered, because the batch breaks whenever the
+// operation changes.
+func (s *PostgresStore) runSeenWriter() {
+	ticker := time.NewTicker(seenWriteInterval)
+	defer ticker.Stop()
+
+	pending := make([]seenResourceWrite, 0, seenWriteBatchSize)
+	reportedDrops := int64(0)
+	reportDrops := func() {
+		if dropped := s.seenDropped.Load(); dropped > reportedDrops {
+			log.Printf("[timeline] seen-resource write queue full: %d change(s) not persisted; "+
+				"they will be reported as newly seen once after the next restart", dropped-reportedDrops)
+			reportedDrops = dropped
+		}
+	}
+	for {
+		select {
+		case <-s.quit:
+			// Drain what is already queued so a clean shutdown does not throw
+			// away marks the informers just made.
+			for {
+				select {
+				case w := <-s.seenWrites:
+					pending = append(pending, w)
+					if len(pending) >= seenWriteBatchSize {
+						s.flushSeenWrites(pending)
+						pending = pending[:0]
+					}
+				default:
+					s.flushSeenWrites(pending)
+					reportDrops()
+					return
+				}
+			}
+		case w := <-s.seenWrites:
+			pending = append(pending, w)
+			if len(pending) >= seenWriteBatchSize || w.done != nil {
+				s.flushSeenWrites(pending)
+				pending = pending[:0]
+			}
+		case <-ticker.C:
+			if len(pending) > 0 {
+				s.flushSeenWrites(pending)
+				pending = pending[:0]
+			}
+			reportDrops()
+		}
+	}
+}
+
+func (s *PostgresStore) flushSeenWrites(pending []seenResourceWrite) {
+	if len(pending) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), postgresOperationTimeout)
+	defer cancel()
+
+	for start := 0; start < len(pending); {
+		end := start + 1
+		for end < len(pending) && pending[end].delete == pending[start].delete {
+			end++
+		}
+		keys := make([][]byte, 0, end-start)
+		for _, w := range pending[start:end] {
+			keys = append(keys, []byte(w.key))
+		}
+		var err error
+		if pending[start].delete {
+			_, err = s.db.ExecContext(ctx,
+				"DELETE FROM radar_timeline_seen_resources WHERE resource_key = ANY($1)", keys)
+		} else {
+			_, err = s.db.ExecContext(ctx,
+				`INSERT INTO radar_timeline_seen_resources (resource_key)
+				 SELECT unnest($1::bytea[]) ON CONFLICT (resource_key) DO NOTHING`, keys)
+		}
+		if err != nil {
+			log.Printf("[timeline] failed to persist %d seen-resource changes: %v", end-start, err)
+			if pending[start].delete {
+				// Kept before the waiting clears are released, so a mark that
+				// follows one of them is the one that wins.
+				failed := make([]string, 0, end-start)
+				for _, w := range pending[start:end] {
+					failed = append(failed, w.key)
+				}
+				s.noteUncleared(failed)
+			}
+			s.noteError(err)
+		}
+		for _, w := range pending[start:end] {
+			if w.done != nil {
+				close(w.done)
+			}
+		}
+		start = end
+	}
+}
+
+// Stats returns storage statistics.
+func (s *PostgresStore) Stats() StoreStats {
+	var stats StoreStats
+	ctx, cancel := context.WithTimeout(context.Background(), postgresOperationTimeout)
+	defer cancel()
+
+	row := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM radar_timeline_events")
+	row.Scan(&stats.TotalEvents)
+
+	row = s.db.QueryRowContext(ctx, "SELECT MIN(timestamp), MAX(timestamp) FROM radar_timeline_events")
+	var oldest, newest sql.NullInt64
+	row.Scan(&oldest, &newest)
+	if oldest.Valid {
+		stats.OldestEvent = time.Unix(0, oldest.Int64).UTC()
+	}
+	if newest.Valid {
+		stats.NewestEvent = time.Unix(0, newest.Int64).UTC()
+	}
+
+	row = s.db.QueryRowContext(ctx, `
+		SELECT COALESCE(MIN(seq), 0), COALESCE(MAX(seq), 0)
+		FROM radar_timeline_events
+	`)
+	row.Scan(&stats.OldestSeq, &stats.NewestSeq)
+
+	stats.StorageBytes = s.storageBytes(ctx)
+
+	s.seenMu.RLock()
+	stats.SeenResources = len(s.seenResources)
+	s.seenMu.RUnlock()
+
+	s.cleanupMu.RLock()
+	stats.RetentionAge = s.retentionAge
+	stats.LastCleanupAt = s.lastCleanupAt
+	stats.LastCleanupDeletedRows = s.lastCleanupN
+	stats.LastCleanupError = s.lastCleanupEr
+	stats.EventsEvicted = s.evictedRows
+	s.cleanupMu.RUnlock()
+
+	return stats
+}
+
+// Cleanup removes events older than the given duration.
+func (s *PostgresStore) Cleanup(ctx context.Context, maxAge time.Duration) (int64, error) {
+	ctx, cancel := withPostgresOperationTimeout(ctx)
+	defer cancel()
+	cutoff := time.Now().Add(-maxAge).UTC().UnixNano()
+	var totalDeleted int64
+	const batchSize = 1000
+
+	for {
+		result, err := s.db.ExecContext(ctx, `
+			WITH doomed AS (
+				SELECT id
+				FROM radar_timeline_events
+				WHERE timestamp < $1
+				ORDER BY timestamp ASC
+				LIMIT $2
+			)
+			DELETE FROM radar_timeline_events
+			USING doomed
+			WHERE radar_timeline_events.id = doomed.id
+		`, cutoff, batchSize)
+		if err != nil {
+			return totalDeleted, err
+		}
+		deleted, err := result.RowsAffected()
+		if err != nil {
+			return totalDeleted, err
+		}
+		totalDeleted += deleted
+		if deleted == 0 || deleted < batchSize {
+			break
+		}
+		if err := ctx.Err(); err != nil {
+			return totalDeleted, err
+		}
+	}
+	return totalDeleted, nil
+}
+
+// StartCleanupLoop spawns a goroutine that periodically deletes events older
+// than retention. The loop exits when Close is called.
+//
+// maxStorageBytes is accepted for interface symmetry and deliberately ignored:
+// PostgreSQL relation size reflects MVCC bloat and autovacuum timing rather
+// than live data, so a SQLite-style file-size target would prune real history
+// chasing space the database will reclaim on its own. Retention is the only
+// bound here.
+func (s *PostgresStore) StartCleanupLoop(retention, interval time.Duration, maxStorageBytes int64) {
+	if interval <= 0 || retention <= 0 {
+		return
+	}
+	s.cleanupMu.Lock()
+	s.retentionAge = retention
+	s.cleanupMu.Unlock()
+
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		s.runCleanup(retention)
+		for {
+			select {
+			case <-s.quit:
+				return
+			case <-ticker.C:
+				s.runCleanup(retention)
+			}
+		}
+	}()
+}
+
+// EvictedThrough implements EvictionBoundary: retention is the only deletion
+// here, so the boundary is its cutoff, whether or not a sweep has run yet.
+// Restart gaps are not tracked here: callers also bound history by when this
+// process started observing.
+func (s *PostgresStore) EvictedThrough() time.Time {
+	s.cleanupMu.RLock()
+	defer s.cleanupMu.RUnlock()
+	if s.retentionAge <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(-s.retentionAge)
+}
+
+func (s *PostgresStore) runCleanup(retention time.Duration) {
+	ctx := context.Background()
+	n, err := s.Cleanup(ctx, retention)
+	now := time.Now()
+	s.cleanupMu.Lock()
+	s.lastCleanupAt = now
+	s.lastCleanupN = n
+	if n > 0 {
+		s.evictedRows = true
+	}
+	if err != nil {
+		s.lastCleanupEr = err.Error()
+	} else {
+		s.lastCleanupEr = ""
+	}
+	s.cleanupMu.Unlock()
+
+	if err != nil {
+		log.Printf("[timeline] PostgreSQL cleanup failed: %v", err)
+		return
+	}
+	if n > 0 {
+		log.Printf("[timeline] PostgreSQL cleanup: deleted %d events", n)
+	}
+}
+
+// storageBytes returns the total relation size for the timeline tables and
+// indexes. Errors are ignored so a size-query failure does not break Stats.
+func (s *PostgresStore) storageBytes(ctx context.Context) int64 {
+	var total sql.NullInt64
+	row := s.db.QueryRowContext(ctx, `
+		SELECT pg_total_relation_size('radar_timeline_events') +
+		       pg_total_relation_size('radar_timeline_seen_resources')
+	`)
+	if err := row.Scan(&total); err != nil {
+		log.Printf("[timeline] failed to query PostgreSQL relation size: %v", err)
+		return 0
+	}
+	return total.Int64
+}
+
+// OwnedUIDs returns the distinct UIDs of resources whose rows name one of
+// ownerUIDs as their owner.
+func (s *PostgresStore) OwnedUIDs(ctx context.Context, clusterContext string, ownerUIDs []string, limit int) ([]string, error) {
+	uids, err := s.ownedUIDs(ctx, clusterContext, ownerUIDs, limit)
+	return uids, s.noteError(err)
+}
+
+func (s *PostgresStore) ownedUIDs(ctx context.Context, clusterContext string, ownerUIDs []string, limit int) ([]string, error) {
+	ownerUIDs = nonEmpty(ownerUIDs)
+	if len(ownerUIDs) == 0 || limit <= 0 {
+		return nil, nil
+	}
+	ctx, cancel := withPostgresOperationTimeout(ctx)
+	defer cancel()
+	query := `SELECT DISTINCT uid FROM radar_timeline_events
+		WHERE COALESCE(uid, '') <> '' AND owner_uid = ANY($1::text[])`
+	args := []any{ownerUIDs}
+	if clusterContext != "" {
+		query += " AND cluster_context = $2"
+		args = append(args, clusterContext)
+	}
+	query += fmt.Sprintf(" LIMIT $%d", len(args)+1)
+	args = append(args, limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query owned uids: %w", err)
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var uid string
+		if err := rows.Scan(&uid); err != nil {
+			return nil, err
+		}
+		out = append(out, uid)
+	}
+	return out, rows.Err()
+}
+
+const postgresAPIGroupExpr = "CASE WHEN strpos(api_version, '/') > 0 THEN split_part(api_version, '/', 1) ELSE '' END"
+
+// Identities returns the distinct resources the rows matching q were about.
+func (s *PostgresStore) Identities(ctx context.Context, q IdentityQuery, limit int) ([]Identity, error) {
+	identities, err := s.identities(ctx, q, limit)
+	return identities, s.noteError(err)
+}
+
+func (s *PostgresStore) identities(ctx context.Context, q IdentityQuery, limit int) ([]Identity, error) {
+	if limit <= 0 {
+		return nil, nil
+	}
+	ctx, cancel := withPostgresOperationTimeout(ctx)
+	defer cancel()
+	query := "SELECT DISTINCT COALESCE(api_version, ''), kind, name, COALESCE(uid, ''), COALESCE(owner_uid, '') FROM radar_timeline_events WHERE true"
+	var args []any
+	arg := func(v any) string {
+		args = append(args, v)
+		return fmt.Sprintf("$%d", len(args))
+	}
+	if q.ClusterContext != "" {
+		query += " AND cluster_context = " + arg(q.ClusterContext)
+	}
+	if q.Namespace != "" {
+		query += " AND namespace = " + arg(q.Namespace)
+	}
+	if q.Ref != nil {
+		query += " AND kind = " + arg(q.Ref.Kind) + " AND namespace = " + arg(q.Ref.Namespace) + " AND name = " + arg(q.Ref.Name) +
+			" AND (COALESCE(api_version, '') = '' OR " + postgresAPIGroupExpr + " = " + arg(q.Ref.Group) + ")"
+	}
+	if len(q.Kinds) > 0 {
+		query += " AND kind = ANY(" + arg(q.Kinds) + "::text[])"
+	}
+	if q.NamePrefix != "" {
+		query += " AND starts_with(name, " + arg(q.NamePrefix) + ")"
+	}
+	if q.OwnerUnknown {
+		query += ownerUnknownSQL
+	}
+	query += " LIMIT " + arg(limit)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("query identities: %w", err)
+	}
+	defer rows.Close()
+	var out []Identity
+	for rows.Next() {
+		var id Identity
+		if err := rows.Scan(&id.APIVersion, &id.Kind, &id.Name, &id.UID, &id.OwnerUID); err != nil {
+			return nil, err
+		}
+		out = append(out, id)
+	}
+	return out, rows.Err()
+}
+
+// buildQuery renders opts as SQL. excludeManaged applies IsManaged before
+// LIMIT, so managed rows cannot fill the limit and leave the page short; the
+// caller resolves it because a filter preset can admit managed rows.
+func (s *PostgresStore) buildQuery(opts QueryOptions, excludeManaged bool) (string, []any, error) {
+	query := strings.Builder{}
+	query.WriteString(`SELECT id, timestamp, source, kind, api_version, namespace, name, uid, event_type,
+		reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence,
+		labels_json, count, correlation_id, cluster_context, resource_created_at, seq
+		FROM radar_timeline_events WHERE 1=1`)
+
+	var args []any
+	argN := 1
+
+	addFilter := func(format string, value any) {
+		query.WriteString(fmt.Sprintf(format, argN))
+		args = append(args, value)
+		argN++
+	}
+	addInFilter := func(column string, values []any) {
+		if len(values) == 0 {
+			return
+		}
+		query.WriteString(fmt.Sprintf(" AND %s IN (", column))
+		for i, v := range values {
+			if i > 0 {
+				query.WriteString(",")
+			}
+			query.WriteString(fmt.Sprintf("$%d", argN))
+			args = append(args, v)
+			argN++
+		}
+		query.WriteString(")")
+	}
+
+	if len(opts.Namespaces) > 0 {
+		vals := make([]any, len(opts.Namespaces))
+		for i, ns := range opts.Namespaces {
+			vals[i] = ns
+		}
+		addInFilter("namespace", vals)
+	}
+	if len(opts.Kinds) > 0 {
+		vals := make([]any, len(opts.Kinds))
+		for i, k := range opts.Kinds {
+			vals[i] = k
+		}
+		addInFilter("kind", vals)
+	}
+	if opts.RequireAPIVersion {
+		query.WriteString(" AND COALESCE(api_version, '') <> ''")
+	}
+	if len(opts.APIGroups) > 0 {
+		// Unknown versions stay visible; known group collisions must be excluded
+		// before LIMIT so they cannot crowd out the requested resource's changes.
+		addFilter(" AND (COALESCE(api_version, '') = '' OR CASE WHEN strpos(api_version, '/') > 0 THEN split_part(api_version, '/', 1) ELSE '' END = ANY($%d::text[]))", opts.APIGroups)
+	}
+	if len(opts.Names) > 0 {
+		vals := make([]any, len(opts.Names))
+		for i, n := range opts.Names {
+			vals[i] = n
+		}
+		addInFilter("name", vals)
+	}
+	if !opts.Since.IsZero() {
+		addFilter(" AND timestamp >= $%d", opts.Since.UTC().UnixNano())
+	}
+	if !opts.Until.IsZero() {
+		addFilter(" AND timestamp <= $%d", opts.Until.UTC().UnixNano())
+	}
+	if len(opts.Sources) > 0 {
+		vals := make([]any, len(opts.Sources))
+		for i, src := range opts.Sources {
+			vals[i] = string(src)
+		}
+		addInFilter("source", vals)
+	}
+	if len(opts.EventTypes) > 0 {
+		vals := make([]any, len(opts.EventTypes))
+		for i, et := range opts.EventTypes {
+			vals[i] = string(et)
+		}
+		addInFilter("event_type", vals)
+	}
+	if opts.ExcludeDeleted {
+		addFilter(" AND event_type != $%d", string(EventTypeDelete))
+	}
+	if excludeManaged {
+		query.WriteString(" AND " + unmanagedRowsSQL)
+	}
+	if !opts.IncludeK8sEvents {
+		addFilter(" AND source != $%d", string(SourceK8sEvent))
+	}
+	if opts.ClusterContext != "" {
+		addFilter(" AND cluster_context = $%d", opts.ClusterContext)
+	}
+	if !opts.Scope.IsZero() {
+		var parts []string
+		if uids := nonEmpty(opts.Scope.UIDs); len(uids) > 0 {
+			parts = append(parts, fmt.Sprintf("uid = ANY($%d::text[])", argN))
+			args = append(args, uids)
+			argN++
+		}
+		if owners := nonEmpty(opts.Scope.OwnerUIDs); len(owners) > 0 {
+			parts = append(parts, fmt.Sprintf("owner_uid = ANY($%d::text[])", argN))
+			args = append(args, owners)
+			argN++
+		}
+		refs := func(list []resourceid.Ref, extra string) {
+			for _, g := range groupRefs(list) {
+				parts = append(parts, fmt.Sprintf("(kind = $%d AND namespace = $%d AND name = ANY($%d::text[]) AND (COALESCE(api_version, '') = '' OR "+
+					postgresAPIGroupExpr+" = $%d)"+extra+")", argN, argN+1, argN+2, argN+3))
+				args = append(args, g.kind, g.namespace, g.names, g.group)
+				argN += 4
+			}
+		}
+		refs(opts.Scope.Refs, "")
+		refs(opts.Scope.OwnerlessRefs, ownerUnknownSQL)
+		if len(parts) == 0 {
+			query.WriteString(" AND false")
+		} else {
+			query.WriteString(" AND (" + strings.Join(parts, " OR ") + ")")
+		}
+	}
+
+	seqPaging := opts.SeqPaging || opts.SinceSeq > 0
+	if seqPaging {
+		addFilter(" AND seq > $%d", opts.SinceSeq)
+	}
+	if opts.UntilSeq > 0 {
+		addFilter(" AND seq < $%d", opts.UntilSeq)
+	}
+
+	// Ordering mirrors the SQLite store exactly (sqlite_store.go). Delta reads
+	// page by ascending arrival so a burst larger than the page resumes from the
+	// lowest unseen seq; bounded snapshots and backwards pages are
+	// newest-arrival-first; everything else is newest-event-time-first.
+	if seqPaging || opts.SequenceOrder == pkgtimeline.SequenceOrderAscending {
+		query.WriteString(" ORDER BY seq ASC")
+	} else if opts.UntilSeq > 0 || opts.SequenceOrder == pkgtimeline.SequenceOrderDescending {
+		query.WriteString(" ORDER BY seq DESC")
+	} else {
+		query.WriteString(" ORDER BY timestamp DESC")
+	}
+
+	limit := opts.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 10000 {
+		limit = 10000
+	}
+	query.WriteString(fmt.Sprintf(" LIMIT %d", limit))
+
+	if opts.Offset > 0 && !seqPaging {
+		query.WriteString(fmt.Sprintf(" OFFSET %d", opts.Offset))
+	}
+
+	return query.String(), args, nil
+}
+
+type eventScanner interface {
+	Scan(dest ...any) error
+}
+
+func (s *PostgresStore) scanEvent(scanner eventScanner) (TimelineEvent, error) {
+	var event TimelineEvent
+	var source, eventType, healthState string
+	var apiVersion, uid, reason, message, correlationID, clusterContext sql.NullString
+	var ownerKind, ownerName, ownerAPIVersion, ownerUID, ownerEvidence sql.NullString
+	var diffJSON, labelsJSON []byte
+	var resourceCreatedAt sql.NullInt64
+	var timestampNanos int64
+
+	err := scanner.Scan(
+		&event.ID,
+		&timestampNanos,
+		&source,
+		&event.Kind,
+		&apiVersion,
+		&event.Namespace,
+		&event.Name,
+		&uid,
+		&eventType,
+		&reason,
+		&message,
+		&diffJSON,
+		&healthState,
+		&ownerKind,
+		&ownerName,
+		&ownerAPIVersion,
+		&ownerUID,
+		&ownerEvidence,
+		&labelsJSON,
+		&event.Count,
+		&correlationID,
+		&clusterContext,
+		&resourceCreatedAt,
+		&event.Seq,
+	)
+	if err != nil {
+		return event, err
+	}
+
+	event.Source = EventSource(source)
+	event.EventType = EventType(eventType)
+	event.HealthState = HealthState(healthState)
+	event.ClusterContext = clusterContext.String
+
+	if apiVersion.Valid {
+		event.APIVersion = apiVersion.String
+	}
+	if uid.Valid {
+		event.UID = uid.String
+	}
+	if reason.Valid {
+		event.Reason = reason.String
+	}
+	if message.Valid {
+		event.Message = message.String
+	}
+	if correlationID.Valid {
+		event.CorrelationID = correlationID.String
+	}
+	event.Timestamp = time.Unix(0, timestampNanos).UTC()
+	if resourceCreatedAt.Valid {
+		t := time.Unix(0, resourceCreatedAt.Int64).UTC()
+		event.CreatedAt = &t
+	}
+	if ownerKind.Valid && ownerKind.String != "" {
+		event.Owner = &OwnerInfo{
+			Kind:       ownerKind.String,
+			Name:       ownerName.String,
+			APIVersion: ownerAPIVersion.String,
+			UID:        ownerUID.String,
+		}
+	}
+	event.OwnerEvidence = OwnerEvidence(ownerEvidence.String)
+	if len(diffJSON) > 0 {
+		var diff DiffInfo
+		if json.Unmarshal(diffJSON, &diff) == nil {
+			event.Diff = &diff
+		}
+	}
+	if len(labelsJSON) > 0 {
+		json.Unmarshal(labelsJSON, &event.Labels)
+	}
+
+	return event, nil
+}
+
+func (s *PostgresStore) scanEventRow(row *sql.Row) (TimelineEvent, error) {
+	return s.scanEvent(row)
+}
+
+func (s *PostgresStore) getOrCompileFilter(presetName string) (*CompiledFilter, error) {
+	s.cacheMu.RLock()
+	if cf, ok := s.filterCache[presetName]; ok {
+		s.cacheMu.RUnlock()
+		return cf, nil
+	}
+	s.cacheMu.RUnlock()
+
+	presets := DefaultFilterPresets()
+	preset, ok := presets[presetName]
+	if !ok {
+		return nil, nil
+	}
+
+	cf, err := CompileFilter(&preset)
+	if err != nil {
+		return nil, err
+	}
+
+	s.cacheMu.Lock()
+	s.filterCache[presetName] = cf
+	s.cacheMu.Unlock()
+
+	return cf, nil
+}
+
+func (s *PostgresStore) hydrateSeenResources(ctx context.Context) error {
+	rows, err := s.db.QueryContext(
+		ctx,
+		"SELECT resource_key FROM radar_timeline_seen_resources",
+	)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	var loaded, obsolete int
+	for rows.Next() {
+		var key []byte
+		if err := rows.Scan(&key); err != nil {
+			return err
+		}
+		// Pre-group-identity rows lack the API-group qualifier and would
+		// wrongly suppress a same-named resource in another group if loaded;
+		// they're ignored here the same way SQLiteStore ignores them.
+		if !isGroupAwareSeenResourceKey(string(key)) {
+			obsolete++
+			continue
+		}
+		s.seenResources[string(key)] = true
+		loaded++
+	}
+	if obsolete > 0 {
+		log.Printf("[timeline] ignored %d obsolete seen_resources rows", obsolete)
+	}
+	if loaded > 0 {
+		log.Printf("[timeline] loaded %d seen resources from PostgreSQL", loaded)
+	}
+	return rows.Err()
+}
+
+type postgresMigration struct {
+	version int64
+	name    string
+	sql     string
+}
+
+func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
+	migrations, err := loadPostgresMigrations()
+	if err != nil {
+		return err
+	}
+
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("acquire migration connection: %w", err)
+	}
+	defer conn.Close()
+
+	if _, err := conn.ExecContext(
+		ctx,
+		"SELECT pg_advisory_lock($1, $2)",
+		postgresMigrationLockNamespace,
+		postgresMigrationLockID,
+	); err != nil {
+		return fmt.Errorf("acquire migration lock: %w", err)
+	}
+
+	migrationErr := applyPostgresMigrations(ctx, conn, migrations)
+
+	unlockCtx, cancelUnlock := context.WithTimeout(
+		context.Background(),
+		postgresUnlockTimeout,
+	)
+	var unlocked bool
+	unlockErr := conn.QueryRowContext(
+		unlockCtx,
+		"SELECT pg_advisory_unlock($1, $2)",
+		postgresMigrationLockNamespace,
+		postgresMigrationLockID,
+	).Scan(&unlocked)
+	cancelUnlock()
+	if unlockErr == nil && !unlocked {
+		unlockErr = fmt.Errorf("migration lock was not held")
+	}
+
+	if migrationErr != nil {
+		if unlockErr != nil {
+			return fmt.Errorf("%w; release migration lock: %v", migrationErr, unlockErr)
+		}
+		return migrationErr
+	}
+	if unlockErr != nil {
+		return fmt.Errorf("release migration lock: %w", unlockErr)
+	}
+	return nil
+}
+
+func applyPostgresMigrations(
+	ctx context.Context,
+	conn *sql.Conn,
+	migrations []postgresMigration,
+) error {
+	if _, err := conn.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS radar_timeline_schema_migrations (
+			version    bigint PRIMARY KEY,
+			applied_at timestamptz NOT NULL DEFAULT now()
+		)
+	`); err != nil {
+		return fmt.Errorf("create migration table: %w", err)
+	}
+
+	applied, err := appliedPostgresMigrationVersions(ctx, conn)
+	if err != nil {
+		return err
+	}
+
+	for _, migration := range migrations {
+		if applied[migration.version] {
+			continue
+		}
+
+		// New migrations must remain additive while rolling upgrades can run old
+		// and new Radar pods against the same database.
+		tx, err := conn.BeginTx(ctx, nil)
+		if err != nil {
+			return fmt.Errorf("begin migration %s: %w", migration.name, err)
+		}
+		if _, err := tx.ExecContext(ctx, migration.sql); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("apply migration %s: %w", migration.name, err)
+		}
+		if _, err := tx.ExecContext(
+			ctx,
+			"INSERT INTO radar_timeline_schema_migrations (version) VALUES ($1)",
+			migration.version,
+		); err != nil {
+			_ = tx.Rollback()
+			return fmt.Errorf("record migration %s: %w", migration.name, err)
+		}
+		if err := tx.Commit(); err != nil {
+			return fmt.Errorf("commit migration %s: %w", migration.name, err)
+		}
+	}
+	return nil
+}
+
+func appliedPostgresMigrationVersions(
+	ctx context.Context,
+	conn *sql.Conn,
+) (map[int64]bool, error) {
+	rows, err := conn.QueryContext(
+		ctx,
+		"SELECT version FROM radar_timeline_schema_migrations",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("query applied migrations: %w", err)
+	}
+	defer rows.Close()
+
+	applied := make(map[int64]bool)
+	for rows.Next() {
+		var version int64
+		if err := rows.Scan(&version); err != nil {
+			return nil, fmt.Errorf("scan applied migration: %w", err)
+		}
+		applied[version] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate applied migrations: %w", err)
+	}
+	return applied, nil
+}
+
+func loadPostgresMigrations() ([]postgresMigration, error) {
+	entries, err := fs.ReadDir(postgresMigrations, "migrations/postgres")
+	if err != nil {
+		return nil, fmt.Errorf("read embedded PostgreSQL migrations: %w", err)
+	}
+
+	migrations := make([]postgresMigration, 0, len(entries))
+	versions := make(map[int64]string, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() || path.Ext(entry.Name()) != ".sql" {
+			continue
+		}
+
+		versionText, _, ok := strings.Cut(entry.Name(), "_")
+		if !ok {
+			return nil, fmt.Errorf("invalid PostgreSQL migration name %q", entry.Name())
+		}
+		version, err := strconv.ParseInt(versionText, 10, 64)
+		if err != nil || version <= 0 {
+			return nil, fmt.Errorf("invalid PostgreSQL migration version in %q", entry.Name())
+		}
+		if previous, exists := versions[version]; exists {
+			return nil, fmt.Errorf(
+				"duplicate PostgreSQL migration version %d in %q and %q",
+				version,
+				previous,
+				entry.Name(),
+			)
+		}
+
+		migrationSQL, err := fs.ReadFile(
+			postgresMigrations,
+			"migrations/postgres/"+entry.Name(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("read PostgreSQL migration %q: %w", entry.Name(), err)
+		}
+		versions[version] = entry.Name()
+		migrations = append(migrations, postgresMigration{
+			version: version,
+			name:    entry.Name(),
+			sql:     string(migrationSQL),
+		})
+	}
+	sort.Slice(migrations, func(i, j int) bool {
+		return migrations[i].version < migrations[j].version
+	})
+	return migrations, nil
+}
+
+// DatabaseUnreachable reports whether err means Radar lost or could not open
+// its connection to PostgreSQL, as opposed to a query the server received and
+// rejected. A database that goes away mid-run first fails pooled connections
+// (EOF, or a shutdown code from the server) and then fails new ones to connect;
+// all of these are the same outage to the person reading the timeline. pgx
+// names the user and database in its connect error, never the password.
+func DatabaseUnreachable(err error) bool {
+	if err == nil {
+		return false
+	}
+	var connectErr *pgconn.ConnectError
+	if errors.As(err, &connectErr) {
+		return true
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		// Class 08 is connection exception; 57P01-57P03 are the server shutting
+		// down, crashing, or not yet accepting connections.
+		return strings.HasPrefix(pgErr.Code, "08") || pgErr.Code == "57P01" || pgErr.Code == "57P02" || pgErr.Code == "57P03"
+	}
+	var opErr *net.OpError
+	return errors.Is(err, io.ErrUnexpectedEOF) || errors.Is(err, driver.ErrBadConn) || errors.As(err, &opErr)
+}
+
+// Ping reports whether the database answers right now. Stats cannot tell an
+// unreachable database from an empty one, so diagnostics asks this first.
+func (s *PostgresStore) Ping(ctx context.Context) error {
+	return s.db.PingContext(ctx)
+}
+
+// postgresTarget describes the database a DSN points at, leaving out the
+// password.
+func postgresTarget(dsn string) string {
+	config, err := pgx.ParseConfig(dsn)
+	if err != nil {
+		return "the configured database"
+	}
+	return fmt.Sprintf("host=%s port=%d database=%s user=%s", config.Host, config.Port, config.Database, config.User)
+}
+
+func postgresConnectionError(operation string, err error, dsn string) error {
+	message := err.Error()
+	if dsn != "" {
+		message = strings.ReplaceAll(message, dsn, "[REDACTED]")
+	}
+	if config, parseErr := pgx.ParseConfig(dsn); parseErr == nil && config.Password != "" {
+		message = strings.ReplaceAll(message, config.Password, "[REDACTED]")
+		message = strings.ReplaceAll(message, url.QueryEscape(config.Password), "[REDACTED]")
+		message = strings.ReplaceAll(message, url.PathEscape(config.Password), "[REDACTED]")
+	}
+	// Keep the chain intact so callers can still errors.Is/errors.As the
+	// driver's error, but never let its own Error() text reach a log or an API
+	// response: that string is where the DSN password appears. fmt.Errorf with
+	// %w would print the wrapped message verbatim and undo the redaction, so
+	// the wrapper below overrides Error() and exposes Unwrap() only.
+	return &postgresConnError{msg: fmt.Sprintf("%s: %s", operation, message), err: err}
+}
+
+// postgresConnError carries a redacted message while preserving the underlying
+// driver error for errors.Is/errors.As.
+type postgresConnError struct {
+	msg string
+	err error
+}
+
+func (e *postgresConnError) Error() string { return e.msg }
+func (e *postgresConnError) Unwrap() error { return e.err }

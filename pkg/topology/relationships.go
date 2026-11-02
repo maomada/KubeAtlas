@@ -1,0 +1,1451 @@
+package topology
+
+import (
+	"sort"
+	"strings"
+
+	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	"github.com/maomada/KubeAtlas/pkg/configrefs"
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+)
+
+// RelationshipsIndex is a precomputed map from node ID to the edges touching
+// that node, derived from a single pass over Topology.Edges. Repeated
+// per-resource lookups via GetRelationshipsWithIndex skip the O(E) edge scan
+// in exchange for one O(E) build per topology refresh.
+//
+// Build once via IndexByResource(topo). Pass to GetRelationshipsWithIndex on
+// each call. Lookups are read-only and goroutine-safe; mutation is not.
+type RelationshipsIndex struct {
+	byNodeID           map[string]*nodeEdgeSlots
+	nodesByID          map[string]*Node
+	nodesByResourceKey map[string]*Node
+	podConsumers       map[string][]ResourceRef
+	visiblePods        map[string]bool
+}
+
+type nodeEdgeSlots struct {
+	incoming []Edge
+	outgoing []Edge
+}
+
+// IndexByResource builds a RelationshipsIndex over topo. Safe to call with a
+// nil topology — returns an empty index whose lookups all miss.
+func IndexByResource(topo *Topology) *RelationshipsIndex {
+	if topo == nil {
+		return &RelationshipsIndex{
+			byNodeID:           map[string]*nodeEdgeSlots{},
+			nodesByID:          map[string]*Node{},
+			nodesByResourceKey: map[string]*Node{},
+		}
+	}
+	idx := &RelationshipsIndex{
+		byNodeID:           make(map[string]*nodeEdgeSlots, len(topo.Nodes)),
+		nodesByID:          make(map[string]*Node, len(topo.Nodes)),
+		nodesByResourceKey: make(map[string]*Node, len(topo.Nodes)),
+		podConsumers:       topo.podConsumers,
+		visiblePods:        make(map[string]bool),
+	}
+	for i := range topo.Nodes {
+		node := &topo.Nodes[i]
+		idx.nodesByID[node.ID] = node
+		for _, key := range nodeResourceKeys(node) {
+			idx.nodesByResourceKey[key] = node
+		}
+	}
+	// A shared snapshot may have been stripped for this user before indexing.
+	visiblePods := idx.visiblePods
+	for _, node := range topo.Nodes {
+		if node.Kind == KindPod {
+			visiblePods[resourceid.ResourceKey("", "Pod", nodeNamespaceFromData(&node), node.Name)] = true
+		}
+		if node.Kind == KindPodGroup {
+			if pods, ok := node.Data["pods"].([]map[string]any); ok {
+				for _, pod := range pods {
+					name, _ := pod["name"].(string)
+					ns, _ := pod["namespace"].(string)
+					visiblePods[resourceid.ResourceKey("", "Pod", ns, name)] = true
+				}
+			}
+		}
+	}
+	for _, e := range topo.Edges {
+		if e.Source != "" {
+			slot := idx.byNodeID[e.Source]
+			if slot == nil {
+				slot = &nodeEdgeSlots{}
+				idx.byNodeID[e.Source] = slot
+			}
+			slot.outgoing = append(slot.outgoing, e)
+		}
+		if e.Target != "" {
+			slot := idx.byNodeID[e.Target]
+			if slot == nil {
+				slot = &nodeEdgeSlots{}
+				idx.byNodeID[e.Target] = slot
+			}
+			slot.incoming = append(slot.incoming, e)
+		}
+	}
+	return idx
+}
+
+func (r *RelationshipsIndex) podConsumersFor(key string) []ResourceRef {
+	if r == nil || r.nodesByResourceKey[key] == nil {
+		return nil
+	}
+	var visible []ResourceRef
+	for _, ref := range r.podConsumers[key] {
+		if r.visiblePods[resourceid.ResourceKey("", "Pod", ref.Namespace, ref.Name)] {
+			visible = append(visible, ref)
+		}
+	}
+	visible = uniqueResourceRefs(visible)
+	sort.Slice(visible, func(i, j int) bool {
+		a, b := visible[i], visible[j]
+		if a.Namespace != b.Namespace {
+			return a.Namespace < b.Namespace
+		}
+		return a.Name < b.Name
+	})
+	return visible
+}
+
+// EdgesFor returns the incoming and outgoing edges touching nodeID. Both
+// slices alias the index's internal storage — callers MUST NOT mutate them.
+// Returns (nil, nil) when the node has no edges or the index is nil.
+func (r *RelationshipsIndex) EdgesFor(nodeID string) (incoming, outgoing []Edge) {
+	if r == nil {
+		return nil, nil
+	}
+	slot := r.byNodeID[nodeID]
+	if slot == nil {
+		return nil, nil
+	}
+	return slot.incoming, slot.outgoing
+}
+
+// edgesForNode returns incoming/outgoing edges for nodeID, preferring the
+// index when supplied and falling back to a linear scan over topo.Edges.
+func edgesForNode(topo *Topology, idx *RelationshipsIndex, nodeID string) (incoming, outgoing []Edge) {
+	if idx != nil {
+		return idx.EdgesFor(nodeID)
+	}
+	if topo == nil {
+		return nil, nil
+	}
+	for _, e := range topo.Edges {
+		if e.Source == nodeID {
+			outgoing = append(outgoing, e)
+		}
+		if e.Target == nodeID {
+			incoming = append(incoming, e)
+		}
+	}
+	return incoming, outgoing
+}
+
+// GetCascadeDeletePreview walks topology management edges to identify related
+// resources deletion may affect. Edges include GitOps attribution and sources;
+// this is not a prediction of Kubernetes garbage collection or controller pruning.
+func GetCascadeDeletePreview(root ResourceRef, topo *Topology, dp DynamicProvider) *CascadeDeletePreview {
+	preview := &CascadeDeletePreview{
+		Root:       root,
+		Dependents: []ResourceRef{},
+	}
+	if topo == nil {
+		return preview
+	}
+
+	rootID := buildNodeID(root.Kind, root.Namespace, root.Name, dp)
+	if root.Group != "" {
+		if dp == nil {
+			return preview
+		}
+		gvr, ok := dp.GetGVRWithGroup(root.Kind, root.Group)
+		if !ok {
+			return preview
+		}
+		resolvedKind := dp.GetKindForGVR(gvr)
+		if resolvedKind == "" {
+			return preview
+		}
+		rootID = strings.ToLower(KindForGVK(resolvedKind, root.Group)) + "/" + root.Namespace + "/" + root.Name
+	}
+	nodeByID := make(map[string]*Node, len(topo.Nodes))
+	for i := range topo.Nodes {
+		nodeByID[topo.Nodes[i].ID] = &topo.Nodes[i]
+	}
+
+	rootNode, ok := nodeByID[rootID]
+	if root.Group != "" {
+		if ok && !nodeMatchesAPIGroup(rootNode, root.Group) {
+			ok = false
+		}
+		if !ok {
+			// Two CRDs can share a lowercase plural, so the deterministic
+			// kind/ns/name ID may resolve to the wrong API group. Resolve
+			// against each node's recorded API group instead.
+			if matched, _ := findNodeByRef(topo.Nodes, root, dp); matched != nil {
+				rootNode = matched
+				rootID = matched.ID
+				ok = true
+			}
+		}
+	} else if !ok || !nodeIsCanonicalBuiltin(rootNode) {
+		matched, ambiguous := findNodeByRef(topo.Nodes, root, dp)
+		if ambiguous || matched == nil {
+			return preview
+		}
+		rootNode = matched
+		rootID = matched.ID
+		ok = true
+	}
+	if !ok {
+		return preview
+	}
+	if resolved := resourceRefForNode(rootNode, dp); resolved != nil {
+		if root.Group != "" {
+			resolved.Group = root.Group
+		}
+		preview.Root = *resolved
+	}
+	preview.RootResolved = true
+
+	// Build adjacency list for EdgeManages edges (source → targets)
+	manages := make(map[string][]string)
+	for _, edge := range topo.Edges {
+		if edge.Type == EdgeManages {
+			manages[edge.Source] = append(manages[edge.Source], edge.Target)
+		}
+	}
+
+	// BFS from root node
+	visited := map[string]bool{rootID: true}
+	queue := []string{rootID}
+	var dependents []ResourceRef
+
+	for len(queue) > 0 {
+		current := queue[0]
+		queue = queue[1:]
+
+		for _, targetID := range manages[current] {
+			if visited[targetID] {
+				continue
+			}
+			visited[targetID] = true
+
+			ref := resourceRefForNode(nodeByID[targetID], dp)
+			if ref == nil {
+				continue
+			}
+			dependents = append(dependents, *ref)
+			queue = append(queue, targetID)
+		}
+	}
+
+	if dependents != nil {
+		preview.Dependents = dependents
+	}
+
+	return preview
+}
+
+// resolveAPIGroup returns the API group for a resource kind using resource discovery.
+// Returns empty string for core K8s types (pods, services, etc.).
+func resolveAPIGroup(kind string, dp DynamicProvider) string {
+	if dp == nil {
+		return ""
+	}
+	gvr, ok := dp.GetGVR(strings.ToLower(kind))
+	if !ok {
+		return ""
+	}
+	return gvr.Group
+}
+
+// enrichRef sets the API group on a ResourceRef for CRD types.
+func enrichRef(ref *ResourceRef, dp DynamicProvider) {
+	if ref == nil {
+		return
+	}
+	if ref.Group != "" {
+		return
+	}
+	ref.Group = resolveAPIGroup(ref.Kind, dp)
+}
+
+// isRouteKind returns true if the kind is a Gateway API route type.
+func isRouteKind(kindLower string) bool {
+	switch kindLower {
+	case "httproute", "httproutes", "grpcroute", "grpcroutes",
+		"tcproute", "tcproutes", "tlsroute", "tlsroutes", "udproute", "udproutes":
+		return true
+	}
+	return false
+}
+
+func isServiceEntrypointRoute(ref *ResourceRef) bool {
+	if ref == nil {
+		return false
+	}
+	switch ref.Group {
+	case "gateway.networking.k8s.io":
+		return isRouteKind(strings.ToLower(ref.Kind))
+	case "serving.knative.dev":
+		return ref.Kind == "Route"
+	case "traefik.io", "traefik.containo.us":
+		return ref.Kind == "IngressRoute" || ref.Kind == "IngressRouteTCP" || ref.Kind == "IngressRouteUDP"
+	case "networking.istio.io":
+		return ref.Kind == "VirtualService"
+	case "projectcontour.io":
+		return ref.Kind == "HTTPProxy"
+	}
+	return false
+}
+
+// GetRelationships computes relationships for a specific resource by finding
+// all edges in the topology that involve this resource. The topology should be
+// pre-built and cached for performance. Builds a per-call inline index for
+// edge lookups; callers with many GetRelationships calls against the same
+// topology should use GetRelationshipsWithIndex with a shared
+// RelationshipsIndex instead.
+//
+// Prefer GetRelationshipsWithObject when the resource has already been fetched
+// by the caller — the kind/name lookup used inside this entry point is
+// group-blind and can return the wrong typed object for CRDs whose plural
+// collides with a core resource (e.g. Knative Service vs core Service).
+func GetRelationships(kind, namespace, name string, topo *Topology, provider ResourceProvider, dp DynamicProvider) *Relationships {
+	return GetRelationshipsWithObject(kind, namespace, name, nil, topo, provider, dp, nil)
+}
+
+// GetRelationshipsWithIndex is the indexed variant of GetRelationships. When
+// idx is non-nil, edge lookups go through the precomputed inverted index
+// instead of scanning topo.Edges; when nil, behavior matches GetRelationships
+// exactly. Callers that issue many per-resource queries against the same
+// topology (T6 BuildResourceContext, T12 get_neighborhood) should build idx
+// once and reuse it.
+//
+// Prefer GetRelationshipsWithObject when the resource has already been fetched —
+// see the doc on GetRelationships for the kind/group collision rationale.
+func GetRelationshipsWithIndex(kind, namespace, name string, topo *Topology, provider ResourceProvider, dp DynamicProvider, idx *RelationshipsIndex) *Relationships {
+	return GetRelationshipsWithObject(kind, namespace, name, nil, topo, provider, dp, idx)
+}
+
+// GetRelationshipsWithObject is the canonical entry point. When obj is non-nil
+// it is used directly for Pod spec extraction (ServiceAccountName, NodeName)
+// and ManagedBy synthesis, eliminating the group-blind kind/name lookup
+// inside lookupObjectMetadata. Callers that have already fetched the resource
+// — REST GET, MCP get_resource — MUST pass obj here, otherwise CRDs whose
+// plural collides with a core resource (e.g. Knative serving.knative.dev/Service
+// vs core/v1 Service) silently surface the wrong managed-by ref.
+//
+// obj may be any typed K8s object or *unstructured.Unstructured (both satisfy
+// metav1.Object and the *corev1.Pod type assertion remains nil-safe). When
+// obj is nil, behavior matches the pre-refactor path: lookupObjectMetadata
+// is called, with the group-collision risk noted above.
+func GetRelationshipsWithObject(kind, namespace, name string, obj any, topo *Topology, provider ResourceProvider, dp DynamicProvider, idx *RelationshipsIndex) *Relationships {
+	if topo == nil {
+		return nil
+	}
+
+	// Build the node ID for this resource (matches format used in builder.go)
+	resolvedKind := kind
+	objectKind, objectGroup := objectGVK(obj)
+	if objectGroup != "" {
+		if objectKind != "" {
+			resolvedKind = objectKind
+		}
+		resolvedKind = KindForGVK(resolvedKind, objectGroup)
+	}
+	nodeID := buildNodeID(resolvedKind, namespace, name, dp)
+	lookupIndex := idx
+	if lookupIndex == nil {
+		lookupIndex = IndexByResource(topo)
+	}
+	nodeByID := lookupIndex.nodesByID
+	directNode, directExists := nodeByID[nodeID]
+	resourceKind := objectKind
+	if resourceKind == "" {
+		resourceKind = normalizeKindWithGroup(kind, objectGroup, dp)
+	}
+	if builtin, ok := resourceid.BuiltinForName(resourceKind); ok {
+		resourceKind = builtin.Kind
+	}
+	resourceGroup := resourceid.ResolveCurrent(resourceid.OptionalGroupReference(objectGroup, resourceKind, namespace, name), nil).Ref.Group
+	if exactNode := lookupIndex.nodesByResourceKey[resourceid.ResourceKey(resourceGroup, resourceKind, namespace, name)]; exactNode != nil {
+		nodeID = exactNode.ID
+		directNode = exactNode
+		directExists = true
+	}
+	if !directExists || objectGroup != "" && !nodeMatchesAPIGroup(directNode, objectGroup) {
+		if matched, _ := findNodeByRef(topo.Nodes, ResourceRef{Kind: resolvedKind, Namespace: namespace, Name: name, Group: objectGroup}, dp); matched != nil {
+			nodeID = matched.ID
+		} else if objectGroup != "" {
+			nodeID = ""
+		}
+	}
+	incomingEdges, outgoingEdges := edgesForNode(topo, lookupIndex, nodeID)
+	refForNodeID := func(id string) *ResourceRef {
+		return resourceRefForNode(nodeByID[id], dp)
+	}
+
+	rel := &Relationships{}
+	if node := nodeByID[nodeID]; node != nil {
+		rel.IstioServiceDomain, _ = node.Data["istioServiceDomain"].(string)
+	}
+	kindLower := strings.ToLower(kind)
+
+	for _, edge := range outgoingEdges {
+		// This resource points TO something (outgoing edge)
+		ref := refForNodeID(edge.Target)
+		if ref == nil {
+			continue
+		}
+
+		switch edge.Type {
+		case EdgeManages:
+			// This resource manages/owns the target
+			rel.Children = append(rel.Children, *ref)
+			rel.manageTargets = append(rel.manageTargets, *ref)
+		case EdgeExposes, EdgeRoutesTo:
+			if ref.Kind == "Pod" && ref.Group == "" {
+				rel.Pods = append(rel.Pods, *ref)
+			} else {
+				rel.Backends = append(rel.Backends, *ref)
+			}
+		case EdgeUses:
+			source := refForNodeID(edge.Source)
+			if isStorageResourceRef(source) {
+				rel.Consumers = append(rel.Consumers, *ref)
+			} else if isScalingRelationship(source, ref) {
+				rel.ScaleTarget = ref
+			} else {
+				rel.Dependencies = append(rel.Dependencies, *ref)
+				if isConfigurationDependency(ref) {
+					rel.ConfigRefs = append(rel.ConfigRefs, *ref)
+				}
+			}
+		case EdgeProtects:
+			source := refForNodeID(edge.Source)
+			if source != nil && source.Kind == "MachineHealthCheck" && source.Group == "cluster.x-k8s.io" {
+				if ref.Kind == "Cluster" && ref.Group == "cluster.x-k8s.io" {
+					rel.Dependencies = append(rel.Dependencies, *ref)
+				}
+			} else {
+				rel.Protects = append(rel.Protects, *ref)
+			}
+		case EdgeConfigures:
+			if source := refForNodeID(edge.Source); source != nil && source.Group == "monitoring.coreos.com" && (source.Kind == "ServiceMonitor" || source.Kind == "PodMonitor") {
+				rel.MonitorTargets = append(rel.MonitorTargets, *ref)
+				continue
+			}
+			rel.Consumers = append(rel.Consumers, *ref)
+			if isConfigurationDependency(refForNodeID(edge.Source)) {
+				rel.Dependents = appendResourceRef(rel.Dependents, *ref)
+			}
+			if reflectionEdge(edge, nodeByID) {
+				if rel.Reflection == nil {
+					rel.Reflection = &ReflectionRelationships{}
+				}
+				rel.Reflection.Mirrors = appendResourceRef(rel.Reflection.Mirrors, *ref)
+			}
+
+		}
+	}
+
+	for _, edge := range incomingEdges {
+		// Something points TO this resource (incoming edge)
+		ref := refForNodeID(edge.Source)
+		if ref == nil {
+			continue
+		}
+
+		switch edge.Type {
+		case EdgeManages:
+			// Something manages/owns this resource
+			rel.Owner = ref
+			rel.manageSources = append(rel.manageSources, *ref)
+		case EdgeExposes:
+			if isServiceEntrypointRoute(ref) {
+				rel.Routes = appendResourceRef(rel.Routes, *ref)
+			} else if ref.Kind == "Service" && ref.Group == "" {
+				rel.Services = appendResourceRef(rel.Services, *ref)
+			} else {
+				rel.RoutedFrom = appendResourceRef(rel.RoutedFrom, *ref)
+			}
+		case EdgeRoutesTo:
+			if ref.Kind == "Ingress" && ref.Group == "networking.k8s.io" {
+				rel.Ingresses = appendResourceRef(rel.Ingresses, *ref)
+			} else if ref.Kind == "Gateway" && ref.Group == "gateway.networking.k8s.io" {
+				rel.Gateways = appendResourceRef(rel.Gateways, *ref)
+			} else if isServiceEntrypointRoute(ref) {
+				rel.Routes = appendResourceRef(rel.Routes, *ref)
+			} else if ref.Kind == "Service" && ref.Group == "" {
+				rel.Services = appendResourceRef(rel.Services, *ref)
+			} else {
+				rel.RoutedFrom = appendResourceRef(rel.RoutedFrom, *ref)
+			}
+		case EdgeUses:
+			if isStorageResourceRef(ref) {
+				rel.StorageRefs = append(rel.StorageRefs, *ref)
+			} else if isScalingRelationship(ref, refForNodeID(edge.Target)) {
+				rel.Scalers = append(rel.Scalers, *ref)
+			} else {
+				rel.Dependents = append(rel.Dependents, *ref)
+				if isConfigurationDependency(refForNodeID(edge.Target)) {
+					rel.Consumers = append(rel.Consumers, *ref)
+				}
+			}
+		case EdgeProtects:
+			switch ref.Group {
+			case "policy":
+				if ref.Kind == "PodDisruptionBudget" {
+					rel.PDBs = append(rel.PDBs, *ref)
+				}
+			case "networking.k8s.io":
+				if ref.Kind == "NetworkPolicy" {
+					rel.NetworkPolicies = append(rel.NetworkPolicies, *ref)
+				}
+			case "cilium.io":
+				if ref.Kind == "CiliumNetworkPolicy" || ref.Kind == "CiliumClusterwideNetworkPolicy" {
+					rel.NetworkPolicies = append(rel.NetworkPolicies, *ref)
+				}
+			case "policy.networking.k8s.io":
+				if ref.Kind == "ClusterNetworkPolicy" {
+					rel.NetworkPolicies = append(rel.NetworkPolicies, *ref)
+				}
+			case "projectcalico.org", "crd.projectcalico.org":
+				switch ref.Kind {
+				case "NetworkPolicy", "GlobalNetworkPolicy", "StagedNetworkPolicy", "StagedGlobalNetworkPolicy", "StagedKubernetesNetworkPolicy":
+					if edge.Partial {
+						rel.StagedPolicies = append(rel.StagedPolicies, *ref)
+					} else if ref.Kind == "NetworkPolicy" || ref.Kind == "GlobalNetworkPolicy" {
+						rel.NetworkPolicies = append(rel.NetworkPolicies, *ref)
+					}
+				}
+			case "cluster.x-k8s.io":
+				if target := refForNodeID(edge.Target); ref.Kind == "MachineHealthCheck" && target != nil && target.Kind == "Cluster" && target.Group == "cluster.x-k8s.io" {
+					rel.HealthChecks = append(rel.HealthChecks, *ref)
+				}
+			}
+		case EdgeConfigures:
+			if isConfigurationDependency(ref) {
+				rel.Dependencies = appendResourceRef(rel.Dependencies, *ref)
+			}
+			if reflectionEdge(edge, nodeByID) {
+				if rel.Reflection == nil {
+					rel.Reflection = &ReflectionRelationships{}
+				}
+				rel.Reflection.Source = ref
+				rel.Reflection.SourceResourceVersion, _ = nodeByID[edge.Source].Data["resourceVersion"].(string)
+			}
+			switch ref.Kind {
+			case "ServiceAccount":
+				rel.ServiceAccount = ref
+			case "ServiceMonitor", "PodMonitor":
+				if ref.Group == "monitoring.coreos.com" {
+					rel.Monitors = append(rel.Monitors, *ref)
+				} else {
+					rel.ConfigRefs = append(rel.ConfigRefs, *ref)
+				}
+			default:
+				rel.ConfigRefs = append(rel.ConfigRefs, *ref)
+			}
+		}
+	}
+
+	addServiceEntrypoints(rel, topo, lookupIndex, nodeID)
+
+	// Convenience shortcuts: bridge the Deployment↔ReplicaSet↔Pod gap
+	// so users see Pods directly under Deployments and vice versa.
+
+	// Deployment → show grandchild Pods (Deployment→ReplicaSet→Pod)
+	if resourceGroup == "apps" && (kindLower == "deployments" || kindLower == "deployment") {
+		for _, child := range rel.Children {
+			// The shortcut IDs below are group-less, so only the built-in
+			// ReplicaSet may take it; a same-named CRD would resolve to another
+			// workload's ReplicaSet.
+			if strings.EqualFold(child.Kind, "ReplicaSet") && isAppsGroup(child.Group) {
+				childID := buildNodeID(child.Kind, child.Namespace, child.Name, dp)
+				_, childOutgoing := edgesForNode(topo, lookupIndex, childID)
+				for _, edge := range childOutgoing {
+					if edge.Type != EdgeManages {
+						continue
+					}
+					podRef := refForNodeID(edge.Target)
+					if podRef != nil && strings.EqualFold(podRef.Kind, "Pod") && podRef.Group == "" {
+						rel.Pods = append(rel.Pods, *podRef)
+					}
+				}
+			}
+		}
+	}
+
+	// Pod → if owner is a ReplicaSet, also show the grandparent Deployment
+	if resourceGroup == "" && (kindLower == "pods" || kindLower == "pod") {
+		if rel.Owner != nil && strings.EqualFold(rel.Owner.Kind, "ReplicaSet") && isAppsGroup(rel.Owner.Group) {
+			ownerID := buildNodeID(rel.Owner.Kind, rel.Owner.Namespace, rel.Owner.Name, dp)
+			ownerIncoming, _ := edgesForNode(topo, lookupIndex, ownerID)
+			for _, edge := range ownerIncoming {
+				if edge.Type != EdgeManages {
+					continue
+				}
+				deployRef := refForNodeID(edge.Source)
+				if deployRef != nil && strings.EqualFold(deployRef.Kind, "Deployment") && isAppsGroup(deployRef.Group) {
+					rel.Deployment = deployRef
+					break
+				}
+			}
+		}
+	}
+
+	// Storage chain: PVC→PV→StorageClass (direct provider lookups, not topology edges)
+	builtinGroup, builtinKind := resourceid.BuiltinGroup(resourceKind)
+	if provider != nil && builtinKind && resourceGroup == builtinGroup {
+		switch kindLower {
+		case "persistentvolumeclaim", "persistentvolumeclaims", "pvc", "pvcs":
+			pvcs, _ := provider.PersistentVolumeClaims()
+			for _, pvc := range pvcs {
+				if pvc.Namespace == namespace && pvc.Name == name && pvc.Spec.VolumeName != "" {
+					pvRef := ResourceRef{Kind: "PersistentVolume", Name: pvc.Spec.VolumeName}
+					enrichRef(&pvRef, dp)
+					rel.StorageRefs = append(rel.StorageRefs, pvRef)
+					break
+				}
+			}
+		case "persistentvolume", "persistentvolumes", "pv", "pvs":
+			pvs, _ := provider.PersistentVolumes()
+			for _, pv := range pvs {
+				if pv.Name == name {
+					if pv.Spec.ClaimRef != nil {
+						claimRef := ResourceRef{Kind: "PersistentVolumeClaim", Namespace: pv.Spec.ClaimRef.Namespace, Name: pv.Spec.ClaimRef.Name}
+						enrichRef(&claimRef, dp)
+						rel.Consumers = append(rel.Consumers, claimRef)
+					}
+					if pv.Spec.StorageClassName != "" {
+						scRef := ResourceRef{Kind: "StorageClass", Name: pv.Spec.StorageClassName}
+						enrichRef(&scRef, dp)
+						rel.ConfigRefs = append(rel.ConfigRefs, scRef)
+					}
+					break
+				}
+			}
+		case "storageclass", "storageclasses", "sc":
+			pvs, _ := provider.PersistentVolumes()
+			for _, pv := range pvs {
+				if pv.Spec.StorageClassName == name {
+					pvRef := ResourceRef{Kind: "PersistentVolume", Name: pv.Name}
+					enrichRef(&pvRef, dp)
+					rel.Consumers = append(rel.Consumers, pvRef)
+				}
+			}
+		case "node", "nodes":
+			if resourceGroup != "" {
+				break
+			}
+			allPods, podsErr := provider.Pods()
+			rel.PodPlacementObserved = true
+			rel.PodPlacementUnavailable = podsErr != nil
+			if podsErr != nil {
+				break
+			}
+			for _, pod := range allPods {
+				if pod != nil && pod.Spec.NodeName == name && pod.Status.Phase != corev1.PodSucceeded && pod.Status.Phase != corev1.PodFailed {
+					podRef := ResourceRef{Kind: "Pod", Namespace: pod.Namespace, Name: pod.Name}
+					enrichRef(&podRef, dp)
+					rel.Pods = append(rel.Pods, podRef)
+				}
+			}
+		}
+	}
+
+	// Hygiene fields (T2): ServiceAccount + Node from Pod.Spec, ManagedBy from
+	// labels/annotations on the queried object (or topology owner chain fallback).
+	//
+	// Use the caller-provided obj when available — it is the authoritative
+	// resource (already disambiguated by group at fetch time) and avoids the
+	// group-blind kind/name lookup. Fall back to lookupObjectMetadata only
+	// when obj is nil (back-compat path).
+	queriedObj := obj
+	if queriedObj == nil {
+		queriedObj = lookupObjectMetadata(kindLower, namespace, name, provider, dp)
+	}
+	if pod, ok := queriedObj.(*corev1.Pod); ok {
+
+		for _, declaration := range configrefs.PodSpecReferences(pod.Namespace, pod.Spec) {
+			if declaration.Kind == "ServiceAccount" {
+				continue
+			}
+			target := lookupIndex.nodesByResourceKey[resourceid.ResourceKey("", declaration.Kind, declaration.Namespace, declaration.Name)]
+			if target == nil {
+				continue
+			}
+			ref := ResourceRef{Kind: declaration.Kind, Namespace: declaration.Namespace, Name: declaration.Name}
+			if declaration.Kind == "PersistentVolumeClaim" {
+				rel.StorageRefs = append(rel.StorageRefs, ref)
+			} else {
+				rel.ConfigRefs = append(rel.ConfigRefs, ref)
+			}
+		}
+		if sa := pod.Spec.ServiceAccountName; sa != "" {
+			saRef := ResourceRef{Kind: "ServiceAccount", Namespace: namespace, Name: sa}
+			enrichRef(&saRef, dp)
+			rel.ServiceAccount = &saRef
+		}
+		if nodeName := pod.Spec.NodeName; nodeName != "" {
+			nodeRef := ResourceRef{Kind: "Node", Name: nodeName}
+			enrichRef(&nodeRef, dp)
+			rel.Node = &nodeRef
+		}
+		for _, pc := range pod.Spec.ResourceClaims {
+			claimName := ""
+			if pc.ResourceClaimName != nil {
+				claimName = *pc.ResourceClaimName
+			} else {
+				// Template-generated claims: the actual claim name only exists in status
+				for _, st := range pod.Status.ResourceClaimStatuses {
+					if st.Name == pc.Name && st.ResourceClaimName != nil {
+						claimName = *st.ResourceClaimName
+						break
+					}
+				}
+			}
+			if claimName != "" {
+				rel.ResourceClaims = append(rel.ResourceClaims, ResourceRef{
+					Kind: "ResourceClaim", Namespace: namespace, Name: claimName, Group: "resource.k8s.io",
+				})
+			}
+		}
+	}
+
+	if resourceGroup == "" && (resourceKind == "ConfigMap" || resourceKind == "Secret" || resourceKind == "PersistentVolumeClaim" || resourceKind == "ServiceAccount") {
+		rel.Consumers = append(rel.Consumers, lookupIndex.podConsumersFor(resourceid.ResourceKey("", resourceKind, namespace, name))...)
+	}
+	if endpoint, ok := queriedObj.(*unstructured.Unstructured); ok &&
+		(kindLower == "hostendpoint" || kindLower == "hostendpoints") &&
+		(endpoint.GroupVersionKind().Group == "crd.projectcalico.org" || endpoint.GroupVersionKind().Group == "projectcalico.org") {
+		if nodeName, _, _ := unstructured.NestedString(endpoint.Object, "spec", "node"); nodeName != "" {
+			nodeRef := ResourceRef{Kind: "Node", Name: nodeName}
+			enrichRef(&nodeRef, dp)
+			rel.Node = &nodeRef
+		}
+	}
+	// ResourceClaim → DeviceClass (what it requests) + reservedFor Pods (who holds it).
+	if kindLower == "resourceclaim" || kindLower == "resourceclaims" {
+		if u, ok := queriedObj.(*unstructured.Unstructured); ok && u.GroupVersionKind().Group == "resource.k8s.io" {
+			seenClasses := map[string]bool{}
+			requests, _, _ := unstructured.NestedSlice(u.Object, "spec", "devices", "requests")
+			for _, r := range requests {
+				req, ok := r.(map[string]any)
+				if !ok {
+					continue
+				}
+				// v1/v1beta2 nest the class under "exactly" (or firstAvailable
+				// subrequests); v1beta1 had deviceClassName at the request level.
+				var classNames []string
+				if dc, _, _ := unstructured.NestedString(req, "exactly", "deviceClassName"); dc != "" {
+					classNames = append(classNames, dc)
+				} else if dc, _, _ := unstructured.NestedString(req, "deviceClassName"); dc != "" {
+					classNames = append(classNames, dc)
+				}
+				if subs, _, _ := unstructured.NestedSlice(req, "firstAvailable"); len(subs) > 0 {
+					for _, s := range subs {
+						if sub, ok := s.(map[string]any); ok {
+							if dc, _, _ := unstructured.NestedString(sub, "deviceClassName"); dc != "" {
+								classNames = append(classNames, dc)
+							}
+						}
+					}
+				}
+				for _, dc := range classNames {
+					if !seenClasses[dc] {
+						seenClasses[dc] = true
+						rel.ConfigRefs = append(rel.ConfigRefs, ResourceRef{Kind: "DeviceClass", Name: dc, Group: "resource.k8s.io"})
+					}
+				}
+			}
+			reserved, _, _ := unstructured.NestedSlice(u.Object, "status", "reservedFor")
+			for _, r := range reserved {
+				ref, ok := r.(map[string]any)
+				if !ok {
+					continue
+				}
+				resource, _, _ := unstructured.NestedString(ref, "resource")
+				holderName, _, _ := unstructured.NestedString(ref, "name")
+				if resource == "pods" && holderName != "" {
+					podRef := ResourceRef{Kind: "Pod", Namespace: namespace, Name: holderName}
+					enrichRef(&podRef, dp)
+					rel.Consumers = append(rel.Consumers, podRef)
+				}
+			}
+		}
+	}
+	var managedByMeta metav1.Object
+	if m, ok := queriedObj.(metav1.Object); ok {
+		managedByMeta = m
+	}
+	if mb := synthesizeManagedByFromNode(managedByMeta, nodeID, topo, dp, idx); len(mb) > 0 {
+		rel.ManagedBy = mb
+	}
+
+	// Return nil if no relationships found
+	// Collected without per-append checks: a PVC shared by thousands of
+	// workloads would make a linear duplicate scan quadratic.
+	for _, refs := range []*[]ResourceRef{&rel.Monitors, &rel.MonitorTargets, &rel.Backends, &rel.RoutedFrom, &rel.Protects, &rel.HealthChecks, &rel.StagedPolicies, &rel.ConfigRefs, &rel.Consumers, &rel.Dependencies, &rel.Dependents, &rel.Scalers, &rel.StorageRefs} {
+		*refs = uniqueResourceRefs(*refs)
+	}
+
+	if rel.Owner == nil && rel.Deployment == nil && len(rel.Children) == 0 && len(rel.Services) == 0 &&
+		len(rel.Ingresses) == 0 && len(rel.Gateways) == 0 && len(rel.Routes) == 0 &&
+		len(rel.ConfigRefs) == 0 && len(rel.Consumers) == 0 && len(rel.Scalers) == 0 &&
+		len(rel.StorageRefs) == 0 && len(rel.Dependencies) == 0 && len(rel.Dependents) == 0 &&
+		len(rel.PDBs) == 0 && len(rel.NetworkPolicies) == 0 && rel.IstioServiceDomain == "" &&
+		len(rel.Monitors) == 0 && len(rel.MonitorTargets) == 0 && len(rel.Backends) == 0 && len(rel.RoutedFrom) == 0 && len(rel.Protects) == 0 && len(rel.HealthChecks) == 0 && len(rel.StagedPolicies) == 0 && rel.ScaleTarget == nil && len(rel.Pods) == 0 &&
+		rel.ServiceAccount == nil && rel.Node == nil && len(rel.ResourceClaims) == 0 && len(rel.ManagedBy) == 0 && !rel.PodPlacementObserved {
+		return nil
+	}
+
+	return rel
+}
+
+func addServiceEntrypoints(rel *Relationships, topo *Topology, idx *RelationshipsIndex, rootID string) {
+	_, outgoing := edgesForNode(topo, idx, rootID)
+	for _, edge := range outgoing {
+		if edge.Type == EdgeExposes || edge.Type == EdgeRoutesTo {
+			return
+		}
+	}
+	for _, service := range rel.Services {
+		if service.Group != "" {
+			continue
+		}
+		serviceNode := idx.nodesByResourceKey[resourceid.ResourceKey(service.Group, service.Kind, service.Namespace, service.Name)]
+		if serviceNode == nil || !strings.EqualFold(KubernetesKindForNode(serviceNode), "Service") {
+			continue
+		}
+		incoming, _ := edgesForNode(topo, idx, serviceNode.ID)
+		for _, edge := range incoming {
+			if edge.Source == rootID || edge.Type != EdgeRoutesTo && edge.Type != EdgeExposes {
+				continue
+			}
+			ref := resourceRefForNode(idx.nodesByID[edge.Source], nil)
+			if ref == nil {
+				continue
+			}
+			switch {
+			case ref.Kind == "Ingress" && ref.Group == "networking.k8s.io":
+				rel.Ingresses = appendResourceRef(rel.Ingresses, *ref)
+			case ref.Kind == "Gateway" && ref.Group == "gateway.networking.k8s.io":
+				rel.Gateways = appendResourceRef(rel.Gateways, *ref)
+			case isServiceEntrypointRoute(ref):
+				rel.Routes = appendResourceRef(rel.Routes, *ref)
+			case ref.Kind == "Service" && ref.Group == "":
+				// A Service in front of the Service adds no entrypoint.
+			default:
+				// Event sources, Brokers and other upstream routers reach the
+				// workload through its Service too.
+				rel.RoutedFrom = appendResourceRef(rel.RoutedFrom, *ref)
+			}
+		}
+	}
+}
+
+func resourceRefForNodeID(nodeID string, topo *Topology, dp DynamicProvider) *ResourceRef {
+	if topo != nil {
+		for i := range topo.Nodes {
+			if topo.Nodes[i].ID == nodeID {
+				return resourceRefForNode(&topo.Nodes[i], dp)
+			}
+		}
+	}
+	return nil
+}
+
+func resourceRefForNode(node *Node, dp DynamicProvider) *ResourceRef {
+	if node == nil {
+		return nil
+	}
+	ref := parseNodeID(node.ID, dp)
+	if ref == nil {
+		// Cluster-scoped graph nodes can use kind/name IDs. Their observed
+		// metadata still carries the complete Kubernetes identity.
+		if node.Kind == KindPodGroup || node.Name == "" {
+			return nil
+		}
+		ref = &ResourceRef{Name: node.Name, Namespace: nodeNamespaceFromData(node)}
+	}
+	ref.Kind = KubernetesKindForNode(node)
+	ref.Group = nodeGroup(node)
+	return ref
+}
+
+type objectGVKReader interface {
+	GetAPIVersion() string
+	GetKind() string
+}
+
+func objectGVK(obj any) (kind, group string) {
+	if reader, ok := obj.(objectGVKReader); ok {
+		return reader.GetKind(), resourceid.GroupFromAPIVersion(reader.GetAPIVersion())
+	}
+	if object, ok := obj.(runtime.Object); ok {
+		gvk := object.GetObjectKind().GroupVersionKind()
+		return gvk.Kind, gvk.Group
+	}
+	return "", ""
+}
+
+func appendResourceRef(refs []ResourceRef, candidate ResourceRef) []ResourceRef {
+	for _, ref := range refs {
+		if strings.EqualFold(ref.Kind, candidate.Kind) && ref.Namespace == candidate.Namespace && ref.Name == candidate.Name && ref.Group == candidate.Group {
+			return refs
+		}
+	}
+	return append(refs, candidate)
+}
+
+func uniqueResourceRefs(refs []ResourceRef) []ResourceRef {
+	if len(refs) < 2 {
+		return refs
+	}
+	seen := make(map[ResourceRef]bool, len(refs))
+	unique := refs[:0]
+	for _, ref := range refs {
+		key := ResourceRef{Kind: strings.ToLower(ref.Kind), Group: ref.Group, Namespace: ref.Namespace, Name: ref.Name}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		unique = append(unique, ref)
+	}
+	return unique
+}
+
+func isStorageResourceRef(ref *ResourceRef) bool {
+	return ref != nil && ref.Group == "" && strings.EqualFold(ref.Kind, "PersistentVolumeClaim")
+}
+
+// Configuration projections preserve navigation for Radar Hub's versioned
+// embedded frontend; newer clients present the same refs as dependencies.
+func isConfigurationDependency(ref *ResourceRef) bool {
+	if ref == nil {
+		return false
+	}
+	switch ref.Kind {
+	case "Issuer", "ClusterIssuer":
+		return ref.Group == "cert-manager.io"
+	case "TriggerAuthentication", "ClusterTriggerAuthentication":
+		return ref.Group == "keda.sh"
+	case "GitRepository", "OCIRepository", "Bucket", "HelmRepository", "HelmChart", "ExternalArtifact":
+		return ref.Group == "source.toolkit.fluxcd.io"
+	default:
+		return false
+	}
+}
+
+func isScalingRelationship(source, target *ResourceRef) bool {
+	if source == nil || target == nil || source.Namespace != target.Namespace {
+		return false
+	}
+	switch source.Kind {
+	case "HorizontalPodAutoscaler":
+		return source.Group == "autoscaling"
+	case "VerticalPodAutoscaler":
+		return source.Group == "autoscaling.k8s.io"
+	case "ScaledObject", "ScaledJob":
+		if target.Group == "keda.sh" && (target.Kind == "TriggerAuthentication" || target.Kind == "ClusterTriggerAuthentication") {
+			return false
+		}
+		return source.Group == "keda.sh"
+	default:
+		return false
+	}
+}
+
+// lookupObjectMetadata returns the typed K8s object (or *unstructured.Unstructured
+// for CRDs) for kind/namespace/name. Used to source labels/annotations for
+// ManagedBy synthesis and Pod spec fields (ServiceAccountName, NodeName).
+//
+// Typed-resource lookups go through the ResourceProvider's accessor methods
+// (Pods, Deployments, …). For CRDs and any kind without a provider method,
+// falls back to the DynamicProvider so GitOps annotations on managed CRs
+// (HelmRelease, ExternalSecret, Certificate, etc.) still drive the chip —
+// without the fallback, the UI's chip would silently disappear for any
+// resource kind not in the typed switch below.
+func lookupObjectMetadata(kindLower, namespace, name string, provider ResourceProvider, dp DynamicProvider) any {
+	if provider != nil {
+		if obj := lookupTypedMetadata(kindLower, namespace, name, provider); obj != nil {
+			return obj
+		}
+	}
+	// Fallback for CRDs and any kind not in the typed switch. dp.Get
+	// returns a *unstructured.Unstructured, which satisfies metav1.Object.
+	if dp != nil {
+		if gvr, ok := dp.GetGVR(kindLower); ok {
+			if u, err := dp.Get(gvr, namespace, name); err == nil && u != nil {
+				return u
+			}
+		}
+	}
+	return nil
+}
+
+// lookupTypedMetadata is the original typed-resource switch. Split out from
+// lookupObjectMetadata so the CRD fallback path is clearly the second tier.
+func lookupTypedMetadata(kindLower, namespace, name string, provider ResourceProvider) any {
+	switch kindLower {
+	case "pod", "pods":
+		pods, _ := provider.Pods()
+		for _, p := range pods {
+			if p.Namespace == namespace && p.Name == name {
+				return p
+			}
+		}
+	case "deployment", "deployments":
+		ds, _ := provider.Deployments()
+		for _, d := range ds {
+			if d.Namespace == namespace && d.Name == name {
+				return d
+			}
+		}
+	case "statefulset", "statefulsets":
+		ss, _ := provider.StatefulSets()
+		for _, s := range ss {
+			if s.Namespace == namespace && s.Name == name {
+				return s
+			}
+		}
+	case "daemonset", "daemonsets":
+		ds, _ := provider.DaemonSets()
+		for _, d := range ds {
+			if d.Namespace == namespace && d.Name == name {
+				return d
+			}
+		}
+	case "replicaset", "replicasets":
+		rs, _ := provider.ReplicaSets()
+		for _, r := range rs {
+			if r.Namespace == namespace && r.Name == name {
+				return r
+			}
+		}
+	case "job", "jobs":
+		jobs, _ := provider.Jobs()
+		for _, j := range jobs {
+			if j.Namespace == namespace && j.Name == name {
+				return j
+			}
+		}
+	case "cronjob", "cronjobs":
+		cjs, _ := provider.CronJobs()
+		for _, c := range cjs {
+			if c.Namespace == namespace && c.Name == name {
+				return c
+			}
+		}
+	case "service", "services":
+		svcs, _ := provider.Services()
+		for _, s := range svcs {
+			if s.Namespace == namespace && s.Name == name {
+				return s
+			}
+		}
+	case "configmap", "configmaps":
+		cms, _ := provider.ConfigMaps()
+		for _, c := range cms {
+			if c.Namespace == namespace && c.Name == name {
+				return c
+			}
+		}
+	case "secret", "secrets":
+		ss, _ := provider.Secrets()
+		for _, s := range ss {
+			if s.Namespace == namespace && s.Name == name {
+				return s
+			}
+		}
+	case "serviceaccount", "serviceaccounts":
+		if serviceAccountProvider, ok := provider.(ServiceAccountProvider); ok {
+			serviceAccounts, _ := serviceAccountProvider.ServiceAccounts()
+			for _, serviceAccount := range serviceAccounts {
+				if serviceAccount.Namespace == namespace && serviceAccount.Name == name {
+					return serviceAccount
+				}
+			}
+		}
+	case "ingress", "ingresses":
+		is, _ := provider.Ingresses()
+		for _, i := range is {
+			if i.Namespace == namespace && i.Name == name {
+				return i
+			}
+		}
+	case "poddisruptionbudget", "poddisruptionbudgets", "pdb", "pdbs":
+		pdbs, _ := provider.PodDisruptionBudgets()
+		for _, p := range pdbs {
+			if p.Namespace == namespace && p.Name == name {
+				return p
+			}
+		}
+	case "networkpolicy", "networkpolicies", "netpol":
+		nps, _ := provider.NetworkPolicies()
+		for _, n := range nps {
+			if n.Namespace == namespace && n.Name == name {
+				return n
+			}
+		}
+	case "horizontalpodautoscaler", "horizontalpodautoscalers", "hpa", "hpas":
+		hpas, _ := provider.HorizontalPodAutoscalers()
+		for _, h := range hpas {
+			if h.Namespace == namespace && h.Name == name {
+				return h
+			}
+		}
+	case "persistentvolumeclaim", "persistentvolumeclaims", "pvc", "pvcs":
+		pvcs, _ := provider.PersistentVolumeClaims()
+		for _, p := range pvcs {
+			if p.Namespace == namespace && p.Name == name {
+				return p
+			}
+		}
+	case "persistentvolume", "persistentvolumes", "pv", "pvs":
+		// Cluster-scoped: ignore namespace.
+		pvs, _ := provider.PersistentVolumes()
+		for _, p := range pvs {
+			if p.Name == name {
+				return p
+			}
+		}
+	case "node", "nodes":
+		// Cluster-scoped: ignore namespace.
+		nodes, _ := provider.Nodes()
+		for _, n := range nodes {
+			if n.Name == name {
+				return n
+			}
+		}
+	}
+	return nil
+}
+
+var topologyNodeKindAliases = map[string]string{
+	"pods":                             "pod",
+	"services":                         "service",
+	"deployments":                      "deployment",
+	"rollouts":                         "rollout",
+	"daemonsets":                       "daemonset",
+	"statefulsets":                     "statefulset",
+	"replicasets":                      "replicaset",
+	"ingresses":                        "ingress",
+	"gateways":                         "gateway",
+	"httproutes":                       "httproute",
+	"grpcroutes":                       "grpcroute",
+	"tcproutes":                        "tcproute",
+	"udproutes":                        "udproute",
+	"tlsroutes":                        "tlsroute",
+	"configmaps":                       "configmap",
+	"secrets":                          "secret",
+	"serviceaccounts":                  "serviceaccount",
+	"sealedsecrets":                    "sealedsecret",
+	"horizontalpodautoscalers":         "horizontalpodautoscaler",
+	"jobs":                             "job",
+	"cronjobs":                         "cronjob",
+	"persistentvolumeclaims":           "persistentvolumeclaim",
+	"applications":                     "application",
+	"kustomizations":                   "kustomization",
+	"helmreleases":                     "helmrelease",
+	"gitrepositories":                  "gitrepository",
+	"certificates":                     "certificate",
+	"issuers":                          "issuer",
+	"clusterissuers":                   "clusterissuer",
+	"nodepools":                        "nodepool",
+	"nodeclaims":                       "nodeclaim",
+	"nodeclasses":                      "nodeclass",
+	"ec2nodeclasses":                   "nodeclass",
+	"aksnodeclasses":                   "nodeclass",
+	"gcenodeclasses":                   "nodeclass",
+	"scaledobjects":                    "scaledobject",
+	"scaledjobs":                       "scaledjob",
+	"gatewayclasses":                   "gatewayclass",
+	"virtualservices":                  "virtualservice",
+	"destinationrules":                 "destinationrule",
+	"istiogateways":                    "istiogateway",
+	"serviceentries":                   "serviceentry",
+	"peerauthentications":              "peerauthentication",
+	"authorizationpolicies":            "authorizationpolicy",
+	"knativeservices":                  "knativeservice",
+	"configurations":                   "knativeconfiguration",
+	"revisions":                        "knativerevision",
+	"routes":                           "knativeroute",
+	"brokers":                          "broker",
+	"triggers":                         "trigger",
+	"pingsources":                      "pingsource",
+	"apiserversources":                 "apiserversource",
+	"containersources":                 "containersource",
+	"sinkbindings":                     "sinkbinding",
+	"channels":                         "channel",
+	"ingressroutes":                    "ingressroute", // Traefik
+	"ingressroutetcps":                 "ingressroutetcp",
+	"ingressrouteudps":                 "ingressrouteudp",
+	"middlewares":                      "middleware",
+	"middlewaretcps":                   "middlewaretcp",
+	"traefikservices":                  "traefikservice",
+	"serverstransports":                "serverstransport",
+	"serverstransporttcps":             "serverstransporttcp",
+	"tlsoptions":                       "tlsoption",
+	"tlsstores":                        "tlsstore",
+	"httpproxies":                      "httpproxy", // Contour
+	"persistentvolumes":                "persistentvolume",
+	"pvs":                              "persistentvolume",
+	"storageclasses":                   "storageclass",
+	"poddisruptionbudgets":             "poddisruptionbudget",
+	"pdbs":                             "poddisruptionbudget",
+	"networkpolicies":                  "networkpolicy",
+	"netpol":                           "networkpolicy",
+	"ciliumnetworkpolicies":            "ciliumnetworkpolicy",
+	"ciliumclusterwidenetworkpolicies": "ciliumclusterwidenetworkpolicy",
+	"clusternetworkpolicies":           "clusternetworkpolicy",
+	"verticalpodautoscalers":           "verticalpodautoscaler",
+	"servicemonitors":                  "servicemonitor",
+	"podmonitors":                      "podmonitor",
+	"vpas":                             "verticalpodautoscaler",
+	"nodes":                            "node",
+	"clusterclasses":                   "clusterclass",        // Cluster API
+	"machines":                         "machine",             // Cluster API
+	"machinesets":                      "machineset",          // Cluster API
+	"machinedeployments":               "machinedeployment",   // Cluster API
+	"machinepools":                     "machinepool",         // Cluster API
+	"kubeadmcontrolplanes":             "kubeadmcontrolplane", // Cluster API
+	"machinehealthchecks":              "machinehealthcheck",  // Cluster API
+	"resourceclaims":                   "resourceclaim",       // DRA
+	"resourceclaimtemplates":           "resourceclaimtemplate",
+	"deviceclasses":                    "deviceclass",
+	"resourceslices":                   "resourceslice",
+}
+
+// buildNodeID constructs a node ID from kind, namespace, and name
+// This must match the format used in builder.go
+// Format: kind/namespace/name (using / since it's not allowed in K8s names)
+func buildNodeID(kind, namespace, name string, dp DynamicProvider) string {
+	// Normalize kind to match topology builder format
+	k := strings.ToLower(kind)
+	switch k {
+	case "globalnetworkpolicy":
+		k = "calicoglobalnetworkpolicy"
+	case "stagednetworkpolicy":
+		k = "calicostagednetworkpolicy"
+	case "stagedglobalnetworkpolicy":
+		k = "calicostagedglobalnetworkpolicy"
+	case "stagedkubernetesnetworkpolicy":
+		k = "calicostagedkubernetesnetworkpolicy"
+	case "caliconetworkpolicies":
+		k = "caliconetworkpolicy"
+	case "globalnetworkpolicies":
+		k = "calicoglobalnetworkpolicy"
+	case "stagednetworkpolicies":
+		k = "calicostagednetworkpolicy"
+	case "stagedglobalnetworkpolicies":
+		k = "calicostagedglobalnetworkpolicy"
+	case "stagedkubernetesnetworkpolicies":
+		k = "calicostagedkubernetesnetworkpolicy"
+	}
+
+	// Handle plural to singular conversion for common types
+
+	if singular, ok := topologyNodeKindAliases[k]; ok {
+		k = singular
+	} else if dp != nil {
+		// Fall back to resource discovery for CRDs (e.g., "certificaterequests" → "certificaterequest")
+		if res, found := getResourceByName(dp, k); found {
+			k = strings.ToLower(res)
+		}
+	}
+
+	return k + "/" + namespace + "/" + name
+}
+
+// getResourceByName looks up a resource kind by its plural name via the DynamicProvider.
+// Returns the Kind string and true if found.
+func getResourceByName(dp DynamicProvider, pluralName string) (string, bool) {
+	// Try GetGVR which accepts kind or resource name
+	gvr, ok := dp.GetGVR(pluralName)
+	if !ok {
+		return "", false
+	}
+	kind := dp.GetKindForGVR(gvr)
+	if kind == "" {
+		return "", false
+	}
+	return kind, true
+}
+
+// parseNodeID extracts kind, namespace, and name from a node ID
+// Returns nil for PodGroup since it's a UI-only concept, not a real K8s resource
+// Format: kind/namespace/name (using / since it's not allowed in K8s names)
+func parseNodeID(nodeID string, dp DynamicProvider) *ResourceRef {
+	// Node IDs are formatted as: kind/namespace/name
+	// e.g., "deployment/default/my-app" or "pod/kube-system/coredns-abc123"
+
+	parts := strings.Split(nodeID, "/")
+	if len(parts) < 3 {
+		return nil
+	}
+
+	kind := parts[0]
+	namespace := parts[1]
+	name := parts[2]
+	group := ""
+	normalizedKind := ""
+	if strings.EqualFold(kind, "nodeclass") && len(parts) >= 5 {
+		group = parts[3]
+		normalizedKind = normalizeKindWithGroup(parts[4], group, dp)
+	}
+
+	// Skip PodGroup - it's a UI grouping concept, not a real K8s resource
+	if strings.ToLower(kind) == "podgroup" {
+		return nil
+	}
+	if normalizedKind == "" {
+		normalizedKind = normalizeKind(kind, dp)
+	}
+
+	return &ResourceRef{
+		Kind:      normalizedKind,
+		Namespace: namespace,
+		Name:      name,
+		Group:     group,
+	}
+}
+
+func normalizeKindWithGroup(kind, group string, dp DynamicProvider) string {
+	if dp != nil && group != "" {
+		if gvr, ok := dp.GetGVRWithGroup(kind, group); ok {
+			if resolved := dp.GetKindForGVR(gvr); resolved != "" {
+				return resolved
+			}
+		}
+	}
+	return normalizeKind(kind, dp)
+}
+
+var topologyDisplayKinds = map[string]string{
+	"pod":                            "Pod",
+	"service":                        "Service",
+	"deployment":                     "Deployment",
+	"rollout":                        "Rollout",
+	"daemonset":                      "DaemonSet",
+	"statefulset":                    "StatefulSet",
+	"replicaset":                     "ReplicaSet",
+	"ingress":                        "Ingress",
+	"gateway":                        "Gateway",
+	"httproute":                      "HTTPRoute",
+	"grpcroute":                      "GRPCRoute",
+	"tcproute":                       "TCPRoute",
+	"udproute":                       "UDPRoute",
+	"tlsroute":                       "TLSRoute",
+	"configmap":                      "ConfigMap",
+	"secret":                         "Secret",
+	"serviceaccount":                 "ServiceAccount",
+	"sealedsecret":                   "SealedSecret",
+	"servicemonitor":                 "ServiceMonitor",
+	"podmonitor":                     "PodMonitor",
+	"horizontalpodautoscaler":        "HorizontalPodAutoscaler",
+	"job":                            "Job",
+	"cronjob":                        "CronJob",
+	"persistentvolumeclaim":          "PersistentVolumeClaim",
+	"podgroup":                       "PodGroup",
+	"application":                    "Application",
+	"kustomization":                  "Kustomization",
+	"helmrelease":                    "HelmRelease",
+	"gitrepository":                  "GitRepository",
+	"certificate":                    "Certificate",
+	"issuer":                         "Issuer",
+	"clusterissuer":                  "ClusterIssuer",
+	"node":                           "Node",
+	"nodepool":                       "NodePool",
+	"nodeclaim":                      "NodeClaim",
+	"nodeclass":                      "NodeClass",
+	"scaledobject":                   "ScaledObject",
+	"scaledjob":                      "ScaledJob",
+	"gatewayclass":                   "GatewayClass",
+	"istiogateway":                   "Gateway",
+	"knativeservice":                 "KnativeService",
+	"knativeconfiguration":           "Configuration",
+	"knativerevision":                "Revision",
+	"knativeroute":                   "Route",
+	"broker":                         "Broker",
+	"trigger":                        "Trigger",
+	"pingsource":                     "PingSource",
+	"apiserversource":                "ApiServerSource",
+	"containersource":                "ContainerSource",
+	"sinkbinding":                    "SinkBinding",
+	"channel":                        "Channel",
+	"ingressroute":                   "IngressRoute", // Traefik
+	"ingressroutetcp":                "IngressRouteTCP",
+	"ingressrouteudp":                "IngressRouteUDP",
+	"middleware":                     "Middleware",
+	"middlewaretcp":                  "MiddlewareTCP",
+	"traefikservice":                 "TraefikService",
+	"serverstransport":               "ServersTransport",
+	"serverstransporttcp":            "ServersTransportTCP",
+	"tlsoption":                      "TLSOption",
+	"tlsstore":                       "TLSStore",
+	"httpproxy":                      "HTTPProxy", // Contour
+	"internet":                       "Internet",
+	"persistentvolume":               "PersistentVolume",
+	"storageclass":                   "StorageClass",
+	"poddisruptionbudget":            "PodDisruptionBudget",
+	"networkpolicy":                  "NetworkPolicy",
+	"ciliumnetworkpolicy":            "CiliumNetworkPolicy",
+	"ciliumclusterwidenetworkpolicy": "CiliumClusterwideNetworkPolicy",
+	"clusternetworkpolicy":           "ClusterNetworkPolicy",
+	"verticalpodautoscaler":          "VerticalPodAutoscaler",
+	"capicluster":                    "Cluster",             // Cluster API
+	"clusterclass":                   "ClusterClass",        // Cluster API
+	"machine":                        "Machine",             // Cluster API
+	"machineset":                     "MachineSet",          // Cluster API
+	"machinedeployment":              "MachineDeployment",   // Cluster API
+	"machinepool":                    "MachinePool",         // Cluster API
+	"kubeadmcontrolplane":            "KubeadmControlPlane", // Cluster API
+	"machinehealthcheck":             "MachineHealthCheck",  // Cluster API
+	"resourceclaim":                  "ResourceClaim",       // DRA
+	"resourceclaimtemplate":          "ResourceClaimTemplate",
+	"deviceclass":                    "DeviceClass",
+	"resourceslice":                  "ResourceSlice",
+}
+
+// normalizeKind converts internal kind format to display format
+func normalizeKind(kind string, dp DynamicProvider) string {
+	switch strings.ToLower(kind) {
+	case "caliconetworkpolicy", "caliconetworkpolicies":
+		return string(KindCalicoNetworkPolicy)
+	case "calicoglobalnetworkpolicy", "globalnetworkpolicy", "globalnetworkpolicies":
+		return string(KindCalicoGlobalNetworkPolicy)
+	case "calicostagednetworkpolicy", "stagednetworkpolicy", "stagednetworkpolicies":
+		return string(KindCalicoStagedNetworkPolicy)
+	case "calicostagedglobalnetworkpolicy", "stagedglobalnetworkpolicy", "stagedglobalnetworkpolicies":
+		return string(KindCalicoStagedGlobalNetworkPolicy)
+	case "calicostagedkubernetesnetworkpolicy", "stagedkubernetesnetworkpolicy", "stagedkubernetesnetworkpolicies":
+		return string(KindCalicoStagedKubernetesNetworkPolicy)
+	}
+
+	if normalized, ok := topologyDisplayKinds[strings.ToLower(kind)]; ok {
+		return normalized
+	}
+	// Fall back to resource discovery for CRDs (e.g., "certificaterequest" → "CertificateRequest")
+	if dp != nil {
+		if k, found := getResourceByName(dp, kind); found {
+			return k
+		}
+	}
+	return kind
+}
+
+func isAppsGroup(group string) bool {
+	return group == "" || group == "apps"
+}

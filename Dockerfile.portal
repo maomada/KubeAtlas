@@ -1,0 +1,51 @@
+FROM --platform=$BUILDPLATFORM node:24-alpine AS frontend-builder
+
+WORKDIR /app
+
+COPY package*.json ./
+COPY web/package*.json ./web/
+COPY packages/k8s-ui/package*.json ./packages/k8s-ui/
+RUN npm ci --prefer-offline --no-audit
+
+COPY web/ ./web/
+COPY packages/k8s-ui/ ./packages/k8s-ui/
+COPY internal/portalui/ ./internal/portalui/
+RUN cd web && npx vite build --config vite.portal.config.ts
+
+FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS backend-builder
+
+RUN apk add --no-cache ca-certificates
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+COPY pkg/ pkg/
+RUN go mod download
+
+COPY cmd/ cmd/
+COPY internal/ internal/
+COPY --from=frontend-builder /app/internal/portalui/dist/ internal/portalui/dist/
+
+ARG TARGETOS
+ARG TARGETARCH
+ARG VERSION=dev
+ARG SOURCE_REVISION=unknown
+
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "-s -w" -o /kubeatlas-portal ./cmd/kubeatlas-portal
+
+FROM gcr.io/distroless/static-debian12:nonroot AS full
+
+ARG SOURCE_REVISION=unknown
+ARG VERSION=dev
+LABEL org.opencontainers.image.title="KubeAtlas Portal"
+LABEL org.opencontainers.image.description="Independent, self-hosted directory for registered KubeAtlas clusters"
+LABEL org.opencontainers.image.source="https://github.com/maomada/KubeAtlas"
+LABEL org.opencontainers.image.vendor="maomada"
+LABEL org.opencontainers.image.revision=$SOURCE_REVISION
+LABEL org.opencontainers.image.version=$VERSION
+
+COPY --from=backend-builder /kubeatlas-portal /kubeatlas-portal
+
+EXPOSE 9290
+USER nonroot:nonroot
+ENTRYPOINT ["/kubeatlas-portal"]

@@ -1,0 +1,311 @@
+package mcp
+
+import (
+	"context"
+	"sort"
+	"strings"
+	"sync"
+
+	"github.com/maomada/KubeAtlas/internal/auditcontext"
+	"github.com/maomada/KubeAtlas/internal/issues"
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/pkg/policyreports"
+	"github.com/maomada/KubeAtlas/pkg/resourcecontext"
+	topo "github.com/maomada/KubeAtlas/pkg/topology"
+)
+
+// mcpPolicyReportLookupAdapter wraps k8s.GetPolicyReportIndex into the
+// resourcecontext.PolicyReportLookup interface. Mirrors the REST adapter in
+// internal/server/ai_handlers.go — keeping the projection narrow here lets
+// pkg/policyreports.Finding evolve without perturbing the wire contract.
+type mcpPolicyReportLookupAdapter struct {
+	idx    *policyreports.Index
+	status k8s.PolicyReportStatus
+	// families this caller may read, by report API group. Same gate as the UI
+	// and the REST agent surface — an agent that can ask the question a second
+	// way must not get an answer the first way withheld.
+	families map[string]bool
+}
+
+// Unavailable implements resourcecontext.PolicyReportAvailability so an agent
+// can tell "no violations" from "Radar could not read the policy reports".
+func (a mcpPolicyReportLookupAdapter) Unavailable() (resourcecontext.OmittedReason, bool) {
+	// Install status first. With no policy engine there is nothing to withhold,
+	// and the mapping above is deliberately silent there — a denial note on every
+	// resource of every non-Kyverno cluster is noise rather than honesty, and a
+	// restricted caller fails the family SARs on that cluster precisely because
+	// the report kinds do not exist.
+	if reason, unavailable := a.status.OmittedReason(); unavailable {
+		return reason, true
+	}
+	if a.status.Status != k8s.KyvernoStatusReady {
+		return "", false
+	}
+	if len(a.families) == 0 {
+		return resourcecontext.OmittedRBACDenied, true
+	}
+	return "", false
+}
+
+// WithheldFor implements resourcecontext.PolicyReportWithholding: this subject
+// has findings the caller may not read, so an empty summary is not an all-clear.
+func (a mcpPolicyReportLookupAdapter) WithheldFor(group, kind, namespace, name string) bool {
+	return k8s.PolicyFindingsWithheld(a.idx, a.families, group, kind, namespace, name)
+}
+
+func (a mcpPolicyReportLookupAdapter) FindingsFor(group, kind, namespace, name string) []resourcecontext.KyvernoFinding {
+	if a.idx == nil {
+		return nil
+	}
+	// Filtered, not FindingsFor: this projection fills `policySummary.kyverno`,
+	// and the index is shared with every other producer writing into the same
+	// report families — Trivy, Falco adapters, VAP evaluation. An unfiltered
+	// read would inflate the Kyverno rollup with enforcement Kyverno never did.
+	//
+	// Sourced, because the engine filter cannot tell which family an outcome was
+	// read from, and that is what this caller is authorized against.
+	findings := k8s.ReadableKyvernoFindings(a.idx, a.families, group, kind, namespace, name)
+	if len(findings) == 0 {
+		return nil
+	}
+	out := make([]resourcecontext.KyvernoFinding, len(findings))
+	for i, f := range findings {
+		out[i] = resourcecontext.KyvernoFinding{
+			Policy:  f.Policy,
+			Rule:    f.Rule,
+			Result:  f.Result,
+			Message: f.Message,
+		}
+	}
+	return out
+}
+
+// computeMCPIssueContext rolls up per-resource issue-composer rows
+// (problem + condition) into an IssueSummary. Mirrors the
+// REST handler's computeIssueSummaryForResource — same composer call, same
+// group-aware iteration filter, same deterministic sort. The composer's
+// native namespace filter restricts the scan to the resource's namespace;
+// the per-row group check prevents cross-group collisions where a CRD and
+// a built-in share kind+ns+name.
+//
+// Pascal-singular kind required: the composer's Filters.Kinds matcher
+// case-folds both sides but doesn't plural-to-singular convert. Callers
+// pass canonicalKind from obj's TypeMeta.
+func computeMCPIssueContext(ctx context.Context, cache *k8s.ResourceCache, group, kind, namespace, name string, includeFacts bool) (*resourcecontext.IssueSummary, []issues.Issue) {
+	if cache == nil {
+		return nil, nil
+	}
+	provider := issues.NewCacheProvider()
+	if provider == nil {
+		return nil, nil
+	}
+	namespaces := issueNamespacesForResource(namespace)
+	// RelatedIssues is owner-aware and uncapped: get_resource on a workload
+	// surfaces the GROUPED issues its pods are evidence for (was empty — the
+	// old flat-by-exact-resource match looked for Kind=Deployment rows, but the
+	// evidence is Kind=Pod), and on a pod past the inline-Members cap too.
+	matched := issues.RelatedIssues(provider, issues.RelatedIssueOptions{
+		Namespaces:             namespaces,
+		SkipPodTemplateContext: !includeFacts,
+		CanReadClusterScoped:   issueClusterScopedAccess(ctx),
+		CanReadRelated:         issueRelatedResourceAccess(ctx),
+		CanReadSubject:         issueSubjectAccess(ctx),
+		CanReadEvidence:        issueEvidenceAccess(ctx),
+	}, group, kind, namespace, name)
+	if len(matched) == 0 {
+		return nil, nil
+	}
+	bySource := make(map[string]int, len(matched))
+	for _, row := range matched {
+		bySource[string(row.Source)]++
+	}
+	// (severity desc, Reason asc) — deterministic across runs.
+	sort.Slice(matched, func(i, j int) bool {
+		ri, rj := issues.SeverityRank(matched[i].Severity), issues.SeverityRank(matched[j].Severity)
+		if ri != rj {
+			return ri > rj
+		}
+		return matched[i].Reason < matched[j].Reason
+	})
+	return &resourcecontext.IssueSummary{
+		Count:           len(matched),
+		HighestSeverity: string(matched[0].Severity),
+		TopReason:       matched[0].Reason,
+		TopSubject:      issues.SummarySubject(matched[0], group, kind, namespace, name),
+		BySource:        bySource,
+	}, matched
+}
+
+func issueNamespacesForResource(namespace string) []string {
+	if namespace == "" {
+		return nil
+	}
+	return []string{namespace}
+}
+
+func attachRelatedIssueDetails(result map[string]any, rows []issues.Issue) {
+	const limit = 3
+	result["relatedIssuesTotal"] = len(rows)
+	result["relatedIssuesTruncated"] = len(rows) > limit
+	if len(rows) > limit {
+		rows = rows[:limit]
+	}
+	if rows == nil {
+		rows = []issues.Issue{}
+	}
+	result["relatedIssues"] = rows
+}
+
+// issueClusterScopedAccess mirrors the issues_list gate so every composer entry
+// point applies the same cluster-scoped authorization — both to the rows
+// themselves and to the cluster-scoped state (NodePool specs) folded into them.
+func issueClusterScopedAccess(ctx context.Context) func(kind, group string) bool {
+	return func(kind, group string) bool {
+		return canReadClusterScopedKind(ctx, kind, group, "list")
+	}
+}
+
+func issueRelatedResourceAccess(ctx context.Context) func(issues.Ref) bool {
+	return func(ref issues.Ref) bool {
+		user, _ := resolveUserPerms(ctx)
+		if user == nil {
+			return true
+		}
+		if ref.Namespace != "" {
+			if !checkNamespaceAccess(ctx, ref.Namespace) {
+				return false
+			}
+			switch {
+			case ref.Group == "apps" && ref.Kind == "ReplicaSet":
+				return canReadInNamespace(ctx, ref.Group, "replicasets", ref.Namespace, "get")
+			case ref.Group == "batch" && ref.Kind == "Job":
+				return canReadInNamespace(ctx, ref.Group, "jobs", ref.Namespace, "get")
+			case ref.Group == "" && ref.Kind == "LimitRange":
+				return canReadInNamespace(ctx, ref.Group, "limitranges", ref.Namespace, "get")
+			}
+			if strings.EqualFold(ref.Kind, "Secret") {
+				return canReadInNamespace(ctx, ref.Group, "secrets", ref.Namespace, "get")
+			}
+			return true
+		}
+		clusterScoped, _, _ := k8s.ClassifyKindScope(ref.Kind, ref.Group)
+		return clusterScoped && canReadClusterScopedKind(ctx, ref.Kind, ref.Group, "get")
+	}
+}
+
+func computeMCPAuditSummary(ctx context.Context, cache *k8s.ResourceCache, group, kind, namespace, name string) *resourcecontext.AuditSummary {
+	summary, _ := auditcontext.SummarizeResource(cache, group, kind, namespace, name, auditOptions(ctx))
+	return summary
+}
+
+// RelationshipTopologySource returns the host's maintained full relationship
+// graph and its index, or nil while none has been built.
+type RelationshipTopologySource func() (*topo.Topology, *topo.RelationshipsIndex)
+
+var relationshipTopology struct {
+	sync.RWMutex
+	source RelationshipTopologySource
+}
+
+// SetRelationshipTopologySource lets resource context reuse the graph the host
+// already keeps for relationship lookups, instead of holding a second copy of
+// the whole cluster.
+func SetRelationshipTopologySource(source RelationshipTopologySource) {
+	relationshipTopology.Lock()
+	relationshipTopology.source = source
+	relationshipTopology.Unlock()
+}
+
+// mcpTopologyForContext uses a complete relationship graph. Resource context
+// authorizes every emitted reference through its request-scoped checker; a
+// namespace-scoped build would erase explicit cross-namespace dependencies.
+func mcpTopologyForContext() (*topo.Topology, *topo.RelationshipsIndex, topo.ResourceProvider, topo.DynamicProvider, bool) {
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return nil, nil, nil, nil, false
+	}
+	provider := k8s.NewTopologyResourceProvider(cache)
+	dyn := k8s.NewTopologyDynamicProvider(k8s.GetDynamicResourceCache(), k8s.GetResourceDiscovery())
+	relationshipTopology.RLock()
+	source := relationshipTopology.source
+	relationshipTopology.RUnlock()
+	if source != nil {
+		if topology, index := source(); topology != nil {
+			return topology, index, provider, dyn, true
+		}
+	}
+	opts := topo.RelationshipBuildOptions()
+	opts.IncludeSecrets = true
+
+	topology, index, err := summaryCtxTopoMemo.GetWithIndexScoped(cache.Generation(), opts, func() (*topo.Topology, error) {
+		return topo.NewBuilder(provider).WithDynamic(dyn).Build(opts)
+	})
+	if err != nil || topology == nil {
+		return nil, nil, nil, nil, false
+	}
+	return topology, index, provider, dyn, true
+}
+
+// issueSubjectAccess mirrors the REST drawer gate for an issue's own
+// namespaced resource: namespace access, plus a get for Secrets and
+// LimitRanges. It runs once per composed row, so the caller's namespaces are
+// resolved once.
+func issueSubjectAccess(ctx context.Context) func(issues.Ref) bool {
+	inNamespace := callerNamespaces(ctx)
+	return func(ref issues.Ref) bool {
+		if !inNamespace(ref.Namespace) {
+			return false
+		}
+		switch {
+		case ref.Group == "" && strings.EqualFold(ref.Kind, "Secret"):
+			return canReadInNamespace(ctx, "", "secrets", ref.Namespace, "get")
+		case ref.Group == "" && strings.EqualFold(ref.Kind, "LimitRange"):
+			return canReadInNamespace(ctx, "", "limitranges", ref.Namespace, "get")
+		}
+		return true
+	}
+}
+
+// issueEvidenceAccess authorizes an inventory a finding was derived from at
+// the granularity Radar reads it: a namespaced read needs namespace access
+// (and a Secret read a Secrets check); a cluster-wide read needs the SAR.
+func issueEvidenceAccess(ctx context.Context) func(issues.EvidenceRead) bool {
+	inNamespace := callerNamespaces(ctx)
+	return func(read issues.EvidenceRead) bool {
+		if read.Namespace == "" {
+			return canReadInNamespace(ctx, read.Group, read.Resource, "", read.Verb)
+		}
+		if !inNamespace(read.Namespace) {
+			return false
+		}
+		if read.Group == "" && read.Resource == "secrets" {
+			return canReadInNamespace(ctx, "", "secrets", read.Namespace, read.Verb)
+		}
+		return true
+	}
+}
+
+// callerNamespaces reports whether the caller may read a namespace (the same
+// answer as checkNamespaceAccess), resolving its namespaces on first use.
+func callerNamespaces(ctx context.Context) func(string) bool {
+	var once sync.Once
+	var allowed map[string]bool
+	all := false
+	return func(namespace string) bool {
+		if namespace == "" {
+			return false
+		}
+		once.Do(func() {
+			namespaces := filterNamespacesForUser(ctx, nil)
+			if namespaces == nil {
+				all = true
+				return
+			}
+			allowed = make(map[string]bool, len(namespaces))
+			for _, ns := range namespaces {
+				allowed[ns] = true
+			}
+		})
+		return all || allowed[namespace]
+	}
+}

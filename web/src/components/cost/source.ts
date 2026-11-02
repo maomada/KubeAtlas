@@ -1,0 +1,139 @@
+import type { CostDataSource, CostUnavailableReason } from '../../api/client'
+import { previousSettingsNote, type PreviousIntegrationSettings } from '../../hooks/usePreviousIntegrationSettings'
+
+export function isCostConfigurable(reason?: string): boolean {
+  return reason === 'no_prometheus' || reason === 'no_cost_source' || reason === 'source_unavailable'
+    || reason === 'authentication_error' || reason === 'configuration_mismatch'
+    || reason === 'metrics_settings_error' || reason === 'cost_settings_error'
+}
+
+export type CostSourcePreference = 'auto' | CostDataSource
+
+export const COST_SOURCE_OPTIONS: { value: CostSourcePreference; label: string; description: string }[] = [
+  { value: 'auto', label: '自动', description: '优先使用可用的 OpenCost 指标，否则使用 Kubecost' },
+  { value: 'prometheus', label: 'OpenCost 指标', description: '来自指标连接' },
+  { value: 'kubecost', label: 'Kubecost', description: '来自 Kubecost Aggregator' },
+]
+
+export function costSourcePreferenceLabel(preference?: string): string {
+  return COST_SOURCE_OPTIONS.find(option => option.value === (preference || 'auto'))?.label ?? preference ?? '自动'
+}
+
+export function costSourceLabel(source?: CostDataSource): string {
+  return costSourcePreferenceLabel(source === 'kubecost' ? 'kubecost' : 'prometheus')
+}
+
+export function isCostDiscoveryPending(reason?: string): boolean {
+  return reason === 'no_prometheus' || reason === 'no_cost_source'
+}
+
+export function costConfigurationAction(reason?: CostUnavailableReason, offers?: PreviousIntegrationSettings): {
+  section: 'prometheus' | 'cost'
+  label: string
+  note?: string
+} {
+  if (reason === 'metrics_settings_error') return { section: 'prometheus', label: 'Review metrics settings' }
+  if (reason === 'cost_settings_error') return { section: 'cost', label: 'Review cost settings' }
+  const previousKind = reason === 'no_prometheus'
+    ? offers?.metrics ? 'metrics' : offers?.explicitCostBackend ? 'cost' : undefined
+    : reason === 'no_cost_source'
+      ? offers?.explicitCostBackend ? 'cost' : offers?.metrics ? 'metrics' : undefined
+      : isCostConfigurable(reason) && offers?.cost ? 'cost' : undefined
+  const offer = previousKind && offers?.[previousKind]
+  if (previousKind && offer) return previousKind === 'metrics'
+    ? { section: 'prometheus', label: 'Configure metrics', note: previousSettingsNote('metrics', offer) }
+    : { section: 'cost', label: 'Configure cost source', note: previousSettingsNote('cost', offer) }
+  return reason === 'no_prometheus'
+    ? { section: 'prometheus', label: 'Configure metrics' }
+    : { section: 'cost', label: 'Configure cost source' }
+}
+
+export function costRateLabels(window?: string): {
+  hourly: string
+  rate: string
+  allocationTitle: string
+  allocationPeriod: string
+} {
+  if (window === '1d') {
+    return {
+      hourly: 'Hourly (1-day average)',
+      rate: '1-day average hourly rate',
+      allocationTitle: '1-day average allocation and use',
+      allocationPeriod: 'Allocation and observed use: 1-day average',
+    }
+  }
+  if (window === '1h') {
+    return {
+      hourly: 'Hourly (1-hour average)',
+      rate: '1-hour average hourly rate',
+      allocationTitle: '1-hour average allocation and use',
+      allocationPeriod: 'Allocation and observed use: 1-hour average',
+    }
+  }
+  return {
+    hourly: 'Current hourly',
+    rate: 'current hourly rate',
+    allocationTitle: 'Current allocation and use',
+    allocationPeriod: 'Allocation and CPU use: 1h average · Memory use: current',
+  }
+}
+
+export function costFreshnessLabel(
+  source?: CostDataSource,
+  window?: string,
+  dataThrough?: string,
+): string {
+  if (source !== 'kubecost') return window ? `last ${window} average` : 'current allocation average'
+  const average = window === '1d'
+    ? '1-day allocation average'
+    : window === '1h'
+      ? '1-hour allocation average'
+      : 'current allocation average'
+  if (!dataThrough) return `latest Kubecost ${average}`
+  const timestamp = costDataThroughLabel(dataThrough)
+  if (!timestamp) return `latest Kubecost ${average}`
+  return `Kubecost ${average} · data through ${timestamp}`
+}
+
+export function costDataThroughLabel(dataThrough?: string): string {
+  if (!dataThrough) return ''
+  const timestamp = new Date(dataThrough)
+  if (Number.isNaN(timestamp.getTime())) return ''
+  return timestamp.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+}
+
+export function costIntegrationUnavailableMessage(
+  reason?: CostUnavailableReason | 'load_error',
+  settingsAvailable = true,
+): string | undefined {
+  switch (reason) {
+    case 'query_error':
+      return settingsAvailable
+        ? 'The selected cost source could not provide data. Check its connection in Settings → Metrics (OpenCost) or Settings → Cost (Kubecost).'
+        : 'The selected cost source could not provide data. Ask your operator to check its connection and query health.'
+    case 'no_cost_source':
+      return settingsAvailable
+        ? 'No compatible cost source was found. Connect OpenCost metrics in Settings → Metrics or configure Kubecost in Settings → Cost.'
+        : 'No compatible cost source is configured for this cluster. Configure OpenCost metrics or Kubecost in the host application or KubeAtlas deployment.'
+    case 'source_unavailable':
+      return settingsAvailable
+        ? 'Kubecost Aggregator is unavailable. Check the URL, network path, and cluster ID in Settings → Cost.'
+        : 'Kubecost Aggregator is unavailable. Update this cluster’s cost-source configuration in the host application or KubeAtlas deployment.'
+    case 'metrics_settings_error':
+      return 'This cluster’s saved metrics settings need review before cost data can load. Review them in Settings → Metrics.'
+    case 'cost_settings_error':
+      return 'This cluster’s saved cost settings need review before cost data can load. Review them in Settings → Cost.'
+    case 'deployment_configuration_error':
+      return "KubeAtlas's operator-supplied cost or metrics configuration is invalid. Check local launch flags or the deployment environment variables and Helm values."
+    case 'authentication_error':
+      return settingsAvailable
+        ? 'Kubecost rejected the configured API key. Update it in Settings → Cost.'
+        : 'Kubecost rejected the configured API key. Update this cluster’s credential in the host application or KubeAtlas deployment.'
+    case 'configuration_mismatch':
+      return settingsAvailable
+        ? 'Saved Kubecost settings are not valid for this cluster. Update the cluster ID or local API key in Settings → Cost.'
+        : 'Kubecost settings are not valid for this cluster. Update the cluster ID or credential in the host application or KubeAtlas deployment.'
+    default:
+      return undefined
+  }
+}

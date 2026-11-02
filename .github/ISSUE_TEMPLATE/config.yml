@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions and support
+    url: https://github.com/maomada/KubeAtlas/issues
+    about: Ask about KubeAtlas.
+  - name: Documentation
+    url: https://github.com/maomada/KubeAtlas/tree/main/docs
+    about: Read this repository's deployment and usage documentation.

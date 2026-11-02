@@ -1,0 +1,658 @@
+# Authentication & Authorization
+
+KubeAtlas supports optional user authentication with per-user authorization powered by Kubernetes RBAC. When enabled, each user sees only the namespaces they have access to, and write operations (restart, scale, exec, Helm, etc.) are executed with the user's identity — so K8s RBAC controls what each user can do.
+
+> **No auth by default.** When running locally or without `--auth-mode`, everything works exactly as before — no login, no restrictions. What that exposes depends on where KubeAtlas listens: see [Without authentication](#without-authentication).
+
+## How It Works
+
+```
+User → [Auth Layer] → KubeAtlas Backend → K8s API (as user, via impersonation)
+```
+
+1. **Authentication** identifies the user (proxy headers or OIDC login)
+2. **Reads** are filtered by namespace — KubeAtlas discovers which namespaces the user can access via `SubjectAccessReview` and only returns resources from those namespaces. Cluster-scoped resources (Nodes, PersistentVolumes, StorageClasses, ClusterRoles when `rbac.viewRBAC` is on, cluster-scoped CRDs, etc.) have no namespace to filter on, so they are gated per-kind via `SubjectAccessReview`: a user sees them only if their own RBAC permits listing that kind. Cluster-wide pod visibility does **not** imply Node/PV visibility — each cluster-scoped read goes through its own check.
+3. **Writes** use K8s impersonation — KubeAtlas makes the K8s API call as the authenticated user, so K8s RBAC decides whether it's allowed
+4. **UI adapts** — capability checks run per-user, so buttons (exec, restart, scale, Helm) only appear if the user has permission
+
+KubeAtlas doesn't have its own role/permission system. It delegates everything to K8s RBAC, which means permissions are managed with standard K8s tooling (`kubectl`, Terraform, GitOps, etc.).
+
+### Read granularity: namespace-level
+
+For **namespaced** resources, reads are authorized at **namespace granularity**: if your RBAC lets you access a namespace, KubeAtlas shows the namespaced resources in it. KubeAtlas does **not** additionally check per-resource-kind RBAC for most namespaced kinds — so a user who can read Pods in a namespace also sees ConfigMaps, Services, etc. in that namespace through KubeAtlas, even if their RBAC wouldn't allow `kubectl get configmaps` directly.
+
+This is a deliberate tradeoff that follows from how KubeAtlas reads the cluster. Rather than calling the Kubernetes API on every request, KubeAtlas watches each resource kind once under its own ServiceAccount and serves reads from an in-memory cache shared by all users — that's what makes it fast on large clusters and able to render topology and real-time views. Because the cache is populated by KubeAtlas's identity, not yours, per-user access has to be re-derived by asking Kubernetes "is this user allowed?" via `SubjectAccessReview`. Doing that at namespace granularity is one such check per namespace; doing it per-resource-kind would be a check for *every kind in every namespace* on *every* read — many times the API-server load, and worst exactly on the large, multi-namespace clusters where the shared cache matters most. So namespace membership is the per-user filter, and per-kind checks are reserved for the cases below where the exposure is highest.
+
+These kinds are gated more tightly, per-resource-kind, because the shared cache can hold data the user's own RBAC wouldn't grant:
+
+- **Secrets** (and Secret-derived data such as TLS certificate metadata) — shown only if the user can list Secrets in that namespace.
+- **Roles, RoleBindings and LimitRanges** — lists, detail pages, counts, search and MCP reads require the caller’s exact permission on that kind in the namespace (`list` for inventories, `get` for a single object).
+- **Trivy Operator reports** (the `aquasecurity.github.io` group: VulnerabilityReports, ExposedSecretReports, ConfigAuditReports, SbomReports and the rest): shown only if the user can list that report kind in that namespace, and across all namespaces at once only with a cluster-wide grant. An ExposedSecretReport holds the secret Trivy found in an image, so reports are treated like Secrets in lists, detail pages, counts, search and the MCP tools.
+- **Cluster-scoped resources** (Nodes, PersistentVolumes, ClusterRoles, cluster-scoped CRDs, etc.) — shown only if the user's RBAC permits listing that kind.
+
+Issues follow the same rule: you see an issue only if you could open its resource. A namespaced resource needs namespace access, the tightly gated namespaced kinds above also need exact kind access, and a cluster-scoped resource needs list on its kind. A cluster-scoped resource's issues are composed across namespaces, so a Node's issues can draw on Pods anywhere, but only rows from namespaces you can access feed them: another namespace's Pods never appear among its members or in its blast radius. Issues roll up to a resource's owner, such as a Pod's Deployment, only if you could open the owner; otherwise the issue stays on the resource. A finding drawn from a Secret's history reaches you without that history if you can't read the Secret: a Pod still running with environment values from a Secret that changed is flagged, with the restart it needs, but not which Secret or keys changed, or when. A finding that something your resource names does not exist (an Ingress's TLS Secret or IngressClass, a PVC's StorageClass, a RoleBinding's ClusterRole) is shown with namespace access: it says only that a name you can already read is missing, and Kubernetes reports a missing StorageClass in the PVC's events too. The Home dashboard's problem list and the MCP tools follow the same rules. The per-resource Issues view says when something was withheld, rather than showing an empty list as "none".
+
+Search uses the same exact list permissions as resource reads for Secrets, Roles, RoleBindings, LimitRanges and Trivy reports. Ordinary namespaced kinds, including ServiceAccounts, NetworkPolicies, ResourceQuotas and dynamic CRDs, use namespace visibility, as resource lists do. Sensitive-kind checks try a cluster-wide SAR first and fan out over visible namespaces only after a denial. Your own access is the scope of a search, so its coverage response reports a denial only for a kind or namespace the query names, keeping caller denial, failed permission checks and collector limitations apart; see [Search coverage](mcp.md#search-coverage-and-cel-object-filters).
+
+**If namespace-level isn't tight enough for you**, scope the boundary at the cache instead of at read time: run a KubeAtlas instance per trust boundary and give each one a **namespace-scoped ServiceAccount** (a `Role`/`RoleBinding`, no `ClusterRole`) limited to that boundary's namespaces. KubeAtlas detects the restricted permissions at startup and only watches and caches what its ServiceAccount can list — so the instance simply never holds another team's data, and there's nothing to over-expose. Point each team at their own instance (an ingress or auth proxy can route them). See [In-Cluster Deployment → namespace-scoped RBAC](in-cluster.md) for the `rbac.create: false` + custom `Role` setup.
+
+Ownership answers (owners, children, and which GitOps manager manages an object) follow the same namespace rule in the UI. MCP checks each manager kind exactly, so an agent can see fewer managers than the UI for a user whose namespace access is wider than their GitOps permissions; a manager the caller can't read contributes no evidence (a name in the object's own metadata stays as a `withheld` claim), and the answer says it is `narrowed`.
+
+Deletion-impact previews fetch the root as the caller and use caller-readable ownership data. Permission and collection gaps make the result partial; remote or unknown GitOps destinations expose no local inventory. See [Shared deletion preview](mcp.md#shared-deletion-preview). Policy coverage metadata is filtered alongside its referenced workloads; it does not reveal names from hidden namespaces.
+
+### Image inspection
+
+Authenticated requests (proxy, OIDC, or upstream Cloud) to `/api/images/metadata`,
+`/api/images/inspect`, and `/api/images/file` must name a `pod` and `namespace`
+(400 otherwise), so KubeAtlas only contacts the registry of an image a Pod runs. The
+caller must have `get pods` in that namespace, and the image must match a
+regular, init, or ephemeral container's spec image or status imageID digest reference.
+Authorization failures deny access; an unavailable authorization check returns 503.
+Registry credentials come from that Pod's `spec.imagePullSecrets`, each used only
+if the caller can `get` that exact Secret or `create pods/exec` in the namespace.
+KubeAtlas's own registry credentials (its Docker config and Google application default
+credentials) are used only for callers with `create pods/exec`, and only to fetch
+the digest the kubelet recorded as pulled for one of the Pod's containers. This
+covers images pulled with the node's cloud identity and no pull secret, such as
+Artifact Registry on GKE. Denied or non-authoritative checks drop the credential,
+with anonymous fallback. The `pullSecrets` query parameter and ServiceAccount pull
+secrets are ignored. Every registry request, including redirects and token
+endpoints, is checked before KubeAtlas connects: link-local addresses (cloud metadata)
+are refused, and loopback is refused in-cluster (locally it is allowed only for the
+registry the Pod's image names). Private addresses are allowed, because self-hosted
+registries often serve tokens or layers from a second internal host. Credentials
+are sent only over HTTPS, as the node's container runtime does by default; a
+registry that needs credentials over plain HTTP can't be inspected. Behind an HTTP
+proxy, a request KubeAtlas can't pin to an address it has checked is refused rather
+than left to the proxy. A refused request returns 403. Downloaded layers are cached
+for a few minutes and shared by all users, keyed by the image's repository and
+digest, so a cached image is only served after the caller has read its manifest
+from that same repository.
+Without an authenticated user, local image inspection keeps its existing
+credential discovery and network behavior.
+
+### Prometheus metrics
+
+Charts of a specific resource are gated like the resource itself: you see them only if you can read what they chart. The surfaces that can't be tied to one resource — raw PromQL, metric discovery, alert rules and the cluster-wide aggregate — are gated on listing Pods in **every** namespace, because a PromQL expression can't be namespace-filtered by inspecting it. Kubernetes' built-in `view` ClusterRole meets that bar, so binding `view` also grants read access to everything the Prometheus backend holds, `kube-system` and node-level series included.
+
+Two consequences worth knowing before you deploy:
+
+- A Role scoped with `resourceNames` doesn't pass the check, which needs the whole kind. It fails closed, so the user sees less rather than more.
+- KubeAtlas queries Prometheus with its own credentials; only the *authorization* is per user. If several tenants share one Prometheus, that backend needs its own isolation — KubeAtlas's gate isn't what separates them.
+
+## Without authentication
+
+KubeAtlas runs without authentication unless you configure it. Where it listens
+decides who can use it:
+
+- **Loopback** (the CLI and Desktop default, `127.0.0.1`): only programs on the
+  same machine reach KubeAtlas, and they act as your kubeconfig user, as `kubectl`
+  would.
+- **Shared** (any other `--listen-address`, including the `0.0.0.0` the Docker
+  image and Helm chart set): **anyone who can reach KubeAtlas's address is a full
+  user**, acting with KubeAtlas's ServiceAccount or kubeconfig identity. Keep such a
+  listener inside a network where everyone is trusted with that identity, or
+  enable authentication.
+
+Two things still hold on a shared listener without authentication:
+
+1. **A web page cannot use KubeAtlas.** A site open in a user's browser cannot act
+   through it: KubeAtlas answers only hostnames a page cannot point at KubeAtlas's
+   address (see [HTTP Listener](configuration.md#http-listener)), refuses
+   changes a browser started from another site (the browser itself keeps that
+   site from reading KubeAtlas's answers), and checks the origin of pod terminal
+   connections and `/mcp`.
+2. **KubeAtlas grants no more than its Kubernetes identity.** It gives no access to
+   the machine or process it runs in:
+   - the host local terminal is unavailable;
+   - profiling is off unless `KUBEATLAS_PPROF` turns it on;
+   - in a cluster, integration settings are set by the operator (Helm values or
+     flags), not from the UI;
+   - saved Prometheus credentials are sent only to the server they were
+     configured for;
+   - connecting the cluster to upstream Cloud, which outlasts the request, needs an
+     explicit acknowledgement.
+
+## Auth Modes
+
+| Mode | Flag | When to Use |
+|------|------|-------------|
+| `none` | `--auth-mode=none` | Local use, single-user, no restrictions needed (default) |
+| `proxy` | `--auth-mode=proxy` | You already have an auth proxy (oauth2-proxy, Pomerium, Cloudflare Access, etc.) in front of your ingress |
+| `oidc` | `--auth-mode=oidc` | You want KubeAtlas to handle login directly — no separate auth proxy needed |
+
+**How to choose:** If your organization already routes internal tools through an auth proxy or SSO gateway, use **proxy** mode — it's zero config on the KubeAtlas side. If you want a standalone deployment with built-in login, use **OIDC** mode.
+
+### Proxy Mode
+
+Use this when you already have (or plan to deploy) an auth proxy like [oauth2-proxy](https://oauth2-proxy.github.io/oauth2-proxy/), Pomerium, Authelia, or similar. The proxy authenticates users and forwards their identity to KubeAtlas via HTTP headers.
+
+**Flow:**
+```
+Browser → Auth Proxy → KubeAtlas
+           sets X-Forwarded-User: alice@company.com
+           sets X-Forwarded-Groups: sre-team,platform-eng
+```
+
+**Helm values:**
+```yaml
+auth:
+  mode: proxy
+  # Optional: customize header names (these are the defaults)
+  # proxy:
+  #   userHeader: X-Forwarded-User
+  #   groupsHeader: X-Forwarded-Groups
+```
+
+**CLI flags:**
+```bash
+kubeatlas --auth-mode=proxy \
+      --auth-user-header=X-Forwarded-User \
+      --auth-groups-header=X-Forwarded-Groups
+```
+
+> **Security:** Your ingress must strip `X-Forwarded-User` and `X-Forwarded-Groups` headers from external requests to prevent spoofing. The auth proxy should be the **only** path to KubeAtlas. KubeAtlas logs a warning at startup as a reminder.
+
+> **Proxies:** Preserve the browser-facing `Host` header when proxying KubeAtlas. KubeAtlas accepts changes and pod exec sessions only from its own page, and it recognizes that page by comparing the browser's `Origin` with `Host` (or by `Sec-Fetch-Site`, which browsers send over HTTPS). If your proxy must rewrite `Host`, list the address users open KubeAtlas at in `trustedOrigins` (Helm) or `KUBEATLAS_TRUSTED_ORIGINS`. See [Changes fail with "KubeAtlas refused this request"](in-cluster.md#changes-fail-with-kubeatlas-refused-this-request).
+
+> **Local terminal:** The host-level local terminal requires both a loopback-bound KubeAtlas listener and a loopback URL, and is unavailable when authentication is enabled. Unlike pod exec, it runs as the KubeAtlas process's operating-system user and cannot be safely impersonated per caller.
+
+**Logout behavior:**
+
+The user menu always shows a **Logout** button. Clicking it clears KubeAtlas's session cookie. On its own, that isn't enough to switch users: your proxy re-injects the identity header on the next request and signs the same user back in.
+
+To make logout actually switch users, point KubeAtlas at your proxy's sign-out URL with `--auth-proxy-logout-url` (or `auth.proxy.logoutURL` in Helm) — e.g. oauth2-proxy's `/oauth2/sign_out`. KubeAtlas then redirects the browser there after clearing its own cookie, so the upstream session is torn down too. When unset, the menu shows a note that the proxy may re-authenticate automatically.
+
+> **Note:** HTTP Basic Auth has no reliable logout mechanism — browsers cache credentials and resend them. If you need user-switching, prefer a proxy with a real sign-out endpoint (oauth2-proxy, Authelia) over plain Basic Auth.
+
+### OIDC Mode
+
+Use this when you want KubeAtlas to handle login directly — no separate auth proxy needed. KubeAtlas redirects to your identity provider (Google, Okta, Dex, Keycloak, etc.), validates the token, and creates a session cookie.
+
+We recommend registering a dedicated OIDC client for KubeAtlas rather than reusing the client ID your Kubernetes API server trusts. KubeAtlas's session holds the user's ID token for logout, so with a shared client a leaked KubeAtlas session could also be used against the API server.
+
+**Flow:**
+```
+Browser → KubeAtlas → redirects to IdP → user logs in → callback → session cookie
+```
+
+**Helm values:**
+```yaml
+auth:
+  mode: oidc
+  secret: ""  # HMAC key for session cookies (auto-generated if empty, but sessions won't survive pod restarts)
+  oidc:
+    issuerURL: https://accounts.google.com    # Your OIDC provider
+    clientID: your-client-id
+    clientSecret: your-client-secret
+    redirectURL: https://radar.example.com/auth/callback
+    # usernameClaim: preferred_username        # Default: email, falling back to sub
+    groupsClaim: groups                        # JWT claim containing group membership
+    # scopes: ["openid", "profile", "email", "groups"]  # Default — uncomment to override (e.g., drop "groups" for Google)
+```
+
+**Scopes:** by default KubeAtlas requests `openid profile email groups` at the authorization endpoint. The `groups` scope is required by Dex, Keycloak, and most IdPs to actually include the groups claim in the ID token. If your IdP rejects unknown scopes (Google in particular doesn't define `groups`), override via `auth.oidc.scopes` / `--auth-oidc-scopes` to drop it or substitute the provider-specific equivalent.
+
+**Username claim:** by default KubeAtlas uses the token's `email` claim as the Kubernetes username, falling back to `sub`. If your API server authenticates the same users with OIDC, set `auth.oidc.usernameClaim` / `--auth-oidc-username-claim` to the claim it maps (`--oidc-username-claim` or `claimMappings.username.claim`), and `usernamePrefix` to its prefix. Otherwise RBAC bindings that work in `kubectl` won't match in KubeAtlas. When the claim is set and missing from a token, KubeAtlas refuses the login rather than falling back to another claim.
+
+**Unverified email:** when the username comes from `email` and the token's `email_verified` claim is `false`, KubeAtlas refuses the login, the same way kube-apiserver rejects such a token. Tokens without `email_verified` are accepted. If your users' addresses are not verified at the IdP, verify them there or set `usernameClaim` to a claim that doesn't depend on email, such as `sub`. KubeAtlas checks this only at sign-in. If you set a fixed `auth.secret` or `auth.existingSecret`, sessions from before the upgrade keep working as long as they stay active; change the secret to sign everyone out.
+
+**Split public/internal provider URLs:** Kubernetes deployments sometimes need the browser to use the canonical issuer URL while the KubeAtlas pod talks to the IdP through service DNS. Keep `issuerURL` set to the canonical browser-facing issuer; KubeAtlas still validates the token `iss` claim against that value. Set `internalIssuerURL` when the internal endpoint has the same path layout, and KubeAtlas will fetch discovery internally while deriving server-side token, userinfo, and JWKS URLs from the internal base:
+
+```yaml
+auth:
+  mode: oidc
+  oidc:
+    issuerURL: http://authentik.example.com/application/o/radar/
+    internalIssuerURL: http://authentik-server.authentik.svc.cluster.local/application/o/radar/
+    clientID: radar
+    redirectURL: https://radar.example.com/auth/callback
+```
+
+If the endpoints cannot be derived from the two issuer bases, override them explicitly. `authorizationURL` is browser-facing; `tokenURL`, `userInfoURL`, and `jwksURL` are server-side URLs used by the KubeAtlas process:
+
+```yaml
+auth:
+  mode: oidc
+  oidc:
+    issuerURL: http://authentik.example.com/application/o/radar/
+    authorizationURL: http://authentik.example.com/application/o/radar/authorize/
+    tokenURL: http://authentik-server.authentik.svc.cluster.local/application/o/radar/token/
+    userInfoURL: http://authentik-server.authentik.svc.cluster.local/application/o/radar/userinfo/
+    jwksURL: http://authentik-server.authentik.svc.cluster.local/application/o/radar/jwks/
+```
+
+**Logout behavior:**
+
+When a user clicks logout, KubeAtlas clears the local session cookie and — if the identity provider supports it — redirects the browser to the provider's logout endpoint ([RP-Initiated Logout](https://openid.net/specs/openid-connect-rpinitiated-1_0.html)) to terminate the SSO session as well. This prevents the common issue where the user appears to log out but is silently re-authenticated on the next visit.
+
+KubeAtlas discovers the provider's `end_session_endpoint` automatically from the OIDC discovery document at startup. If the provider supports it (Okta, Keycloak, Azure AD), KubeAtlas redirects the browser there to terminate the SSO session. If the provider doesn't advertise `end_session_endpoint` (e.g., Google), KubeAtlas uses `prompt=login` on the next authorization request to force the IdP to show a login screen instead of silently re-authenticating. Check the startup logs for confirmation:
+
+```
+[oidc] RP-Initiated Logout enabled (end_session_endpoint discovered)
+# or
+[oidc] IdP does not advertise end_session_endpoint — will use prompt=login on next auth after logout
+```
+
+To redirect users back to KubeAtlas after IdP logout, set `--auth-oidc-post-logout-redirect-url` (or `auth.oidc.postLogoutRedirectURL` in Helm). This URL **must be registered** with your identity provider as a valid post-logout redirect URI.
+
+**Back-Channel Logout (IdP-initiated session revocation):**
+
+When an admin disables a user at the IdP level (e.g., disables an Okta account), KubeAtlas has no way to know — the existing session cookie remains valid until it expires. Back-Channel Logout ([spec](https://openid.net/specs/openid-connect-backchannel-1_0.html)) solves this: the IdP POSTs a signed `logout_token` to KubeAtlas's `/auth/backchannel-logout` endpoint, and KubeAtlas immediately revokes the matching session.
+
+To enable, set `--auth-oidc-backchannel-logout` (or `auth.oidc.backchannelLogout: true` in Helm), then register `https://radar.example.com/auth/backchannel-logout` as the Back-Channel Logout URI in your IdP.
+
+If KubeAtlas is served under a base path, the route sits at `{basePath}/auth/backchannel-logout` — register that. An unprefixed URI is not routed to KubeAtlas, and the IdP's POST is silently lost: disabling a user leaves their KubeAtlas session live until the cookie expires, which is the exact failure this feature exists to prevent.
+
+```yaml
+auth:
+  mode: oidc
+  oidc:
+    issuerURL: https://your-idp.example.com
+    clientID: radar
+    backchannelLogout: true
+```
+
+Check the startup logs to confirm IdP support:
+```
+[oidc] Backchannel Logout enabled (sid-based revocation)
+# or
+[oidc] WARNING: --auth-oidc-backchannel-logout is set, but IdP does not advertise backchannel_logout_supported.
+```
+
+**Limitations:**
+- **Single-replica only.** Revocations are stored in memory and not shared across pods. If KubeAtlas runs multiple replicas behind a load balancer, a revocation hitting one pod won't affect sessions on other pods.
+- **Lost on restart.** If KubeAtlas restarts, all pending revocations are lost. The session will expire naturally at cookie TTL (4h default).
+- **`sid` required for targeted revocation.** If the IdP's logout_token contains only `sub` (no `sid`), KubeAtlas cannot target the specific session — it logs a warning and the session expires at cookie TTL. Most major IdPs (Okta, Keycloak, Auth0, Azure AD) include `sid`.
+- **Google does not support back-channel logout.** For Google, session exposure is bounded by cookie TTL only.
+
+**Using K8s Secrets for sensitive values:**
+
+For production, use K8s Secrets instead of storing credentials in Helm values (which are visible in Helm release history):
+
+```yaml
+auth:
+  mode: oidc
+  # Session signing key from a K8s Secret
+  existingSecret: radar-auth-secret        # K8s Secret containing the HMAC key
+  existingSecretKey: auth-secret            # Key within the Secret (default)
+  oidc:
+    issuerURL: https://accounts.google.com
+    clientID: your-client-id
+    # OIDC client secret from a K8s Secret
+    existingSecret: radar-oidc-credentials  # K8s Secret containing the client secret
+    clientSecretKey: client-secret           # Key within the Secret (default)
+    redirectURL: https://radar.example.com/auth/callback
+```
+
+You can also mix approaches — use `existingSecret` for the client secret but pass `clientID` as a plain value (it's not sensitive).
+
+**TLS configuration for self-signed certificates:**
+
+If your OIDC provider uses a self-signed or internal CA certificate (e.g., on-prem Keycloak), use one of:
+
+```yaml
+auth:
+  oidc:
+    caCert: /etc/radar/oidc-ca.crt          # Path to CA certificate file (secure)
+    # insecureSkipVerify: true              # Skip TLS verification (dev/test only)
+```
+
+When using `caCert` in Kubernetes, mount the CA certificate into the pod via a ConfigMap or Secret volume.
+
+### upstream Cloud mode
+
+> Upstream Cloud mode is unavailable in KubeAtlas. The chart rejects
+> `cloud.enabled: true`; the details below document retained authentication
+> and RBAC contracts only and are not a supported deployment path.
+
+Legacy `KUBEATLAS_CLOUD_MODE` and `cloud.*` settings described a specialized
+deployment mode that used an outbound tunnel.
+
+Under cloud-mode (`KUBEATLAS_CLOUD_MODE=true`, set automatically by the chart when `cloud.enabled=true`), KubeAtlas:
+
+- Forces `--auth-mode=proxy` with pinned `X-Forwarded-User` / `X-Forwarded-Groups` headers. KubeAtlas accepts those headers only on requests marked in-process by its authenticated Cloud tunnel; the ordinary pod TCP listener cannot assert Cloud identity.
+- Ships three default ClusterRoleBindings mapping Cloud's `radar:owner` / `radar:member` / `radar:viewer` groups to the standard K8s `admin` / `edit` / `view` ClusterRoles. Configurable via `cloud.defaultRbac.*` in `values.yaml`.
+- Adds a **cluster-read add-on** (`cloud.defaultRbac.clusterScopedRead.{viewer,member,owner}`, each default on) granting `get/list/watch` on infrastructure the built-in `view`/`edit`/`admin` roles exclude — Nodes, PersistentVolumes, StorageClasses, IngressClasses, PriorityClasses, RuntimeClasses, Leases (namespaced; the spec is only a holder and renew times — `edit`/`admin` already include them, so only viewers and the view-based system and AI grants gain), ClusterTrustBundles, CRDs, and admission webhook configurations — plus list-only Upgrade impact evidence for CSIDrivers, CSIStorageCapacities, legacy PodSecurityPolicies, and API flow-control configuration. When the matching collection is enabled, it also grants APIServices, PrometheusRules, Karpenter kinds, and node metrics. It does not grant Secrets, RBAC objects, API-server metrics, or kubelet proxy access. It's an independent axis per tier: set a tier `false` to make it namespaced-only (e.g. `clusterScopedRead.viewer: false`). Owner node cordon/drain is a separate cluster-scoped *write*, off by default (`cloud.defaultRbac.nodeOps`).
+- Creates the default read grant for `radar:system`, upstream Cloud's alerts worker and timeline puller: a chart-owned role aggregated to match `view`, the cluster-read and integration-read add-ons, and cluster-wide Secret read. Helm release alerts and Secret changes in the timeline need Secret read; Helm stores releases as Secrets. No writes. Controlled by `cloud.systemRbac` (default `true`).
+- Creates the default read grant for alert-triggered AI investigations, recorded in Kubernetes audit logs as `radar:ai:<org>`: `radar:ai:reader` receives permissions based on `view` plus the cluster-read and integration-read add-ons. Stock `view` excludes Secrets, but includes pod logs and ConfigMaps; roles labelled `aggregate-to-view` widen this grant too. Controlled by `cloud.aiRbac` (default `true`). Requests a person starts or follows up on use that person's identity and groups, including follow-ups on alert-triggered investigations. MCP clients also use the user's permissions.
+- Treats `cloud.aiRbac` and `cloud.systemRbac` as controls for the chart's default grants, independent of `cloud.defaultRbac`. False or absent (including after a plain `--reuse-values` upgrade from an older chart) creates no default grant and leaves customer-created bindings untouched. These settings do not disable background jobs or automatic analysis; they control their default Kubernetes access.
+- Requires cluster-admin-equivalent authority or `escalate` on ClusterRoles to create or update the AI/system aggregated roles, in addition to normal chart installation permissions. Restricted installers can set `cloud.aiRbac=false` and `cloud.systemRbac=false` and supply their own read-only group bindings.
+- Uses the Cloud role (`radar:owner` / `radar:member` / `radar:viewer`) only to gate KubeAtlas's own configuration (settings, integrations, audit settings, registered OCI chart sources, self-upgrade), which runs as KubeAtlas's ServiceAccount. A Cloud request with no role group (such as the Hub's `radar:system` background identity) is refused there. Operations that run as the impersonated user — Helm reads and writes, in-cluster probe pods — are decided by Kubernetes RBAC alone.
+- Does **not** grant `PodCertificateRequest` access through the default Cloud tier bindings. KubeAtlas surfaces the API when Kubernetes 1.37 serves it, but a Cloud user can browse requests only when their Kubernetes RBAC independently grants `get/list` access. To opt in, bind a Role or ClusterRole granting `get/list/watch` on `certificates.k8s.io/podcertificaterequests` to the intended `radar:*` groups. This stays separate because certificate-request metadata is more sensitive than ordinary workload inventory.
+- Restricts the ordinary pod/ClusterIP TCP listener to `/api/health`; the full handler is served only over yamux streams from the outbound Cloud tunnel. Cloud mode also omits `/debug/pprof/*` and narrows auth exemptions to health only.
+
+<a id="cloud-mode-helm-bindings"></a>
+**Optional Upgrade impact metrics evidence.** The default Cloud bindings deliberately omit the broader API server `/metrics` endpoint and kubelet `nodes/proxy` access. Upgrade impact reports checks that depend on those sources as **Incomplete**. To enable deprecated-API request evidence for a tier, bind a separate ClusterRole granting `get` on `nonResourceURLs: ["/metrics"]` to its canonical `radar:viewer`, `radar:member`, or `radar:owner` group. Keep this opt-in separate from the default cluster-read role so operators can make the broader disclosure decision explicitly.
+
+**Helm-specific bindings (when `rbac.helm=true`).** Helm's pre-flight existence check needs cluster-scoped reads/writes that the K8s built-in `admin`/`edit`/`view` ClusterRoles don't grant. The chart emits two add-on ClusterRoles, split by trust tier:
+
+- `radar-helm` — CRDs, StorageClasses, RuntimeClasses, PriorityClasses, PodDisruptionBudgets, Namespaces. Bound to `radar:owner` AND `radar:member`.
+- `radar-helm-admin` — RBAC objects (Roles/Bindings, Cluster variants), validating/mutating webhooks, ApiServices. Bound to `radar:owner` ONLY. Granting these to a tier weaker than owner would let a member self-promote to cluster-admin in one `ClusterRoleBinding` write, collapsing the owner/member distinction.
+
+A `radar:member` attempting to install a chart that bundles its own RBAC will get a typed `rbac_preflight` 403 with an actionable "ask an owner" message. Day-to-day app charts and operator-CRD installs still work for members.
+
+<a id="user-token-mode"></a>
+#### User-token mode (no impersonation)
+
+**Legacy upstream Cloud contract only.** KubeAtlas does not provide this mode. See the [RBAC baseline](cloud-rbac-baseline.md) for the retained permission contract.
+
+Set `auth.kubernetesCredentials: user-token` (flag `--auth-k8s-credentials=user-token`, env `KUBEATLAS_AUTH_K8S_CREDENTIALS`). KubeAtlas then stops impersonating people, and the chart grants the ServiceAccount no `impersonate` permission.
+
+**How KubeAtlas handles each tunneled request:**
+
+- **With the user's token** (`X-Forwarded-Kubernetes-Token`): KubeAtlas asks the API server who the token belongs to (SelfSubjectReview) and makes every live call — writes, logs, exec, Helm — with that token alone, so the API server applies your own RBAC and audit logs show the real user. The forwarded username must match the token's username, or the request is refused.
+- **Without a token, as a person** (for example cross-cluster views): KubeAtlas serves its cache, filtered by that person's permissions, and refuses every live call with a 403 (`reason: user_token_required`).
+- **Without a token, as `radar:system:*` (group `radar:system`) or `radar:ai:<org>` (group `radar:ai:reader`)**: KubeAtlas reads with its ServiceAccount, after a SubjectAccessReview of every request against that identity's bindings (`cloud.systemRbac`, `cloud.aiRbac`).
+
+**Requirements:**
+
+- upstream Cloud mode (`cloud.enabled: true`), with `cloud.defaultRbac.create=false`. With the default bindings, the API server would apply them to any token whose IdP groups are named `radar:owner`, `radar:member` or `radar:viewer`.
+- A verified tunnel: `wss://` with `cloud.insecureSkipVerify=false`. The chart and the binary both refuse otherwise.
+- API servers that accept the token the control plane relays: the ID token your identity provider issues to its sign-in client, or the access token, with `auth.oidc.clusterToken: access_token`.
+- A non-empty `--oidc-groups-prefix` on the API servers. KubeAtlas refuses tokens whose groups start with `radar:`, `cloud:` or `system:` (other than `system:authenticated`), because the API server would apply the chart's `radar:system` and `radar:ai:reader` bindings, or `system:masters`, to them.
+
+**What still uses the ServiceAccount:**
+
+- The cache. The ServiceAccount fills it and keeps its cluster-wide reads (Secrets included under auth), as in every mode. Each person's view is filtered by the identity upstream Cloud forwards, so a compromised control plane could read the cache as anyone it names, although it can't make live calls without that person's token.
+- Background identities. They only read: any other verb is refused before it reaches the API server.
+- Prometheus queries, permission lookups for other subjects, and the in-cluster reachability check. They never write.
+
+**Other effects:**
+
+- The `radar:*` role groups only gate KubeAtlas's own settings. KubeAtlas never uses them when it checks Kubernetes permissions.
+- The chart drops the ServiceAccount's `pods/exec` and `pods/portforward` grants, since shells and port-forwards run on each person's token. Integrations that fall back to a ServiceAccount port-forward (Hubble, OpenCost) only work over their in-cluster Service.
+
+The chart rejects the Cloud mode. The comment block in [`deploy/helm/kubeatlas/values.yaml`](../deploy/helm/kubeatlas/values.yaml) is retained as a compatibility reference for its legacy values.
+
+## Setting Up User Permissions
+
+KubeAtlas delegates authorization entirely to K8s RBAC via impersonation. It doesn't have its own role system — permissions are managed with standard K8s tooling (kubectl, Terraform, Helm, GitOps, etc.).
+
+**If your cluster already has RBAC bindings** (most production clusters do), they work automatically. KubeAtlas impersonates the authenticated user, and K8s evaluates their existing bindings. You only need to create new bindings if users don't already have the access they need.
+
+### How It Works with Cloud Providers
+
+Cloud-managed clusters typically map their IAM to K8s RBAC automatically:
+
+- **GKE**: Google Groups for RBAC maps Google Workspace groups to K8s groups. IAM roles (`roles/container.viewer`, etc.) grant K8s access. The username is the user's Google email.
+- **EKS**: The `aws-auth` ConfigMap maps IAM roles/users to K8s users and groups. The username is typically the IAM role ARN or a mapped alias.
+- **AKS**: Azure AD integration maps Azure AD groups directly to K8s groups. The username is the Azure AD user principal name.
+
+In all cases, the username and groups that KubeAtlas receives from your auth layer (proxy headers or OIDC token) must match what K8s RBAC expects. Usually this means using the same email/UPN your cloud provider uses.
+
+### Understanding the Chain
+
+```
+Identity Provider (Google, Okta, etc.)
+  → returns: username=alice@company.com, groups=[sre-team]
+
+Auth Layer (proxy headers or OIDC token)
+  → KubeAtlas extracts: user="alice@company.com", groups=["sre-team"]
+
+KubeAtlas backend
+  → creates impersonated K8s client: act as alice@company.com in group sre-team
+
+K8s API server
+  → checks RBAC: does any RoleBinding/ClusterRoleBinding grant "sre-team" this permission?
+  → allow or deny
+```
+
+K8s RBAC doesn't require users to have ServiceAccounts. It supports binding roles to `User` (a string like `alice@company.com`) and `Group` (a string like `sre-team`). These strings just need to match what the identity provider returns.
+
+### Using Built-in K8s Roles
+
+K8s ships with built-in ClusterRoles that work well with KubeAtlas. You don't need to create custom roles unless you want fine-grained control:
+
+| Built-in Role | What Users Can Do in KubeAtlas |
+|---------------|---------------------------|
+| `view` | See resources, topology, events, logs. No restart, scale, or Helm writes. |
+| `edit` | Everything in `view` + restart, scale, edit resources. Does NOT include exec or port-forward (those require `pods/exec` and `pods/portforward` subresources — use the custom `radar-operator` role below). |
+| `admin` | Everything in `edit` + manage RBAC within namespaces. Same exec/port-forward caveat as `edit`. |
+| `cluster-admin` | Full access to everything across all namespaces, including exec and port-forward. |
+
+```yaml
+# Example: give the dev-team group read-only access to all namespaces
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: dev-team-view
+subjects:
+  - kind: Group
+    name: dev-team
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: view
+  apiGroup: rbac.authorization.k8s.io
+```
+
+For more control, create a custom ClusterRole:
+
+### Step 1: Create a ClusterRole with the permissions you want
+
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: radar-operator
+rules:
+  # View workloads (most users)
+  - apiGroups: ["", "apps", "batch"]
+    resources: ["pods", "deployments", "statefulsets", "daemonsets", "services",
+                "configmaps", "jobs", "cronjobs", "replicasets", "events"]
+    verbs: ["get", "list", "watch"]
+
+  # Restart and scale workloads
+  - apiGroups: ["apps"]
+    resources: ["deployments", "statefulsets", "daemonsets"]
+    verbs: ["patch", "update"]
+
+  # View logs
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+  # Exec into pods (optional — omit for read-only users)
+  - apiGroups: [""]
+    resources: ["pods/exec"]
+    verbs: ["create"]
+```
+
+### Step 2: Bind it to your users or groups
+
+**By group** (recommended — matches group from your identity provider):
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: sre-team-radar-operator
+subjects:
+  - kind: Group
+    name: sre-team                    # Must match the group string from IdP
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: radar-operator
+  apiGroup: rbac.authorization.k8s.io
+```
+
+**By user:**
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: alice-radar-operator
+subjects:
+  - kind: User
+    name: alice@company.com           # Must match the username from IdP
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: radar-operator
+  apiGroup: rbac.authorization.k8s.io
+```
+
+**Per-namespace** (use RoleBinding instead of ClusterRoleBinding):
+```yaml
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: dev-team-radar-operator
+  namespace: staging                  # Only grants access in this namespace
+subjects:
+  - kind: Group
+    name: dev-team
+    apiGroup: rbac.authorization.k8s.io
+roleRef:
+  kind: ClusterRole
+  name: radar-operator
+  apiGroup: rbac.authorization.k8s.io
+```
+
+### Step 3: Verify
+
+After deploying with auth enabled, you can verify impersonation works:
+
+```bash
+# Check what alice can do (from a machine with cluster-admin access)
+kubectl auth can-i --list --as=alice@company.com --as-group=sre-team
+
+# Check specific permission
+kubectl auth can-i get pods -n production --as=alice@company.com --as-group=sre-team
+```
+
+## What Users See
+
+When auth is enabled:
+- A **username** appears in the KubeAtlas header with a logout option
+- The **namespace selector** only shows namespaces the user can access
+- **Topology, resources, events, dashboard** are filtered to accessible namespaces
+- **Cluster-scoped resources** (Nodes, PersistentVolumes, StorageClasses) are gated per-kind via `SubjectAccessReview` — a user sees them only if their own RBAC permits listing that kind, independent of namespace access
+- **Helm releases** are read with the user's own identity, like everything else. Helm stores releases as Secrets, so a user sees a release only where their RBAC grants `list secrets` in the storage namespace — and the K8s built-in `view` role deliberately does not. KubeAtlas resolves the namespaces the user can actually read release storage in and lists only there, returning 403 when there are none. Write operations (install, upgrade, rollback, uninstall) are impersonated and need the matching RBAC.
+- **Write buttons** (restart, scale, exec, Helm install, etc.) only appear if the user has permission
+- Write operations return **403** from K8s if RBAC denies them (shown as an error toast)
+- The **/api/auth/me** endpoint returns the current user info and whether auth is enabled
+
+## ServiceAccount RBAC
+
+When auth is enabled, KubeAtlas's ServiceAccount needs two additional permissions (added automatically by the Helm chart):
+
+```yaml
+# Impersonate users and groups
+- apiGroups: [""]
+  resources: ["users", "groups"]
+  verbs: ["impersonate"]
+
+# Check permissions for specific users
+- apiGroups: ["authorization.k8s.io"]
+  resources: ["subjectaccessreviews"]
+  verbs: ["create"]
+```
+
+The ServiceAccount's existing read permissions (list pods, watch deployments, etc.) continue to power the shared cache. Impersonation is used for every call made on a user's behalf rather than served from the cache: writes, exec, logs, port-forward, and Helm release reads.
+
+**Treat the ServiceAccount as privileged.** Kubernetes RBAC can't limit `impersonate` to a subset of users or groups. KubeAtlas enforces the reserved-identity rule above where it accepts identities, but anyone holding the ServiceAccount's token can call the API server directly as any user or group, which is effectively cluster-admin. Run KubeAtlas in a dedicated namespace, restrict network access to it with NetworkPolicies, and make your auth proxy or ingress the only path to it.
+
+## Session Cookies
+
+KubeAtlas uses stateless HMAC-SHA256 signed cookies for sessions. The cookie contains the username and groups — no server-side session storage.
+
+- **Cookie TTL**: 4 hours by default (sliding), configurable with `--auth-cookie-ttl` or `auth.cookieTTL` in Helm values. Sessions auto-extend while you're active; idle sessions expire after the configured TTL. Active users won't notice — KubeAtlas's frontend polling keeps the session alive automatically.
+- **Proxy mode**: When the cookie expires, the middleware transparently re-creates the session from proxy headers on the next request, so the shorter default TTL has no UX impact.
+- **Session secret**: Set `auth.secret` or `KUBEATLAS_AUTH_SECRET` env var. If empty, a random key is generated at startup (sessions won't survive pod restarts)
+- **For production**: Use `auth.existingSecret` to reference a K8s Secret, so sessions survive restarts
+
+## Configuration Reference
+
+| Parameter | CLI Flag | Helm Value | Default |
+|-----------|----------|------------|---------|
+| Auth mode | `--auth-mode` | `auth.mode` | `none` |
+| Session secret | `--auth-secret` | `auth.secret` | auto-generated |
+| Cookie TTL | `--auth-cookie-ttl` | `auth.cookieTTL` | `4h` (sliding) |
+| User header (proxy) | `--auth-user-header` | `auth.proxy.userHeader` | `X-Forwarded-User` |
+| Groups header (proxy) | `--auth-groups-header` | `auth.proxy.groupsHeader` | `X-Forwarded-Groups` |
+| Proxy logout URL (proxy) | `--auth-proxy-logout-url` | `auth.proxy.logoutURL` | — |
+| OIDC issuer | `--auth-oidc-issuer` | `auth.oidc.issuerURL` | — |
+| OIDC internal issuer | `--auth-oidc-internal-issuer` | `auth.oidc.internalIssuerURL` | — |
+| OIDC authorization URL | `--auth-oidc-authorization-url` | `auth.oidc.authorizationURL` | — |
+| OIDC token URL | `--auth-oidc-token-url` | `auth.oidc.tokenURL` | — |
+| OIDC userinfo URL | `--auth-oidc-userinfo-url` | `auth.oidc.userInfoURL` | — |
+| OIDC JWKS URL | `--auth-oidc-jwks-url` | `auth.oidc.jwksURL` | — |
+| OIDC client ID | `--auth-oidc-client-id` | `auth.oidc.clientID` | — |
+| OIDC client secret | `--auth-oidc-client-secret` | `auth.oidc.clientSecret` | — |
+| OIDC client secret (K8s Secret) | — | `auth.oidc.existingSecret` | — |
+| OIDC client secret key | — | `auth.oidc.clientSecretKey` | `client-secret` |
+| OIDC redirect URL | `--auth-oidc-redirect-url` | `auth.oidc.redirectURL` | — |
+| OIDC username claim | `--auth-oidc-username-claim` | `auth.oidc.usernameClaim` | `email`, falling back to `sub` |
+| OIDC groups claim | `--auth-oidc-groups-claim` | `auth.oidc.groupsClaim` | `groups` |
+| OIDC scopes | `--auth-oidc-scopes` | `auth.oidc.scopes` | `openid,profile,email,groups` |
+| OIDC post-logout redirect | `--auth-oidc-post-logout-redirect-url` | `auth.oidc.postLogoutRedirectURL` | — |
+| OIDC username prefix | `--auth-oidc-username-prefix` | `auth.oidc.usernamePrefix` | — |
+| OIDC groups prefix | `--auth-oidc-groups-prefix` | `auth.oidc.groupsPrefix` | — |
+| OIDC CA certificate | `--auth-oidc-ca-cert` | `auth.oidc.caCert` | — |
+| OIDC skip TLS verify | `--auth-oidc-insecure-skip-verify` | `auth.oidc.insecureSkipVerify` | `false` |
+| OIDC backchannel logout | `--auth-oidc-backchannel-logout` | `auth.oidc.backchannelLogout` | `false` |
+
+## Troubleshooting
+
+### User is logged back in immediately after logout (OIDC)
+
+This happens when the identity provider's SSO session is not terminated during logout. Check:
+
+1. **Check the startup logs.** Look for `[oidc] RP-Initiated Logout enabled` or the `prompt=login` fallback message. Both approaches should prevent silent re-authentication.
+2. **Is `post_logout_redirect_uri` registered?** If you set `--auth-oidc-post-logout-redirect-url`, it must be registered as a valid post-logout redirect URI with your identity provider. If not registered, the IdP may show an error instead of redirecting.
+3. **Browser extensions or aggressive caching?** Some browser extensions may interfere with the redirect to the IdP's logout endpoint.
+
+### Users get 401 on every request
+
+- **Proxy mode**: Check that the auth proxy is setting `X-Forwarded-User`. Inspect with:
+  ```bash
+  kubectl logs -n radar -l app.kubernetes.io/name=radar | grep "auth"
+  ```
+- **OIDC mode**: Verify the issuer URL, client ID, and redirect URL are correct. Check KubeAtlas logs for OIDC errors.
+
+### Users authenticate but see empty dashboard / no resources
+
+The user will see a "No Namespace Access" message if they have no K8s RBAC bindings. KubeAtlas uses `SubjectAccessReview` to discover which namespaces each user can access — with no bindings, the result is zero namespaces.
+
+**Verify the user's access:**
+```bash
+# Check if the user can list pods in a specific namespace
+kubectl auth can-i list pods -n <namespace> \
+  --as=<username> --as-group=<group>
+
+# Check cluster-wide access
+kubectl auth can-i list pods --all-namespaces \
+  --as=<username> --as-group=<group>
+```
+
+**Fix:** Create a RoleBinding or ClusterRoleBinding for the user/group (see examples above).
+
+### All users see empty data even with correct RBAC
+
+KubeAtlas's ServiceAccount may be missing the `subjectaccessreviews` permission needed to check user access. When this fails, KubeAtlas denies all namespace access (fail-closed). Verify:
+```bash
+kubectl auth can-i create subjectaccessreviews \
+  --as=system:serviceaccount:radar:radar
+```
+
+If this returns `no`, the Helm chart's RBAC was not applied. Re-install with `rbac.create: true` (the default) or add the rule manually.
+
+### Write operations return 403
+
+The user's K8s RBAC doesn't include the required verb. Check with:
+```bash
+kubectl auth can-i patch deployments -n <namespace> \
+  --as=<username> --as-group=<group>
+```
+
+### Impersonation errors in KubeAtlas logs
+
+KubeAtlas's ServiceAccount is missing impersonation permissions. Verify:
+```bash
+kubectl auth can-i impersonate users \
+  --as=system:serviceaccount:radar:radar
+```
+
+If using `rbac.create: false` in Helm, make sure your custom ClusterRole includes the impersonation rules.

@@ -1,0 +1,77 @@
+export type SettingsSectionId =
+  | 'overview'
+  | 'perms'
+  | 'connection'
+  | 'prometheus'
+  | 'cost'
+  | 'argocd'
+  | 'ai'
+  | 'advanced'
+  | 'privacy'
+
+export type IntegrationSectionId = 'prometheus' | 'cost' | 'argocd'
+// Tabs whose drafts save through their own form, not the startup footer.
+export type PendingSectionId = IntegrationSectionId | 'ai'
+
+export const SETTINGS_NAV_LABELS = {
+  overview: '总览',
+  perms: '我的权限',
+  connection: '连接',
+  prometheus: '指标',
+  cost: '成本',
+  ai: 'AI调查',
+  privacy: '隐私',
+  advanced: '高级',
+} as const
+
+export const pendingSectionLabels: Record<PendingSectionId, string> = {
+  prometheus: '指标', cost: '成本', argocd: 'Argo CD', ai: 'AI 调查',
+}
+
+export function pendingSections(dirty: Record<PendingSectionId, boolean>): PendingSectionId[] {
+  return (['prometheus', 'cost', 'argocd', 'ai'] as const).filter(section => dirty[section])
+}
+
+// AI preferences are open to every user, so an AI draft pending in another tab
+// shows the footer even without owner access.
+export function shouldShowSettingsFooter(input: {
+  canEditConfig: boolean
+  confirmingClose: boolean
+  configDirty: boolean
+  integrationDirty: boolean
+  aiDirtyElsewhere: boolean
+  hasSaveMessage: boolean
+}): boolean {
+  return (
+    input.confirmingClose ||
+    input.aiDirtyElsewhere ||
+    (input.canEditConfig &&
+      (input.configDirty ||
+        input.integrationDirty ||
+        input.hasSaveMessage))
+  )
+}
+
+export function costSourceApplyLabel(
+  source: 'auto' | 'prometheus' | 'kubecost',
+): string {
+  return source === 'prometheus' ? '应用数据源' : '测试并应用数据源'
+}
+
+export function prometheusHeadersFromRows(
+  rows: { key: string; value: string }[] | null,
+): Record<string, string> | undefined {
+  if (rows === null) return undefined
+  if (rows.length === 0) return {}
+  const entries: [string, string][] = []
+  const seen = new Set<string>()
+  for (const row of rows) {
+    const key = row.key.trim()
+    if (!key && !row.value) continue
+    if (!key || !row.value) throw new Error('Enter both a name and value for each header, or remove the incomplete row.')
+    if (seen.has(key.toLowerCase())) throw new Error(`Header "${key}" is entered more than once.`)
+    seen.add(key.toLowerCase())
+    entries.push([key, row.value])
+  }
+  return entries.length ? Object.fromEntries(entries) : undefined
+}

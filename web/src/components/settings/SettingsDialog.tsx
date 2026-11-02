@@ -1,0 +1,2785 @@
+import { useState, useEffect, useRef, useCallback, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
+import {
+  Settings, X, RotateCcw, RotateCw, Loader2, Copy, Check, Pin, Shield, Lock, Plug,
+  Terminal, Boxes, Activity, GitBranch, Sparkles, SlidersHorizontal, Zap,
+  LayoutDashboard, ChevronRight, AlertTriangle, Coins, EyeOff,
+  type LucideIcon,
+} from 'lucide-react'
+import { clsx } from 'clsx'
+import { useQueryClient } from '@tanstack/react-query'
+import { useAnimatedUnmount } from '../../hooks/useAnimatedUnmount'
+import { TRANSITION_BACKDROP, TRANSITION_PANEL, overlayExitMs, overlayTransitionStyle } from '../../utils/animation'
+import { apiUrl, getApiBase, getAuthHeaders, getCredentialsMode, mcpEndpointUrl } from '../../api/config'
+import {
+  useCloudRole, useVersionCheck, useClusterInfo, usePrometheusStatus, useArgoStatus,
+  useOpenCostSummary,
+} from '../../api/client'
+import { useCapabilitiesContext } from '../../contexts/CapabilitiesContext'
+import { Input, ResourceRefBadge, SelectMenu, type ResourceRef } from '@maomada/k8s-ui'
+import { Collapse, CollapseChevron } from '@maomada/k8s-ui/components/ui/Collapse'
+import { Tooltip } from '../ui/Tooltip'
+import { AISettingsSection, type AIDraft } from '../diagnose/AISettings'
+import { MyPermissionsContent } from './MyPermissionsDialog'
+import { PrivacySection } from './PrivacySection'
+import { ConfigToggle, SubHeading } from './controls'
+import { useDiagnose, type DiagnoseSetup } from '../diagnose/DiagnoseContext'
+import { currencyOptionsForValue } from './currency-options'
+import { UpdateNotification } from '../ui/UpdateNotification'
+import {
+  costConfigurationAction,
+  costFreshnessLabel,
+  costIntegrationUnavailableMessage,
+  costSourceLabel,
+  costSourcePreferenceLabel,
+  COST_SOURCE_OPTIONS,
+} from '../cost/source'
+import { costSourceApplyLabel, pendingSectionLabels, pendingSections, SETTINGS_NAV_LABELS, shouldShowSettingsFooter } from './settings-state'
+import { PrometheusConfigField } from './PrometheusConfigField'
+import { LocalConnectionSettings, type IntegrationProfiles, type IntegrationKind } from './LocalConnectionSettings'
+import { LocalIntegrationStatus } from './LocalIntegrationStatus'
+import { LocalConfigurationDetails, SavedClusterConnections, PreviousIntegrationSettingsNotice } from './LocalConfigurationDetails'
+import { useContextSwitch } from '../../context/ContextSwitchContext'
+import { previousIntegrationSettingsKey, type IntegrationSettingsResponse } from '../../hooks/usePreviousIntegrationSettings'
+import type { SettingsSectionId } from './settings-state'
+import { OperatorManagedNotice } from './OperatorManagedNotice'
+import { FormSaveActions } from './FormSaveActions'
+export type { SettingsSectionId } from './settings-state'
+
+interface Config {
+  kubeconfig?: string
+  kubeconfigDirs?: string[]
+  namespace?: string
+  port?: number
+  noBrowser?: boolean
+  browser?: string
+  timelineStorage?: 'memory' | 'sqlite'
+  timelineDbPath?: string
+  historyLimit?: number
+  prometheusUrl?: string
+  opencostCurrency?: string
+  costSource?: 'auto' | 'prometheus' | 'kubecost'
+  kubecostUrl?: string
+  kubecostClusterId?: string
+  argoCdUrl?: string
+  argoCdInsecureTls?: boolean
+  mcp?: boolean | null
+  mcpReadOnly?: boolean | null
+  restoreLastDesktopContext?: boolean | null
+}
+
+interface ConfigResponse extends IntegrationSettingsResponse {
+  file: Config
+  effective: Config
+  isDesktop: boolean
+  openCostCurrencyManaged?: boolean
+  prometheusHeaderKeys?: string[]
+  prometheusServerManaged: boolean
+  prometheusHeadersManaged: boolean
+  prometheusUrlFromFlag: boolean
+  kubecostApiKeySet?: boolean
+  kubecostEnvManaged?: boolean
+  kubecostEnvError?: string
+  // True when an Argo CD auth token is stored. The token itself is never
+  // returned — the card shows a "configured" placeholder and omits the token
+  // from the PUT unless the user changes or clears it.
+  argoCdTokenSet?: boolean
+  // True when the integration is provisioned from the environment
+  // (KUBEATLAS_ARGOCD_TOKEN / _TOKEN_FILE) — the card renders read-only because the
+  // server refuses UI edits to a declaratively-configured integration.
+  argoCdEnvManaged?: boolean
+  // Set when environment provisioning was attempted but failed (bad token file,
+  // invalid URL, …) — the read-only card surfaces the reason.
+  argoCdEnvError?: string
+  // A detected Argo CD CLI login (server + user + TLS mode, no token), so the UI
+  // can offer "use your CLI session" as a one-click when it will actually work.
+  argoCdCliSession?: { server: string; user: string; insecure?: boolean }
+}
+
+interface CostSourceApplyResponse {
+  source: 'prometheus' | 'kubecost'
+  address?: string
+  service?: ResourceRef & { kind: 'Service'; port: number }
+  apiKeySet: boolean
+}
+
+interface SettingsDialogProps {
+  open: boolean
+  onClose: () => void
+  initialSection?: SettingsSectionId
+  onNavigateToResource?: (resource: ResourceRef) => void
+}
+
+// The settings surface splits into three honest apply buckets:
+//   • Persisted startup config (kubeconfig, server, timeline, MCP) — saved by
+//     the owner-gated footer and applied after restart.
+//   • Live integrations (Prometheus, cost source, Argo CD) — their own Apply/Connect endpoints
+//     re-point the running server; effect immediately, NOT part of footer dirty.
+//   • Self-saving preferences (cost currency, AI investigations) — applied immediately.
+// Integration fields (prometheusUrl, argoCdUrl, argoCdInsecureTls) apply through
+// their own controls and are excluded here. Every field is normalized so
+// unset≡default doesn't read as a change.
+function normalizeStartup(c: Config) {
+  return {
+    kubeconfig: c.kubeconfig ?? '',
+    kubeconfigDirs: c.kubeconfigDirs && c.kubeconfigDirs.length > 0 ? c.kubeconfigDirs.join('\x00') : '',
+    namespace: c.namespace ?? '',
+    port: c.port ?? null,
+    noBrowser: c.noBrowser ?? false,
+    browser: c.browser ?? '',
+    timelineStorage: c.timelineStorage ?? 'memory',
+    timelineDbPath: c.timelineDbPath ?? '',
+    historyLimit: c.historyLimit ?? null,
+    mcp: c.mcp ?? true,
+    mcpReadOnly: c.mcpReadOnly ?? false,
+    restoreLastDesktopContext: c.restoreLastDesktopContext ?? true,
+  }
+}
+
+const localIntegrationCaption = '按集群保存；保存后生效，无需重启。'
+
+export function SettingsDialog({
+  open,
+  onClose,
+  initialSection = 'overview',
+  onNavigateToResource,
+}: SettingsDialogProps) {
+  const queryClient = useQueryClient()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const { shouldRender, isOpen } = useAnimatedUnmount(open, overlayExitMs('dialog'))
+  const { data: versionInfo } = useVersionCheck()
+  const { canAtLeast } = useCloudRole()
+  const capabilities = useCapabilitiesContext()
+  const { data: settingsCluster } = useClusterInfo()
+  const { isSwitching } = useContextSwitch()
+  const settingsApiBase = getApiBase()
+  const [prometheusCredentialDirty, setPrometheusCredentialDirty] = useState(false)
+  const [localDirty, setLocalDirty] = useState<Record<IntegrationKind, boolean>>({ metrics: false, argocd: false, cost: false })
+  const [discardGeneration, setDiscardGeneration] = useState(0)
+  const [localBusy, setLocalBusy] = useState<Record<IntegrationKind, boolean>>({ metrics: false, argocd: false, cost: false })
+  const [storageBusy, setStorageBusy] = useState(false)
+  const integrationBusy = Object.values(localBusy).some(Boolean)
+  const metricsBusyChange = useCallback((busy: boolean) => setLocalBusy(value => ({ ...value, metrics: busy })), [])
+  const argoBusyChange = useCallback((busy: boolean) => setLocalBusy(value => ({ ...value, argocd: busy })), [])
+  const costBusyChange = useCallback((busy: boolean) => setLocalBusy(value => ({ ...value, cost: busy })), [])
+  const metricsDirtyChange = useCallback((dirty: boolean) => setLocalDirty(value => ({ ...value, metrics: dirty })), [])
+  const argoDirtyChange = useCallback((dirty: boolean) => setLocalDirty(value => ({ ...value, argocd: dirty })), [])
+  const costDirtyChange = useCallback((dirty: boolean) => setLocalDirty(value => ({ ...value, cost: dirty })), [])
+  const [connectionsChangedAt, setConnectionsChangedAt] = useState(0)
+  const overviewHeading = useRef<HTMLHeadingElement>(null)
+  const previousNoticeDismissed = useCallback(() => {
+    // The notice unmounts with its focused button; keep focus in the dialog.
+    requestAnimationFrame(() => overviewHeading.current?.focus())
+    setConfigData(value => value?.integrationProfiles ? {
+      ...value,
+      integrationProfiles: Object.fromEntries(Object.entries(value.integrationProfiles).map(([kind, profile]) =>
+        [kind, profile.legacy ? { ...profile, legacy: { ...profile.legacy, noticeDismissed: true } } : profile])) as IntegrationProfiles,
+    } : value)
+    void queryClient.resetQueries({ queryKey: [previousIntegrationSettingsKey] })
+  }, [queryClient])
+  const connectionsChanged = useCallback((profiles: IntegrationProfiles) => {
+    setConnectionsChangedAt(Date.now())
+    setConfigData(value => value ? { ...value, integrationProfiles: profiles } : value)
+    void queryClient.resetQueries({ queryKey: [previousIntegrationSettingsKey] })
+    void queryClient.invalidateQueries({ predicate: query => typeof query.queryKey[0] === 'string' && /^(prometheus|opencost|gitops|argo)/.test(query.queryKey[0]) })
+  }, [queryClient])
+
+  const [configData, setConfigData] = useState<ConfigResponse | null>(null)
+  const operatorManaged = configData?.management === 'operator'
+  const canEditConfig = configData != null && !operatorManaged && canAtLeast('owner')
+  const [editedConfig, setEditedConfig] = useState<Config>({})
+  const [saving, setSaving] = useState(false)
+  const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [section, setSection] = useState<SettingsSectionId>('overview')
+  const [confirmingClose, setConfirmingClose] = useState(false)
+  const [costCredentialDirty, setCostCredentialDirty] = useState(false)
+  const [costDraftReset, setCostDraftReset] = useState(0)
+  const [costCurrencySaving, setCostCurrencySaving] = useState(false)
+  const configSavingRef = useRef(false)
+  const costCurrencySavingRef = useRef(false)
+  const pendingCloseActionRef = useRef<(() => void) | null>(null)
+  const argoStatusQuery = useArgoStatus(
+    open && section === 'argocd'
+  )
+  const { data: argoSectionStatus, refetch: refetchArgoSectionStatus } = argoStatusQuery
+
+  // Local AI preferences save independently of the owner-gated server settings.
+  const diag = useDiagnose()
+  const aiAvailable = diag.available && diag.agents.length > 0
+  const [aiDraft, setAiDraft] = useState<AIDraft>({
+    agent: diag.selectedAgent,
+    profile: diag.profile,
+    model: diag.model,
+    effort: diag.effort,
+  })
+  const [aiSaved, setAiSaved] = useState(false)
+  // Until the user edits, the draft follows the saved preferences: the agent
+  // list loads after Settings may already be open, and adopting its defaults
+  // is not an edit.
+  const [aiTouched, setAiTouched] = useState(false)
+  const aiEditable = aiAvailable && !diag.hosted && configData?.management !== 'operator'
+  const aiDirty = aiEditable && (
+    aiDraft.agent !== diag.selectedAgent ||
+    aiDraft.profile !== diag.profile ||
+    aiDraft.model !== diag.model ||
+    aiDraft.effort !== diag.effort)
+  useEffect(() => {
+    if (aiTouched) return
+    setAiDraft({ agent: diag.selectedAgent, profile: diag.profile, model: diag.model, effort: diag.effort })
+  }, [aiTouched, diag.selectedAgent, diag.profile, diag.model, diag.effort])
+
+  // Per-bucket normalized dirty. Only startup fields participate; integration
+  // fields apply live and never light up the footer.
+  const edN = normalizeStartup(editedConfig)
+  const svN = normalizeStartup(configData?.file ?? {})
+  const clusterDirty =
+    edN.kubeconfig !== svN.kubeconfig ||
+    edN.kubeconfigDirs !== svN.kubeconfigDirs ||
+    edN.namespace !== svN.namespace ||
+    edN.restoreLastDesktopContext !== svN.restoreLastDesktopContext
+  const serverDirty =
+    edN.port !== svN.port || edN.noBrowser !== svN.noBrowser || edN.browser !== svN.browser
+  const mcpDirty = edN.mcp !== svN.mcp || edN.mcpReadOnly !== svN.mcpReadOnly
+  const timelineDirty =
+    edN.timelineStorage !== svN.timelineStorage ||
+    edN.timelineDbPath !== svN.timelineDbPath ||
+    edN.historyLimit !== svN.historyLimit
+  const costSourceDirty =
+    (editedConfig.costSource ?? 'auto') !== (configData?.file.costSource ?? 'auto') ||
+    (editedConfig.kubecostUrl ?? '').trim() !== (configData?.file.kubecostUrl ?? '').trim() ||
+    (editedConfig.kubecostClusterId ?? '').trim() !== (configData?.file.kubecostClusterId ?? '').trim()
+  const costIntegrationDirty = costSourceDirty || costCredentialDirty || localDirty.cost
+  // Merged-pane dirty for the flat nav (Connection = cluster+server, Advanced = mcp+timeline).
+  const connectionDirty = clusterDirty || serverDirty
+  const advancedDirty = mcpDirty || timelineDirty
+  const configDirty = configData != null && (connectionDirty || advancedDirty)
+  const prometheusDirty = prometheusCredentialDirty || localDirty.metrics || (editedConfig.prometheusUrl ?? '') !== (configData?.effective.prometheusUrl ?? '')
+  const pending = pendingSections({ prometheus: prometheusDirty, cost: costIntegrationDirty, argocd: localDirty.argocd, ai: aiDirty })
+  const integrationDirty = pending.some(item => item !== 'ai')
+  // Drafts that save through their own form, which "Save startup settings" leaves in place.
+  const formDirty = pending.length > 0
+  const reviewSection = pending.find(item => item !== section)
+  const settingsBusy = saving || costCurrencySaving || integrationBusy || storageBusy
+  const metricsDraft = useRef({ open, scope: `${settingsApiBase}:${settingsCluster?.context}`, dirty: false })
+  const [draftFrozen, setDraftFrozen] = useState(false)
+  const [reloadVersion, setReloadVersion] = useState(0)
+  const settingsScope = `${settingsApiBase}:${settingsCluster?.context}`
+  const targetChangedWithDraft = open && metricsDraft.current.open && metricsDraft.current.dirty && (isSwitching || metricsDraft.current.scope !== settingsScope)
+  const showLocalStatus = open && !draftFrozen && !targetChangedWithDraft && !isSwitching
+  useEffect(() => {
+    if (!open) {
+      setDraftFrozen(false)
+      metricsDraft.current = { open: false, scope: settingsScope, dirty: false }
+      return
+    }
+    if (targetChangedWithDraft) {
+      setDraftFrozen(true)
+      return
+    }
+    if (draftFrozen) return
+    metricsDraft.current = { open, scope: settingsScope, dirty: configData != null && (prometheusDirty || configDirty || costIntegrationDirty || localDirty.argocd || aiDirty) }
+  }, [open, settingsScope, targetChangedWithDraft, draftFrozen, configData, prometheusDirty, configDirty, costIntegrationDirty, localDirty.argocd, aiDirty])
+
+  // Load config on open + snapshot AI prefs + pick a default section that's
+  // actually accessible to the current identity.
+  useEffect(() => {
+    if (!open) return
+    if (targetChangedWithDraft || draftFrozen) return
+    const controller = new AbortController()
+    setConfigData(null)
+    setPrometheusCredentialDirty(false)
+    setLocalDirty({ metrics: false, argocd: false, cost: false })
+    setSaveMessage(null)
+    setLoadError(null)
+    setConfirmingClose(false)
+    pendingCloseActionRef.current = null
+    setCostCredentialDirty(false)
+    setCostDraftReset((current) => current + 1)
+    setAiSaved(false)
+    setAiTouched(false)
+    if (isSwitching) return () => controller.abort()
+    fetch(apiUrl('/config'), { signal: controller.signal, credentials: getCredentialsMode(), headers: getAuthHeaders() })
+      .then((res) => {
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        return res.json()
+      })
+      .then((data: ConfigResponse) => {
+        if (controller.signal.aborted || getApiBase() !== settingsApiBase) return
+        setConfigData(data)
+        setEditedConfig({ ...data.file, prometheusUrl: data.effective.prometheusUrl })
+      })
+      .catch((err) => {
+        if (controller.signal.aborted) return
+        console.warn('[settings] Failed to load config:', err)
+        setLoadError('Failed to load configuration.')
+      })
+    return () => controller.abort()
+    // Snapshot-on-open only; we don't want late diag updates to wipe staged edits.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, isSwitching, settingsCluster?.context, settingsApiBase, draftFrozen, reloadVersion])
+
+  useEffect(() => {
+    if (open) setSection(initialSection)
+  }, [open, initialSection])
+
+  useEffect(() => {
+    if (!open || diag.agents.length === 0) return
+    setAiDraft((current) => {
+      const profiles = diag.agents.find((agent) => agent.name === current.agent)?.profiles ?? []
+      if (profiles.length === 0 || profiles.includes(current.profile)) return current
+      return { ...current, profile: profiles[0] }
+    })
+  }, [open, diag.agents])
+
+  const updateConfigField = useCallback(<K extends keyof Config>(field: K, value: Config[K]) => {
+    setEditedConfig((prev) => ({ ...prev, [field]: value }))
+    setSaveMessage(null)
+  }, [])
+
+  const saveConfig = useCallback(async (): Promise<boolean> => {
+    if (!configData || integrationBusy || draftFrozen || targetChangedWithDraft || configSavingRef.current || costCurrencySavingRef.current) return false
+    configSavingRef.current = true
+    setSaving(true)
+    setSaveMessage(null)
+    try {
+      // /config is FULL-REPLACEMENT. Integration fields must carry the
+      // LAST-COMMITTED values (from configData.file), never an un-applied draft:
+      // sending a typed-but-not-applied argoCdUrl trips the server-side origin
+      // guard that clears the stored Argo token, and a stale value would revert a
+      // live-applied integration. configData.file is kept in sync after every live save.
+      const body: Config = {
+        ...editedConfig,
+        opencostCurrency: configData.file.opencostCurrency,
+        prometheusUrl: configData.file.prometheusUrl,
+        costSource: configData.file.costSource,
+        kubecostUrl: configData.file.kubecostUrl,
+        kubecostClusterId: configData.file.kubecostClusterId,
+        argoCdUrl: configData.file.argoCdUrl,
+        argoCdInsecureTls: configData.file.argoCdInsecureTls,
+      }
+      const res = await fetch(apiUrl('/config'), {
+        method: 'PUT',
+        credentials: getCredentialsMode(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setSaveMessage(`Error: ${data?.error || res.statusText}`)
+        return false
+      }
+      const saved = await res.json() as Config
+      const committed = { ...body, opencostCurrency: saved.opencostCurrency }
+      setEditedConfig((prev) => ({ ...prev, opencostCurrency: saved.opencostCurrency }))
+      setConfigData((prev) => (prev ? { ...prev, file: committed } : prev))
+      setSaveMessage('已保存。重启 KubeAtlas 后生效。')
+      return true
+    } catch (err) {
+      setSaveMessage(`Error: ${err}`)
+      return false
+    } finally {
+      configSavingRef.current = false
+      setSaving(false)
+    }
+  }, [editedConfig, configData, integrationBusy, draftFrozen, targetChangedWithDraft])
+
+  const saveCostCurrency = useCallback(async (value: string): Promise<void> => {
+    if (!configData) throw new Error('KubeAtlas configuration is not available')
+    if (configSavingRef.current) throw new Error('Other settings are being saved')
+    if (costCurrencySavingRef.current) throw new Error('A currency change is already being saved')
+    costCurrencySavingRef.current = true
+    setCostCurrencySaving(true)
+    try {
+      const body: Config = {
+        ...configData.file,
+        opencostCurrency: value || undefined,
+      }
+      const res = await fetch(apiUrl('/config'), {
+        method: 'PUT',
+        credentials: getCredentialsMode(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        const message = data !== null && typeof data === 'object' && 'error' in data && typeof data.error === 'string'
+          ? data.error
+          : res.statusText
+        throw new Error(message)
+      }
+      const saved = await res.json() as Config
+      setEditedConfig((prev) => ({ ...prev, opencostCurrency: saved.opencostCurrency }))
+      setConfigData((prev) => prev ? {
+        ...prev,
+        file: { ...prev.file, opencostCurrency: saved.opencostCurrency },
+      } : prev)
+      void queryClient.invalidateQueries({
+        predicate: (query) =>
+          typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('opencost-'),
+      })
+    } finally {
+      costCurrencySavingRef.current = false
+      setCostCurrencySaving(false)
+    }
+  }, [configData, queryClient])
+
+  // AI prefs are client-side (localStorage) — commit the staged draft now.
+  // setSelectedAgent clears model/effort (they're agent-specific), so set the
+  // agent first, then restore the draft's model/effort.
+  const saveAi = useCallback(() => {
+    diag.setSelectedAgent(aiDraft.agent)
+    diag.setProfile(aiDraft.profile)
+    diag.setModel(aiDraft.model)
+    diag.setEffort(aiDraft.effort)
+    setAiTouched(false)
+    setAiSaved(true)
+  }, [diag, aiDraft])
+
+  const discardAi = useCallback(() => {
+    setAiTouched(false)
+    setAiSaved(false)
+  }, [])
+
+  const discardChanges = useCallback(() => {
+    // Revert unsaved startup edits back to the last-saved values (non-
+    // destructive). configData.file holds the committed config, including the
+    // live integration fields, so restoring it drops drafts without touching
+    // what's saved. AI preferences don't depend on the config load.
+    if (settingsBusy || draftFrozen || targetChangedWithDraft) return
+    discardAi()
+    if (!configData) return
+    setEditedConfig({ ...configData.file, prometheusUrl: configData.effective.prometheusUrl })
+    setCostCredentialDirty(false)
+    setPrometheusCredentialDirty(false)
+    setDiscardGeneration(value => value + 1)
+    setLocalDirty({ metrics: false, argocd: false, cost: false })
+    setCostDraftReset((current) => current + 1)
+    setSaveMessage(null)
+  }, [configData, settingsBusy, draftFrozen, targetChangedWithDraft, discardAi])
+
+  const finishClose = useCallback(() => {
+    const action = pendingCloseActionRef.current
+    pendingCloseActionRef.current = null
+    onClose()
+    action?.()
+  }, [onClose])
+
+  const handleSaveAndClose = useCallback(async () => {
+    const ok = await saveConfig()
+    if (ok) finishClose()
+  }, [saveConfig, finishClose])
+
+  const reviewPendingDraft = () => {
+    if (!reviewSection) return
+    setConfirmingClose(false)
+    setSection(reviewSection)
+    focusIntegration.current = true
+  }
+  const focusIntegration = useRef(false)
+  useEffect(() => {
+    if (!focusIntegration.current) return
+    focusIntegration.current = false
+    const panel = dialogRef.current?.querySelector<HTMLElement>('[role="tabpanel"]:not([inert])')
+    panel?.querySelector<HTMLElement>('fieldset[tabindex], input, select, button')?.focus()
+  }, [section])
+
+  // Close guard: any pending draft prompts an inline confirm rather than
+  // silently discarding. AI drafts count for every user; the rest need owner access.
+  // Saving or discarding the last draft from its own tab answers the close
+  // prompt; a stale "Unsaved changes" would otherwise linger in the footer.
+  useEffect(() => {
+    if (confirmingClose && !configDirty && !formDirty) setConfirmingClose(false)
+  }, [confirmingClose, configDirty, formDirty])
+
+  const requestCloseRef = useRef<(afterClose?: () => void) => void>(() => {})
+  requestCloseRef.current = (afterClose) => {
+    if (settingsBusy) return
+    pendingCloseActionRef.current = afterClose ?? null
+    if ((canEditConfig && (configDirty || integrationDirty)) || aiDirty) setConfirmingClose(true)
+    else finishClose()
+  }
+
+  const navigateFromSettings = useCallback((resource: ResourceRef) => {
+    if (!onNavigateToResource) return
+    requestCloseRef.current(() => onNavigateToResource(resource))
+  }, [onNavigateToResource])
+
+  useEffect(() => {
+    if (!open) return
+    const handleDocumentKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      const modalDialogs = Array.from(document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]'))
+      const topDialog = modalDialogs[modalDialogs.length - 1]
+      if (topDialog !== dialogRef.current || dialogRef.current?.contains(event.target as Node)) return
+      event.preventDefault()
+      event.stopPropagation()
+      requestCloseRef.current()
+    }
+    document.addEventListener('keydown', handleDocumentKeyDown, true)
+    return () => document.removeEventListener('keydown', handleDocumentKeyDown, true)
+  }, [open])
+
+  // Post-save feedback ("Saved. Restart KubeAtlas to apply.") is scoped to the
+  // section it was saved from. Clear it on navigation so it doesn't linger — with
+  // its disabled footer — on a live-apply section where "Restart to apply" is
+  // wrong. It still stays put while the user remains on the saved section.
+  useEffect(() => { setSaveMessage(null) }, [section])
+
+  // Focus trap
+  useEffect(() => {
+    if (open && dialogRef.current) {
+      dialogRef.current.focus()
+    }
+  }, [open])
+
+  if (!shouldRender) return null
+
+  const isDesktop = configData?.isDesktop ?? false
+  const deploymentMode = capabilities.deployment?.mode ?? 'local'
+  const showBrowserLaunchControls = !isDesktop && deploymentMode === 'local'
+
+  // Flat, un-grouped nav ordered as a narrative — at-a-glance, then you, then how
+  // KubeAtlas connects, then data integrations, then AI, then advanced. The
+  // per-section captions carry the restart-vs-live semantics, so group labels
+  // would only add visual weight. AI investigations is always shown (the section
+  // explains how to enable it when no agent CLI is installed).
+  const navItems: NavItemDef[] = [
+    { id: 'overview', label: SETTINGS_NAV_LABELS.overview, icon: LayoutDashboard, ownerOnly: false, dirty: false },
+    { id: 'perms', label: SETTINGS_NAV_LABELS.perms, icon: Shield, ownerOnly: false, dirty: false },
+    { id: 'connection', label: SETTINGS_NAV_LABELS.connection, icon: Boxes, ownerOnly: true, dirty: connectionDirty },
+    { id: 'prometheus', label: SETTINGS_NAV_LABELS.prometheus, icon: Activity, ownerOnly: true, dirty: prometheusDirty },
+    { id: 'cost', label: SETTINGS_NAV_LABELS.cost, icon: Coins, ownerOnly: true, dirty: costIntegrationDirty },
+    { id: 'argocd', label: 'Argo CD', icon: GitBranch, ownerOnly: true, dirty: localDirty.argocd },
+    { id: 'ai', label: SETTINGS_NAV_LABELS.ai, icon: Sparkles, ownerOnly: false, dirty: aiDirty },
+    { id: 'privacy', label: SETTINGS_NAV_LABELS.privacy, icon: EyeOff, ownerOnly: false, dirty: false },
+    { id: 'advanced', label: SETTINGS_NAV_LABELS.advanced, icon: SlidersHorizontal, ownerOnly: true, dirty: advancedDirty },
+  ]
+
+  const showFooter = shouldShowSettingsFooter({
+    canEditConfig,
+    confirmingClose,
+    configDirty,
+    integrationDirty: integrationDirty && (!configData?.integrationProfiles || (!!reviewSection && reviewSection !== 'ai')),
+    aiDirtyElsewhere: aiDirty && section !== 'ai',
+    hasSaveMessage: Boolean(saveMessage),
+  })
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      {/* Backdrop */}
+      <div
+        className={clsx(
+          'absolute inset-0 bg-black/60 backdrop-blur-sm',
+          TRANSITION_BACKDROP,
+          isOpen ? 'opacity-100' : 'opacity-0'
+        )}
+        style={overlayTransitionStyle(isOpen, 'dialog')}
+        onClick={() => requestCloseRef.current()}
+      />
+
+      {/* Dialog */}
+      <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-dialog-title"
+        tabIndex={-1}
+        onKeyDown={(event) => {
+          if (event.key !== 'Escape') return
+          event.preventDefault()
+          event.stopPropagation()
+          requestCloseRef.current()
+        }}
+        className={clsx(
+          'relative bg-theme-surface border border-theme-border shadow-theme-lg w-full outline-none flex flex-col',
+          'max-sm:inset-0 max-sm:absolute max-sm:rounded-none max-sm:max-h-full max-sm:border-0',
+          // Fixed height so the dialog doesn't jump when switching tabs — short
+          // tabs leave breathing room, tall ones scroll inside the content pane.
+          // max-h keeps it on-screen on short viewports.
+          'sm:rounded-xl sm:max-w-5xl sm:mx-6 sm:h-[800px] sm:max-h-[calc(100dvh-64px)]',
+          TRANSITION_PANEL,
+          isOpen ? 'opacity-100 scale-100' : 'opacity-0 scale-95'
+        )}
+        style={overlayTransitionStyle(isOpen, 'dialog')}
+      >
+        {/* Header — spans both panes */}
+        <div className="relative flex items-center justify-between p-4 border-b border-theme-border shrink-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <Settings className="w-5 h-5 shrink-0 text-theme-text-secondary" />
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1">
+              <h2 id="settings-dialog-title" className="text-lg font-semibold text-theme-text-primary">设置</h2>
+              <span className="break-all text-[11px] text-theme-text-tertiary">
+                KubeAtlas{versionInfo?.currentVersion ? ` v${versionInfo.currentVersion.replace(/^v/, '')}` : ''}
+                <span className="text-theme-text-disabled"> · Skyhook 出品</span>
+              </span>
+              <UpdateNotification placement="settings" />
+            </div>
+          </div>
+          <button
+            onClick={() => requestCloseRef.current()}
+            aria-label="关闭设置"
+            disabled={settingsBusy}
+            className="shrink-0 p-1 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded disabled:opacity-50"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Body: sidebar + content */}
+        <div className="flex flex-col sm:flex-row flex-1 min-h-0">
+          {/* Sidebar (sm+) */}
+          <nav
+            role="tablist"
+            aria-orientation="vertical"
+            className="hidden sm:flex sm:flex-col gap-0.5 w-[200px] shrink-0 overflow-y-auto border-r border-theme-border p-3"
+          >
+            {navItems.map((i) => (
+              <NavItem
+                key={i.id}
+                item={i}
+                active={section === i.id}
+                disabled={i.ownerOnly && !operatorManaged && !canAtLeast('owner')}
+                onSelect={() => setSection(i.id)}
+              />
+            ))}
+          </nav>
+
+          {/* Tab strip (below sm) */}
+          <div role="tablist" className="sm:hidden flex gap-1 overflow-x-auto border-b border-theme-border p-2 shrink-0">
+            {navItems.map((i) => (
+              <NavItem
+                key={i.id}
+                item={i}
+                horizontal
+                active={section === i.id}
+                disabled={i.ownerOnly && !operatorManaged && !canAtLeast('owner')}
+                onSelect={() => setSection(i.id)}
+              />
+            ))}
+          </div>
+
+          {/* Content pane — stable scrollbar gutter so switching between a
+              scrolling tab and a short one doesn't shift content sideways. */}
+          <div className="flex-1 min-w-0 overflow-y-auto p-4 sm:p-5 [scrollbar-gutter:stable]">
+            {loadError && (
+              <div className="mb-3 px-3 py-2 text-xs text-amber-700 dark:text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-md">
+                {loadError}
+              </div>
+            )}
+
+            {draftFrozen && <div role="status" className="mb-4 space-y-2 rounded-md border border-theme-border p-3 text-sm text-theme-text-secondary">
+              <p>集群已更改，且你有尚未保存的编辑。下方仍显示之前的草稿，但无法应用到此集群。</p>
+              <button type="button" disabled={isSwitching} className="text-xs text-accent-text hover:underline disabled:opacity-50" onClick={() => {
+                metricsDraft.current = { open, scope: settingsScope, dirty: false }
+                setDraftFrozen(false)
+                setReloadVersion((version) => version + 1)
+              }}>放弃草稿并加载当前集群</button>
+            </div>}
+            {!configData && !['overview', 'perms', 'ai', 'privacy'].includes(section) ? (
+              <p className="text-sm text-theme-text-secondary">{loadError ? '配置不可用。请关闭设置后重试。' : '正在加载配置…'}</p>
+            ) : <div inert={draftFrozen || settingsBusy || undefined} className={draftFrozen ? 'opacity-60' : undefined}>
+            {operatorManaged && section !== 'perms' && section !== 'ai' && section !== 'privacy' && <div className="mb-4"><OperatorManagedNotice /></div>}
+            {/* Overview — status at a glance; the landing section */}
+            <div className={clsx(section !== 'overview' && 'hidden')} role="tabpanel" inert={section !== 'overview' || undefined}>
+              <div className="mb-1">
+                <h3 ref={overviewHeading} tabIndex={-1} className="text-base font-semibold text-theme-text-primary outline-none">总览</h3>
+                <p className="mt-0.5 text-xs text-theme-text-tertiary">
+                  查看 KubeAtlas 当前连接的对象 — 选择一行查看详情。
+                </p>
+              </div>
+              {configData?.management === 'local' && configData.integrationProfiles && canEditConfig && (
+                <PreviousIntegrationSettingsNotice profiles={configData.integrationProfiles} onNavigate={setSection} onDismissed={previousNoticeDismissed} />
+              )}
+              <div className="mt-3">
+                <OverviewPanel active={section === 'overview'} onNavigate={setSection} />
+              </div>
+              {configData?.management === 'local' && configData.integrationProfiles && canEditConfig && (
+                <LocalConfigurationDetails onNavigate={setSection} />
+              )}
+            </div>
+
+            {/* My permissions — usable by everyone, rendered inline (no launcher) */}
+            <div className={clsx(section !== 'perms' && 'hidden')} role="tabpanel" inert={section !== 'perms' || undefined}>
+              <div className="mb-1">
+                <h3 className="text-base font-semibold text-theme-text-primary">我的权限</h3>
+                <p className="mt-0.5 text-xs text-theme-text-tertiary">
+                  查看当前身份在此集群中可以执行的操作，包括绑定的角色及汇总后的有效权限。
+                </p>
+              </div>
+              <div className="mt-3">
+                <MyPermissionsContent active={section === 'perms'} />
+              </div>
+            </div>
+
+            {/* Connection — Cluster + Server merged */}
+            <SectionPane
+              id="connection"
+              active={section}
+              title="连接"
+              managed={operatorManaged ? <OperatorSettingsSummary section="connection" config={configData} /> : undefined}
+              caption="Kubeconfig 和服务器更改将在下次启动时生效。"
+              locked={!canEditConfig}
+            >
+              <div className="space-y-4">
+                <SubHeading>集群</SubHeading>
+                <ClusterSection
+                  config={editedConfig}
+                  effectiveConfig={configData?.effective}
+                  isDesktop={isDesktop}
+                  onChange={updateConfigField}
+                />
+              </div>
+              <div className="space-y-4 border-t border-theme-border-subtle pt-4">
+                <SubHeading>服务器</SubHeading>
+                <ServerSection
+                  config={editedConfig}
+                  effectiveConfig={configData?.effective}
+                  isDesktop={isDesktop}
+                  showBrowserLaunchControls={showBrowserLaunchControls}
+                  onChange={updateConfigField}
+                />
+              </div>
+              {configData?.management === 'local' && configData.integrationProfiles && canEditConfig && (
+                <SavedClusterConnections
+                  key={settingsScope}
+                  active={open && section === 'connection' && !draftFrozen && !isSwitching}
+                  profiles={configData.integrationProfiles}
+                  onChange={connectionsChanged}
+                  onBusyChange={setStorageBusy}
+                />
+              )}
+            </SectionPane>
+
+            {/* Metrics backend — live */}
+            <SectionPane
+              id="prometheus"
+              active={section}
+              title="指标"
+              managed={operatorManaged ? <OperatorSettingsSummary section="prometheus" config={configData} /> : undefined}
+              caption={configData?.integrationProfiles ? localIntegrationCaption : '连接和管理指标后端。'}
+              live
+              locked={!canEditConfig}
+            >
+              {configData?.integrationProfiles ? <LocalConnectionSettings key={`${discardGeneration}:${JSON.stringify(configData.integrationProfiles.metrics.target)}`} kind="metrics" profiles={configData.integrationProfiles} onChange={connectionsChanged} onDirtyChange={metricsDirtyChange} onBusyChange={metricsBusyChange}
+                status={showLocalStatus && section === 'prometheus' && !['error', 'target_changed'].includes(configData.integrationProfiles.metrics.state) ? <LocalIntegrationStatus kind="metrics" profile={configData.integrationProfiles.metrics} argo={argoStatusQuery} busy={integrationBusy} changedAt={connectionsChangedAt} /> : undefined} /> : <PrometheusConfigField
+                key={`${settingsApiBase}:${discardGeneration}`}
+                onBusyChange={metricsBusyChange}
+                onDirtyChange={setPrometheusCredentialDirty}
+                local={deploymentMode === 'local'}
+                value={editedConfig.prometheusUrl ?? ''}
+                configuredHeaderKeys={configData?.prometheusHeaderKeys ?? []}
+                serverManaged={configData?.prometheusServerManaged === true}
+                headersManaged={configData?.prometheusHeadersManaged === true}
+                urlFromFlag={configData?.prometheusUrlFromFlag === true}
+                onChange={(v) => updateConfigField('prometheusUrl', v || undefined)}
+                onApplied={(url) => {
+                  setEditedConfig((prev) => ({ ...prev, prometheusUrl: url || undefined }))
+                  setConfigData((prev) =>
+                    prev ? {
+                      ...prev,
+                      file: { ...prev.file, prometheusUrl: url || undefined },
+                      effective: { ...prev.effective, prometheusUrl: url || undefined },
+                    } : prev
+                  )
+                }}
+              />}
+            </SectionPane>
+
+            <SectionPane
+              id="cost"
+              active={section}
+              title="成本"
+              managed={operatorManaged ? <OperatorSettingsSummary section="cost" config={configData} /> : undefined}
+              caption={configData?.integrationProfiles ? `${localIntegrationCaption} 显示货币适用于所有集群。` : '选择 KubeAtlas 获取成本数据的方式以及金额的显示标签。'}
+              live
+              locked={!canEditConfig}
+            >
+              <CostSection
+                integration={configData?.integrationProfiles ? <LocalConnectionSettings key={`${discardGeneration}:${JSON.stringify(configData.integrationProfiles.cost.target)}`} kind="cost" profiles={configData.integrationProfiles} onChange={connectionsChanged} onDirtyChange={costDirtyChange} onBusyChange={costBusyChange}
+                  status={showLocalStatus && section === 'cost' && !['error', 'target_changed'].includes(configData.integrationProfiles.cost.state) ? <LocalIntegrationStatus kind="cost" profile={configData.integrationProfiles.cost} argo={argoStatusQuery} busy={integrationBusy} changedAt={connectionsChangedAt} /> : undefined} /> : undefined}
+                currency={editedConfig.opencostCurrency ?? ''}
+                source={editedConfig.costSource ?? 'auto'}
+                url={editedConfig.kubecostUrl ?? ''}
+                clusterId={editedConfig.kubecostClusterId ?? ''}
+                apiKeySet={configData?.kubecostApiKeySet ?? false}
+                sourceEnvManaged={configData?.kubecostEnvManaged ?? false}
+                sourceEnvError={configData?.kubecostEnvError}
+                draftDirty={costIntegrationDirty}
+                resetVersion={costDraftReset}
+                managed={configData?.openCostCurrencyManaged ?? false}
+                effectiveCurrency={configData?.effective.opencostCurrency ?? ''}
+                deploymentMode={deploymentMode}
+                settingsSaving={settingsBusy}
+                onNavigateToResource={navigateFromSettings}
+                onApplyCurrency={saveCostCurrency}
+                onChangeSource={(value) => updateConfigField('costSource', value)}
+                onChangeUrl={(value) => updateConfigField('kubecostUrl', value || undefined)}
+                onChangeClusterId={(value) => updateConfigField('kubecostClusterId', value || undefined)}
+                onCredentialDirtyChange={setCostCredentialDirty}
+                onApplied={({ source, url, clusterId, apiKeySet }) => {
+                  setCostCredentialDirty(false)
+                  setEditedConfig((prev) => ({ ...prev, costSource: source, kubecostUrl: url || undefined, kubecostClusterId: clusterId || undefined }))
+                  setConfigData((prev) => prev ? {
+                    ...prev,
+                    file: { ...prev.file, costSource: source, kubecostUrl: url || undefined, kubecostClusterId: clusterId || undefined },
+                    kubecostApiKeySet: apiKeySet,
+                  } : prev)
+                  void queryClient.invalidateQueries({
+                    predicate: (query) => typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('opencost-'),
+                  })
+                }}
+              />
+            </SectionPane>
+
+            {/* Argo CD — live */}
+            <SectionPane
+              id="argocd"
+              active={section}
+              title="Argo CD"
+              managed={operatorManaged ? <OperatorSettingsSummary section="argocd" config={configData} /> : undefined}
+              caption={configData?.integrationProfiles ? localIntegrationCaption : '按集群保存；保存后生效，无需重启。'}
+              live
+              locked={!canEditConfig}
+            >
+              {configData?.integrationProfiles ? <LocalConnectionSettings key={`${discardGeneration}:${JSON.stringify(configData.integrationProfiles.argocd.target)}`} kind="argocd" profiles={configData.integrationProfiles} cliSession={configData.argoCdCliSession} onChange={connectionsChanged} onDirtyChange={argoDirtyChange} onBusyChange={argoBusyChange}
+                status={showLocalStatus && section === 'argocd' && !['error', 'target_changed'].includes(configData.integrationProfiles.argocd.state) ? <LocalIntegrationStatus kind="argocd" profile={configData.integrationProfiles.argocd} argo={argoStatusQuery} busy={integrationBusy} changedAt={connectionsChangedAt} /> : undefined} /> : <ArgoCDConfigField
+                url={editedConfig.argoCdUrl ?? ''}
+                insecureTls={editedConfig.argoCdInsecureTls ?? false}
+                tokenSet={configData?.argoCdTokenSet ?? false}
+                envManaged={configData?.argoCdEnvManaged ?? false}
+                envError={configData?.argoCdEnvError}
+                cliSession={configData?.argoCdCliSession}
+                anonymous={argoSectionStatus?.connected && argoSectionStatus.anonymous}
+                connectedAddress={argoSectionStatus?.connected && !argoSectionStatus.anonymous ? argoSectionStatus.address : undefined}
+                active={section === 'argocd'}
+                statusReason={argoSectionStatus?.configured ? argoSectionStatus.reason : undefined}
+                connecting={argoSectionStatus?.connecting}
+                onChangeUrl={(v) => updateConfigField('argoCdUrl', v || undefined)}
+                onChangeInsecureTls={(v) => updateConfigField('argoCdInsecureTls', v || undefined)}
+                onApplied={({ url, insecureTls, tokenSet }) => {
+                  setConfigData((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          file: { ...prev.file, argoCdUrl: url || undefined, argoCdInsecureTls: insecureTls || undefined },
+                          argoCdTokenSet: tokenSet,
+                        }
+                      : prev
+                  )
+                  void refetchArgoSectionStatus()
+                  // The GitOps detail page the user came from doesn't poll
+                  // when idle; without this the notice that sent them here
+                  // would still be up when they get back.
+                  void queryClient.invalidateQueries({
+                    predicate: (query) => typeof query.queryKey[0] === 'string' && query.queryKey[0].startsWith('gitops-'),
+                  })
+                }}
+              />}
+            </SectionPane>
+
+            {/* AI investigations — self-saving, usable by everyone. Same heading block
+                as every other tab; the body is the agent controls (when a CLI is
+                installed) or an enable explainer (when not). */}
+            <div className={clsx(section !== 'ai' && 'hidden')} role="tabpanel" inert={section !== 'ai' || undefined}>
+              <div className="mb-4">
+                <h3 className="text-base font-semibold text-theme-text-primary">AI 调查</h3>
+                <p className="mt-0.5 text-xs text-theme-text-tertiary">
+                  {operatorManaged
+                    ? '本地 KubeAtlas 和 upstream Cloud 均可使用 AI 调查。'
+                    : diag.hosted
+                    ? `使用 ${diag.agentLabel} 调查事件——读取日志、事件和拓扑以了解当前情况。`
+                    : "使用在你自己的机器上运行的 AI 代理调查事件 — 读取日志、事件和拓扑以了解当前情况。无需 upstream Cloud 或 API 密钥。"}
+                </p>
+              </div>
+              {operatorManaged ? <p className="text-sm text-theme-text-secondary">共享安装中无法使用本地 AI 调查。请在本地 KubeAtlas 中配合 Agent CLI 使用，或使用 upstream Cloud。</p> : aiAvailable ? (
+                <div className="space-y-4">
+                  <AISettingsSection
+                    available={diag.available}
+                    agents={diag.agents}
+                    hosted={diag.hosted}
+                    agentLabel={diag.agentLabel}
+                    draft={aiDraft}
+                    onChange={(patch) => {
+                      setAiDraft((d) => ({ ...d, ...patch }))
+                      setAiTouched(true)
+                      setAiSaved(false)
+                    }}
+                    onHistoryCleared={diag.refreshRuns}
+                  />
+                  {aiEditable && (
+                    <FormSaveActions
+                      dirty={aiDirty}
+                      busy={false}
+                      onSave={saveAi}
+                      onDiscard={discardAi}
+                      feedback={aiSaved ? { tone: 'success', message: '已保存' } : undefined}
+                    />
+                  )}
+                </div>
+              ) : (
+                <AIUnavailableNotice
+                  setupState={diag.setupState}
+                  cliOverride={diag.cliOverride}
+                  checkingAgents={diag.checkingAgents}
+                  agentsCheckFailed={diag.agentsCheckFailed}
+                  recheckAgents={diag.recheckAgents}
+                />
+              )}
+            </div>
+
+            {/* Privacy: static notice about disabled usage reporting. */}
+            <SectionPane id="privacy" active={section} title="隐私" caption="立即生效。" live>
+              <PrivacySection />
+            </SectionPane>
+
+            {/* Advanced — MCP + Timeline merged */}
+            <SectionPane
+              id="advanced"
+              active={section}
+              title="高级"
+              managed={operatorManaged ? <OperatorSettingsSummary section="advanced" config={configData} /> : undefined}
+              caption="下次启动时生效。"
+              locked={!canEditConfig}
+            >
+              <div className="space-y-4">
+                <SubHeading>MCP</SubHeading>
+                <MCPSection
+                  mcpEnabled={editedConfig.mcp ?? true}
+                  onToggle={(v) => setEditedConfig((c) => ({ ...c, mcp: v, mcpReadOnly: v && (c.mcpReadOnly ?? false) }))}
+                  readOnly={editedConfig.mcpReadOnly ?? false}
+                  onReadOnlyChange={(v) => updateConfigField('mcpReadOnly', v)}
+                  isDesktop={isDesktop}
+                  portPinned={editedConfig.port != null && editedConfig.port > 0}
+                  onPinPort={(port) => updateConfigField('port', port)}
+                />
+              </div>
+              <div className="space-y-4 border-t border-theme-border-subtle pt-4">
+                <SubHeading>时间线</SubHeading>
+                <TimelineSection
+                  config={editedConfig}
+                  effectiveConfig={configData?.effective}
+                  onChange={updateConfigField}
+                />
+              </div>
+            </SectionPane>
+            </div>}
+          </div>
+        </div>
+
+        {/* Startup settings only apply on the next launch, so they save here
+            instead of in their tabs; drafts left in other tabs surface here
+            too, so closing can't drop them unnoticed. */}
+        <Collapse open={showFooter} className="shrink-0">
+          <div className="border-t border-theme-border">
+            <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+              {confirmingClose ? (
+                <>
+                  <div className="space-y-1 text-xs text-theme-text-secondary">
+                    <p>
+                    {formDirty
+                      ? `${pending.map(item => pendingSectionLabels[item]).join('、')}更改尚未保存。${configDirty ? '启动设置尚未保存。' : ''}`
+                      : '有未保存的更改。'}
+                    </p>
+                    {saveMessage && <p role="status" className={saveMessage.startsWith('Error') ? 'text-semantic-error' : undefined}>{saveMessage}</p>}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => {
+                        pendingCloseActionRef.current = null
+                        setConfirmingClose(false)
+                      }}
+                      disabled={settingsBusy}
+                      className="px-3 py-1.5 text-xs font-medium text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-md transition-colors disabled:opacity-50"
+                    >
+                      继续编辑
+                    </button>
+                    <button
+                      onClick={finishClose}
+                      disabled={settingsBusy}
+                      className="px-3 py-1.5 text-xs font-medium text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-md transition-colors disabled:opacity-50"
+                    >
+                      放弃
+                    </button>
+                    {reviewSection && (
+                      <button
+                        onClick={reviewPendingDraft}
+                        className={clsx(
+                          'flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium',
+                          configDirty
+                            ? 'text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary'
+                            : 'btn-brand',
+                        )}
+                      >
+                        查看{pendingSectionLabels[reviewSection]}
+                      </button>
+                    )}
+                    {configDirty && canEditConfig && (
+                      <button
+                        onClick={formDirty ? saveConfig : handleSaveAndClose}
+                        disabled={settingsBusy || draftFrozen || targetChangedWithDraft}
+                        className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium btn-brand rounded-md"
+                      >
+                        {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        保存启动设置
+                      </button>
+                    )}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-2">
+              {(!configData?.integrationProfiles || configDirty || !!reviewSection) && <Tooltip content="放弃未保存的更改并恢复为上次保存的值">
+                      <button
+                        onClick={discardChanges}
+                        disabled={settingsBusy || draftFrozen || targetChangedWithDraft || (!configDirty && !formDirty)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-md transition-colors disabled:opacity-50 disabled:pointer-events-none"
+                      >
+                        <RotateCcw className="w-3.5 h-3.5" />
+                        {formDirty && (configDirty || pending.length > 1) ? '放弃所有更改' : '放弃更改'}
+                      </button>
+                    </Tooltip>}
+                    {saveMessage && (
+                      <span className={clsx('text-xs', saveMessage.startsWith('Error') ? 'text-red-400' : 'text-green-400')}>
+                        {saveMessage}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {reviewSection && (
+                      <button
+                        onClick={reviewPendingDraft}
+                        className={clsx(
+                          'flex items-center gap-1.5 rounded-md px-4 py-1.5 text-sm font-medium',
+                          configDirty
+                            ? 'text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary'
+                            : 'btn-brand',
+                        )}
+                      >
+                        查看{pendingSectionLabels[reviewSection]}
+                      </button>
+                    )}
+                    {configDirty && canEditConfig && (
+                      <button
+                        onClick={saveConfig}
+                        disabled={settingsBusy || draftFrozen || targetChangedWithDraft}
+                        className="flex items-center gap-1.5 px-4 py-1.5 text-sm font-medium btn-brand rounded-md"
+                      >
+                        {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                        保存启动设置
+                      </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </Collapse>
+      </div>
+    </div>,
+    document.body
+  )
+}
+
+// -- Sidebar primitives -------------------------------------------------------
+
+interface NavItemDef {
+  id: SettingsSectionId
+  label: string
+  icon: LucideIcon
+  ownerOnly: boolean
+  dirty: boolean
+}
+
+function NavItem({
+  item,
+  active,
+  disabled,
+  horizontal,
+  onSelect,
+}: {
+  item: NavItemDef
+  active: boolean
+  disabled: boolean
+  horizontal?: boolean
+  onSelect: () => void
+}) {
+  const Icon = item.icon
+  const button = (
+    <button
+      type="button"
+      role="tab"
+      aria-selected={active}
+      onClick={onSelect}
+      disabled={disabled}
+      className={clsx(
+        'group flex items-center gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+        horizontal ? 'shrink-0' : 'w-full text-left',
+        active
+          ? 'bg-theme-active text-theme-text-primary font-medium'
+          : 'text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary',
+        disabled && 'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-theme-text-secondary'
+      )}
+    >
+      <Icon className="w-4 h-4 shrink-0" />
+      <span className={clsx('truncate', !horizontal && 'flex-1')}>{item.label}</span>
+      {disabled ? (
+        <Lock className="w-3 h-3 shrink-0 text-theme-text-tertiary" />
+      ) : item.dirty ? (
+        <Tooltip content="有未保存的更改" delay={200} wrapperClassName="flex shrink-0">
+          <span className="w-1.5 h-1.5 rounded-full bg-accent" />
+        </Tooltip>
+      ) : null}
+    </button>
+  )
+  return disabled ? (
+    <Tooltip content="需要所有者权限" delay={200} wrapperClassName={horizontal ? 'shrink-0' : 'w-full'}>
+      {button}
+    </Tooltip>
+  ) : (
+    button
+  )
+}
+
+// -- Section shell ------------------------------------------------------------
+
+// A section stays MOUNTED (visibility toggled) so local draft state in the live
+// integration cards survives switching sidebar items. The caption states the
+// section's honest apply semantics.
+function SectionPane({
+  id,
+  active,
+  title,
+  caption,
+  live,
+  locked,
+  managed,
+  children,
+}: {
+  id: SettingsSectionId
+  active: SettingsSectionId
+  title: string
+  caption?: string
+  live?: boolean
+  locked?: boolean
+  managed?: ReactNode
+  children: ReactNode
+}) {
+  return (
+    <div className={clsx(active !== id && 'hidden')} role="tabpanel" inert={active !== id || undefined}>
+      <div className="mb-4">
+        <h3 className="text-base font-semibold text-theme-text-primary">{title}</h3>
+        {!locked && caption && <SectionCaption live={live}>{caption}</SectionCaption>}
+      </div>
+      {managed ?? (locked ? <LockWall /> : <div className="space-y-4">{children}</div>)}
+    </div>
+  )
+}
+
+function SectionCaption({ children, live }: { children: ReactNode; live?: boolean }) {
+  return (
+    <p
+      className={clsx(
+        'mt-1 flex items-center gap-1.5 text-xs',
+        live ? 'text-theme-text-secondary' : 'text-theme-text-tertiary'
+      )}
+    >
+      {live ? <Zap className="w-3 h-3 shrink-0" /> : <RotateCw className="w-3 h-3 shrink-0" />}
+      {children}
+    </p>
+  )
+}
+
+function OperatorSettingsSummary({ section, config }: { section: SettingsSectionId; config: ConfigResponse }) {
+  const { data: prom, error: promError } = usePrometheusStatus()
+  const { data: argo, error: argoError } = useArgoStatus(section === 'argocd')
+  const { data: cost, error: costError } = useOpenCostSummary()
+  const { data: cluster } = useClusterInfo()
+  const c = config.effective
+  let rows: [string, ReactNode][] = []
+  let detail: string | undefined
+  switch (section) {
+    case 'connection':
+      rows = [['集群连接', cluster?.inCluster ? 'Pod 服务账户' : cluster?.context ?? '正在连接…'], ['服务端口', c.port ?? '—']]
+      detail = '集群和连接设置由操作员在启动时选择。'
+      break
+    case 'prometheus':
+      rows = [
+        ['状态', promError ? '状态不可用' : !prom ? '正在检查…' : prom.connected ? '已连接' : prom.discovering ? '正在发现…' : '未连接'],
+        ['端点', prom?.address || c.prometheusUrl || '自动发现'],
+        ['请求头', config.prometheusHeaderKeys?.join(', ') || '未配置'],
+      ]
+      detail = prom?.error
+      break
+    case 'argocd':
+      rows = [
+        ['状态', argoError ? '状态不可用' : !argo ? '正在检查…' : argo.connected ? '已连接' : argo.connecting ? '正在连接…' : '未连接'],
+        ['端点', argo?.address || c.argoCdUrl || '自动发现'],
+        ['API 令牌', config.argoCdTokenSet ? '已配置' : '未配置'],
+        ['TLS 验证', c.argoCdInsecureTls ? '已禁用' : '已启用'],
+      ]
+      detail = config.argoCdEnvError || argo?.reason
+      break
+    case 'cost':
+      rows = [
+        ['状态', costError ? '状态不可用' : !cost ? '检查中…' : cost.available ? '可用' : '不可用'],
+        ['来源偏好', costSourcePreferenceLabel(c.costSource)],
+        ['Kubecost 端点', c.kubecostUrl || '自动发现'],
+        ['Kubecost 集群 ID', c.kubecostClusterId || '自动检测'],
+        ['API 密钥', config.kubecostApiKeySet ? '已配置' : '未配置'],
+        ['货币覆盖', c.opencostCurrency || '自动'],
+      ]
+      detail = config.kubecostEnvError || (cost?.reason ? costIntegrationUnavailableMessage(cost.reason) ?? undefined : undefined)
+      break
+    case 'advanced':
+      rows = [
+        ['MCP', c.mcp ? (c.mcpReadOnly ? '只读' : '已启用') : '已禁用'],
+        ['时间线存储', c.timelineStorage || '内存'],
+        ['事件历史上限', c.historyLimit ?? '—'],
+      ]
+      break
+  }
+  return (
+    <div className="space-y-3">
+      <dl className="divide-y divide-theme-border-subtle rounded-lg border border-theme-border px-3">
+        {rows.map(([label, value]) => (
+          <div key={label} className="grid grid-cols-[140px_minmax(0,1fr)] gap-3 py-3 text-sm">
+            <dt className="text-theme-text-tertiary">{label}</dt>
+            <dd className="min-w-0 break-words text-theme-text-primary">{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {detail && <p className="text-sm text-theme-text-secondary break-words">{detail}</p>}
+    </div>
+  )
+}
+
+function LockWall() {
+  return (
+    <div className="rounded-md border border-theme-border bg-theme-elevated/50 p-4 flex items-start gap-3">
+      <Lock className="w-4 h-4 mt-0.5 shrink-0 text-theme-text-tertiary" />
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-theme-text-primary">需要所有者权限</p>
+        <p className="mt-0.5 text-xs text-theme-text-tertiary">
+          这些设置（kubeconfig、服务器端口、时间线和集成）会影响此 KubeAtlas 实例的所有用户，因此仅所有者可以更改。如需调整，请联系所有者。
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// -- Overview (landing) -------------------------------------------------------
+
+type OverviewTone = 'ok' | 'warn' | 'off' | 'unknown'
+
+interface OverviewRow {
+  id: SettingsSectionId
+  icon: LucideIcon
+  label: string
+  tone: OverviewTone
+  value: string
+  detail?: string
+  copyable?: boolean
+}
+
+// OverviewPanel is the Settings landing: a status-at-a-glance of what KubeAtlas is
+// connected to right now. Each row navigates to the section that manages it.
+// The Argo status query is gated on `active` (it triggers a background reconnect
+// probe, so we don't want it firing when Settings opens on another section);
+// cluster and Prometheus status are shared app-wide caches, so they're read
+// unconditionally.
+function OverviewPanel({ active, onNavigate }: { active: boolean; onNavigate: (s: SettingsSectionId) => void }) {
+  const { data: cluster } = useClusterInfo()
+  const { data: prom } = usePrometheusStatus()
+  const { data: cost } = useOpenCostSummary()
+  const { data: argo } = useArgoStatus(active)
+  const capabilities = useCapabilitiesContext()
+  const diag = useDiagnose()
+  const [copied, setCopied] = useState(false)
+
+  const aiAvailable = diag.available && diag.agents.length > 0
+  const agentLabel =
+    diag.agents.find((a) => a.name === diag.selectedAgent)?.label ?? diag.agents[0]?.label
+  const mcpOn = capabilities.mcpEnabled
+  const mcpUrl = mcpEndpointUrl(capabilities.mcpReadOnly)
+  const costMissing = cost?.reason === 'no_prometheus' || cost?.reason === 'no_cost_source' || cost?.reason === 'no_metrics'
+  const costUnavailableDetail = cost?.reason === 'no_prometheus'
+    ? '请在“指标”中连接 OpenCost 指标。'
+    : cost?.reason === 'no_metrics'
+      ? '当前成本来源没有返回分配数据。'
+      : cost?.reason === 'access_denied'
+        ? '你当前的权限不允许读取成本数据。'
+        : cost?.reason
+          ? costIntegrationUnavailableMessage(cost.reason) ?? '当前成本来源无法提供数据。'
+          : undefined
+
+  const rows: OverviewRow[] = [
+    {
+      id: 'connection', icon: Boxes, label: '集群',
+      tone: cluster ? 'ok' : 'unknown',
+      value: cluster?.context ?? '正在连接…',
+      detail: cluster ? `Kubernetes ${cluster.kubernetesVersion} · ${cluster.nodeCount} 个节点` : undefined,
+    },
+    {
+      id: 'prometheus', icon: Activity, label: '指标',
+      tone: prom?.connected ? 'ok' : prom?.discovering ? 'unknown' : prom?.error ? 'warn' : 'off',
+      value: prom?.connected ? '已连接' : prom?.discovering ? '正在发现…' : '未连接',
+      detail: prom?.connected ? prom.address : prom?.discovering ? undefined : prom?.error ? '打开“指标”查看连接详情。' : undefined,
+    },
+    {
+      id: costConfigurationAction(cost?.reason).section, icon: Coins, label: '成本',
+      tone: cost?.available ? 'ok' : cost ? (costMissing ? 'off' : 'warn') : 'unknown',
+      value: cost?.available
+        ? costSourceLabel(cost.source)
+        : cost
+          ? costMissing ? '无成本数据' : '不可用'
+          : '检查中…',
+      detail: cost?.available
+        ? costFreshnessLabel(cost.source, cost.window, cost.dataThrough)
+        : costUnavailableDetail,
+    },
+    {
+      id: 'argocd', icon: GitBranch, label: 'Argo CD',
+      tone: argo?.connected ? (argo.reason ? 'warn' : 'ok') : argo?.connecting ? 'unknown' : argo?.configured || argo?.reason ? 'warn' : 'off',
+      value: argo?.connected ? (argo.anonymous ? '已连接 · 无需令牌' : '已连接') : argo?.connecting ? '正在连接…' : '未连接',
+      detail: argo?.reason ? '打开 Argo CD 查看连接详情。' : argo?.connected ? argo.address : undefined,
+    },
+    {
+      id: 'advanced', icon: Zap, label: 'MCP',
+      tone: mcpOn ? 'ok' : 'off',
+      value: mcpOn ? (capabilities.mcpReadOnly ? '只读' : '开启') : '关闭',
+      detail: mcpOn ? mcpUrl : undefined,
+      copyable: mcpOn,
+    },
+    {
+      id: 'ai', icon: Sparkles, label: 'AI 调查',
+      ...aiOverviewStatus(aiAvailable, diag.setupState, diag.cliOverride, diag.agentsCheckFailed),
+      detail: aiAvailable ? agentLabel : undefined,
+    },
+  ]
+
+  const copyMcp = () => {
+    navigator.clipboard.writeText(mcpUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="rounded-md border border-theme-border divide-y divide-theme-border-subtle overflow-hidden">
+        {rows.map((row) => {
+          const Icon = row.icon
+          return (
+            <div
+              key={row.label}
+              role="button"
+              tabIndex={0}
+              onClick={() => onNavigate(row.id)}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onNavigate(row.id) } }}
+              className="group flex items-center gap-3 px-3 py-1.5 cursor-pointer hover:bg-theme-hover transition-colors"
+            >
+              <Icon className="w-4 h-4 shrink-0 text-theme-text-tertiary" />
+              <span className="text-sm text-theme-text-primary w-32 shrink-0">{row.label}</span>
+              <OverviewStatus tone={row.tone} />
+              <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span className="truncate text-sm text-theme-text-secondary">{row.value}</span>
+                {row.detail && (
+                  <span className="break-words text-xs leading-4 text-theme-text-tertiary">{row.detail}</span>
+                )}
+              </div>
+              {row.copyable && (
+                <Tooltip content="复制 MCP URL" wrapperClassName="shrink-0">
+                  <button
+                    onClick={(e) => { e.stopPropagation(); copyMcp() }}
+                    className="p-1 text-theme-text-tertiary hover:text-theme-text-primary hover:bg-theme-elevated rounded transition-colors"
+                  >
+                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                </Tooltip>
+              )}
+              <ChevronRight className="w-4 h-4 shrink-0 text-theme-text-disabled group-hover:text-theme-text-tertiary" />
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+// aiOverviewStatus says which reason applies, for the same reason
+// AIUnavailableNotice does: "No agent CLI" is a claim about the user's machine,
+// and it is false when KUBEATLAS_AI_CLI_BIN is what's broken, when an agent is
+// reported but off, when this deployment can't run investigations at all, or
+// when the agents probe hasn't answered.
+function aiOverviewStatus(
+  aiAvailable: boolean,
+  setupState: DiagnoseSetup,
+  cliOverride: boolean,
+  checkFailed: boolean,
+): Pick<OverviewRow, 'tone' | 'value'> {
+  if (aiAvailable) return { tone: 'ok', value: '已就绪' }
+  if (cliOverride && (setupState === 'needs-install' || setupState === 'needs-restart')) {
+    return { tone: 'warn', value: '无法运行 KUBEATLAS_AI_CLI_BIN' }
+  }
+  switch (setupState) {
+    case 'unknown':
+      return checkFailed ? { tone: 'warn', value: '无法检查' } : { tone: 'unknown', value: '检查中…' }
+    case 'needs-restart':
+      return { tone: 'warn', value: '当前不可用' }
+    case 'off':
+      return { tone: 'off', value: '此部署不可用' }
+    default:
+      return { tone: 'off', value: '无 Agent CLI' }
+  }
+}
+
+function OverviewStatus({ tone }: { tone: OverviewTone }) {
+  const cls =
+    tone === 'ok' ? 'bg-green-500'
+      : tone === 'warn' ? 'bg-amber-500'
+        : tone === 'unknown' ? 'bg-theme-text-tertiary animate-pulse'
+          : 'bg-theme-text-disabled'
+  return <span className={clsx('w-2 h-2 rounded-full shrink-0', cls)} />
+}
+
+// AIUnavailableNotice is the body of the AI investigations tab when the agent,
+// model and effort controls have nothing to configure. The tab supplies the
+// heading, so this is just the explainer.
+//
+// It must say WHICH of the reasons applies. "No supported agent CLI found" is a
+// claim about the user's machine, and when a CLI was found but investigations
+// didn't start it is false.
+function AIUnavailableNotice({
+  setupState,
+  cliOverride,
+  checkingAgents,
+  agentsCheckFailed,
+  recheckAgents,
+}: {
+  setupState: DiagnoseSetup
+  cliOverride: boolean
+  checkingAgents: boolean
+  agentsCheckFailed: boolean
+  recheckAgents: () => Promise<void>
+}) {
+  // The state the tab was in when a check started. "Still…" is only true when
+  // the finished check left it there.
+  const [checkedState, setCheckedState] = useState<DiagnoseSetup | null>(null)
+  const unchanged = checkedState === setupState && !checkingAgents && !agentsCheckFailed
+  const checkAgain = (
+    <button
+      type="button"
+      disabled={checkingAgents}
+      onClick={() => void recheckAgents().then(() => setCheckedState(setupState))}
+      className="mt-3 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand rounded-md disabled:opacity-50"
+    >
+      <RotateCw className={clsx('w-3.5 h-3.5', checkingAgents && 'animate-spin')} />
+      {checkingAgents ? '检查中…' : '重新检查'}
+    </button>
+  )
+  const panel = (title: string, body?: ReactNode, action?: ReactNode) => (
+    <div className="rounded-md border border-theme-border bg-theme-elevated/50 p-3">
+      <p className="text-sm font-medium text-theme-text-primary">{title}</p>
+      {body && <p className="mt-1 text-xs text-theme-text-tertiary">{body}</p>}
+      {action}
+    </div>
+  )
+  if (setupState === 'unknown') {
+    // The agent probe hasn't answered. Saying anything about the CLI or the
+    // deployment here would be a guess.
+    return agentsCheckFailed && !checkingAgents
+      ? panel("无法检查 Agent CLI", '请重试。', checkAgain)
+      : panel('检查中…')
+  }
+  if (setupState === 'off') {
+    return panel(
+      '此部署不可用',
+      '需要在你自己的电脑上运行 KubeAtlas，开启 MCP 并关闭登录。',
+    )
+  }
+  if (cliOverride) {
+    return panel(
+      'KubeAtlas 无法运行 KUBEATLAS_AI_CLI_BIN',
+      <>
+        修正路径，或移除该变量后重启 KubeAtlas。
+        {unchanged && ' 仍然无法运行。'}
+      </>,
+      checkAgain,
+    )
+  }
+  if (setupState === 'needs-restart') {
+    return panel(
+      "AI 调查目前不可用",
+      <>
+        {agentsCheckFailed && !checkingAgents ? "检查失败。请重试。" : '请稍后重试。'}
+        {unchanged && ' 仍然不可用。'}
+      </>,
+      checkAgain,
+    )
+  }
+  return panel(
+    '未找到受支持的 Agent CLI',
+    <>
+      安装 <span className="text-theme-text-secondary">Claude Code</span>、{' '}
+      <span className="text-theme-text-secondary">Codex</span>,{' '}
+      <span className="text-theme-text-secondary">Cursor</span>（
+      <span className="font-mono">cursor-agent</span>），或{' '}
+      <span className="text-theme-text-secondary">OpenCode</span>，此标签页将显示 Agent、模型和工作强度选项。
+      {agentsCheckFailed && !checkingAgents && ' 无法检查，请重试。'}
+      {unchanged && ' 仍未找到。'}
+    </>,
+    checkAgain,
+  )
+}
+
+// -- Startup section bodies ---------------------------------------------------
+
+function ClusterSection({
+  config,
+  effectiveConfig,
+  isDesktop,
+  onChange,
+}: {
+  config: Config
+  effectiveConfig?: Config
+  isDesktop: boolean
+  onChange: <K extends keyof Config>(field: K, value: Config[K]) => void
+}) {
+  const kubeconfigDirs = effectiveConfig ? (effectiveConfig.kubeconfigDirs ?? []) : config.kubeconfigDirs
+  const hasKubeconfigDirs = (kubeconfigDirs?.length ?? 0) > 0
+
+  return (
+    <>
+      <ConfigField
+        label="主要 Kubeconfig"
+        help="优先于其他目录加载的文件路径"
+        value={config.kubeconfig ?? ''}
+        effectiveValue={effectiveConfig?.kubeconfig}
+        placeholder={hasKubeconfigDirs ? '未配置主要文件' : '~/.kube/config'}
+        onChange={(v) => onChange('kubeconfig', v || undefined)}
+      />
+      <ConfigArrayField
+        label="Kubeconfig 目录"
+        help="其他 kubeconfig 目录。未设置主要文件时，这些目录将替代 KUBECONFIG"
+        value={config.kubeconfigDirs}
+        effectiveValue={effectiveConfig?.kubeconfigDirs}
+        placeholder="/path/to/dir1, /path/to/dir2"
+        onChange={(v) => onChange('kubeconfigDirs', v)}
+      />
+      <ConfigField
+        label="默认命名空间"
+        help="仅作为启动时的默认值 — 可随时通过顶部切换器更改当前命名空间"
+        value={config.namespace ?? ''}
+        effectiveValue={effectiveConfig?.namespace}
+        placeholder="全部命名空间"
+        onChange={(v) => onChange('namespace', v || undefined)}
+      />
+      {isDesktop && (
+        <ConfigToggle
+          label="重新打开上次使用的集群"
+          description="返回上次使用的集群。关闭后，Desktop 下次启动时将使用 kubeconfig 中的当前上下文。"
+          value={config.restoreLastDesktopContext ?? true}
+          onChange={(v) => onChange('restoreLastDesktopContext', v ? undefined : false)}
+        />
+      )}
+    </>
+  )
+}
+
+function ServerSection({
+  config,
+  effectiveConfig,
+  isDesktop,
+  showBrowserLaunchControls,
+  onChange,
+}: {
+  config: Config
+  effectiveConfig?: Config
+  isDesktop: boolean
+  showBrowserLaunchControls: boolean
+  onChange: <K extends keyof Config>(field: K, value: Config[K]) => void
+}) {
+  return (
+    <>
+      <ConfigNumberField
+        label="端口"
+        help={isDesktop
+          ? '固定服务器端口（留空则随机分配）。设置后可保持 MCP 端点稳定。'
+          : '服务器端口'}
+        value={config.port}
+        effectiveValue={effectiveConfig?.port}
+        placeholder={isDesktop ? '随机' : '9280'}
+        onChange={(v) => onChange('port', v)}
+      />
+
+      {showBrowserLaunchControls && (
+        <>
+          <ConfigToggle
+            label="启动时打开浏览器"
+            description="KubeAtlas 启动时自动在浏览器中打开界面 — 关闭后将以无头模式运行，请自行打开 URL。"
+            value={!(config.noBrowser ?? false)}
+            onChange={(v) => onChange('noBrowser', !v ? true : undefined)}
+          />
+          <ConfigField
+            label="浏览器"
+            help="用于打开界面的浏览器 — 可填写 macOS 应用名称（Google Chrome、Safari）或 Linux/Windows 命令（google-chrome）。留空则使用系统默认浏览器。"
+            value={config.browser ?? ''}
+            effectiveValue={effectiveConfig?.browser}
+            placeholder="系统默认"
+            onChange={(v) => onChange('browser', v || undefined)}
+          />
+        </>
+      )}
+    </>
+  )
+}
+
+function TimelineSection({
+  config,
+  effectiveConfig,
+  onChange,
+}: {
+  config: Config
+  effectiveConfig?: Config
+  onChange: <K extends keyof Config>(field: K, value: Config[K]) => void
+}) {
+  return (
+    <>
+      <div>
+        <label className="block text-sm font-medium text-theme-text-primary mb-1">
+          存储后端
+        </label>
+        <select
+          value={config.timelineStorage ?? 'memory'}
+          onChange={(e) => onChange('timelineStorage', e.target.value === 'memory' ? undefined : e.target.value as 'sqlite')}
+          className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary focus:outline-none focus:border-skyhook-500"
+        >
+          <option value="memory">内存（默认）</option>
+          <option value="sqlite">SQLite（持久化）</option>
+        </select>
+        <EffectiveHint current={config.timelineStorage} effective={effectiveConfig?.timelineStorage} />
+      </div>
+
+      <ConfigNumberField
+        label="历史记录上限"
+        help="保留的最大事件数"
+        value={config.historyLimit}
+        effectiveValue={effectiveConfig?.historyLimit}
+        placeholder="10000"
+        onChange={(v) => onChange('historyLimit', v)}
+      />
+    </>
+  )
+}
+
+function CostSection({
+  integration,
+  currency,
+  source,
+  url,
+  clusterId,
+  apiKeySet,
+  sourceEnvManaged,
+  sourceEnvError,
+  draftDirty,
+  resetVersion,
+  managed,
+  effectiveCurrency,
+  deploymentMode,
+  settingsSaving,
+  onNavigateToResource,
+  onApplyCurrency,
+  onChangeSource,
+  onChangeUrl,
+  onChangeClusterId,
+  onCredentialDirtyChange,
+  onApplied,
+}: {
+  integration?: ReactNode
+  currency: string
+  source: 'auto' | 'prometheus' | 'kubecost'
+  url: string
+  clusterId: string
+  apiKeySet: boolean
+  sourceEnvManaged: boolean
+  sourceEnvError?: string
+  draftDirty: boolean
+  resetVersion: number
+  managed: boolean
+  effectiveCurrency: string
+  deploymentMode: 'local' | 'in-cluster' | 'cloud'
+  settingsSaving: boolean
+  onNavigateToResource?: (resource: ResourceRef) => void
+  onApplyCurrency: (value: string) => Promise<void>
+  onChangeSource: (value: 'auto' | 'prometheus' | 'kubecost') => void
+  onChangeUrl: (value: string) => void
+  onChangeClusterId: (value: string) => void
+  onCredentialDirtyChange: (dirty: boolean) => void
+  onApplied: (value: { source: 'auto' | 'prometheus' | 'kubecost'; url: string; clusterId: string; apiKeySet: boolean }) => void
+}) {
+  const [apply, setApply] = useState<CostApplyState>({ status: 'idle' })
+  const [apiKey, setApiKey] = useState('')
+  const [apiKeyTouched, setApiKeyTouched] = useState(false)
+  const [apiKeyCleared, setApiKeyCleared] = useState(false)
+  const [advancedOpen, setAdvancedOpen] = useState(false)
+  const [currencyDraft, setCurrencyDraft] = useState(currency)
+  const [currencySave, setCurrencySave] = useState<CurrencySaveState>({ status: 'idle' })
+  const apiKeyWillBeUsed = !apiKeyCleared && ((apiKeyTouched && apiKey !== '') || apiKeySet)
+  const apiKeyUsesPlainHTTP = apiKeyWillBeUsed && /^http:\/\//i.test(url.trim())
+
+  useEffect(() => {
+    setApiKey('')
+    setApiKeyTouched(false)
+    setApiKeyCleared(false)
+    setApply({ status: 'idle' })
+    setCurrencySave({ status: 'idle' })
+  }, [resetVersion])
+
+  useEffect(() => {
+    setCurrencyDraft(currency)
+  }, [currency])
+
+  useEffect(() => {
+    onCredentialDirtyChange(apiKeyTouched || apiKeyCleared)
+  }, [apiKeyCleared, apiKeyTouched, onCredentialDirtyChange])
+
+  useEffect(() => {
+    if (url.trim() || clusterId.trim()) setAdvancedOpen(true)
+  }, [clusterId, url])
+
+  const applySource = async () => {
+    setApply({ status: 'applying' })
+    let sentKey: string | undefined
+    if (apiKeyCleared) {
+      sentKey = ''
+    } else if (apiKeyTouched && apiKey !== '') {
+      sentKey = apiKey
+    }
+    try {
+      const res = await fetch(apiUrl('/integrations/cost'), {
+        method: 'PUT',
+        credentials: getCredentialsMode(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify({
+          source,
+          url: url.trim(),
+          clusterId: clusterId.trim(),
+          ...(sentKey !== undefined ? { apiKey: sentKey } : {}),
+        }),
+      })
+      const data: unknown = await res.json().catch(() => null)
+      if (!res.ok) {
+        const error =
+          data !== null &&
+          typeof data === 'object' &&
+          'error' in data &&
+          typeof data.error === 'string'
+            ? data.error
+            : res.statusText
+        setApply({ status: 'failed', error })
+        return
+      }
+      if (
+        data === null ||
+        typeof data !== 'object' ||
+        !('source' in data) ||
+        (data.source !== 'prometheus' && data.source !== 'kubecost') ||
+        !('apiKeySet' in data) ||
+        typeof data.apiKeySet !== 'boolean' ||
+        ('address' in data && data.address !== undefined && typeof data.address !== 'string') ||
+        ('service' in data &&
+          data.service !== undefined &&
+          (data.service === null ||
+            typeof data.service !== 'object' ||
+            !('kind' in data.service) ||
+            data.service.kind !== 'Service' ||
+            !('namespace' in data.service) ||
+            typeof data.service.namespace !== 'string' ||
+            !('name' in data.service) ||
+            typeof data.service.name !== 'string' ||
+            !('port' in data.service) ||
+            typeof data.service.port !== 'number' ||
+            !Number.isInteger(data.service.port) ||
+            data.service.port <= 0))
+      ) {
+        throw new Error('KubeAtlas returned an invalid cost source response')
+      }
+      const applied = data as CostSourceApplyResponse
+      setApiKey('')
+      setApiKeyTouched(false)
+      setApiKeyCleared(false)
+      onApplied({ source, url: url.trim(), clusterId: clusterId.trim(), apiKeySet: applied.apiKeySet })
+      setApply({ status: 'connected', source: applied.source, address: applied.address, service: applied.service })
+    } catch (err) {
+      setApply({ status: 'failed', error: String(err) })
+    }
+  }
+
+  const saveCurrency = async (value: string) => {
+    if (currencySave.status === 'saving') return
+    setCurrencyDraft(value)
+    setCurrencySave({ status: 'saving' })
+    try {
+      await onApplyCurrency(value)
+      setCurrencySave({ status: 'saved' })
+    } catch (err) {
+      setCurrencyDraft(currency)
+      setCurrencySave({
+        status: 'failed',
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      {integration ? (
+        <div className="space-y-4">
+        <SubHeading>此集群</SubHeading>
+          {integration}
+        </div>
+      ) : <>{sourceEnvManaged && (
+        <div id="cost-source-managed" className={clsx(
+          'rounded-md border p-3',
+          sourceEnvError
+            ? 'border-red-500/30 bg-red-500/[0.07]'
+            : 'border-skyhook-500/30 bg-skyhook-500/[0.07]',
+        )}>
+          <p className={clsx(
+            'flex items-center gap-1.5 text-sm font-medium',
+            sourceEnvError ? 'text-red-600 dark:text-red-400/90' : 'text-theme-text-primary',
+          )}>
+            {sourceEnvError
+              ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+              : <Terminal className="h-3.5 w-3.5 shrink-0 text-skyhook-500" />}
+            {sourceEnvError ? '部署成本配置无效' : '由部署配置'}
+          </p>
+          <p className="mt-1 text-xs text-theme-text-tertiary">
+            {sourceEnvError ?? '如需更改数据源，请编辑 KUBEATLAS_COST_SOURCE 和 KUBEATLAS_KUBECOST_* 环境变量或 Helm values，然后重启 KubeAtlas。'}
+          </p>
+        </div>
+      )}
+
+      <div className="space-y-4 rounded-lg border border-theme-border bg-theme-base/40 p-4">
+        <p className="text-sm font-semibold text-theme-text-primary">成本数据源</p>
+        <div>
+          <label htmlFor="cost-source" className="mb-1 block text-sm font-medium text-theme-text-primary">数据源</label>
+          <p id="cost-source-help" className="mb-1 text-xs text-theme-text-tertiary">
+            自动模式优先使用现有 OpenCost 指标，其次使用 Kubecost。除非需要强制指定来源，否则请保持此选项。
+          </p>
+          <SelectMenu
+            id="cost-source"
+            value={source}
+            options={COST_SOURCE_OPTIONS}
+            onChange={(value) => { onChangeSource(value as typeof source); setApply({ status: 'idle' }) }}
+            disabled={sourceEnvManaged}
+            className="w-full"
+            ariaLabel="成本数据源"
+            ariaDescribedBy={sourceEnvManaged ? 'cost-source-help cost-source-managed' : 'cost-source-help'}
+          />
+        </div>
+
+      {source !== 'prometheus' && (
+        <div className="space-y-3 border-t border-theme-border-subtle pt-4">
+          <p className="text-xs font-medium text-theme-text-secondary">
+            {source === 'auto' ? 'Kubecost 备用来源' : 'Kubecost 连接'}
+          </p>
+          <div>
+            <button
+              type="button"
+              onClick={() => setAdvancedOpen((open) => !open)}
+              className="flex w-full items-center gap-1.5 rounded-md py-1 text-left text-xs font-medium text-theme-text-secondary hover:text-theme-text-primary"
+              aria-expanded={advancedOpen}
+              aria-controls="cost-advanced-connection"
+            >
+              <CollapseChevron open={advancedOpen} className="h-3.5 w-3.5" />
+              高级连接设置
+            </button>
+            <Collapse open={advancedOpen}>
+              <div id="cost-advanced-connection" className="pt-3">
+                <div className="space-y-3 rounded-md border border-theme-border-subtle bg-theme-base/60 p-3">
+                  <div>
+                    <label htmlFor="cost-kubecost-url" className="mb-1 block text-sm font-medium text-theme-text-primary">Kubecost 聚合器 URL</label>
+                    <p id="cost-kubecost-url-help" className="mb-1 text-xs text-theme-text-tertiary">
+                      如果 Kubecost 运行在此集群中，请留空。仅代理或联合部署时填写中心聚合器 URL。
+                    </p>
+                    <Input
+                      id="cost-kubecost-url"
+                      aria-describedby={sourceEnvManaged ? 'cost-kubecost-url-help cost-source-managed' : 'cost-kubecost-url-help'}
+                      value={url}
+                      onChange={(event) => { onChangeUrl(event.target.value); setApply({ status: 'idle' }) }}
+                      disabled={sourceEnvManaged}
+                      placeholder="自动发现，或填写 https://kubecost.example.com"
+                      className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="cost-kubecost-cluster-id" className="mb-1 block text-sm font-medium text-theme-text-primary">Kubecost 集群 ID</label>
+                    <p id="cost-kubecost-cluster-id-help" className="mb-1 text-xs text-theme-text-tertiary">
+                      通常会自动检测。仅在检测失败或 Kubecost 服务器包含多个集群的数据时设置。请使用 FinOps Agent 或聚合器中配置的 <code>CLUSTER_ID</code>{' '}
+                      值。
+                    </p>
+                    <Input
+                      id="cost-kubecost-cluster-id"
+                      aria-describedby={sourceEnvManaged ? 'cost-kubecost-cluster-id-help cost-source-managed' : 'cost-kubecost-cluster-id-help'}
+                      value={clusterId}
+                      onChange={(event) => { onChangeClusterId(event.target.value); setApply({ status: 'idle' }) }}
+                      disabled={sourceEnvManaged}
+                      placeholder="自动检测"
+                      className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </Collapse>
+          </div>
+          <div>
+                    <label htmlFor="cost-kubecost-api-key" className="mb-1 block text-sm font-medium text-theme-text-primary">API 密钥（可选）</label>
+            <p id="cost-kubecost-api-key-help" className="mb-1 text-xs text-theme-text-tertiary">
+              仅在 Kubecost 要求身份验证时需要。{' '}
+              {url.trim() === '' && (
+                <>当 SAML/OIDC 保护端口 9004 时，自动发现可使用 Aggregator 的 <code>tcp-api-rbac:9008</code> 端点；设置密钥后将停用此回退方式。 </>
+              )}
+              {deploymentMode === 'local' ? (
+                <>KubeAtlas 会将其以未加密形式保存在此设备仅所有者可访问的配置文件（<code>~/.kubeatlas/config.json</code>）中，且不会通过 API 返回。</>
+              ) : (
+                <>对于此集群内部署，请创建 Kubernetes Secret 并设置 Helm 值 <code>cost.kubecost.existingSecret</code>。在此输入的密钥将以未加密形式保存在此 Pod 的临时配置文件中，Pod 重启时可能丢失。KubeAtlas 不会通过 API 返回该密钥。</>
+              )}
+              {apiKeySet && !apiKeyCleared ? ' 已配置密钥。' : ''}
+            </p>
+            <div className="flex items-center gap-2">
+              <Input
+                id="cost-kubecost-api-key"
+                aria-describedby={sourceEnvManaged ? 'cost-kubecost-api-key-help cost-source-managed' : 'cost-kubecost-api-key-help'}
+                type="password"
+                value={apiKey}
+                onChange={(event) => { setApiKey(event.target.value); setApiKeyTouched(true); setApiKeyCleared(false); setApply({ status: 'idle' }) }}
+                autoComplete="off"
+                spellCheck={false}
+                disabled={sourceEnvManaged}
+                placeholder={apiKeySet && !apiKeyCleared ? 'Saved value' : 'Optional API key'}
+                className="min-w-0 flex-1 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+              />
+              {apiKeySet && !apiKeyCleared && !sourceEnvManaged && (
+                <button
+                  type="button"
+                  aria-label="移除已保存的 Kubecost API 密钥"
+                  onClick={() => { setApiKey(''); setApiKeyTouched(false); setApiKeyCleared(true); setApply({ status: 'idle' }) }}
+                  className="px-2 py-1.5 text-xs text-theme-text-tertiary hover:text-theme-text-primary"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            {apiKeyUsesPlainHTTP && (
+              <p className="mt-1 flex items-center gap-1 text-xs text-warning-text">
+                <AlertTriangle className="h-3 w-3 shrink-0" /> The API key will be sent over unencrypted HTTP. Use HTTPS unless this is a trusted private network.
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {!sourceEnvManaged && <div>
+        <button
+          id="cost-apply-source"
+          type="button"
+          onClick={applySource}
+          disabled={apply.status === 'applying'}
+          aria-busy={apply.status === 'applying'}
+          className="flex min-w-40 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium btn-brand disabled:opacity-50"
+        >
+          {apply.status === 'applying' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plug className="h-3.5 w-3.5" />}
+          {apply.status === 'applying' ? 'Applying…' : costSourceApplyLabel(source)}
+        </button>
+        <div className="mt-1 min-h-7 text-xs">
+          {apply.status === 'applying' && (
+            <p key="applying" role="status" aria-live="polite" className="animate-status-enter text-theme-text-tertiary">
+              {source === 'prometheus' ? 'Applying source…' : 'Testing connection and applying source…'}
+            </p>
+          )}
+          {apply.status === 'connected' && (
+            <div key="connected" className="animate-status-enter flex flex-wrap items-center gap-x-1.5 gap-y-1">
+              <p role="status" aria-live="polite" className="flex items-center gap-1 text-green-600 dark:text-green-400/80">
+                <Check className="h-3 w-3 shrink-0" /> Applied · active source: {costSourceLabel(apply.source)}
+                <span className="sr-only">
+                  {apply.service
+                    ? ` · Service ${apply.service.namespace}/${apply.service.name}, port ${apply.service.port}`
+                    : apply.address
+                      ? ` · ${apply.address}`
+                      : ''}
+                </span>
+              </p>
+              {apply.service ? (
+                <>
+                  <ResourceRefBadge resourceRef={apply.service} onClick={onNavigateToResource} />
+                  <span className="text-theme-text-tertiary">in {apply.service.namespace}</span>
+              <span className="text-theme-text-tertiary">· 端口 <span className="font-mono">{apply.service.port}</span></span>
+                </>
+              ) : apply.address ? (
+                <span className="break-all font-mono text-theme-text-tertiary">{apply.address}</span>
+              ) : null}
+            </div>
+          )}
+          {apply.status === 'failed' && (
+            <p key="failed" role="alert" className="animate-status-enter text-red-600 dark:text-red-400/80">{apply.error}</p>
+          )}
+          {draftDirty && apply.status === 'idle' && (
+            <p key="dirty" role="status" aria-live="polite" className="animate-status-enter flex items-center gap-1 text-warning-text">
+              <AlertTriangle className="h-3 w-3 shrink-0" /> 来源更改尚未应用
+            </p>
+          )}
+        </div>
+      </div>}
+      </div>
+
+      </>}
+      <div className={integration ? 'space-y-4 border-t border-theme-border-subtle pt-4' : 'rounded-lg border border-theme-border bg-theme-base/40 p-4'}>
+        {integration && <SubHeading>所有集群</SubHeading>}
+        <div>
+          <label htmlFor="cost-currency" className="block text-sm font-semibold text-theme-text-primary">
+            显示货币
+          </label>
+          {integration
+            ? <p className="mt-1 text-xs text-theme-text-secondary">自动保存。</p>
+            : deploymentMode === 'local' && <p className="mt-1 text-xs text-theme-text-secondary">显示偏好 · 适用于所有本地集群。自动保存。</p>}
+          <p id="cost-currency-help" className="mb-1 mt-0.5 text-xs text-theme-text-tertiary">
+            “自动”使用当前成本来源报告的货币；不可用时使用 USD。覆盖设置只会更改金额显示标签，KubeAtlas 不会进行货币换算。
+          </p>
+          <SelectMenu
+            id="cost-currency"
+            value={currencyDraft}
+            options={currencyOptionsForValue(currencyDraft)}
+            onChange={(value) => { void saveCurrency(value) }}
+            ariaLabel="显示货币"
+            ariaDescribedBy="cost-currency-help"
+            searchPlaceholder="按名称或代码搜索货币"
+            disabled={settingsSaving || currencySave.status === 'saving'}
+            className="w-full"
+          />
+          {currencySave.status === 'saving' && (
+            <p role="status" aria-live="polite" className="mt-1 flex items-center gap-1 text-xs text-theme-text-tertiary">
+              <Loader2 className="h-3 w-3 animate-spin" /> 正在保存…
+            </p>
+          )}
+          {currencySave.status === 'saved' && (
+            <p role="status" aria-live="polite" className="mt-1 flex items-center gap-1 text-xs text-green-600 dark:text-green-400/80">
+              <Check className="h-3 w-3" /> {managed ? '已保存，移除 CLI 或 Helm 覆盖设置后生效' : '已保存'}
+            </p>
+          )}
+          {currencySave.status === 'failed' && (
+            <p role="alert" className="mt-1 text-xs text-red-600 dark:text-red-400/80">
+              Could not save: {currencySave.error}
+            </p>
+          )}
+          {managed && (
+            <p className="mt-2 text-xs text-amber-600 dark:text-amber-400/80">
+              CLI 或 Helm 当前设置为 {effectiveCurrency || '自动'}；移除该覆盖设置前，它会持续生效。
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// -- MCP Section --------------------------------------------------------------
+
+function MCPSection({
+  mcpEnabled,
+  readOnly,
+  onReadOnlyChange,
+  onToggle,
+  isDesktop,
+  portPinned,
+  onPinPort,
+}: {
+  mcpEnabled: boolean
+  readOnly: boolean
+  onReadOnlyChange: (value: boolean) => void
+  onToggle: (value: boolean) => void
+  isDesktop: boolean
+  portPinned: boolean
+  onPinPort: (port: number) => void
+}) {
+  const [copied, setCopied] = useState(false)
+
+  const currentPort = Number(window.location.port) || 80
+  const capabilities = useCapabilitiesContext()
+  const mcpUrl = mcpEndpointUrl(capabilities.mcpReadOnly)
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(mcpUrl)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  const handlePinPort = () => {
+    onPinPort(currentPort)
+  }
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-theme-text-tertiary">
+        允许 AI 工具通过 KubeAtlas 使用 Model Context Protocol 查询此集群。
+        完整模式还允许更改。设置会在重启 KubeAtlas 后生效。
+      </p>
+      <ConfigToggle
+        label="MCP 服务"
+        value={mcpEnabled}
+        onChange={onToggle}
+      />
+
+      {mcpEnabled && <ConfigToggle label="只读 MCP" value={readOnly} onChange={onReadOnlyChange} />}
+      {mcpEnabled && capabilities.mcpEnabled && (
+        <div className="space-y-2 pl-0.5">
+          <div>
+            <label className="block text-xs text-theme-text-secondary mb-1">运行中的 MCP 端点</label>
+            <div className="flex items-center gap-2">
+              <code className="flex-1 px-2.5 py-1.5 text-xs font-mono bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary truncate">
+                {mcpUrl}
+              </code>
+              <Tooltip content="复制 MCP URL" wrapperClassName="shrink-0">
+              <button
+                onClick={handleCopy}
+                className="p-1.5 text-theme-text-tertiary hover:text-theme-text-primary hover:bg-theme-elevated rounded-md transition-colors"
+              >
+                {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              </button>
+              </Tooltip>
+            </div>
+          </div>
+
+          {isDesktop && !portPinned && (
+            <div className="flex items-start gap-2 px-2.5 py-2 text-xs bg-amber-500/10 border border-amber-500/20 rounded-md">
+              <span className="text-amber-700 dark:text-amber-300 flex-1">
+                端口每次重启都会变化。固定端口可保持 MCP 端点稳定。
+              </span>
+              <button
+                onClick={handlePinPort}
+                className="shrink-0 flex items-center gap-1 px-2 py-0.5 text-xs font-medium text-amber-800 dark:text-amber-200 hover:text-amber-900 dark:hover:text-white bg-amber-500/20 hover:bg-amber-500/30 rounded transition-colors"
+              >
+                <Pin className="w-3 h-3" />
+                固定端口 {currentPort}
+              </button>
+            </div>
+          )}
+
+          {isDesktop && portPinned && (
+            <p className="text-xs text-green-600 dark:text-green-400/80 px-0.5">
+              端口已固定。MCP 端点将在重启后保持稳定。
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// -- Prometheus (live-appliable) ----------------------------------------------
+
+// The Prometheus URL can be re-pointed without a restart — the metrics path reads
+// it from a mutable global. "Apply now" hits PUT /integrations/prometheus, which
+// persists the URL AND re-points the running client, then probes it so we can
+// confirm reachability inline. onApplied notifies the parent so the footer's
+// last-committed snapshot stays in sync (see saveConfig). No EffectiveHint here —
+// a restart-diff hint would contradict the whole point of applying live.
+
+type CostApplyState =
+  | { status: 'idle' }
+  | { status: 'applying' }
+  | { status: 'connected'; source: 'prometheus' | 'kubecost'; address?: string; service?: CostSourceApplyResponse['service'] }
+  | { status: 'failed'; error: string }
+
+type CurrencySaveState =
+  | { status: 'idle' }
+  | { status: 'saving' }
+  | { status: 'saved' }
+  | { status: 'failed'; error: string }
+
+
+// -- Argo CD (live-appliable) -------------------------------------------------
+
+// The Argo CD integration powers the full Git-rendered desired-vs-live diff on
+// GitOps Application pages. Like Prometheus, it applies to the running server
+// without a restart: both actions PUT /integrations/argocd, which persists the
+// settings AND re-points the running client, then verifies reachability (the
+// server returns 400 distinguishing unreachable from an invalid token). onApplied
+// notifies the parent so the footer's last-committed snapshot stays in sync. The
+// token is write-only — never returned, and omitted from the PUT unless the user
+// types a new value or clicks Clear.
+type ArgoState =
+  | { status: 'idle' }
+  | { status: 'connecting' }
+  | { status: 'connected' }
+  | { status: 'error'; error: string }
+
+function ArgoCDConfigField({
+  url,
+  insecureTls,
+  tokenSet,
+  envManaged,
+  envError,
+  cliSession,
+  statusReason,
+  connecting,
+  anonymous,
+  connectedAddress,
+  active,
+  onChangeUrl,
+  onChangeInsecureTls,
+  onApplied,
+}: {
+  url: string
+  insecureTls: boolean
+  tokenSet: boolean
+  envManaged?: boolean
+  envError?: string
+  cliSession?: { server: string; user: string; insecure?: boolean }
+  statusReason?: string
+  connecting?: boolean
+  anonymous?: boolean
+  connectedAddress?: string
+  active?: boolean
+  onChangeUrl: (value: string) => void
+  onChangeInsecureTls: (value: boolean) => void
+  onApplied?: (v: { url: string; insecureTls: boolean; tokenSet: boolean }) => void
+}) {
+  if (envManaged) {
+    return <ArgoCDEnvManagedField url={url} insecureTls={insecureTls} envError={envError} connectedAddress={connectedAddress} statusReason={statusReason} connecting={connecting} />
+  }
+  return (
+    <ArgoCDEditableField
+      url={url}
+      insecureTls={insecureTls}
+      tokenSet={tokenSet}
+      cliSession={cliSession}
+      statusReason={statusReason}
+      connecting={connecting}
+      anonymous={anonymous}
+      connectedAddress={connectedAddress}
+      active={active}
+      onChangeUrl={onChangeUrl}
+      onChangeInsecureTls={onChangeInsecureTls}
+      onApplied={onApplied}
+    />
+  )
+}
+
+// Read-only card for the environment-managed integration: the token/URL/TLS come
+// from the deployment (KUBEATLAS_ARGOCD_TOKEN / _TOKEN_FILE / _URL), so editing here
+// is disabled — the server refuses the PUT. Shows the effective endpoint and points
+// the operator at the deployment for changes.
+function ArgoCDEnvManagedField({
+  url,
+  insecureTls,
+  envError,
+  connectedAddress,
+  statusReason,
+  connecting,
+}: {
+  url: string
+  insecureTls: boolean
+  envError?: string
+  // Live connection, from the status endpoint: the address when the
+  // token-backed session is up, else why it isn't. The card is read-only,
+  // so this is the one thing on it that can change after deploy.
+  connectedAddress?: string
+  statusReason?: string
+  connecting?: boolean
+}) {
+  if (envError) {
+    return (
+      <div>
+        <p className="text-xs text-theme-text-tertiary mb-3">
+          为 GitOps 应用页面提供完整的 Git 声明与集群实际运行状态之间的差异视图。
+        </p>
+        <div className="rounded-md border border-red-500/30 bg-red-500/[0.07] p-3">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-red-600 dark:text-red-400/90">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            环境变量中的 Argo CD 配置无效
+          </p>
+          <p className="mt-1 text-xs text-theme-text-secondary break-words">{envError}</p>
+          <p className="mt-2 text-xs text-theme-text-tertiary">
+            部署设置了 <code className="inline-code">KUBEATLAS_ARGOCD_TOKEN</code>（或{' '}
+            <code className="inline-code">KUBEATLAS_ARGOCD_TOKEN_FILE</code>），但无法使用，因此深度差异视图已停用。请修复部署的环境变量或 Secret 并重启；详情请查看 KubeAtlas Pod 日志。
+          </p>
+        </div>
+      </div>
+    )
+  }
+  return (
+    <div>
+      <p className="text-xs text-theme-text-tertiary mb-3">
+        为 GitOps 应用页面提供完整的 Git 声明与集群实际运行状态之间的差异视图。
+      </p>
+      <div className="rounded-md border border-skyhook-500/30 bg-skyhook-500/[0.07] p-3">
+        <p className="flex items-center gap-1.5 text-sm font-medium text-theme-text-primary">
+          <Terminal className="w-3.5 h-3.5 shrink-0 text-skyhook-500" />
+          由环境变量配置
+        </p>
+        <p className="mt-1 text-xs text-theme-text-tertiary">
+          部署通过{' '}
+          <code className="inline-code">KUBEATLAS_ARGOCD_TOKEN</code>（或{' '}
+          <code className="inline-code">KUBEATLAS_ARGOCD_TOKEN_FILE</code>）提供令牌，因此此处为只读。若要更改，请编辑部署的环境变量或 Secret 并重启。
+        </p>
+        <dl className="mt-3 space-y-1 text-xs">
+          <div className="flex gap-2">
+            <dt className="w-24 shrink-0 text-theme-text-tertiary">服务器</dt>
+            <dd className="min-w-0 truncate text-theme-text-secondary">
+              {url || '在此集群中自动发现'}
+            </dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-24 shrink-0 text-theme-text-tertiary">令牌</dt>
+            <dd className="text-theme-text-secondary">通过环境变量提供</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-24 shrink-0 text-theme-text-tertiary">状态</dt>
+            <dd className="min-w-0 truncate text-theme-text-secondary">
+              {connectedAddress ? (
+                <>
+                  <span className="inline-flex items-center gap-1">
+                    <Check className="w-3 h-3 shrink-0 text-green-600 dark:text-green-400/80" />
+                    已连接至 {connectedAddress}
+                  </span>
+                  {statusReason && <span className="block whitespace-normal text-warning-text">{statusReason}</span>}
+                </>
+              ) : connecting ? (
+                '正在连接…'
+              ) : statusReason ? (
+                <span className="text-warning-text">未连接 — {statusReason}</span>
+              ) : (
+                '未连接'
+              )}
+            </dd>
+          </div>
+          {insecureTls && (
+            <div className="flex gap-2">
+              <dt className="w-24 shrink-0 text-theme-text-tertiary">TLS</dt>
+              <dd className="text-amber-600 dark:text-amber-400/80">已跳过验证</dd>
+            </div>
+          )}
+        </dl>
+      </div>
+      <p className="mt-2 text-xs text-theme-text-tertiary">
+        如果差异视图未加载，请确认令牌对该集群的 Argo CD 有效，并查看 KubeAtlas Pod 日志。
+      </p>
+    </div>
+  )
+}
+
+function ArgoCDEditableField({
+  url,
+  insecureTls,
+  tokenSet,
+  cliSession,
+  statusReason,
+  connecting: serverConnecting,
+  anonymous,
+  connectedAddress,
+  active,
+  onChangeUrl,
+  onChangeInsecureTls,
+  onApplied,
+}: {
+  url: string
+  insecureTls: boolean
+  tokenSet: boolean
+  cliSession?: { server: string; user: string; insecure?: boolean }
+  statusReason?: string
+  connecting?: boolean
+  anonymous?: boolean
+  connectedAddress?: string
+  active?: boolean
+  onChangeUrl: (value: string) => void
+  onChangeInsecureTls: (value: boolean) => void
+  onApplied?: (v: { url: string; insecureTls: boolean; tokenSet: boolean }) => void
+}) {
+  const [state, setState] = useState<ArgoState>({ status: 'idle' })
+  // Token editor three-way state: `touched` = user typed a value (replaces the
+  // stored token); `cleared` = user hit Clear (send "" to wipe it); neither =
+  // leave the stored token untouched (omit from the PUT).
+  const [token, setToken] = useState('')
+  const [tokenTouched, setTokenTouched] = useState(false)
+  const [tokenCleared, setTokenCleared] = useState(false)
+  // Optimistic "is a token stored" after a successful apply (config isn't
+  // refetched), so the placeholder reflects the new reality without a reopen.
+  const [tokenSetLocal, setTokenSetLocal] = useState<boolean | null>(null)
+  const effectiveTokenSet = tokenSetLocal ?? tokenSet
+
+  const clearStatus = () => setState((s) => (s.status === 'connecting' ? s : { status: 'idle' }))
+
+  // Drop a stale "Connected"/error line when the URL changes out from under us
+  // (footer Reset, external edit) so it doesn't describe an emptied field.
+  useEffect(() => {
+    setState((s) => (s.status === 'idle' || s.status === 'connecting' ? s : { status: 'idle' }))
+  }, [url])
+
+  const put = async (body: Record<string, unknown>, resultingTokenSet?: boolean) => {
+    setState({ status: 'connecting' })
+    try {
+      const res = await fetch(apiUrl('/integrations/argocd'), {
+        method: 'PUT',
+        credentials: getCredentialsMode(),
+        headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json().catch(() => null)
+      if (!res.ok) {
+        setState({ status: 'error', error: data?.error || res.statusText })
+        return
+      }
+      // Reset the token editor so the field reflects the now-stored token.
+      setToken('')
+      setTokenTouched(false)
+      setTokenCleared(false)
+      if (resultingTokenSet !== undefined) setTokenSetLocal(resultingTokenSet)
+      onApplied?.({
+        url: (body.argoCdUrl as string) ?? '',
+        insecureTls: (body.argoCdInsecureTls as boolean) ?? false,
+        tokenSet: resultingTokenSet ?? effectiveTokenSet,
+      })
+      setState({ status: 'connected' })
+    } catch (err) {
+      setState({ status: 'error', error: String(err) })
+    }
+  }
+
+  const handleConnect = () => {
+    let argoCdToken: string | undefined
+    let resultingTokenSet = effectiveTokenSet
+    if (tokenCleared) {
+      argoCdToken = ''
+      resultingTokenSet = false
+    } else if (tokenTouched && token !== '') {
+      argoCdToken = token
+      resultingTokenSet = true
+    }
+    put(
+      {
+        argoCdUrl: url.trim(),
+        argoCdInsecureTls: insecureTls,
+        ...(argoCdToken !== undefined ? { argoCdToken } : {}),
+      },
+      resultingTokenSet,
+    )
+  }
+
+  const handleUseCliToken = () => {
+    // Only reachable from the "Use this session" button, which renders solely
+    // when a session was detected. The detected session is for its own server
+    // (which may differ from the URL field) — connect to that server with its TLS
+    // mode (Argo CD is https; the insecure flag covers self-signed) and reflect
+    // it in the form. An explicit URL is required: the server rejects useCliToken
+    // with an empty URL rather than routing the CLI token to a discovered server.
+    if (!cliSession) return
+    const sessionUrl = /^https?:\/\//i.test(cliSession.server)
+      ? cliSession.server
+      : `https://${cliSession.server}`
+    const insecure = cliSession.insecure ?? false
+    onChangeUrl(sessionUrl)
+    onChangeInsecureTls(insecure)
+    put({ argoCdUrl: sessionUrl, argoCdInsecureTls: insecure, useCliToken: true }, true)
+  }
+
+  const showConfiguredPlaceholder = effectiveTokenSet && !tokenTouched && !tokenCleared
+  const connecting = state.status === 'connecting'
+  // Opening this section with nothing set up (typically from the GitOps
+  // page's "connect KubeAtlas to your Argo CD server") starts the user at the
+  // token — unless a CLI session offers a one-click connect, or reads
+  // already work anonymously.
+  const tokenInputRef = useRef<HTMLInputElement>(null)
+  useEffect(() => {
+    if (active && !effectiveTokenSet && !cliSession && !anonymous) tokenInputRef.current?.focus()
+  }, [active, effectiveTokenSet, cliSession, anonymous])
+
+  return (
+    <div>
+      <p className="text-xs text-theme-text-tertiary mb-3">
+        Connect your Argo CD server for the full Git-rendered desired-vs-live diff on GitOps
+        Application pages — what Git declares vs what's actually running — and, on Argo CD 3, for
+        Argo's own health verdict on each resource. Without it, KubeAtlas falls back to a lighter
+        annotation-based drift that can miss fields, and to its own read of each resource.
+      </p>
+
+      {state.status !== 'connected' && (anonymous || connectedAddress) && (
+        <p className="mb-3 flex items-center gap-1.5 text-xs text-theme-text-secondary">
+          <Check className="w-3.5 h-3.5 shrink-0 text-green-600 dark:text-green-400/80" />
+          {anonymous ? (
+            <>
+              Your Argo CD server lets KubeAtlas read without a token, so it's already connected. Add a token only
+              if anonymous access gets restricted, or a URL to point KubeAtlas at a specific server.
+            </>
+          ) : (
+            <>已连接到 Argo CD：{connectedAddress}。</>
+          )}
+        </p>
+      )}
+
+      {serverConnecting && state.status === 'idle' && !anonymous && !connectedAddress && (
+        <p className="mb-3 text-xs text-theme-text-secondary">正在连接 Argo CD…</p>
+      )}
+
+      {statusReason && state.status !== 'connected' && (
+        <div className="mb-3 rounded-md border border-theme-border bg-theme-elevated p-3">
+          <p className="flex items-center gap-1.5 text-sm font-medium text-warning-text">
+            <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+            Argo CD 连接需要处理
+          </p>
+          <p className="mt-1 text-xs text-theme-text-secondary">{statusReason}</p>
+        </div>
+      )}
+
+      <label className="block text-sm font-medium text-theme-text-primary mb-1">服务器 URL</label>
+      <p className="text-xs text-theme-text-tertiary mb-1">
+        若要在此集群自动发现 argocd-server，请留空；也可以填写其 API URL。
+      </p>
+      <Input
+        value={url}
+        onChange={(e) => { onChangeUrl(e.target.value); clearStatus() }}
+        placeholder="自动发现 argocd-server"
+        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+      />
+
+      {cliSession && (
+        <div className="mt-3 rounded-md border border-skyhook-500/30 bg-skyhook-500/[0.07] p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 text-sm font-medium text-theme-text-primary">
+                <Terminal className="w-3.5 h-3.5 shrink-0 text-skyhook-500" />
+                已发现 Argo CD CLI 会话
+              </p>
+              <p className="mt-0.5 truncate text-xs text-theme-text-tertiary">
+                {cliSession.user && cliSession.user !== cliSession.server ? (
+                  <><span className="text-theme-text-secondary">{cliSession.user}</span> @ {cliSession.server}</>
+                ) : (
+                  <span className="text-theme-text-secondary">{cliSession.server}</span>
+                )}
+              </p>
+            </div>
+            <button
+              onClick={handleUseCliToken}
+              disabled={connecting}
+              className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand rounded-md disabled:opacity-50"
+            >
+              {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plug className="w-3.5 h-3.5" />}
+              使用此会话
+            </button>
+          </div>
+          <p className="mt-2 text-[11px] text-theme-text-tertiary">
+            复用你的 <code className="inline-code">argocd login</code> 令牌 — 无需生成或粘贴。
+          </p>
+        </div>
+      )}
+
+      <label className="block text-sm font-medium text-theme-text-primary mt-3 mb-1">
+        {cliSession ? '或粘贴令牌' : 'API 令牌'}
+      </label>
+      <p className="text-xs text-theme-text-tertiary mb-1">
+        该令牌允许 KubeAtlas 读取你的应用。可使用{' '}
+        <code className="inline-code">argocd account generate-token</code> 创建，也可在 Argo CD UI 的 Settings → Accounts 中创建。
+      </p>
+      <div className="flex items-center gap-2">
+        <input
+          ref={tokenInputRef}
+          type="password"
+          value={showConfiguredPlaceholder ? '' : token}
+          onChange={(e) => { setToken(e.target.value); setTokenTouched(true); setTokenCleared(false); clearStatus() }}
+          placeholder={showConfiguredPlaceholder ? '已保存的值' : 'Argo CD API 令牌'}
+          className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+        />
+        {effectiveTokenSet && !tokenCleared && (
+          <button
+            onClick={() => { setToken(''); setTokenTouched(false); setTokenCleared(true); clearStatus() }}
+            className="shrink-0 px-2.5 py-1.5 text-xs font-medium text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-md transition-colors"
+          >
+            移除
+          </button>
+        )}
+      </div>
+      {tokenCleared && (
+        <p className="mt-1 text-xs text-amber-600 dark:text-amber-400/80">保存时将移除此令牌。</p>
+      )}
+
+      <label className="mt-2 flex items-center gap-2 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={insecureTls}
+          onChange={(e) => { onChangeInsecureTls(e.target.checked); clearStatus() }}
+          className="h-3.5 w-3.5 accent-skyhook-600"
+        />
+        <span className="text-xs text-theme-text-secondary">跳过 TLS 验证（自签名 Argo CD 服务器）</span>
+      </label>
+
+      <div className="mt-3">
+        <button
+          onClick={handleConnect}
+          disabled={connecting}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium btn-brand rounded-md disabled:opacity-50"
+        >
+          {connecting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plug className="w-3.5 h-3.5" />}
+          连接并保存
+        </button>
+      </div>
+
+      {state.status === 'connected' ? (
+        <p className="mt-2 flex items-center gap-1 text-xs text-green-600 dark:text-green-400/80">
+          <Check className="w-3 h-3 shrink-0" />
+          已连接到 Argo CD — 配置已应用，无需重启
+        </p>
+      ) : state.status === 'error' ? (
+        <p className="mt-2 text-xs text-red-600 dark:text-red-400/80">{state.error}</p>
+      ) : (
+        <p className="mt-2 text-xs text-theme-text-tertiary">
+          连接前会验证 URL 和令牌，然后才会保存任何内容。
+        </p>
+      )}
+    </div>
+  )
+}
+
+// -- Shared Field Components --------------------------------------------------
+
+function ConfigField({
+  label,
+  help,
+  value,
+  effectiveValue,
+  placeholder,
+  onChange,
+}: {
+  label: string
+  help?: string
+  value: string
+  effectiveValue?: string
+  placeholder?: string
+  onChange: (value: string) => void
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-theme-text-primary mb-1">
+        {label}
+      </label>
+      {help && <p className="text-xs text-theme-text-tertiary mb-1">{help}</p>}
+      <Input
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+      />
+      <EffectiveHint current={value || undefined} effective={effectiveValue} />
+    </div>
+  )
+}
+
+// Comma-separated list input. Keeps a local string buffer so intermediate states
+// like "foo," or "foo,," survive — parsing into an array on every keystroke
+// (split/trim/filter) would otherwise strip trailing commas before they re-render.
+// The focus flag is load-bearing: without it, every parent re-render during typing
+// would overwrite `text` with the canonical joined form and wipe the keystroke.
+// On blur the buffer resyncs to the canonical "a, b" form.
+function ConfigArrayField({
+  label,
+  help,
+  value,
+  effectiveValue,
+  placeholder,
+  onChange,
+}: {
+  label: string
+  help?: string
+  value?: string[]
+  effectiveValue?: string[]
+  placeholder?: string
+  onChange: (value: string[] | undefined) => void
+}) {
+  const canonical = (v?: string[]) => v?.join(', ') ?? ''
+  const [text, setText] = useState(() => canonical(value))
+  const focusedRef = useRef(false)
+
+  useEffect(() => {
+    if (!focusedRef.current) setText(canonical(value))
+  }, [value])
+
+  const commit = (raw: string) => {
+    const parts = raw.split(',').map(s => s.trim()).filter(Boolean)
+    onChange(parts.length > 0 ? parts : undefined)
+  }
+
+  return (
+    <div>
+      <label className="block text-sm font-medium text-theme-text-primary mb-1">
+        {label}
+      </label>
+      {help && <p className="text-xs text-theme-text-tertiary mb-1">{help}</p>}
+      <Input
+        value={text}
+        onFocus={() => { focusedRef.current = true }}
+        onBlur={() => {
+          focusedRef.current = false
+          setText(canonical(value))
+        }}
+        onChange={(e) => {
+          setText(e.target.value)
+          commit(e.target.value)
+        }}
+        placeholder={placeholder}
+        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+      />
+      <EffectiveHint current={canonical(value) || undefined} effective={canonical(effectiveValue) || undefined} />
+    </div>
+  )
+}
+
+function ConfigNumberField({
+  label,
+  help,
+  value,
+  effectiveValue,
+  placeholder,
+  onChange,
+}: {
+  label: string
+  help?: string
+  value?: number
+  effectiveValue?: number
+  placeholder?: string
+  onChange: (value: number | undefined) => void
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-theme-text-primary mb-1">
+        {label}
+      </label>
+      {help && <p className="text-xs text-theme-text-tertiary mb-1">{help}</p>}
+      <input
+        type="number"
+        value={value ?? ''}
+        onChange={(e) => onChange(e.target.value ? parseInt(e.target.value, 10) || undefined : undefined)}
+        placeholder={placeholder}
+        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+      />
+      <EffectiveHint current={value} effective={effectiveValue} />
+    </div>
+  )
+}
+
+function EffectiveHint({
+  current,
+  effective,
+}: {
+  current?: string | number
+  effective?: string | number
+}) {
+  if (!effective || effective === current) return null
+  const currentStr = current != null ? String(current) : ''
+  const effectiveStr = String(effective)
+  if (currentStr === effectiveStr) return null
+
+  return (
+    <p className="text-xs text-amber-600 dark:text-amber-400/80 mt-0.5">
+      当前运行配置：{effectiveStr}（重启后生效）
+    </p>
+  )
+}

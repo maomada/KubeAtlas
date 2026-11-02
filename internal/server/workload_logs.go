@@ -1,0 +1,1579 @@
+package server
+
+import (
+	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/go-chi/chi/v5"
+	appsv1 "k8s.io/api/apps/v1"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/dynamic"
+	"k8s.io/client-go/kubernetes"
+
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/podlogs"
+	"github.com/maomada/KubeAtlas/internal/readscope"
+	"github.com/maomada/KubeAtlas/pkg/health"
+	"github.com/maomada/KubeAtlas/pkg/k8score"
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+	"github.com/maomada/KubeAtlas/pkg/rollouts"
+)
+
+type workloadLogMetadata struct {
+	EmptyReason  string `json:"emptyReason,omitempty"`
+	EmptyMessage string `json:"emptyMessage,omitempty"`
+	Command      string `json:"command,omitempty"`
+}
+
+type WorkloadRun struct {
+	Group       string `json:"group"`
+	Kind        string `json:"kind"`
+	Namespace   string `json:"namespace"`
+	Name        string `json:"name"`
+	Phase       string `json:"phase"`
+	Deleting    bool   `json:"deleting,omitempty"`
+	Active      bool   `json:"active"`
+	StartedAt   string `json:"startedAt,omitempty"`
+	FinishedAt  string `json:"finishedAt,omitempty"`
+	ScheduledAt string `json:"scheduledAt,omitempty"`
+	Trigger     string `json:"trigger,omitempty"`
+	Message     string `json:"message,omitempty"`
+
+	Succeeded   int32                   `json:"succeeded,omitempty"`
+	Failed      int32                   `json:"failed,omitempty"`
+	Running     int32                   `json:"running,omitempty"`
+	Desired     int32                   `json:"desired,omitempty"`
+	Parallelism int32                   `json:"parallelism,omitempty"`
+	Progress    string                  `json:"progress,omitempty"`
+	Template    string                  `json:"template,omitempty"`
+	Launcher    *WorkloadRunResourceRef `json:"launcher,omitempty"`
+	JobSet      *JobSetMember           `json:"jobset,omitempty"`
+
+	PodTotal     int `json:"podTotal,omitempty"`
+	PodSucceeded int `json:"podSucceeded,omitempty"`
+	PodFailed    int `json:"podFailed,omitempty"`
+	PodRunning   int `json:"podRunning,omitempty"`
+	PodPending   int `json:"podPending,omitempty"`
+}
+
+// JobSetMember preserves controller-written labels and restart annotations as strings.
+// It describes membership in the returned JobSet collection, not a generic execution attempt.
+type JobSetMember struct {
+	ReplicatedJob         string `json:"replicatedJob,omitempty"`
+	ReplicatedJobReplicas string `json:"replicatedJobReplicas,omitempty"`
+	JobIndex              string `json:"jobIndex,omitempty"`
+	GlobalReplicas        string `json:"globalReplicas,omitempty"`
+	GlobalIndex           string `json:"globalIndex,omitempty"`
+	GroupName             string `json:"groupName,omitempty"`
+	GroupReplicas         string `json:"groupReplicas,omitempty"`
+	GroupIndex            string `json:"groupIndex,omitempty"`
+	RestartAttempt        string `json:"restartAttempt,omitempty"`
+	JobRestartAttempt     string `json:"jobRestartAttempt,omitempty"`
+}
+
+type WorkloadRunCollection string
+
+const (
+	WorkloadRunCollectionRuns    WorkloadRunCollection = "runs"
+	WorkloadRunCollectionMembers WorkloadRunCollection = "members"
+)
+
+type WorkloadRunsResponse struct {
+	// Runs are execution roots; members are children of one execution, not its history.
+	Collection    WorkloadRunCollection `json:"collection"`
+	Runs          []WorkloadRun         `json:"runs"`
+	Total         int                   `json:"total"`
+	Truncated     bool                  `json:"truncated"`
+	FilteredTotal *int                  `json:"filteredTotal,omitempty"`
+	Selected      *WorkloadRun          `json:"selected,omitempty"`
+}
+
+type WorkloadRunResourceRef struct {
+	Kind      string `json:"kind"`
+	Namespace string `json:"namespace,omitempty"`
+	Name      string `json:"name"`
+	Group     string `json:"group,omitempty"`
+}
+
+type workloadReadTarget struct {
+	group    string
+	resource string
+}
+
+var workloadReadTargets = map[string]workloadReadTarget{
+	"deployment":   {group: "apps", resource: "deployments"},
+	"deployments":  {group: "apps", resource: "deployments"},
+	"statefulset":  {group: "apps", resource: "statefulsets"},
+	"statefulsets": {group: "apps", resource: "statefulsets"},
+	"daemonset":    {group: "apps", resource: "daemonsets"},
+	"daemonsets":   {group: "apps", resource: "daemonsets"},
+	"job":          {group: "batch", resource: "jobs"},
+	"jobs":         {group: "batch", resource: "jobs"},
+	"workflow":     {group: "argoproj.io", resource: "workflows"},
+	"workflows":    {group: "argoproj.io", resource: "workflows"},
+	"rollout":      {group: "argoproj.io", resource: "rollouts"},
+	"rollouts":     {group: "argoproj.io", resource: "rollouts"},
+}
+
+// handleWorkloadPods returns the list of pods for a workload
+func (s *Server) handleWorkloadPods(w http.ResponseWriter, r *http.Request) {
+	kind := strings.ToLower(chi.URLParam(r, "kind"))
+	if kind == "raycluster" || kind == "rayclusters" {
+		s.handleRayClusterPods(w, r)
+		return
+	}
+	namespace := chi.URLParam(r, "namespace")
+	name := chi.URLParam(r, "name")
+	limit := 0
+	if _, requested := r.URL.Query()["limit"]; requested {
+		var err error
+		limit, err = parseCapacityLimit(r.URL.Query(), maxWorkloadPodResponseLimit, maxWorkloadPodResponseLimit)
+		if err != nil {
+			s.writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+	}
+
+	if !s.authorizeWorkloadPodRead(w, r, kind, namespace) {
+		return
+	}
+
+	pods, err := s.getWorkloadPods(kind, namespace, name)
+	if err != nil {
+		s.writeWorkloadError(w, err)
+		return
+	}
+
+	dynamicClient, contextName := s.getDynamicClientSnapshotForRequest(r)
+	target := s.workloadRevisionTargetForRequest(r, k8s.GetResourceCache(), dynamicClient, contextName, kind, namespace, name)
+	podInfos := buildPodInfosForRevision(pods, target)
+	total := len(podInfos)
+	truncated := false
+	if limit > 0 {
+		podInfos, truncated = limitWorkloadPodInfos(podInfos, limit)
+	}
+	s.writeJSON(w, map[string]any{
+		"pods":      podInfos,
+		"total":     total,
+		"truncated": truncated,
+	})
+}
+
+func (s *Server) handleWorkloadRuns(w http.ResponseWriter, r *http.Request) {
+	kind := strings.ToLower(chi.URLParam(r, "kind"))
+	namespace := chi.URLParam(r, "namespace")
+	name := chi.URLParam(r, "name")
+	clusterScoped := r.URL.Query().Get("clusterScoped") == "true"
+
+	runNamespaces := []string{namespace}
+	if clusterScoped {
+		runNamespaces = s.parseNamespacesForUser(r)
+		if readscope.NoNamespaceAccess(runNamespaces) {
+			s.writeError(w, http.StatusForbidden, "no namespace access")
+			return
+		}
+	} else {
+		if allowed := s.getUserNamespaces(r, []string{namespace}); readscope.NoNamespaceAccess(allowed) {
+			s.writeError(w, http.StatusForbidden, "no access to namespace "+namespace)
+			return
+		}
+	}
+	switch kind {
+	case "job", "jobs":
+		if !s.canRead(r, "batch", "jobs", namespace, "get") {
+			s.writeError(w, http.StatusForbidden, "no access to jobs in namespace "+namespace)
+			return
+		}
+	case "workflow", "workflows":
+		if !s.canRead(r, "argoproj.io", "workflows", namespace, "get") {
+			s.writeError(w, http.StatusForbidden, "no access to workflows in namespace "+namespace)
+			return
+		}
+	case "cronjob", "cronjobs":
+		if !s.canRead(r, "batch", "cronjobs", namespace, "get") {
+			s.writeError(w, http.StatusForbidden, "no access to cronjobs in namespace "+namespace)
+			return
+		}
+		if !s.canRead(r, "batch", "jobs", namespace, "list") {
+			s.writeError(w, http.StatusForbidden, "no access to jobs in namespace "+namespace)
+			return
+		}
+	case "cronworkflow", "cronworkflows":
+		if !s.canRead(r, "argoproj.io", "cronworkflows", namespace, "get") {
+			s.writeError(w, http.StatusForbidden, "no access to cronworkflows in namespace "+namespace)
+			return
+		}
+		if !s.canRead(r, "argoproj.io", "workflows", namespace, "list") {
+			s.writeError(w, http.StatusForbidden, "no access to workflows in namespace "+namespace)
+			return
+		}
+	case "workflowtemplate", "workflowtemplates":
+		if !s.canRead(r, "argoproj.io", "workflowtemplates", namespace, "get") {
+			s.writeError(w, http.StatusForbidden, "no access to workflowtemplates in namespace "+namespace)
+			return
+		}
+		if !s.canRead(r, "argoproj.io", "workflows", namespace, "list") {
+			s.writeError(w, http.StatusForbidden, "no access to workflows in namespace "+namespace)
+			return
+		}
+	case "clusterworkflowtemplate", "clusterworkflowtemplates":
+		if !s.canRead(r, "argoproj.io", "clusterworkflowtemplates", "", "get") {
+			s.writeError(w, http.StatusForbidden, "no access to clusterworkflowtemplates")
+			return
+		}
+		var ok bool
+		runNamespaces, ok = s.readableRunNamespaces(r, "argoproj.io", "workflows", runNamespaces)
+		if !ok {
+			s.writeError(w, http.StatusForbidden, "no access to workflows")
+			return
+		}
+	case "scaledjob", "scaledjobs":
+		if !s.canRead(r, "keda.sh", "scaledjobs", namespace, "get") {
+			s.writeError(w, http.StatusForbidden, "no access to scaledjobs in namespace "+namespace)
+			return
+		}
+		if !s.canRead(r, "batch", "jobs", namespace, "list") {
+			s.writeError(w, http.StatusForbidden, "no access to jobs in namespace "+namespace)
+			return
+		}
+	case "jobset", "jobsets":
+		if !s.canRead(r, "jobset.x-k8s.io", "jobsets", namespace, "get") {
+			s.writeError(w, http.StatusForbidden, "no access to jobsets in namespace "+namespace)
+			return
+		}
+		if !s.canRead(r, "batch", "jobs", namespace, "list") {
+			s.writeError(w, http.StatusForbidden, "no access to jobs in namespace "+namespace)
+			return
+		}
+	}
+
+	if kind == "jobset" || kind == "jobsets" {
+		result, err := s.getJobSetMemberRuns(r.Context(), namespace, name, jobSetMemberQueryFromRequest(r))
+		if err != nil {
+			s.writeWorkloadError(w, err)
+			return
+		}
+		s.writeJSON(w, result)
+		return
+	}
+
+	includeJobSetLauncher := (kind == "job" || kind == "jobs") && s.canRead(r, "jobset.x-k8s.io", "jobsets", namespace, "get")
+	runs, err := s.getWorkloadRuns(r.Context(), kind, namespace, name, runNamespaces, includeJobSetLauncher)
+	if err != nil {
+		s.writeWorkloadError(w, err)
+		return
+	}
+
+	s.writeJSON(w, WorkloadRunsResponse{Collection: WorkloadRunCollectionRuns, Runs: runs, Total: len(runs)})
+}
+
+func (s *Server) readableRunNamespaces(r *http.Request, group, resource string, namespaces []string) ([]string, bool) {
+	if readscope.NoNamespaceAccess(namespaces) {
+		return nil, false
+	}
+	if namespaces == nil {
+		if s.canRead(r, group, resource, "", "list") {
+			return nil, true
+		}
+		allowed := s.filterNamespacesByCanRead(r, group, resource, "list", allNamespaceNames())
+		return allowed, len(allowed) > 0
+	}
+	allowed := s.filterNamespacesByCanRead(r, group, resource, "list", namespaces)
+	return allowed, len(allowed) > 0
+}
+
+func (s *Server) authorizeWorkloadPodRead(w http.ResponseWriter, r *http.Request, kind, namespace string) bool {
+	target, ok := workloadReadTargets[kind]
+	if !ok {
+		s.writeError(w, http.StatusBadRequest, "only deployments, statefulsets, daemonsets, rollouts, jobs, and workflows are supported")
+		return false
+	}
+	if readscope.NoNamespaceAccess(s.getUserNamespaces(r, []string{namespace})) {
+		s.writeError(w, http.StatusForbidden, "no access to namespace "+namespace)
+		return false
+	}
+	if !s.canRead(r, target.group, target.resource, namespace, "get") {
+		s.writeError(w, http.StatusForbidden, "no access to "+target.resource+" in namespace "+namespace)
+		return false
+	}
+	if !s.canRead(r, "", "pods", namespace, "list") {
+		s.writeError(w, http.StatusForbidden, "no access to pods in namespace "+namespace)
+		return false
+	}
+	return true
+}
+
+func (s *Server) authorizeWorkloadLogRead(w http.ResponseWriter, r *http.Request, kind, namespace string) bool {
+	if !s.authorizeWorkloadPodRead(w, r, kind, namespace) {
+		return false
+	}
+	return s.authorizePodLogRead(w, r, namespace)
+}
+
+func (s *Server) authorizePodLogRead(w http.ResponseWriter, r *http.Request, namespace string) bool {
+	if !s.canReadSubresource(r, "", "pods", "log", namespace, "get") {
+		s.writeError(w, http.StatusForbidden, "no access to pod logs in namespace "+namespace+": requires get pods/log")
+		return false
+	}
+	return true
+}
+
+// handleWorkloadLogs fetches and merges logs from all pods (non-streaming)
+func (s *Server) handleWorkloadLogs(w http.ResponseWriter, r *http.Request) {
+	kind := strings.ToLower(chi.URLParam(r, "kind"))
+	namespace := chi.URLParam(r, "namespace")
+	name := chi.URLParam(r, "name")
+
+	if !s.authorizeWorkloadLogRead(w, r, kind, namespace) {
+		return
+	}
+
+	container := r.URL.Query().Get("container")
+	tailLines := podlogs.ParseTailLines(r.URL.Query().Get("tailLines"), 100)
+	sinceSeconds := podlogs.ParseSinceSeconds(r.URL.Query().Get("sinceSeconds"))
+
+	pods, err := s.getWorkloadPods(kind, namespace, name)
+	if err != nil {
+		s.writeWorkloadError(w, err)
+		return
+	}
+
+	if len(pods) == 0 {
+		metadata := s.describeWorkloadLogEmpty(r.Context(), kind, namespace, name)
+		response := map[string]any{
+			"pods": []podlogs.PodInfo{},
+			"logs": []podlogs.Entry{},
+		}
+		addWorkloadLogMetadata(response, metadata)
+		s.writeJSON(w, response)
+		return
+	}
+
+	client := s.getClientForRequest(r)
+	if client == nil {
+		s.writeError(w, http.StatusServiceUnavailable, "cluster client not available — check cluster connection")
+		return
+	}
+
+	// Collect logs from all pods concurrently
+	snapshot := podlogs.CollectPods(r.Context(), client, namespace, pods, container, tailLines, sinceSeconds, false)
+
+	podlogs.Sort(snapshot.Logs)
+
+	s.writeJSON(w, map[string]any{
+		"pods":   podlogs.BuildPodInfos(pods),
+		"logs":   snapshot.Logs,
+		"notice": snapshot.Notice,
+	})
+}
+
+// handleWorkloadLogsStream streams logs from all pods using SSE
+func (s *Server) handleWorkloadLogsStream(w http.ResponseWriter, r *http.Request) {
+	kind := strings.ToLower(chi.URLParam(r, "kind"))
+	namespace := chi.URLParam(r, "namespace")
+	name := chi.URLParam(r, "name")
+
+	if !s.authorizeWorkloadLogRead(w, r, kind, namespace) {
+		return
+	}
+
+	container := r.URL.Query().Get("container")
+	tailLines := podlogs.ParseTailLines(r.URL.Query().Get("tailLines"), 50)
+	sinceSeconds := podlogs.ParseSinceSeconds(r.URL.Query().Get("sinceSeconds"))
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		sendSSEError(w, flusher, "resource cache not available")
+		return
+	}
+
+	client := s.getClientForRequest(r)
+	if client == nil {
+		sendSSEError(w, flusher, "cluster client not available — check cluster connection")
+		return
+	}
+
+	selector, err := k8s.GetWorkloadSelector(cache, kind, namespace, name)
+	if err != nil {
+		sendSSEError(w, flusher, err.Error())
+		return
+	}
+
+	// Get initial pods
+	pods := cache.GetPodsForWorkload(namespace, selector)
+	podInfos := podlogs.BuildPodInfos(pods)
+
+	// Send connected event with pod list
+	connected := map[string]any{
+		"workload":  name,
+		"namespace": namespace,
+		"kind":      kind,
+		"pods":      podInfos,
+	}
+	var emptyMetadata workloadLogMetadata
+	if len(pods) == 0 {
+		emptyMetadata = s.describeWorkloadLogEmpty(r.Context(), kind, namespace, name)
+		addWorkloadLogMetadata(connected, emptyMetadata)
+	}
+	sendSSEEvent(w, flusher, "connected", connected)
+
+	if len(pods) == 0 && !shouldWaitForPodsInLogStream(kind, emptyMetadata) {
+		sendSSEEvent(w, flusher, "end", workloadLogEndPayload(emptyMetadata))
+		return
+	}
+
+	// Context for managing goroutines
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	// Channel for aggregated log lines
+	logCh := make(chan podlogs.Entry, 1000)
+	resultCh := make(chan podLogSourceResult)
+	unavailable := podlogs.UnavailableSources{}
+
+	// Track active streams
+	var activeStreams sync.Map // podName/containerName -> stream handle
+	var streamWg sync.WaitGroup
+	// A container's follow ends when it exits and the next discovery pass
+	// reopens it, so each container resumes after the last line it sent.
+	cursors := map[string]*podlogs.StreamCursor{}
+	follows := 0
+	generation := 0
+
+	// Start streaming from each pod/container
+	startPodStreams := func(pods []*corev1.Pod) {
+		for _, pod := range pods {
+			containers := k8s.GetContainersForPod(pod, container, true)
+			for _, c := range containers {
+				key := pod.Name + "/" + c
+				if value, exists := activeStreams.Load(key); exists {
+					handle := value.(*podLogStreamHandle)
+					if handle.uid == pod.UID {
+						continue
+					}
+					handle.cancel()
+				}
+
+				follows++
+				follow := follows
+				opts := podlogs.CursorFor(cursors, key, pod.UID, follow).RestartOptions(c, tailLines, sinceSeconds)
+				streamCtx, streamCancel := context.WithCancel(ctx)
+				handle := &podLogStreamHandle{uid: pod.UID, cancel: streamCancel, follow: follow, generation: generation}
+				finite := podlogs.ContainerTerminated(pod, c)
+				activeStreams.Store(key, handle)
+
+				streamWg.Add(1)
+				go func(podName, key string, streamCtx context.Context) {
+					defer streamWg.Done()
+					defer streamCancel()
+					defer activeStreams.CompareAndDelete(key, handle)
+
+					done, err := streamPodLogs(streamCtx, client, namespace, podName, opts, follow, logCh, func() { handle.opened.Store(true) })
+					// A completed worker must not look live while its result waits.
+					activeStreams.CompareAndDelete(key, handle)
+					if err != nil || done && finite && streamCtx.Err() == nil {
+						select {
+						case resultCh <- podLogSourceResult{key: key, uid: handle.uid, follow: follow, err: err}:
+						case <-streamCtx.Done():
+						}
+					}
+				}(pod.Name, key, streamCtx)
+			}
+		}
+	}
+
+	// Start initial streams
+	startPodStreams(pods)
+
+	// Pod discovery ticker (every 5 seconds)
+	discoveryTicker := time.NewTicker(5 * time.Second)
+	defer discoveryTicker.Stop()
+
+	// Track known pods for detecting changes
+	knownPods := make(map[string]types.UID)
+	for _, p := range pods {
+		knownPods[p.Name] = p.UID
+	}
+
+	// Main loop: forward logs and handle pod discovery
+	for {
+		select {
+		case <-ctx.Done():
+			sendSSEEvent(w, flusher, "end", map[string]string{"reason": "client disconnected"})
+			return
+
+		case entry := <-logCh:
+			key := entry.Pod + "/" + entry.Container
+			cursor := cursors[key]
+			if cursor != nil && !cursor.Admit(entry) {
+				continue
+			}
+			sendSSEEvent(w, flusher, "log", entry)
+
+		case result := <-resultCh:
+			key := result.key
+			// A stream canceled during pod removal can still deliver its report.
+			podName, _, _ := strings.Cut(key, "/")
+			if uid, known := knownPods[podName]; known && uid == result.uid {
+				changed := false
+				if result.err != nil {
+					changed = unavailable.Add(key, result.follow, result.err.Error())
+				} else {
+					changed = unavailable.Remove(key, result.follow)
+				}
+				if changed {
+					sendSSEEvent(w, flusher, "notice", map[string]string{"notice": unavailable.Notice()})
+				}
+			}
+
+		case <-discoveryTicker.C:
+			generation++
+			// Re-discover pods
+			currentPods := cache.GetPodsForWorkload(namespace, selector)
+			if len(currentPods) == 0 {
+				metadata := s.describeWorkloadLogEmpty(ctx, kind, namespace, name)
+				if !shouldWaitForPodsInLogStream(kind, metadata) {
+					sendSSEEvent(w, flusher, "end", workloadLogEndPayload(metadata))
+					return
+				}
+			}
+			currentPodNames := make(map[string]bool)
+			for _, p := range currentPods {
+				currentPodNames[p.Name] = true
+			}
+
+			// Check for new pods
+			for _, p := range currentPods {
+				if previousUID, seen := knownPods[p.Name]; !seen || previousUID != p.UID {
+					if seen {
+						stopPodLogStreams(&activeStreams, cursors, p.Name)
+						if unavailable.RemovePod(p.Name) {
+							sendSSEEvent(w, flusher, "notice", map[string]string{"notice": unavailable.Notice()})
+						}
+						sendSSEEvent(w, flusher, "pod_removed", map[string]string{"pod": p.Name, "reason": "replaced"})
+					}
+					knownPods[p.Name] = p.UID
+					// Notify frontend about new pod
+					sendSSEEvent(w, flusher, "pod_added", map[string]any{
+						"pods": []podlogs.PodInfo{podlogs.BuildPodInfo(p, time.Now())},
+					})
+				}
+			}
+
+			// Check for removed pods
+			for podName := range knownPods {
+				if !currentPodNames[podName] {
+					delete(knownPods, podName)
+					stopPodLogStreams(&activeStreams, cursors, podName)
+					if unavailable.RemovePod(podName) {
+						sendSSEEvent(w, flusher, "notice", map[string]string{"notice": unavailable.Notice()})
+					}
+					// Notify frontend
+					sendSSEEvent(w, flusher, "pod_removed", map[string]string{
+						"pod":    podName,
+						"reason": "terminated",
+					})
+				}
+			}
+
+			// A newer opened follow that survived a discovery interval is live
+			// even for a quiet container. Replay alone never clears a warning.
+			activeStreams.Range(func(key, value any) bool {
+				handle := value.(*podLogStreamHandle)
+				podName, _, _ := strings.Cut(key.(string), "/")
+				if knownPods[podName] == handle.uid && handle.generation < generation && handle.opened.Load() && unavailable.Remove(key.(string), handle.follow) {
+					sendSSEEvent(w, flusher, "notice", map[string]string{"notice": unavailable.Notice()})
+				}
+				return true
+			})
+
+			// Start streams for all current pods — startPodStreams skips pods
+			// that already have active streams, so this safely retries pods
+			// whose initial stream failed (e.g., container wasn't ready yet)
+			startPodStreams(currentPods)
+		}
+	}
+}
+
+func workloadLogEndPayload(metadata workloadLogMetadata) map[string]string {
+	reason := metadata.EmptyReason
+	if reason == "" {
+		reason = "no pods found"
+	}
+	payload := map[string]string{"reason": reason}
+	if metadata.EmptyReason != "" {
+		payload["emptyReason"] = metadata.EmptyReason
+	}
+	if metadata.EmptyMessage != "" {
+		payload["emptyMessage"] = metadata.EmptyMessage
+	}
+	if metadata.Command != "" {
+		payload["command"] = metadata.Command
+	}
+	return payload
+}
+
+func shouldWaitForPodsInLogStream(kind string, metadata workloadLogMetadata) bool {
+	if metadata.EmptyReason != "no-pods" {
+		return false
+	}
+	return kind == "job" || kind == "jobs" || kind == "workflow" || kind == "workflows"
+}
+
+// streamPodLogs streams logs from a single pod/container to the log channel
+//
+// A clean EOF returns true. Node notices return their error instead of being
+// emitted as application output. Failed opens, reads and cancellations return
+// false so they cannot certify a successful read of a completed container.
+func streamPodLogs(ctx context.Context, client kubernetes.Interface, namespace, podName string, opts corev1.PodLogOptions, follow int, logCh chan<- podlogs.Entry, onOpen func()) (bool, error) {
+	containerName := opts.Container
+	stream, err := client.CoreV1().Pods(namespace).GetLogs(podName, &opts).Stream(ctx)
+	if err != nil {
+		log.Printf("[workload-logs] Failed to stream logs for %s/%s: %v", podName, containerName, err)
+		return false, nil
+	}
+	defer stream.Close()
+	if onOpen != nil {
+		onOpen()
+	}
+
+	reader := bufio.NewReader(stream)
+	for {
+		select {
+		case <-ctx.Done():
+			return false, nil
+		default:
+			line, err := reader.ReadString('\n')
+			// The notice is the whole body with no trailing newline, so it
+			// arrives together with EOF.
+			if followErr := k8score.LogFollowError(line); followErr != nil {
+				return false, followErr
+			}
+
+			line = strings.TrimSuffix(line, "\n")
+
+			if line != "" && (err == nil || err == io.EOF) {
+				ts, content := podlogs.ParseLine(line)
+				select {
+				case logCh <- podlogs.Entry{
+					Pod:       podName,
+					Container: containerName,
+					Timestamp: ts,
+					Content:   content,
+					Follow:    follow,
+				}:
+				case <-ctx.Done():
+					return false, nil
+				}
+			}
+			if err != nil {
+				if err == io.EOF || ctx.Err() != nil {
+					return err == io.EOF && ctx.Err() == nil, nil
+				}
+				log.Printf("[workload-logs] Read error for %s/%s: %v", podName, containerName, err)
+				return false, nil
+			}
+		}
+	}
+}
+
+func buildPodInfosForRevision(pods []*corev1.Pod, target workloadRevisionTarget) []podlogs.PodInfo {
+	infos := make([]podlogs.PodInfo, 0, len(pods))
+	now := time.Now()
+	for _, pod := range pods {
+		info := podlogs.BuildPodInfo(pod, now)
+		if target.label != "" && target.value != "" {
+			if identity := pod.Labels[target.label]; identity != "" {
+				updated := identity == target.value
+				info.RevisionIdentity = identity
+				info.UpdatedRevision = &updated
+			}
+		}
+		infos = append(infos, info)
+	}
+	return infos
+}
+
+const maxWorkloadPodResponseLimit = 200
+
+func limitWorkloadPodInfos(infos []podlogs.PodInfo, limit int) ([]podlogs.PodInfo, bool) {
+	sort.SliceStable(infos, func(i, j int) bool {
+		leftRank := health.Rank(health.Level(infos[i].HealthLevel))
+		rightRank := health.Rank(health.Level(infos[j].HealthLevel))
+		if leftRank != rightRank {
+			return leftRank > rightRank
+		}
+		if infos[i].RestartCount != infos[j].RestartCount {
+			return infos[i].RestartCount > infos[j].RestartCount
+		}
+		return infos[i].Name < infos[j].Name
+	})
+	if limit >= len(infos) {
+		return infos, false
+	}
+	return infos[:limit], true
+}
+
+// workloadError represents a typed error for workload operations
+type workloadError struct {
+	statusCode int
+	message    string
+}
+
+func (e *workloadError) Error() string { return e.message }
+
+// getWorkloadPods validates the kind, retrieves cache, and returns pods for a workload
+func (s *Server) getWorkloadPods(kind, namespace, name string) ([]*corev1.Pod, *workloadError) {
+	if _, ok := workloadReadTargets[kind]; !ok {
+		return nil, &workloadError{http.StatusBadRequest, "only deployments, statefulsets, daemonsets, rollouts, jobs, and workflows are supported"}
+	}
+
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return nil, &workloadError{http.StatusServiceUnavailable, "resource cache not available"}
+	}
+
+	selector, err := k8s.GetWorkloadSelector(cache, kind, namespace, name)
+	if err != nil {
+		return nil, workloadSelectorGetError(err)
+	}
+
+	return cache.GetPodsForWorkload(namespace, selector), nil
+}
+
+type workloadRevisionTarget struct {
+	label string
+	value string
+}
+
+const workloadRevisionTargetTTL = 5 * time.Second
+
+type workloadRevisionTargetCacheEntry struct {
+	target    workloadRevisionTarget
+	expiresAt time.Time
+}
+
+func (s *Server) workloadRevisionTargetForRequest(r *http.Request, cache *k8s.ResourceCache, dynamicClient dynamic.Interface, contextName, kind, namespace, name string) workloadRevisionTarget {
+	if (kind != "daemonset" && kind != "daemonsets") || cache == nil || cache.DaemonSets() == nil {
+		return workloadRevisionTargetFor(r.Context(), cache, dynamicClient, kind, namespace, name)
+	}
+	workload, err := cache.DaemonSets().DaemonSets(namespace).Get(name)
+	if err != nil {
+		return workloadRevisionTarget{}
+	}
+	key := contextName + "\x00" + requestCachePrincipal(r) + "\x00" + string(workload.UID) + "\x00" + strconv.FormatInt(workload.Generation, 10)
+	now := time.Now()
+	s.workloadRevisionMu.Lock()
+	entry, ok := s.workloadRevisionCache[key]
+	s.workloadRevisionMu.Unlock()
+	if ok && now.Before(entry.expiresAt) {
+		return entry.target
+	}
+
+	target := daemonSetRevisionTarget(r.Context(), dynamicClient, workload)
+	s.workloadRevisionMu.Lock()
+	if s.workloadRevisionCache == nil {
+		s.workloadRevisionCache = make(map[string]workloadRevisionTargetCacheEntry)
+	}
+	for existingKey, existing := range s.workloadRevisionCache {
+		if !now.Before(existing.expiresAt) {
+			delete(s.workloadRevisionCache, existingKey)
+		}
+	}
+	if len(s.workloadRevisionCache) < 256 {
+		s.workloadRevisionCache[key] = workloadRevisionTargetCacheEntry{target: target, expiresAt: now.Add(workloadRevisionTargetTTL)}
+	}
+	s.workloadRevisionMu.Unlock()
+	return target
+}
+
+func workloadRevisionTargetFor(ctx context.Context, cache *k8s.ResourceCache, dynamicClient dynamic.Interface, kind, namespace, name string) workloadRevisionTarget {
+	if cache == nil {
+		return workloadRevisionTarget{}
+	}
+	switch kind {
+	case "deployment", "deployments":
+		if cache.Deployments() == nil || cache.ReplicaSets() == nil {
+			return workloadRevisionTarget{}
+		}
+		deployment, err := cache.Deployments().Deployments(namespace).Get(name)
+		if err != nil {
+			return workloadRevisionTarget{}
+		}
+		if deployment.Status.UpdatedReplicas == 0 {
+			return workloadRevisionTarget{}
+		}
+		replicaSets, err := cache.ReplicaSets().ReplicaSets(namespace).List(labels.Everything())
+		if err != nil {
+			return workloadRevisionTarget{}
+		}
+		if hash := k8score.CurrentDeploymentRevisionPodHashes(replicaSets)[deployment.UID]; hash != "" {
+			return workloadRevisionTarget{label: appsv1.DefaultDeploymentUniqueLabelKey, value: hash}
+		}
+	case "statefulset", "statefulsets":
+		if cache.StatefulSets() != nil {
+			if workload, err := cache.StatefulSets().StatefulSets(namespace).Get(name); err == nil {
+				return workloadRevisionTarget{label: appsv1.ControllerRevisionHashLabelKey, value: workload.Status.UpdateRevision}
+			}
+		}
+	case "daemonset", "daemonsets":
+		if cache.DaemonSets() != nil {
+			if workload, err := cache.DaemonSets().DaemonSets(namespace).Get(name); err == nil {
+				return daemonSetRevisionTarget(ctx, dynamicClient, workload)
+			}
+		}
+	case "rollout", "rollouts":
+		if workload, err := cache.GetDynamicWithGroup(ctx, "Rollout", namespace, name, "argoproj.io"); err == nil {
+			if hash, found, _ := unstructured.NestedString(workload.Object, "status", "currentPodHash"); found {
+				return workloadRevisionTarget{label: rollouts.PodTemplateHashLabel, value: hash}
+			}
+		}
+	}
+	return workloadRevisionTarget{}
+}
+
+func daemonSetRevisionTarget(ctx context.Context, dynamicClient dynamic.Interface, workload *appsv1.DaemonSet) workloadRevisionTarget {
+	if dynamicClient == nil {
+		return workloadRevisionTarget{}
+	}
+	selector, err := metav1.LabelSelectorAsSelector(workload.Spec.Selector)
+	if err != nil {
+		return workloadRevisionTarget{}
+	}
+	controllerRevisions, err := dynamicClient.Resource(schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "controllerrevisions"}).Namespace(workload.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector.String()})
+	if err != nil {
+		log.Printf("[workload-pods] DaemonSet revision attribution unavailable for %s/%s: %v", workload.Namespace, workload.Name, err)
+		return workloadRevisionTarget{}
+	}
+	if hash := k8score.CurrentControllerRevisionPodHashes(controllerRevisions.Items)[workload.UID]; hash != "" {
+		return workloadRevisionTarget{label: appsv1.ControllerRevisionHashLabelKey, value: hash}
+	}
+	return workloadRevisionTarget{}
+}
+
+func workloadSelectorGetError(err error) *workloadError {
+	if errors.Is(err, k8s.ErrWorkloadAccessDenied) || apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+		return &workloadError{http.StatusForbidden, err.Error()}
+	}
+	if apierrors.IsNotFound(err) || errors.Is(err, k8score.ErrResourceNotFound) {
+		return &workloadError{http.StatusNotFound, err.Error()}
+	}
+	if errors.Is(err, k8s.ErrWorkloadSelectorUnavailable) || errors.Is(err, rollouts.ErrWorkloadRefUnsupported) {
+		return &workloadError{http.StatusBadRequest, err.Error()}
+	}
+	return &workloadError{http.StatusInternalServerError, err.Error()}
+}
+
+func (s *Server) getWorkloadRuns(ctx context.Context, kind, namespace, name string, runNamespaces []string, includeJobSetLauncher bool) ([]WorkloadRun, *workloadError) {
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return nil, &workloadError{http.StatusServiceUnavailable, "resource cache not available"}
+	}
+
+	runs := make([]WorkloadRun, 0)
+	switch kind {
+	case "job", "jobs":
+		if cache.Jobs() == nil {
+			return nil, &workloadError{http.StatusForbidden, "insufficient permissions to get jobs"}
+		}
+		job, err := cache.Jobs().Jobs(namespace).Get(name)
+		if err != nil {
+			return nil, workloadParentGetError("job", namespace, name, err)
+		}
+		run := jobRunInfo(job)
+		if includeJobSetLauncher {
+			if launcher := resolveJobSetLauncher(ctx, cache, job); launcher != nil {
+				run.Launcher = launcher
+			}
+		}
+		runs = append(runs, run)
+	case "workflow", "workflows":
+		workflow, err := cache.GetDynamicWithGroup(ctx, "Workflow", namespace, name, "argoproj.io")
+		if err != nil {
+			return nil, workloadParentGetError("workflow", namespace, name, err)
+		}
+		runs = append(runs, workflowRunInfo(workflow))
+	case "cronjob", "cronjobs":
+		if cache.CronJobs() == nil {
+			return nil, &workloadError{http.StatusForbidden, "insufficient permissions to list cronjobs"}
+		}
+		cronJob, err := cache.CronJobs().CronJobs(namespace).Get(name)
+		if err != nil {
+			return nil, workloadParentGetError("cronjob", namespace, name, err)
+		}
+		if cache.Jobs() == nil {
+			return nil, &workloadError{http.StatusForbidden, "insufficient permissions to list jobs"}
+		}
+		jobs, err := listJobRuns(cache, []string{namespace})
+		if err != nil {
+			return nil, &workloadError{http.StatusInternalServerError, err.Error()}
+		}
+		for _, job := range jobs {
+			owner := metav1.GetControllerOf(job)
+			if owner != nil && owner.Kind == "CronJob" && owner.Name == name &&
+				owner.UID != "" && owner.UID == cronJob.UID && resourceid.GroupFromAPIVersion(owner.APIVersion) == "batch" {
+				runs = append(runs, jobRunInfo(job))
+			}
+		}
+	case "cronworkflow", "cronworkflows":
+		if _, err := cache.GetDynamicWithGroup(ctx, "CronWorkflow", namespace, name, "argoproj.io"); err != nil {
+			return nil, workloadParentGetError("cronworkflow", namespace, name, err)
+		}
+		workflows, err := listWorkflowRuns(ctx, cache, []string{namespace})
+		if err != nil {
+			return nil, &workloadError{http.StatusInternalServerError, err.Error()}
+		}
+		for _, workflow := range workflows {
+			if cronWorkflowOwnerName(workflow) == name {
+				runs = append(runs, workflowRunInfo(workflow))
+			}
+		}
+	case "workflowtemplate", "workflowtemplates":
+		if _, err := cache.GetDynamicWithGroup(ctx, "WorkflowTemplate", namespace, name, "argoproj.io"); err != nil {
+			return nil, workloadParentGetError("workflowtemplate", namespace, name, err)
+		}
+		workflows, err := listWorkflowRuns(ctx, cache, []string{namespace})
+		if err != nil {
+			return nil, &workloadError{http.StatusInternalServerError, err.Error()}
+		}
+		for _, workflow := range workflows {
+			if workflowReferencesTemplate(workflow, namespace, name) {
+				runs = append(runs, workflowRunInfo(workflow))
+			}
+		}
+	case "clusterworkflowtemplate", "clusterworkflowtemplates":
+		if _, err := cache.GetDynamicWithGroup(ctx, "ClusterWorkflowTemplate", "", name, "argoproj.io"); err != nil {
+			return nil, workloadParentGetError("clusterworkflowtemplate", "", name, err)
+		}
+		workflows, err := listWorkflowRuns(ctx, cache, runNamespaces)
+		if err != nil {
+			return nil, &workloadError{http.StatusInternalServerError, err.Error()}
+		}
+		for _, workflow := range workflows {
+			if workflowReferencesClusterTemplate(workflow, name) {
+				runs = append(runs, workflowRunInfo(workflow))
+			}
+		}
+	case "scaledjob", "scaledjobs":
+		if _, err := cache.GetDynamicWithGroup(ctx, "ScaledJob", namespace, name, "keda.sh"); err != nil {
+			return nil, workloadParentGetError("scaledjob", namespace, name, err)
+		}
+		if cache.Jobs() == nil {
+			return nil, &workloadError{http.StatusForbidden, "insufficient permissions to list jobs"}
+		}
+		jobs, err := listJobRuns(cache, []string{namespace})
+		if err != nil {
+			return nil, &workloadError{http.StatusInternalServerError, err.Error()}
+		}
+		for _, job := range jobs {
+			if controllerOwnerName(job.OwnerReferences, "ScaledJob") == name {
+				runs = append(runs, jobRunInfo(job))
+			}
+		}
+	default:
+		return nil, &workloadError{http.StatusBadRequest, "only jobs, workflows, cronjobs, cronworkflows, workflowtemplates, clusterworkflowtemplates, and scaledjobs have runs"}
+	}
+
+	sortRuns(runs)
+	return runs, nil
+}
+
+func (s *Server) getJobSetMemberRuns(ctx context.Context, namespace, name string, query jobSetMemberQuery) (WorkloadRunsResponse, *workloadError) {
+	jobSet, jobs, err := loadJobSetJobs(ctx, namespace, name)
+	if err != nil {
+		return WorkloadRunsResponse{}, err
+	}
+	return jobSetMemberRuns(jobSet, jobs, query), nil
+}
+
+func loadJobSetJobs(ctx context.Context, namespace, name string) (*unstructured.Unstructured, []*batchv1.Job, *workloadError) {
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return nil, nil, &workloadError{http.StatusServiceUnavailable, "resource cache not available"}
+	}
+	jobSet, err := cache.GetDynamicWithGroup(ctx, "JobSet", namespace, name, "jobset.x-k8s.io")
+	if err != nil {
+		return nil, nil, workloadParentGetError("jobset", namespace, name, err)
+	}
+	if !isSupportedJobSet(jobSet) {
+		return nil, nil, &workloadError{http.StatusBadRequest, "only jobset.x-k8s.io/v1alpha2 JobSets have child Jobs"}
+	}
+	if cache.Jobs() == nil {
+		return nil, nil, &workloadError{http.StatusForbidden, "insufficient permissions to list jobs"}
+	}
+	jobs, err := listJobRuns(cache, []string{namespace})
+	if err != nil {
+		return nil, nil, &workloadError{http.StatusInternalServerError, err.Error()}
+	}
+	return jobSet, jobs, nil
+}
+
+const maxJobSetMemberRuns = 200
+
+const (
+	jobSetAPIVersion                  = "jobset.x-k8s.io/v1alpha2"
+	replicatedJobNameLabel            = "jobset.sigs.k8s.io/replicatedjob-name"
+	replicatedJobReplicasLabel        = "jobset.sigs.k8s.io/replicatedjob-replicas"
+	jobSetJobIndexLabel               = "jobset.sigs.k8s.io/job-index"
+	jobSetGlobalReplicasLabel         = "jobset.sigs.k8s.io/global-replicas"
+	jobSetJobGlobalIndexLabel         = "jobset.sigs.k8s.io/job-global-index"
+	jobSetGroupNameLabel              = "jobset.sigs.k8s.io/group-name"
+	jobSetGroupReplicasLabel          = "jobset.sigs.k8s.io/group-replicas"
+	jobSetJobGroupIndexLabel          = "jobset.sigs.k8s.io/job-group-index"
+	jobSetRestartAttemptAnnotation    = "jobset.sigs.k8s.io/restart-attempt"
+	jobSetJobRestartAttemptAnnotation = "jobset.sigs.k8s.io/job-restart-attempt"
+)
+
+func isSupportedJobSet(jobSet *unstructured.Unstructured) bool {
+	return jobSet != nil && jobSet.GetAPIVersion() == jobSetAPIVersion && jobSet.GetKind() == "JobSet"
+}
+
+func jobSetMemberRuns(jobSet *unstructured.Unstructured, jobs []*batchv1.Job, query jobSetMemberQuery) WorkloadRunsResponse {
+	runs := make([]WorkloadRun, 0)
+	for _, job := range jobs {
+		if job == nil || !jobSetControls(jobSet, job) {
+			continue
+		}
+		runs = append(runs, jobSetMemberRunInfo(jobSet, job))
+	}
+	sortJobSetMembers(runs)
+	result := WorkloadRunsResponse{Collection: WorkloadRunCollectionMembers, Total: len(runs), Runs: []WorkloadRun{}}
+	for _, run := range runs {
+		if "jobs/"+run.Namespace+"/"+run.Name == query.Selected {
+			selected := run
+			result.Selected = &selected
+		}
+		if query.Role != "" && run.JobSet.ReplicatedJob != query.Role {
+			continue
+		}
+		if query.Search != "" && !strings.Contains(strings.ToLower(run.Name), strings.ToLower(query.Search)) {
+			continue
+		}
+		if query.State == "active" && !run.Active {
+			continue
+		}
+		if query.State == "failed" && run.Phase != "Failed" && run.Phase != "Error" {
+			continue
+		}
+		result.Runs = append(result.Runs, run)
+	}
+	filtered := len(result.Runs)
+	result.FilteredTotal = &filtered
+	if len(result.Runs) > maxJobSetMemberRuns {
+		result.Runs = result.Runs[:maxJobSetMemberRuns]
+		result.Truncated = true
+	}
+	return result
+}
+
+func jobSetControls(jobSet *unstructured.Unstructured, child metav1.Object) bool {
+	if !isSupportedJobSet(jobSet) || child == nil || child.GetNamespace() != jobSet.GetNamespace() {
+		return false
+	}
+	owner := metav1.GetControllerOf(child)
+	if owner == nil || owner.APIVersion != jobSetAPIVersion || owner.Kind != "JobSet" || owner.Name != jobSet.GetName() {
+		return false
+	}
+	return jobSet.GetUID() != "" && owner.UID == jobSet.GetUID()
+}
+
+func jobSetMemberRunInfo(jobSet *unstructured.Unstructured, job *batchv1.Job) WorkloadRun {
+	run := jobRunInfo(job)
+	labels := job.GetLabels()
+	annotations := job.GetAnnotations()
+	run.Launcher = jobSetLauncher(jobSet, job)
+	run.JobSet = &JobSetMember{
+		ReplicatedJob:         labels[replicatedJobNameLabel],
+		ReplicatedJobReplicas: labels[replicatedJobReplicasLabel],
+		JobIndex:              labels[jobSetJobIndexLabel],
+		GlobalReplicas:        labels[jobSetGlobalReplicasLabel],
+		GlobalIndex:           labels[jobSetJobGlobalIndexLabel],
+		GroupName:             labels[jobSetGroupNameLabel],
+		GroupReplicas:         labels[jobSetGroupReplicasLabel],
+		GroupIndex:            labels[jobSetJobGroupIndexLabel],
+		RestartAttempt:        annotations[jobSetRestartAttemptAnnotation],
+		JobRestartAttempt:     annotations[jobSetJobRestartAttemptAnnotation],
+	}
+	if job.DeletionTimestamp != nil {
+		run.Deleting = true
+	}
+	return run
+}
+
+func resolveJobSetLauncher(ctx context.Context, cache *k8s.ResourceCache, job *batchv1.Job) *WorkloadRunResourceRef {
+	owner := metav1.GetControllerOf(job)
+	if owner == nil || owner.APIVersion != jobSetAPIVersion || owner.Kind != "JobSet" || owner.Name == "" || owner.UID == "" {
+		return nil
+	}
+	jobSet, err := cache.GetDynamicWithGroup(ctx, "JobSet", job.Namespace, owner.Name, "jobset.x-k8s.io")
+	if err != nil {
+		return nil
+	}
+	return jobSetLauncher(jobSet, job)
+}
+
+func jobSetLauncher(jobSet *unstructured.Unstructured, job *batchv1.Job) *WorkloadRunResourceRef {
+	if job == nil || !jobSetControls(jobSet, job) {
+		return nil
+	}
+	return &WorkloadRunResourceRef{Kind: "JobSet", Namespace: job.Namespace, Name: jobSet.GetName(), Group: "jobset.x-k8s.io"}
+}
+
+func sortJobSetMembers(runs []WorkloadRun) {
+	sort.SliceStable(runs, func(i, j int) bool {
+		if rankDiff := jobSetMemberPhaseRank(runs[i].Phase) - jobSetMemberPhaseRank(runs[j].Phase); rankDiff != 0 {
+			return rankDiff < 0
+		}
+		if runs[i].Deleting != runs[j].Deleting {
+			return !runs[i].Deleting
+		}
+		if runs[i].JobSet.GroupName != runs[j].JobSet.GroupName {
+			return runs[i].JobSet.GroupName < runs[j].JobSet.GroupName
+		}
+		if runs[i].JobSet.ReplicatedJob != runs[j].JobSet.ReplicatedJob {
+			return runs[i].JobSet.ReplicatedJob < runs[j].JobSet.ReplicatedJob
+		}
+		left, leftErr := strconv.Atoi(runs[i].JobSet.JobIndex)
+		right, rightErr := strconv.Atoi(runs[j].JobSet.JobIndex)
+		if leftErr == nil && rightErr == nil && left != right {
+			return left < right
+		}
+		if runs[i].JobSet.JobIndex != runs[j].JobSet.JobIndex {
+			return runs[i].JobSet.JobIndex < runs[j].JobSet.JobIndex
+		}
+		return runs[i].Name < runs[j].Name
+	})
+}
+
+func jobSetMemberPhaseRank(phase string) int {
+	switch phase {
+	case "Failed", "Error":
+		return 0
+	case "Running", "Pending":
+		return 1
+	case "Suspended":
+		return 2
+	case "Succeeded", "Complete":
+		return 3
+	default:
+		return 4
+	}
+}
+
+func listJobRuns(cache *k8s.ResourceCache, namespaces []string) ([]*batchv1.Job, error) {
+	lister := cache.Jobs()
+	var out []*batchv1.Job
+	if len(namespaces) == 0 {
+		return lister.List(labels.Everything())
+	}
+	for _, ns := range namespaces {
+		items, err := lister.Jobs(ns).List(labels.Everything())
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	return out, nil
+}
+
+func listWorkflowRuns(ctx context.Context, cache *k8s.ResourceCache, namespaces []string) ([]*unstructured.Unstructured, error) {
+	if len(namespaces) == 0 {
+		return cache.ListDynamicWithGroup(ctx, "Workflow", "", "argoproj.io")
+	}
+	var out []*unstructured.Unstructured
+	for _, ns := range namespaces {
+		items, err := cache.ListDynamicWithGroup(ctx, "Workflow", ns, "argoproj.io")
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, items...)
+	}
+	return out, nil
+}
+
+func workloadParentGetError(kind, namespace, name string, err error) *workloadError {
+	displayName := name
+	if namespace != "" {
+		displayName = namespace + "/" + name
+	}
+	if apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err) {
+		return &workloadError{http.StatusForbidden, "insufficient permissions to get " + kind + " " + displayName}
+	}
+	if apierrors.IsNotFound(err) || errors.Is(err, k8score.ErrResourceNotFound) {
+		return &workloadError{http.StatusNotFound, kind + " " + displayName + " not found"}
+	}
+	return &workloadError{http.StatusInternalServerError, "failed to get " + kind + " " + displayName + ": " + err.Error()}
+}
+
+func workflowReferencesTemplate(workflow *unstructured.Unstructured, namespace, name string) bool {
+	refName, _, _ := unstructured.NestedString(workflow.Object, "spec", "workflowTemplateRef", "name")
+	clusterScope, _, _ := unstructured.NestedBool(workflow.Object, "spec", "workflowTemplateRef", "clusterScope")
+	if refName != "" {
+		return !clusterScope && workflow.GetNamespace() == namespace && refName == name
+	}
+	return workflow.GetNamespace() == namespace && workflow.GetLabels()["workflows.argoproj.io/workflow-template"] == name
+}
+
+func workflowReferencesClusterTemplate(workflow *unstructured.Unstructured, name string) bool {
+	refName, _, _ := unstructured.NestedString(workflow.Object, "spec", "workflowTemplateRef", "name")
+	clusterScope, _, _ := unstructured.NestedBool(workflow.Object, "spec", "workflowTemplateRef", "clusterScope")
+	return clusterScope && refName == name
+}
+
+func jobRunInfo(job *batchv1.Job) WorkloadRun {
+	completeCondition, complete := jobCondition(job, batchv1.JobComplete)
+	failedCondition, failed := jobCondition(job, batchv1.JobFailed)
+
+	phase := "Pending"
+	switch {
+	case jobIsSuspended(job):
+		phase = "Suspended"
+	case job.Status.Active > 0:
+		phase = "Running"
+	case complete:
+		phase = "Succeeded"
+	case failed:
+		phase = "Failed"
+	}
+
+	annotations := job.Annotations
+	scheduledAt := ""
+	trigger := ""
+	if annotations["cronjob.kubernetes.io/instantiate"] == "manual" {
+		trigger = "manual"
+	} else if v := annotations["batch.kubernetes.io/cronjob-scheduled-timestamp"]; v != "" {
+		scheduledAt = v
+		trigger = "schedule"
+	}
+
+	launcher := jobLauncher(job)
+	if trigger == "" && launcher != nil && launcher.Kind == "ScaledJob" {
+		trigger = "event"
+	}
+	run := WorkloadRun{
+		Group:        "batch",
+		Kind:         "jobs",
+		Namespace:    job.Namespace,
+		Name:         job.Name,
+		Phase:        phase,
+		Active:       phase == "Running" || phase == "Pending",
+		StartedAt:    formatMetaTime(job.Status.StartTime),
+		ScheduledAt:  scheduledAt,
+		Trigger:      trigger,
+		Succeeded:    job.Status.Succeeded,
+		Failed:       job.Status.Failed,
+		Running:      job.Status.Active,
+		Desired:      jobDesiredCount(job),
+		Parallelism:  jobParallelismCount(job),
+		Launcher:     launcher,
+		PodSucceeded: int(job.Status.Succeeded),
+		PodFailed:    int(job.Status.Failed),
+		PodRunning:   int(job.Status.Active), // Job.Status.Active counts Pending Pods too.
+	}
+	run.PodTotal = run.PodSucceeded + run.PodFailed + run.PodRunning
+	if run.Desired > 0 {
+		run.Progress = fmt.Sprintf("%d/%d", run.Succeeded, run.Desired)
+	}
+	if complete {
+		applyJobCondition(&run, completeCondition)
+	} else if failed {
+		applyJobCondition(&run, failedCondition)
+	}
+	return run
+}
+
+func jobIsSuspended(job *batchv1.Job) bool {
+	if job.Spec.Suspend != nil && *job.Spec.Suspend {
+		return true
+	}
+	for _, condition := range job.Status.Conditions {
+		if string(condition.Type) == "Suspended" && condition.Status == corev1.ConditionTrue {
+			return true
+		}
+	}
+	return false
+}
+
+func jobLauncher(job *batchv1.Job) *WorkloadRunResourceRef {
+	for _, owner := range job.OwnerReferences {
+		if owner.Controller == nil || !*owner.Controller {
+			continue
+		}
+		switch owner.Kind {
+		case "CronJob":
+			return &WorkloadRunResourceRef{Kind: owner.Kind, Namespace: job.Namespace, Name: owner.Name, Group: "batch"}
+		case "ScaledJob":
+			return &WorkloadRunResourceRef{Kind: owner.Kind, Namespace: job.Namespace, Name: owner.Name, Group: "keda.sh"}
+		}
+	}
+	return nil
+}
+
+func jobCondition(job *batchv1.Job, conditionType batchv1.JobConditionType) (batchv1.JobCondition, bool) {
+	for _, condition := range job.Status.Conditions {
+		if condition.Type == conditionType && condition.Status == corev1.ConditionTrue {
+			return condition, true
+		}
+	}
+	return batchv1.JobCondition{}, false
+}
+
+func applyJobCondition(run *WorkloadRun, condition batchv1.JobCondition) {
+	run.FinishedAt = condition.LastTransitionTime.Format(time.RFC3339)
+	if condition.Message != "" {
+		run.Message = condition.Message
+	}
+}
+
+func jobDesiredCount(job *batchv1.Job) int32 {
+	if job.Spec.Completions != nil {
+		return *job.Spec.Completions
+	}
+	return 1
+}
+
+func jobParallelismCount(job *batchv1.Job) int32 {
+	if job.Spec.Parallelism != nil {
+		return *job.Spec.Parallelism
+	}
+	return 1
+}
+
+func workflowRunInfo(workflow *unstructured.Unstructured) WorkloadRun {
+	phase, _, _ := unstructured.NestedString(workflow.Object, "status", "phase")
+	startedAt, _, _ := unstructured.NestedString(workflow.Object, "status", "startedAt")
+	finishedAt, _, _ := unstructured.NestedString(workflow.Object, "status", "finishedAt")
+	message, _, _ := unstructured.NestedString(workflow.Object, "status", "message")
+	progress, _, _ := unstructured.NestedString(workflow.Object, "status", "progress")
+	template, _, _ := unstructured.NestedString(workflow.Object, "spec", "workflowTemplateRef", "name")
+	if phase == "" {
+		phase = "Pending"
+	}
+	scheduledAt := workflow.GetAnnotations()["workflows.argoproj.io/scheduled-time"]
+	trigger := ""
+	if scheduledAt != "" {
+		trigger = "schedule"
+	}
+	run := WorkloadRun{
+		Group:       "argoproj.io",
+		Kind:        "workflows",
+		Namespace:   workflow.GetNamespace(),
+		Name:        workflow.GetName(),
+		Phase:       phase,
+		Active:      phase == "Running" || phase == "Pending",
+		StartedAt:   startedAt,
+		FinishedAt:  finishedAt,
+		ScheduledAt: scheduledAt,
+		Trigger:     trigger,
+		Message:     message,
+		Progress:    progress,
+		Template:    template,
+		Launcher:    workflowLauncher(workflow),
+	}
+	applyWorkflowPodCounts(&run, workflow)
+	return run
+}
+
+func workflowLauncher(workflow *unstructured.Unstructured) *WorkloadRunResourceRef {
+	if name := cronWorkflowOwnerName(workflow); name != "" {
+		return &WorkloadRunResourceRef{Kind: "CronWorkflow", Namespace: workflow.GetNamespace(), Name: name, Group: "argoproj.io"}
+	}
+	return nil
+}
+
+func applyWorkflowPodCounts(run *WorkloadRun, workflow *unstructured.Unstructured) {
+	nodes, found, _ := unstructured.NestedMap(workflow.Object, "status", "nodes")
+	if !found {
+		return
+	}
+	for _, raw := range nodes {
+		node, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		nodeType, _ := node["type"].(string)
+		nodePhase, _ := node["phase"].(string)
+		if nodeType == "Pod" {
+			run.PodTotal++
+			switch nodePhase {
+			case "Succeeded":
+				run.PodSucceeded++
+			case "Failed", "Error":
+				run.PodFailed++
+			case "Running":
+				run.PodRunning++
+			case "Pending":
+				run.PodPending++
+			}
+		}
+	}
+}
+
+func sortRuns(runs []WorkloadRun) {
+	sort.SliceStable(runs, func(i, j int) bool {
+		return runComesBefore(runs[i], runs[j])
+	})
+}
+
+func runComesBefore(a, b WorkloadRun) bool {
+	if a.Active != b.Active {
+		return a.Active
+	}
+	if !runSortTime(a).Equal(runSortTime(b)) {
+		return runSortTime(a).After(runSortTime(b))
+	}
+	if runPhaseRank(a.Phase) != runPhaseRank(b.Phase) {
+		return runPhaseRank(a.Phase) < runPhaseRank(b.Phase)
+	}
+	return a.Name < b.Name
+}
+
+func runPhaseRank(phase string) int {
+	switch phase {
+	case "Failed", "Error":
+		return 0
+	case "Running", "Pending":
+		return 1
+	case "Succeeded":
+		return 2
+	default:
+		return 3
+	}
+}
+
+func runSortTime(run WorkloadRun) time.Time {
+	var out time.Time
+	for _, value := range []string{run.StartedAt, run.ScheduledAt, run.FinishedAt} {
+		if value == "" {
+			continue
+		}
+		if t, err := time.Parse(time.RFC3339, value); err == nil && t.After(out) {
+			out = t
+		}
+	}
+	return out
+}
+
+func formatMetaTime(t *metav1.Time) string {
+	if t == nil {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}
+
+func addWorkloadLogMetadata(response map[string]any, metadata workloadLogMetadata) {
+	if metadata.EmptyReason != "" {
+		response["emptyReason"] = metadata.EmptyReason
+	}
+	if metadata.EmptyMessage != "" {
+		response["emptyMessage"] = metadata.EmptyMessage
+	}
+	if metadata.Command != "" {
+		response["command"] = metadata.Command
+	}
+}
+
+func (s *Server) describeWorkloadLogEmpty(ctx context.Context, kind, namespace, name string) workloadLogMetadata {
+	switch kind {
+	case "job", "jobs":
+		return s.describeJobLogEmpty(namespace, name)
+	case "workflow", "workflows":
+		return s.describeWorkflowLogEmpty(ctx, namespace, name)
+	default:
+		return workloadLogMetadata{
+			EmptyReason:  "no-pods",
+			EmptyMessage: "No pods found for this workload.",
+		}
+	}
+}
+
+func (s *Server) describeJobLogEmpty(namespace, name string) workloadLogMetadata {
+	metadata := workloadLogMetadata{
+		EmptyReason:  "no-pods",
+		EmptyMessage: "No pods found for this Job yet. Check the Timeline tab for scheduling or admission events.",
+		Command:      "kubectl logs job/" + name + " -n " + namespace,
+	}
+	cache := k8s.GetResourceCache()
+	if cache == nil || cache.Jobs() == nil {
+		return metadata
+	}
+	job, err := cache.Jobs().Jobs(namespace).Get(name)
+	if err != nil {
+		return metadata
+	}
+	applyTerminalJobEmptyState(&metadata, job, namespace, name)
+	return metadata
+}
+
+func applyTerminalJobEmptyState(metadata *workloadLogMetadata, job *batchv1.Job, namespace, name string) {
+	if !k8s.IsJobTerminal(job) {
+		return
+	}
+	metadata.EmptyReason = "pods-gone"
+	metadata.EmptyMessage = "This Job has finished, but its pods are no longer present in Kubernetes. If logs were retained externally, use your logging system; otherwise inspect the Job conditions and events."
+	metadata.Command = "kubectl describe job/" + name + " -n " + namespace
+}
+
+func (s *Server) describeWorkflowLogEmpty(ctx context.Context, namespace, name string) workloadLogMetadata {
+	metadata := workloadLogMetadata{
+		EmptyReason:  "no-pods",
+		EmptyMessage: "No Workflow pods found yet. Check the Timeline tab for scheduling or admission events.",
+		Command:      "argo logs " + name + " -n " + namespace,
+	}
+	cache := k8s.GetResourceCache()
+	if cache == nil {
+		return metadata
+	}
+	workflow, err := cache.GetDynamicWithGroup(ctx, "Workflow", namespace, name, "argoproj.io")
+	if err != nil {
+		return metadata
+	}
+	applyTerminalWorkflowEmptyState(&metadata, workflow.Object, namespace, name)
+	return metadata
+}
+
+func applyTerminalWorkflowEmptyState(metadata *workloadLogMetadata, workflow map[string]any, namespace, name string) {
+	if !k8s.IsWorkflowTerminal(workflow) {
+		return
+	}
+	metadata.EmptyReason = "pods-gone"
+	if k8s.WorkflowArchiveLogsConfigured(workflow) {
+		metadata.EmptyMessage = "This Workflow has finished and its pods are no longer present. Archived logs appear to be enabled; use the configured Argo or logging UI, or try argo logs " + name + " -n " + namespace + "."
+	} else {
+		metadata.EmptyMessage = "This Workflow has finished and its pods are no longer present. Argo may have garbage-collected them; Kubernetes pod logs are no longer available here."
+	}
+}
+
+// writeWorkloadError writes an error response based on workloadError
+func (s *Server) writeWorkloadError(w http.ResponseWriter, err *workloadError) {
+	s.writeError(w, err.statusCode, err.message)
+}

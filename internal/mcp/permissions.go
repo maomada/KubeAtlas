@@ -1,0 +1,475 @@
+package mcp
+
+import (
+	"context"
+	"log"
+	"slices"
+	"strings"
+	"sync"
+
+	"k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/meaningfulchanges"
+	"github.com/maomada/KubeAtlas/internal/readscope"
+	"github.com/maomada/KubeAtlas/internal/timeline"
+	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
+	"github.com/maomada/KubeAtlas/pkg/issuesapi"
+	pkgopencost "github.com/maomada/KubeAtlas/pkg/opencost"
+)
+
+// mcpChangeAuthorizer returns the per-kind authorizer for the ctx user, for the
+// shared k8s.ChangeReadAllowed gate. canReadInNamespace memoizes on the user's
+// permission cache; nil user (auth off) short-circuits to allow inside it.
+func mcpChangeAuthorizer(ctx context.Context) func(group, resource, namespace string) bool {
+	return func(group, resource, namespace string) bool {
+		return canReadInNamespace(ctx, group, resource, namespace, "list")
+	}
+}
+
+// filterRecentChangesRBAC drops RecentChange rows the ctx user can't read, via
+// the shared per-kind gate (APIVersion disambiguates CRD kind collisions). It is
+// the MCP twin of the server-side filter, applied at every MCP surface that
+// emits change rows (get_changes, dashboard, issues recent_changes, per-issue
+// correlation incl. consumed ConfigMaps, diagnose, get_resource).
+//
+// Helm-package-manager rows are a synthesized kind with no real GVR and their
+// own namespace/helm authorization upstream; pass them through rather than
+// fail-closed on an unresolvable kind (preserves the pre-existing behavior — the
+// prior cluster-scoped-only filter also let them through). Auth off → unchanged.
+func filterRecentChangesRBAC(ctx context.Context, changes []issuesapi.RecentChange) []issuesapi.RecentChange {
+	allow := recentChangeReadFilter(ctx)
+	if allow == nil {
+		return changes
+	}
+	out := changes[:0]
+	for _, c := range changes {
+		if allow(c) {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// recentChangeReadFilter is filterRecentChangesRBAC's per-row predicate, for
+// change queries that must drop unreadable rows before their own cut
+// (meaningfulchanges.Query.Allow). nil when auth is off. The predicate keeps
+// per-call state and is not safe for concurrent use.
+func recentChangeReadFilter(ctx context.Context) func(issuesapi.RecentChange) bool {
+	if pkgauth.UserFromContext(ctx) == nil {
+		return nil
+	}
+	authz := mcpChangeAuthorizer(ctx)
+	// A cluster-wide query can hold hundreds of kind/namespace pairs, each a
+	// permission check on first use. One cluster-wide check per kind answers
+	// every namespace for callers who can read that kind everywhere.
+	everywhere := map[string]bool{}
+	authorize := func(group, resource, namespace string) bool {
+		key := group + "/" + resource
+		all, checked := everywhere[key]
+		if !checked {
+			all = authz(group, resource, "")
+			everywhere[key] = all
+		}
+		return all || authz(group, resource, namespace)
+	}
+	return func(c issuesapi.RecentChange) bool {
+		return c.Source == helmChangeSource || k8s.ChangeReadAllowed(c.Kind, c.APIVersion, c.Namespace, authorize)
+	}
+}
+
+// recentChangeViewer gates the Pod and workload names change rows carry.
+// The zero Viewer when auth is off.
+func recentChangeViewer(ctx context.Context) meaningfulchanges.Viewer {
+	if pkgauth.UserFromContext(ctx) == nil {
+		return meaningfulchanges.Viewer{}
+	}
+	return meaningfulchanges.Viewer{
+		CanReadPods:     func(namespace string) bool { return canReadInNamespace(ctx, "", "pods", namespace, "get") },
+		CanReadConsumer: recentChangeReadFilter(ctx),
+	}
+}
+
+// callerReadsAllNamespaces reports whether the caller is unrestricted by
+// namespace. Store-wide facts, such as when Radar's held history becomes
+// complete, go only to such callers.
+func callerReadsAllNamespaces(ctx context.Context) bool {
+	return filterNamespacesForUser(ctx, nil) == nil
+}
+
+// filterTimelineEventsRBAC is filterRecentChangesRBAC's twin for raw timeline
+// events (the MCP dashboard queries the store directly). Auth off → unchanged.
+func filterTimelineEventsRBAC(ctx context.Context, events []timeline.TimelineEvent) []timeline.TimelineEvent {
+	if pkgauth.UserFromContext(ctx) == nil {
+		return events
+	}
+	authz := mcpChangeAuthorizer(ctx)
+	out := events[:0]
+	for _, e := range events {
+		if k8s.ChangeReadAllowed(e.Kind, e.APIVersion, e.Namespace, authz) {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+// MCP read tools share the cluster-wide resource cache (populated by the pod
+// SA), so per-user namespace filtering must happen at read time. This mirrors
+// the REST handler chain (parseNamespacesForUser → getUserNamespaces) but
+// lives in the MCP package because Server.permCache isn't reachable from here.
+
+var (
+	mcpPermCache     *pkgauth.PermissionCache
+	mcpPermCacheOnce sync.Once
+)
+
+func getPermCache() *pkgauth.PermissionCache {
+	mcpPermCacheOnce.Do(func() {
+		// Stamp entries with the current K8s context — a request mid-context-
+		// switch can't be authorized by the previous cluster's RBAC even if
+		// the OnContextSwitch invalidation hasn't fired yet.
+		mcpPermCache = pkgauth.NewPermissionCache().WithContextName(k8s.GetContextName)
+		// New cluster ⇒ stale RBAC: drop everything we cached for the old one.
+		k8s.OnContextSwitch(func(_ string) {
+			mcpPermCache.Invalidate()
+		})
+	})
+	return mcpPermCache
+}
+
+// resolveUserPerms returns the user's namespace permissions, discovering them
+// via SubjectAccessReview on first call. Result is cached per-user with the
+// PermissionCache TTL (2 min) so subsequent reads stay fast.
+//
+// Returns nil when no user is on context (auth disabled). Returns a perms
+// struct with a non-nil but empty AllowedNamespaces on discovery failure
+// (fail-closed: treat the user as having no access rather than leaking).
+func resolveUserPerms(ctx context.Context) (*pkgauth.User, *pkgauth.UserPermissions) {
+	user, perms, _ := resolveUserPermsDecision(ctx)
+	return user, perms
+}
+
+func resolveUserPermsDecision(ctx context.Context) (*pkgauth.User, *pkgauth.UserPermissions, bool) {
+	user := pkgauth.UserFromContext(ctx)
+	if user == nil {
+		return nil, nil, true
+	}
+	cache := getPermCache()
+	if perms := cache.Get(user.Username, user.Groups); perms != nil {
+		return user, perms, true
+	}
+
+	client := k8s.GetClient()
+	if client == nil {
+		log.Printf("[mcp] K8s client unavailable for namespace discovery (user=%s) — denying access", user.Username)
+		// Empty (not nil) AllowedNamespaces means "no access"; nil would mean cluster-admin.
+		return user, &pkgauth.UserPermissions{AllowedNamespaces: []string{}}, false
+	}
+
+	allNamespaces := mcpAllNamespaceNames(ctx)
+	allowed, err := pkgauth.DiscoverNamespaces(ctx, client, user.Username, user.Groups, allNamespaces)
+	if err != nil {
+		log.Printf("[mcp] DiscoverNamespaces failed for %s: %v — denying access (fail-closed)", user.Username, err)
+		return user, &pkgauth.UserPermissions{AllowedNamespaces: []string{}}, false
+	}
+
+	perms := &pkgauth.UserPermissions{AllowedNamespaces: allowed}
+	cache.Set(user.Username, user.Groups, perms)
+	return user, perms, true
+}
+
+func resolveUserPermsWithStatus(ctx context.Context) (*pkgauth.User, *pkgauth.UserPermissions, bool) {
+	user, perms, checked := resolveUserPermsDecision(ctx)
+	return user, perms, !checked
+}
+
+func mcpAllNamespaceNames(ctx context.Context) []string {
+	var allNamespaces []string
+	if rc := k8s.GetResourceCache(); rc != nil {
+		if nsLister := rc.Namespaces(); nsLister != nil {
+			nsList, _ := nsLister.List(labels.Everything())
+			for _, ns := range nsList {
+				allNamespaces = append(allNamespaces, ns.Name)
+			}
+		}
+	}
+	if len(allNamespaces) == 0 {
+		if accessible, _ := k8s.GetAccessibleNamespaces(ctx); len(accessible) > 0 {
+			allNamespaces = accessible
+		}
+	}
+	return allNamespaces
+}
+
+// filterNamespacesForUser intersects requested namespaces with the user's
+// allowed set. Mirrors auth.FilterNamespacesForUser semantics:
+//
+//   - nil return  → no filter (auth disabled or user is cluster-admin)
+//   - empty slice → user has no access; caller should return empty results
+//   - non-empty   → restrict reads to these namespaces
+//
+// requested may be nil ("all namespaces"). Pass a single-element slice to
+// check a specific namespace.
+func filterNamespacesForUser(ctx context.Context, requested []string) []string {
+	namespaces, _ := filterNamespacesForUserWithStatus(ctx, requested)
+	return namespaces
+}
+
+// filterNamespacesForUserWithStatus is filterNamespacesForUser plus whether
+// the result is fail-closed because namespace discovery failed.
+func filterNamespacesForUserWithStatus(ctx context.Context, requested []string) ([]string, bool) {
+	user, perms, failed := resolveUserPermsWithStatus(ctx)
+	if user == nil {
+		return requested, false
+	}
+	return pkgauth.FilterNamespacesForUser(requested, user, perms), failed
+}
+
+// scopedNamespacesForUser applies the --namespace pin before the RBAC filter,
+// mirroring Server.openCostRouteScope and parseNamespacesForUser. Prometheus
+// and Kubecost answer cluster-wide no matter which namespace the informer
+// caches are pinned to, so a tool reading them must clamp the scope itself or a
+// namespace-scoped Radar reports spend for namespaces it was told to ignore.
+func scopedNamespacesForUser(ctx context.Context, requested []string) []string {
+	clamped, ok := clampToNamespacePin(requested)
+	if !ok {
+		return []string{}
+	}
+	return filterNamespacesForUser(ctx, clamped)
+}
+
+// namespaceWithinPin reports whether a single namespace survives the --namespace
+// pin, for tools that authorize it with their own exact SubjectAccessReview.
+func namespaceWithinPin(namespace string) bool {
+	_, ok := clampToNamespacePin([]string{namespace})
+	return ok
+}
+
+// deniedScopeReason names why a namespace request resolved to nothing. The pin
+// and an RBAC denial are indistinguishable in the resulting namespace list, so
+// the cause has to be re-derived from configuration: "you cannot read this"
+// and "radar was started with --namespace-scope" need different answers. The
+// pin is the answer only for namespaces the caller can see: one they can't is
+// an access denial either way, so guessing names can't find the pin.
+func deniedScopeReason(ctx context.Context, requested []string) string {
+	if pinExcludesVisible(ctx, requested) {
+		return ReasonOutsideNamespacePin
+	}
+	return pkgopencost.ReasonAccessDenied
+}
+
+// pinExcludesVisible reports whether the --namespace pin excludes a request
+// once it is limited to the namespaces the caller can see.
+func pinExcludesVisible(ctx context.Context, requested []string) bool {
+	if requested == nil {
+		return false
+	}
+	if visible := filterNamespacesForUser(ctx, requested); visible != nil {
+		if len(visible) == 0 {
+			return false
+		}
+		requested = visible
+	}
+	_, ok := clampToNamespacePin(requested)
+	return !ok
+}
+
+// ReasonOutsideNamespacePin marks a request the --namespace pin excluded,
+// rather than one this identity lacks permission for.
+const ReasonOutsideNamespacePin = "outside_namespace_pin"
+
+// NamespacePinned reports whether informer caches are pinned to one namespace,
+// and which. Callers use it to attribute a narrowed scope: a pin and an RBAC
+// limit produce the same namespace list, and telling a cluster-admin their
+// access is restricted when the operator pinned the process is a wrong answer.
+func NamespacePinned() (string, bool) {
+	if !k8s.ForceNamespaceScope {
+		return "", false
+	}
+	target := k8s.GetNamespaceScopeTarget()
+	return target, target != ""
+}
+
+// clampToNamespacePin applies only the --namespace pin, reporting false when the
+// request falls outside it.
+func clampToNamespacePin(requested []string) ([]string, bool) {
+	if !k8s.ForceNamespaceScope {
+		return requested, true
+	}
+	target := k8s.GetNamespaceScopeTarget()
+	if target == "" {
+		return nil, false
+	}
+	if requested != nil && !slices.Contains(requested, target) {
+		return nil, false
+	}
+	return []string{target}, true
+}
+
+// checkNamespaceAccess reports whether the user can read in this single
+// namespace. Convenience for tools that target one namespaced resource
+// (get_pod_logs, get_workload_logs).
+//
+// Only valid for namespaced reads. Empty namespace ("") routes to
+// canReadClusterScopedKind — namespace-list discovery is not a sufficient
+// signal for cluster-scoped authorization.
+func checkNamespaceAccess(ctx context.Context, namespace string) bool {
+	if namespace == "" {
+		// Caller misuse — cluster-scoped reads must use canReadClusterScopedKind.
+		return false
+	}
+	allowed := filterNamespacesForUser(ctx, []string{namespace})
+	if allowed == nil {
+		return true
+	}
+	return slices.Contains(allowed, namespace)
+}
+
+// subjectCanI is overridden in tests to bypass the live apiserver call.
+var subjectCanI = pkgauth.SubjectCanI
+
+// canReadClusterScopedKind authorizes a single (verb, kind) cluster-scoped
+// read for the calling user via SubjectAccessReview. Mirrors Server.canRead
+// for the MCP package. Result is cached on UserPermissions per the same TTL
+// as the namespace-discovery cache.
+//
+// group disambiguates colliding kinds (e.g. Knative Service vs core Service).
+// Pass "" when the caller doesn't know the group; the static catalogue still
+// wins on core kinds.
+//
+// Returns true (passthrough) when the kind is namespaced/unknown — the
+// caller's namespace check is the gate in that case.
+func canReadClusterScopedKind(ctx context.Context, kind, group, verb string) bool {
+	allowed, _ := canReadClusterScopedKindDecision(ctx, kind, group, verb)
+	return allowed
+}
+
+func canReadClusterScopedKindDecision(ctx context.Context, kind, group, verb string) (bool, bool) {
+	clusterScoped, gvrGroup, gvrResource := k8s.ClassifyKindScope(kind, group)
+	if !clusterScoped {
+		return true, true
+	}
+	return canReadInNamespaceDecision(ctx, gvrGroup, gvrResource, "", verb)
+}
+
+// canReadInNamespace authorizes a single (verb, group, resource, namespace)
+// read via SubjectAccessReview, memoizing on UserPermissions.canI. Use when
+// per-kind RBAC inside a namespace differs from namespace-list discovery
+// (e.g. user can list pods but not secrets in `team-a`).
+//
+// namespace="" issues an any-namespace SAR — for a *namespaced* kind that
+// asks "can the user list this kind cluster-wide?" (useful as the
+// cluster-wide-scan branch in search RBAC). For *cluster-scoped* kinds
+// keep using canReadClusterScopedKind; it routes via ClassifyKindScope.
+//
+// Returns true (passthrough) when no user is on context — auth-mode=none
+// applies the SA's RBAC at the cache layer.
+func canReadInNamespace(ctx context.Context, group, resource, namespace, verb string) bool {
+	allowed, _ := canReadInNamespaceDecision(ctx, group, resource, namespace, verb)
+	return allowed
+}
+
+func canReadInNamespaceDecision(ctx context.Context, group, resource, namespace, verb string) (bool, bool) {
+	user, perms := resolveUserPerms(ctx)
+	if user == nil {
+		return true, true
+	}
+	if perms != nil {
+		if v, ok := perms.CanI(verb, group, resource, namespace); ok {
+			return v, true
+		}
+	}
+	client := k8s.GetClient()
+	if client == nil {
+		log.Printf("[mcp] canReadInNamespace: no K8s client, denying %s on %s/%s in %q for %s", k8s.SanitizeForLog(verb), k8s.SanitizeForLog(group), k8s.SanitizeForLog(resource), k8s.SanitizeForLog(namespace), k8s.SanitizeForLog(user.Username))
+		return false, false
+	}
+	allowed, err := subjectCanI(ctx, client, user.Username, user.Groups, namespace, group, resource, verb)
+	if err != nil {
+		log.Printf("[mcp] canReadInNamespace SAR failed for %s on %s/%s in %q: %v", k8s.SanitizeForLog(user.Username), k8s.SanitizeForLog(group), k8s.SanitizeForLog(resource), k8s.SanitizeForLog(namespace), err)
+		return false, false
+	}
+	if perms != nil {
+		perms.SetCanI(verb, group, resource, namespace, allowed)
+	}
+	return allowed, true
+}
+
+// filterNamespacesByCanRead returns the subset of `namespaces` where the
+// calling user passes a per-namespace SAR for (group, resource, verb). The
+// MCP-side mirror of Server.filterNamespacesByCanRead, with the same bounded
+// parallelism: each canReadInNamespace miss is a SAR round-trip, so a serial
+// loop over a large candidate set (a cluster-wide reader's full namespace
+// list) would block the tool call for N round-trips. Output is sorted so the
+// result is deterministic regardless of goroutine completion order — matching
+// the HTTP helper.
+//
+// nil or empty input is returned unchanged.
+func filterNamespacesByCanRead(ctx context.Context, group, resource, verb string, namespaces []string) []string {
+	namespaces, _ = filterNamespacesByCanReadDecision(ctx, group, resource, verb, namespaces)
+	return namespaces
+}
+
+func filterNamespacesByCanReadDecision(ctx context.Context, group, resource, verb string, namespaces []string) ([]string, bool) {
+	if len(namespaces) == 0 {
+		return namespaces, true
+	}
+	allowed, _, unchecked := partitionNamespacesByCanRead(ctx, group, resource, verb, namespaces)
+	return allowed, len(unchecked) == 0
+}
+
+// partitionNamespacesByCanRead splits namespaces by the caller's per-namespace
+// SAR: allowed, denied, and unchecked (the check itself failed). Each part is
+// sorted and non-nil.
+func partitionNamespacesByCanRead(ctx context.Context, group, resource, verb string, namespaces []string) (allowed, denied, unchecked []string) {
+	return readscope.PartitionAccess(namespaces, func(ns string) (bool, bool) {
+		return canReadInNamespaceDecision(ctx, group, resource, ns, verb)
+	})
+}
+
+// retainAllowedObjects post-filters cache results for namespace-restricted users.
+// FetchResourceList accepts an `allowed` namespace slice for namespaced kinds
+// (it iterates per-namespace), but cluster-scoped lookups (e.g. cache.Nodes)
+// ignore it — and the "namespaces" lister always returns all namespaces.
+// This helper applies the per-user filter to the result objects.
+//
+// Behavior:
+//   - "namespaces" kind: keep only items whose .Name is in allowed
+//   - other items with no metadata.namespace (cluster-scoped): drop them
+//     (non-admins reach this only for kinds we forgot to flag clusterOnly)
+//   - namespaced items: keep only those whose metadata.namespace is in allowed
+func retainAllowedObjects(objs []runtime.Object, allowed []string, kind string) []runtime.Object {
+	if allowed == nil {
+		return objs
+	}
+	set := make(map[string]bool, len(allowed))
+	for _, ns := range allowed {
+		set[ns] = true
+	}
+	out := make([]runtime.Object, 0, len(objs))
+	isNamespacesKind := strings.ToLower(kind) == "namespaces" || strings.ToLower(kind) == "namespace"
+	for _, obj := range objs {
+		m, err := meta.Accessor(obj)
+		if err != nil {
+			continue
+		}
+		if isNamespacesKind {
+			if set[m.GetName()] {
+				out = append(out, obj)
+			}
+			continue
+		}
+		ns := m.GetNamespace()
+		if ns == "" {
+			// Cluster-scoped resource leaked through (e.g. caller didn't gate
+			// via isClusterOnlyKind). Drop it for non-admins.
+			continue
+		}
+		if set[ns] {
+			out = append(out, obj)
+		}
+	}
+	return out
+}

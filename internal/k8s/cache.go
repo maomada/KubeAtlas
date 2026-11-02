@@ -1,0 +1,2450 @@
+package k8s
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"log"
+	"os"
+	"slices"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	appsv1 "k8s.io/api/apps/v1"
+	autoscalingv2 "k8s.io/api/autoscaling/v2"
+	batchv1 "k8s.io/api/batch/v1"
+	corev1 "k8s.io/api/core/v1"
+	networkingv1 "k8s.io/api/networking/v1"
+
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	toolscache "k8s.io/client-go/tools/cache"
+
+	"github.com/maomada/KubeAtlas/internal/timeline"
+	"github.com/maomada/KubeAtlas/pkg/k8score"
+	"github.com/maomada/KubeAtlas/pkg/resourceid"
+	"github.com/maomada/KubeAtlas/pkg/topology"
+)
+
+// DebugEvents enables verbose event debugging when true (set via --debug-events flag)
+var DebugEvents bool
+
+// ListPageSize, when > 0, makes high-cardinality informers (Pods, ReplicaSets)
+// paginate their initial LIST instead of pulling it in one response (set via
+// --list-page-size flag). Opt-in hardening for very large clusters where
+// WatchList streaming isn't available; 0 keeps the standard behavior.
+var ListPageSize int64
+
+// ForceNamespaceScope pins all namespaced informer caches to one namespace.
+// Cluster-scoped resources still use cluster-wide informers.
+var ForceNamespaceScope bool
+
+// TimingLogs enables [startup-timing] log lines when true (set via --dev flag).
+// These are useful for profiling startup but too noisy for production.
+var TimingLogs bool
+
+// LogTiming prints a [startup-timing] log line if TimingLogs is enabled.
+func LogTiming(format string, args ...any) {
+	if TimingLogs {
+		log.Printf("[startup-timing] "+format, args...)
+	}
+}
+
+var logTiming = LogTiming
+
+// InitialSyncComplete reports whether the current cache has finished its
+// initial sync, after which an add is an object Radar had not seen before.
+func InitialSyncComplete() bool {
+	return initialSyncComplete.Load()
+}
+
+// initialSyncComplete is set to true after the initial cache sync completes.
+// During initial sync, "add" events are skipped since they represent existing
+// resources, not new creations. Only adds after sync are recorded.
+var initialSyncComplete atomic.Bool
+
+// deferredResources lists informer keys that are NOT required for the initial
+// dashboard render. These sync in the background after the critical informers
+// complete, so the UI can render immediately with core resources.
+// Critical: pods, deployments, services, statefulsets, daemonsets, nodes, namespaces, ingresses, jobs, cronjobs.
+var deferredResources = map[string]bool{
+	"secrets":                  true,
+	"events":                   true,
+	"configmaps":               true,
+	"persistentvolumeclaims":   true,
+	"persistentvolumes":        true,
+	"storageclasses":           true,
+	"poddisruptionbudgets":     true,
+	"networkpolicies":          true,
+	"replicasets":              true, // topology-only (Deployment→RS→Pod); can be very large
+	"horizontalpodautoscalers": true, // problems detection, not critical for first render
+	"serviceaccounts":          true, // audit inheritance lookups, not first-render
+	"limitranges":              true, // audit inheritance lookups, not first-render
+	"resourcequotas":           true, // scheduling/admission diagnostics, not first-render
+}
+
+// minimalFirstPaintSet is the subset of critical informers the home
+// dashboard needs to feel coherent. Pods are included despite being
+// typically the largest kind — without pods the topology graph and
+// resource counts are empty. The patience window absorbs pod-sync
+// latency on healthy clusters; on slow ones, the user sees a working
+// home view sooner with a "still loading" hint for the rest.
+var minimalFirstPaintSet = map[string]bool{
+	"pods":        true,
+	"namespaces":  true,
+	"nodes":       true,
+	"services":    true,
+	"deployments": true,
+}
+
+// firstPaintPatience is how long we wait for ALL critical informers before
+// falling back to the minimal set. On most clusters the full critical set
+// syncs well inside this window, so first paint is complete and there is
+// no progressive fill-in. Slow clusters fall through to the minimal-set
+// gate and render with whatever is ready then.
+const firstPaintPatience = 8 * time.Second
+
+// firstPaintBackstop now lives in deadlines.go as the exported package
+// variable FirstPaintBackstop so operators can widen the bound from the
+// command line without recompiling. The 5-minute default is preserved.
+
+// ResourceChange is a type alias for the canonical definition in pkg/k8score.
+type ResourceChange = k8score.ResourceChange
+
+// ResourceCache provides fast, eventually-consistent access to K8s resources
+// using SharedInformers. It embeds *k8score.ResourceCache for the shared
+// informer logic and adds Radar-specific extensions (dynamic cache, resource
+// status, pod workload lookup, timeline integration).
+type ResourceCache struct {
+	*k8score.ResourceCache
+	permissionResult *PermissionCheckResult
+	secretsEnabled   bool // Whether secrets informer is running (requires RBAC)
+	// argoDrift tracks how long each manual-sync ArgoCD Application has been
+	// continuously OutOfSync. Lives here so its lifecycle is the cache's:
+	// recreated per cluster, dropped on a kubeconfig context switch.
+	argoDrift *argoDriftTracker
+	// cronJobScheduleObservations only counts schedule changes observed by this cache, so
+	// restart and context-switch boundaries cannot manufacture run history.
+	cronJobScheduleObservations *cronJobScheduleObservationTracker
+	// secretWriteTimes preserves verified Secret data-owner write times that
+	// the shared informer transform intentionally strips before caching.
+	secretWriteTimes *secretDataManagerWriteIndex
+	// generation is the cacheGeneration this cache was built under.
+	generation uint64
+}
+
+// Generation identifies the construction this cache came from. Every
+// context switch and namespace rescope replaces the cache through
+// ResetResourceCache, so the replacement always has a different value. Use
+// it to scope anything derived from the cache's contents, so a result built
+// from the previous cluster is never served to a request holding the new
+// cache.
+func (c *ResourceCache) Generation() uint64 {
+	return c.generation
+}
+
+type secretDataManagerWrite struct {
+	uid string
+	at  time.Time
+	// managers are the field managers whose entries carry at, the latest
+	// timestamp among managers that own Secret data (more than one on a tie),
+	// sorted. A manager's timestamp moves on a write to any field it owns,
+	// so at is the time of that manager's last write, not necessarily of a
+	// data change.
+	managers []string
+}
+
+type secretDataManagerWriteVersion struct {
+	namespace       string
+	name            string
+	uid             string
+	resourceVersion string
+}
+
+type pendingSecretDataManagerWrite struct {
+	write *secretDataManagerWrite
+	helm  bool
+}
+
+type secretDataManagerWriteIndex struct {
+	mu           sync.Mutex
+	committed    map[string]secretDataManagerWrite
+	pending      map[secretDataManagerWriteVersion]pendingSecretDataManagerWrite
+	pendingLimit int
+}
+
+const maxPendingSecretDataManagerWrites = 10_000
+
+func newSecretDataManagerWriteIndex() *secretDataManagerWriteIndex {
+	return &secretDataManagerWriteIndex{
+		committed:    make(map[string]secretDataManagerWrite),
+		pending:      make(map[secretDataManagerWriteVersion]pendingSecretDataManagerWrite),
+		pendingLimit: maxPendingSecretDataManagerWrites,
+	}
+}
+
+func secretWriteKey(namespace, name string) string {
+	return namespace + "\x00" + name
+}
+
+func secretChangeWritesData(change k8score.ResourceChange) bool {
+	if change.Diff == nil {
+		return false
+	}
+	for _, field := range change.Diff.Fields {
+		if isSecretDataWritePath(field.Path) {
+			return true
+		}
+	}
+	return false
+}
+
+func isSecretDataWritePath(path string) bool {
+	switch path {
+	case "data (added keys)", "data (removed keys)", "data (modified keys)",
+		"stringData (added keys)", "stringData (removed keys)", "stringData (modified keys)":
+		return true
+	default:
+		return false
+	}
+}
+
+func (index *secretDataManagerWriteIndex) capture(obj any) {
+	secret, ok := obj.(*corev1.Secret)
+	if !ok || secret == nil || index == nil {
+		return
+	}
+	var latest time.Time
+	var latestManagers []string
+	for _, entry := range secret.ManagedFields {
+		if entry.Time == nil || entry.FieldsV1 == nil ||
+			(entry.Operation != metav1.ManagedFieldsOperationApply && entry.Operation != metav1.ManagedFieldsOperationUpdate) {
+			continue
+		}
+		raw := entry.FieldsV1.Raw
+		if !bytes.Contains(raw, []byte(`"f:data"`)) && !bytes.Contains(raw, []byte(`"f:stringData"`)) {
+			continue
+		}
+		var fields map[string]json.RawMessage
+		if json.Unmarshal(raw, &fields) != nil {
+			continue
+		}
+		if _, ownsData := fields["f:data"]; !ownsData {
+			if _, ownsStringData := fields["f:stringData"]; !ownsStringData {
+				continue
+			}
+		}
+		switch {
+		case entry.Time.Time.After(latest):
+			latest = entry.Time.Time
+			latestManagers = []string{entry.Manager}
+		case entry.Time.Time.Equal(latest) && !slices.Contains(latestManagers, entry.Manager):
+			latestManagers = append(latestManagers, entry.Manager)
+		}
+	}
+	slices.Sort(latestManagers)
+	version := secretDataManagerWriteVersion{
+		namespace:       secret.Namespace,
+		name:            secret.Name,
+		uid:             string(secret.UID),
+		resourceVersion: secret.ResourceVersion,
+	}
+	pending := pendingSecretDataManagerWrite{
+		helm: secret.Type == corev1.SecretType("helm.sh/release.v1"),
+	}
+	if !latest.IsZero() {
+		pending.write = &secretDataManagerWrite{uid: string(secret.UID), at: latest, managers: latestManagers}
+	}
+	index.mu.Lock()
+	// Watch-list informers transform each object present at startup twice,
+	// and the second pass sees the managedFields the first one stripped (the
+	// same reason DropManagedFields checks for Helm digests). One object
+	// version always carries the same managedFields, so an empty set on a
+	// version already captured is that second pass, not new evidence: keep
+	// the first capture.
+	if _, captured := index.pending[version]; captured && len(secret.ManagedFields) == 0 {
+		index.mu.Unlock()
+		return
+	}
+	if _, exists := index.pending[version]; !exists && len(index.pending) >= index.pendingLimit {
+		// Transform observations are advisory. Under callback starvation,
+		// discard unmatched candidates rather than grow without bound; a
+		// missing fallback fails closed and a later object version can restage.
+		clear(index.pending)
+	}
+	index.pending[version] = pending
+	index.mu.Unlock()
+}
+
+func (index *secretDataManagerWriteIndex) reconcile(change k8score.ResourceChange, obj any) {
+	if index == nil || change.Kind != "Secret" {
+		return
+	}
+	key := secretWriteKey(change.Namespace, change.Name)
+	index.mu.Lock()
+	defer index.mu.Unlock()
+
+	if change.Operation == k8score.OpDelete {
+		if write, ok := index.committed[key]; ok && write.uid == change.UID {
+			delete(index.committed, key)
+		}
+		for version := range index.pending {
+			if version.namespace == change.Namespace && version.name == change.Name && version.uid == change.UID {
+				delete(index.pending, version)
+			}
+		}
+		return
+	}
+
+	meta, ok := obj.(metav1.Object)
+	if !ok || meta == nil {
+		return
+	}
+	version := secretDataManagerWriteVersion{
+		namespace:       change.Namespace,
+		name:            change.Name,
+		uid:             change.UID,
+		resourceVersion: meta.GetResourceVersion(),
+	}
+	pending, ok := index.pending[version]
+	if !ok {
+		return
+	}
+	delete(index.pending, version)
+
+	if pending.helm {
+		if write, ok := index.committed[key]; !ok || write.uid == change.UID {
+			delete(index.committed, key)
+		}
+		return
+	}
+	if change.Operation == k8score.OpUpdate && !secretChangeWritesData(change) {
+		return
+	}
+	if write, ok := index.committed[key]; ok && write.uid != change.UID && change.Operation != k8score.OpAdd {
+		return
+	}
+	if pending.write == nil {
+		delete(index.committed, key)
+		return
+	}
+	index.committed[key] = *pending.write
+}
+
+func (index *secretDataManagerWriteIndex) load(namespace, name string) (secretDataManagerWrite, bool) {
+	if index == nil {
+		return secretDataManagerWrite{}, false
+	}
+	index.mu.Lock()
+	defer index.mu.Unlock()
+	write, ok := index.committed[secretWriteKey(namespace, name)]
+	return write, ok
+}
+
+var (
+	// resourceCache is the promoted singleton. Reads are lock-free (handlers
+	// on hot paths call GetResourceCache constantly, and progressive startup
+	// admits them while promotion is still in flight); writes stay under
+	// cacheMu so promotion, retirement of the mid-sync handle, and the
+	// completion flag move as one lifecycle step.
+	resourceCache atomic.Pointer[ResourceCache]
+	cacheOnce     = new(sync.Once)
+	cacheMu       sync.Mutex
+	// syncingCache is the mid-Phase-1 handle published by OnInformersStarted:
+	// structurally complete but not synced — every read through it MUST gate on
+	// KindReadinessFor. Cleared on promotion (resourceCache assigned), on init
+	// failure, and on reset. Guarded by cacheMu.
+	syncingCache *ResourceCache
+	// cacheGeneration invalidates in-flight cache constructions: a context
+	// switch bumps it (via ResetResourceCache), and any publish/promote/clear
+	// from an older generation becomes a no-op — without this, an old
+	// cluster's construction finishing late could republish that cluster's
+	// cache over the new one. Guarded by cacheMu.
+	cacheGeneration uint64
+)
+
+// tombstones retains recently-seen resource enrichment (owner/labels/createdAt)
+// for a short window after objects leave the informer cache, so delete-time and
+// late K8s events (the "Killing" class, processed after the involved object is
+// already gone from cache) carry owner/labels/createdAt as fact instead of
+// shipping anonymous. Fed from informer add/update/delete callbacks (an
+// already-seen relist add returns before recording, so it skips the feed);
+// consulted after the live cache during event enrichment. Bounded + TTL'd so
+// it cannot grow without limit; misses are silent (null enrichment).
+var tombstones = timeline.NewTombstoneCache(15*time.Minute, 4000)
+
+// InitResourceCache initializes the resource cache with timeline-wired callbacks.
+func InitResourceCache(ctx context.Context) error {
+	var initErr error
+	once, gen := claimCacheInit()
+	once.Do(func() {
+		client := GetClient()
+		if client == nil {
+			initErr = fmt.Errorf("cannot create resource cache: k8s client not initialized")
+			return
+		}
+
+		// Probe per-resource list access before creating informers. The
+		// returned scope map is authoritative for both enablement and
+		// per-kind namespace scoping (some kinds may be cluster-wide while
+		// others are namespace-scoped to the same fallback namespace).
+		rbacStart := time.Now()
+		rbacCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
+		// A superseded result is still wired from rather than discarded: this
+		// runs under contextOpMu, so the operation that superseded the probe is
+		// already tearing this cache down, and the ctx.Err() check below drops
+		// out of the boot path that does not hold that lock.
+		probe, probeErr := bootstrapResourcePermissions(rbacCtx, freshResourcePermissions)
+		cancel()
+		logTiming("    Resource access probes: %v", time.Since(rbacStart))
+
+		if probeErr != nil {
+			initErr = probeErr
+			return
+		}
+
+		if ctx.Err() != nil {
+			initErr = ctx.Err()
+			return
+		}
+		// Only the result the informers are built from becomes the
+		// process-wide one; a retry the probe budget cut short is never
+		// published.
+		publishResourcePermissions(probe)
+		permResult := probe.result
+
+		// scopes drives which informers are created and at what scope.
+		// k8score routes each kind through the matching factory (cluster-wide
+		// or namespace-scoped) based on these per-kind decisions.
+		scopes := permResult.Scopes
+		if scopes == nil {
+			scopes = map[string]k8score.ResourceScope{}
+		}
+
+		// Captured ONCE at wiring time and closed over by the callbacks below.
+		// Informer shutdown on context switch is asynchronous (up to 5s, then
+		// abandoned), so a late callback reading ActiveClusterContext() at
+		// delivery time would stamp the OLD cluster's event with the NEW
+		// cluster's name — permanently, under SQLite storage. Closing over the
+		// wiring-time value keeps late events truthfully attributed to the
+		// cluster they came from.
+		recordClusterContext := ActiveClusterContext()
+		secretWriteTimes := newSecretDataManagerWriteIndex()
+		cronJobScheduleObservations := newCronJobScheduleObservationTracker()
+
+		cfg := k8score.CacheConfig{
+			Client:                  client,
+			ResourceScopes:          scopes,
+			ResourceScopeNamespaces: permResult.ScopeNamespaces,
+			DeferredTypes:           deferredResources,
+			DebugEvents:             DebugEvents,
+			TimingLogger:            logTiming,
+			PatienceWindow:          firstPaintPatience,
+			MinimalSet:              minimalFirstPaintSet,
+			SyncTimeout:             FirstPaintBackstop,
+			SyncProgress:            emitSyncProgress,
+			DeferredSyncTimeout:     3 * time.Minute,
+			ListPageSize:            ListPageSize,
+
+			OnReceived: func(kind string) {
+				timeline.IncrementReceived(kind)
+			},
+
+			OnTransform: func(obj any) {
+				secretWriteTimes.capture(obj)
+			},
+
+			OnObservedChange: observedChangeHandler(client, secretWriteTimes.observeChange, cronJobScheduleObservations.observeChange),
+
+			OnChange: func(change k8score.ResourceChange, obj, oldObj any) {
+				if DebugEvents && change.Operation == "add" &&
+					(change.Kind == "Pod" || change.Kind == "Deployment" || change.Kind == "Service") {
+					log.Printf("[DEBUG] enqueueChange: %s add %s/%s", change.Kind, change.Namespace, change.Name)
+				}
+
+				// Record to timeline store
+				recordToTimelineStore(recordClusterContext, change.Kind, change.Namespace, change.Name, change.UID, change.Operation, oldObj, obj, change.Diff, true)
+			},
+
+			OnEventChange: func(obj any, op string) {
+				// Event deletes are not recorded to timeline — events represent
+				// things that happened and should remain in history.
+				if op == "delete" {
+					return
+				}
+				recordK8sEventToTimeline(recordClusterContext, obj)
+			},
+
+			OnDrop: func(kind, ns, name, reason, op string) {
+				timeline.RecordDrop(kind, ns, name, reason, op, recordClusterContext)
+				if DebugEvents {
+					log.Printf("[DEBUG] Change dropped: %s/%s/%s reason=%s op=%s", kind, ns, name, reason, op)
+				}
+			},
+
+			ComputeDiff: func(kind string, oldObj, newObj any) *k8score.DiffInfo {
+				return ComputeDiff(kind, oldObj, newObj)
+			},
+
+			IsNoisyResource: isNoisyResource,
+		}
+
+		wrapped := &ResourceCache{
+			permissionResult:            clonePermissionCheckResult(permResult),
+			secretsEnabled:              scopes["secrets"].Enabled,
+			argoDrift:                   newArgoDriftTracker(),
+			cronJobScheduleObservations: cronJobScheduleObservations,
+			secretWriteTimes:            secretWriteTimes,
+			generation:                  gen,
+		}
+		// OnInformersStarted runs synchronously inside NewResourceCache, so
+		// wrapped.ResourceCache is visible-before-publication under cacheMu.
+		cfg.OnInformersStarted = func(syncing *k8score.ResourceCache) {
+			wrapped.ResourceCache = syncing
+			publishSyncingCache(wrapped, gen)
+		}
+		cfg.DebugSyncDelays = parseDebugSyncDelays(os.Getenv("KUBEATLAS_DEBUG_SYNC_DELAY"))
+
+		core, err := k8score.NewResourceCache(cfg)
+		if err != nil {
+			clearSyncingCacheForGen(gen)
+			initErr = err
+			return
+		}
+
+		// Only the no-enabled-resources path (OnInformersStarted never ran)
+		// reaches here with a nil embedded pointer; when the callback did run
+		// it already set the same core, and rewriting it would race with
+		// handlers reading the published wrapper.
+		if wrapped.ResourceCache == nil {
+			wrapped.ResourceCache = core
+		}
+
+		if !promoteCache(wrapped, gen, core.IsSyncComplete()) {
+			core.Stop()
+			initErr = fmt.Errorf("cluster changed during cache initialization")
+			return
+		}
+	})
+	return initErr
+}
+
+// claimCacheInit snapshots the init Once and the generation it belongs to in
+// one critical section. Sampling the generation inside Do instead would let a
+// context switch landing between the Once load and the snapshot hand an old
+// cluster's construction the NEW generation — it would then pass every guard
+// and could win promotion over the new cluster's cache.
+func claimCacheInit() (*sync.Once, uint64) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	return cacheOnce, cacheGeneration
+}
+
+// publishSyncingCache installs wrapped as the mid-sync handle unless the
+// cache generation moved (a context switch invalidated this construction).
+func publishSyncingCache(wrapped *ResourceCache, gen uint64) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if cacheGeneration == gen {
+		syncingCache = wrapped
+	}
+}
+
+// clearSyncingCacheForGen retires the mid-sync handle after a failed
+// construction — but only for its own generation, so a stale failure can't
+// clear a newer construction's handle.
+func clearSyncingCacheForGen(gen uint64) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if cacheGeneration == gen {
+		syncingCache = nil
+	}
+}
+
+// promoteCache installs wrapped as the ready singleton, retires the mid-sync
+// handle, and records the sync-completion flag — all inside the same
+// generation-checked critical section, so a context reset can never interleave
+// between promotion and the completion write and leave a stale flag behind.
+// Returns false when the generation moved — the caller owns stopping the
+// now-orphaned core.
+func promoteCache(wrapped *ResourceCache, gen uint64, syncComplete bool) bool {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	if cacheGeneration != gen {
+		return false
+	}
+	resourceCache.Store(wrapped)
+	syncingCache = nil
+	initialSyncComplete.Store(syncComplete)
+	return true
+}
+
+// parseDebugSyncDelays parses KUBEATLAS_DEBUG_SYNC_DELAY — a development seam for
+// exercising the progressive-readiness window on fast clusters. Accepts a
+// bare duration ("60s", applied to pods) or per-kind pairs
+// ("pods=60s,deployments=10s"). Returns nil for empty/invalid input.
+func parseDebugSyncDelays(raw string) map[string]time.Duration {
+	if raw == "" {
+		return nil
+	}
+	delays := map[string]time.Duration{}
+	for _, part := range strings.Split(raw, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		key, val, found := strings.Cut(part, "=")
+		if !found {
+			key, val = "pods", part
+		}
+		d, err := time.ParseDuration(strings.TrimSpace(val))
+		if err != nil || d <= 0 {
+			log.Printf("[cache] ignoring invalid KUBEATLAS_DEBUG_SYNC_DELAY entry %q: %v", part, err)
+			continue
+		}
+		delays[strings.TrimSpace(key)] = d
+	}
+	if len(delays) == 0 {
+		return nil
+	}
+	log.Printf("[cache] DEBUG: artificial informer sync delays active: %v", delays)
+	return delays
+}
+
+// GetResourceCache returns the singleton cache instance.
+func GetResourceCache() *ResourceCache {
+	return resourceCache.Load()
+}
+
+// KindReadiness re-exports the k8score readiness vocabulary for handler use.
+type KindReadiness = k8score.KindReadiness
+
+const (
+	KindUnavailable = k8score.KindUnavailable
+	KindPending     = k8score.KindPending
+	KindReady       = k8score.KindReady
+	KindFailed      = k8score.KindFailed
+)
+
+// GetSyncingResourceCache returns the mid-sync cache handle published by
+// OnInformersStarted, or nil when no construction is in flight. Reads through
+// it MUST gate on KindReadinessFor — its listers are incomplete by definition.
+func GetSyncingResourceCache() *ResourceCache {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	return syncingCache
+}
+
+// SnapshotCaches returns the promoted singleton and the mid-sync handle as
+// one consistent read under the lifecycle lock. Progressive-startup callers
+// run concurrently with promotion and reset, so loading the two pointers
+// separately could observe promotion half-applied (both set, or neither).
+func SnapshotCaches() (promoted, syncing *ResourceCache) {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+	return resourceCache.Load(), syncingCache
+}
+
+// ReadableCacheForKind picks the cache a typed-kind read should serve from:
+// the promoted singleton when it exists (post-Phase-1 — readiness still
+// gates promoted/deferred kinds that are syncing in background), otherwise
+// the mid-sync handle. A nil cache means no construction has produced a
+// handle yet (probing, or disconnected) — callers respond "not ready".
+// key is an informer key (lowercase plural, e.g. "pods").
+func ReadableCacheForKind(key string) (*ResourceCache, KindReadiness) {
+	promoted, syncing := SnapshotCaches()
+	if promoted != nil {
+		return promoted, promoted.KindReadinessFor(key)
+	}
+	if syncing != nil {
+		return syncing, syncing.KindReadinessFor(key)
+	}
+	return nil, KindUnavailable
+}
+
+// ResetResourceCache stops and clears the resource cache so it can be
+// reinitialized for a new cluster after context switch.
+func ResetResourceCache() {
+	cacheMu.Lock()
+	defer cacheMu.Unlock()
+
+	// Invalidate any in-flight construction: its publishes become no-ops and
+	// its core is stopped on return (see the generation check in
+	// InitResourceCache).
+	cacheGeneration++
+	if syncingCache != nil {
+		syncingCache.Stop()
+		syncingCache = nil
+	}
+	// Detach before stopping: readers are lock-free, so publishing nil first
+	// shrinks the window where a request can pick up a cache whose informers
+	// are already shutting down. (A handle loaded just before this point can
+	// still serve its one request — listers stay readable after Stop.)
+	if promoted := resourceCache.Swap(nil); promoted != nil {
+		promoted.Stop()
+	}
+	cacheOnce = new(sync.Once)
+	initialSyncComplete.Store(false)
+	resetRecreateStash()
+	// Tombstone keys are UID-first, falling back to an apiVersion|kind|ns|name
+	// composite (no cluster context) when a source lacks a UID; a leftover
+	// UID-less entry could mis-enrich a same-named resource on the next cluster.
+	// Drop them all in place (not a var reassignment) so concurrent informer
+	// readers of the stable pointer don't race with the reset.
+	tombstones.Clear()
+}
+
+// recordK8sEventToTimeline records a K8s Event to the timeline store.
+// clusterContext is the wiring-time capture (see InitResourceCache), not the
+// live active context — a late callback must stamp the cluster it came from.
+func recordK8sEventToTimeline(clusterContext string, obj any) {
+	event, ok := obj.(*corev1.Event)
+	if !ok {
+		return
+	}
+
+	store := timeline.GetStore()
+	if store == nil {
+		timeline.RecordDrop("K8sEvent:"+event.InvolvedObject.Kind, event.InvolvedObject.Namespace, event.InvolvedObject.Name, timeline.DropReasonStoreDown, "add", clusterContext)
+		return
+	}
+
+	if DebugEvents {
+		timeline.IncrementReceived("K8sEvent:" + event.InvolvedObject.Kind)
+	}
+
+	owner, labels, createdAt, ownerEvidence := enrichInvolvedObject(event)
+
+	timelineEvent := timeline.NewK8sEventTimelineEvent(event, owner)
+	timelineEvent.OwnerEvidence = ownerEvidence
+	timelineEvent.Labels = labels
+	timelineEvent.CreatedAt = createdAt
+	timelineEvent.ClusterContext = clusterContext
+
+	ctx := context.Background()
+	if err := timeline.RecordEvent(ctx, timelineEvent); err != nil {
+		log.Printf("Warning: failed to record K8s event to timeline store: %v", err)
+		timeline.RecordDrop("K8sEvent:"+event.InvolvedObject.Kind, event.InvolvedObject.Namespace, event.InvolvedObject.Name, timeline.DropReasonStoreFailed, "add", clusterContext)
+	} else if DebugEvents {
+		timeline.IncrementRecorded("K8sEvent:" + event.InvolvedObject.Kind)
+	}
+}
+
+// enrichInvolvedObject resolves the K8s Event's involved object to its
+// controller owner, grouping labels, and creation time. The live informer cache
+// is consulted first (freshest); the tombstone second, which is what carries the
+// answer for delete-time and late events (e.g. "Killing") whose involved object
+// has already left the cache. The evidence says which happened: the subject
+// was found, missed, or can't be identified at all because the event carries
+// no UID for it.
+func enrichInvolvedObject(event *corev1.Event) (owner *timeline.OwnerInfo, labels map[string]string, createdAt *time.Time, evidence timeline.OwnerEvidence) {
+	subject := timeline.K8sEventSubject(event)
+	if subject.UID == "" {
+		return nil, nil, nil, timeline.OwnerUnidentified
+	}
+	if o, l, c, ok := liveInvolvedObject(subject); ok {
+		return o, l, c, timeline.OwnerEnriched
+	}
+	if entry, ok := tombstones.Get(subject.UID, event.InvolvedObject.APIVersion, subject.Kind, subject.Namespace, subject.Name); ok {
+		return entry.Owner, entry.Labels, entry.CreatedAt, timeline.OwnerEnriched
+	}
+	return nil, nil, nil, timeline.OwnerMissed
+}
+
+// liveInvolvedObject reads the involved object straight from the typed informer
+// cache when it is still present. ok=false means the object is not (or no longer)
+// cached, so the caller should fall back to the tombstone.
+//
+// The typed lister is keyed by namespace/name alone, so the event must prove it
+// names that exact object: the built-in group and the object's UID. Otherwise a
+// same-named object of another group, or a replacement incarnation, would lend
+// its owner to an event about something else.
+func liveInvolvedObject(subject resourceid.Reference) (owner *timeline.OwnerInfo, labels map[string]string, createdAt *time.Time, ok bool) {
+	cache := GetResourceCache()
+	if cache == nil || subject.UID == "" || !subject.HasGroup() {
+		return nil, nil, nil, false
+	}
+	if group, builtin := resourceid.BuiltinGroup(subject.Kind); !builtin || subject.Group != group {
+		return nil, nil, nil, false
+	}
+	uid, namespace, name := subject.UID, subject.Namespace, subject.Name
+	uidMatches := func(obj metav1.Object) bool {
+		return string(obj.GetUID()) == uid
+	}
+	switch subject.Kind {
+	case "Pod":
+		if cache.Pods() == nil {
+			return nil, nil, nil, false
+		}
+		pod, err := cache.Pods().Pods(namespace).Get(name)
+		if err != nil || pod == nil || !uidMatches(pod) {
+			return nil, nil, nil, false
+		}
+		return liveEntry(pod)
+	case "ReplicaSet":
+		if cache.ReplicaSets() == nil {
+			return nil, nil, nil, false
+		}
+		rs, err := cache.ReplicaSets().ReplicaSets(namespace).Get(name)
+		if err != nil || rs == nil || !uidMatches(rs) {
+			return nil, nil, nil, false
+		}
+		return liveEntry(rs)
+	}
+	return nil, nil, nil, false
+}
+
+// liveEntry extracts a live object's enrichment exactly as its tombstone would,
+// so an event's owner doesn't depend on whether the subject is still cached.
+func liveEntry(obj metav1.Object) (*timeline.OwnerInfo, map[string]string, *time.Time, bool) {
+	entry, _ := timeline.ExtractTombstoneEntry(obj)
+	return entry.Owner, entry.Labels, entry.CreatedAt, true
+}
+
+// emitSyncProgress is the SyncProgress callback wired into the resource
+// cache. It keeps the connection's progressMessage in step with the live
+// informer-sync count so the connecting screen ticks up instead of
+// sitting on a static message during a 30–60s sync. Once the cache
+// returns and connection state flips to "connected", further progress
+// lives in the home dashboard's deferred-loading indicator.
+func emitSyncProgress(synced, total int, minimalReady bool) {
+	if total == 0 {
+		return
+	}
+	// Only update while we're still in the connecting phase. Once
+	// connected, the connecting screen is gone and the message is moot.
+	if GetConnectionStatus().State != StateConnecting {
+		return
+	}
+	var msg string
+	switch {
+	case synced == total:
+		msg = "Finalizing…"
+	case minimalReady:
+		msg = fmt.Sprintf("Loading cluster data… %d of %d ready (showing partial)", synced, total)
+	default:
+		msg = fmt.Sprintf("Loading cluster data… %d of %d ready", synced, total)
+	}
+	UpdateConnectionProgress(msg)
+}
+
+// isNoisyResource returns true if this resource generates constant updates that aren't interesting
+func isNoisyResource(kind, name, op string) bool {
+	if op != "update" {
+		return false
+	}
+
+	switch kind {
+	case "Lease", "Endpoints", "EndpointSlice", "Event":
+		return true
+	case "VerticalPodAutoscalerCheckpoint":
+		// VPA writes per-container resource recommendations here on every
+		// reconcile (~1m). The whole point of the resource is to be a live
+		// ticker — per-update is never user-meaningful.
+		return true
+	}
+
+	if kind == "ConfigMap" {
+		noisyPatterns := []string{
+			"-lock", "-lease", "-leader-election", "-heartbeat",
+			"cluster-kubestore", "cluster-autoscaler-status",
+			"datadog-token", "datadog-operator-lock", "datadog-leader-election",
+			"kube-root-ca.certs",
+		}
+		for _, pattern := range noisyPatterns {
+			if strings.Contains(name, pattern) {
+				return true
+			}
+		}
+	}
+
+	if kind == "Secret" {
+		if strings.Contains(name, "leader-election") {
+			return true
+		}
+	}
+
+	return false
+}
+
+// getGeneration returns the metadata.generation of an informer object, or 0
+// if the object is nil or doesn't expose metav1.Object. Both typed K8s
+// resources and *unstructured.Unstructured satisfy metav1.Object.
+func getGeneration(obj any) int64 {
+	if obj == nil {
+		return 0
+	}
+	m, ok := obj.(metav1.Object)
+	if !ok {
+		return 0
+	}
+	return m.GetGeneration()
+}
+
+// deletionAccountsForGenerationBump reports whether an update is the start of
+// deletion and that explains its whole generation bump. The API server
+// increments generation once when it first sets deletionTimestamp: on graceful
+// deletion (Pods, from Kubernetes 1.33) and on deletion held by finalizers.
+// A larger jump means the informer folded a spec edit into the same update
+// (a relist after a watch gap), so that still counts as a spec change.
+func deletionAccountsForGenerationBump(oldObj, newObj any) bool {
+	oldMeta, oldOK := oldObj.(metav1.Object)
+	newMeta, newOK := newObj.(metav1.Object)
+	if !oldOK || !newOK {
+		return false
+	}
+	return oldMeta.GetDeletionTimestamp() == nil && newMeta.GetDeletionTimestamp() != nil &&
+		newMeta.GetGeneration()-oldMeta.GetGeneration() == 1
+}
+
+func generationBumpSignalsSpecChange(kind string, oldObj, newObj any) bool {
+	// The delete event that follows records the removal.
+	if deletionAccountsForGenerationBump(oldObj, newObj) {
+		return false
+	}
+	if kind != "Deployment" {
+		return true
+	}
+	oldDeployment, oldOK := oldObj.(*appsv1.Deployment)
+	newDeployment, newOK := newObj.(*appsv1.Deployment)
+	if !oldOK || !newOK {
+		return true
+	}
+
+	// The Deployment API increments generation for top-level annotation
+	// changes because those annotations are copied to ReplicaSets.
+	return !apiequality.Semantic.DeepEqual(oldDeployment.Spec, newDeployment.Spec)
+}
+
+// isSyncAdd reports whether an add is an object that already existed rather
+// than one just created: everything listed before the initial sync completes,
+// and adds for objects older than 30s (a relist after a watch gap).
+func isSyncAdd(obj any) bool {
+	if !initialSyncComplete.Load() {
+		return true
+	}
+	if meta, ok := obj.(metav1.Object); ok {
+		return time.Since(meta.GetCreationTimestamp().Time) > 30*time.Second
+	}
+	return false
+}
+
+// timelineUpdateDiff returns the diff an update is recorded with, and false when
+// the update carries nothing the timeline records (a heartbeat, a
+// managedFields-only write, a reconcile counter). The no-store path asks the same
+// question, so an outage counts only the changes it actually lost.
+func timelineUpdateDiff(kind string, oldObj, newObj any, precomputedDiff *DiffInfo, diffPrecomputed bool) (*timeline.DiffInfo, bool) {
+	var diff *timeline.DiffInfo
+	// Reuse the cache layer's already-computed diff on the hot path; only
+	// recompute for callers (tests / non-cache) that didn't precompute it.
+	localDiff := precomputedDiff
+	if !diffPrecomputed {
+		localDiff = ComputeDiff(kind, oldObj, newObj)
+	}
+	if localDiff != nil {
+		diff = &timeline.DiffInfo{
+			Fields:  make([]timeline.FieldChange, len(localDiff.Fields)),
+			Summary: localDiff.Summary,
+		}
+		for i, f := range localDiff.Fields {
+			diff.Fields[i] = timeline.FieldChange{
+				Path:     f.Path,
+				OldValue: f.OldValue,
+				NewValue: f.NewValue,
+			}
+		}
+	} else if KindHasDiffer(kind) || isUnstructuredUpdate(oldObj, newObj) {
+		// Diff handling found nothing observable — usually a heartbeat,
+		// managedFields-only update, or reconcile counter.
+		// Before dropping, use metadata.generation to catch spec fields our
+		// audited differ does not yet track.
+		if oldGen, newGen := getGeneration(oldObj), getGeneration(newObj); oldGen != newGen && oldGen > 0 && newGen > 0 && generationBumpSignalsSpecChange(kind, oldObj, newObj) {
+			diff = &timeline.DiffInfo{
+				Fields: []timeline.FieldChange{{
+					Path:     "metadata.generation",
+					OldValue: oldGen,
+					NewValue: newGen,
+				}},
+				Summary: fmt.Sprintf("spec changed (gen %d→%d, fields not specifically tracked)", oldGen, newGen),
+			}
+		} else {
+			return nil, false
+		}
+	}
+	return diff, true
+}
+
+// recordToTimelineStore records a resource change to the timeline.
+// clusterContext is the wiring-time capture (see InitResourceCache), not the
+// live active context — a late callback must stamp the cluster it came from.
+// When the caller has already computed the update diff (the cache layer does,
+// before firing OnChange), it passes it via precomputedDiff +
+// diffPrecomputed=true so we don't recompute the identical diff on the hottest
+// per-update path; callers without one (tests, non-cache paths) pass nil +
+// false and the diff is computed here.
+func recordToTimelineStore(clusterContext, kind, namespace, name, uid, op string, oldObj, newObj any, precomputedDiff *DiffInfo, diffPrecomputed bool) {
+	obj := newObj
+	if obj == nil {
+		obj = oldObj
+	}
+	if tombstone, ok := obj.(toolscache.DeletedFinalStateUnknown); ok {
+		obj = tombstone.Obj
+	}
+
+	apiVersion := extractAPIVersion(kind, obj)
+	apiGroup := ""
+	if gvr, ok := BuiltinGVRAnyGroup(kind); ok {
+		apiGroup = gvr.Group
+	}
+	if apiVersion != "" {
+		apiGroup = resourceid.GroupFromAPIVersion(apiVersion)
+	}
+
+	// ServiceAccount token updates are token-controller bookkeeping; they are
+	// not recorded, though their tombstone stays current below.
+	serviceAccountTokenUpdate := false
+	if kind == "Secret" && apiGroup == "" && op == "update" {
+		var secretType string
+		switch secret := obj.(type) {
+		case *corev1.Secret:
+			secretType = string(secret.Type)
+		case *unstructured.Unstructured:
+			secretType, _, _ = unstructured.NestedString(secret.Object, "type")
+		}
+		serviceAccountTokenUpdate = secretType == string(corev1.SecretTypeServiceAccountToken)
+	}
+
+	store := timeline.GetStore()
+	if store == nil {
+		if serviceAccountTokenUpdate {
+			timeline.RecordDrop(kind, namespace, name, timeline.DropReasonNoisyFilter, op, clusterContext)
+			return
+		}
+		if op == "delete" {
+			timeline.NoteDeletedWhileUnavailable(clusterContext, apiGroup, kind, namespace, name)
+		}
+		// No store means a configured backend could not be opened. Count the
+		// change the same way a failed write is counted, so a timeline that is
+		// quietly losing history still moves the drop counter an operator
+		// watches. Objects listed at startup and updates with nothing to record
+		// (heartbeats) would not have been recorded either, so they are not
+		// counted as lost.
+		if op == "add" && isSyncAdd(obj) {
+			return
+		}
+		if op == "update" && oldObj != nil && newObj != nil {
+			if _, recordable := timelineUpdateDiff(kind, oldObj, newObj, precomputedDiff, diffPrecomputed); !recordable {
+				timeline.RecordDrop(kind, namespace, name, timeline.DropReasonNoDiff, op, clusterContext)
+				return
+			}
+		}
+		timeline.RecordDrop(kind, namespace, name, timeline.DropReasonStoreDown, op, clusterContext)
+		return
+	}
+
+	if op == "add" {
+		if store.IsResourceSeen(clusterContext, apiGroup, kind, namespace, name) {
+			timeline.RecordDrop(kind, namespace, name, timeline.DropReasonAlreadySeen, op, clusterContext)
+			if DebugEvents {
+				log.Printf("[DEBUG] Already seen, skipping: %s/%s/%s", kind, namespace, name)
+			}
+			return
+		}
+	} else if op == "delete" {
+		store.ClearResourceSeen(clusterContext, apiGroup, kind, namespace, name)
+	}
+
+	resourceVersion := ""
+	if obj != nil {
+		if meta, ok := obj.(metav1.Object); ok {
+			resourceVersion = meta.GetResourceVersion()
+		}
+	}
+
+	if op == "delete" {
+		stashDeletedForRecreate(apiGroup, kind, namespace, name, uid, obj)
+	}
+
+	// One extraction of owner/labels/createdAt, reused for both the event and
+	// the tombstone.
+	entry, extracted := timeline.ExtractTombstoneEntry(obj)
+	owner := entry.Owner
+	var ownerEvidence timeline.OwnerEvidence
+	if extracted {
+		ownerEvidence = timeline.OwnerObserved
+	}
+	labels := entry.Labels
+	createdAt := entry.CreatedAt
+	healthState := classifyTimelineChangeHealth(kind, oldObj, obj, time.Now())
+
+	// Feed the tombstone on every add/update/delete. While the object is live
+	// this mirrors its enrichment; once it is gone (delete, or a late K8s event
+	// after eviction) the retained copy is the only source of owner/labels.
+	// Only when the object actually unwrapped — an extract failure yields an
+	// empty entry, and storing it would clobber the enrichment a prior good
+	// entry was preserving.
+	if name != "" && extracted {
+		tombstones.Put(uid, apiVersion, kind, namespace, name, entry)
+	}
+	if serviceAccountTokenUpdate {
+		timeline.RecordDrop(kind, namespace, name, timeline.DropReasonNoisyFilter, op, clusterContext)
+		return
+	}
+
+	var diff *timeline.DiffInfo
+	if op == "update" && oldObj != nil && newObj != nil {
+		var recordable bool
+		if diff, recordable = timelineUpdateDiff(kind, oldObj, newObj, precomputedDiff, diffPrecomputed); !recordable {
+			timeline.RecordDrop(kind, namespace, name, timeline.DropReasonNoDiff, op, clusterContext)
+			if DebugEvents {
+				log.Printf("[DEBUG] No-diff update, skipping: %s/%s/%s", kind, namespace, name)
+			}
+			return
+		}
+	}
+
+	// Recreate-join: an add that replaces a just-deleted object of the same
+	// group, kind, namespace, and name but a different UID carries the diff
+	// against its predecessor, so the change feed can show what the recreate
+	// changed instead of a contentless delete+add pair. Guarded to young
+	// objects post-sync — the same conditions under which the add below is
+	// recorded at all.
+	//
+	// Status is stripped from BOTH sides before diffing: every recreate
+	// resets status, so cross-recreate status deltas (ready 1→0, condition
+	// flips) are tautological noise — and worse, a spec-identical recreate
+	// (namespace re-apply) would otherwise emit a status-only "recreated
+	// with changes" entry that reads as a config change.
+	recreated := false
+	if op == "add" && newObj != nil && initialSyncComplete.Load() {
+		if meta, ok := newObj.(metav1.Object); ok && time.Since(meta.GetCreationTimestamp().Time) <= 30*time.Second {
+			if stashed, ok := takeRecreateMatch(apiGroup, kind, namespace, name, uid); ok {
+				if localDiff := ComputeDiff(kind, stripStatusForRecreateDiff(stashed), stripStatusForRecreateDiff(newObj)); localDiff != nil && len(localDiff.Fields) > 0 {
+					diff = &timeline.DiffInfo{
+						Fields:  make([]timeline.FieldChange, len(localDiff.Fields)),
+						Summary: "recreated with changes: " + localDiff.Summary,
+					}
+					for i, f := range localDiff.Fields {
+						diff.Fields[i] = timeline.FieldChange{
+							Path:     f.Path,
+							OldValue: f.OldValue,
+							NewValue: f.NewValue,
+						}
+					}
+					recreated = true
+				}
+			}
+		}
+	}
+
+	event := timeline.NewInformerEvent(
+		kind, apiVersion, namespace, name, uid, resourceVersion,
+		timeline.OperationToEventType(op),
+		healthState,
+		diff,
+		owner,
+		labels,
+		createdAt,
+	)
+	event.ClusterContext = clusterContext
+	event.OwnerEvidence = ownerEvidence
+	if recreated {
+		event.Reason = timeline.ReasonRecreated
+	}
+
+	var events []timeline.TimelineEvent
+	if op == "add" && newObj != nil {
+		historicalEvents := extractTimelineHistoricalEvents(clusterContext, kind, apiVersion, namespace, name, newObj, owner, labels)
+		for i := range historicalEvents {
+			historicalEvents[i].ClusterContext = event.ClusterContext
+			historicalEvents[i].UID = uid
+			if extracted {
+				historicalEvents[i].OwnerEvidence = timeline.OwnerReconstructed
+			}
+		}
+		events = append(events, historicalEvents...)
+	}
+
+	if op == "add" {
+		if isSyncAdd(obj) {
+			if DebugEvents {
+				log.Printf("[DEBUG] Skipping sync add event: %s/%s/%s (extracted %d historical events)", kind, namespace, name, len(events))
+			}
+			if len(events) > 0 {
+				ctx := context.Background()
+				if err := timeline.RecordEvents(ctx, events); err != nil {
+					log.Printf("Warning: failed to record historical events: %v", err)
+					timeline.RecordDrop(kind, namespace, name, timeline.DropReasonStoreFailed, op, clusterContext)
+					return
+				}
+			}
+			store.MarkResourceSeen(clusterContext, apiGroup, kind, namespace, name)
+			return
+		}
+	}
+
+	events = append(events, event)
+
+	ctx := context.Background()
+	if err := timeline.RecordEvents(ctx, events); err != nil {
+		log.Printf("Warning: failed to record to timeline store: %v", err)
+		timeline.RecordDrop(kind, namespace, name, timeline.DropReasonStoreFailed, op, clusterContext)
+		return
+	}
+
+	timeline.IncrementRecorded(kind)
+
+	if op == "add" {
+		store.MarkResourceSeen(clusterContext, apiGroup, kind, namespace, name)
+	}
+}
+
+func isUnstructuredUpdate(oldObj, newObj any) bool {
+	_, oldOK := oldObj.(*unstructured.Unstructured)
+	_, newOK := newObj.(*unstructured.Unstructured)
+	return oldOK && newOK
+}
+
+// extractAPIVersion returns the exact dynamic apiVersion or restores the
+// canonical version stripped from typed informer objects.
+func extractAPIVersion(kind string, obj any) string {
+	if u, ok := obj.(*unstructured.Unstructured); ok {
+		return u.GetAPIVersion()
+	}
+	if apiVersion, ok := resourceid.BuiltinAPIVersion(kind); ok {
+		return apiVersion
+	}
+	return ""
+}
+
+// extractTimelineHistoricalEvents extracts historical events from resource metadata/status
+func extractTimelineHistoricalEvents(clusterContext, kind, apiVersion, namespace, name string, obj any, owner *timeline.OwnerInfo, labels map[string]string) []timeline.TimelineEvent {
+	var events []timeline.TimelineEvent
+
+	// A same-named CRD reaches these cases too and falls through to the generic
+	// extraction below; pkg/timeline's historicalCollisionGroup group-qualifies
+	// history IDs for exactly these Kinds, so keep the two lists in step.
+	switch kind {
+	case "Pod":
+		if pod, ok := obj.(*corev1.Pod); ok {
+			if !pod.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					pod.CreationTimestamp.Time, "created", "", timeline.HealthUnknown, owner, labels))
+			}
+			if pod.Status.StartTime != nil && !pod.Status.StartTime.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					pod.Status.StartTime.Time, "started", "", timeline.HealthDegraded, owner, labels))
+			}
+			for _, cond := range pod.Status.Conditions {
+				if cond.LastTransitionTime.IsZero() {
+					continue
+				}
+				health := timeline.HealthUnknown
+				if cond.Type == corev1.PodReady && cond.Status == corev1.ConditionTrue {
+					health = timeline.HealthHealthy
+				} else if cond.Status == corev1.ConditionFalse {
+					health = timeline.HealthDegraded
+				}
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					cond.LastTransitionTime.Time, string(cond.Type), cond.Message, health, owner, labels))
+			}
+		}
+
+	case "Deployment":
+		if deploy, ok := obj.(*appsv1.Deployment); ok {
+			if !deploy.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					deploy.CreationTimestamp.Time, "created", "", timeline.HealthUnknown, owner, labels))
+			}
+			for _, cond := range deploy.Status.Conditions {
+				if cond.LastTransitionTime.IsZero() {
+					continue
+				}
+				health := timeline.HealthUnknown
+				if cond.Type == appsv1.DeploymentAvailable && cond.Status == corev1.ConditionTrue {
+					health = timeline.HealthHealthy
+				} else if cond.Status == corev1.ConditionFalse {
+					health = timeline.HealthDegraded
+				}
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					cond.LastTransitionTime.Time, string(cond.Type), cond.Message, health, owner, labels))
+			}
+		}
+
+	case "ReplicaSet":
+		if rs, ok := obj.(*appsv1.ReplicaSet); ok {
+			if !rs.CreationTimestamp.IsZero() {
+				health := timeline.HealthUnknown
+				if rs.Status.ReadyReplicas > 0 && rs.Status.ReadyReplicas == rs.Status.Replicas {
+					health = timeline.HealthHealthy
+				}
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					rs.CreationTimestamp.Time, "created", "", health, owner, labels))
+			}
+		}
+
+	case "StatefulSet":
+		if sts, ok := obj.(*appsv1.StatefulSet); ok {
+			if !sts.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					sts.CreationTimestamp.Time, "created", "", timeline.HealthUnknown, owner, labels))
+			}
+		}
+
+	case "DaemonSet":
+		if ds, ok := obj.(*appsv1.DaemonSet); ok {
+			if !ds.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					ds.CreationTimestamp.Time, "created", "", timeline.HealthUnknown, owner, labels))
+			}
+		}
+
+	case "Service":
+		if svc, ok := obj.(*corev1.Service); ok {
+			if !svc.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					svc.CreationTimestamp.Time, "created", "", timeline.HealthHealthy, owner, labels))
+			}
+		}
+
+	case "Ingress":
+		if ing, ok := obj.(*networkingv1.Ingress); ok {
+			if !ing.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					ing.CreationTimestamp.Time, "created", "", timeline.HealthHealthy, owner, labels))
+			}
+		}
+
+	case "CronJob":
+		if cj, ok := obj.(*batchv1.CronJob); ok {
+			if !cj.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					cj.CreationTimestamp.Time, "created", "", timeline.HealthHealthy, owner, labels))
+			}
+		}
+
+	case "HorizontalPodAutoscaler":
+		if hpa, ok := obj.(*autoscalingv2.HorizontalPodAutoscaler); ok {
+			if !hpa.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					hpa.CreationTimestamp.Time, "created", "", timeline.HealthHealthy, owner, labels))
+			}
+		}
+
+	case "Job":
+		if job, ok := obj.(*batchv1.Job); ok {
+			if !job.CreationTimestamp.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					job.CreationTimestamp.Time, "created", "", timeline.HealthUnknown, owner, labels))
+			}
+			if job.Status.StartTime != nil && !job.Status.StartTime.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					job.Status.StartTime.Time, "started", "", timeline.HealthDegraded, owner, labels))
+			}
+			if job.Status.CompletionTime != nil && !job.Status.CompletionTime.IsZero() {
+				// CompletionTime is set only on SUCCESS — a completed Job is
+				// neutral/idle (done by design), even if earlier attempts failed
+				// (Status.Failed > 0 counts retries, not a terminal failure).
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					job.Status.CompletionTime.Time, "completed", "", timeline.HealthNeutral, owner, labels))
+			} else {
+				// Terminal failure (backoffLimit exceeded) has no CompletionTime —
+				// surface the JobFailed condition as unhealthy at its transition time.
+				for _, cond := range job.Status.Conditions {
+					if cond.Type == batchv1.JobFailed && cond.Status == corev1.ConditionTrue {
+						events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+							cond.LastTransitionTime.Time, "failed", cond.Message, timeline.HealthUnhealthy, owner, labels))
+						break
+					}
+				}
+			}
+		}
+
+	}
+
+	if len(events) == 0 {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			ct := u.GetCreationTimestamp()
+			if !ct.IsZero() {
+				events = append(events, timeline.NewHistoricalEvent(clusterContext, kind, apiVersion, namespace, name,
+					ct.Time, "created", "", timeline.HealthUnknown, owner, labels))
+			}
+		}
+	}
+
+	return events
+}
+
+// knownKinds maps lowercase kind names to whether they're handled by the typed cache
+var knownKinds = map[string]bool{
+	"pod": true, "pods": true,
+	"service": true, "services": true,
+	"deployment": true, "deployments": true,
+	"daemonset": true, "daemonsets": true,
+	"statefulset": true, "statefulsets": true,
+	"replicaset": true, "replicasets": true,
+	"ingress": true, "ingresses": true,
+	"configmap": true, "configmaps": true,
+	"secret": true, "secrets": true,
+	"event": true, "events": true,
+	"persistentvolumeclaim": true, "persistentvolumeclaims": true, "pvc": true, "pvcs": true,
+	"node": true, "nodes": true,
+	"namespace": true, "namespaces": true,
+	"job": true, "jobs": true,
+	"cronjob": true, "cronjobs": true,
+	"horizontalpodautoscaler": true, "horizontalpodautoscalers": true, "hpa": true, "hpas": true,
+	"persistentvolume": true, "persistentvolumes": true, "pv": true, "pvs": true,
+	"storageclass": true, "storageclasses": true, "sc": true,
+	"poddisruptionbudget": true, "poddisruptionbudgets": true, "pdb": true, "pdbs": true,
+	"networkpolicy": true, "networkpolicies": true, "netpol": true,
+	"role": true, "roles": true,
+	"clusterrole": true, "clusterroles": true,
+	"rolebinding": true, "rolebindings": true,
+	"clusterrolebinding": true, "clusterrolebindings": true,
+}
+
+// IsKnownKind returns true if the kind is handled by the typed cache
+func IsKnownKind(kind string) bool {
+	return knownKinds[strings.ToLower(kind)]
+}
+
+// ListDynamic returns resources of any type using the dynamic cache
+func (c *ResourceCache) ListDynamic(ctx context.Context, kind string, namespace string) ([]*unstructured.Unstructured, error) {
+	return c.ListDynamicWithGroup(ctx, kind, namespace, "")
+}
+
+// typedRouteGVR reports whether a dynamic-cache read for (kind, group) must
+// be served by the typed cache instead of spinning up a dynamic informer
+// that would duplicate a typed one (cluster-wide Secrets/ConfigMaps twice is
+// a real memory cost, and the serial informer startups were the dominant
+// cold-path cost of the GitOps tree). Dispatch mirrors the REST/MCP
+// handlers' convention exactly: an explicit group must be owned by the
+// built-in (CRDs whose kind shadows a built-in, e.g. Knative Service, keep
+// their dynamic route); an empty group means "the built-in if this name is
+// built-in".
+func typedRouteGVR(kind, group string) (schema.GroupVersionResource, bool) {
+	if group != "" && !TypedKindOwnsGroup(kind, group) {
+		return schema.GroupVersionResource{}, false
+	}
+	return lookupTypedBuiltinGVR(kind)
+}
+
+// typedObjectToUnstructured converts a typed lister object to unstructured
+// and stamps apiVersion/kind (informer objects carry no TypeMeta). The
+// conversion allocates fresh maps, so the shared informer object is never
+// mutated — which also makes the in-place strip below safe.
+func typedObjectToUnstructured(obj runtime.Object, gvr schema.GroupVersionResource) (*unstructured.Unstructured, error) {
+	m, err := runtime.DefaultUnstructuredConverter.ToUnstructured(obj)
+	if err != nil {
+		return nil, err
+	}
+	u := &unstructured.Unstructured{Object: m}
+	// Match the dynamic path's outward contract (StripUnstructuredFields):
+	// no managedFields, no kubectl last-applied. The typed informer
+	// transform (DropManagedFields) covers only its explicit kind list —
+	// RBAC kinds among others fall through with last-applied intact, and
+	// exposing it here would leak a full JSON copy of the object into every
+	// tree/list payload. Stripped in place: the converted map is fresh.
+	unstructured.RemoveNestedField(u.Object, "metadata", "managedFields")
+	if annotations := u.GetAnnotations(); annotations != nil {
+		if _, ok := annotations["kubectl.kubernetes.io/last-applied-configuration"]; ok {
+			delete(annotations, "kubectl.kubernetes.io/last-applied-configuration")
+			if len(annotations) == 0 {
+				u.SetAnnotations(nil)
+			} else {
+				u.SetAnnotations(annotations)
+			}
+		}
+	}
+	if u.GetAPIVersion() == "" || u.GetKind() == "" {
+		apiVersion := gvr.Version
+		if gvr.Group != "" {
+			apiVersion = gvr.Group + "/" + gvr.Version
+		}
+		u.SetAPIVersion(apiVersion)
+		if kindName, ok := BuiltinKindForResource(gvr.Resource); ok {
+			u.SetKind(kindName)
+		}
+	}
+	return u, nil
+}
+
+// getTypedAsUnstructured serves a single-object read for a typed built-in
+// kind from the typed cache. Tri-state: a kind whose deferred informer
+// hasn't synced yet falls back to a one-off direct GET — never to starting
+// a dynamic informer; a kind the RBAC probe disabled stays forbidden.
+// handled=false means the typed path can't answer and the caller should fall
+// through to the dynamic cache.
+//
+// The deferred check runs BEFORE the lister read: several deferred kinds
+// (ServiceAccounts, ReplicaSets, HPAs, LimitRanges, ResourceQuotas) expose
+// a non-nil lister as soon as they're enabled, so during the warmup window
+// they'd otherwise serve empty stores as confident NotFound/empty results.
+// After it, a nil-lister "forbidden" error can only mean the RBAC probe
+// disabled the kind — returned as-is.
+func (c *ResourceCache) getTypedAsUnstructured(ctx context.Context, gvr schema.GroupVersionResource, kind, namespace, name string) (*unstructured.Unstructured, bool, error) {
+	if c.IsDeferredPending(gvr.Resource) {
+		return c.typedDirectGet(ctx, gvr, namespace, name)
+	}
+	obj, err := FetchResource(c, kind, namespace, name)
+	if err != nil {
+		if errors.Is(err, ErrUnknownKind) {
+			return nil, false, nil
+		}
+		return nil, true, err
+	}
+	u, cerr := typedObjectToUnstructured(obj, gvr)
+	return u, true, cerr
+}
+
+func (c *ResourceCache) typedDirectGet(ctx context.Context, gvr schema.GroupVersionResource, namespace, name string) (*unstructured.Unstructured, bool, error) {
+	dynamicCache := GetDynamicResourceCache()
+	if dynamicCache == nil {
+		return nil, true, fmt.Errorf("dynamic resource cache not initialized")
+	}
+	u, err := dynamicCache.GetDirect(ctx, gvr, namespace, name)
+	return u, true, err
+}
+
+func (c *ResourceCache) typedDirectList(ctx context.Context, gvr schema.GroupVersionResource, namespace string) ([]*unstructured.Unstructured, bool, error) {
+	dynamicCache := GetDynamicResourceCache()
+	if dynamicCache == nil {
+		return nil, true, fmt.Errorf("dynamic resource cache not initialized")
+	}
+	us, err := dynamicCache.ListDirect(ctx, gvr, namespace)
+	return us, true, err
+}
+
+// listTypedAsUnstructured is the list counterpart of getTypedAsUnstructured,
+// with the same tri-state semantics (see there for why the deferred check
+// precedes the lister read). A namespace filter on a cluster-only kind
+// returns empty to match the dynamic cache's namespace-index behavior
+// (FetchResourceList would ignore the filter and return everything).
+func (c *ResourceCache) listTypedAsUnstructured(ctx context.Context, gvr schema.GroupVersionResource, kind, namespace string) ([]*unstructured.Unstructured, bool, error) {
+	if namespace != "" {
+		if _, _, clusterOnly := ClusterOnlyKindGVR(kind); clusterOnly {
+			return []*unstructured.Unstructured{}, true, nil
+		}
+	}
+	if c.IsDeferredPending(gvr.Resource) {
+		return c.typedDirectList(ctx, gvr, namespace)
+	}
+	var namespaces []string
+	if namespace != "" {
+		namespaces = []string{namespace}
+	}
+	objs, err := FetchResourceList(c, kind, namespaces)
+	if err != nil {
+		if errors.Is(err, ErrUnknownKind) {
+			return nil, false, nil
+		}
+		return nil, true, err
+	}
+	out := make([]*unstructured.Unstructured, 0, len(objs))
+	for _, obj := range objs {
+		u, cerr := typedObjectToUnstructured(obj, gvr)
+		if cerr != nil {
+			return nil, true, cerr
+		}
+		out = append(out, u)
+	}
+	return out, true, nil
+}
+
+// ListDynamicWithGroup returns resources, using the group to disambiguate
+func (c *ResourceCache) ListDynamicWithGroup(ctx context.Context, kind string, namespace string, group string) ([]*unstructured.Unstructured, error) {
+	if gvr, ok := typedRouteGVR(kind, group); ok {
+		if out, handled, err := c.listTypedAsUnstructured(ctx, gvr, kind, namespace); handled {
+			return out, err
+		}
+	}
+
+	gvr, err := resolveDynamicGVR(kind, group)
+	if err != nil {
+		return nil, err
+	}
+
+	dynamicCache := GetDynamicResourceCache()
+	if dynamicCache == nil {
+		return nil, fmt.Errorf("%w: dynamic cache", ErrDynamicNotReady)
+	}
+
+	if ShouldBypassDynamicInformer(gvr) {
+		return dynamicCache.ListDirect(ctx, gvr, namespace)
+	}
+
+	return dynamicCache.List(gvr, namespace)
+}
+
+// ListDirectSelectedWithGroup lists one bounded, label-selected page of a
+// dynamic kind straight from the API server, never through an informer. It
+// resolves the GVR the same way ListDynamicWithGroup does.
+func (c *ResourceCache) ListDirectSelectedWithGroup(ctx context.Context, kind, namespace, group, labelSelector string, limit int64) ([]*unstructured.Unstructured, bool, error) {
+	gvr, err := resolveDynamicGVR(kind, group)
+	if err != nil {
+		return nil, false, err
+	}
+	dynamicCache := GetDynamicResourceCache()
+	if dynamicCache == nil {
+		return nil, false, fmt.Errorf("%w: dynamic cache", ErrDynamicNotReady)
+	}
+	return dynamicCache.ListDirectSelected(ctx, gvr, namespace, labelSelector, limit)
+}
+
+func resolveDynamicGVR(kind, group string) (schema.GroupVersionResource, error) {
+	discovery := GetResourceDiscovery()
+	if discovery == nil {
+		return schema.GroupVersionResource{}, fmt.Errorf("%w: resource discovery", ErrDynamicNotReady)
+	}
+
+	var gvr schema.GroupVersionResource
+	var ok bool
+
+	if group != "" {
+		gvr, ok = discovery.GetGVRWithGroup(kind, group)
+	} else {
+		gvr, ok = discovery.GetGVR(kind)
+	}
+
+	if !ok {
+		gvr, ok = builtinGVRFallback(kind, group)
+	}
+
+	if !ok {
+		if group != "" {
+			return schema.GroupVersionResource{}, fmt.Errorf("%w: %s (group: %s)", ErrUnknownDynamicKind, kind, group)
+		}
+		return schema.GroupVersionResource{}, fmt.Errorf("%w: %s", ErrUnknownDynamicKind, kind)
+	}
+	return gvr, nil
+}
+
+// builtinGVRFallback resolves a built-in kind's GVR from the static table when
+// API discovery couldn't (partial discovery under restricted RBAC, or a
+// transient refresh miss). It only resolves built-ins addressed by their own
+// group, so a CRD whose plural shadows a built-in still falls through as
+// unknown. Live/dynamic fetch paths (notably the GitOps drift last-applied GET,
+// which can't use the typed cache) rely on this so they don't silently fail
+// when discovery is incomplete.
+func builtinGVRFallback(kind, group string) (schema.GroupVersionResource, bool) {
+	return BuiltinGVR(kind, group)
+}
+
+func ShouldBypassDynamicInformer(gvr schema.GroupVersionResource) bool {
+	return (gvr.Group == "discovery.k8s.io" && gvr.Resource == "endpointslices") ||
+		(gvr.Group == "coordination.k8s.io" && gvr.Resource == "leases") ||
+		(gvr.Group == "" && gvr.Resource == "endpoints")
+}
+
+// ErrUnknownDynamicKind is returned by ListDynamic / GetDynamicWithGroup when
+// the requested kind has no registered GVR in API discovery. Wrapped with
+// fmt.Errorf("%w: ..."), so callers should match with errors.Is. The HTTP
+// layer translates this to 400 Bad Request.
+var ErrUnknownDynamicKind = errors.New("unknown resource kind")
+
+// ErrDynamicNotReady is returned when API discovery or the dynamic cache hasn't
+// been wired (early startup / a context without dynamic support). It is a
+// definitive "dynamic support isn't available" - distinct from a transient List
+// failure (RBAC / cache-not-synced) against an available CRD - so callers can
+// treat it as a clean no-match rather than as actionable uncertainty.
+var ErrDynamicNotReady = errors.New("dynamic resource support not initialized")
+
+// GetDynamic returns a single resource of any type using the dynamic cache
+func (c *ResourceCache) GetDynamic(ctx context.Context, kind string, namespace string, name string) (*unstructured.Unstructured, error) {
+	return c.GetDynamicWithGroup(ctx, kind, namespace, name, "")
+}
+
+// GetDynamicWithGroup returns a single resource, using the group to disambiguate
+func (c *ResourceCache) GetDynamicWithGroup(ctx context.Context, kind string, namespace string, name string, group string) (*unstructured.Unstructured, error) {
+	return c.getDynamicWithGroup(ctx, kind, namespace, name, group, false, false)
+}
+
+// GetDynamicWithGroupVerified confirms cache misses with a direct API read.
+// Only an API NotFound establishes absence; an unavailable cache or API does not.
+func (c *ResourceCache) GetDynamicWithGroupVerified(ctx context.Context, kind, namespace, name, group string) (*unstructured.Unstructured, error) {
+	obj, err := c.GetDynamicWithGroup(ctx, kind, namespace, name, group)
+	if !apierrors.IsNotFound(err) && !errors.Is(err, k8score.ErrResourceNotFound) {
+		return obj, err
+	}
+	ctx, cancel := context.WithTimeout(ctx, 3*time.Second)
+	defer cancel()
+	return c.getDynamicWithGroup(ctx, kind, namespace, name, group, false, true)
+}
+
+// GetDynamicWithGroupPreserveLastApplied returns a single resource while
+// preserving kubectl last-applied for internal drift computation. Do not use
+// for API/UI/MCP responses.
+func (c *ResourceCache) GetDynamicWithGroupPreserveLastApplied(ctx context.Context, kind string, namespace string, name string, group string) (*unstructured.Unstructured, error) {
+	return c.getDynamicWithGroup(ctx, kind, namespace, name, group, true, false)
+}
+
+func (c *ResourceCache) getDynamicWithGroup(ctx context.Context, kind string, namespace string, name string, group string, preserveLastApplied, forceDirect bool) (*unstructured.Unstructured, error) {
+	// preserveLastApplied must never take the typed route: the typed cache
+	// strips kubectl last-applied at ingestion, so serving drift reads from it
+	// would silently return "no drift" for every built-in kind.
+	if !preserveLastApplied && !forceDirect {
+		if gvr, ok := typedRouteGVR(kind, group); ok {
+			if u, handled, err := c.getTypedAsUnstructured(ctx, gvr, kind, namespace, name); handled {
+				return u, err
+			}
+		}
+	}
+
+	discovery := GetResourceDiscovery()
+	if discovery == nil {
+		return nil, fmt.Errorf("%w: resource discovery", ErrDynamicNotReady)
+	}
+
+	var gvr schema.GroupVersionResource
+	var ok bool
+
+	if group != "" {
+		gvr, ok = discovery.GetGVRWithGroup(kind, group)
+	} else {
+		gvr, ok = discovery.GetGVR(kind)
+	}
+
+	if !ok {
+		gvr, ok = builtinGVRFallback(kind, group)
+	}
+
+	if !ok {
+		if group != "" {
+			return nil, fmt.Errorf("%w: %s (group: %s)", ErrUnknownDynamicKind, kind, group)
+		}
+		return nil, fmt.Errorf("%w: %s", ErrUnknownDynamicKind, kind)
+	}
+
+	dynamicCache := GetDynamicResourceCache()
+	if dynamicCache == nil {
+		return nil, fmt.Errorf("%w: dynamic cache", ErrDynamicNotReady)
+	}
+
+	// CRD detail views need spec.versions[].schema and spec.conversion, which
+	// the dynamic cache strips to save memory. Bypass the cache on single-CRD
+	// fetches so the YAML tab and MCP get_resource see the full object; list
+	// views (which don't render schemas) still go through the cache.
+	//
+	// preserveLastApplied also goes via direct GET. The cached path would
+	// otherwise force-start a dynamic informer for the resource's GVR — fine
+	// for CRDs but a memory regression for core kinds (apps/Deployment,
+	// /v1/Service, etc.) that Argo's status.resources commonly references,
+	// since the informer would retain last-applied across every object
+	// cluster-wide just to power a per-page-load drift diff.
+	var u *unstructured.Unstructured
+	var err error
+	if preserveLastApplied {
+		u, err = dynamicCache.GetDirectPreserveLastApplied(ctx, gvr, namespace, name)
+	} else if forceDirect || ShouldBypassDynamicInformer(gvr) {
+		u, err = dynamicCache.GetDirect(ctx, gvr, namespace, name)
+	} else if gvr.Group == "apiextensions.k8s.io" && gvr.Resource == "customresourcedefinitions" {
+		u, err = dynamicCache.GetDirect(ctx, gvr, namespace, name)
+	} else if gvr.Group == "apiregistration.k8s.io" && gvr.Resource == "apiservices" {
+		u, err = dynamicCache.GetDirect(ctx, gvr, namespace, name)
+	} else {
+		u, err = dynamicCache.Get(gvr, namespace, name)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	if u.GetAPIVersion() == "" || u.GetKind() == "" {
+		apiVersion := gvr.Version
+		if gvr.Group != "" {
+			apiVersion = gvr.Group + "/" + gvr.Version
+		}
+		u.SetAPIVersion(apiVersion)
+		if kindName := discovery.GetKindForGVR(gvr); kindName != "" {
+			u.SetKind(kindName)
+		}
+	}
+
+	return u, nil
+}
+
+// ResourceStatus is an alias for topology.ResourceStatus so both packages share one definition.
+type ResourceStatus = topology.ResourceStatus
+
+// GetResourceStatus looks up a resource and returns its status
+func (c *ResourceCache) GetResourceStatus(kind, namespace, name string) *ResourceStatus {
+	if c == nil {
+		return nil
+	}
+
+	kindLower := strings.ToLower(kind)
+
+	switch kindLower {
+	case "pod", "pods":
+		if c.Pods() == nil {
+			return nil
+		}
+		pod, err := c.Pods().Pods(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		issue := getPodIssue(pod)
+		status := string(pod.Status.Phase)
+		summary := status
+		if issue != "" {
+			summary = issue
+			status = issue
+		}
+		return &ResourceStatus{
+			Status:  status,
+			Ready:   getPodReadyCount(pod),
+			Message: getPodStatusMessage(pod),
+			Summary: summary,
+			Issue:   issue,
+		}
+
+	case "deployment", "deployments":
+		if c.Deployments() == nil {
+			return nil
+		}
+		dep, err := c.Deployments().Deployments(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		ready := fmt.Sprintf("%d/%d", dep.Status.ReadyReplicas, dep.Status.Replicas)
+		status := "Progressing"
+		if dep.Status.ReadyReplicas == dep.Status.Replicas && dep.Status.Replicas > 0 {
+			status = "Running"
+		} else if dep.Status.Replicas == 0 {
+			status = "Scaled to 0"
+		}
+
+		result := &ResourceStatus{
+			Status:  status,
+			Ready:   ready,
+			Summary: ready + " ready",
+		}
+
+		if dep.Status.ReadyReplicas < dep.Status.Replicas && dep.Status.Replicas > 0 {
+			pods := c.GetPodsForWorkload(namespace, dep.Spec.Selector)
+			if len(pods) > 0 {
+				issueSummary := getPodsIssueSummary(pods)
+				if issueSummary.TopIssue != "" {
+					result.Status = issueSummary.TopIssue
+					result.Issue = issueSummary.TopIssue
+					result.Summary = issueSummary.FormatStatusSummary()
+				}
+			}
+		}
+
+		return result
+
+	case "statefulset", "statefulsets":
+		if c.StatefulSets() == nil {
+			return nil
+		}
+		sts, err := c.StatefulSets().StatefulSets(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		replicas := int32(1)
+		if sts.Spec.Replicas != nil {
+			replicas = *sts.Spec.Replicas
+		}
+		ready := fmt.Sprintf("%d/%d", sts.Status.ReadyReplicas, replicas)
+		status := "Progressing"
+		if sts.Status.ReadyReplicas == replicas && replicas > 0 {
+			status = "Running"
+		} else if replicas == 0 {
+			status = "Scaled to 0"
+		}
+
+		result := &ResourceStatus{
+			Status:  status,
+			Ready:   ready,
+			Summary: ready + " ready",
+		}
+
+		if sts.Status.ReadyReplicas < replicas && replicas > 0 {
+			pods := c.GetPodsForWorkload(namespace, sts.Spec.Selector)
+			if len(pods) > 0 {
+				issueSummary := getPodsIssueSummary(pods)
+				if issueSummary.TopIssue != "" {
+					result.Status = issueSummary.TopIssue
+					result.Issue = issueSummary.TopIssue
+					result.Summary = issueSummary.FormatStatusSummary()
+				}
+			}
+		}
+
+		return result
+
+	case "daemonset", "daemonsets":
+		if c.DaemonSets() == nil {
+			return nil
+		}
+		ds, err := c.DaemonSets().DaemonSets(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		ready := fmt.Sprintf("%d/%d", ds.Status.NumberReady, ds.Status.DesiredNumberScheduled)
+		status := "Progressing"
+		if ds.Status.NumberReady == ds.Status.DesiredNumberScheduled && ds.Status.DesiredNumberScheduled > 0 {
+			status = "Running"
+		}
+
+		result := &ResourceStatus{
+			Status:  status,
+			Ready:   ready,
+			Summary: ready + " ready",
+		}
+
+		if ds.Status.NumberReady < ds.Status.DesiredNumberScheduled {
+			pods := c.GetPodsForWorkload(namespace, ds.Spec.Selector)
+			if len(pods) > 0 {
+				issueSummary := getPodsIssueSummary(pods)
+				if issueSummary.TopIssue != "" {
+					result.Status = issueSummary.TopIssue
+					result.Issue = issueSummary.TopIssue
+					result.Summary = issueSummary.FormatStatusSummary()
+				}
+			}
+		}
+
+		return result
+
+	case "replicaset", "replicasets":
+		if c.ReplicaSets() == nil {
+			return nil
+		}
+		rs, err := c.ReplicaSets().ReplicaSets(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		replicas := int32(1)
+		if rs.Spec.Replicas != nil {
+			replicas = *rs.Spec.Replicas
+		}
+		ready := fmt.Sprintf("%d/%d", rs.Status.ReadyReplicas, replicas)
+		status := "Progressing"
+		if rs.Status.ReadyReplicas == replicas && replicas > 0 {
+			status = "Running"
+		} else if replicas == 0 {
+			status = "Scaled to 0"
+		}
+		return &ResourceStatus{
+			Status: status,
+			Ready:  ready,
+		}
+
+	case "service", "services":
+		if c.Services() == nil {
+			return nil
+		}
+		_, err := c.Services().Services(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: "Active",
+		}
+
+	case "role", "roles":
+		if c.Roles() == nil {
+			return nil
+		}
+		if _, err := c.Roles().Roles(namespace).Get(name); err != nil {
+			return nil
+		}
+		return &ResourceStatus{Status: "Active"}
+
+	case "clusterrole", "clusterroles":
+		if c.ClusterRoles() == nil {
+			return nil
+		}
+		if _, err := c.ClusterRoles().Get(name); err != nil {
+			return nil
+		}
+		return &ResourceStatus{Status: "Active"}
+
+	case "rolebinding", "rolebindings":
+		if c.RoleBindings() == nil {
+			return nil
+		}
+		if _, err := c.RoleBindings().RoleBindings(namespace).Get(name); err != nil {
+			return nil
+		}
+		return &ResourceStatus{Status: "Active"}
+
+	case "clusterrolebinding", "clusterrolebindings":
+		if c.ClusterRoleBindings() == nil {
+			return nil
+		}
+		if _, err := c.ClusterRoleBindings().Get(name); err != nil {
+			return nil
+		}
+		return &ResourceStatus{Status: "Active"}
+
+	case "configmap", "configmaps":
+		if c.ConfigMaps() == nil {
+			return nil
+		}
+		_, err := c.ConfigMaps().ConfigMaps(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: "Active",
+		}
+
+	case "secret", "secrets":
+		lister := c.Secrets()
+		if lister == nil {
+			return nil
+		}
+		_, err := lister.Secrets(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: "Active",
+		}
+
+	case "ingress", "ingresses":
+		if c.Ingresses() == nil {
+			return nil
+		}
+		_, err := c.Ingresses().Ingresses(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: "Active",
+		}
+
+	case "job", "jobs":
+		if c.Jobs() == nil {
+			return nil
+		}
+		job, err := c.Jobs().Jobs(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		status := "Running"
+		if job.Status.Succeeded > 0 {
+			status = "Succeeded"
+		} else if job.Status.Failed > 0 {
+			status = "Failed"
+		}
+		completions := int32(1)
+		if job.Spec.Completions != nil {
+			completions = *job.Spec.Completions
+		}
+		return &ResourceStatus{
+			Status: status,
+			Ready:  fmt.Sprintf("%d/%d", job.Status.Succeeded, completions),
+		}
+
+	case "cronjob", "cronjobs":
+		if c.CronJobs() == nil {
+			return nil
+		}
+		cj, err := c.CronJobs().CronJobs(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		status := "Active"
+		if cj.Spec.Suspend != nil && *cj.Spec.Suspend {
+			status = "Suspended"
+		}
+		return &ResourceStatus{
+			Status: status,
+		}
+
+	case "horizontalpodautoscaler", "horizontalpodautoscalers", "hpa":
+		if c.HorizontalPodAutoscalers() == nil {
+			return nil
+		}
+		hpa, err := c.HorizontalPodAutoscalers().HorizontalPodAutoscalers(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: "Active",
+			Ready:  fmt.Sprintf("%d/%d", hpa.Status.CurrentReplicas, hpa.Status.DesiredReplicas),
+		}
+
+	case "persistentvolumeclaim", "persistentvolumeclaims", "pvc":
+		if c.PersistentVolumeClaims() == nil {
+			return nil
+		}
+		pvc, err := c.PersistentVolumeClaims().PersistentVolumeClaims(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: string(pvc.Status.Phase),
+		}
+
+	case "persistentvolume", "persistentvolumes", "pv":
+		if c.PersistentVolumes() == nil {
+			return nil
+		}
+		pv, err := c.PersistentVolumes().Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: string(pv.Status.Phase),
+		}
+
+	case "storageclass", "storageclasses", "sc":
+		if c.StorageClasses() == nil {
+			return nil
+		}
+		if _, err := c.StorageClasses().Get(name); err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: "Active",
+		}
+
+	case "poddisruptionbudget", "poddisruptionbudgets", "pdb":
+		if c.PodDisruptionBudgets() == nil {
+			return nil
+		}
+		pdb, err := c.PodDisruptionBudgets().PodDisruptionBudgets(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: "Active",
+			Ready:  fmt.Sprintf("%d/%d", pdb.Status.CurrentHealthy, pdb.Status.DesiredHealthy),
+		}
+
+	case "networkpolicy", "networkpolicies", "netpol":
+		if c.NetworkPolicies() == nil {
+			return nil
+		}
+		_, err := c.NetworkPolicies().NetworkPolicies(namespace).Get(name)
+		if err != nil {
+			return nil
+		}
+		return &ResourceStatus{
+			Status: "Active",
+		}
+
+	default:
+		return nil
+	}
+}
+
+// GetResourceCount shadows the embedded method to count only core topology
+// resource types (the 9 types rendered in the UI topology view).
+func (c *ResourceCache) GetResourceCount() int {
+	if c == nil {
+		return 0
+	}
+	counts := c.ResourceCache.GetKindObjectCounts()
+	total := 0
+	for kind, n := range counts {
+		switch kind {
+		case "Pod", "Service", "Node", "Namespace", "Deployment",
+			"DaemonSet", "StatefulSet", "ReplicaSet", "Ingress":
+			total += n
+		}
+	}
+	return total
+}
+
+// getPodReadyCount returns the ready container count as "ready/total"
+func getPodReadyCount(pod *corev1.Pod) string {
+	ready := 0
+	total := len(pod.Spec.Containers)
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.Ready {
+			ready++
+		}
+	}
+	return fmt.Sprintf("%d/%d", ready, total)
+}
+
+// getPodStatusMessage returns a brief status message for a pod
+func getPodStatusMessage(pod *corev1.Pod) string {
+	for _, cs := range pod.Status.ContainerStatuses {
+		if cs.State.Waiting != nil && cs.State.Waiting.Reason != "" {
+			return cs.State.Waiting.Reason
+		}
+		if cs.State.Terminated != nil && cs.State.Terminated.Reason != "" {
+			return cs.State.Terminated.Reason
+		}
+	}
+	for _, cond := range pod.Status.Conditions {
+		if cond.Status == corev1.ConditionFalse && cond.Message != "" {
+			return cond.Message
+		}
+	}
+	return ""
+}
+
+// getPodIssue returns the primary issue affecting a pod (if any)
+func getPodIssue(pod *corev1.Pod) string {
+	for _, cs := range pod.Status.InitContainerStatuses {
+		if issue := getContainerIssue(&cs); issue != "" {
+			return issue
+		}
+	}
+	for _, cs := range pod.Status.ContainerStatuses {
+		if issue := getContainerIssue(&cs); issue != "" {
+			return issue
+		}
+	}
+	for _, cond := range pod.Status.Conditions {
+		if cond.Type == corev1.PodScheduled && cond.Status == corev1.ConditionFalse {
+			if cond.Reason != "" {
+				return cond.Reason
+			}
+		}
+	}
+	return ""
+}
+
+// getContainerIssue extracts the issue from a container status
+func getContainerIssue(cs *corev1.ContainerStatus) string {
+	if cs.State.Waiting != nil {
+		reason := cs.State.Waiting.Reason
+		if reason != "" && reason != "PodInitializing" && reason != "ContainerCreating" {
+			return reason
+		}
+	}
+	if cs.State.Terminated != nil && cs.State.Terminated.ExitCode != 0 {
+		if cs.State.Terminated.Reason != "" {
+			return cs.State.Terminated.Reason
+		}
+	}
+	if cs.LastTerminationState.Terminated != nil {
+		if cs.LastTerminationState.Terminated.Reason == "OOMKilled" {
+			return "OOMKilled"
+		}
+	}
+	return ""
+}
+
+// PodIssueSummary holds aggregated pod issue information
+type PodIssueSummary struct {
+	Total    int
+	Ready    int
+	Issues   map[string]int
+	TopIssue string
+	TopCount int
+}
+
+// getPodsIssueSummary analyzes a list of pods and returns issue summary
+func getPodsIssueSummary(pods []*corev1.Pod) *PodIssueSummary {
+	summary := &PodIssueSummary{
+		Total:  len(pods),
+		Issues: make(map[string]int),
+	}
+
+	for _, pod := range pods {
+		if pod.Status.Phase == corev1.PodRunning {
+			allReady := true
+			for _, cs := range pod.Status.ContainerStatuses {
+				if !cs.Ready {
+					allReady = false
+					break
+				}
+			}
+			if allReady {
+				summary.Ready++
+			}
+		}
+
+		if issue := getPodIssue(pod); issue != "" {
+			summary.Issues[issue]++
+			if summary.Issues[issue] > summary.TopCount {
+				summary.TopIssue = issue
+				summary.TopCount = summary.Issues[issue]
+			}
+		}
+	}
+
+	return summary
+}
+
+// FormatStatusSummary creates a brief human-readable status string
+func (s *PodIssueSummary) FormatStatusSummary() string {
+	if s.Total == 0 {
+		return "No pods"
+	}
+	if s.TopIssue != "" {
+		return fmt.Sprintf("%d/%d %s", s.Ready, s.Total, s.TopIssue)
+	}
+	if s.Ready == s.Total {
+		return fmt.Sprintf("%d/%d ready", s.Ready, s.Total)
+	}
+	return fmt.Sprintf("%d/%d ready", s.Ready, s.Total)
+}
+
+// GetPodsForWorkload returns pods matching the given label selector in a namespace
+func (c *ResourceCache) GetPodsForWorkload(namespace string, selector *metav1.LabelSelector) []*corev1.Pod {
+	if c == nil || selector == nil || c.Pods() == nil {
+		return nil
+	}
+
+	allPods, err := c.Pods().Pods(namespace).List(labels.Everything())
+	if err != nil {
+		return nil
+	}
+
+	labelSelector, err := metav1.LabelSelectorAsSelector(selector)
+	if err != nil {
+		return nil
+	}
+
+	var matchingPods []*corev1.Pod
+	for _, pod := range allPods {
+		if labelSelector.Matches(labels.Set(pod.Labels)) {
+			matchingPods = append(matchingPods, pod)
+		}
+	}
+
+	return matchingPods
+}
+
+func (rc *ResourceCache) AssessKindRead(resource string, requested []string) k8score.KindReadAssessment {
+	var core *k8score.ResourceCache
+	if rc != nil {
+		core = rc.ResourceCache
+	}
+	return core.AssessKindRead(resource, requested)
+}
+
+// ReadableObjects, ReadableObject and ReadableCount are the nil-safe forms of
+// k8score's readiness-gated reads: they serve a namespace whose own informer
+// has synced even while the kind as a whole is still loading.
+func (rc *ResourceCache) ReadableObjects(resource string, namespaces []string) ([]runtime.Object, bool) {
+	if rc == nil {
+		return nil, false
+	}
+	return rc.ResourceCache.ReadableObjects(resource, namespaces)
+}
+
+func (rc *ResourceCache) ReadableObject(resource, namespace, name string) (obj runtime.Object, found, ok bool) {
+	if rc == nil {
+		return nil, false, false
+	}
+	return rc.ResourceCache.ReadableObject(resource, namespace, name)
+}
+
+func (rc *ResourceCache) ReadableCount(resource string, namespaces []string) (int, bool) {
+	if rc == nil {
+		return 0, false
+	}
+	return rc.ResourceCache.ReadableCount(resource, namespaces)
+}
+
+// PermissionResult returns the probes that selected this cache's informer
+// scope. A later global refresh must not re-label rows from this cache. Its
+// errors, including 401s, describe this cache for its whole life; they clear
+// only when the cache is rebuilt and probes again, as on a reconnect or a
+// --namespace-scope change.
+func (rc *ResourceCache) PermissionResult() *PermissionCheckResult {
+	if rc == nil {
+		return nil
+	}
+	return clonePermissionCheckResult(rc.permissionResult)
+}
+
+// bootstrapResourcePermissions runs the startup access probes that choose the
+// cache's informer scope. A 401 rejects Radar's identity, not one scope, so a
+// 401 in only some probes is most likely a token refreshed mid-probe: probe
+// once more, within the same budget, rather than leave those kinds switched
+// off for the life of the connection.
+//
+//   - Credentials rejected by every probe fail initialization into the
+//     connection's auth owner.
+//   - A rejection limited to some probes keeps what the others granted, as a
+//     denial would: the identity works, and failing the connection would hide
+//     every kind it can read.
+//   - A retry the budget cut short is not used. Probes still in flight at the
+//     deadline count as allowed, so its result is a guess; the first result
+//     stands, under the same rules.
+//   - Budget expiry otherwise keeps the grants the probe established.
+//     Cancellation returns ctx.Err(), so a superseded initialization wires
+//     nothing.
+func bootstrapResourcePermissions(ctx context.Context, probe func(context.Context, bool) permissionProbe) (permissionProbe, error) {
+	first := probe(ctx, false)
+	rejected := permissionUnauthorized(first.result)
+	if rejected != nil && ctx.Err() == nil {
+		retry := probe(ctx, true)
+		if ctx.Err() == nil {
+			if err := permissionUnauthorized(retry.result); err != nil && credentialsRejectedEverywhere(retry.result) {
+				return permissionProbe{}, fmt.Errorf("resource access probe rejected credentials: %w", err)
+			}
+			return retry, nil
+		}
+	}
+	if err := ctx.Err(); err != nil && !errors.Is(err, context.DeadlineExceeded) {
+		return permissionProbe{}, err
+	}
+	if rejected != nil && credentialsRejectedEverywhere(first.result) {
+		return permissionProbe{}, fmt.Errorf("resource access probe rejected credentials: %w", rejected)
+	}
+	return first, nil
+}
+
+// freshResourcePermissions is the startup probe. It publishes nothing: startup
+// publishes the result it picks. A retry bypasses the cached result, which may
+// hold the very rejection being retried, without bumping the generation, so
+// the first result can still be published if the retry is discarded.
+func freshResourcePermissions(ctx context.Context, retry bool) permissionProbe {
+	return probeResourcePermissions(ctx, retry)
+}
+
+// credentialsRejectedEverywhere reports a probe in which no kind
+// authenticated: every kind ended disabled by a credential rejection. A kind
+// that was granted, or denied (which needs an authenticated identity), has no
+// entry in ProbeErrors.
+func credentialsRejectedEverywhere(result *PermissionCheckResult) bool {
+	return result != nil && len(result.Scopes) > 0 && len(result.ProbeErrors) == len(result.Scopes)
+}
+
+func permissionUnauthorized(result *PermissionCheckResult) error {
+	if result == nil {
+		return nil
+	}
+	for _, err := range result.ProbeErrors {
+		if apierrors.IsUnauthorized(err) {
+			return err
+		}
+	}
+	for _, byNamespace := range result.NamespaceProbeErrors {
+		for _, err := range byNamespace {
+			if apierrors.IsUnauthorized(err) {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// KnownMissingNamespaces returns the namespaces among names that Radar knows
+// don't exist: its Namespace informer has synced and holds none by that name.
+// Without a synced informer none is known to be missing. Only a caller who can
+// see every namespace may be told the answer.
+func (c *ResourceCache) KnownMissingNamespaces(names []string) []string {
+	if c == nil || c.Namespaces() == nil || !c.IsKindReady("namespaces") {
+		return nil
+	}
+	var missing []string
+	for _, ns := range names {
+		if _, err := c.Namespaces().Get(ns); apierrors.IsNotFound(err) {
+			missing = append(missing, ns)
+		}
+	}
+	return missing
+}

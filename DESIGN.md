@@ -1,0 +1,351 @@
+# Design System
+
+Radar's design system for AI coding agents. Read this before writing or modifying frontend code.
+
+Source files: `packages/k8s-ui/src/theme/variables.css` (tokens), `tailwind-theme.css` (Tailwind mapping), `components.css` (shared classes), `Badge.tsx` (badge component + color definitions).
+
+## 1. Visual Theme & Atmosphere
+
+Cool, professional, data-dense. A barely-blue-tinted neutral palette — not generic gray, not flashy. Light mode defaults to cool off-white surfaces; dark mode to deep navy-black. The brand accent is a refined mid-blue (`#4A7CC9` light / `#6A9FE0` dark) — saturated enough to stand out, restrained enough for a tool you stare at all day. Information density is high (K8s dashboards), so the palette relies on subtle background layering and muted borders rather than heavy visual chrome.
+
+**Key characteristics:**
+- Light/dark via `light-dark()` CSS function + `.dark` class toggle
+- Cool blue-gray tint in backgrounds and borders (not pure gray)
+- Single brand accent color — no secondary brand colors
+- DM Sans Variable for UI, DM Mono for code/terminal
+- Rounder than Tailwind defaults (6px base, 14px cards/modals)
+- Status communicated via emerald/amber/red/sky semantic colors
+
+## 2. Color Palette & Roles
+
+### Backgrounds
+| Token | CSS Variable | Light | Dark | Use for |
+|-------|-------------|-------|------|---------|
+| `bg-theme-base` | `--bg-base` | `#F0F3F9` | `#0B0F1E` | Page background, header, toolbar chrome |
+| `bg-theme-surface` | `--bg-surface` | `#F8FBFE` | `#14192A` | Sidebars, cards, panels, drawers |
+| `bg-theme-elevated` | `--bg-elevated` | `#E6ECF5` | `#1E2338` | Inputs, count badges, dropdowns |
+| `bg-theme-hover` | `--bg-hover` | `#DDE5F2` | `#282E48` | Hover states on interactive elements |
+| `bg-theme-active` | `--bg-active` | `#D3DCEC` | `#1C2840` | Active/pressed states |
+
+### Text
+| Token | CSS Variable | Light | Dark | Use for |
+|-------|-------------|-------|------|---------|
+| `text-theme-text-primary` | `--text-primary` | `#1A1C20` | `#F5F6F8` | Headings, primary content |
+| `text-theme-text-secondary` | `--text-secondary` | `#555860` | `#D8DAE0` | Body text, descriptions |
+| `text-theme-text-tertiary` | `--text-tertiary` | `#6B7080` | `#B0B5C0` | Placeholders, metadata, timestamps |
+| `text-theme-text-disabled` | `--text-disabled` | `#A0A4AC` | `#6A7080` | Disabled states |
+| `text-warning-text` | `--warning-text` | `#92400E` | `#FBBF24` | Warning or attention text on a plain background |
+
+### Borders
+| Token | CSS Variable | Light | Dark | Use for |
+|-------|-------------|-------|------|---------|
+| `border-theme-border` | `--border-default` | `#D8E0EE` | `#222840` | Standard borders (cards, inputs, dividers) |
+| `border-theme-border-light` | `--border-light` | `#CDD6E8` | `#2C324A` | Slightly heavier borders |
+| `border-theme-border-subtle` | `--border-subtle` | `rgba(74,100,180,0.07)` | `rgba(255,255,255,0.04)` | Very subtle separators |
+
+### Brand & Accent
+| Token | CSS Variable | Light | Dark | Use for |
+|-------|-------------|-------|------|---------|
+| `bg-accent` / `text-accent` | `--accent` | `#4A7CC9` | `#6A9FE0` | Primary actions, active states, links |
+| `bg-accent-light` | `--accent-light` | `#3B66A8` | `#8BB5EA` | Hover on accent elements |
+| `bg-accent-muted` | `--accent-muted` | `rgba(74,124,201,0.12)` | `rgba(106,159,224,0.18)` | Subtle accent backgrounds |
+| `text-accent-text` | `--accent-text` | `#3B66A8` | `#8BB5EA` | Accent-colored text |
+
+Full Skyhook brand scale: `--color-skyhook-50` (`#EBF2FA`) through `--color-skyhook-900` (`#1F365C`), centered on `--color-skyhook` (`#5088CC`). Available as `bg-skyhook-*` / `text-skyhook-*` utilities.
+
+### Semantic Status
+| Color | Variable | Hex | Use for |
+|-------|----------|-----|---------|
+| Success | `--color-success` | `#22C55E` | Healthy, running, active, ready |
+| Warning | `--color-warning` | `#F59E0B` | Degraded, pending, suspended |
+| Error | `--color-error` | `#EF4444` | Unhealthy, failed, crashloop |
+| Info | `--color-info` | `#3B82F6` | Completed, informational |
+
+Crossplane’s declared reconciliation pause is neutral context alongside recorded readiness and independent errors. A requested operation that pause may defer, such as deletion cleanup, gets an inline warning.
+
+### Selection/Highlight
+| Token | CSS Variable | Use for |
+|-------|-------------|---------|
+| `.selection` | `--selection-bg` | Selected rows, items |
+| `.selection-strong` | `--selection-bg-strong` | Strongly selected items |
+| `.selection-text` | `--selection-text` | Text in selected items |
+| `.selection-ring` | `--selection-border` | Box-shadow ring on selected items |
+
+### Shadows
+| Token | CSS Variable | Use for |
+|-------|-------------|---------|
+| `shadow-theme-sm` | `--shadow-sm` | Subtle elevation (buttons, small elements) |
+| `shadow-theme-md` | `--shadow-md` | Medium elevation (cards, dropdowns) |
+| `shadow-theme-lg` | `--shadow-lg` | High elevation (modals, popovers) |
+| `shadow-drawer` | `--shadow-drawer` | Slide-out drawers |
+| `shadow-glow-brand-sm` | `--glow-brand-sm` | Subtle brand glow |
+| `shadow-glow-brand-md` | `--glow-brand-md` | Medium brand glow |
+
+Dark mode overrides shadows with heavier values + subtle white inset borders.
+
+## 3. Typography Rules
+
+### Font Families
+| Role | Family | Tailwind class |
+|------|--------|---------------|
+| UI text | DM Sans Variable | `font-sans` (default) |
+| Code, terminal, monospace | DM Mono | `font-mono` |
+
+### Scale
+Standard Tailwind type scale. No custom sizes or tracking. Use Tailwind utilities (`text-sm`, `text-base`, `text-lg`, `font-medium`, etc.) as normal.
+
+## 4. Component Stylings
+
+### Buttons
+| Class | Use for |
+|-------|---------|
+| `.btn-brand` | Primary CTAs — brand-colored bg, white text, 10px radius |
+| `.btn-brand-muted` | Secondary brand actions — dimmed brand bg, white text |
+| `.btn-brand-toggle` | Toggle buttons — 50% brand bg, primary text |
+
+Hover/disabled states are built into the classes. For non-brand buttons, use shadcn/ui `<Button>` variants.
+
+### Badges
+Use the `<Badge>` component from `@maomada/k8s-ui` — **never hand-write badge
+color strings** (`bg-<color>-NN/NN text-<color>-NN …`). Those bypass the theme
+(they're dark-tuned and wash out in light mode) and, worse, *overload hues across
+intents* — a green `bg-green-500/20` "HTTPS" chip becomes indistinguishable from a
+green "success" chip, so retuning "success" silently recolors every HTTPS tag.
+
+**Pick the prop by what the badge MEANS, not by the color you want** (tokens are
+named by intent so a future retune moves exactly the right ones):
+
+| The badge represents… | Use | Example |
+|---|---|---|
+| a status / outcome | `severity=` (`success`/`warning`/`alert`/`error`/`info`/`neutral`) | `<Badge severity="error">Failed</Badge>` |
+| resource health | `severity=` via `mapHealthToTone` / `getHealthBadgeColor` | health tone |
+| a K8s/CRD **resource kind** | `kind=` | `<Badge kind="Middleware">Middleware</Badge>` |
+| a transport **protocol/scheme** | `protocol=` (http/https/tls/tcp/udp/grpc/h2) | `<Badge protocol="HTTPS">HTTPS</Badge>` |
+| a neutral **attention/FYI** marker (cross-namespace, wildcard, default, immutable) | `tone="note"` | `<Badge tone="note">cross-namespace</Badge>` |
+| **local** categorical distinction (rw/ro, spot/on-demand, control-plane/worker) — hue has no global meaning, just "tell siblings apart" | `tone="accent1"`/`"accent2"`/`"accent3"` | `<Badge tone="accent1">rw</Badge>` |
+| a **structural** data fragment (port, path, host, weight, name, count) | `tone="structural"` | `<Badge tone="structural" size="sm">:8080</Badge>` |
+| words an **AI agent** attached to a Radar fact (evidence role chips: Cause, Symptom, Rules out) — muted accent, never a severity hue, so agent framing can't pass for a Radar finding | `tone="agent"` | `<Badge tone="agent" size="sm">Cause</Badge>` |
+| genuinely one-off (last resort) | `colorClass=` | `<Badge colorClass="…">Custom</Badge>` |
+
+```tsx
+<Badge severity="success">Running</Badge>
+<Badge kind="Pod">my-pod</Badge>
+<Badge protocol="TCP">TCP</Badge>      {/* protocol ≠ severity: TCP is indigo, not orange/success */}
+<Badge tone="note">wildcard</Badge>
+<Badge tone="structural" size="sm">:443</Badge>
+```
+
+If you reach for `colorClass`, first ask whether you're inventing an intent that
+should be a named token here instead — if two places want "the same accent",
+that's a token, not two literals. A ratchet test
+(`badge-no-handrolled.test.tsx`) fails CI if a renderer **adds** a hand-rolled
+chip; the existing baseline shrinks over time, never grows.
+
+For programmatic color lookup (e.g., dynamic table cells):
+- `getKindColorClass(kind)` — returns Tailwind classes for a K8s resource kind
+- `getSeverityBadge(severity)` — returns classes for a severity level
+- `getResourceStatusColor(status)` — maps K8s status strings ("Running", "Pending", "Failed") to badge classes
+- `getHealthBadgeColor(health)` — maps health states to badge classes
+- `getHelmStatusColor(status)` — maps Helm release statuses to badge classes
+
+All from `@maomada/k8s-ui/utils/badge-colors`.
+
+### Status Badges in Tables
+Use CSS classes from `components.css` for status cells in table rows:
+- `.status-healthy` — emerald
+- `.status-degraded` — amber
+- `.status-unhealthy` — red
+- `.status-neutral` — sky
+- `.status-unknown` — gray (uses theme variables)
+- `.status-violet`, `.status-purple`, `.status-orange`, `.status-cyan` — special cases
+
+### Cards & Containers
+| Class | Use for |
+|-------|---------|
+| `.card-inner` | Nested containers in drawers/renderers — base bg, subtle border, 6px radius, 8px padding |
+| `.card-inner-lg` | Larger nested containers — 10px radius, 12px padding |
+| `.dialog` | Modal/dialog containers — surface bg, default border, 14px radius, large shadow |
+
+### Subtle Borders
+| Class | Use for |
+|-------|---------|
+| `.table-divide-subtle` | Ultra-subtle dividers between table rows (apply to parent) |
+| `.border-b-subtle` | Bottom border on individual elements |
+| `.border-r-subtle` | Right border |
+| `.border-t-subtle` | Top border |
+
+### Unknown, partial and denied values
+
+Keep unavailable values visible and name why they could not be read; never substitute zero, “none” or a healthy tone. Partial totals are bounds (`CertaintyGlyph`), not exact counts. Recorded declarations and observed state need distinct source labels. Use `FactValue` with `FactSource` for values and their provenance, and `worseTone` when combining health readings so an unread part cannot produce a healthy result. Workspace problem presentation maps issue severity to the canonical health tones; it does not classify evidence or authorize reads.
+
+### Times and Ages
+Every relative time uses the shared tiers — seconds, minutes, hours, days (`45s`, `12m`, `4h`, `212d`) — never months or years, matching kubectl. What the text says depends on what the reader is asking:
+
+| The value answers | Shows | Use |
+|-------------------|-------|-----|
+| When did it happen? ("Started", "Last Reconciled", "Last Seen", "Created") | `5m ago`, `just now` | `<TimeValue>` for a drawer property (adds the exact local time on hover); `formatRelativeAgeTime` in lists and sentences |
+| How long has it existed or lasted? ("Age", "5m old", "Terminating for") | `5m` | `formatAge` / `formatCompactAge` |
+
+A bare `5m` under "Started" or "Finished" reads as a duration, so a moment in a drawer, list or sentence always says "ago".
+
+Table columns are a judgment call per screen, because the header already names the event. Choose what reads clearest there. Columns that mirror `kubectl get` (Age, Last Seen, Last Schedule) stay bare, as kubectl prints them. Radar's own views don't have to look like CLI output: the GitOps fleet's Last Sync and the Leases list's Last Renewed say "ago" because it reads more naturally. Keep sibling columns on one screen consistent with each other.
+
+Go text uses `pkg/timeutil.FormatAgeShort`, with the same tiers.
+
+## 5. Layout Principles
+
+### Spacing
+Standard Tailwind spacing scale. No custom base unit.
+
+### Border Radius (rounder than Tailwind defaults)
+| Tailwind | Value | Use for |
+|----------|-------|---------|
+| `rounded` | 6px | Badges, inline elements |
+| `rounded-md` | 8px | Inputs, small containers |
+| `rounded-lg` | 10px | Buttons, dropdowns |
+| `rounded-xl` | 14px | Cards, modals, dialogs |
+
+### Breakpoints
+| Name | Width |
+|------|-------|
+| `sm` | 900px |
+| `md` | 1100px |
+| `lg` | 1280px |
+| `xl` | 1536px |
+
+Wider than Tailwind defaults — Radar is a desktop-first tool.
+
+## 6. Depth & Elevation
+
+| Level | Treatment | Use for |
+|-------|-----------|---------|
+| Base | `bg-theme-base`, no shadow | Page background |
+| Surface | `bg-theme-surface`, optional `shadow-theme-sm` | Panels, sidebars, cards |
+| Elevated | `bg-theme-elevated`, `shadow-theme-md` | Dropdowns, popovers, inputs |
+| Floating | `bg-theme-surface`, `shadow-theme-lg` | Modals, command palette |
+| Drawer | `bg-theme-surface`, `shadow-drawer` | Slide-out resource drawers |
+
+Dark mode adds heavier shadows with subtle white inset borders for edge definition.
+
+## 7. Motion
+
+One curve, a handful of durations, and a primitive per surface. All timing lives in `packages/k8s-ui/src/utils/animation.ts`; radar-hub-web re-exports it so Radar and Radar Cloud move alike. Never write a duration or curve inline.
+
+| Surface | Primitive | Timing |
+|---------|-----------|--------|
+| In-flow disclosure (section, row expander, "show details") | `<Collapse open>` + `<CollapseChevron open>` + `useDisclosure(open)` | `DURATION_DISCLOSURE` 300ms, symmetric, height-only (`grid-template-rows` 0fr↔1fr) |
+| Menu / popover / listbox | `useAnimatedUnmount(open, overlayExitMs('menu'))` + `TRANSITION_MENU` + `overlayTransitionStyle(isOpen, 'menu')` | 140ms in / 100ms out, from the anchor corner (`origin-top-left` etc.) |
+| Dialog / command palette | `DialogPortal`, or the same recipe with `'dialog'` | 220ms in / 160ms out |
+| Bottom sheet | recipe with `'sheet'` | 280ms in / 220ms out |
+| Side drawer | `TRANSITION_DRAWER`; backdrop uses `'drawer'` | 300ms both ways |
+| Dock height, drawer↔fullscreen morph | `DURATION_DOCK`, `DURATION_DRAWER_MORPH` | Deliberately their own clocks — direct manipulation, not a reveal |
+
+The curve everywhere is `CSS_EASE` = `cubic-bezier(0.32, 0.72, 0, 1)` (fast out of the gate, gentle settle: the click reads as the cause of the motion and content is legible early).
+
+**Disclosure rules**
+- Height only. No opacity fade on the panel, no overflow release at the end; the caret rotates on the same clock as the panel so an interrupted toggle reverses cleanly.
+- Pick the mount policy per site, it is not cosmetic: default keeps content mounted and `inert` while closed (cheap static content); `mountLazily` for many instances with heavy collapsed content; `unmountOnExit` for subtrees that poll, subscribe, hold an editor, or must reset on close.
+- One predicate drives the header's `aria-expanded`, the caret and the panel's `open`. If the panel can't open (no content yet), the header must not announce expanded.
+- Rows mapped inline can't call `useDisclosure`; build ids with `disclosurePanelId(useId(), key)` so display keys with spaces don't split `aria-controls`.
+- Caret convention: in-flow disclosures use `CollapseChevron` (ChevronRight → 90°). Menu triggers keep a `ChevronDown` flip toward the menu. Inside a tinted header (amber warning, red error) pass `inheritColor`.
+- No native `<details>` on primary paths; `web/src/components/ui/Disclosure.tsx` is the drop-in.
+
+**Presence rules (menus, dialogs, sheets)**
+- Logical close → visual exit → disposal. Render on `shouldRender`, drive classes from `isOpen`, key dismiss / focus / keyboard logic on the logical `open`.
+- While exiting: `inert` + `pointer-events-none`. Keep the last placement through the exit (don't clear an anchor at logical close). Effects that need the menu in the DOM depend on `shouldRender`, not just `open`.
+- `TRANSITION_BACKDROP` / `TRANSITION_PANEL` / `TRANSITION_MENU` carry no duration on purpose; every element that uses them also gets `overlayTransitionStyle(isOpen, kind)`.
+- Modal: focus restore and scroll unlock happen at logical close, not after the exit.
+
+**Reduced motion** is an app-level policy in `web/src/index.css` (durations and delays → 0, every loop runs once, spinners exempt), not a per-class list. JS-coordinated motion checks `prefersReducedMotion()` and disposes at logical close.
+
+## 8. Do's and Don'ts
+
+### Do
+- Use `bg-theme-surface`, `text-theme-text-secondary`, `border-theme-border` etc. for all surfaces, text, and borders
+- Use `<Badge severity="...">` or `<Badge kind="...">` for all badge rendering
+- Use `.btn-brand` for primary action buttons
+- Use `.card-inner` / `.card-inner-lg` for nested containers
+- Use `.status-healthy` / `.status-degraded` / etc. for status cells in tables
+- Use `shadow-theme-sm` / `shadow-theme-md` / `shadow-theme-lg` for elevation
+- Use `font-sans` (DM Sans) and `font-mono` (DM Mono) — they're the defaults
+- Use `<Collapse>` + `<CollapseChevron>` for anything that expands in place, and the presence recipe (`useAnimatedUnmount` + `overlayExitMs` + `overlayTransitionStyle`) for anything that floats — see §7 Motion
+- Use `light-dark()` in CSS when adding new custom properties that need theme awareness. Note: `light-dark()` doesn't work for comma-separated values (e.g., multi-layer shadows) — use a `.dark {}` override block instead, as done in `variables.css`
+
+### Don't
+- Don't use `bg-white`, `bg-gray-*`, `bg-slate-*` for backgrounds — use `bg-theme-base/surface/elevated/hover`
+- Don't use `text-gray-*`, `text-slate-*` for text — use `text-theme-text-primary/secondary/tertiary`
+- Don't use `border-gray-*`, `border-slate-*` for borders — use `border-theme-border/border-light/border-subtle`
+- Don't use `bg-blue-*` / `text-blue-*` for brand/accent — use `bg-accent`, `text-accent`, `.btn-brand`
+- Don't use `shadow-sm` / `shadow-md` / `shadow-lg` (raw Tailwind) for cards, panels, or dialogs — use `shadow-theme-sm/md/lg`. Raw Tailwind shadows are fine on tooltips and transient floating elements.
+- Don't hand-write badge color strings like `bg-emerald-100 text-emerald-700 ...` — use `<Badge>` or `badge-colors.ts` helpers
+- Don't use `dark:` variants for colors that have theme tokens — the theme handles light/dark automatically
+- Don't use template literals to construct Tailwind class names — Tailwind can't scan dynamic strings
+- Don't hand-roll a `grid-template-rows` transition, write `duration-200` / `ease-out` / a bezier inline, render a disclosure with `open && (...)` (it snaps shut), or reach for native `<details>` — see §7 Motion
+
+**Exceptions:** Raw Tailwind color scales (`red-*`, `emerald-*`, etc.) are acceptable in:
+- `Badge.tsx` and `badge-colors.ts` — static color definitions that Tailwind scans
+- One-off visual effects (e.g., topology node glow, chart highlights) where no semantic token applies — use `dark:` variants for these
+
+## 9. Responsive Behavior
+
+Desktop-first tool. Most views assume 1100px+ viewport. Key patterns:
+- Topology graph fills available space
+- Resource tables truncate columns at narrower widths
+- Drawers overlay from the right at fixed width
+- Bottom dock (terminal/logs) collapses vertically
+
+## 10. Agent Quick Reference
+
+### Most Common Tokens
+```
+Page background:     bg-theme-base
+Panel/card bg:       bg-theme-surface
+Input/dropdown bg:   bg-theme-elevated
+Hover state:         bg-theme-hover
+
+Primary text:        text-theme-text-primary
+Secondary text:      text-theme-text-secondary
+Muted text:          text-theme-text-tertiary
+
+Standard border:     border-theme-border
+Subtle border:       border-theme-border-subtle
+
+Brand button:        .btn-brand
+Brand accent:        bg-accent / text-accent
+
+Card container:      .card-inner / .card-inner-lg
+Dialog/modal:        .dialog
+
+Elevation:           shadow-theme-sm / shadow-theme-md / shadow-theme-lg
+
+Disclosure:          <Collapse open> + <CollapseChevron open> + useDisclosure(open)
+Menu / popover:      useAnimatedUnmount(open, overlayExitMs('menu')) + TRANSITION_MENU + overlayTransitionStyle
+Dialog:              <DialogPortal>  (or the recipe above with 'dialog')
+
+Status badge:        <Badge severity="success|warning|error|info|neutral">
+Kind badge:          <Badge kind="Deployment|Pod|Service|...">
+Table status cell:   .status-healthy / .status-degraded / .status-unhealthy
+```
+
+### Example Component Patterns
+```tsx
+// Card with header
+<div className="bg-theme-surface border border-theme-border rounded-xl shadow-theme-sm">
+  <div className="border-b-subtle px-4 py-3">
+    <h3 className="text-theme-text-primary font-medium">Title</h3>
+  </div>
+  <div className="p-4 text-theme-text-secondary text-sm">Content</div>
+</div>
+
+// Primary action button
+<button className="btn-brand px-4 py-2 text-sm font-medium">Deploy</button>
+
+// Status in a table cell
+<span className="badge status-healthy">Running</span>
+
+// Nested detail section
+<div className="card-inner">
+  <span className="text-theme-text-tertiary text-xs">Label</span>
+  <span className="text-theme-text-primary text-sm">Value</span>
+</div>
+```

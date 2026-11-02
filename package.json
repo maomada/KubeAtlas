@@ -1,0 +1,14 @@
+{
+  "name": "kubeatlas",
+  "private": true,
+  "workspaces": [
+    "web",
+    "packages/*"
+  ],
+  "overrides": {
+    "dompurify": "3.4.17"
+  },
+  "devDependencies": {
+    "typescript-7": "npm:typescript@^7.0.2"
+  }
+}

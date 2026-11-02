@@ -1,0 +1,1962 @@
+// Package argocd manages Radar's connection to the Argo CD API server:
+// configuration, endpoint discovery, reachability/auth probing, and a small
+// response cache. It mirrors internal/prometheus's manager-around-a-pure-client
+// shape, with pkg/argoapi doing the actual HTTP calls.
+package argocd
+
+import (
+	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"io"
+	"log"
+	"net"
+	"net/http"
+	"net/url"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
+
+	"github.com/maomada/KubeAtlas/internal/config"
+	"github.com/maomada/KubeAtlas/internal/connections"
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/pkg/argoapi"
+)
+
+var (
+	// ErrUnreachable means the Argo CD API server could not be reached (or
+	// no server was found by discovery).
+	ErrUnreachable = errors.New("argocd: server unreachable")
+	// ErrConnecting means there is no connection yet and one is being made
+	// in the background. Reads answer with it rather than wait.
+	ErrConnecting = errors.New("argocd: still connecting")
+	// ErrTokenInvalid means the server responded but rejected the configured
+	// token (or no token is configured and the server requires one).
+	ErrTokenInvalid = errors.New("argocd: token invalid")
+)
+
+const managedResourcesTTL = 15 * time.Second
+
+// Git commit metadata is small and per-revision; a longer TTL makes browsing
+// deploy history cheap while still refreshing drifting tags/signature. The cap
+// bounds memory across many revisions.
+const (
+	revisionMetadataTTL      = 5 * time.Minute
+	revisionMetadataCacheCap = 256
+)
+
+type revMetaEntry struct {
+	meta    *argoapi.RevisionMetadata
+	expires time.Time
+}
+
+// repositoriesTTL keeps the (global, per-connection) repository list cached long
+// enough that the 2s insights poll hits the cache instead of re-listing repos
+// upstream on every request.
+const repositoriesTTL = 60 * time.Second
+
+// probeTimeout bounds a background probe. probeRetryInterval is the least
+// time between background probes, so a dead argocd-server doesn't get
+// hammered on every insights request and a slow one isn't re-checked on
+// every failed read.
+const (
+	probeTimeout       = 15 * time.Second
+	probeRetryInterval = 30 * time.Second
+
+	// probeEndpointTimeout bounds a single reachability probe. On macOS,
+	// resolving any *.local hostname (a common convention for local cluster
+	// Gateway/Ingress hostnames) routes through mDNSResponder, which tries
+	// multicast DNS first and only falls back to /etc/hosts after its own
+	// hardcoded 5s timeout — so a tight probe budget can time out on DNS
+	// resolution alone before the TCP connect even starts, misreporting a
+	// live, reachable server as unreachable. 8s leaves headroom above that
+	// worst case for the actual connect + HTTP round trip.
+	probeEndpointTimeout = 8 * time.Second
+
+	// readFailureShownFor is how long a failed read stays reported with no
+	// read since. Pages that keep failing ask every 10s and renew it.
+	readFailureShownFor = 2 * time.Minute
+
+	// connectCheckTimeout bounds the TCP connect that tells a slow server
+	// from a gone one after a reachability probe timed out.
+	connectCheckTimeout = 3 * time.Second
+
+	// repoErrorBackoff throttles repo-list refetches after a failure (commonly a
+	// token without `repositories, get`), so insights' 2s poll doesn't hammer
+	// argocd-server. Longer than probeRetryInterval since repo-scope denials are
+	// usually persistent until the operator widens the token.
+	repoErrorBackoff = 2 * time.Minute
+)
+
+type cacheEntry struct {
+	items   []argoapi.ResourceDiff
+	expires time.Time
+}
+
+// applicationHealthTTL bounds how often the per-resource health of one app is
+// re-read from argocd-server. Failures are cached for the same window: the
+// GitOps detail page polls every 2s while a sync runs, and an install that
+// refuses anonymous reads must not be asked again on every tick.
+const applicationHealthTTL = 15 * time.Second
+
+type anonymousReadState uint8
+
+const (
+	anonymousReadUnknown anonymousReadState = iota
+	anonymousReadAllowed
+	anonymousReadRefused
+)
+
+type appHealthEntry struct {
+	health  *argoapi.ApplicationHealth
+	err     error
+	expires time.Time
+}
+
+// In-cluster mode cannot switch clusters, so a process-local sentinel is a
+// complete boundary. Requiring a cluster UID here would add a startup API read
+// that can fail under restricted RBAC and permanently strand env-provided tokens.
+const inClusterTokenBinding = "kcb1_incluster"
+
+// Manager holds the Argo CD connection state. Use NewManager (or the
+// package-level functions backed by the default instance).
+type Manager struct {
+	mu sync.Mutex
+
+	// probeSlot holds one token while a probe runs, so probes never overlap.
+	// A channel rather than a mutex: a caller waiting for it can give up
+	// when its context ends. Never held together with mu across network I/O.
+	probeSlot chan struct{}
+
+	seeded      bool
+	manualURL   string
+	token       string
+	insecureTLS bool
+	// envManaged is set when the integration was provisioned from the environment
+	// (KUBEATLAS_ARGOCD_TOKEN[_FILE]) rather than the Settings UI — including the case
+	// where that provisioning was ATTEMPTED but failed (see envError). Such a
+	// config is the declarative source of truth: the UI renders it read-only, the
+	// apply handler refuses to change it, and it is never written to disk.
+	envManaged bool
+	// envError, when non-empty, is the sanitized reason environment provisioning
+	// failed (bad token file, invalid URL, etc.). It keeps envManaged=true with no
+	// token so the integration fails closed — it must NOT fall back to a stale
+	// on-disk token — while the UI surfaces "the env config is invalid".
+	envError string
+
+	// generation bumps on every SetConfig/Reset. A Probe captures it before
+	// its (unlocked) network I/O and commits the resolved connection only if
+	// generation is unchanged — so a slow probe for stale settings can't
+	// resurrect a dropped connection after a config change or context switch.
+	generation uint64
+
+	// background is the background probe in flight, if any.
+	background *backgroundProbe
+	nextProbe  time.Time
+	// lastRead is when a page or Settings last asked for the connection,
+	// and failureUnread that the last connect failed with nobody asking
+	// since it started (a prewarm): the first read then connects again at
+	// once instead of waiting out the retry interval.
+	lastRead      time.Time
+	failureUnread bool
+	// lastDemand is when a read last needed the connection. A failed
+	// connect is retried on its own while someone has asked recently, so
+	// the next page load finds it connected instead of starting the retry.
+	lastDemand time.Time
+	// retryAt is when a scheduled retry of a failed connect starts.
+	retryAt time.Time
+	// retryInterval overrides probeRetryInterval; tests set it.
+	retryInterval time.Duration
+	// lastProbeErr is why the last probe failed, for Settings to show; a
+	// connection drop keeps it (that is when the user wants to know).
+	lastProbeErr error
+	// lastReadErr is why the last read through the live client failed, for
+	// Settings to show next to "Connected". Cleared by a read that succeeds;
+	// shown for readFailureShownFor after lastReadAt, so a failure from a
+	// page nobody has open any more doesn't linger in Settings.
+	lastReadErr error
+	lastReadAt  time.Time
+
+	baseURL string
+	client  *argoapi.Client
+	forward *activeForward
+	// clientAnonymous marks a client built without a token. It counts as a
+	// connection only once a read has actually succeeded through it: a
+	// reachable argocd-server that answers 401 is not an integration, and
+	// must not light the diff or show as connected in Settings.
+	clientAnonymous bool
+	anonymousRead   anonymousReadState
+
+	cache map[string]cacheEntry
+	// appHealthCache memoizes ApplicationHealthCached per app, hits and
+	// misses alike.
+	appHealthCache map[string]appHealthEntry
+
+	// revMetaCache holds Git commit metadata keyed by
+	// (appNamespace, app, sourceIndex, revision). Cleared alongside `cache` on
+	// reconnect/context switch so it never serves another cluster's data.
+	revMetaCache map[string]revMetaEntry
+
+	// repoCache holds the (global) repository list + connection state. Single
+	// entry with a TTL; repoFetchMu serializes the upstream list so a burst of
+	// insights requests triggers one fetch, not one per request. Cleared on
+	// reconnect/context switch.
+	repoCache        []argoapi.Repository
+	repoCacheExpires time.Time
+	repoFetchMu      sync.Mutex
+	// repoRetryAfter throttles the background repo-list refetch after a failure,
+	// so a token that lacks `repositories, get` (the documented default) doesn't
+	// re-hit argocd-server on every 2s insights poll. Reset on reconnect/switch.
+	repoRetryAfter time.Time
+
+	// tokenContext is the readable kubeconfig context recorded alongside the stored
+	// token. A non-empty value without tokenBinding identifies a legacy config that
+	// must be confirmed again before its token can be used for auto-discovery.
+	// tokenBinding is the authorization boundary for auto-discovery: it identifies
+	// the source entry independently of mutable switcher labels. It does not detect
+	// edits that repoint the same context entry to a different cluster.
+	//
+	// When the URL is empty, auto-discovery resolves whatever
+	// argocd-server exists in the CURRENT cluster — and the in-cluster Service
+	// DNS is identical across clusters — so a token must never be sent to a
+	// discovered server in a DIFFERENT cluster than it was configured for.
+	// Empty means "not bound" (explicit-URL mode, where the origin guard
+	// governs instead).
+	tokenContext string
+	tokenBinding string
+
+	k8sClient      func() kubernetes.Interface
+	k8sConfig      func() *rest.Config
+	inCluster      func() bool
+	contextName    func() string
+	contextBinding func(context.Context) string
+	loadConfig     func() config.Config
+	// portForward replaces startPortForward in tests.
+	portForward func(ctx context.Context, snap probeSnapshot, namespace, service string, targetPort int) (*activeForward, error)
+}
+
+// NewManager builds a Manager wired to the live internal/k8s connection.
+// The k8s accessors are resolved lazily per call, so the Manager follows
+// kubeconfig context switches without a reinit step.
+func NewManager() *Manager {
+	return &Manager{
+		k8sClient: func() kubernetes.Interface {
+			// k8s.GetClient returns a concrete *Clientset; convert nil to a
+			// nil interface so callers can compare against nil.
+			if c := k8s.GetClient(); c != nil {
+				return c
+			}
+			return nil
+		},
+		k8sConfig:      k8s.GetConfig,
+		inCluster:      k8s.IsInCluster,
+		contextName:    k8s.GetContextName,
+		contextBinding: k8s.ClusterSafetyBinding,
+		loadConfig:     config.Load,
+	}
+}
+
+var defaultManager = NewManager()
+
+// SetConfig applies new connection settings on the default manager.
+func SetConfig(url, token string, insecureTLS bool, tokenIsFresh bool) {
+	defaultManager.SetConfig(url, token, insecureTLS, tokenIsFresh)
+}
+
+// RestoreConfig rolls the default manager back to a captured state, including
+// the token's source binding.
+func RestoreConfig(url, token string, insecureTLS bool, tokenContext, tokenBinding string) {
+	defaultManager.RestoreConfig(url, token, insecureTLS, tokenContext, tokenBinding)
+}
+
+// Env var names for declarative (headless / in-cluster / Cloud) provisioning.
+const (
+	envArgoToken     = "KUBEATLAS_ARGOCD_TOKEN"
+	envArgoTokenFile = "KUBEATLAS_ARGOCD_TOKEN_FILE"
+	envArgoURL       = "KUBEATLAS_ARGOCD_URL"
+	envArgoInsecure  = "KUBEATLAS_ARGOCD_INSECURE_TLS"
+)
+
+// SeedFromEnvVars provisions the Argo CD integration from environment variables,
+// for deployments with no interactive Settings session (helm/in-cluster, Cloud
+// tunnel). KUBEATLAS_ARGOCD_TOKEN_FILE (a mounted-secret path) takes precedence over
+// the inline KUBEATLAS_ARGOCD_TOKEN — file mounts don't expose the value via
+// /proc/<pid>/environ. When a token is present the integration becomes
+// environment-managed (read-only in the UI, never persisted). Returns
+// (false, nil) when no token env is set, leaving the interactive path unchanged.
+// Must run before the server serves so the lazy config seed can't clobber it.
+func SeedFromEnvVars() (bool, error) {
+	url, token, insecure, ok, err := resolveEnvArgo(os.Getenv, os.ReadFile)
+	if err != nil {
+		// The operator set the Argo env vars but they're invalid. Mark the manager
+		// env-managed-but-errored so it fails closed (no stale disk token) and the
+		// UI can show the reason. The error is already sanitized (no token/raw URL).
+		if envArgoAttempted(os.Getenv) {
+			defaultManager.SeedFromEnvFailed(sanitizeEnvErr(err))
+		}
+		return false, err
+	}
+	if !ok {
+		// No token resolved. If env provisioning was clearly attempted (a URL/token
+		// var is set but incomplete), still fail closed rather than fall back to a
+		// stale on-disk token; a truly empty environment leaves the disk path alone.
+		if envArgoAttempted(os.Getenv) {
+			defaultManager.SeedFromEnvFailed("no token provided — set " + envArgoToken + " or " + envArgoTokenFile)
+		}
+		return false, nil
+	}
+	defaultManager.SeedFromEnv(url, token, insecure)
+	return true, nil
+}
+
+func EnvironmentConfiguration() (argoapi.Connection, bool, error) {
+	url, token, insecure, ok, err := resolveEnvArgo(os.Getenv, os.ReadFile)
+	attempted := ok || envArgoAttempted(os.Getenv)
+	if err != nil {
+		return argoapi.Connection{}, attempted, errors.New(sanitizeEnvErr(err))
+	}
+	if attempted && !ok {
+		return argoapi.Connection{}, true, errors.New("Argo CD environment configuration requires a token")
+	}
+	return argoapi.Connection{URL: url, Token: token, InsecureTLS: insecure}, attempted, nil
+}
+
+// envArgoAttempted reports whether the operator clearly tried to provision Argo CD
+// from the environment — a token, token-file, or URL is set. It gates the
+// fail-closed suppression of the on-disk fallback so a truly empty environment
+// still uses the interactive/disk config unchanged. (Insecure-TLS alone is too
+// weak a signal — it's a modifier, not an intent to configure.)
+func envArgoAttempted(getenv func(string) string) bool {
+	return strings.TrimSpace(getenv(envArgoToken)) != "" ||
+		strings.TrimSpace(getenv(envArgoTokenFile)) != "" ||
+		strings.TrimSpace(getenv(envArgoURL)) != ""
+}
+
+// sanitizeEnvErr strips the "argocd: " prefix for a UI-facing message. The
+// resolveEnvArgo errors are already token- and raw-URL-free.
+func sanitizeEnvErr(err error) string {
+	return strings.TrimPrefix(err.Error(), "argocd: ")
+}
+
+// resolveEnvArgo parses the Argo CD env config with all precedence + validation
+// rules, without touching the manager — so the source-precedence and validation
+// paths are unit-testable. ok is false (with nil err) when no token is set, which
+// leaves the interactive path untouched. getenv/readFile are injected for tests.
+func resolveEnvArgo(getenv func(string) string, readFile func(string) ([]byte, error)) (url, token string, insecure, ok bool, err error) {
+	if f := strings.TrimSpace(getenv(envArgoTokenFile)); f != "" {
+		// A mounted-secret file takes precedence over the inline env var — the file
+		// value isn't exposed via /proc/<pid>/environ.
+		b, rerr := readFile(f)
+		if rerr != nil {
+			return "", "", false, false, fmt.Errorf("argocd: read %s=%q: %w", envArgoTokenFile, f, rerr)
+		}
+		token = strings.TrimSpace(string(b))
+		if token == "" {
+			return "", "", false, false, fmt.Errorf("argocd: %s=%q is empty", envArgoTokenFile, f)
+		}
+	} else {
+		token = strings.TrimSpace(getenv(envArgoToken))
+	}
+
+	rawURL := strings.TrimSpace(getenv(envArgoURL))
+	rawInsecure := strings.TrimSpace(getenv(envArgoInsecure))
+
+	if token == "" {
+		// A URL or TLS flag without a token can't authenticate the deep-diff — warn
+		// so a half-set env config doesn't silently do nothing.
+		if rawURL != "" || rawInsecure != "" {
+			log.Printf("[argocd] %s/%s is set but no token (%s or %s) — ignoring the environment Argo CD config",
+				envArgoURL, envArgoInsecure, envArgoToken, envArgoTokenFile)
+		}
+		return "", "", false, false, nil
+	}
+
+	// The env URL is a non-UI input that ends up in status/config/logs, so validate
+	// it at least as strictly as the Settings PUT: http(s) scheme, a host, and no
+	// embedded userinfo credentials (which would leak into those surfaces).
+	if rawURL != "" {
+		if verr := validateEnvArgoURL(rawURL); verr != nil {
+			return "", "", false, false, fmt.Errorf("argocd: invalid %s: %w", envArgoURL, verr)
+		}
+	}
+
+	if rawInsecure != "" {
+		v, perr := strconv.ParseBool(rawInsecure)
+		if perr != nil {
+			// Don't echo the value — a miswired Secret key could point this at the
+			// token, which would then land in the logs.
+			return "", "", false, false, fmt.Errorf("argocd: %s is not a boolean (use true/false)", envArgoInsecure)
+		}
+		insecure = v
+	}
+
+	return rawURL, token, insecure, true, nil
+}
+
+func validateEnvArgoURL(raw string) error { return argoapi.ValidateServerURL(raw) }
+
+// SeedFromEnv provisions the default manager from an already-resolved
+// environment token (see SeedFromEnvVars).
+func SeedFromEnv(url, token string, insecureTLS bool) {
+	defaultManager.SeedFromEnv(url, token, insecureTLS)
+}
+
+// SeedFromEnvFailed marks the default manager env-managed-but-errored (see the
+// Manager method) — used when env provisioning was attempted but didn't resolve.
+func SeedFromEnvFailed(reason string) { defaultManager.SeedFromEnvFailed(reason) }
+
+// IsEnvManaged reports whether the token was provisioned from the environment.
+func IsEnvManaged() bool { return defaultManager.IsEnvManaged() }
+
+// EnvManagedConfig returns the effective env-managed URL + TLS mode (ok=false when
+// not env-managed). The token is never returned.
+func EnvManagedConfig() (url string, insecureTLS bool, ok bool) {
+	return defaultManager.EnvManagedConfig()
+}
+
+// EnvManagedError returns the sanitized reason environment provisioning failed
+// ("" when it succeeded or isn't env-managed).
+func EnvManagedError() string { return defaultManager.EnvManagedError() }
+
+// ValidateServerURL strictly validates an argocd-server URL: http(s) scheme, a
+// host, and no embedded userinfo / query / fragment. Used for BOTH the env input
+// and the Settings PUT so a credential-bearing URL (e.g. https://user:pass@host
+// or ?token=…) can't be persisted and then surfaced in /api/config, the status
+// address, or logs. Returns a UI-safe error (never echoes the raw input).
+func ValidateServerURL(raw string) error { return validateEnvArgoURL(raw) }
+
+// IsConfigured reports whether the default manager has connection settings.
+func IsConfigured() bool { return defaultManager.IsConfigured() }
+
+// AnonymousReadAllowed reports whether the default manager reads argocd-server
+// without a token and the install answers.
+func AnonymousReadAllowed() bool { return defaultManager.AnonymousReadAllowed() }
+
+// TokenSet reports whether the default manager has a token configured.
+func TokenSet() bool { return defaultManager.TokenSet() }
+
+// LastProbeError is the default manager's most recent probe failure, if any.
+func LastProbeError() error { return defaultManager.LastProbeError() }
+
+// TokenContext returns the readable context recorded with the current token.
+func TokenContext() string { return defaultManager.TokenContext() }
+
+// TokenBinding returns the source identity the current token is bound to.
+func TokenBinding() string { return defaultManager.TokenBinding() }
+
+// TokenBindingUpgradeRequired reports whether an auto-discovery token has only
+// a name-based stamp and must be explicitly re-confirmed before use.
+func TokenBindingUpgradeRequired() bool { return defaultManager.TokenBindingUpgradeRequired() }
+
+// Reset clears the default manager's connection state (used on context switch).
+func Reset() { defaultManager.Reset() }
+
+// Get returns the default manager's connected client, or (nil, false).
+func Get() (*argoapi.Client, bool) { return defaultManager.Get() }
+
+// Probe resolves and verifies the default manager's connection.
+func Probe(ctx context.Context) error { return defaultManager.Probe(ctx) }
+
+// Prewarm starts the default manager's connect in the background; see
+// Manager.Prewarm.
+func Prewarm() { defaultManager.Prewarm() }
+
+// Connecting reports that the default manager is connecting in the
+// background with no failure to report yet.
+func Connecting() bool { return defaultManager.Connecting() }
+
+// Retrying reports that the default manager is retrying a connect that may
+// pass on its own.
+func Retrying() bool { return defaultManager.Retrying() }
+
+// LastReadError is why the default manager's last read through its live
+// client failed, if it did.
+func LastReadError() error { return defaultManager.LastReadError() }
+
+// Address returns the default manager's resolved base URL ("" when not connected).
+func Address() string { return defaultManager.Address() }
+
+// ManagedResourcesCached fetches managed resources via the default manager.
+func ManagedResourcesCached(ctx context.Context, q argoapi.ManagedResourcesQuery) ([]argoapi.ResourceDiff, error) {
+	return defaultManager.ManagedResourcesCached(ctx, q)
+}
+
+func RevisionMetadataCached(ctx context.Context, q argoapi.RevisionMetadataQuery) (*argoapi.RevisionMetadata, error) {
+	return defaultManager.RevisionMetadataCached(ctx, q)
+}
+
+// ApplicationHealthCached fetches an Application's per-resource health via the
+// default manager (see Manager.ApplicationHealthCached).
+func ApplicationHealthCached(ctx context.Context, q argoapi.ApplicationQuery) (*argoapi.ApplicationHealth, error) {
+	return defaultManager.ApplicationHealthCached(ctx, q)
+}
+
+func RepositoriesCached() []argoapi.Repository {
+	return defaultManager.RepositoriesCached()
+}
+
+// TokenFromCLI reads the auth token from the user's Argo CD CLI config
+// (~/.config/argocd/config) for the given server URL. Empty serverURL uses
+// the CLI's current-context.
+func TokenFromCLI(serverURL string) (string, error) {
+	return argoapi.TokenFromCLIConfig("", serverURL)
+}
+
+// CLISession returns the detected Argo CD CLI login (server + user, token-free),
+// or nil when there is none — so the UI can offer "use your CLI session" only
+// when it will actually work. Machine-local; no connection state involved.
+func CLISession() (*argoapi.CLISession, error) {
+	return argoapi.CLISessionFromConfig("")
+}
+
+// SetConfig re-points the manager immediately: connection state and cache are
+// dropped so the next Probe/Get resolves against the new settings. Empty url
+// enables auto-discovery. tokenIsFresh must be true ONLY when the token was
+// explicitly provided by the user (typed or CLI-adopted) — a genuine "this
+// token is for this cluster" action — and false when it's the stored token
+// being carried forward. That distinction is load-bearing: re-saving other
+// settings after a context switch must NOT rebind a preserved token to the new
+// source (which would defeat the auto-discovery guard), so the binding is only
+// re-stamped for a fresh token.
+func (m *Manager) SetConfig(url, token string, insecureTLS bool, tokenIsFresh bool) {
+	normalizedURL := strings.TrimRight(strings.TrimSpace(url), "/")
+	tokenContext := ""
+	tokenBinding := ""
+	if tokenIsFresh && normalizedURL == "" && token != "" {
+		tokenBinding = m.contextBindingForConfig()
+		if tokenBinding != "" {
+			tokenContext = m.currentContextName()
+		}
+	}
+	m.mu.Lock()
+	m.seeded = true
+	// An explicit interactive config supersedes environment provisioning. In
+	// practice the apply handler refuses the PUT while env-managed, so this path
+	// isn't reached then; clearing the flag here keeps the "env is source of truth"
+	// invariant inside the manager rather than resting solely on that HTTP gate.
+	m.envManaged = false
+	m.envError = ""
+	m.manualURL = normalizedURL
+	m.token = token
+	m.insecureTLS = insecureTLS
+	if tokenIsFresh {
+		m.tokenContext = tokenContext
+		m.tokenBinding = tokenBinding
+	}
+	m.bumpAndReset()
+}
+
+// SeedFromEnv provisions the manager from an environment-provided token. Like a
+// fresh SetConfig it binds the token to the current source (so the
+// auto-discovery cross-cluster guard accepts it for the cluster it's deployed
+// in), and additionally marks the integration environment-managed: the apply
+// handler refuses UI changes and the token is never written to disk. Runs at
+// startup before the first Get, so the lazy config seed won't override it.
+func (m *Manager) SeedFromEnv(url, token string, insecureTLS bool) {
+	normalizedURL := strings.TrimRight(strings.TrimSpace(url), "/")
+	tokenContext := ""
+	tokenBinding := ""
+	if normalizedURL == "" && token != "" {
+		tokenBinding = m.contextBindingForConfig()
+		if tokenBinding != "" {
+			tokenContext = m.currentContextName()
+		}
+	}
+	m.mu.Lock()
+	m.seeded = true
+	m.envManaged = true
+	m.envError = ""
+	m.manualURL = normalizedURL
+	m.token = token
+	m.insecureTLS = insecureTLS
+	m.tokenContext = tokenContext
+	m.tokenBinding = tokenBinding
+	m.bumpAndReset()
+}
+
+// SeedFromEnvFailed marks the manager environment-managed but errored: the
+// operator set the Argo CD env vars, but they didn't resolve to a usable token
+// (unreadable/empty file, invalid URL, non-boolean TLS, or a URL with no token).
+// It seeds NO credential and sets m.seeded so the lazy config load can't fall
+// back to a stale on-disk token — the operator declared the environment as the
+// source of truth, so honoring old disk creds would be wrong (potentially the
+// wrong Argo, with the UI silently editable). The integration is left unconfigured
+// (fails closed to annotation drift) with the reason surfaced for the UI.
+func (m *Manager) SeedFromEnvFailed(reason string) {
+	m.mu.Lock()
+	m.seeded = true
+	m.envManaged = true
+	m.envError = reason
+	m.manualURL = ""
+	m.token = ""
+	m.insecureTLS = false
+	m.tokenContext = ""
+	m.tokenBinding = ""
+	m.bumpAndReset()
+}
+
+// IsEnvManaged reports whether the token was provisioned from the environment.
+func (m *Manager) IsEnvManaged() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	return m.envManaged
+}
+
+// EnvManagedConfig returns the effective URL + TLS mode when the integration is
+// environment-managed, so callers (e.g. GET /api/config) can present the real
+// endpoint instead of the stale on-disk values, which env-managed mode ignores.
+// ok is false when not env-managed. The token is never returned.
+func (m *Manager) EnvManagedConfig() (url string, insecureTLS bool, ok bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	if !m.envManaged {
+		return "", false, false
+	}
+	return m.manualURL, m.insecureTLS, true
+}
+
+// EnvManagedError returns the sanitized reason environment provisioning failed,
+// or "" when it succeeded (or isn't env-managed). The UI surfaces this so a
+// misconfigured declarative credential isn't invisible behind one startup log.
+func (m *Manager) EnvManagedError() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	return m.envError
+}
+
+// RestoreConfig rolls the manager back to a previously-captured state, INCLUDING
+// the token's source binding. It exists for the connect-rollback path: the
+// candidate SetConfig may have re-stamped the binding for a fresh token, and a
+// plain SetConfig(fresh=false) rollback leaves that stamp in place — which would
+// mark the restored (older) token as valid for the wrong cluster and defeat the
+// auto-discovery cross-cluster guard. Restoring both stamps explicitly keeps the
+// guard intact.
+func (m *Manager) RestoreConfig(url, token string, insecureTLS bool, tokenContext, tokenBinding string) {
+	m.mu.Lock()
+	m.seeded = true
+	// A rollback restores a previously-captured state faithfully; it must not
+	// change env-managed-ness. (It's only reached from the apply handler, which
+	// refuses the PUT while env-managed, so this only ever runs with it already
+	// false — but hard-coding false here would be a latent way to drop the
+	// read-only marker if that ever changed.)
+	m.manualURL = strings.TrimRight(strings.TrimSpace(url), "/")
+	m.token = token
+	m.insecureTLS = insecureTLS
+	m.tokenContext = tokenContext
+	m.tokenBinding = tokenBinding
+	m.bumpAndReset()
+}
+
+// IsConfigured reports whether the Argo CD integration has connection settings
+// (an explicit URL or a token) — i.e. the user has set it up, even if a live
+// probe hasn't landed yet. Used to offer the deep-diff capability immediately
+// after a restart while the background reconnect is still in flight, instead of
+// showing "not connected" until the first probe completes.
+func (m *Manager) IsConfigured() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	return m.manualURL != "" || m.token != ""
+}
+
+func (m *Manager) currentContextName() string {
+	if m.contextName == nil {
+		return ""
+	}
+	return m.contextName()
+}
+
+func (m *Manager) currentContextBinding(ctx context.Context) string {
+	if m.inCluster != nil && m.inCluster() {
+		return inClusterTokenBinding
+	}
+	if m.contextBinding == nil {
+		return ""
+	}
+	return m.contextBinding(ctx)
+}
+
+func (m *Manager) contextBindingForConfig() string {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	return m.currentContextBinding(ctx)
+}
+
+// bumpAndReset invalidates in-flight probes (generation++), drops the live
+// connection, releases m.mu, and stops any freed port-forward OUTSIDE the lock
+// (fwd.stop must never run under m.mu). The caller must hold m.mu; it is released
+// on return. Centralizing the epilogue keeps every config mutator's lock ordering
+// identical — the stop-outside-lock invariant is expressed once, not five times.
+func (m *Manager) bumpAndReset() {
+	m.generation++
+	// The last failure was about the settings or cluster being replaced.
+	m.lastProbeErr = nil
+	if m.background != nil && m.background.cancel != nil {
+		// Its result would be discarded as stale; stop it so it doesn't hold
+		// the probe slot that a probe of the new settings is waiting for.
+		m.background.cancel()
+	}
+	fwd := m.dropConnectionLocked()
+	m.mu.Unlock()
+	if fwd != nil {
+		fwd.stop()
+	}
+}
+
+// Reset drops connection state and cache but keeps the configured
+// URL/token — after a kubeconfig context switch the next Probe rediscovers
+// against the new cluster.
+func (m *Manager) Reset() {
+	m.mu.Lock()
+	m.bumpAndReset()
+}
+
+func (m *Manager) dropConnectionLocked() *activeForward {
+	m.baseURL = ""
+	m.client = nil
+	m.cache = nil
+	m.appHealthCache = nil
+	m.revMetaCache = nil
+	m.repoCache = nil
+	// Clear the retry throttles too, so a reconnect or context switch (which is
+	// what dropped the connection) probes and refetches immediately instead of
+	// staying suppressed for up to a retry interval on the PREVIOUS failure.
+	m.nextProbe = time.Time{}
+	m.retryAt = time.Time{}
+	m.failureUnread = false
+	m.repoRetryAfter = time.Time{}
+	m.lastReadErr = nil
+	m.clientAnonymous = false
+	m.anonymousRead = anonymousReadUnknown
+	fwd := m.forward
+	m.forward = nil
+	return fwd
+}
+
+// Get returns the connected client without any network I/O. Returns
+// (nil, false) when unconfigured or not yet (successfully) probed, and for
+// a tokenless client until argocd-server has answered a read through it —
+// reachability alone is not an integration the rest of the product can use.
+func (m *Manager) Get() (*argoapi.Client, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.client == nil {
+		// Settings persisted by a previous run seed lazily, but nothing would
+		// ever probe them — a restart would silently disable the integration
+		// until the user re-saved Settings. Kick one throttled background
+		// probe; callers see connected=false until it lands. Someone is
+		// looking, so a failed connect is retried on its own meanwhile, and
+		// its failure counts as seen.
+		m.lastDemand = time.Now()
+		m.lastRead = m.lastDemand
+		m.startBackgroundProbeLocked(false)
+		m.markDemandedLocked()
+		return nil, false
+	}
+	if m.clientAnonymous && m.anonymousRead != anonymousReadAllowed {
+		return nil, false
+	}
+	return m.client, true
+}
+
+// AnonymousReadAllowed reports that the live connection carries no token and
+// argocd-server has answered a read through it anyway — the install serves
+// reads to everyone, so there is nothing for the user to configure.
+func (m *Manager) AnonymousReadAllowed() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.client != nil && m.clientAnonymous && m.anonymousRead == anonymousReadAllowed
+}
+
+// TokenSet reports whether a token is configured, without exposing it.
+func (m *Manager) TokenSet() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	return m.token != ""
+}
+
+// Prewarm starts connecting a configured integration in the background when
+// there is no connection, so the first page that needs Argo CD finds it
+// ready instead of answering "connecting". Called once settings are in place:
+// when Kubernetes connects (start, context switch) and after a settings
+// change. It never waits; a failure is recorded like any background probe's.
+func (m *Manager) Prewarm() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.client == nil {
+		// Settings were just put in place (a save of the same settings
+		// changes nothing else): the hold after an earlier failed connect
+		// was about that attempt.
+		if !m.probingLocked() {
+			m.nextProbe = time.Time{}
+		}
+		m.startBackgroundProbeLocked(false)
+	}
+}
+
+// backgroundProbe is a probe nobody waits for. Its result is recorded for
+// Settings and for the reads that follow.
+type backgroundProbe struct {
+	generation uint64
+	started    time.Time
+	// demanded: a page read or a retry on its behalf started it.
+	demanded bool
+	// recheck: a client existed when it started, so a failed read started it.
+	recheck           bool
+	allowUnconfigured bool
+	// cancel is set once the probe's settings are reloaded and it starts.
+	cancel context.CancelFunc
+}
+
+// Connecting reports that a configured integration has no connection yet,
+// no failure to report, and a background probe is making one.
+func (m *Manager) Connecting() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	configured := m.manualURL != "" || m.token != ""
+	return configured && m.client == nil && m.lastProbeErr == nil && m.probingLocked()
+}
+
+func (m *Manager) probingLocked() bool {
+	return m.background != nil && m.background.generation == m.generation
+}
+
+// startBackgroundProbeLocked starts a probe that no caller waits for: to
+// connect when there is no client, or to re-check the server after a read
+// through the client failed. At most one runs at a time, and a new one
+// starts no sooner than probeRetryInterval after the last failed probe or
+// re-check finished.
+//
+// Without allowUnconfigured it does nothing when neither a URL nor a token
+// is configured: auto-discovery on every Get would run service discovery on
+// each insights request for users who never enabled the integration. The
+// health read passes it, because it asks unconfigured installs too (see
+// ApplicationHealthCached), and so does a re-check, which only runs once a
+// client exists. Caller must hold m.mu.
+func (m *Manager) startBackgroundProbeLocked(allowUnconfigured bool) {
+	m.ensureSeededLocked()
+	if !allowUnconfigured && m.manualURL == "" && m.token == "" {
+		return
+	}
+	if m.probingLocked() || time.Now().Before(m.nextProbe) {
+		return
+	}
+	run := &backgroundProbe{generation: m.generation, started: time.Now(), recheck: m.client != nil, allowUnconfigured: allowUnconfigured}
+	m.background = run
+	go m.runBackgroundProbe(run)
+}
+
+func (m *Manager) runBackgroundProbe(run *backgroundProbe) {
+	// Like Probe, reload this context's settings first, outside mu: a reload
+	// can call SetConfig or Reset.
+	if err := m.refreshSettings(); err != nil {
+		// Not throttled: a reload fails while Kubernetes is disconnected or a
+		// context switch is under way, and the next read should try again
+		// as soon as that is over. Reads hit the same failure in their own
+		// reload and report it.
+		m.mu.Lock()
+		if m.background == run {
+			m.background = nil
+		}
+		m.mu.Unlock()
+		return
+	}
+	m.mu.Lock()
+	if m.background != run {
+		// Another probe of newer settings replaced this one during the reload.
+		m.mu.Unlock()
+		return
+	}
+	// The reload may have changed the settings; probe the ones now in place.
+	run.generation = m.generation
+	run.recheck = m.client != nil
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	run.cancel = cancel
+	m.mu.Unlock()
+
+	// The budget starts once the slot is free: a Settings save may hold it.
+	release, err := m.acquireProbeSlot(ctx)
+	if err == nil {
+		defer release()
+	}
+	m.mu.Lock()
+	// A probe that held the slot (the Settings save) may have connected
+	// these same settings already; probing them again would only cost the
+	// server another round trip.
+	skip := err == nil && !run.recheck && m.client != nil && run.generation == m.generation
+	tok := m.token
+	configured := m.manualURL != "" || m.token != ""
+	m.mu.Unlock()
+	if skip {
+		m.mu.Lock()
+		if m.background == run {
+			m.background = nil
+		}
+		m.mu.Unlock()
+		return
+	}
+	if err == nil {
+		probeCtx, stop := context.WithTimeout(ctx, probeTimeout)
+		err = m.probeHoldingSlot(probeCtx)
+		stop()
+	}
+
+	m.mu.Lock()
+	if m.background == run {
+		m.background = nil
+	}
+	current := run.generation == m.generation && !errors.Is(err, errStaleProbe)
+	// A re-check that found the server slow kept the connection; its
+	// timeout is not a connect failure to report once that connection is
+	// gone for another reason.
+	keptSlow := run.recheck && errors.Is(err, errNoAnswerInTime) && m.client != nil
+	retrying := false
+	if current {
+		// A re-check was started by a read that failed: that read saw it.
+		m.failureUnread = err != nil && !run.demanded && !run.recheck && m.lastRead.Before(run.started)
+		if !keptSlow {
+			// This probe ran on its own deadline, so a timeout is the
+			// server's answer, unlike a caller's deadline in Probe.
+			m.lastProbeErr = err
+		}
+		// A connect that worked doesn't hold back the re-check of a read
+		// that fails right after it.
+		if err != nil || run.recheck {
+			m.nextProbe = time.Now().Add(m.retryEvery())
+		}
+		// Only a server that couldn't be reached may come back by itself; a
+		// rejected token or a token bound to another cluster needs the user.
+		if configured && transientConnectFailure(err) && m.client == nil && time.Since(m.lastDemand) < m.retryEvery() {
+			m.scheduleRetryLocked(run.allowUnconfigured)
+			retrying = true
+		}
+	}
+	every := m.retryEvery()
+	m.mu.Unlock()
+	// Discovery for an install nobody configured failing is the normal
+	// case where Argo CD isn't reachable; it is not worth a log line.
+	if err != nil && current && configured {
+		next := "tries again on next use"
+		if retrying {
+			next = "retrying in " + every.String()
+		}
+		log.Printf("[argocd] background probe failed (%s): %v", next, redactToken(err.Error(), tok))
+	}
+}
+
+// markDemandedLocked marks the connect in flight, if any, as one a page is
+// waiting on. Caller must hold m.mu.
+func (m *Manager) markDemandedLocked() {
+	if m.probingLocked() {
+		m.background.demanded = true
+	}
+}
+
+func (m *Manager) retryEvery() time.Duration {
+	if m.retryInterval > 0 {
+		return m.retryInterval
+	}
+	return probeRetryInterval
+}
+
+// scheduleRetryLocked starts another background connect once the retry
+// interval ends, if the settings haven't changed and nothing has connected
+// meanwhile. Caller must hold m.mu.
+func (m *Manager) scheduleRetryLocked(allowUnconfigured bool) {
+	gen := m.generation
+	m.retryAt = m.nextProbe.Add(10 * time.Millisecond)
+	time.AfterFunc(time.Until(m.retryAt), func() {
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		if m.generation == gen && m.client == nil {
+			m.startBackgroundProbeLocked(allowUnconfigured)
+			m.markDemandedLocked()
+		}
+	})
+}
+
+// refreshSettings reloads the current context's Argo CD settings before a
+// probe, and refuses while Kubernetes is not connected or a context switch is
+// in progress. Only the process-wide manager is wired to them. Must be called
+// without mu.
+func (m *Manager) refreshSettings() error {
+	if m != defaultManager {
+		return nil
+	}
+	return connections.Refresh(config.IntegrationArgoCD)
+}
+
+// Address returns the resolved base URL, or "" when not connected.
+func (m *Manager) Address() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.baseURL
+}
+
+// Probe resolves the Argo CD endpoint (manual URL or discovery), verifies
+// reachability, and — when a token is configured — verifies the token via
+// session/userinfo. Errors wrap ErrUnreachable or ErrTokenInvalid so callers
+// can map them to distinct messages.
+func (m *Manager) Probe(ctx context.Context) error {
+	if err := m.refreshSettings(); err != nil {
+		return err
+	}
+	m.mu.Lock()
+	gen := m.generation
+	m.mu.Unlock()
+	release, err := m.acquireProbeSlot(ctx)
+	if err == nil {
+		m.mu.Lock()
+		// A probe of these same settings (a background connect that held
+		// the slot while this caller waited) has already connected: that is
+		// the answer.
+		landed := m.client != nil && m.generation == gen
+		m.mu.Unlock()
+		if landed {
+			release()
+			return nil
+		}
+		err = m.probeHoldingSlot(ctx)
+		release()
+	}
+	// The caller's own deadline or navigation says nothing about the
+	// server; recording it would have Settings report a timeout the
+	// background probe never saw.
+	if errors.Is(err, errStaleProbe) || ctx.Err() != nil {
+		return err
+	}
+	m.mu.Lock()
+	m.lastProbeErr = err
+	m.mu.Unlock()
+	return err
+}
+
+// LastProbeError is the failure of the most recent completed probe, or nil
+// after a success — what Settings shows next to "Not reachable".
+func (m *Manager) LastProbeError() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastProbeErr
+}
+
+// transientConnectFailure: the server couldn't be reached, which may pass on
+// its own. A rejected token, a token bound to another cluster, a certificate
+// Radar can't verify, a URL that isn't an Argo CD server and a cluster with
+// no argocd-server Service Radar can see need the user.
+func transientConnectFailure(err error) bool {
+	return errors.Is(err, ErrUnreachable) && !errors.Is(err, ErrTokenInvalid) &&
+		!isTLSError(err) && !errors.Is(err, argoapi.ErrNotFound) && !errors.Is(err, errNoArgoServer)
+}
+
+// Retrying reports that the connection failed in a way that may pass on its
+// own, so pages should ask again now and then: a connect is running after a
+// failure, a connect that couldn't reach the server is about to be retried,
+// or the last read through the connection got no answer (until a read
+// succeeds).
+func (m *Manager) Retrying() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.client != nil {
+		return m.readFailureLocked() != nil
+	}
+	// A connect running after a failure may land whatever the failure was
+	// (the user may have fixed the token meanwhile).
+	if m.lastProbeErr != nil && m.probingLocked() {
+		return true
+	}
+	return transientConnectFailure(m.lastProbeErr) && time.Now().Before(m.retryAt.Add(time.Second))
+}
+
+// LastReadError is why the last read through the live client failed, or nil
+// when it succeeded or there is no client.
+func (m *Manager) LastReadError() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.client == nil {
+		return nil
+	}
+	return m.readFailureLocked()
+}
+
+func (m *Manager) readFailureLocked() error {
+	if m.lastReadErr == nil || time.Since(m.lastReadAt) > readFailureShownFor {
+		return nil
+	}
+	return m.lastReadErr
+}
+
+// acquireProbeSlot waits for the probe slot until ctx ends. The returned
+// func releases it. Probes are serialized: the background probe and the
+// Settings save's Probe would otherwise run discovery + port-forward setup
+// concurrently and race on m.forward / m.baseURL / m.client. The generation
+// check only discards STALE results; it doesn't stop two same-generation
+// probes from both committing (and leaking a port-forward).
+func (m *Manager) acquireProbeSlot(ctx context.Context) (func(), error) {
+	m.mu.Lock()
+	if m.probeSlot == nil {
+		m.probeSlot = make(chan struct{}, 1)
+	}
+	slot := m.probeSlot
+	m.mu.Unlock()
+	select {
+	case slot <- struct{}{}:
+		if err := ctx.Err(); err != nil {
+			// The slot and the cancellation were ready together.
+			<-slot
+			return nil, err
+		}
+		return func() { <-slot }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// probeHoldingSlot runs one probe. The caller holds the probe slot.
+func (m *Manager) probeHoldingSlot(ctx context.Context) error {
+	bindingBefore := m.currentContextBinding(ctx)
+	m.mu.Lock()
+	m.ensureSeededLocked()
+	snap := m.snapshotLocked()
+	m.mu.Unlock()
+	bindingAfter := m.currentContextBinding(ctx)
+
+	// Auto-discovery (empty URL) resolves whatever argocd-server the CURRENT
+	// cluster exposes. A token bound to a different source must NOT be sent to
+	// it — the in-cluster Service DNS is identical across clusters, so the URL
+	// can't distinguish them. When the configured token isn't bound to the
+	// captured context (or a switch raced the capture), refuse to connect at all
+	// rather than connect unauthenticated: an unauthenticated "connected" state
+	// would light the deep-diff capability while every managed-resource call
+	// 403s. Stay disconnected until the user re-confirms the token for this
+	// cluster. Explicit-URL tokens are governed by the origin guard instead.
+	if snap.manualURL == "" && snap.token != "" {
+		if snap.tokenBinding == "" {
+			if snap.tokenContext != "" {
+				return ErrTokenBindingUpgrade
+			}
+			return errTokenContextMismatch
+		}
+		bindingStable := bindingBefore != "" && bindingBefore == bindingAfter
+		if !bindingStable || snap.tokenBinding != bindingAfter {
+			return errTokenContextMismatch
+		}
+	}
+
+	// All network I/O below uses `snap` — a single coherent (url-intent, token,
+	// tls) capture — never live m.* fields. So a concurrent SetConfig/Reset can
+	// never make this probe send snap's token to a different origin, or a
+	// different token to snap's origin; a changed config just invalidates the
+	// whole result at the generation check.
+	url, newForward, err := m.resolve(ctx, snap)
+	if err != nil {
+		return err
+	}
+	if err := m.verifyAuth(ctx, url, snap); err != nil {
+		// The new forward resolve reached the server through won't be used.
+		if newForward != nil {
+			newForward.stop()
+		}
+		// Nor will the connection in place, unless it was only slow to
+		// answer: reads go on using it. Skip when a config change already
+		// superseded this probe; that SetConfig/Reset owns the cleanup.
+		m.mu.Lock()
+		var fwd *activeForward
+		if !m.staleLocked(snap) && !(errors.Is(err, errNoAnswerInTime) && m.client != nil) {
+			fwd = m.dropConnectionLocked()
+		}
+		m.mu.Unlock()
+		if fwd != nil {
+			fwd.stop()
+		}
+		return err
+	}
+
+	// Forwards this commit leaves unused, stopped once mu is released.
+	var unused *activeForward
+	defer func() {
+		if unused != nil {
+			unused.stop()
+		}
+	}()
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.staleLocked(snap) {
+		// Config changed while we were probing off-lock. Discard rather than
+		// resurrect a connection to a target the user has moved away from.
+		unused = newForward
+		return errStaleProbe
+	}
+	if newForward != nil && newForward.exited.Load() {
+		// The new tunnel died after the server answered through it; the
+		// connection in place, if any, is still the better one.
+		unused = newForward
+		return fmt.Errorf("%w: the port-forward to argocd-server exited", ErrUnreachable)
+	}
+	// A re-check that confirms the connection in place keeps it, so reads
+	// in flight still belong to it.
+	newConnection := m.client == nil || m.baseURL != url
+	if m.baseURL != url {
+		// A forward serves one address: a new address replaces it with the
+		// forward resolve reached the server through, or none.
+		unused = m.forward
+		m.forward = newForward
+		m.baseURL = url
+		m.cache = nil
+		m.revMetaCache = nil
+		m.anonymousRead = anonymousReadUnknown
+	} else {
+		unused = newForward
+	}
+	if newConnection {
+		m.client = newClient(url, snap.token, snap.insecureTLS)
+		m.clientAnonymous = snap.token == ""
+		m.lastReadErr = nil
+	}
+	// The server answered and accepted the token: a cached "no answer" must
+	// not outlive that, and neither must a read that lost its connection
+	// (reset, refused, a certificate error). A read that timed out stays
+	// reported until a read succeeds: this check doesn't touch the
+	// endpoints the reads use, so it can't say they answer in time.
+	if m.lastReadErr != nil && !isNoAnswerInTime(m.lastReadErr) {
+		m.lastReadErr = nil
+	}
+	for k, e := range m.appHealthCache {
+		if e.err != nil && isTransportFailure(e.err) {
+			delete(m.appHealthCache, k)
+		}
+	}
+	return nil
+}
+
+// probeSnapshot is an immutable capture of the config a single Probe uses, so
+// concurrent config changes can't make one probe mix credentials or origins.
+type probeSnapshot struct {
+	generation   uint64
+	manualURL    string
+	token        string
+	insecureTLS  bool
+	tokenContext string
+	tokenBinding string
+	// k8sClient + k8sConfig are captured at snapshot time so BOTH candidate
+	// discovery and the port-forward dial target the SAME cluster the token was
+	// captured against. If a context switch swaps the live client/config
+	// mid-probe, these frozen handles keep the token pointed at its own
+	// cluster's Argo — never the new one — and the generation check then
+	// discards the superseded result.
+	k8sClient kubernetes.Interface
+	k8sConfig *rest.Config
+}
+
+func (m *Manager) snapshotLocked() probeSnapshot {
+	var k8sc kubernetes.Interface
+	if m.k8sClient != nil {
+		k8sc = m.k8sClient()
+	}
+	var cfg *rest.Config
+	if m.k8sConfig != nil {
+		cfg = m.k8sConfig()
+	}
+	return probeSnapshot{
+		generation:   m.generation,
+		manualURL:    m.manualURL,
+		token:        m.token,
+		insecureTLS:  m.insecureTLS,
+		tokenContext: m.tokenContext,
+		tokenBinding: m.tokenBinding,
+		k8sClient:    k8sc,
+		k8sConfig:    cfg,
+	}
+}
+
+// staleLocked reports whether a config change (SetConfig/Reset) has superseded
+// the probe that captured snap. Caller must hold m.mu.
+func (m *Manager) staleLocked(snap probeSnapshot) bool {
+	return m.generation != snap.generation
+}
+
+// errStaleProbe is an internal sentinel: a Probe found the manager's config had
+// changed under it and refused to commit. Not surfaced to users — callers treat
+// a Probe as "not connected yet" and retry.
+var errStaleProbe = errors.New("argocd: probe superseded by a config change")
+
+// errTokenContextMismatch means the configured token is bound to a different
+// kubeconfig context than the current one (auto-discovery mode), so the probe
+// refused to connect rather than send the token to another cluster or connect
+// unauthenticated. It wraps ErrTokenInvalid: to every downstream error mapper
+// this is effectively "the token isn't valid for this cluster", so it surfaces
+// as a re-authenticate prompt instead of a misleading 502/"unreachable".
+var errTokenContextMismatch = fmt.Errorf("argocd: token not valid for the current cluster context: %w", ErrTokenInvalid)
+
+// ErrTokenBindingUpgrade is returned when a persisted auto-discovery token has
+// only a mutable context-name stamp. The token is never sent until the operator
+// re-enters it, which records the source-scoped binding.
+var ErrTokenBindingUpgrade = fmt.Errorf("argocd: re-confirm this token for this kubeconfig source: %w", ErrTokenInvalid)
+
+// connectedClient returns the live client and the generation it belongs
+// to. It never waits for a probe: with no client it starts one in the
+// background and answers ErrConnecting, or, while the last failed probe's
+// retry interval runs, that probe's failure.
+func (m *Manager) connectedClient(allowUnconfigured bool) (*argoapi.Client, uint64, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	gen := m.generation
+	m.lastDemand = time.Now()
+	m.lastRead = m.lastDemand
+	if m.client != nil {
+		return m.client, gen, nil
+	}
+	m.ensureSeededLocked()
+	if m.failureUnread && !m.probingLocked() {
+		// No page has asked since that connect failed; this one is the first
+		// to need it, so try again now rather than when the interval ends.
+		m.failureUnread = false
+		m.nextProbe = time.Time{}
+	}
+	if !m.probingLocked() && time.Now().Before(m.nextProbe) && m.lastProbeErr != nil {
+		// The connect failed before anyone was asking: retry it when the
+		// interval ends, now that a page is.
+		if (m.manualURL != "" || m.token != "") && transientConnectFailure(m.lastProbeErr) && !time.Now().Before(m.retryAt) {
+			m.scheduleRetryLocked(allowUnconfigured)
+		}
+		return nil, gen, fmt.Errorf("%w (retry throttled)", m.lastProbeErr)
+	}
+	m.startBackgroundProbeLocked(allowUnconfigured)
+	m.markDemandedLocked()
+	if m.lastProbeErr != nil {
+		// A retry of a connect that failed: until it lands, the failure is
+		// still the answer, not "connecting".
+		if m.probingLocked() {
+			return nil, gen, fmt.Errorf("%w (reconnecting)", m.lastProbeErr)
+		}
+		return nil, gen, m.lastProbeErr
+	}
+	if m.probingLocked() {
+		return nil, gen, ErrConnecting
+	}
+	return nil, gen, fmt.Errorf("%w: not connected", ErrUnreachable)
+}
+
+// noteReadLocked records how a read through the client of generation gen
+// went, and starts a background re-check of the server when the failure may
+// mean the connection is broken. The re-check drops the connection only if
+// the server is gone or rejects the token. Caller must hold m.mu.
+func (m *Manager) noteReadLocked(gen uint64, client *argoapi.Client, err error) {
+	// A read through a connection that has since been replaced says nothing
+	// about the one in place now.
+	if m.generation != gen || m.client == nil || m.client != client {
+		return
+	}
+	switch {
+	case errors.Is(err, context.Canceled):
+	case err == nil || !isTransportFailure(err):
+		// The server answered, so the connection works.
+		m.lastReadErr = nil
+		if errors.Is(err, argoapi.ErrUnauthorized) && !m.clientAnonymous {
+			// Either the token was revoked or it can't read this one
+			// application. Only the re-check can tell, and it reports the
+			// first; the second belongs to the page that asked.
+			m.startBackgroundProbeLocked(true)
+		}
+	default:
+		// No usable answer from the server: that is about the connection,
+		// so Settings shows it.
+		m.lastReadErr = err
+		m.lastReadAt = time.Now()
+		m.startBackgroundProbeLocked(true)
+	}
+}
+
+// ReadMayRecover reports whether a page whose read failed with err should ask
+// again later: the read got no usable HTTP answer, or a retry of the shared
+// connection is under way. A certificate Radar can't verify needs the user to
+// fix the configuration, so it never counts, even while a retry runs.
+func ReadMayRecover(err error) bool {
+	if isTLSError(err) {
+		return false
+	}
+	return isTransportFailure(err) || Retrying()
+}
+
+// isTransportFailure reports a read that got no usable HTTP answer: a
+// timeout, a refused connection, a failed DNS lookup, a certificate Radar
+// can't verify, or a gateway in front of argocd-server answering for it.
+func isTransportFailure(err error) bool {
+	if isNoAnswerInTime(err) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || isTLSError(err) ||
+		errors.Is(err, argoapi.ErrGatewayUnavailable) {
+		return true
+	}
+	// Not any *url.Error: a refused redirect is wrapped in one too, and that
+	// server did answer.
+	var opErr *net.OpError
+	var dnsErr *net.DNSError
+	return errors.As(err, &opErr) || errors.As(err, &dnsErr)
+}
+
+// ManagedResourcesCached returns the app's managed-resource diffs, serving
+// from a 15s TTL cache keyed by (appNamespace, appName). Queries carrying
+// per-resource filters bypass the cache — mixing filtered results into the
+// app-level key would poison it for unfiltered callers.
+func (m *Manager) ManagedResourcesCached(ctx context.Context, q argoapi.ManagedResourcesQuery) ([]argoapi.ResourceDiff, error) {
+	if m == defaultManager {
+		if err := connections.Refresh(config.IntegrationArgoCD); err != nil {
+			return nil, err
+		}
+	}
+	filtered := q.Group != "" || q.Kind != "" || q.Namespace != "" || q.Name != ""
+	key := q.AppNamespace + "\x00" + q.AppName
+
+	if !filtered {
+		m.mu.Lock()
+		if e, ok := m.cache[key]; ok && time.Now().Before(e.expires) {
+			items := e.items
+			m.mu.Unlock()
+			return items, nil
+		}
+		m.mu.Unlock()
+	}
+
+	client, gen, err := m.connectedClient(false)
+	if err != nil {
+		return nil, err
+	}
+
+	items, err := client.ManagedResources(ctx, q)
+	m.mu.Lock()
+	m.noteReadLocked(gen, client, err)
+	m.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
+	if !filtered {
+		m.mu.Lock()
+		// A SetConfig/Reset (context switch, reconnect) during the fetch bumps the
+		// generation; the result is for a superseded cluster/config, so it must not
+		// be cached under the app key — a later read for the new target would serve
+		// the old cluster's manifests. Mirrors the probe path's staleLocked guard.
+		// A re-check that dropped or replaced the connection meanwhile counts
+		// the same way.
+		if m.generation == gen && m.client == client {
+			now := time.Now()
+			for k, e := range m.cache {
+				if now.After(e.expires) {
+					delete(m.cache, k)
+				}
+			}
+			if m.cache == nil {
+				m.cache = make(map[string]cacheEntry)
+			}
+			m.cache[key] = cacheEntry{items: items, expires: now.Add(managedResourcesTTL)}
+		}
+		m.mu.Unlock()
+	}
+	return items, nil
+}
+
+// ApplicationHealthCached returns Argo's own per-resource health for an
+// Application, as argocd-server reports it. The plain GET establishes
+// identity (UID) and mode; in appTree mode the health itself comes from
+// resource-tree, which every 3.x scopes by the Application's own namespace
+// (3.0's GET-side inference keyed the tree cache by bare name, so an app
+// outside Argo's namespace could get a same-named app's verdicts). The GET's
+// inline health is used only when the tree call fails. Served from a 15s
+// cache per app, misses included.
+//
+// Unlike the diff calls, this also runs for an UNCONFIGURED manager: with no
+// URL and no token it discovers argocd-server and asks without credentials,
+// which succeeds only where the install allows anonymous read
+// (users.anonymous.enabled). A refusal is cached and discovery is throttled,
+// so an install that says no is asked again at most every
+// probeRetryInterval.
+func (m *Manager) ApplicationHealthCached(ctx context.Context, q argoapi.ApplicationQuery) (*argoapi.ApplicationHealth, error) {
+	if m == defaultManager {
+		if err := connections.Refresh(config.IntegrationArgoCD); err != nil {
+			return nil, err
+		}
+	}
+	key := q.AppNamespace + "\x00" + q.AppName
+	m.mu.Lock()
+	if e, ok := m.appHealthCache[key]; ok && time.Now().Before(e.expires) {
+		m.mu.Unlock()
+		return e.health, e.err
+	}
+	m.mu.Unlock()
+
+	client, gen, err := m.connectedClient(true)
+	if err != nil {
+		// Not connected yet, or the last connect failed and is throttled:
+		// nothing to cache, the connection state already answers the next
+		// read.
+		return nil, err
+	}
+	health, err := fetchApplicationHealth(ctx, client, q)
+
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	// A SetConfig/Reset during the fetch bumps the generation: the answer
+	// (or the failure) is for a superseded connection and must neither be
+	// served nor cached under the new one — a changed token against the same
+	// Application keeps its UID, so the overlay could not tell.
+	if m.generation != gen {
+		return nil, fmt.Errorf("%w: connection changed during fetch", ErrUnreachable)
+	}
+	if m.client != client {
+		// Replaced meanwhile (the server was found again elsewhere): answer
+		// this caller, but don't cache or report it for the new connection.
+		return health, err
+	}
+	m.noteReadLocked(gen, client, err)
+	// A navigation ends this caller's read; it is not the server's answer
+	// for everyone else, so it isn't cached. A timeout is cached like any
+	// other failure: every caller gets the same short budget, so another
+	// viewer, or the next poll, would only wait it out again against a
+	// server already too slow to answer. A re-check that finds the server
+	// answering clears it.
+	if errors.Is(err, context.Canceled) {
+		return nil, err
+	}
+	// The read is the only thing that proves whether the install serves
+	// anonymous reads; a 401/403 settles it the other way. Other failures
+	// leave the question open.
+	if m.client != nil && m.clientAnonymous {
+		switch {
+		case err == nil:
+			m.anonymousRead = anonymousReadAllowed
+		case errors.Is(err, argoapi.ErrUnauthorized):
+			m.anonymousRead = anonymousReadRefused
+		}
+	}
+	if m.appHealthCache == nil {
+		m.appHealthCache = make(map[string]appHealthEntry)
+	}
+	now := time.Now()
+	for k, e := range m.appHealthCache {
+		if now.After(e.expires) {
+			delete(m.appHealthCache, k)
+		}
+	}
+	m.appHealthCache[key] = appHealthEntry{health: health, err: err, expires: now.Add(applicationHealthTTL)}
+	return health, err
+}
+
+// fetchApplicationHealth reads an Application's health through client.
+func fetchApplicationHealth(ctx context.Context, client *argoapi.Client, q argoapi.ApplicationQuery) (*argoapi.ApplicationHealth, error) {
+	app, err := client.Application(ctx, q)
+	if err != nil {
+		return nil, err
+	}
+	if app.ResourceHealthSource == "appTree" {
+		// The tree is the only acceptable source here — a tree with no
+		// health at all is Argo saying "no check for any of these", and a
+		// tree error is no answer, never a reason to fall back to the GET's
+		// possibly mis-scoped inference.
+		tree, terr := client.ResourceTree(ctx, q)
+		if terr != nil {
+			return nil, terr
+		}
+		tree.UID = app.UID
+		tree.ResourceHealthSource = app.ResourceHealthSource
+		return tree, nil
+	}
+	return app, nil
+}
+
+// RevisionMetadataCached returns Git commit metadata for a revision, cached
+// per (appNamespace, app, sourceIndex, revision) with a bounded TTL. Like
+// ManagedResourcesCached it reads through the live connection; with none
+// yet and the integration configured, it starts one in the background and
+// answers ErrConnecting. The cache is cleared on reconnect / context switch
+// (dropConnectionLocked), so it never serves another cluster's data.
+func (m *Manager) RevisionMetadataCached(ctx context.Context, q argoapi.RevisionMetadataQuery) (*argoapi.RevisionMetadata, error) {
+	if m == defaultManager {
+		if err := connections.Refresh(config.IntegrationArgoCD); err != nil {
+			return nil, err
+		}
+	}
+	key := q.AppNamespace + "\x00" + q.AppName + "\x00" + q.SourceIndex + "\x00" + q.Revision
+
+	m.mu.Lock()
+	if e, ok := m.revMetaCache[key]; ok && time.Now().Before(e.expires) {
+		meta := e.meta
+		m.mu.Unlock()
+		return meta, nil
+	}
+	m.mu.Unlock()
+
+	client, gen, err := m.connectedClient(false)
+	if err != nil {
+		return nil, err
+	}
+
+	meta, err := client.RevisionMetadata(ctx, q)
+	m.mu.Lock()
+	m.noteReadLocked(gen, client, err)
+	m.mu.Unlock()
+	if err != nil {
+		return nil, err
+	}
+
+	m.mu.Lock()
+	// Don't cache a result whose config or connection was superseded
+	// mid-fetch (see the guard in ManagedResourcesCached); still return it to
+	// this caller.
+	if m.generation != gen || m.client != client {
+		m.mu.Unlock()
+		return meta, nil
+	}
+	if m.revMetaCache == nil {
+		m.revMetaCache = make(map[string]revMetaEntry)
+	}
+	now := time.Now()
+	for k, e := range m.revMetaCache {
+		if now.After(e.expires) {
+			delete(m.revMetaCache, k)
+		}
+	}
+	// Hard cap: if still full after the expiry sweep, drop an arbitrary entry.
+	// Metadata is cheap to refetch, so exact LRU isn't worth the bookkeeping.
+	if len(m.revMetaCache) >= revisionMetadataCacheCap {
+		for k := range m.revMetaCache {
+			delete(m.revMetaCache, k)
+			break
+		}
+	}
+	m.revMetaCache[key] = revMetaEntry{meta: meta, expires: now.Add(revisionMetadataTTL)}
+	m.mu.Unlock()
+	return meta, nil
+}
+
+// RepositoriesCached returns Argo CD's repository list with cached connection
+// state, and NEVER blocks the caller on network I/O — repo health rides the
+// insights hot path (polled every 2s), so it must not add the Argo client's
+// timeout to it. A fresh cache is returned immediately; a stale/cold cache
+// returns the last value (or nil) while a single background refresh runs, so
+// the data appears at most one poll late. Stale is always same-cluster (the
+// cache is cleared on reconnect/context switch).
+func (m *Manager) RepositoriesCached() []argoapi.Repository {
+	if m == defaultManager {
+		if err := connections.Refresh(config.IntegrationArgoCD); err != nil {
+			return nil
+		}
+	}
+	m.mu.Lock()
+	repos := m.repoCache
+	fresh := repos != nil && time.Now().Before(m.repoCacheExpires)
+	m.mu.Unlock()
+	if !fresh {
+		m.refreshRepositoriesAsync()
+	}
+	return repos
+}
+
+// refreshRepositoriesAsync kicks at most one background repository fetch
+// (TryLock skips if one is already running). It uses a detached, timeout-bounded
+// context — the triggering request may end immediately — and a generation guard
+// so a context switch mid-fetch can't cache the previous cluster's repos.
+func (m *Manager) refreshRepositoriesAsync() {
+	if !m.repoFetchMu.TryLock() {
+		return
+	}
+	m.mu.Lock()
+	gen := m.generation
+	// Honor the post-failure backoff: a token without `repositories, get` would
+	// otherwise 403 on every 2s insights poll, flooding argocd-server and logs.
+	if time.Now().Before(m.repoRetryAfter) {
+		m.mu.Unlock()
+		m.repoFetchMu.Unlock()
+		return
+	}
+	m.mu.Unlock()
+	go func() {
+		defer m.repoFetchMu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), probeTimeout)
+		defer cancel()
+
+		client, _, err := m.connectedClient(false)
+		if err != nil {
+			return
+		}
+		repos, err := client.Repositories(ctx)
+		if err != nil {
+			m.mu.Lock()
+			if m.generation == gen && m.client == client {
+				m.repoRetryAfter = time.Now().Add(repoErrorBackoff)
+			}
+			m.mu.Unlock()
+			log.Printf("[argocd] repository list failed (backing off %s): %v", repoErrorBackoff, m.redactSelfToken(err.Error()))
+			return
+		}
+		m.mu.Lock()
+		if m.generation == gen && m.client == client {
+			m.repoCache = repos
+			m.repoCacheExpires = time.Now().Add(repositoriesTTL)
+			m.repoRetryAfter = time.Time{}
+		}
+		m.mu.Unlock()
+	}()
+}
+
+// resolve returns a reachable base URL: the already-connected one if it still
+// responds, else the snapshot's manual URL, else discovery. When discovery
+// reached the server through a new port-forward, that forward is returned
+// uninstalled; the caller installs it with the client or stops it. All
+// reachability clients use the snapshot's credentials. Errors wrap
+// ErrUnreachable.
+func (m *Manager) resolve(ctx context.Context, snap probeSnapshot) (string, *activeForward, error) {
+	m.mu.Lock()
+	baseURL := m.baseURL
+	forwarded := m.forward != nil
+	m.mu.Unlock()
+
+	if baseURL != "" {
+		err := m.probeEndpoint(ctx, baseURL, snap)
+		if err == nil {
+			return baseURL, nil, nil
+		}
+		// Slow is not gone: keep the connection reads are using while its
+		// address still takes connections. A refused connection, a dead
+		// port-forward, an address nothing answers on any more or a server
+		// that is not Argo CD drops it and finds the server again.
+		slow := fmt.Errorf("%w: %w: Argo CD at %s: %w", ErrUnreachable, errNoAnswerInTime, baseURL, err)
+		if isNoAnswerInTime(err) && forwarded && snap.manualURL == "" {
+			// A forward's local end always accepts, so a timeout can't tell
+			// a dead tunnel from a slow server. Find the server again while
+			// the connection stays in place; if nothing answers, the server
+			// is slow.
+			url, fwd, derr := m.discover(ctx, snap)
+			if derr != nil {
+				return "", nil, slow
+			}
+			return url, fwd, nil
+		}
+		if isNoAnswerInTime(err) && !forwarded && acceptsConnections(ctx, baseURL) {
+			return "", nil, slow
+		}
+		m.mu.Lock()
+		if m.baseURL == baseURL {
+			fwd := m.dropConnectionLocked()
+			m.mu.Unlock()
+			if fwd != nil {
+				fwd.stop()
+			}
+		} else {
+			m.mu.Unlock()
+		}
+	}
+
+	if snap.manualURL != "" {
+		if err := m.probeEndpoint(ctx, snap.manualURL, snap); err != nil {
+			return "", nil, fmt.Errorf("%w: Argo CD at %s: %w", ErrUnreachable, snap.manualURL, err)
+		}
+		return snap.manualURL, nil, nil
+	}
+
+	return m.discover(ctx, snap)
+}
+
+// verifyAuth checks the snapshot's token against session/userinfo. With no
+// token configured, reachability is the only possible check.
+func (m *Manager) verifyAuth(ctx context.Context, url string, snap probeSnapshot) error {
+	if snap.token == "" {
+		return nil
+	}
+	client := newClient(url, snap.token, snap.insecureTLS)
+	info, err := client.UserInfo(ctx)
+	if err != nil {
+		if errors.Is(err, argoapi.ErrUnauthorized) {
+			return fmt.Errorf("%w: %v", ErrTokenInvalid, err)
+		}
+		// The tokenless probe skips TLS verification, so a certificate
+		// problem first surfaces here, where the token would be sent; say
+		// what to do about it rather than leaving a bare x509 error.
+		if isTLSError(err) {
+			return fmt.Errorf("%w: %w (argocd-server serves a certificate Radar can't verify; set argoCdInsecureTls to trust it)", ErrUnreachable, err)
+		}
+		if isNoAnswerInTime(err) {
+			return fmt.Errorf("%w: %w: %w", ErrUnreachable, errNoAnswerInTime, err)
+		}
+		return fmt.Errorf("%w: %v", ErrUnreachable, err)
+	}
+	if !info.LoggedIn {
+		return fmt.Errorf("%w: session/userinfo reports loggedIn=false", ErrTokenInvalid)
+	}
+	return nil
+}
+
+// acceptsConnections reports whether a TCP connection to rawURL's host
+// opens. An HTTP timeout alone can't tell a slow server from an address
+// nothing listens on any more: the HTTP client reports a connect that never
+// completes as the request's deadline.
+func acceptsConnections(ctx context.Context, rawURL string) bool {
+	u, err := url.Parse(rawURL)
+	if err != nil || u.Host == "" {
+		return false
+	}
+	// Through a proxy, a direct connect says nothing about the server: keep
+	// the connection.
+	if proxy, perr := http.ProxyFromEnvironment(&http.Request{URL: u}); perr != nil || proxy != nil {
+		return true
+	}
+	port := u.Port()
+	if port == "" {
+		port = "80"
+		if u.Scheme == "https" {
+			port = "443"
+		}
+	}
+	// The caller's deadline has often just passed (that is why it is
+	// asking), so only its cancellation, a config change, stops this.
+	dialCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), connectCheckTimeout)
+	defer cancel()
+	stop := context.AfterFunc(ctx, func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			cancel()
+		}
+	})
+	defer stop()
+	conn, err := (&net.Dialer{}).DialContext(dialCtx, "tcp", net.JoinHostPort(u.Hostname(), port))
+	if err != nil {
+		return false
+	}
+	_ = conn.Close()
+	return true
+}
+
+// errNoAnswerInTime marks a probe failure that only says the server was
+// slow, which is not a reason to drop a connection reads are using.
+var errNoAnswerInTime = errors.New("no answer in time")
+
+func isNoAnswerInTime(err error) bool {
+	// A connect or lookup that times out found no server; that is gone, not
+	// slow.
+	var opErr *net.OpError
+	var dnsErr *net.DNSError
+	if (errors.As(err, &opErr) && opErr.Op == "dial") || errors.As(err, &dnsErr) {
+		return false
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	var netErr net.Error
+	return errors.As(err, &netErr) && netErr.Timeout()
+}
+
+func isTLSError(err error) bool {
+	var certErr x509.UnknownAuthorityError
+	var hostErr x509.HostnameError
+	var certInvalid x509.CertificateInvalidError
+	if errors.As(err, &certErr) || errors.As(err, &hostErr) || errors.As(err, &certInvalid) {
+		return true
+	}
+	var tlsErr *tls.CertificateVerificationError
+	return errors.As(err, &tlsErr)
+}
+
+// probeEndpoint checks that an Argo CD API server answers at url. A 401/403
+// still proves reachability — auth is verifyAuth's concern.
+func (m *Manager) probeEndpoint(ctx context.Context, url string, snap probeSnapshot) error {
+	probeCtx, cancel := context.WithTimeout(ctx, probeEndpointTimeout)
+	defer cancel()
+	// Reachability only — send NO token. /api/version answers 200 (public) or 401
+	// either way, so the bearer token is never needed to prove an endpoint is up.
+	// During auto-discovery this runs against every labeled candidate Service; a
+	// tokenless probe means the configured token is disclosed only to the single
+	// endpoint that verifyAuth later authenticates against, never to a losing (or
+	// attacker-planted) candidate. A 401 still counts as reachable.
+	_, err := newClient(url, "", snap.insecureTLS).Version(probeCtx)
+	if err == nil || errors.Is(err, argoapi.ErrUnauthorized) {
+		return nil
+	}
+	return err
+}
+
+// newClient builds a client for url. A client that carries no token has
+// nothing on the wire to protect, so it skips TLS verification regardless of
+// the setting: the default in-cluster argocd-server serves a self-signed
+// certificate, and without this the reachability probe and the anonymous
+// read would fail there for every install. The setting still governs every
+// client that sends the token.
+func newClient(url, token string, insecureTLS bool) *argoapi.Client {
+	return argoapi.New(argoapi.Options{
+		BaseURL:               url,
+		Token:                 token,
+		InsecureSkipTLSVerify: insecureTLS || token == "",
+	})
+}
+
+// ensureSeededLocked adopts the persisted config on first use, so settings
+// saved by a previous run apply without explicit startup wiring.
+func (m *Manager) ensureSeededLocked() {
+	if m.seeded {
+		return
+	}
+	m.seeded = true
+	c := m.loadConfig()
+	m.manualURL = strings.TrimRight(strings.TrimSpace(c.ArgoCDURL), "/")
+	m.token = c.ArgoCDToken
+	m.insecureTLS = c.ArgoCDInsecureTLS
+	m.tokenContext = c.ArgoCDTokenContext
+	m.tokenBinding = c.ArgoCDTokenBinding
+}
+
+// TokenContext returns the readable kubeconfig context recorded with the token.
+// It is persisted as a diagnostic and legacy-config marker; authorization uses
+// TokenBinding.
+func (m *Manager) TokenContext() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	return m.tokenContext
+}
+
+// TokenBinding returns the source identity the current token is bound to.
+func (m *Manager) TokenBinding() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	return m.tokenBinding
+}
+
+// TokenBindingUpgradeRequired reports whether source-bound confirmation is missing.
+func (m *Manager) TokenBindingUpgradeRequired() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ensureSeededLocked()
+	return m.manualURL == "" && m.token != "" && m.tokenBinding == "" && m.tokenContext != ""
+}
+
+// redactToken masks the bearer token if it appears verbatim in a string
+// (e.g. an upstream error or misconfigured echo-proxy body) before it is
+// logged, so the credential never lands in logs.
+func redactToken(s, token string) string {
+	if token == "" {
+		return s
+	}
+	return strings.ReplaceAll(s, token, "<redacted-token>")
+}
+
+// RedactToken masks the default manager's current bearer token if it appears in
+// s. Exposed so the HTTP layer can give its Argo-error logs the same guarantee
+// the manager's own logs have, instead of relying on the token never landing in
+// an upstream error body.
+func RedactToken(s string) string { return defaultManager.redactSelfToken(s) }
+
+func (m *Manager) redactSelfToken(s string) string {
+	m.mu.Lock()
+	tok := m.token
+	m.mu.Unlock()
+	return redactToken(s, tok)
+}

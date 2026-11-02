@@ -1,0 +1,41 @@
+version: 2
+project_name: kubeatlas
+
+before:
+  hooks:
+    - sh -c "npm ci && npm --workspace web run build"
+    - sh -c "rm -rf internal/static/dist && mkdir -p internal/static/dist"
+    - sh -c "cp -r web/dist/* internal/static/dist/"
+
+builds:
+  - id: kubeatlas
+    main: ./cmd/explorer
+    binary: kubeatlas
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+    ignore:
+      - goos: windows
+        goarch: arm64
+
+archives:
+  - id: default
+    formats: [tar.gz]
+    name_template: "{{ .ProjectName }}_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files: [LICENSE*, README*]
+
+checksum:
+  name_template: checksums.txt
+
+snapshot:
+  version_template: "{{ incpatch .Version }}-next"
+
+release:
+  disable: true

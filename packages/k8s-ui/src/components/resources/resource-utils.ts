@@ -1,0 +1,2881 @@
+// Utility functions for resource display in tables
+
+import { getNodeLifecycle } from '../../utils/node-lifecycle'
+import { effectivePolicyTypeNames } from '../../utils/network-policy'
+import { formatCPUString, formatMemoryString, formatBytes, formatCompactAge } from '../../utils/format'
+import { pluralize } from '../../utils/pluralize'
+import type { WorkloadPodInfo } from '../../types/core'
+import { getArgoRolloutStepNumber, getObservedGeneration, getWorkloadRolloutActivity, isArgoRolloutResource, isRolloutActivityVisible, rolloutActivityBadge, type WorkloadRolloutActivity } from '../../utils/workload-rollout'
+
+// Import functions from sub-modules used internally by getCellFilterValue
+import { getCertificateStatus, getCertificateRequestStatus, getClusterIssuerStatus, getClusterIssuerType, getOrderState, getChallengeState, getChallengeType } from './resource-utils-certmanager'
+import { getNodePoolStatus, getNodeClaimStatus } from './resource-utils-karpenter'
+import { getScaledObjectStatus, getScaledJobStatus } from './resource-utils-keda'
+import { getGitRepositoryStatus, getOCIRepositoryStatus, getHelmRepositoryStatus, getHelmRepositoryType, getKustomizationStatus, getFluxHelmReleaseStatus, getFluxAlertStatus } from './resource-utils-flux'
+import { getArgoApplicationStatus, getArgoApplicationSetStatus, getArgoApplicationSync, getArgoApplicationHealth, getArgoApplicationProject } from './resource-utils-argo'
+import { getVulnerabilityReportImage as _getVulnerabilityReportImage } from './resource-utils-trivy'
+import { getKyvernoPolicyRuleTypes as _getKyvernoPolicyRuleTypes, getPolicyReportStatus as _getPolicyReportStatus, getKyvernoPolicyStatus as _getKyvernoPolicyStatus } from './resource-utils-kyverno'
+import { getResourceClaimStatus as _getResourceClaimStatus, getResourceClaimDeviceClasses as _getResourceClaimDeviceClasses, getResourceClaimTemplateDeviceClasses as _getResourceClaimTemplateDeviceClasses, getResourceClaimAllocation as _getResourceClaimAllocation, getResourceClaimReservedFor as _getResourceClaimReservedFor } from './resource-utils-dra'
+import { getNvidiaClusterPolicyStatus as _getNvidiaClusterPolicyStatus, getNvidiaClusterPolicyEnabledComponents as _getNvidiaClusterPolicyEnabledComponents, getNvidiaDriverStatus as _getNvidiaDriverStatus } from './resource-utils-nvidia'
+import { getClusterQueueStatus as _getClusterQueueStatus, getLocalQueueStatus as _getLocalQueueStatus, getKueueWorkloadStatus as _getKueueWorkloadStatus, getResourceFlavorStatus as _getResourceFlavorStatus, getAdmissionCheckStatus as _getAdmissionCheckStatus, getProvisioningRequestStatus as _getProvisioningRequestStatus } from './resource-utils-kueue'
+import { getRayClusterStatus as _getRayClusterStatus, getRayJobStatus as _getRayJobStatus, getRayServiceStatus as _getRayServiceStatus, getRayCronJobStatus as _getRayCronJobStatus, getRayCronJobTimeZone as _getRayCronJobTimeZone } from './resource-utils-ray'
+import { getLeaderWorkerSetStatus as _getLeaderWorkerSetStatus, getJobSetStatus as _getJobSetStatus } from './resource-utils-jobset-lws'
+import { getInferenceServiceStatus as _getInferenceServiceStatus, getServingRuntimeStatus as _getServingRuntimeStatus, getInferenceGraphStatus as _getInferenceGraphStatus, getTrainedModelStatus as _getTrainedModelStatus, getLLMInferenceServiceStatus as _getLLMInferenceServiceStatus } from './resource-utils-kserve'
+import { getInferencePoolStatus as _getInferencePoolStatus, getInferenceObjectiveStatus as _getInferenceObjectiveStatus } from './resource-utils-inference-gateway'
+import { getVolcanoJobStatus as _getVolcanoJobStatus, getVolcanoQueueStatus as _getVolcanoQueueStatus, getVolcanoPodGroupStatus as _getVolcanoPodGroupStatus, getJobFlowStatus as _getJobFlowStatus, getJobTemplateStatus as _getJobTemplateStatus } from './resource-utils-volcano'
+import { getKaiQueueStatus as _getKaiQueueStatus, getKaiPodGroupStatus as _getKaiPodGroupStatus } from './resource-utils-kai'
+import { getKaitoWorkspaceStatus as _getKaitoWorkspaceStatus, getRAGEngineStatus as _getRAGEngineStatus } from './resource-utils-kaito'
+import { getNIMServiceStatus as _getNIMServiceStatus, getNIMCacheStatus as _getNIMCacheStatus, getNIMPipelineStatus as _getNIMPipelineStatus } from './resource-utils-nim'
+import { getAMDDeviceConfigStatus as _getAMDDeviceConfigStatus } from './resource-utils-amd-gpu'
+import { getPyTorchJobStatus as _getPyTorchJobStatus, getTFJobStatus as _getTFJobStatus, getMPIJobStatus as _getMPIJobStatus, getTrainJobStatus as _getTrainJobStatus } from './resource-utils-kubeflow-training'
+import { getBackupStatus as _getBackupStatus, getRestoreStatus as _getRestoreStatus, getScheduleStatus as _getScheduleStatus, getBSLStatus as _getBSLStatus, getBackupRepositoryStatus as _getBackupRepositoryStatus } from './resource-utils-velero'
+import { getExternalSecretStatus as _getExternalSecretStatus, getClusterExternalSecretStatus as _getClusterExternalSecretStatus, getSecretStoreStatus as _getSecretStoreStatus, getClusterSecretStoreStatus as _getClusterSecretStoreStatus, getSecretStoreProviderType as _getSecretStoreProviderType } from './resource-utils-eso'
+import { getHPATableState, hpaStatusFromState } from './resource-utils-hpa'
+import { getCNPGClusterStatus as _getCNPGClusterStatus, getCNPGBackupStatus as _getCNPGBackupStatus, getCNPGScheduledBackupStatus as _getCNPGScheduledBackupStatus, getCNPGPoolerStatus as _getCNPGPoolerStatus, isApiGroup as _isApiGroup, CNPG_GROUP as _CNPG_GROUP } from './resource-utils-cnpg'
+import { getGenericResourceStatus } from './generic-status'
+import { getCrossplaneStatus, getProviderStatus, getProviderConfigStatus, isManagedResource, isComposite } from './resource-utils-crossplane'
+import { getIstioGatewayStatus as _getIstioGatewayStatus, getIstioGatewayServerCount as _getIstioGatewayServerCount, getIstioGatewaySelectorString as _getIstioGatewaySelectorString, getAuthorizationPolicySelectorString as _getAuthorizationPolicySelectorString, getDestinationRuleTlsMode as _getDestinationRuleTlsMode } from './resource-utils-istio'
+import { formatKubernetesLabelSelector, getCalicoIPPoolAllowedUses, getCalicoIPPoolBlockSize, getCalicoIPPoolEncapsulation, getCalicoPolicyNamespaceSelector, getCalicoPolicyServiceAccountSelector, getCalicoPolicyTypes, isCalicoApiVersion, isCalicoPolicyResource } from './resource-utils-calico'
+
+// ============================================================================
+// STATUS & HEALTH UTILITIES
+// ============================================================================
+
+// Six health levels in escalating urgency order:
+//   healthy < neutral < unknown < degraded < alert < unhealthy
+// `alert` (orange) is the intermediate tier between degraded (amber) and
+// unhealthy (red). Used for severity gradients like Problems/Audit
+// (critical/high/medium → unhealthy/alert/degraded), where collapsing
+// `high` into either neighbor erases real signal.
+export type HealthLevel = 'healthy' | 'degraded' | 'alert' | 'unhealthy' | 'unknown' | 'neutral'
+
+export interface StatusBadge {
+  text: string
+  color: string
+  level: HealthLevel
+}
+
+// Color classes for different health levels (theme-aware)
+export const healthColors: Record<HealthLevel, string> = {
+  healthy: 'status-healthy',
+  degraded: 'status-degraded',
+  alert: 'status-alert',
+  unhealthy: 'status-unhealthy',
+  unknown: 'status-unknown',
+  neutral: 'status-neutral',
+}
+
+// ============================================================================
+// POD UTILITIES
+// ============================================================================
+
+export interface PodProblem {
+  severity: 'critical' | 'high' | 'medium'
+  message: string
+  // detail carries extra human context shown after the short message (e.g.
+  // the scheduler's verdict for an Unschedulable pod). message stays the
+  // stable short label so filter-chip matching (podMatchesProblemCategory)
+  // and known-pattern checks keep working on exact strings.
+  detail?: string
+}
+
+/**
+ * Condense a kube-scheduler verdict (the PodScheduled=False / FailedScheduling
+ * message) for display: drop the "0/N nodes are available:" prefix and the
+ * "preemption: …" tail, keeping the per-predicate clause list — which already
+ * names untolerated taints, insufficient resources, and affinity/selector
+ * misses. Presentation-only; the backend `scheduling` issue source does the
+ * structured decomposition + node-label resolution (e.g. naming arm64).
+ */
+export function summarizeSchedulerMessage(message?: string, options: { plain?: boolean } = {}): string {
+  if (!message) return ''
+  let m = message.split('. preemption:')[0].split(' preemption:')[0].trim()
+  if (options.plain) {
+    m = m.replace(/^(?:Pod cannot be scheduled:\s*)?(?:Unschedulable:\s*)?(?:0\/\d+ nodes are available:\s*)?/i, '')
+    // Schedulers with dynamic resource allocation append this after the node reasons.
+    m = m.replace(/no new claims to deallocate,?/i, '').trim()
+  } else {
+    const colon = m.indexOf(':')
+    if (colon >= 0) m = m.slice(colon + 1).trim()
+  }
+  m = m.replace(/\.\s*$/, '').trim()
+  if (!options.plain) return m
+  const total = /0\/(\d+) nodes (?:are )?available/.exec(message)?.[1]
+  const causes: [RegExp, string][] = [
+    [/^(\d+) (?:Too many pods|(?:node\(s\) )?insufficient pods)(?: \(0\/\d+ nodes available\))?$/i, 'have reached their Pod limit'],
+    [/^(\d+) (?:node\(s\) )?Insufficient cpu(?: \(0\/\d+ nodes available\))?$/i, 'do not have enough CPU'],
+    [/^(\d+) (?:node\(s\) )?Insufficient memory(?: \(0\/\d+ nodes available\))?$/i, 'do not have enough memory'],
+    [/^(\d+) node\(s\) (?:didn.t match Pod.s node affinity\/selector|node affinity\/selector mismatch)(?: \(0\/\d+ nodes available\))?$/i, 'do not match the Pod’s node affinity or selector'],
+    [/^(\d+) node\(s\) (?:had )?untolerated taint(?:\(s\))?(?: \{[^}]*\}| [^\s]+)?(?: \(0\/\d+ nodes available\))?$/i, 'have taints the Pod does not tolerate'],
+    [/^(\d+) node\(s\) (?:(?:had )?volume node[- ]affinity conflict|didn.t match PersistentVolume.s node affinity)(?: \(0\/\d+ nodes available\))?$/i, 'do not match the volume’s node affinity'],
+  ]
+  return splitSchedulerClauses(m).filter((part) => part.trim()).map((part) => {
+    const clause = part.trim()
+    for (const [pattern, cause] of causes) {
+      const count = pattern.exec(clause)?.[1]
+      if (count) return `${count === '1' ? '1 node' : count === total && count === '2' ? 'both nodes' : count === total ? 'all nodes' : `${count} nodes`} ${count === '1' ? cause.replace(/^have /, 'has ').replace(/^do /, 'does ') : cause}`
+    }
+    if (/^(?:pod has )?unbound (?:immediate )?PersistentVolumeClaims?(?:\s*\(0\/\d+ nodes available\))?$/i.test(clause)) return 'a required volume claim is not bound'
+    return clause
+  }).join('; ')
+}
+
+// Splits on commas and semicolons, except where the next bracket ahead closes:
+// scheduler taints and resolved node labels can contain comma-separated values.
+// One pass from the end keeps long messages linear.
+function splitSchedulerClauses(m: string): string[] {
+  const parts: string[] = []
+  let end = m.length
+  let insideBrackets = false
+  for (let i = m.length - 1; i >= 0; i--) {
+    const c = m[i]
+    if (c === ']' || c === '}') insideBrackets = true
+    else if (c === '[' || c === '{') insideBrackets = false
+    else if ((c === ',' || c === ';') && !insideBrackets) {
+      parts.push(m.slice(i + 1, end))
+      end = i
+    }
+  }
+  parts.push(m.slice(0, end))
+  return parts.reverse()
+}
+
+/** Tailwind classes for severity dot indicators (used in tooltips and alert banners) */
+export const SEVERITY_DOT_COLOR: Record<PodProblem['severity'], string> = {
+  critical: 'bg-red-400',
+  high: 'bg-orange-400',
+  medium: 'bg-yellow-400',
+}
+
+/** Check whether a pod's problems match a given problem category (filter chip label) */
+export function podMatchesProblemCategory(problems: PodProblem[], restarts: number, category: string): boolean {
+  const msgs = problems.map(p => p.message)
+  switch (category) {
+    case 'CrashLoopBackOff':
+      return msgs.includes('CrashLoopBackOff')
+    case 'ImagePullBackOff':
+      return msgs.some(m => m.includes('ImagePull') && !m.startsWith('Init:'))
+    case 'OOMKilled':
+      return msgs.includes('OOMKilled')
+    case 'Unschedulable':
+      return msgs.includes('Unschedulable')
+    case 'Not Ready':
+      return msgs.includes('Not Ready') || msgs.some(m => m.includes('Probe') || m.includes('Readiness Gate'))
+    case 'High Restarts':
+      return restarts > 5
+    case 'Init Failed':
+      return msgs.some(m => m.startsWith('Init:'))
+    case 'Exit Code Error':
+      return msgs.some(m => m.startsWith('Exit Code'))
+    case 'Failed':
+      return msgs.includes('Failed') || msgs.includes('Unknown')
+    case 'Other': {
+      const knownPatterns = ['CrashLoopBackOff', 'ImagePull', 'ErrImagePull', 'OOMKilled', 'Unschedulable', 'Not Ready', 'Probe', 'Readiness Gate', 'Init:', 'Exit Code', 'Failed', 'Unknown']
+      return problems.some(p => !knownPatterns.some(pat => p.message.includes(pat)) && p.message !== `${restarts} restarts`)
+    }
+    default:
+      return false
+  }
+}
+
+// A transient lifecycle state (plain Pending, Terminating, awaiting an address)
+// is not a fault while it's young — it becomes one only once it's stuck past
+// these windows, mirroring the backend health thresholds (ClassifyPodHealth:
+// pending 5m; detect.go: terminating 10m, LB/PVC pending 5m). Two things escalate
+// immediately, regardless of age, because they're definitive failures the backend
+// also flags at once: fatal *container* states (CrashLoopBackOff, ImagePull,
+// InvalidImageName, OOMKilled, …) and Unschedulable (the scheduler tried and
+// could not place the pod).
+const PENDING_STUCK_MINUTES = 5
+const TERMINATING_STUCK_MINUTES = 10
+
+// minutesSince returns minutes elapsed since an ISO timestamp, or 0 when it's
+// missing/invalid — so "unknown age" is treated as not-yet-stuck (benign).
+function minutesSince(timestamp?: string): number {
+  if (!timestamp) return 0
+  const t = new Date(timestamp).getTime()
+  if (Number.isNaN(t)) return 0
+  return (Date.now() - t) / 60000
+}
+
+function podUnschedulable(pod: any): boolean {
+  const conds = pod?.status?.conditions || []
+  return conds.some(
+    (c: any) => c.type === 'PodScheduled' && c.status === 'False' && c.reason === 'Unschedulable'
+  )
+}
+
+// A container that has terminated successfully (exit 0) is done, not "not ready".
+// A completing Job pod (Running phase, container Completed, Ready=false) must not
+// read as degraded just because ready<total — this mirrors ClassifyPodHealth, so
+// the badge agrees with the timeline/Problems verdict.
+function containerSettledOk(cs: any): boolean {
+  return cs?.ready === true || cs?.state?.terminated?.exitCode === 0
+}
+
+// Hard-failure waiting reasons that won't self-resolve — mirrors the backend's
+// isFatalWaitingReason. These escalate immediately regardless of pod age or a
+// Terminating overlay (a bad image / config error is a real failure now, not a
+// benign young-Pending pod).
+const FATAL_WAITING_REASONS = new Set([
+  'CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull', 'InvalidImageName',
+  'ImageInspectError', 'CreateContainerConfigError', 'CreateContainerError', 'RunContainerError',
+])
+
+// firstFatalContainer returns the first init- or main-container in a hard-failure
+// state (or null). Init containers are walked first: when init is failing the pod
+// stays Pending and main ContainerStatuses haven't populated yet, so checking main
+// alone would miss it and fall through to a benign "Pending".
+function firstFatalContainer(pod: any): { name: string; reason: string } | null {
+  const init = pod?.status?.initContainerStatuses || []
+  const main = pod?.status?.containerStatuses || []
+  for (const cs of [...init, ...main]) {
+    const w = cs?.state?.waiting?.reason
+    if (w && FATAL_WAITING_REASONS.has(w)) return { name: cs?.name, reason: w }
+    if (cs?.state?.terminated?.reason === 'OOMKilled') return { name: cs?.name, reason: 'OOMKilled' }
+  }
+  return null
+}
+
+const CRASH_SETTLE_MS = 5 * 60 * 1000
+const STALE_CRASH_STATE_GAP_MS = 2 * CRASH_SETTLE_MS
+
+function stableCrashHistory(cs: any): boolean {
+  if (!cs?.restartCount) return false
+
+  const startedAt = cs?.state?.running?.startedAt
+  const finishedAt = cs?.lastState?.terminated?.finishedAt
+  if (startedAt) {
+    const startedAtMs = new Date(startedAt).getTime()
+    if (Number.isFinite(startedAtMs) && Date.now() - startedAtMs >= CRASH_SETTLE_MS) return false
+    if (finishedAt) {
+      const finishedAtMs = new Date(finishedAt).getTime()
+      if (
+        Number.isFinite(startedAtMs)
+        && Number.isFinite(finishedAtMs)
+        && startedAtMs - finishedAtMs > STALE_CRASH_STATE_GAP_MS
+      ) return false
+    }
+  } else if (cs?.state?.running && finishedAt) {
+    const finishedAtMs = new Date(finishedAt).getTime()
+    if (Number.isFinite(finishedAtMs) && Date.now() - finishedAtMs >= CRASH_SETTLE_MS) return false
+  }
+  if (cs?.state?.terminated?.exitCode === 0) return false
+
+  const term = cs?.lastState?.terminated
+  if (!term || term.reason === 'OOMKilled') return false
+  return term.reason === 'CrashLoopBackOff' || term.reason === 'Error' || Number(term.exitCode ?? 0) !== 0
+}
+
+function podCrashHistoryLevel(pod: any): 'degraded' | 'unhealthy' | null {
+  let degraded = false
+  for (const cs of pod?.status?.containerStatuses || []) {
+    if (!stableCrashHistory(cs)) continue
+    if (!(cs?.state?.running && cs?.ready)) return 'unhealthy'
+    degraded = true
+  }
+
+  const initContainers = pod?.spec?.initContainers || []
+  for (const cs of pod?.status?.initContainerStatuses || []) {
+    const spec = initContainers.find((c: any) => c?.name === cs?.name)
+    const restartable = spec?.restartPolicy === 'Always'
+    if (!stableCrashHistory(cs)) continue
+    if (!(restartable && cs?.state?.running && cs?.ready)) return 'unhealthy'
+    degraded = true
+  }
+  return degraded ? 'degraded' : null
+}
+
+function podCrashRestartTotal(pod: any): number {
+  const main = pod?.status?.containerStatuses || []
+  const init = pod?.status?.initContainerStatuses || []
+  return [...main, ...init]
+    .filter(stableCrashHistory)
+    .reduce((sum, cs) => sum + (cs?.restartCount || 0), 0)
+}
+
+function podReadinessGateBlocked(pod: any): boolean {
+  const gates: { conditionType: string }[] = pod.spec?.readinessGates || []
+  if (pod.metadata?.deletionTimestamp || pod.status?.phase !== 'Running' || gates.length === 0) return false
+  const conditions: any[] = pod.status?.conditions || []
+  const ready = conditions.find(c => c.type === 'Ready')
+  const containersReady = conditions.find(c => c.type === 'ContainersReady')
+  if (ready?.status !== 'False' || ready.reason !== 'ReadinessGatesNotReady' || containersReady?.status !== 'True') return false
+  const now = Date.now()
+  let recent = false
+  for (const c of [ready, containersReady]) {
+    const since = Date.parse(c.lastTransitionTime || pod.metadata?.creationTimestamp)
+    if (!Number.isFinite(since)) continue
+    recent ||= since <= now + PENDING_STUCK_MINUTES * 60000 && now - since < PENDING_STUCK_MINUTES * 60000
+  }
+  if (recent) return false
+  return gates.some(g => {
+    const condition = conditions.find(c => c.type === g.conditionType)
+    return !condition || condition.status !== 'True'
+  })
+}
+
+// Match the health classifier's OOM recovery precedence before showing a gate failure.
+function readinessGateOOMRecovery(pod: any): string | null {
+  const now = Date.now()
+  for (const cs of pod.status?.containerStatuses || []) {
+    if (cs.lastState?.terminated?.reason !== 'OOMKilled') continue
+    const probe = pod.spec?.containers?.find((c: any) => c.name === cs.name)?.readinessProbe
+    if (cs.ready && probe) continue
+    const startedAt = Date.parse(cs.state?.running?.startedAt)
+    if (Number.isFinite(startedAt)) {
+      if (now - startedAt <= CRASH_SETTLE_MS) return cs.name
+      continue
+    }
+    const finishedAt = Date.parse(cs.lastState.terminated.finishedAt)
+    if (cs.state?.waiting || (Number.isFinite(finishedAt) && now - finishedAt <= CRASH_SETTLE_MS)) return cs.name
+  }
+  for (const cs of pod.status?.initContainerStatuses || []) {
+    if (cs.lastState?.terminated?.reason !== 'OOMKilled') continue
+    if (cs.state?.terminated?.exitCode === 0) continue
+    const startedAt = Date.parse(cs.state?.running?.startedAt)
+    if (Number.isFinite(startedAt) && now - startedAt > CRASH_SETTLE_MS) continue
+    return cs.name
+  }
+  return null
+}
+
+export function getPodStatus(pod: any): StatusBadge {
+  const phase = pod.status?.phase || 'Unknown'
+  const containerStatuses = pod.status?.containerStatuses || []
+
+  // Fatal init/main container states win over the Pending grace AND a Terminating
+  // overlay — a crash-loop, bad image, or config error is a real failure now,
+  // whatever the pod's age or deletion state. Skip for Succeeded: a terminal
+  // success must not flip unhealthy on a sidecar that OOMed before the main
+  // container finished (matches getPodPhaseDisplay + ClassifyPodHealth).
+  if (phase !== 'Succeeded') {
+    const fatal = firstFatalContainer(pod)
+    if (fatal) {
+      return { text: fatal.reason, color: healthColors.unhealthy, level: 'unhealthy' }
+    }
+  }
+
+  // A terminal failure stays unhealthy even while the pod is being deleted — the
+  // Terminating overlay below must not mask a Failed pod (the Problems panel and
+  // dashboard report it as an error regardless).
+  if (phase === 'Failed') {
+    return { text: 'Failed', color: healthColors.unhealthy, level: 'unhealthy' }
+  }
+
+  const gateBlocked = podReadinessGateBlocked(pod)
+  const gateOOM = gateBlocked ? readinessGateOOMRecovery(pod) : null
+  if (gateOOM) {
+    return { text: 'OOMKilled', color: healthColors.unhealthy, level: 'unhealthy' }
+  }
+
+  const crashHistoryLevel = phase !== 'Succeeded' && phase !== 'Unknown'
+    ? podCrashHistoryLevel(pod)
+    : null
+  if (crashHistoryLevel === 'unhealthy') {
+    return {
+      text: 'CrashLoopBackOff',
+      color: healthColors.unhealthy,
+      level: 'unhealthy',
+    }
+  }
+
+  // Terminating: neutral while gracefully shutting down, degraded once stuck
+  // (a wedged finalizer / preStop hook holding the pod open).
+  if (pod.metadata?.deletionTimestamp) {
+    if (minutesSince(pod.metadata.deletionTimestamp) >= TERMINATING_STUCK_MINUTES) {
+      return { text: 'Terminating', color: healthColors.degraded, level: 'degraded' }
+    }
+    return { text: 'Terminating', color: healthColors.neutral, level: 'neutral' }
+  }
+
+  const hasUnsettledMainContainer = containerStatuses.some((c: any) => !containerSettledOk(c))
+  if (crashHistoryLevel === 'degraded' && !hasUnsettledMainContainer) {
+    const restarts = podCrashRestartTotal(pod)
+    return {
+      text: `Restarted (${restarts})`,
+      color: healthColors.degraded,
+      level: 'degraded',
+    }
+  }
+
+  switch (phase) {
+    case 'Running': {
+      if (gateBlocked) {
+        return { text: 'Readiness gate blocked', color: healthColors.degraded, level: 'degraded' }
+      }
+      // Degrade only on containers that are neither ready nor successfully done —
+      // a completed container (exit 0) on a Running pod is finishing, not a fault.
+      const ready = containerStatuses.filter((c: any) => c.ready).length
+      const total = containerStatuses.length
+      const unsettled = containerStatuses.filter((c: any) => !containerSettledOk(c)).length
+      if (unsettled > 0) {
+        return { text: `Running (${ready}/${total})`, color: healthColors.degraded, level: 'degraded' }
+      }
+      // Batch work in flight is not an all-clear. The Job itself already grades
+      // neutral while running; without the same call here its pods would read
+      // healthy — one piece of work graded two ways. Last, after every failure
+      // check above, so a broken Job pod keeps its real verdict.
+      // Mirrors pkg/health.classifyPodLevel.
+      if (isOwnedByJob(pod)) {
+        return { text: 'Running', color: healthColors.neutral, level: 'neutral' }
+      }
+      return { text: 'Running', color: healthColors.healthy, level: 'healthy' }
+    }
+    case 'Succeeded':
+      return { text: 'Completed', color: healthColors.neutral, level: 'neutral' }
+    case 'Pending':
+      // Unschedulable = the scheduler tried and failed to place this pod; the
+      // backend flags it immediately (severity ramps with duration), so the badge
+      // does too. Plain Pending (not yet placed) keeps the young-grace window.
+      if (podUnschedulable(pod)) {
+        return { text: 'Unschedulable', color: healthColors.degraded, level: 'degraded' }
+      }
+      if (minutesSince(pod.metadata?.creationTimestamp) >= PENDING_STUCK_MINUTES) {
+        return { text: 'Pending', color: healthColors.degraded, level: 'degraded' }
+      }
+      return { text: 'Pending', color: healthColors.neutral, level: 'neutral' }
+    case 'Failed':
+      return { text: 'Failed', color: healthColors.unhealthy, level: 'unhealthy' }
+    default:
+      return { text: phase, color: healthColors.unknown, level: 'unknown' }
+  }
+}
+
+/**
+ * Pod phase enriched with readiness/restart/crash signals so the Phase
+ * row doesn't show a bare "Running" on a 0/1 or crash-looping pod.
+ */
+export interface PodPhaseDisplay {
+  /** Verbatim `pod.status.phase` (or "Unknown") — never lost. */
+  phase: string
+  /** Phase + derived qualifier, e.g. "Running — Not Ready (0/1)". */
+  text: string
+  /** Severity tier for tinting / icon choice, mirrors getPodStatus. */
+  level: HealthLevel
+  /** Optional one-line explanation surfaced as a tooltip / muted suffix. */
+  hint?: string
+}
+
+const RESTART_CYCLING_THRESHOLD = 5
+
+export function getPodPhaseDisplay(pod: any): PodPhaseDisplay {
+  const phase: string = pod?.status?.phase || 'Unknown'
+  const containerStatuses: any[] = pod?.status?.containerStatuses || []
+  const totalContainers = containerStatuses.length
+  const readyContainers = containerStatuses.filter((c) => c?.ready).length
+  const restartTotal = containerStatuses.reduce(
+    (sum, c) => sum + (c?.restartCount || 0),
+    0
+  )
+
+  // Container-state failures take precedence over phase AND over a Terminating
+  // overlay: a CrashLoopBackOff pod can still report phase: Running, an init
+  // failure keeps the pod Pending, and a pod crashing while being deleted is
+  // still a failure worth surfacing. Skip for Succeeded — a Job pod whose sidecar
+  // was OOMKilled before the main container completed should not read unhealthy
+  // after terminal success.
+  if (phase !== 'Succeeded') {
+    const fatal = firstFatalContainer(pod)
+    if (fatal) {
+      return {
+        phase,
+        text: `${phase} — ${fatal.reason}`,
+        level: 'unhealthy',
+        hint: fatal.reason === 'OOMKilled'
+          ? `Container "${fatal.name}" was OOMKilled.`
+          : `Container "${fatal.name}" is stuck in ${fatal.reason}.`,
+      }
+    }
+  }
+
+  // A terminal failure stays unhealthy even while the pod is being deleted — don't
+  // let the Terminating overlay mask a Failed pod.
+  if (phase === 'Failed') {
+    return { phase, text: 'Failed', level: 'unhealthy' }
+  }
+
+  const gateBlocked = podReadinessGateBlocked(pod)
+  const gateOOM = gateBlocked ? readinessGateOOMRecovery(pod) : null
+  if (gateOOM) {
+    return { phase, text: `${phase} — OOMKilled`, level: 'unhealthy', hint: `Container "${gateOOM}" is recovering from an OOM kill.` }
+  }
+
+  const crashHistoryLevel = phase !== 'Succeeded' && phase !== 'Unknown'
+    ? podCrashHistoryLevel(pod)
+    : null
+  if (crashHistoryLevel === 'unhealthy') {
+    return {
+      phase,
+      text: `${phase} — CrashLoopBackOff`,
+      level: 'unhealthy',
+      hint: 'At least one container has crash history and is not serving now.',
+    }
+  }
+
+  // Terminating: neutral while gracefully shutting down, degraded once stuck.
+  if (pod?.metadata?.deletionTimestamp) {
+    const stuck = minutesSince(pod.metadata.deletionTimestamp) >= TERMINATING_STUCK_MINUTES
+    return {
+      phase,
+      text: `${phase} — Terminating`,
+      level: stuck ? 'degraded' : 'neutral',
+      hint: stuck
+        ? 'Pod has been terminating for a while — a finalizer or preStop hook may be wedged.'
+        : 'Pod has a deletionTimestamp set; awaiting graceful termination.',
+    }
+  }
+
+  const hasUnsettledMainContainer = containerStatuses.some((c) => !containerSettledOk(c))
+  if (crashHistoryLevel === 'degraded' && !hasUnsettledMainContainer) {
+    const crashRestarts = podCrashRestartTotal(pod)
+    return {
+      phase,
+      text: `${phase} — Recently restarted (${crashRestarts} restart${crashRestarts === 1 ? '' : 's'})`,
+      level: 'degraded',
+      hint: 'Containers are ready now but remain in the crash settle window.',
+    }
+  }
+
+  switch (phase) {
+    case 'Running': {
+      if (gateBlocked) {
+        return { phase, text: 'Running — Readiness gate blocked', level: 'degraded', hint: pod.status?.conditions?.find((c: any) => c.type === 'Ready')?.message }
+      }
+      // A successfully-completed container (exit 0) is settled, not "not ready" —
+      // don't degrade a completing pod over it (matches getPodStatus / timeline).
+      const unsettled = containerStatuses.filter((c) => !containerSettledOk(c)).length
+      const notReady = totalContainers > 0 && unsettled > 0
+      const cycling = restartTotal > RESTART_CYCLING_THRESHOLD
+      if (notReady && cycling) {
+        return {
+          phase,
+          text: `Running — Not Ready (${readyContainers}/${totalContainers}), ${restartTotal} restarts`,
+          level: 'unhealthy',
+          hint: 'Containers report not-ready and have restarted many times — likely crash-looping.',
+        }
+      }
+      if (notReady) {
+        return {
+          phase,
+          text: `Running — Not Ready (${readyContainers}/${totalContainers})`,
+          level: 'degraded',
+          hint: 'Pod is in the Running phase but at least one container is not ready (probes failing or still starting).',
+        }
+      }
+      if (cycling) {
+        return {
+          phase,
+          text: `Running — Restarting (${restartTotal} restarts)`,
+          level: 'degraded',
+          hint: 'Containers are ready right now but have restarted many times — investigate stability.',
+        }
+      }
+      return { phase, text: 'Running', level: 'healthy' }
+    }
+    case 'Succeeded':
+      return { phase, text: 'Completed', level: 'neutral' }
+    case 'Pending':
+      // Unschedulable = the scheduler tried and failed; surface it immediately
+      // (the backend does, with severity ramping by duration). Plain Pending
+      // (not yet placed) keeps the young-grace window.
+      if (podUnschedulable(pod)) {
+        return {
+          phase,
+          text: `${phase} — Unschedulable`,
+          level: 'degraded',
+          hint: 'No node can accept this pod (insufficient resources, taints, affinity, or quota).',
+        }
+      }
+      if (minutesSince(pod?.metadata?.creationTimestamp) >= PENDING_STUCK_MINUTES) {
+        return {
+          phase,
+          text: 'Pending',
+          level: 'degraded',
+          hint: 'Pod has been Pending for several minutes — check scheduling and image pulls.',
+        }
+      }
+      return { phase, text: 'Pending', level: 'neutral' }
+    case 'Failed':
+      return { phase, text: 'Failed', level: 'unhealthy' }
+    default:
+      return { phase, text: phase, level: 'unknown' }
+  }
+}
+
+export function getPodProblems(pod: any): PodProblem[] {
+  const problems: PodProblem[] = []
+  const containerStatuses = pod.status?.containerStatuses || []
+  const initContainerStatuses = pod.status?.initContainerStatuses || []
+  const conditions = pod.status?.conditions || []
+  const phase = pod.status?.phase
+  const podStatusMessage = pod.status?.message || undefined
+  const hasPodIP = Boolean(pod.status?.podIP || pod.status?.podIPs?.some((ip: any) => ip?.ip))
+  const hasScheduledNode = Boolean(pod.spec?.nodeName)
+  const hasUnschedulableCondition = conditions.some((cond: any) => cond.type === 'PodScheduled' && cond.status === 'False')
+  const hasContainerCreating = containerStatuses.some((cs: any) => cs.state?.waiting?.reason === 'ContainerCreating')
+  const createdAtMs = pod.metadata?.creationTimestamp ? new Date(pod.metadata.creationTimestamp).getTime() : NaN
+  const podAgeMs = Number.isFinite(createdAtMs) ? Date.now() - createdAtMs : 0
+  const sandboxStartupStallAgeMs = 10 * 60 * 1000
+  const sandboxStartupStallCriticalAgeMs = 30 * 60 * 1000
+  const inferredSandboxStartupStall = phase === 'Pending' && hasScheduledNode && !hasUnschedulableCondition && hasContainerCreating && !hasPodIP && podAgeMs > sandboxStartupStallAgeMs
+  const inferredSandboxStartupStallSeverity: PodProblem['severity'] = podAgeMs >= sandboxStartupStallCriticalAgeMs ? 'critical' : 'high'
+  let hasSandboxStartupStallProblem = false
+
+  // Failed or Unknown phase
+  if (phase === 'Failed' && pod.status?.reason !== 'Evicted') {
+    problems.push({ severity: 'critical', message: 'Failed', detail: podStatusMessage })
+  } else if (phase === 'Unknown') {
+    problems.push({ severity: 'high', message: 'Unknown', detail: podStatusMessage })
+  }
+
+  // Init container failures
+  for (const cs of initContainerStatuses) {
+    if (cs.state?.waiting?.reason && cs.state.waiting.reason !== 'PodInitializing') {
+      const reason = cs.state.waiting.reason
+      const detail = cs.state.waiting.message || undefined
+      if (['CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull'].includes(reason)) {
+        problems.push({ severity: 'critical', message: `Init: ${reason}`, detail })
+      } else {
+        problems.push({ severity: 'high', message: `Init: ${reason}`, detail })
+      }
+    }
+    if (cs.state?.terminated?.exitCode && cs.state.terminated.exitCode !== 0) {
+      problems.push({ severity: 'high', message: `Init: Exit Code ${cs.state.terminated.exitCode}`, detail: cs.state.terminated.message || undefined })
+    }
+  }
+
+  for (const cs of containerStatuses) {
+    // Check waiting state
+    if (cs.state?.waiting?.reason) {
+      const reason = cs.state.waiting.reason
+      const detail = cs.state.waiting.message || undefined
+      if (['CrashLoopBackOff', 'ImagePullBackOff', 'ErrImagePull'].includes(reason)) {
+        problems.push({ severity: 'critical', message: reason, detail })
+      } else if (reason === 'CreateContainerConfigError') {
+        problems.push({ severity: 'critical', message: 'Config Error', detail })
+      } else if (reason === 'ContainerCannotRun') {
+        problems.push({ severity: 'critical', message: 'Cannot Run', detail })
+      } else if (reason !== 'ContainerCreating' && reason !== 'PodInitializing') {
+        problems.push({ severity: 'high', message: reason, detail })
+      }
+    }
+    // Check terminated state
+    if (cs.state?.terminated?.reason === 'OOMKilled') {
+      problems.push({ severity: 'critical', message: 'OOMKilled', detail: cs.state.terminated.message || undefined })
+    } else if (cs.state?.terminated?.exitCode && cs.state.terminated.exitCode !== 0) {
+      problems.push({ severity: 'high', message: `Exit Code ${cs.state.terminated.exitCode}`, detail: cs.state.terminated.message || undefined })
+    }
+    // High restart count
+    if (cs.restartCount > 5) {
+      problems.push({ severity: 'medium', message: `${cs.restartCount} restarts` })
+    }
+    // Volume mount issues from last state
+    const lastMsgRaw = cs.lastState?.terminated?.message || ''
+    const lastMsg = lastMsgRaw.toLowerCase()
+    if (lastMsg.includes('failed to mount') || lastMsg.includes('failedattachvolume')) {
+      problems.push({ severity: 'high', message: 'Volume Mount Failed', detail: lastMsgRaw || undefined })
+    }
+  }
+
+  if (podReadinessGateBlocked(pod)) {
+    problems.push({ severity: 'medium', message: 'Readiness Gate Blocked', detail: conditions.find((c: any) => c.type === 'Ready')?.message })
+  }
+
+  // Check conditions
+  for (const cond of conditions) {
+    if (cond.type === 'PodScheduled' && cond.status === 'False') {
+      if (cond.reason === 'Unschedulable') {
+        problems.push({ severity: 'high', message: 'Unschedulable', detail: summarizeSchedulerMessage(cond.message) || undefined })
+      }
+    }
+    // Readiness/Liveness probe failures
+    if (cond.type === 'ContainersReady' && cond.status === 'False') {
+      const msg = (cond.message || '').toLowerCase()
+      if (msg.includes('readiness')) {
+        problems.push({ severity: 'medium', message: 'Readiness Probe Failing', detail: cond.message || undefined })
+      } else if (msg.includes('liveness')) {
+        problems.push({ severity: 'high', message: 'Liveness Probe Failing', detail: cond.message || undefined })
+      }
+    }
+    // IP allocation failures (subnet exhaustion)
+    if (cond.type === 'PodReadyToStartContainers' && cond.status === 'False') {
+      const msg = (cond.message || '').toLowerCase()
+      if (msg.includes('failed to assign an ip')) {
+        problems.push({ severity: 'critical', message: 'IP Allocation Failed', detail: cond.message || undefined })
+      } else if (msg.includes('pod sandbox')) {
+        problems.push({ severity: 'critical', message: 'Sandbox Startup Stalled', detail: cond.message || undefined })
+        hasSandboxStartupStallProblem = true
+      }
+    }
+  }
+  if (inferredSandboxStartupStall && !hasSandboxStartupStallProblem) {
+    problems.push({ severity: inferredSandboxStartupStallSeverity, message: 'Sandbox Startup Stalled' })
+  }
+
+  // Evicted pods
+  if (phase === 'Failed' && pod.status?.reason === 'Evicted') {
+    problems.push({ severity: 'high', message: 'Evicted', detail: podStatusMessage })
+  }
+
+  // Stuck terminating (zombie pod). Use the same threshold as the badge
+  // (TERMINATING_STUCK_MINUTES) so the drawer problem and the table badge flip
+  // together — firing at 60s while the badge stayed calm to 10m was a mismatch.
+  if (pod.metadata?.deletionTimestamp) {
+    if (minutesSince(pod.metadata.deletionTimestamp) >= TERMINATING_STUCK_MINUTES) {
+      problems.push({ severity: 'medium', message: 'Stuck Terminating' })
+    }
+  }
+
+  // Not ready (Running but containers not ready). Use the same containerSettledOk
+  // gate as getPodStatus so a completing Job pod (Running, container terminated
+  // exit 0, Ready=false) doesn't raise a drawer problem while the table badge
+  // stays calm — a settled/completed container is not "Not Ready".
+  if (phase === 'Running') {
+    const unsettled = containerStatuses.filter((c: any) => !containerSettledOk(c)).length
+    const totalContainers = containerStatuses.length
+    if (totalContainers > 0 && unsettled > 0) {
+      // Only add if we haven't already flagged a more specific issue
+      const hasSpecificIssue = problems.some(p =>
+        p.message.includes('Probe') || p.message.includes('CrashLoop') || p.message.includes('OOM')
+      )
+      if (!hasSpecificIssue) {
+        problems.push({ severity: 'medium', message: 'Not Ready' })
+      }
+    }
+  }
+
+  return problems
+}
+
+export function getPodReadiness(pod: any): { ready: number; total: number } {
+  const containerStatuses = pod.status?.containerStatuses || []
+  const initContainerStatuses = pod.status?.initContainerStatuses || []
+
+  // Check init containers first
+  const initNotComplete = initContainerStatuses.filter((c: any) =>
+    !c.state?.terminated || c.state.terminated.exitCode !== 0
+  ).length
+
+  if (initNotComplete > 0 && initContainerStatuses.length > 0) {
+    const initComplete = initContainerStatuses.length - initNotComplete
+    return { ready: initComplete, total: initContainerStatuses.length }
+  }
+
+  const ready = containerStatuses.filter((c: any) => c.ready).length
+  return { ready, total: containerStatuses.length || pod.spec?.containers?.length || 0 }
+}
+
+export function getPodRestarts(pod: any): number {
+  const containerStatuses = pod.status?.containerStatuses || []
+  return containerStatuses.reduce((sum: number, c: any) => sum + (c.restartCount || 0), 0)
+}
+
+export interface ContainerSquareState {
+  name: string
+  status: 'ready' | 'running' | 'waiting' | 'completed' | 'terminated' | 'unknown'
+  restarts: number
+  reason?: string
+  message?: string
+  exitCode?: number
+  startedAt?: string
+  finishedAt?: string
+  isInit?: boolean
+  /** Last termination info — crucial for debugging CrashLoopBackOff */
+  lastTermination?: {
+    reason?: string
+    exitCode?: number
+    startedAt?: string
+    finishedAt?: string
+  }
+}
+
+/**
+ * The container to default to for exec / logs on a multi-container pod. Honors
+ * the kubectl.kubernetes.io/default-container annotation (the convention
+ * kubectl, k9s, and Lens follow, and what service meshes like Istio set to
+ * point past their injected sidecar), falling back to the first container.
+ * Without this, mesh-injected pods default to their distroless sidecar — which
+ * has no shell — making the terminal appear broken.
+ */
+export function getDefaultContainerName(pod: any): string | undefined {
+  const containers = pod?.spec?.containers || []
+  const annotated = pod?.metadata?.annotations?.['kubectl.kubernetes.io/default-container']
+  if (annotated && containers.some((c: any) => c.name === annotated)) {
+    return annotated
+  }
+  return containers[0]?.name
+}
+
+/**
+ * The containers a terminal can target: the regular containers, then native
+ * sidecars (init containers with restartPolicy: Always, Kubernetes 1.29+),
+ * which keep running for the pod's lifetime like regular containers.
+ */
+export function getExecContainerNames(pod: any): string[] {
+  const regular = (pod?.spec?.containers || []).map((c: any) => c.name)
+  const sidecars = (pod?.spec?.initContainers || [])
+    .filter((c: any) => c.restartPolicy === 'Always')
+    .map((c: any) => c.name)
+  return [...regular, ...sidecars].filter(Boolean)
+}
+
+export function getContainerSquareStates(pod: any): ContainerSquareState[] {
+  const result: ContainerSquareState[] = []
+  const initStatuses = pod.status?.initContainerStatuses || []
+  const containerStatuses = pod.status?.containerStatuses || []
+  const specContainers = pod.spec?.containers || []
+
+  for (const cs of initStatuses) {
+    const stateKey = cs.state ? Object.keys(cs.state)[0] : 'unknown'
+    let status: ContainerSquareState['status'] = 'unknown'
+    if (stateKey === 'terminated' && cs.state?.terminated?.exitCode === 0) {
+      status = 'completed'
+    } else if (stateKey === 'running') {
+      status = cs.ready ? 'ready' : 'running'
+    } else if (stateKey === 'waiting') {
+      status = 'waiting'
+    } else if (stateKey === 'terminated') {
+      status = 'terminated'
+    }
+    const stateDetail = cs.state?.[stateKey]
+    const lastTerm = cs.lastState?.terminated
+    result.push({
+      name: cs.name,
+      status,
+      restarts: cs.restartCount || 0,
+      reason: stateDetail?.reason,
+      message: stateDetail?.message,
+      exitCode: stateDetail?.exitCode,
+      startedAt: stateDetail?.startedAt,
+      finishedAt: stateDetail?.finishedAt,
+      isInit: true,
+      lastTermination: lastTerm ? { reason: lastTerm.reason, exitCode: lastTerm.exitCode, startedAt: lastTerm.startedAt, finishedAt: lastTerm.finishedAt } : undefined,
+    })
+  }
+
+  if (containerStatuses.length > 0) {
+    for (const cs of containerStatuses) {
+      const stateKey = cs.state ? Object.keys(cs.state)[0] : 'unknown'
+      let status: ContainerSquareState['status'] = 'unknown'
+      if (stateKey === 'running' && cs.ready) {
+        status = 'ready'
+      } else if (stateKey === 'running') {
+        status = 'running'
+      } else if (stateKey === 'terminated' && cs.state?.terminated?.exitCode === 0) {
+        status = 'completed'
+      } else if (stateKey === 'terminated') {
+        status = 'terminated'
+      } else if (stateKey === 'waiting') {
+        status = 'waiting'
+      }
+      const stateDetail = cs.state?.[stateKey]
+      const lastTerm = cs.lastState?.terminated
+      result.push({
+        name: cs.name,
+        status,
+        restarts: cs.restartCount || 0,
+        reason: stateDetail?.reason,
+        message: stateDetail?.message,
+        exitCode: stateDetail?.exitCode,
+        startedAt: stateDetail?.startedAt,
+        finishedAt: stateDetail?.finishedAt,
+        lastTermination: lastTerm ? { reason: lastTerm.reason, exitCode: lastTerm.exitCode, startedAt: lastTerm.startedAt, finishedAt: lastTerm.finishedAt } : undefined,
+      })
+    }
+  } else {
+    for (const c of specContainers) {
+      result.push({ name: c.name, status: 'unknown', restarts: 0 })
+    }
+  }
+
+  return result
+}
+
+// ============================================================================
+// WORKLOAD UTILITIES (Deployment, StatefulSet, DaemonSet, ReplicaSet)
+// ============================================================================
+
+/**
+ * Whether the controller has not yet acted on this workload's current spec, so
+ * grading against that spec would report controller lag as an outage. The
+ * scale-up case: spec says 10, the controller is still working from the previous
+ * generation and has created 3.
+ *
+ * Deliberately NOT age-based — "created recently" guesses wrong exactly when a
+ * deploy is broken on arrival. Mirrors pkg/health.converging; keep in step.
+ */
+function isConverging(resource: any): boolean {
+  const generation = resource?.metadata?.generation
+  const observed = getObservedGeneration(resource)
+  return typeof generation === 'number' && observed > 0 && observed < generation
+}
+
+/** Whether the pod was created by a batch Job. The owner's API group is checked
+ *  so a CRD that merely uses Kind "Job" doesn't match. Mirrors
+ *  pkg/health.isOwnedByJob. */
+function isOwnedByJob(pod: any): boolean {
+  const refs = pod?.metadata?.ownerReferences
+  if (!Array.isArray(refs)) return false
+  return refs.some((r: any) => r?.kind === 'Job' && typeof r?.apiVersion === 'string' && r.apiVersion.startsWith('batch/'))
+}
+
+export function getWorkloadStatus(resource: any, kind: string): StatusBadge {
+  const status = resource.status || {}
+  const spec = resource.spec || {}
+
+  if (kind === 'daemonsets') {
+    const desired = status.desiredNumberScheduled || 0
+    const ready = status.numberReady || 0
+    const updated = status.updatedNumberScheduled || 0
+
+    // 0 desired = the node selector matches no nodes — intentional/idle, not a
+    // fault and not "unknown" (matches pkg/health.Workload). Sky.
+    if (desired === 0) return { text: '0 nodes', color: healthColors.neutral, level: 'neutral' }
+    if (ready >= desired && updated >= desired) {
+      return { text: `${Math.min(ready, desired)}/${desired}`, color: healthColors.healthy, level: 'healthy' }
+    }
+    // Convergence grace, same as the replica kinds below. pkg/health.Workload
+    // passes this signal for DaemonSets too, so omitting it here would render a
+    // mid-reconcile DaemonSet unhealthy while the backend calls it neutral.
+    if (isConverging(resource)) {
+      return { text: `${ready}/${desired}`, color: healthColors.neutral, level: 'neutral' }
+    }
+    if (ready > 0) {
+      return { text: `${ready}/${desired}`, color: healthColors.degraded, level: 'degraded' }
+    }
+    return { text: `${ready}/${desired}`, color: healthColors.unhealthy, level: 'unhealthy' }
+  }
+
+  // Deployment, StatefulSet, ReplicaSet
+  const desired = spec.replicas ?? 1
+  const ready = status.readyReplicas || 0
+  const updated = status.updatedReplicas || 0
+  const available = status.availableReplicas || 0
+
+  if (desired === 0) {
+    return { text: 'Scaled to 0', color: healthColors.neutral, level: 'neutral' }
+  }
+
+  // Convergence grace — mirrors pkg/health.replicaVerdict. A workload whose
+  // spec just changed (or that was created moments ago) has not had a chance to
+  // reach its target, so grading against that target reports controller lag as
+  // an outage. Neutral, never healthy: declining to call it broken is not the
+  // same as calling it fine. Guarded on "not already fully ready" so a
+  // converged workload still takes the healthy path below, matching Go's order.
+  if (isConverging(resource) && !(ready >= desired && available >= desired)) {
+    return { text: `${ready}/${desired}`, color: healthColors.neutral, level: 'neutral' }
+  }
+
+  if (ready >= desired && available >= desired) {
+    return { text: `${Math.min(ready, desired)}/${desired}`, color: healthColors.healthy, level: 'healthy' }
+  }
+  const partition = kind === 'statefulsets' ? (spec.updateStrategy?.rollingUpdate?.partition ?? 0) : 0
+  const updateTarget = Math.max(0, desired - partition)
+  if (updated < updateTarget && updated > 0) {
+    return { text: `Updating ${updated}/${updateTarget}`, color: healthColors.degraded, level: 'degraded' }
+  }
+  if (ready > 0) {
+    return { text: `${ready}/${desired}`, color: healthColors.degraded, level: 'degraded' }
+  }
+  return { text: `${ready}/${desired}`, color: healthColors.unhealthy, level: 'unhealthy' }
+}
+
+export function getWorkloadDisplayStatus(
+  resource: any,
+  kind: string,
+  workloadPods?: WorkloadPodInfo[],
+): { activity: WorkloadRolloutActivity; status: StatusBadge } {
+  const normalizedKind = kind.toLowerCase().replace(/s$/, '')
+  const activity = getWorkloadRolloutActivity(resource, normalizedKind, workloadPods)
+  if (normalizedKind === 'rollout' && !isArgoRolloutResource(resource)) {
+    return { activity, status: getRolloutStatus(resource) }
+  }
+  const healthStatus = getWorkloadStatus(resource, `${normalizedKind}s`)
+  if (!isRolloutActivityVisible(activity)) {
+    return { activity, status: healthStatus }
+  }
+  const status: StatusBadge = rolloutActivityBadge(activity)
+  if (workloadStatusLevelRank[healthStatus.level] > workloadStatusLevelRank[status.level]) {
+    status.level = healthStatus.level
+    status.color = healthStatus.color
+    status.text = `${workloadStatusLabel(healthStatus)} · ${status.text}`
+  }
+  return { activity, status }
+}
+
+export function workloadStatusLabel(status: StatusBadge): string {
+  if (status.text === 'Scaled to 0') return status.text
+  return {
+    healthy: 'Healthy',
+    degraded: 'Degraded',
+    alert: 'Alert',
+    unhealthy: 'Unhealthy',
+    neutral: 'Neutral',
+    unknown: 'Unknown',
+  }[status.level]
+}
+
+const workloadStatusLevelRank: Record<HealthLevel, number> = {
+  neutral: 0,
+  healthy: 0,
+  unknown: 2,
+  degraded: 3,
+  alert: 4,
+  unhealthy: 5,
+}
+
+/** Detect problems for Deployments, StatefulSets, DaemonSets. Parallel to getPodProblems. */
+export function getWorkloadProblems(resource: any, kind: string): PodProblem[] {
+  const problems: PodProblem[] = []
+  const status = resource.status || {}
+  const spec = resource.spec || {}
+  const k = kind.toLowerCase()
+
+  if (k === 'daemonsets') {
+    const desired = status.desiredNumberScheduled || 0
+    const ready = status.numberReady || 0
+    if (desired > 0 && ready === 0) {
+      problems.push({ severity: 'critical', message: 'No pods ready' })
+    } else if (desired > 0 && ready < desired) {
+      problems.push({ severity: 'high', message: `${desired - ready} pods unavailable` })
+    }
+    return problems
+  }
+
+  // Deployment, StatefulSet
+  const desired = spec.replicas ?? status.replicas ?? 0
+  const ready = status.readyReplicas || 0
+  const available = status.availableReplicas ?? ready
+  const updated = status.updatedReplicas || 0
+
+  if (desired === 0) return problems
+
+  if (ready === 0 && desired > 0) {
+    problems.push({ severity: 'critical', message: 'No pods ready' })
+  } else if (available < desired) {
+    problems.push({ severity: 'high', message: `${desired - available} pods unavailable` })
+  }
+
+  if (updated > 0 && updated < desired) {
+    problems.push({ severity: 'medium', message: 'Rollout in progress' })
+  }
+
+  // Check conditions for stuck rollouts (Deployment only)
+  if (k === 'deployments') {
+    const conditions = status.conditions || []
+    for (const cond of conditions) {
+      if (cond.type === 'Progressing' && cond.status === 'False' && cond.reason === 'ProgressDeadlineExceeded') {
+        problems.push({ severity: 'critical', message: 'Rollout stuck' })
+      }
+    }
+  }
+
+  return problems
+}
+
+/** Check whether a workload's problems match a given problem category */
+export function workloadMatchesProblemCategory(problems: PodProblem[], category: string): boolean {
+  const msgs = problems.map(p => p.message)
+  switch (category) {
+    case 'Unavailable':
+      return msgs.some(m => m.includes('unavailable') || m.includes('No pods ready'))
+    case 'Rollout Stuck':
+      return msgs.includes('Rollout stuck')
+    case 'Rollout In Progress':
+      return msgs.includes('Rollout in progress')
+    default:
+      return false
+  }
+}
+
+export function getWorkloadImages(resource: any): string[] {
+  const containers = resource.spec?.template?.spec?.containers || []
+  return containers.map((c: any) => {
+    const image = c.image || ''
+    // Extract just image:tag, remove registry prefix
+    const parts = image.split('/')
+    return parts[parts.length - 1] || image
+  })
+}
+
+export function getWorkloadConditions(resource: any): { conditions: string[]; hasIssues: boolean } {
+  const conditions = resource.status?.conditions || []
+  const activeConditions: string[] = []
+  let hasIssues = false
+
+  for (const cond of conditions) {
+    if (cond.status === 'True') {
+      activeConditions.push(cond.type)
+      // Progressing and Available are good, others might indicate issues
+      if (!['Progressing', 'Available'].includes(cond.type)) {
+        hasIssues = true
+      }
+    } else if (cond.status === 'False') {
+      // Available=False is an issue
+      if (cond.type === 'Available') {
+        hasIssues = true
+      }
+    }
+  }
+
+  return { conditions: activeConditions, hasIssues }
+}
+
+export function getReplicaSetOwner(rs: any): string | null {
+  const ownerRefs = rs.metadata?.ownerReferences || []
+  const owner = ownerRefs[0]
+  if (owner) {
+    return `${owner.kind}/${owner.name}`
+  }
+  return null
+}
+
+export function isReplicaSetActive(rs: any): boolean {
+  const replicas = rs.spec?.replicas || 0
+  return replicas > 0
+}
+
+// ============================================================================
+// SERVICE UTILITIES
+// ============================================================================
+
+export function getServiceStatus(service: any): StatusBadge {
+  const type = service.spec?.type || 'ClusterIP'
+  const color = type === 'LoadBalancer' || type === 'NodePort'
+    ? 'status-violet'
+    : healthColors.neutral
+  return { text: type, color, level: 'neutral' }
+}
+
+export function getServicePorts(service: any): string {
+  const ports = service.spec?.ports || []
+  if (ports.length === 0) return '-'
+  if (ports.length <= 2) {
+    return ports.map((p: any) => {
+      const port = p.port
+      const target = p.targetPort !== p.port ? `:${p.targetPort}` : ''
+      const proto = p.protocol !== 'TCP' ? `/${p.protocol}` : ''
+      return `${port}${target}${proto}`
+    }).join(', ')
+  }
+  return `${ports.length} ports`
+}
+
+export function getServiceExternalIP(service: any): string | null {
+  const type = service.spec?.type
+  if (type === 'LoadBalancer') {
+    const ingress = service.status?.loadBalancer?.ingress || []
+    // Show all IPs, not just first
+    if (ingress.length > 0) {
+      const ips = ingress.map((i: any) => i.ip || i.hostname).filter(Boolean)
+      if (ips.length > 2) return `${ips[0]} +${ips.length - 1}`
+      return ips.join(', ') || null
+    }
+    return 'Pending'
+  }
+  if (type === 'NodePort') {
+    const ports = service.spec?.ports || []
+    const nodePorts = ports.map((p: any) => p.nodePort).filter(Boolean)
+    if (nodePorts.length > 0) {
+      return `NodePort: ${nodePorts.join(', ')}`
+    }
+  }
+  // Also check spec.externalIPs (can be set on any service type)
+  if (service.spec?.externalIPs?.length > 0) {
+    const ips = service.spec.externalIPs
+    if (ips.length > 2) return `${ips[0]} +${ips.length - 1}`
+    return ips.join(', ')
+  }
+  return null
+}
+
+export function getServiceSelector(service: any): string {
+  // For ExternalName services, show the external DNS name
+  if (service.spec?.type === 'ExternalName') {
+    return service.spec.externalName || '-'
+  }
+  const selector = service.spec?.selector || {}
+  const pairs = Object.entries(selector).map(([k, v]) => `${k}=${v}`)
+  if (pairs.length === 0) return 'None'
+  if (pairs.length <= 2) return pairs.join(', ')
+  return `${pairs.slice(0, 2).join(', ')} +${pairs.length - 2}`
+}
+
+export function getServiceEndpointsStatus(service: any): { status: string; color: string } {
+  const type = service.spec?.type
+  if (type === 'ExternalName') {
+    return { status: 'External', color: 'status-violet' }
+  }
+  const selector = service.spec?.selector || {}
+  const hasSelector = Object.keys(selector).length > 0
+  if (!hasSelector) {
+    return { status: 'None', color: 'status-unknown' }
+  }
+  // If it has a selector, it should have endpoints (we assume active since we can't check endpoints from service alone)
+  return { status: 'Active', color: 'status-healthy' }
+}
+
+// ============================================================================
+// INGRESS UTILITIES
+// ============================================================================
+
+export function getIngressStatus(ingress: any): StatusBadge {
+  const lbIngress = ingress.status?.loadBalancer?.ingress || []
+  if (lbIngress.length > 0) {
+    return { text: 'Active', color: healthColors.healthy, level: 'healthy' }
+  }
+  // Awaiting an external address is normal right after creation; only flag it
+  // once the ingress/LB controller has had time and still hasn't assigned one.
+  if (minutesSince(ingress.metadata?.creationTimestamp) >= PENDING_STUCK_MINUTES) {
+    return { text: 'Pending', color: healthColors.degraded, level: 'degraded' }
+  }
+  return { text: 'Pending', color: healthColors.neutral, level: 'neutral' }
+}
+
+export function getIngressHosts(ingress: any): string {
+  const rules = ingress.spec?.rules || []
+  const hosts = rules.map((r: any) => r.host).filter(Boolean)
+  if (hosts.length === 0) return '*'
+  if (hosts.length <= 2) return hosts.join(', ')
+  return `${hosts[0]} +${hosts.length - 1} more`
+}
+
+export function getIngressClass(ingress: any): string | null {
+  return ingress.spec?.ingressClassName ||
+    ingress.metadata?.annotations?.['kubernetes.io/ingress.class'] ||
+    null
+}
+
+export function hasIngressTLS(ingress: any): boolean {
+  return (ingress.spec?.tls?.length || 0) > 0
+}
+
+export function getIngressAddress(ingress: any): string | null {
+  const lbIngress = ingress.status?.loadBalancer?.ingress || []
+  if (lbIngress.length > 0) {
+    return lbIngress[0].ip || lbIngress[0].hostname || null
+  }
+  return null
+}
+
+export function getIngressRules(ingress: any): string {
+  const rules = ingress.spec?.rules || []
+  if (rules.length === 0) return 'No rules'
+
+  const formattedRules = rules.map((rule: any) => {
+    const host = rule.host || '*'
+    const paths = rule.http?.paths || []
+    if (paths.length === 0) return host
+
+    const pathMappings = paths.map((p: any) => {
+      const path = p.path || '/'
+      // Support both new (service.name) and legacy (serviceName) formats
+      const backend = p.backend?.service?.name || (p.backend as any)?.serviceName || 'unknown'
+      return `${path}→${backend}`
+    })
+
+    if (pathMappings.length === 1) {
+      return `${host}: ${pathMappings[0]}`
+    }
+    return `${host}: ${pathMappings.join(', ')}`
+  })
+
+  if (formattedRules.length === 1) return formattedRules[0]
+  if (formattedRules.length === 2) return formattedRules.join('; ')
+  return `${formattedRules[0]}; +${formattedRules.length - 1} more`
+}
+
+// ============================================================================
+// CONFIGMAP / SECRET UTILITIES
+// ============================================================================
+
+export function getConfigMapKeys(cm: any): { count: number; preview: string } {
+  const data = cm.data || {}
+  const binaryData = cm.binaryData || {}
+  const keys = [...Object.keys(data), ...Object.keys(binaryData)]
+  const count = keys.length
+
+  if (count === 0) return { count: 0, preview: 'Empty' }
+  if (count <= 3) return { count, preview: keys.join(', ') }
+  return { count, preview: `${keys.slice(0, 2).join(', ')} +${count - 2}` }
+}
+
+export function getConfigMapSize(cm: any): string {
+  const data = cm.data || {}
+  const binaryData = cm.binaryData || {}
+
+  let totalBytes = 0
+  for (const value of Object.values(data)) {
+    totalBytes += (value as string).length
+  }
+  for (const value of Object.values(binaryData)) {
+    // Base64 encoded, actual size is ~75% of encoded
+    totalBytes += Math.floor((value as string).length * 0.75)
+  }
+
+  return formatBytes(totalBytes)
+}
+
+export function getSecretType(secret: any): { type: string; color: string } {
+  const type = secret.type || 'Opaque'
+  const typeMap: Record<string, { type: string; color: string }> = {
+    'Opaque': { type: 'Opaque', color: 'status-unknown' },
+    'kubernetes.io/tls': { type: 'TLS', color: 'status-neutral' },
+    'kubernetes.io/dockercfg': { type: 'Docker', color: 'status-purple' },
+    'kubernetes.io/dockerconfigjson': { type: 'Docker', color: 'status-purple' },
+    'kubernetes.io/basic-auth': { type: 'Basic Auth', color: 'status-orange' },
+    'kubernetes.io/ssh-auth': { type: 'SSH', color: 'status-cyan' },
+    'kubernetes.io/service-account-token': { type: 'SA Token', color: 'status-healthy' },
+    'bootstrap.kubernetes.io/token': { type: 'Bootstrap', color: 'status-healthy' },
+  }
+  return typeMap[type] || { type: type.split('/').pop() || type, color: 'status-unknown' }
+}
+
+export function getSecretKeyCount(secret: any): number {
+  const data = secret.data || {}
+  return Object.keys(data).length
+}
+
+// ============================================================================
+// JOB / CRONJOB UTILITIES
+// ============================================================================
+
+export function getJobStatus(job: any): StatusBadge {
+  const status = job.status || {}
+  const conditions = status.conditions || []
+
+  // Check conditions first
+  const failedCond = conditions.find((c: any) => c.type === 'Failed' && c.status === 'True')
+  if (failedCond) {
+    return { text: 'Failed', color: healthColors.unhealthy, level: 'unhealthy' }
+  }
+
+  const completeCond = conditions.find((c: any) => c.type === 'Complete' && c.status === 'True')
+  if (completeCond) {
+    // A completed Job is done by design — neutral/idle (sky), not the green of a
+    // serving workload (matches pkg/health.Workload).
+    return { text: 'Complete', color: healthColors.neutral, level: 'neutral' }
+  }
+
+  if (job.spec?.suspend) {
+    return { text: 'Suspended', color: healthColors.neutral, level: 'neutral' }
+  }
+
+  if (status.active > 0) {
+    return { text: 'Running', color: healthColors.neutral, level: 'neutral' }
+  }
+
+  return { text: 'Pending', color: healthColors.degraded, level: 'degraded' }
+}
+
+export function getJobCompletions(job: any): { succeeded: number; total: number } {
+  const completions = job.spec?.completions || 1
+  const succeeded = job.status?.succeeded || 0
+  return { succeeded, total: completions }
+}
+
+export function getJobDuration(job: any): string | null {
+  const startTime = job.status?.startTime
+  const completionTime = job.status?.completionTime
+
+  if (!startTime) return null
+
+  const start = new Date(startTime)
+  const end = completionTime ? new Date(completionTime) : new Date()
+  const durationMs = end.getTime() - start.getTime()
+
+  return formatDuration(durationMs)
+}
+
+export function getCronJobStatus(cj: any): StatusBadge {
+  if (cj.spec?.suspend) {
+    return { text: 'Suspended', color: healthColors.neutral, level: 'neutral' }
+  }
+  const activeJobs = cj.status?.active?.length || 0
+  if (activeJobs > 0) {
+    return { text: `Active (${activeJobs})`, color: healthColors.neutral, level: 'neutral' }
+  }
+  return { text: 'Enabled', color: healthColors.neutral, level: 'neutral' }
+}
+
+export function getCronJobSchedule(cj: any): { cron: string; readable: string } {
+  const schedule = cj.spec?.schedule || ''
+  return { cron: schedule, readable: cronToHuman(schedule) }
+}
+
+export function getCronJobLastRun(cj: any): string | null {
+  const lastSchedule = cj.status?.lastScheduleTime
+  if (!lastSchedule) return null
+  return formatAge(lastSchedule)
+}
+
+// ============================================================================
+// HPA UTILITIES
+// ============================================================================
+
+export function getHPAStatus(hpa: any): StatusBadge {
+  return hpaStatusFromState(getHPATableState(hpa), healthColors)
+}
+
+export function getHPAReplicas(hpa: any): { current: number; min: number; max: number } {
+  return {
+    current: hpa.status?.currentReplicas || 0,
+    min: hpa.spec?.minReplicas ?? 1,
+    max: hpa.spec?.maxReplicas || 0,
+  }
+}
+
+export function getHPATarget(hpa: any): string {
+  const ref = hpa.spec?.scaleTargetRef
+  if (!ref) return '-'
+  return `${ref.kind}/${ref.name}`
+}
+
+export function getHPAMetrics(hpa: any): { cpu?: number; memory?: number; custom: number } {
+  const currentMetrics = hpa.status?.currentMetrics || []
+  const result: { cpu?: number; memory?: number; custom: number } = { custom: 0 }
+
+  for (const metric of currentMetrics) {
+    if (metric.type === 'Resource') {
+      const current = metric.resource?.current?.averageUtilization
+      if (metric.resource?.name === 'cpu' && current !== undefined) {
+        result.cpu = current
+      } else if (metric.resource?.name === 'memory' && current !== undefined) {
+        result.memory = current
+      }
+    } else {
+      result.custom++
+    }
+  }
+
+  return result
+}
+
+// ============================================================================
+// NODE UTILITIES
+// ============================================================================
+
+export function getNodeStatus(node: any): StatusBadge {
+  const lifecycle = getNodeLifecycle(node)
+  return { text: lifecycle.label, color: healthColors[lifecycle.level], level: lifecycle.level }
+}
+
+export function getNodeRoles(node: any): string {
+  const labels = node.metadata?.labels || {}
+  const roles: string[] = []
+
+  for (const [key, value] of Object.entries(labels)) {
+    if (key.startsWith('node-role.kubernetes.io/')) {
+      let role = key.replace('node-role.kubernetes.io/', '')
+      // Normalize master to control-plane
+      if (role === 'master') role = 'control-plane'
+      if (role && value !== 'false') {
+        roles.push(role)
+      }
+    }
+  }
+
+  if (roles.length === 0) return 'worker'
+  return roles.join(', ')
+}
+
+export interface NodeCondition {
+  type: string
+  status: 'True' | 'False' | 'Unknown'
+  message?: string
+}
+
+export function getNodeConditions(node: any): { problems: string[]; healthy: boolean; readinessLabel: string } {
+  const conditions = node.status?.conditions || []
+  const problems: string[] = []
+  const lifecycle = getNodeLifecycle(node)
+
+  for (const cond of conditions) {
+    // Ready=False is a problem
+    if (cond.type === 'Ready' && lifecycle.readinessFailed) {
+      problems.push('NotReady')
+    }
+    // Other conditions are problems when True
+    if (lifecycle.problems.includes(cond.type) && cond.status === 'True') {
+      // Format: "DiskPressure" -> "Disk Pressure"
+      const formatted = cond.type.replace(/([A-Z])/g, ' $1').trim()
+      problems.push(formatted)
+    }
+  }
+
+  if (lifecycle.delayed) problems.push('Removal delayed')
+  const ready = conditions.find((cond: any) => cond.type === 'Ready')
+  const readinessLabel = lifecycle.removing && !lifecycle.readinessFailed && ready?.status === 'False'
+    ? 'Not ready (expected during removal)'
+    : lifecycle.removing && !lifecycle.readinessFailed && ready?.status === 'Unknown'
+      ? 'Readiness unknown during removal'
+      : 'Readiness unknown'
+  return { problems, healthy: problems.length === 0 && ready?.status === 'True', readinessLabel }
+}
+
+export function getNodeTaints(node: any): { count: number; text: string } {
+  const taints = node.spec?.taints || []
+  const count = taints.length
+  if (count === 0) return { count: 0, text: 'None' }
+  return { count, text: pluralize(count, 'taint') }
+}
+
+export function getNodeVersion(node: any): string {
+  return node.status?.nodeInfo?.kubeletVersion || '-'
+}
+
+// ============================================================================
+// FORMATTING UTILITIES
+// ============================================================================
+
+export function formatAge(timestamp: string): string {
+  return formatCompactAge(timestamp) || '-'
+}
+
+export function formatDuration(ms: number, detailed: boolean = false): string {
+  const seconds = Math.floor(ms / 1000)
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const days = Math.floor(hours / 24)
+
+  if (detailed) {
+    // Detailed format: "2d 5h", "5h 30m", "30m 15s"
+    if (days > 0) return `${days}d ${hours % 24}h`
+    if (hours > 0) return `${hours}h ${minutes % 60}m`
+    if (minutes > 0) return `${minutes}m ${seconds % 60}s`
+    return `${seconds}s`
+  }
+
+  // Short format: "2d", "5h", "30m"
+  if (days > 0) return `${days}d`
+  if (hours > 0) return `${hours}h`
+  if (minutes > 0) return `${minutes}m`
+  if (seconds > 0) return `${seconds}s`
+  return '<1s'
+}
+
+// formatBytes is available from @skyhook/k8s-ui utils — no re-export needed
+
+export function cronToHuman(cron: string): string {
+  if (!cron) return '-'
+  const parts = cron.split(' ')
+  if (parts.length !== 5) return cron
+
+  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts
+
+  // Common patterns
+  if (minute === '0' && hour === '0' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    return 'Daily at midnight'
+  }
+  if (minute === '0' && hour.startsWith('*/') && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    const interval = hour.slice(2)
+    return interval === '1' ? 'Every hour' : `Every ${interval} hours`
+  }
+  if (minute === '0' && hour !== '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    return `Daily at ${hour}:00`
+  }
+  // Exclude step-minute ("*/N") here so it falls through to the interval branch
+  // below — otherwise "*/5 * * * *" rendered as "Every hour at :*/5" instead of
+  // "Every 5 minutes". A literal minute like "30" still reads "Every hour at :30".
+  if (minute !== '*' && !minute.startsWith('*/') && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    return `Every hour at :${minute.padStart(2, '0')}`
+  }
+  if (minute === '*' && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    return 'Every minute'
+  }
+  // Only claim a plain "Every N minutes" when nothing else constrains the window;
+  // otherwise "*/5 9 * * *" (only at 09:xx) or "*/5 * * * 1-5" (weekdays only)
+  // would read as an unconstrained interval. Constrained shapes fall through to
+  // the raw cron rather than assert something misleading.
+  if (minute.startsWith('*/') && hour === '*' && dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
+    const interval = minute.slice(2)
+    return interval === '1' ? 'Every minute' : `Every ${interval} minutes`
+  }
+  // Weekday phrasing needs a literal hour:minute — a wildcard/step in either field
+  // (e.g. "*/5 * * * 1-5") would render "Weekdays at *:*/5", so let it fall to raw.
+  if (
+    (dayOfWeek === '1-5' || dayOfWeek === 'MON-FRI') &&
+    hour !== '*' && !hour.startsWith('*/') &&
+    minute !== '*' && !minute.startsWith('*/')
+  ) {
+    return `Weekdays at ${hour}:${minute.padStart(2, '0')}`
+  }
+
+  return cron
+}
+
+// ============================================================================
+// PVC UTILITIES
+// ============================================================================
+
+export function getPVCStatus(pvc: any): StatusBadge {
+  const phase = pvc.status?.phase || 'Unknown'
+  switch (phase) {
+    case 'Bound':
+      return { text: 'Bound', color: healthColors.healthy, level: 'healthy' }
+    case 'Pending':
+      // Pending is benign here: a WaitForFirstConsumer claim stays Pending by
+      // design until a pod needs it (could be forever for a scaled-to-zero
+      // workload). We can't see the StorageClass binding mode from the PVC alone,
+      // so age can't distinguish that from genuinely-stuck — the Problems panel,
+      // which has that context, owns the stuck-PVC alarm.
+      return { text: 'Pending', color: healthColors.neutral, level: 'neutral' }
+    case 'Lost':
+      return { text: 'Lost', color: healthColors.unhealthy, level: 'unhealthy' }
+    default:
+      return { text: phase, color: healthColors.unknown, level: 'unknown' }
+  }
+}
+
+export function getPVCCapacity(pvc: any): string {
+  return pvc.status?.capacity?.storage || pvc.spec?.resources?.requests?.storage || '-'
+}
+
+export function getPVCAccessModes(pvc: any): string {
+  const modes = pvc.status?.accessModes || pvc.spec?.accessModes || []
+  const shortModes = modes.map((m: string) => {
+    switch (m) {
+      case 'ReadWriteOnce': return 'RWO'
+      case 'ReadOnlyMany': return 'ROX'
+      case 'ReadWriteMany': return 'RWX'
+      case 'ReadWriteOncePod': return 'RWOP'
+      default: return m
+    }
+  })
+  return shortModes.join(', ') || '-'
+}
+
+// ============================================================================
+// ROLLOUT UTILITIES (Argo Rollouts CRD)
+// ============================================================================
+
+export function getRolloutStatus(rollout: any): StatusBadge {
+  if (!isArgoRolloutResource(rollout)) {
+    return { text: rollout.status?.phase || 'Unknown', color: healthColors.unknown, level: 'unknown' }
+  }
+  return rolloutActivityBadge(getWorkloadRolloutActivity(rollout, 'rollout'))
+}
+
+/** The AnalysisPhase vocabulary (AnalysisRun, Experiment, and a Rollout's
+ *  analysis slots all report it) mapped onto HealthLevel. Shared so a caller
+ *  holding only the phase string lands on the same tone as one holding the
+ *  whole run. */
+export function analysisPhaseLevel(phase?: string): HealthLevel {
+  switch (phase) {
+    case 'Successful':
+      return 'healthy'
+    case 'Running':
+    case 'Pending':
+      return 'degraded'
+    case 'Inconclusive':
+      return 'alert'
+    case 'Failed':
+    case 'Error':
+      return 'unhealthy'
+    default:
+      return 'unknown'
+  }
+}
+
+export function getAnalysisRunStatus(run: any): StatusBadge {
+  const phase = run.status?.phase || 'Unknown'
+  const level = analysisPhaseLevel(phase)
+  return { text: phase, color: healthColors[level], level }
+}
+
+// Counts only verdict-bearing metrics: Argo excludes dryRun results from the run's
+// phase, and Running/Pending have not passed yet.
+export function summarizeAnalysisMetrics(run: any): {
+  total: number
+  passing: number
+  notPassing: number
+  dryRun: number
+} {
+  const results: any[] = run?.status?.metricResults || []
+  const scored = results.filter((m) => !m.dryRun)
+  return {
+    total: scored.length,
+    passing: scored.filter((m) => m.phase === 'Successful').length,
+    notPassing: scored.filter((m) => ['Failed', 'Error', 'Inconclusive'].includes(m.phase)).length,
+    dryRun: results.length - scored.length,
+  }
+}
+
+export function getRolloutStrategy(rollout: any): string {
+  if (rollout.spec?.strategy?.canary) return 'Canary'
+  if (rollout.spec?.strategy?.blueGreen) return 'BlueGreen'
+  return 'Unknown'
+}
+
+export function getRolloutReady(rollout: any): string {
+  const ready = rollout.status?.availableReplicas || 0
+  const desired = rollout.spec?.replicas || 0
+  return `${ready}/${desired}`
+}
+
+export function getRolloutStep(rollout: any): string | null {
+  const steps = rollout.spec?.strategy?.canary?.steps || []
+  const stepNumber = getArgoRolloutStepNumber(rollout)
+  if (stepNumber === null) return null
+  return `${stepNumber}/${steps.length}`
+}
+
+// ============================================================================
+// WORKFLOW UTILITIES (Argo Workflows CRD)
+// ============================================================================
+
+export function getWorkflowStatus(workflow: any): StatusBadge {
+  const phase = workflow.status?.phase || 'Unknown'
+  switch (phase) {
+    case 'Succeeded':
+      return { text: 'Succeeded', color: healthColors.healthy, level: 'healthy' }
+    case 'Running':
+      return { text: 'Running', color: healthColors.neutral, level: 'neutral' }
+    case 'Failed':
+      return { text: 'Failed', color: healthColors.unhealthy, level: 'unhealthy' }
+    case 'Error':
+      return { text: 'Error', color: healthColors.unhealthy, level: 'unhealthy' }
+    case 'Pending':
+      return { text: 'Pending', color: healthColors.degraded, level: 'degraded' }
+    default:
+      return { text: phase, color: healthColors.unknown, level: 'unknown' }
+  }
+}
+
+export function getWorkflowDuration(workflow: any): string | null {
+  const startedAt = workflow.status?.startedAt
+  const finishedAt = workflow.status?.finishedAt
+  if (!startedAt) return null
+  const start = new Date(startedAt)
+  const end = finishedAt ? new Date(finishedAt) : new Date()
+  return formatDuration(end.getTime() - start.getTime())
+}
+
+export function getWorkflowProgress(workflow: any): string | null {
+  const nodes = workflow.status?.nodes
+  if (!nodes) return null
+  const nodeList = Object.values(nodes) as any[]
+  const podNodes = nodeList.filter((n: any) => n.type === 'Pod')
+  if (podNodes.length === 0) return null
+  const succeeded = podNodes.filter((n: any) => n.phase === 'Succeeded').length
+  return `${succeeded}/${podNodes.length}`
+}
+
+export function getWorkflowTemplate(workflow: any): string | null {
+  return workflow.spec?.workflowTemplateRef?.name || null
+}
+
+export function getCronWorkflowStatus(cwf: any): StatusBadge {
+  const spec = cwf.spec || {}
+  const status = cwf.status || {}
+  const active = Array.isArray(status.active) ? status.active.length : 0
+  if (spec.suspend === true) {
+    return { text: 'Suspended', color: healthColors.degraded, level: 'degraded' }
+  }
+  if (active > 0) {
+    return { text: `${active} active`, color: healthColors.neutral, level: 'neutral' }
+  }
+  if (status.lastScheduledTime) {
+    return { text: 'Idle', color: healthColors.neutral, level: 'neutral' }
+  }
+  return { text: 'Never run', color: healthColors.unknown, level: 'unknown' }
+}
+
+export function getCronWorkflowSchedule(cwf: any): string {
+  const schedules = cwf.spec?.schedules
+  if (Array.isArray(schedules) && schedules.length > 0) return schedules.join(', ')
+  return cwf.spec?.schedule || '-'
+}
+
+export function getCronWorkflowLastRun(cwf: any): string {
+  return cwf.status?.lastScheduledTime ? formatAge(cwf.status.lastScheduledTime) : 'Never'
+}
+
+export function getCronWorkflowTemplate(cwf: any): string {
+  return cwf.spec?.workflowSpec?.workflowTemplateRef?.name || cwf.spec?.workflowSpec?.entrypoint || '-'
+}
+
+// ============================================================================
+// CERT-MANAGER UTILITIES — re-exported from resource-utils-certmanager.ts
+// ============================================================================
+export {
+  getCertificateStatus,
+  getCertificateDomains,
+  getCertificateIssuer,
+  getCertificateExpiry,
+  getCertificateRequestStatus,
+  getCertificateRequestIssuer,
+  getCertificateRequestApproved,
+  getClusterIssuerStatus,
+  getClusterIssuerType,
+  getIssuerStatus,
+  getIssuerType,
+  getOrderState,
+  getOrderDomains,
+  getOrderIssuer,
+  getChallengeState,
+  getChallengeType,
+  getChallengeDomain,
+  getChallengePresented,
+} from './resource-utils-certmanager'
+
+// ============================================================================
+// FLUXCD UTILITIES — re-exported from resource-utils-flux.ts
+// ============================================================================
+export {
+  getFluxResourceStatus,
+  getGitRepositoryStatus,
+  getOCIRepositoryStatus,
+  getHelmRepositoryStatus,
+  getFluxAlertStatus,
+  getKustomizationStatus,
+  getFluxHelmReleaseStatus,
+  getGitRepositoryUrl,
+  getGitRepositoryRef,
+  getGitRepositoryRevision,
+  getOCIRepositoryUrl,
+  getOCIRepositoryRef,
+  getOCIRepositoryRevision,
+  getHelmRepositoryUrl,
+  getHelmRepositoryType,
+  getKustomizationSource,
+  getKustomizationPath,
+  getKustomizationInventory,
+  getFluxHelmReleaseChart,
+  getFluxHelmReleaseVersion,
+  getFluxHelmReleaseRevision,
+  getFluxHelmReleaseMessage,
+  getFluxAlertProvider,
+  getFluxAlertEventCount,
+} from './resource-utils-flux'
+
+// ============================================================================
+// ARGOCD UTILITIES — re-exported from resource-utils-argo.ts
+// ============================================================================
+export {
+  getArgoApplicationStatus,
+  getArgoApplicationProject,
+  getArgoApplicationSync,
+  getArgoApplicationHealth,
+  getArgoApplicationRepo,
+  getArgoApplicationSetGenerators,
+  getArgoApplicationSetTemplate,
+  getArgoApplicationSetAppCount,
+  getArgoApplicationSetStatus,
+  getArgoAppProjectDescription,
+  getArgoAppProjectDestinations,
+  getArgoAppProjectSources,
+} from './resource-utils-argo'
+
+// ============================================================================
+// PERSISTENT VOLUME UTILITIES
+// ============================================================================
+
+export function getPVStatus(pv: any): StatusBadge {
+  const phase = pv.status?.phase
+  switch (phase) {
+    case 'Bound':
+      return { text: 'Bound', color: healthColors.healthy, level: 'healthy' }
+    case 'Available':
+      return { text: 'Available', color: healthColors.healthy, level: 'healthy' }
+    case 'Released':
+      return { text: 'Released', color: healthColors.degraded, level: 'degraded' }
+    case 'Failed':
+      return { text: 'Failed', color: healthColors.unhealthy, level: 'unhealthy' }
+    default:
+      return { text: phase || 'Unknown', color: healthColors.unknown, level: 'unknown' }
+  }
+}
+
+export function getPVAccessModes(pv: any): string {
+  const shorthand: Record<string, string> = {
+    ReadWriteOnce: 'RWO', ReadOnlyMany: 'ROX', ReadWriteMany: 'RWX', ReadWriteOncePod: 'RWOP',
+  }
+  const modes = pv.spec?.accessModes || []
+  return modes.map((m: string) => shorthand[m] || m).join(', ') || '-'
+}
+
+export function getPVClaim(pv: any): string {
+  const ref = pv.spec?.claimRef
+  if (!ref) return '-'
+  return ref.namespace ? `${ref.namespace}/${ref.name}` : ref.name || '-'
+}
+
+// ============================================================================
+// STORAGE CLASS UTILITIES
+// ============================================================================
+
+export function getStorageClassProvisioner(sc: any): string {
+  return sc.provisioner || '-'
+}
+
+export function getStorageClassReclaimPolicy(sc: any): string {
+  return sc.reclaimPolicy || '-'
+}
+
+export function getStorageClassBindingMode(sc: any): string {
+  const mode = sc.volumeBindingMode
+  if (mode === 'WaitForFirstConsumer') return 'WaitForConsumer'
+  return mode || '-'
+}
+
+export function getStorageClassExpansion(sc: any): string {
+  return sc.allowVolumeExpansion ? 'Yes' : 'No'
+}
+
+
+
+// ============================================================================
+// GATEWAY UTILITIES (Gateway API)
+// ============================================================================
+
+export function getGatewayStatus(gw: any): StatusBadge {
+  const conditions = gw.status?.conditions || []
+  const programmed = conditions.find((c: any) => c.type === 'Programmed')
+  const accepted = conditions.find((c: any) => c.type === 'Accepted')
+  if (programmed?.status === 'True') return { text: 'Programmed', color: healthColors.healthy, level: 'healthy' }
+  if (accepted?.status === 'True') return { text: 'Accepted', color: healthColors.degraded, level: 'degraded' }
+  if (accepted?.status === 'False') return { text: 'Not Accepted', color: healthColors.unhealthy, level: 'unhealthy' }
+  return { text: 'Unknown', color: healthColors.unknown, level: 'unknown' }
+}
+
+export function getGatewayClass(gw: any): string {
+  return gw.spec?.gatewayClassName || '-'
+}
+
+export function getGatewayListeners(gw: any): string {
+  const listeners = gw.spec?.listeners || []
+  if (listeners.length === 0) return '-'
+  return listeners.map((l: any) => `${l.protocol}:${l.port}`).join(', ')
+}
+
+export function getGatewayAttachedRoutes(gw: any): number {
+  const statusListeners = gw.status?.listeners || []
+  return statusListeners.reduce((sum: number, l: any) => sum + (l.attachedRoutes ?? 0), 0)
+}
+
+export function getGatewayAddresses(gw: any): string {
+  const addrs = gw.status?.addresses || gw.spec?.addresses || []
+  return addrs.map((a: any) => a.value).join(', ') || '-'
+}
+
+// ============================================================================
+// GATEWAYCLASS UTILITIES (Gateway API)
+// ============================================================================
+
+export function getGatewayClassStatus(gc: any): StatusBadge {
+  const conditions = gc.status?.conditions || []
+  const accepted = conditions.find((c: any) => c.type === 'Accepted')
+  if (accepted?.status === 'True') return { text: 'Accepted', color: healthColors.healthy, level: 'healthy' }
+  if (accepted?.status === 'False') return { text: accepted.reason || 'Not Accepted', color: healthColors.unhealthy, level: 'unhealthy' }
+  return { text: 'Pending', color: healthColors.degraded, level: 'degraded' }
+}
+
+export function getGatewayClassController(gc: any): string {
+  return gc.spec?.controllerName || '-'
+}
+
+export function getGatewayClassDescription(gc: any): string {
+  return gc.spec?.description || '-'
+}
+
+// ============================================================================
+// GATEWAY API ROUTE UTILITIES (shared by HTTPRoute, GRPCRoute, TCPRoute, TLSRoute, UDPRoute)
+// ============================================================================
+
+const GATEWAY_API_GROUP = 'gateway.networking.k8s.io'
+
+/**
+ * Whether a status report describes a parent the spec still asks for.
+ *
+ * A controller can leave a report behind after its parentRef is removed, and
+ * the defaults matter: an unset group/kind/namespace on either side means
+ * gateway.networking.k8s.io, Gateway, and the route's own namespace.
+ */
+function isReportForParentRef(ref: any, reported: any, routeNamespace: string): boolean {
+  const norm = (r: any) => ({
+    group: r?.group ?? GATEWAY_API_GROUP,
+    kind: r?.kind ?? 'Gateway',
+    namespace: r?.namespace ?? routeNamespace,
+    name: r?.name,
+    sectionName: r?.sectionName,
+    port: r?.port,
+  })
+  const a = norm(ref)
+  const b = norm(reported)
+  return a.group === b.group && a.kind === b.kind && a.namespace === b.namespace &&
+    a.name === b.name && a.sectionName === b.sectionName && a.port === b.port
+}
+
+// All Gateway API route types share the same status/parents/rules/hostnames structure
+/**
+ * A route's verdict, from BOTH conditions the API guarantees it carries.
+ *
+ * Accepted alone is not health: a backendRef naming a Service that does not
+ * exist is Accepted=True by design, because the gateway still has to answer the
+ * request — with a 5xx. Reading only Accepted therefore reported the "why is my
+ * route 503ing" case as healthy, beside a Backends column naming the Service
+ * that is missing. An ABSENT ResolvedRefs is not healthy either: GEP-1364 has
+ * routes always carry both, so a missing one means nothing has confirmed the
+ * refs yet.
+ */
+/**
+ * The reports that describe parents this route is actually attached to, plus
+ * the readers the verdict uses. Shared with getRouteStatusReason so the badge
+ * and its explanation can never disagree about which parents counted.
+ */
+function routeParentEvidence(route: any) {
+  const refs = route.spec?.parentRefs || []
+  const reports = route.status?.parents || []
+  const routeNamespace = route.metadata?.namespace || ''
+  const generation = route.metadata?.generation
+
+  // Status entries are identified by parentRef AND controllerName, so one
+  // parent can carry reports from two controllers while one replaces the other.
+  // All of them count: reading a single report would make the verdict depend on
+  // their order in the array.
+  const reportsFor = (ref: any) =>
+    reports.filter((p: any) => isReportForParentRef(ref, p?.parentRef, routeNamespace))
+  const perRef = refs.map(reportsFor)
+
+  // A route can also attach to default Gateways without naming them, in which
+  // case the attachment exists only in status. Those reports are real and their
+  // failures must count. Without that opt-in an unmatched report is a leftover
+  // from a parentRef the spec no longer names, and counting it would resurrect
+  // a verdict for a parent the route has left.
+  const useDefaultGateways = route.spec?.useDefaultGateways
+  const attachedByDefault = useDefaultGateways !== undefined && useDefaultGateways !== 'None'
+  const claimed = new Set(perRef.flat())
+  // Only a Gateway can be a default parent. An unmatched report for anything
+  // else — a mesh Service parent the spec has dropped — is obsolete by
+  // definition, and would otherwise keep voting forever if its controller is
+  // gone.
+  const isDefaultGatewayReport = (p: any) =>
+    (p?.parentRef?.group ?? GATEWAY_API_GROUP) === GATEWAY_API_GROUP &&
+    (p?.parentRef?.kind ?? 'Gateway') === 'Gateway'
+  const considered = attachedByDefault
+    ? [...perRef.flat(), ...reports.filter((p: any) => !claimed.has(p) && isDefaultGatewayReport(p))]
+    : perRef.flat()
+
+  // A condition observed against a superseded generation describes a spec that
+  // has since changed, so it cannot confirm the current one. A condition with no
+  // observedGeneration at all is taken at face value.
+  const isCurrent = (c: any) =>
+    c?.observedGeneration === undefined || generation === undefined || c.observedGeneration === generation
+  const conditionOf = (report: any, type: string) =>
+    (report?.conditions || []).filter((c: any) => c?.type === type && isCurrent(c)).pop()
+  const statusOf = (report: any, type: string) => conditionOf(report, type)?.status
+
+  // A report whose conditions all describe a superseded spec says nothing about
+  // the current one, either way — so it neither votes nor confirms the parent it
+  // belongs to. Requiring it to agree would let one leftover from a replaced
+  // controller hold a live healthy parent at Pending; counting it as
+  // confirmation would let the other parents speak for one nothing has
+  // confirmed.
+  const speaksToCurrentSpec = (r: any) =>
+    conditionOf(r, 'Accepted') !== undefined || conditionOf(r, 'ResolvedRefs') !== undefined
+  const current = considered.filter(speaksToCurrentSpec)
+  const everyRefConfirmed = perRef.every((list: any[]) => list.some(speaksToCurrentSpec))
+
+  return { considered, current, everyRefConfirmed, conditionOf, statusOf }
+}
+
+export function getRouteStatus(route: any): StatusBadge {
+  const { considered, current, everyRefConfirmed, statusOf } = routeParentEvidence(route)
+
+  if (considered.length === 0) return { text: 'Unknown', color: healthColors.unknown, level: 'unknown' }
+  if (current.length === 0) return { text: 'Pending', color: healthColors.degraded, level: 'degraded' }
+  const anyFailure = current.some((r: any) =>
+    statusOf(r, 'Accepted') === 'False' || statusOf(r, 'ResolvedRefs') === 'False')
+
+  if (everyRefConfirmed && current.every((r: any) => statusOf(r, 'Accepted') === 'False')) {
+    return { text: 'Not Accepted', color: healthColors.unhealthy, level: 'unhealthy' }
+  }
+  if (anyFailure) {
+    return { text: 'Degraded', color: healthColors.degraded, level: 'degraded' }
+  }
+  if (everyRefConfirmed && current.every((r: any) =>
+      statusOf(r, 'Accepted') === 'True' && statusOf(r, 'ResolvedRefs') === 'True')) {
+    return { text: 'Accepted', color: healthColors.healthy, level: 'healthy' }
+  }
+  return { text: 'Pending', color: healthColors.degraded, level: 'degraded' }
+}
+
+/**
+ * Why the badge says what it says: which parent is unhappy, and the controller's
+ * own reason. Without it "Degraded" tells an operator something is wrong and
+ * nothing about what — and the whole point of reading ResolvedRefs is that the
+ * answer is usually "the backend you named does not exist".
+ */
+export function getRouteStatusReason(route: any): string {
+  const { current, conditionOf } = routeParentEvidence(route)
+  const parts: string[] = []
+  for (const report of current) {
+    const name = report?.parentRef?.name || 'parent'
+    for (const type of ['Accepted', 'ResolvedRefs']) {
+      const c = conditionOf(report, type)
+      if (c?.status !== 'False') continue
+      const detail = [c.reason, c.message].filter(Boolean).join(': ')
+      parts.push(detail ? `${name}: ${detail}` : `${name}: ${type} is false`)
+    }
+  }
+  return parts.join(' · ')
+}
+
+export function getRouteParents(route: any): string {
+  const refs = route.spec?.parentRefs || []
+  return refs.map((r: any) => r.name).join(', ') || '-'
+}
+
+export function getRouteHostnames(route: any): string {
+  const hostnames = route.spec?.hostnames || []
+  return hostnames.join(', ') || 'Any'
+}
+
+export function getRouteRulesCount(route: any): number {
+  return (route.spec?.rules || []).length
+}
+
+export function getRouteBackends(route: any): string {
+  const rules = route.spec?.rules || []
+  // Collect unique backend name:port pairs across all rules
+  const seen = new Set<string>()
+  for (const rule of rules) {
+    for (const ref of rule.backendRefs || []) {
+      const key = ref.port ? `${ref.name}:${ref.port}` : ref.name
+      seen.add(key)
+    }
+  }
+  if (seen.size === 0) return '-'
+  return Array.from(seen).join(', ')
+}
+
+// Legacy aliases for HTTPRoute (used by HTTPRouteRenderer)
+export const getHTTPRouteStatus = getRouteStatus
+export const getHTTPRouteParents = getRouteParents
+export const getHTTPRouteHostnames = getRouteHostnames
+export const getHTTPRouteRulesCount = getRouteRulesCount
+
+// ============================================================================
+// SEALED SECRET UTILITIES (Bitnami)
+// ============================================================================
+
+export function getSealedSecretStatus(ss: any): StatusBadge {
+  const conditions = ss.status?.conditions || []
+  const synced = conditions.find((c: any) => c.type === 'Synced')
+  if (synced?.status === 'True') return { text: 'Synced', color: healthColors.healthy, level: 'healthy' }
+  if (synced?.status === 'False') return { text: 'Not Synced', color: healthColors.unhealthy, level: 'unhealthy' }
+  return { text: 'Unknown', color: healthColors.unknown, level: 'unknown' }
+}
+
+export function getSealedSecretKeyCount(ss: any): number {
+  return Object.keys(ss.spec?.encryptedData || {}).length
+}
+
+// ============================================================================
+// WORKFLOW TEMPLATE UTILITIES (Argo)
+// ============================================================================
+
+export function getWorkflowTemplateCount(wt: any): number {
+  return (wt.spec?.templates || []).length
+}
+
+export function getWorkflowTemplateEntrypoint(wt: any): string {
+  return wt.spec?.entrypoint || '-'
+}
+
+// ============================================================================
+// NETWORK POLICY UTILITIES
+// ============================================================================
+
+export function getNetworkPolicyTypes(np: any): string {
+  return effectivePolicyTypeNames(np.spec).join(', ')
+}
+
+export function getNetworkPolicyRuleCount(np: any): { ingress: number; egress: number } {
+  return {
+    ingress: (np.spec?.ingress || []).length,
+    egress: (np.spec?.egress || []).length,
+  }
+}
+
+/**
+ * Who the policy applies to.
+ *
+ * podSelector is a LabelSelector, so it can target a subset through
+ * matchExpressions alone. Reading only matchLabels reported those policies as
+ * covering the whole namespace — a gap rendered as coverage, on the surface
+ * where that reads as "this namespace is protected, look elsewhere".
+ */
+export function getNetworkPolicySelector(np: any): string {
+  const selector = np.spec?.podSelector
+  const hasLabels = Object.keys(selector?.matchLabels ?? {}).length > 0
+  // Count only what the formatter will actually render: it skips malformed
+  // entries, and an expression list of nothing but those would otherwise reach
+  // its empty-case string and describe the same state in different words.
+  const hasExpressions = (Array.isArray(selector?.matchExpressions) ? selector.matchExpressions : [])
+    .some((e: any) => e && typeof e === 'object')
+  if (!hasLabels && !hasExpressions) return 'All pods'
+  return formatKubernetesLabelSelector(selector)
+}
+
+// ============================================================================
+// POD DISRUPTION BUDGET UTILITIES
+// ============================================================================
+
+export function getPDBStatus(pdb: any): StatusBadge {
+  const status = pdb.status || {}
+  const allowed = status.disruptionsAllowed
+  const healthy = status.currentHealthy || 0
+  const desired = status.desiredHealthy || 0
+
+  if (healthy < desired) return { text: 'Unhealthy', color: healthColors.unhealthy, level: 'unhealthy' }
+  if (allowed === 0 && (status.expectedPods || 0) > 0) return { text: 'Blocked', color: healthColors.degraded, level: 'degraded' }
+  if (allowed > 0) return { text: 'OK', color: healthColors.healthy, level: 'healthy' }
+  return { text: 'Unknown', color: healthColors.unknown, level: 'unknown' }
+}
+
+export function getPDBBudget(pdb: any): string {
+  const spec = pdb.spec || {}
+  if (spec.minAvailable !== undefined) return `min: ${spec.minAvailable}`
+  if (spec.maxUnavailable !== undefined) return `max unavail: ${spec.maxUnavailable}`
+  return '-'
+}
+
+export function getPDBHealthy(pdb: any): string {
+  const status = pdb.status || {}
+  return `${status.currentHealthy || 0}/${status.expectedPods || 0}`
+}
+
+export function getPDBAllowed(pdb: any): number {
+  return pdb.status?.disruptionsAllowed ?? 0
+}
+
+// ============================================================================
+// SERVICE ACCOUNT UTILITIES
+// ============================================================================
+
+export function getServiceAccountSecretCount(sa: any): number {
+  return (sa.secrets || []).length
+}
+
+export function getServiceAccountAutomount(sa: any): string {
+  return sa.automountServiceAccountToken === false ? 'No' : 'Yes'
+}
+
+// ============================================================================
+// ROLE / CLUSTER ROLE UTILITIES
+// ============================================================================
+
+export function getRoleRuleCount(role: any): number {
+  return (role.rules || []).length
+}
+
+// ============================================================================
+// ROLE BINDING / CLUSTER ROLE BINDING UTILITIES
+// ============================================================================
+
+export function getRoleBindingRole(rb: any): string {
+  const ref = rb.roleRef
+  if (!ref) return '-'
+  return ref.name || '-'
+}
+
+export function getRoleBindingSubjectCount(rb: any): number {
+  return (rb.subjects || []).length
+}
+
+// ============================================================================
+// WORKLOAD PROBLEM DETECTION (for table row indicators)
+// ============================================================================
+
+
+// ============================================================================
+// FORMATTING UTILITIES
+// ============================================================================
+
+export function truncate(str: string, length: number): string {
+  if (!str || str.length <= length) return str
+  return str.slice(0, length - 1) + '…'
+}
+
+export function formatResources(resources: any): string {
+  const parts: string[] = []
+  if (resources.cpu) {
+    parts.push(`CPU: ${formatCPUString(resources.cpu)}`)
+  }
+  if (resources.memory) {
+    parts.push(`Mem: ${formatMemoryString(resources.memory)}`)
+  }
+  for (const [key, value] of Object.entries(resources)) {
+    if (key === 'cpu' || key === 'memory') continue
+    parts.push(`${key}: ${value}`)
+  }
+  return parts.join(', ') || '-'
+}
+
+// ============================================================================
+// GENERIC COLUMN FILTER VALUE EXTRACTION
+// ============================================================================
+
+/**
+ * Extracts a string filter value for a given column key and resource kind.
+ * Used by the generic column filter system to match resources against filter values.
+ * Reuses existing utility functions for kind-specific columns.
+ */
+// Parse column filters from URL `filters` param. Each column is either
+// "col:val1,val2" (implicit include) or "col:exclude:val1,val2" (explicit
+// operator). `|` separates columns, `,` separates values within a column.
+// Keys and values are URI-encoded so their own delimiters survive; the operator,
+// when present, is the literal token "include" or "exclude".
+export function parseColumnFilters(filtersParam: string | null): Record<string, string[]> {
+  const filters = new Map<string, string[]>()
+  for (const pair of (filtersParam ?? '').split('|')) {
+    const parsed = parseColumnFilterPair(pair)
+    if (parsed && parsed.key !== '__proto__' && parsed.key !== 'prototype' && parsed.key !== 'constructor') {
+      filters.set(parsed.key, parsed.values)
+    }
+  }
+  return Object.setPrototypeOf(Object.fromEntries(filters), null)
+}
+
+// Serialize column filters to URL param format. Columns listed in `excludes`
+// emit the explicit "exclude" operator; all others keep the backwards-compatible
+// two-part shape. Keys and values are both URI-encoded so a colon inside a
+// custom-column key (e.g. "label:tier") or a comma inside a value (e.g.
+// "Ready,SchedulingDisabled") survives the round-trip.
+export function serializeColumnFilters(
+  filters: Record<string, string[]>,
+  excludes?: Record<string, boolean>,
+): string {
+  return Object.entries(filters)
+    .filter(([, v]) => v.length > 0)
+    .map(([k, vals]) => {
+      const op = excludes?.[k] ? 'exclude:' : ''
+      return `${encodeURIComponent(k)}:${op}${vals.map(v => encodeURIComponent(v)).join(',')}`
+    })
+    .join('|')
+}
+
+// Which columns are in exclude mode (show non-matching rows). Read from the same
+// `filters` param so the operator can't drift out of sync with the values it
+// negates — a lone exclude operator with no values is structurally impossible.
+export function parseColumnFilterExcludes(filtersParam: string | null): Record<string, boolean> {
+  const excludes = new Map<string, boolean>()
+  for (const pair of (filtersParam ?? '').split('|')) {
+    const parsed = parseColumnFilterPair(pair)
+    if (
+      parsed && parsed.values.length &&
+      parsed.key !== '__proto__' && parsed.key !== 'prototype' && parsed.key !== 'constructor'
+    ) {
+      // Values are last-write-wins per key in parseColumnFilters, so the mode
+      // must track the same final segment: a later include overrides an
+      // earlier exclude for the same column, otherwise the two disagree.
+      if (parsed.exclude) {
+        excludes.set(parsed.key, true)
+      } else {
+        excludes.delete(parsed.key)
+      }
+    }
+  }
+  return Object.setPrototypeOf(Object.fromEntries(excludes), null)
+}
+
+/** The Resources list's own filter params in the URL (the kind is in the path, `apiGroup` beside it). */
+export const RESOURCE_LIST_FILTER_PARAMS = ['search', 'regex', 'filters', 'problems', 'labels', 'ownerKind', 'ownerName', 'showInactive'] as const
+
+/** The per-kind filters in a query string: what a kind switch resets or restores. */
+export function kindFiltersFromSearch(search: string | undefined) {
+  const params = new URLSearchParams(search ?? '')
+  const filtersParam = params.get('filters')
+  return {
+    columnFilters: parseColumnFilters(filtersParam),
+    columnFilterExcludes: parseColumnFilterExcludes(filtersParam),
+    problemFilters: params.get('problems')?.split(',').filter(Boolean) || [],
+  }
+}
+
+/** The `filters` param value. Drops an exclude flag on a column with no active values. */
+export function columnFiltersParam(colFilters: Record<string, string[]>, colExcludes: Record<string, boolean>): string {
+  const activeExcludes = Object.fromEntries(
+    Object.entries(colExcludes).filter(([k, on]) => on && (colFilters[k]?.length ?? 0) > 0)
+  )
+  return serializeColumnFilters(colFilters, activeExcludes)
+}
+
+/** Inverse of kindFiltersFromSearch: the `filters` + `problems` query, '' when none. */
+export function kindFiltersToSearch(f: ReturnType<typeof kindFiltersFromSearch>): string {
+  const params = new URLSearchParams()
+  const filters = columnFiltersParam(f.columnFilters, f.columnFilterExcludes)
+  if (filters) params.set('filters', filters)
+  if (f.problemFilters.length > 0) params.set('problems', f.problemFilters.join(','))
+  return params.toString()
+}
+
+// Split a single "col[:operator]:values" pair into its decoded key, values, and
+// whether the explicit exclude operator was present. The first literal colon
+// delimits key from the rest (keys are encoded, so their own colons don't
+// count); an optional leading "include"/"exclude" token in the remainder is the
+// operator. Any other leading token is treated as a value (two-part form), so a
+// value literally named "exclude" without a following colon round-trips.
+function parseColumnFilterPair(
+  pair: string,
+): { key: string; values: string[]; exclude: boolean } | null {
+  const colonIdx = pair.indexOf(':')
+  if (colonIdx <= 0) return null
+  const rawKey = pair.slice(0, colonIdx).trim()
+  let rest = pair.slice(colonIdx + 1).trim()
+  let key: string
+  try { key = decodeURIComponent(rawKey) } catch { key = rawKey }
+  if (!key) return null
+  // Guard against prototype-pollution: the key becomes an object property name
+  // downstream, and it comes straight from the URL. Reject the well-known
+  // dangerous names so a crafted `filters` param can't touch the prototype.
+  if (key === '__proto__' || key === 'prototype' || key === 'constructor') return null
+
+  let exclude = false
+  const opIdx = rest.indexOf(':')
+  if (opIdx >= 0) {
+    const op = rest.slice(0, opIdx).trim().toLowerCase()
+    if (op === 'exclude' || op === 'include') {
+      exclude = op === 'exclude'
+      rest = rest.slice(opIdx + 1).trim()
+    }
+  }
+  if (!rest) return null
+  const values = rest.split(',').map(v => {
+    try { return decodeURIComponent(v.trim()) } catch { return v.trim() }
+  }).filter(Boolean)
+  if (!values.length) return null
+  return { key, values, exclude }
+}
+
+export function getCellFilterValue(resource: any, column: string, kind: string): string {
+  try {
+  const kindLower = kind.toLowerCase()
+
+  switch (column) {
+    case 'namespace':
+      return resource.metadata?.namespace || ''
+    case 'type':
+      if (kindLower === 'secrets' || kindLower === 'sealedsecrets') return getSecretType(resource).type
+      if (kindLower === 'services') return resource.spec?.type || ''
+      if (kindLower === 'events') return resource.type || ''
+      if (kindLower === 'helmrepositories') return getHelmRepositoryType(resource)
+      return resource.spec?.type || resource.type || ''
+    case 'status':
+      if (kindLower === 'pods') return getPodStatus(resource).text
+      if (['deployments', 'statefulsets', 'daemonsets', 'replicasets', 'rollouts'].includes(kindLower)) {
+        let status: StatusBadge
+        if (kindLower === 'replicasets') {
+          status = getWorkloadStatus(resource, kindLower)
+        } else {
+          const display = getWorkloadDisplayStatus(resource, kindLower)
+          if (isRolloutActivityVisible(display.activity)) return display.status.text
+          status = display.status
+        }
+        return workloadStatusLabel(status)
+      }
+      if (kindLower === 'nodes') return getNodeStatus(resource).text
+      if (kindLower === 'jobs') return getJobStatus(resource).text
+      if (kindLower === 'cronjobs') return getCronJobStatus(resource).text
+      if (kindLower === 'certificates') return getCertificateStatus(resource).text
+      if (kindLower === 'certificaterequests') return getCertificateRequestStatus(resource).text
+      if (kindLower === 'clusterissuers' || kindLower === 'issuers') return getClusterIssuerStatus(resource).text
+      if (kindLower === 'persistentvolumeclaims') return getPVCStatus(resource).text
+      if (kindLower === 'persistentvolumes') return getPVStatus(resource).text
+      if (kindLower === 'analysisruns') return getAnalysisRunStatus(resource).text
+      if (kindLower === 'workflows') return getWorkflowStatus(resource).text
+      if (kindLower === 'cronworkflows') return getCronWorkflowStatus(resource).text
+      if (kindLower === 'hpas' || kindLower === 'horizontalpodautoscalers') return getHPAStatus(resource).text
+      if (kindLower === 'gateways') return getGatewayStatus(resource).text
+      if (kindLower === 'gatewayclasses') return getGatewayClassStatus(resource).text
+      if (['httproutes', 'grpcroutes', 'tcproutes', 'tlsroutes', 'udproutes'].includes(kindLower)) return getRouteStatus(resource).text
+      if (kindLower === 'sealedsecrets') return getSealedSecretStatus(resource).text
+      if (kindLower === 'poddisruptionbudgets') return getPDBStatus(resource).text
+      if (kindLower === 'applications') return getArgoApplicationStatus(resource).text
+      if (kindLower === 'applicationsets') return getArgoApplicationSetStatus(resource).text
+      if (kindLower === 'gitrepositories') return getGitRepositoryStatus(resource).text
+      if (kindLower === 'ocirepositories') return getOCIRepositoryStatus(resource).text
+      if (kindLower === 'helmrepositories') return getHelmRepositoryStatus(resource).text
+      if (kindLower === 'kustomizations') return getKustomizationStatus(resource).text
+      if (kindLower === 'helmreleases') return getFluxHelmReleaseStatus(resource).text
+      if (kindLower === 'alerts') return getFluxAlertStatus(resource).text
+      if (kindLower === 'nodepools') return getNodePoolStatus(resource).text
+      if (kindLower === 'nodeclaims') return getNodeClaimStatus(resource).text
+      if (kindLower === 'scaledobjects') return getScaledObjectStatus(resource).text
+      if (kindLower === 'scaledjobs') return getScaledJobStatus(resource).text
+      if (kindLower === 'policyreports' || kindLower === 'clusterpolicyreports') return _getPolicyReportStatus(resource).text
+      if (kindLower === 'kyvernopolicies' || kindLower === 'clusterpolicies') return _getKyvernoPolicyStatus(resource).text
+      if (kindLower === 'nvidiaclusterpolicies') return _getNvidiaClusterPolicyStatus(resource).text
+      if (kindLower === 'nvidiadrivers') return _getNvidiaDriverStatus(resource).text
+      if (kindLower === 'resourceclaims') return _getResourceClaimStatus(resource).text
+      if (kindLower === 'clusterqueues') return _getClusterQueueStatus(resource).text
+      if (kindLower === 'localqueues') return _getLocalQueueStatus(resource).text
+      if (kindLower === 'workloads') return _getKueueWorkloadStatus(resource).text
+      if (kindLower === 'admissionchecks') return _getAdmissionCheckStatus(resource).text
+      if (kindLower === 'provisioningrequests') return _getProvisioningRequestStatus(resource).text
+      if (kindLower === 'rayclusters') return _getRayClusterStatus(resource).text
+      if (kindLower === 'rayjobs') return _getRayJobStatus(resource).text
+      if (kindLower === 'rayservices') return _getRayServiceStatus(resource).text
+      if (kindLower === 'raycronjobs') return _getRayCronJobStatus(resource).text
+      if (kindLower === 'leaderworkersets') return _getLeaderWorkerSetStatus(resource).text
+      if (kindLower === 'jobsets') return _getJobSetStatus(resource).text
+      if (kindLower === 'inferenceservices') return _getInferenceServiceStatus(resource).text
+      if (kindLower === 'servingruntimes' || kindLower === 'clusterservingruntimes') return _getServingRuntimeStatus(resource).text
+      if (kindLower === 'inferencegraphs') return _getInferenceGraphStatus(resource).text
+      if (kindLower === 'trainedmodels') return _getTrainedModelStatus(resource).text
+      if (kindLower === 'llminferenceservices') return _getLLMInferenceServiceStatus(resource).text
+      if (kindLower === 'inferencepools') return _getInferencePoolStatus(resource).text
+      if (kindLower === 'inferenceobjectives') return _getInferenceObjectiveStatus(resource).text
+      if (kindLower === 'volcanojobs') return _getVolcanoJobStatus(resource).text
+      if (kindLower === 'volcanoqueues') return _getVolcanoQueueStatus(resource).text
+      if (kindLower === 'volcanopodgroups') return _getVolcanoPodGroupStatus(resource).text
+      if (kindLower === 'jobflows') return _getJobFlowStatus(resource).text
+      if (kindLower === 'kaiqueues') return _getKaiQueueStatus(resource).text
+      if (kindLower === 'kaipodgroups') return _getKaiPodGroupStatus(resource).text
+      if (kindLower === 'kaitoworkspaces') return _getKaitoWorkspaceStatus(resource).text
+      if (kindLower === 'ragengines') return _getRAGEngineStatus(resource).text
+      if (kindLower === 'nimservices') return _getNIMServiceStatus(resource).text
+      if (kindLower === 'nimcaches') return _getNIMCacheStatus(resource).text
+      if (kindLower === 'nimpipelines') return _getNIMPipelineStatus(resource).text
+      if (kindLower === 'deviceconfigs') return _getAMDDeviceConfigStatus(resource).text
+      if (kindLower === 'pytorchjobs') return _getPyTorchJobStatus(resource).text
+      if (kindLower === 'tfjobs') return _getTFJobStatus(resource).text
+      if (kindLower === 'mpijobs') return _getMPIJobStatus(resource).text
+      if (kindLower === 'trainjobs') return _getTrainJobStatus(resource).text
+      // Positively gated, matching the cell dispatch: `backups` is reached here
+      // only when the group is unknown to normalizeKindToPlural, and a third
+      // vendor's Backup renders through the generic path — so the sort key has
+      // to come from there too, or the column sorts on a Velero-derived string
+      // the row never displayed.
+      if (kindLower === 'backups') {
+        if (_isApiGroup(resource.apiVersion, _CNPG_GROUP)) return _getCNPGBackupStatus(resource).text
+        if (_isApiGroup(resource.apiVersion, 'velero.io')) return _getBackupStatus(resource).text
+        return getGenericResourceStatus(resource)?.text ?? ''
+      }
+      // Velero's Restore/Schedule keys are group-qualified (see
+      // GROUP_QUALIFIED_COLUMN_KEYS) because those plurals are shared with
+      // rancher/backup-restore-operator and others. The unqualified plural
+      // deliberately does not match: a foreign CRD falls through to the generic
+      // reader below rather than being filtered as though it were Velero.
+      if (kindLower === 'velerorestores') return _getRestoreStatus(resource).text
+      if (kindLower === 'veleroschedules') return _getScheduleStatus(resource).text
+      // Same positive gate as `backups` above, for the same reason: the cell
+      // dispatch sends a non-Velero resource to GenericCell, so the sort and
+      // filter keys have to come from there too.
+      if (kindLower === 'backupstoragelocations') {
+        if (_isApiGroup(resource.apiVersion, 'velero.io')) return _getBSLStatus(resource).text
+        return getGenericResourceStatus(resource)?.text ?? ''
+      }
+      if (kindLower === 'backuprepositories') {
+        if (_isApiGroup(resource.apiVersion, 'velero.io')) return _getBackupRepositoryStatus(resource).text
+        return getGenericResourceStatus(resource)?.text ?? ''
+      }
+      if (kindLower === 'externalsecrets') return _getExternalSecretStatus(resource).text
+      if (kindLower === 'clusterexternalsecrets') return _getClusterExternalSecretStatus(resource).text
+      if (kindLower === 'secretstores') return _getSecretStoreStatus(resource).text
+      if (kindLower === 'clustersecretstores') return _getClusterSecretStoreStatus(resource).text
+      // CNPG. The filter must read the same text the cell renders, or the
+      // dropdown offers strings that appear on no row: CNPG's phase is prose
+      // ("Cluster in healthy state") while the badge is a short state
+      // ("Healthy"). Worse for `cnpgclusters` — a WAL-archiving failure leaves
+      // the phase healthy, so filtering on the raw phase cannot express the
+      // badge at all. `cnpgclusters`/`cnpgbackups` arrive group-qualified;
+      // `scheduledbackups`/`poolers` are bare plurals, so gate those on the
+      // group rather than assume nobody else ships the name.
+      if (kindLower === 'cnpgclusters') return _getCNPGClusterStatus(resource).text
+      if (kindLower === 'cnpgbackups') return _getCNPGBackupStatus(resource).text
+      if (kindLower === 'scheduledbackups' && _isApiGroup(resource.apiVersion, _CNPG_GROUP)) return _getCNPGScheduledBackupStatus(resource).text
+      if (kindLower === 'poolers' && _isApiGroup(resource.apiVersion, _CNPG_GROUP)) return _getCNPGPoolerStatus(resource).text
+      if (kindLower === 'istiogateways') return _getIstioGatewayStatus(resource).text
+      if (kindLower === 'providers' && _isApiGroup(resource.apiVersion, 'pkg.crossplane.io')) return getProviderStatus(resource).text
+      if (kindLower === 'providerconfigs') return getProviderConfigStatus(resource).text
+      if (isManagedResource(resource) || isComposite(resource)) return getCrossplaneStatus(resource).text
+      // Generic CRDs. Must read the same text the cell renders or the dropdown
+      // offers strings that appear on no row — hence the shared derivation.
+      return getGenericResourceStatus(resource)?.text ?? ''
+    // Istio Gateway's own columns. Without these the filter dropdown is empty
+    // for a column the table is visibly populating.
+    case 'servers':
+      if (kindLower === 'istiogateways') return String(_getIstioGatewayServerCount(resource))
+      return ''
+    case 'selector':
+      if (kindLower === 'istiogateways') return _getIstioGatewaySelectorString(resource)
+      if (kindLower === 'authorizationpolicies') return _getAuthorizationPolicySelectorString(resource)
+      return ''
+    case 'tlsMode':
+      // Distinct from Traefik's boolean 'tls' key, which SKIP_FILTER_COLUMNS
+      // excludes — sharing it would have made this reader unreachable. The
+      // generic fallback cannot reach spec.trafficPolicy.tls.mode.
+      if (kindLower === 'destinationrules') return _getDestinationRuleTlsMode(resource)
+      return ''
+    case 'state':
+      if (kindLower === 'orders') return getOrderState(resource).text
+      if (kindLower === 'challenges') return getChallengeState(resource).text
+      return resource.status?.state || ''
+    case 'challengeType':
+      return getChallengeType(resource)
+    case 'issuerType':
+      return getClusterIssuerType(resource)
+    case 'class':
+      return resource.spec?.ingressClassName || resource.spec?.gatewayClassName || ''
+    case 'roles':
+      return getNodeRoles(resource)
+    case 'strategy':
+      return getRolloutStrategy(resource)
+    case 'storageClass':
+      return resource.spec?.storageClassName || ''
+    case 'reclaimPolicy':
+      return resource.reclaimPolicy || resource.spec?.persistentVolumeReclaimPolicy || ''
+    case 'bindingMode':
+      return getStorageClassBindingMode(resource)
+    case 'expansion':
+      return getStorageClassExpansion(resource)
+    case 'automount':
+      return getServiceAccountAutomount(resource)
+    case 'policyTypes':
+      return getNetworkPolicyTypes(resource)
+    case 'types':
+      if (isCalicoPolicyResource(resource)) return getCalicoPolicyTypes(resource).join(', ')
+      break
+    case 'namespaceSelector':
+      if (isCalicoPolicyResource(resource)) return getCalicoPolicyNamespaceSelector(resource)
+      break
+    case 'serviceAccountSelector':
+      if (isCalicoPolicyResource(resource)) return getCalicoPolicyServiceAccountSelector(resource)
+      break
+    case 'tier':
+      if (isCalicoPolicyResource(resource)) return String(resource.spec?.tier ?? 'default')
+      break
+    case 'cidr':
+      if (isCalicoApiVersion(resource?.apiVersion)) return String(resource.spec?.cidr ?? '')
+      break
+    case 'blockSize':
+      if (isCalicoApiVersion(resource?.apiVersion)) {
+        const size = getCalicoIPPoolBlockSize(resource)
+        return size === undefined ? '' : String(size)
+      }
+      break
+    case 'natOutgoing':
+      if (isCalicoApiVersion(resource?.apiVersion)) return resource.spec?.natOutgoing ? 'Yes' : 'No'
+      break
+    case 'nodeSelector':
+      if (isCalicoApiVersion(resource?.apiVersion)) return String(resource.spec?.nodeSelector ?? 'all()')
+      break
+    case 'allowedUses':
+      if (isCalicoApiVersion(resource?.apiVersion)) return getCalicoIPPoolAllowedUses(resource)
+      break
+    case 'expectedIPs':
+      if (isCalicoApiVersion(resource?.apiVersion)) {
+        return Array.isArray(resource.spec?.expectedIPs) ? resource.spec.expectedIPs.map(String).join(', ') : ''
+      }
+      break
+    case 'profiles':
+      if (isCalicoApiVersion(resource?.apiVersion)) {
+        return Array.isArray(resource.spec?.profiles) ? resource.spec.profiles.map(String).join(', ') : ''
+      }
+      break
+    case 'encapsulation':
+      if (isCalicoApiVersion(resource?.apiVersion)) return getCalicoIPPoolEncapsulation(resource)
+      break
+    case 'disabled':
+      if (isCalicoApiVersion(resource?.apiVersion)) return resource.spec?.disabled === true ? 'Disabled' : 'No'
+      break
+    case 'interfaceName':
+      if (isCalicoApiVersion(resource?.apiVersion)) return String(resource.spec?.interfaceName ?? '')
+      break
+    case 'defaultAction':
+      if (isCalicoApiVersion(resource?.apiVersion)) return String(resource.spec?.defaultAction ?? 'Deny')
+      break
+    case 'order':
+      if (isCalicoPolicyResource(resource) && resource.spec?.order !== undefined) return String(resource.spec.order)
+      break
+    case 'stagedAction':
+      if (isCalicoPolicyResource(resource)) return String(resource.spec?.stagedAction ?? '')
+      break
+    case 'node':
+      // A Calico HostEndpoint names its node in spec.node; a Pod uses spec.nodeName.
+      if (isCalicoApiVersion(resource?.apiVersion)) return String(resource.spec?.node ?? '')
+      return resource.spec?.nodeName || ''
+    case 'version':
+      if (kindLower === 'nodes') return getNodeVersion(resource)
+      return resource.spec?.version || ''
+    case 'health':
+      if (kindLower === 'applications') return getArgoApplicationHealth(resource).status
+      return resource.status?.health?.status || ''
+    case 'sync':
+      if (kindLower === 'applications') return getArgoApplicationSync(resource).status
+      return resource.status?.sync?.status || ''
+    case 'project':
+      if (kindLower === 'applications') return getArgoApplicationProject(resource)
+      return resource.spec?.project || ''
+    case 'provider':
+      if (kindLower === 'secretstores' || kindLower === 'clustersecretstores') return _getSecretStoreProviderType(resource)
+      return resource.spec?.provider || ''
+    // DRA + NVIDIA columns. Unmatched kinds break to the generic fallback —
+    // these keys are shared (e.g. 'components' is also a Trivy SBOM column).
+    case 'deviceClass':
+      if (kindLower === 'resourceclaims') return _getResourceClaimDeviceClasses(resource).join(', ')
+      if (kindLower === 'resourceclaimtemplates') return _getResourceClaimTemplateDeviceClasses(resource).join(', ')
+      break
+    case 'allocated':
+      if (kindLower === 'resourceclaims') return _getResourceClaimAllocation(resource).map(r => r.driver).join(', ')
+      break
+    case 'reservedFor':
+      if (kindLower === 'resourceclaims') return _getResourceClaimReservedFor(resource).map(r => r.name).join(', ')
+      break
+    case 'pool':
+      if (kindLower === 'resourceslices') return resource.spec?.pool?.name || ''
+      break
+    case 'devices':
+      if (kindLower === 'resourceslices') return String((resource.spec?.devices || []).length)
+      break
+    case 'selectors':
+      if (kindLower === 'deviceclasses') return String((resource.spec?.selectors || []).length)
+      break
+    case 'components':
+      if (kindLower === 'nvidiaclusterpolicies') return _getNvidiaClusterPolicyEnabledComponents(resource).filter(c => c.enabled).map(c => c.label).join(', ')
+      break
+    case 'mig':
+      if (kindLower === 'nvidiaclusterpolicies') return resource.spec?.mig?.strategy || ''
+      break
+    // Trivy keeps the scanned image under report.artifact, so the generic
+    // spec/status probe finds nothing and the header would offer a filter
+    // button that never populates.
+    case 'image':
+      if (kindLower === 'vulnerabilityreports' || kindLower === 'sbomreports'
+        || kindLower === 'clustersbomreports' || kindLower === 'exposedsecretreports') {
+        return _getVulnerabilityReportImage(resource)
+      }
+      break
+    case 'ruleTypes':
+      if (kindLower === 'kyvernopolicies' || kindLower === 'clusterpolicies') {
+        return _getKyvernoPolicyRuleTypes(resource)
+      }
+      break
+    // The fallback would read spec.timeZone and yield '' for an undeclared
+    // zone, so those rows would drop out of a filter the cell shows a value for.
+    case 'timeZone':
+      if (kindLower === 'raycronjobs') return _getRayCronJobTimeZone(resource)
+      break
+  }
+
+  // Fallback: try common paths
+  const val = resource.status?.[column] ?? resource.spec?.[column] ?? resource[column]
+  if (val === undefined || val === null) return ''
+  if (typeof val === 'boolean') return val ? 'Yes' : 'No'
+  if (typeof val === 'string') return val
+  if (typeof val === 'number') return String(val)
+  if (typeof val === 'object') return '' // Skip objects/arrays — not filterable
+  return String(val)
+  } catch (err) {
+    console.warn(`[getCellFilterValue] Failed for kind=${kind} column=${column}:`, err)
+    return ''
+  }
+}
+
+// ============================================================================
+// TRIVY OPERATOR UTILITIES — re-exported from resource-utils-trivy.ts
+// ============================================================================
+export {
+  getVulnerabilityReportSummary,
+  getVulnerabilityReportStatus,
+  getVulnerabilityReportImage,
+  getSbomReportImage,
+  getVulnerabilityReportContainer,
+  getConfigAuditReportSummary,
+  getConfigAuditReportStatus,
+  getExposedSecretReportSummary,
+  getExposedSecretReportContainer,
+  getExposedSecretReportImage,
+  getExposedSecretReportStatus,
+  getRbacAssessmentReportSummary,
+  getRbacAssessmentReportStatus,
+  getClusterComplianceReportStatus,
+  getSbomReportStatus,
+  getSbomReportContainer,
+} from './resource-utils-trivy'
+export type { VulnerabilitySummary, ConfigAuditSummary } from './resource-utils-trivy'
+
+// ============================================================================
+// KARPENTER UTILITIES — re-exported from resource-utils-karpenter.ts
+// ============================================================================
+export {
+  getNodePoolStatus,
+  getNodePoolNodeClassRef,
+  getNodePoolLimits,
+  getNodePoolDisruptionPolicy,
+  getNodePoolRequirements,
+  getNodePoolWeight,
+  getNodeClaimStatus,
+  getNodeClaimInstanceType,
+  getNodeClaimNodeName,
+  getNodeClaimCapacity,
+  getNodeClaimNodePoolRef,
+} from './resource-utils-karpenter'
+
+// ============================================================================
+// KEDA UTILITIES — re-exported from resource-utils-keda.ts
+// ============================================================================
+export {
+  getScaledObjectStatus,
+  getScaledObjectTarget,
+  getScaledObjectTargetKind,
+  getScaledObjectTargetName,
+  getScaledObjectReplicas,
+  getScaledObjectTriggers,
+  getScaledObjectTriggerCount,
+  getScaledObjectHpaName,
+  getScaledObjectPollingInterval,
+  getScaledObjectCooldownPeriod,
+  getScaledJobStatus,
+  getScaledJobTarget,
+  getScaledJobStrategy,
+  getScaledJobTriggerCount,
+  getScaledJobTriggers,
+} from './resource-utils-keda'
+
+// ============================================================================
+// KYVERNO / POLICY REPORT UTILITIES — re-exported from resource-utils-kyverno.ts
+// ============================================================================
+export {
+  getPolicyReportStatus,
+  getPolicyReportSummary,
+  getPolicyReportResults,
+  getPolicyReportResultCount,
+  getPolicyReportScope,
+  getPolicyReportSource,
+  getClusterPolicyReportStatus,
+  getKyvernoPolicyStatus,
+  getKyvernoPolicyAction,
+  getKyvernoPolicyRuleCount,
+  getKyvernoPolicyRuleTypes,
+  getKyvernoPolicyRules,
+  getKyvernoPolicyBackground,
+  getKyvernoPolicyRuleCountByType,
+  getClusterPolicyStatus,
+  getClusterPolicyAction,
+  getClusterPolicyRuleCount,
+} from './resource-utils-kyverno'
+
+// ============================================================================
+// EXTERNAL SECRETS OPERATOR UTILITIES — re-exported from resource-utils-eso.ts
+// ============================================================================
+export {
+  getExternalSecretStatus,
+  getExternalSecretStore,
+  getExternalSecretRefreshInterval,
+  getExternalSecretSecretCount,
+  getExternalSecretLastSync,
+  getExternalSecretTargetName,
+  getExternalSecretProvider,
+  getClusterExternalSecretStatus,
+  getClusterExternalSecretNamespaceCount,
+  getClusterExternalSecretFailedCount,
+  getSecretStoreStatus,
+  getSecretStoreProviderType,
+  getSecretStoreProviderKey,
+  getClusterSecretStoreStatus,
+} from './resource-utils-eso'
