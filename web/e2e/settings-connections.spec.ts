@@ -574,7 +574,7 @@ test('Cost explains query failures beside the connection status', async ({ page 
   await dialog.getByRole('tab', { name: '我的权限', exact: true }).click()
   await expect(dialog.getByText('查看当前身份在此集群中可以执行的操作，包括绑定的角色及汇总后的有效权限。', { exact: true })).toBeVisible()
   await dialog.getByRole('tab', { name: '成本', exact: true }).click()
-  await expect(dialog.getByRole('group', { name: '当前连接', exact: true })).toContainText('The selected cost source could not provide data.')
+  await expect(dialog.getByRole('group', { name: '当前连接', exact: true })).toContainText('所选成本来源无法提供数据。')
 })
 
 for (const integration of integrations) {
@@ -1532,7 +1532,7 @@ for (const surface of ['overview', 'workload', 'application'] as const) {
     await page.goto(surface === 'overview' ? '/cost' : surface === 'application'
       ? '/applications?app=default%2FDeployment%2Fnginx&view=cost'
       : '/workload/deployments/default/nginx?tab=cost')
-    await expect(page.getByText(/Kubecost Aggregator is unavailable/)).toBeVisible()
+    await expect(page.getByText(/Kubecost Aggregator 不可用/)).toBeVisible()
     await expect(page.getByText(previousHint).first()).toBeVisible()
     await page.getByRole('button', { name: 'Configure cost source', exact: true }).first().click()
     await expect(page.getByRole('dialog', { name: '设置', exact: true }).getByRole('tab', { name: '成本', exact: true })).toHaveAttribute('aria-selected', 'true')
