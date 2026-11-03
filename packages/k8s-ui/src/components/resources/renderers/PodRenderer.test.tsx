@@ -145,6 +145,7 @@ describe('PodRenderer resolved environment', () => {
     expect(html).toContain('2 个变量')
     expect(html).toContain('1 个来自 Secret')
     expect(html).toContain('Secret 值在主动显示前会保持隐藏。')
+    expect(html).toContain('aria-label="显示值"')
     expect(html).not.toContain('Value if restarted now')
     expect(html).toContain('这里只显示 Pod 上声明的变量。')
     expect(html).not.toContain('Changes observed')
@@ -180,6 +181,7 @@ describe('PodRenderer resolved environment', () => {
 
     const normal = render(environment)
     expect(normal).toContain('w-[46%]')
+    expect(normal).toContain('直接设置')
     expect(normal).not.toContain('>Status</span>')
     expect(normal).toContain('lucide-equal')
     expect(normal).not.toContain('lucide-pencil')
@@ -191,7 +193,7 @@ describe('PodRenderer resolved environment', () => {
         rows: [{ name: 'FEATURE', state: 'missing', optional: true, source: { kind: 'ConfigMap', name: 'settings', key: 'feature' }, message: 'Optional key feature is absent.' }],
       }],
     })
-    expect(optional).toContain('Not set')
+    expect(optional).toContain('未设置')
     expect(optional).toContain('w-[46%]')
     expect(optional).not.toContain('>Status</span>')
     expect(optional).toContain('!cursor-help')
@@ -222,7 +224,7 @@ describe('PodRenderer resolved environment', () => {
         rows: [{ name: 'RUNTIME_VALUE', value: '$(SERVICE_HOST)', state: 'unavailable', runtimeDependent: true, source: { kind: 'Direct' } }],
       }],
     })
-    expect(runtime).toContain('Set at startup')
+    expect(runtime).toContain('启动时设置')
     expect(runtime).toContain('w-[46%]')
     expect(runtime).not.toContain('>Status</span>')
 
@@ -240,8 +242,8 @@ describe('PodRenderer resolved environment', () => {
         }],
       }],
     })
-    expect(restartBlocked).toContain('Restart blocked')
-    expect(restartBlocked).not.toContain('>Removed after start</span>')
+    expect(restartBlocked).toContain('重启受阻')
+    expect(restartBlocked).not.toContain('>启动后移除</span>')
     expect(restartBlocked).toContain('>状态</span>')
 
     const startupBlocked = render({
@@ -251,7 +253,7 @@ describe('PodRenderer resolved environment', () => {
         rows: [{ name: 'REQUIRED', state: 'missing', missingImpact: 'startupBlocked', source: { kind: 'Secret', name: 'credentials', key: 'required' } }],
       }],
     })
-    expect(startupBlocked).toContain('Prevents start')
+    expect(startupBlocked).toContain('阻止启动')
     expect(startupBlocked).toContain('>状态</span>')
 
     const limitedHistory = render({
@@ -259,7 +261,7 @@ describe('PodRenderer resolved environment', () => {
       coverage: { degraded: true, degradedReason: 'Change history is limited to this Radar session.', saturated: true },
     })
     expect(limitedHistory).toContain('Change history is limited to this Radar session.')
-    expect(limitedHistory).toContain('Some recent changes may not be shown.')
+    expect(limitedHistory).toContain('部分近期变化可能未显示。')
 
     const changed = render({
       ...environment,
@@ -273,6 +275,29 @@ describe('PodRenderer resolved environment', () => {
     })
     expect(changed).toContain('w-[42%]')
     expect(changed).toContain('>状态</span>')
+    expect(changed).toContain('启动后变更')
+
+    const denied = render({
+      ...environment,
+      containers: [{
+        ...environment.containers[0],
+        rows: [{ name: 'TOKEN', state: 'denied', source: { kind: 'Secret', name: 'credentials' }, message: 'Access denied by policy.' }],
+      }],
+    })
+    expect(denied).toContain('需要访问权限')
+
+    const specialSources = render({
+      ...environment,
+      containers: [{
+        ...environment.containers[0],
+        rows: [
+          { name: 'CPU_LIMIT', value: '1', state: 'resolved', source: { kind: 'Container resources', key: 'limits.cpu' } },
+          { name: 'DERIVED', value: 'value', state: 'resolved', source: { kind: 'Variable', variable: 'BASE' } },
+        ],
+      }],
+    })
+    expect(specialSources).toContain('容器资源')
+    expect(specialSources).toContain('>变量</span>')
   })
 
   it('selects the first regular container instead of an init container', () => {
@@ -317,11 +342,11 @@ describe('PodRenderer resolved environment', () => {
 
     const ready = render(null)
     expect(ready).toContain('group-hover/value:opacity-100')
-    expect(ready).toContain('aria-label="Copy value"')
+    expect(ready).toContain('aria-label="复制值"')
     expect(ready).toContain('lucide-copy')
 
     const confirmed = render('api\u0000PUBLIC_URL')
-    expect(confirmed).toContain('aria-label="Value copied"')
+    expect(confirmed).toContain('aria-label="值已复制"')
     expect(confirmed).toContain('lucide-check')
     expect(confirmed).toContain('text-green-400')
   })

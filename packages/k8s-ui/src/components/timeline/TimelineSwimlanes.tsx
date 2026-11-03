@@ -409,14 +409,14 @@ export interface ClusterBreakdownLine {
 }
 
 function breakdownLabel(event: TimelineEvent): string {
-  if (isProblematicEvent(event)) return event.reason || 'Warning'
+  if (isProblematicEvent(event)) return event.reason || '警告'
   if (isChangeEvent(event)) {
-    if (event.eventType === 'add') return 'Created'
-    if (event.eventType === 'delete') return 'Deleted'
-    if (event.eventType === 'update') return 'Modified'
-    return 'Changed'
+    if (event.eventType === 'add') return '已创建'
+    if (event.eventType === 'delete') return '已删除'
+    if (event.eventType === 'update') return '已修改'
+    return '已变更'
   }
-  return event.reason || 'Event'
+  return event.reason || '事件'
 }
 
 /**
@@ -1539,7 +1539,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
   }, [events, bounds])
 
   if (isLoading) {
-    return <PaneLoader label="Loading timeline…" className="h-full w-full" />
+    return <PaneLoader label="正在加载时间线…" className="h-full w-full" />
   }
 
   // Compute empty state info (but don't early return - we need the toolbar visible)
@@ -1647,7 +1647,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                 {hasVisibleChildren ? (
                   <button
                     onClick={() => toggleLane(lane.id)}
-                    aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                    aria-label={isExpanded ? '折叠' : '展开'}
                     className="p-1 -m-0.5 text-theme-text-tertiary hover:text-theme-text-primary hover:bg-theme-elevated rounded"
                   >
                     <CollapseChevron open={isExpanded} inheritColor className="w-4 h-4" />
@@ -1664,7 +1664,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                      chip + namespace. Only the NAME navigates; the rest is inert. */
                   <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <Tooltip content={lane.identityAmbiguous ? `${lane.name} · API group unknown` : lane.name} wrapperClassName="min-w-0 flex-1">
+                      <Tooltip content={lane.identityAmbiguous ? `${lane.name} · API 组未知` : lane.name} wrapperClassName="min-w-0 flex-1">
                         <span
                           onClick={lane.identityAmbiguous ? undefined : () => handleLaneOpen(lane.kind, lane.namespace, lane.name, lane.group, lane.identityResolved)}
                           className={clsx('min-w-0 w-full text-sm text-theme-text-primary', !lane.identityAmbiguous && 'hover:text-accent-text hover:underline cursor-pointer', compact ? 'font-medium' : 'font-semibold font-mono')}
@@ -1878,21 +1878,21 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
               <div className="text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-theme-text-tertiary">事件</div>
               <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-theme-text-secondary">
                 {/* One activity hue: shape carries the event class. */}
-                <MarkerLegendItem shape="triangle-up" colorClass="text-blue-600 dark:text-blue-400" label="created" description="Resource was created" />
-                <MarkerLegendItem shape="circle" colorClass="text-blue-600 dark:text-blue-400" label="modified" description="Resource change or informational Kubernetes event" />
-                <MarkerLegendItem shape="triangle-down" colorClass="text-blue-600 dark:text-blue-400" label="deleted" description="Resource was removed" />
-                <MarkerLegendItem shape="diamond" colorClass="text-amber-500 dark:text-amber-400" label="warning" description="Warning event (CrashLoopBackOff, Failed, etc.)" />
-                <MarkerLegendItem shape="ring" colorClass="text-theme-text-tertiary" label="historical" description="Inferred from resource metadata (creation time, etc.)" />
-                <ClusterLegendItem description="Nearby events collapsed into one pill" />
+                <MarkerLegendItem shape="triangle-up" colorClass="text-blue-600 dark:text-blue-400" label="已创建" description="资源已创建" />
+                <MarkerLegendItem shape="circle" colorClass="text-blue-600 dark:text-blue-400" label="已修改" description="资源变更或说明性 Kubernetes 事件" />
+                <MarkerLegendItem shape="triangle-down" colorClass="text-blue-600 dark:text-blue-400" label="已删除" description="资源已移除" />
+                <MarkerLegendItem shape="diamond" colorClass="text-amber-500 dark:text-amber-400" label="警告" description="警告事件（CrashLoopBackOff、Failed 等）" />
+                <MarkerLegendItem shape="ring" colorClass="text-theme-text-tertiary" label="历史记录" description="根据资源元数据推断（例如创建时间）" />
+                <ClusterLegendItem description="附近事件已合并为一个标记" />
               </div>
-              <div className="mt-3.5 text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-theme-text-tertiary">Health</div>
+              <div className="mt-3.5 text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-theme-text-tertiary">健康状态</div>
               <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-theme-text-secondary">
                 {/* Exactly three status colors; everything else is gray. */}
-                <HealthLegendItem color={HEALTH_STRIP_COLORS.healthy} label="healthy" description="Resource is fully operational" />
-                <HealthLegendItem color={HEALTH_STRIP_COLORS.degraded} label="degraded" description="Unexpected partial availability" />
-                <HealthLegendItem color={HEALTH_STRIP_COLORS.unhealthy} label="unhealthy" description="Resource is failing or not ready" />
-                <HealthLegendItem color="bg-gray-400/50" label="no signal" description="Not a health state: rolling out, idle/suspended, or nothing observed yet" />
-                <HealthLegendItem label="mixed" swatchStyle={MIXED_HEALTH_STRIP_STYLE} description="members disagree — some OK, some degraded; expand or hover for who" />
+                <HealthLegendItem color={HEALTH_STRIP_COLORS.healthy} label="健康" description="资源运行正常" />
+                <HealthLegendItem color={HEALTH_STRIP_COLORS.degraded} label="降级" description="资源部分可用且状态异常" />
+                <HealthLegendItem color={HEALTH_STRIP_COLORS.unhealthy} label="不健康" description="资源运行失败或尚未就绪" />
+                <HealthLegendItem color="bg-gray-400/50" label="无状态信号" description="非健康状态：正在滚动更新、空闲或暂停，或尚无观测数据" />
+                <HealthLegendItem label="状态不一" swatchStyle={MIXED_HEALTH_STRIP_STYLE} description="成员状态不一致——部分正常、部分降级；展开或悬停查看详情" />
               </div>
             </div>
           </>
@@ -1913,7 +1913,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
           <div className="sticky top-0 z-30 bg-theme-surface border-b border-theme-border">
             <div className="flex">
               <div className={clsx('shrink-0 border-r border-theme-border px-3 h-8 flex items-center', laneLabelWidthClass)}>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-theme-text-tertiary">Resource</span>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-theme-text-tertiary">资源</span>
                 {/* Single morphing toggle: ≥half the groups open → offers
                     collapse-all; otherwise expand-all. Tooltip names the action
                     and its shortcut. ml-auto rides the Tooltip's own flex wrapper
@@ -1921,12 +1921,12 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                     inflates to the line-height and top-aligns the glyph). */}
                 {/* Flat compact lanes never nest, so bulk expand/collapse is a no-op. */}
                 {!compact && (
-                  <Tooltip content={mostlyExpanded ? 'Collapse all (E)' : 'Expand all (E)'} wrapperClassName="ml-auto">
+                  <Tooltip content={mostlyExpanded ? '折叠全部（E）' : '展开全部（E）'} wrapperClassName="ml-auto">
                     <button
                       type="button"
                       onClick={() => setAllExpanded(!mostlyExpanded)}
                       className="rounded p-1 text-theme-text-tertiary hover:bg-theme-elevated hover:text-theme-text-primary"
-                      aria-label={mostlyExpanded ? 'Collapse all resources' : 'Expand all resources'}
+                      aria-label={mostlyExpanded ? '折叠所有资源' : '展开所有资源'}
                     >
                       {mostlyExpanded
                         ? <ChevronsDownUp className="h-3.5 w-3.5" />
@@ -2246,10 +2246,10 @@ function KindChip({ kind, title }: { kind: string; title?: string }) {
 // it reads as a subtle qualifier next to the kind badge, not a status pill.
 function GroupChip({ group }: { group: string }) {
   return (
-    <Tooltip content={`API group ${group}`} wrapperClassName="shrink-0">
+    <Tooltip content={`API 组 ${group}`} wrapperClassName="shrink-0">
       <span
         className="rounded bg-theme-hover px-1 py-px text-[10px] font-medium text-theme-text-tertiary ring-1 ring-inset ring-theme-border"
-        aria-label={`API group ${group}`}
+        aria-label={`API 组 ${group}`}
       >
         {group}
       </span>
@@ -2889,20 +2889,20 @@ function EventMarker({ event, x, selected, onClick, dimmed, small }: EventMarker
   // Get human-readable operation label with color indicator
   const getOperationLabel = () => {
     if (isProblematic) {
-      return `⚠ ${event.reason || 'Warning'}`
+      return `⚠ ${event.reason || '警告'}`
     }
     if (isChange) {
       switch (event.eventType) {
-        case 'add': return '● Created'
-        case 'delete': return '● Deleted'
-        case 'update': return '● Modified'
-        default: return '● Changed'
+        case 'add': return '● 已创建'
+        case 'delete': return '● 已删除'
+        case 'update': return '● 已修改'
+        default: return '● 已变更'
       }
     }
     if (event.reason) {
       return `● ${event.reason}`
     }
-    return '● Event'
+    return '● 事件'
   }
 
   const tooltipLines: string[] = []
@@ -2915,7 +2915,7 @@ function EventMarker({ event, x, selected, onClick, dimmed, small }: EventMarker
     tooltipLines.push(msg)
   }
   tooltipLines.push(formatRelativeAgeTime(event.timestamp))
-  if (isHistoricalEvent(event)) tooltipLines.push('(from metadata)')
+  if (isHistoricalEvent(event)) tooltipLines.push('(来自元数据)')
 
   const tooltipText = tooltipLines.join(' · ')
 
@@ -3228,7 +3228,7 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
               {isHistorical && (
                 <span className="badge-sm bg-theme-hover text-theme-text-secondary">
                   <Clock className="h-3 w-3" />
-                  from metadata
+                  来自元数据
                 </span>
               )}
             </dd>

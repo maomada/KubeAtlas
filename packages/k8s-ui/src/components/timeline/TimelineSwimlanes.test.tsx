@@ -215,8 +215,8 @@ describe('clusterBreakdown (pill hover breakdown)', () => {
     expect(more).toBe(0)
     expect(lines).toEqual([
       { label: 'BackOff', count: 1 },
-      { label: 'Created', count: 1 },
-      { label: 'Modified', count: 2 },
+      { label: '已创建', count: 1 },
+      { label: '已修改', count: 2 },
     ])
   })
 
@@ -245,13 +245,13 @@ describe('clusterBreakdown (pill hover breakdown)', () => {
       4,
     )
     expect(lines).toHaveLength(4)
-    expect(lines[3]).toEqual({ label: 'Deleted', count: 1 })
+    expect(lines[3]).toEqual({ label: '已删除', count: 1 })
     expect(more).toBe(2)
   })
 
-  it('labels a reason-less warning as Warning', () => {
+  it('labels a reason-less warning in Chinese', () => {
     const { lines } = clusterBreakdown([mkEvent('w1', 'Warning')])
-    expect(lines).toEqual([{ label: 'Warning', count: 1 }])
+    expect(lines).toEqual([{ label: '警告', count: 1 }])
   })
 })
 
@@ -276,8 +276,9 @@ describe('bulk expand/collapse toggle (single morphing control)', () => {
     })
     // Flat lanes (no groups) → nothing expanded → the toggle offers Expand.
     const html = renderToString(<TimelineSwimlanes events={[ev('web')]} />)
-    expect(html).toContain('aria-label="Expand all resources"')
-    expect(html).not.toContain('aria-label="Collapse all resources"')
+    expect(html).toContain('>资源</span>')
+    expect(html).toContain('aria-label="展开所有资源"')
+    expect(html).not.toContain('aria-label="折叠所有资源"')
     // The "(E)" shortcut hint rides the custom Tooltip (not SSR'd) — the
     // aria-labels above are the state-aware affordance.
   })
@@ -291,10 +292,10 @@ describe('compact mode (embedded detail-view swimlane)', () => {
 
   it('hides the bulk expand/collapse toggle — flat lanes never nest', () => {
     const full = renderToString(<TimelineSwimlanes events={[ev('web')]} />)
-    expect(full).toContain('aria-label="Expand all resources"')
+    expect(full).toContain('aria-label="展开所有资源"')
     const compact = renderToString(<TimelineSwimlanes events={[ev('web')]} grouping="flat" compact />)
-    expect(compact).not.toContain('aria-label="Expand all resources"')
-    expect(compact).not.toContain('aria-label="Collapse all resources"')
+    expect(compact).not.toContain('aria-label="展开所有资源"')
+    expect(compact).not.toContain('aria-label="折叠所有资源"')
   })
 
   it('widens the label column (no namespace subtitle or tree competing for it)', () => {
@@ -998,9 +999,9 @@ describe('group collision chip (same kind+ns+name, different API group)', () => 
         viewWindow={{ fromMs: NOW - HOUR, toMs: NOW + HOUR }}
       />,
     )
-    // The chip is the "API group <g>" title; both groups get one.
-    expect(html).toContain('API group cluster.x-k8s.io')
-    expect(html).toContain('API group postgresql.cnpg.io')
+    // The chip is the "API 组 <g>" title; both groups get one.
+    expect(html).toContain('API 组 cluster.x-k8s.io')
+    expect(html).toContain('API 组 postgresql.cnpg.io')
   })
 
   it('renders NO group chip when the CRD lane is unique', () => {
@@ -1011,7 +1012,7 @@ describe('group collision chip (same kind+ns+name, different API group)', () => 
         viewWindow={{ fromMs: NOW - HOUR, toMs: NOW + HOUR }}
       />,
     )
-    expect(html).not.toContain('API group')
+    expect(html).not.toContain('API 组')
     // The group still rides the kind badge's title tooltip (non-intrusive).
     expect(html).toContain('postgresql.cnpg.io')
   })
