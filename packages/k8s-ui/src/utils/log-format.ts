@@ -125,6 +125,25 @@ export function highlightSearchMatches(
   return escaped.replace(regex, '<mark class="log-highlight">$1</mark>')
 }
 
+export function highlightRanges(
+  text: string,
+  ranges: readonly [number, number][],
+): string {
+  if (ranges.length === 0) return escapeHtml(text)
+
+  let html = ''
+  let cursor = 0
+  for (const [rawStart, rawEnd] of ranges) {
+    const start = Math.max(cursor, Math.min(text.length, rawStart))
+    const end = Math.max(start, Math.min(text.length, rawEnd))
+    if (start >= end) continue
+    html += escapeHtml(text.slice(cursor, start))
+    html += `<mark class="log-highlight">${escapeHtml(text.slice(start, end))}</mark>`
+    cursor = end
+  }
+  return html + escapeHtml(text.slice(cursor))
+}
+
 /**
  * Escape HTML special characters to prevent XSS.
  */

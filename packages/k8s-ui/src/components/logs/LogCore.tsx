@@ -10,12 +10,14 @@ import { showApiError, showApiSuccess } from '../ui/Toast'
 import {
   formatLogTimestamp,
   highlightSearchMatches,
+  highlightRanges,
   stripAnsi,
   ansiToHtml,
   type TimestampFormat,
   TIMESTAMP_FORMAT_LABELS,
 } from '../../utils/log-format'
 import { getLogPalette, getLogLevelColor, type LogPalette } from './log-palette'
+import type { LogSearchRange } from './logSearchCore'
 import { associateContinuations, groupContinuations, type LogGroup } from '../../utils/log-level'
 import { copyText } from '../../utils/clipboard'
 import { useAnimatedUnmount } from '../../hooks/useAnimatedUnmount'
@@ -325,6 +327,13 @@ export function LogCore({
   const search = useLogSearch(levelFilteredEntries, virtuosoRef, recordIdOf, pauseFollowing)
 
   const displayEntries = search.isFiltering ? search.filteredEntries : levelFilteredEntries
+  const searchRangesById = useMemo(() => {
+    const ranges = new Map<number, readonly LogSearchRange[]>()
+    levelFilteredEntries.forEach((entry, index) => {
+      if (search.ranges[index]) ranges.set(entry.id, search.ranges[index])
+    })
+    return ranges
+  }, [levelFilteredEntries, search.ranges])
   const hiddenCount = levelFilteredEntries.length - displayEntries.length
   // Hidden lines leave nothing to highlight, so Hide keeps normal rendering and stack grouping.
   const highlightQuery = search.mode === 'hide' ? '' : search.query
@@ -1039,7 +1048,9 @@ export function LogCore({
             <>
               <span className={`text-xs whitespace-nowrap ${search.regexError ? palette.textError : palette.textTertiary}`}>
                 {search.regexError
-                  ? 'Invalid regex'
+                  ? search.regexError.startsWith('Invalid regular expression') ? 'Invalid regex' : search.regexError
+                  : search.isSearching
+                    ? '搜索中…'
                   : search.mode === 'hide'
                     ? `${hiddenCount.toLocaleString()} hidden`
                     : search.matchCount > 0
@@ -1165,6 +1176,7 @@ export function LogCore({
                 searchQuery={highlightQuery}
                 searchIsRegex={search.isRegex}
                 searchIsCaseSensitive={search.isCaseSensitive}
+                searchRangesById={searchRangesById}
                 showPodName={showPodName}
                 showTimestamp={showTimestamps}
                 tsFormat={tsFormat}
@@ -1270,6 +1282,7 @@ interface LogLineProps {
   searchQuery: string
   searchIsRegex: boolean
   searchIsCaseSensitive: boolean
+  searchRangesById: ReadonlyMap<number, readonly LogSearchRange[]>
   showPodName: boolean
   showTimestamp: boolean
   tsFormat: TimestampFormat
@@ -1291,6 +1304,7 @@ function LogLine({
   searchQuery,
   searchIsRegex,
   searchIsCaseSensitive,
+  searchRangesById,
   showPodName,
   showTimestamp,
   tsFormat,
@@ -1313,7 +1327,9 @@ function LogLine({
   let contentElement: React.ReactNode
   if (searchQuery) {
     const plain = stripAnsi(entry.content)
-    const highlighted = highlightSearchMatches(plain, searchQuery, searchIsRegex, searchIsCaseSensitive)
+    const highlighted = searchIsRegex
+      ? highlightRanges(plain, searchRangesById.get(entry.id) ?? [])
+      : highlightSearchMatches(plain, searchQuery, false, searchIsCaseSensitive)
     contentElement = (
       <span
         className={`${wordWrap ? 'whitespace-pre-wrap [overflow-wrap:anywhere]' : 'whitespace-pre'} ${levelColor}`}
@@ -1388,6 +1404,7 @@ interface LogGroupItemProps {
   searchQuery: string
   searchIsRegex: boolean
   searchIsCaseSensitive: boolean
+  searchRangesById: ReadonlyMap<number, readonly LogSearchRange[]>
   showPodName: boolean
   showTimestamp: boolean
   tsFormat: TimestampFormat

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { highlightJson, tokenizeJson, unescapeJsonStrings } from './log-format'
+import { highlightJson, highlightRanges, tokenizeJson, unescapeJsonStrings } from './log-format'
 
 describe('unescapeJsonStrings', () => {
   it('expands whitespace inside strings while leaving escapes outside them untouched', () => {
@@ -37,5 +37,13 @@ describe('JSON highlighting', () => {
     const text = '"' + '\\"'.repeat(100_000)
     expect(tokenizeJson(text)).toEqual([{ type: 'text', value: text }])
     expect(highlightJson(text)).toBe(text)
+  })
+})
+
+describe('log search range highlighting', () => {
+  it('escapes text outside and inside match ranges', () => {
+    expect(highlightRanges('<script>& ok', [[0, 8], [8, 9]])).toBe(
+      '<mark class="log-highlight">&lt;script&gt;</mark><mark class="log-highlight">&amp;</mark> ok',
+    )
   })
 })
