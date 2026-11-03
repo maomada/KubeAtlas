@@ -1,0 +1,51 @@
+name: Security
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '0 9 * * 1'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  sast:
+    name: SAST (Semgrep CE)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          repository: semgrep/semgrep-rules
+          ref: 16b9e6d45f10649f6a531ec4838ed9924372c3bc
+          path: .security-upstream
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned standalone scanner
+        run: python3 -m pip install -r .github/security-requirements.txt
+      - name: Verify fail-closed policy and Go/JS/TS detection
+        run: |
+          python3 -m unittest discover -s scripts -p 'test_security*.py'
+          python3 scripts/security_scan.py --rules-source .security-upstream --output "$RUNNER_TEMP/security" --self-test
+      - name: Scan all production Go and JavaScript/TypeScript sources
+        run: python3 scripts/security_scan.py --rules-source .security-upstream --output "$RUNNER_TEMP/security"
+      - name: Preserve scan evidence even on failure
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-${{ github.sha }}
+          path: ${{ runner.temp }}/security/
+          if-no-files-found: error
+          retention-days: 14
