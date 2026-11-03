@@ -897,7 +897,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
   useRegisterShortcut({
     id: 'swimlane-escape',
     keys: 'Escape',
-    description: 'Close event detail',
+    description: '关闭事件详情',
     category: 'Timeline',
     scope: 'timeline',
     handler: () => {
@@ -918,7 +918,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
   useRegisterShortcut({
     id: 'swimlane-cluster-prev',
     keys: 'ArrowUp',
-    description: 'Previous clustered event',
+    description: '上一个聚合事件',
     category: 'Timeline',
     scope: 'timeline',
     handler: (e) => {
@@ -930,7 +930,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
   useRegisterShortcut({
     id: 'swimlane-cluster-next',
     keys: 'ArrowDown',
-    description: 'Next clustered event',
+    description: '下一个聚合事件',
     category: 'Timeline',
     scope: 'timeline',
     handler: (e) => {
@@ -2062,7 +2062,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                 >
                   {widthPx > GAP_LABEL_MIN_PX && (
                     <span className="whitespace-nowrap rounded bg-theme-surface/70 px-1 text-[10px] uppercase tracking-wide text-theme-text-tertiary">
-                      connector offline
+                      连接器离线
                     </span>
                   )}
                 </div>
@@ -2074,7 +2074,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
               <div data-testid="timeline-pinned-section">
                 <div className="flex">
                   <div className={clsx('shrink-0 border-r border-theme-border px-3 py-1.5', laneLabelWidthClass)}>
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-theme-text-tertiary">Pinned</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-theme-text-tertiary">已固定</span>
                   </div>
                   <div className="flex-1" />
                 </div>
@@ -2170,7 +2170,7 @@ function ClusterLegendItem({ description }: { description: string }) {
           <MarkerGlyph shape="circle" size={8} className="text-blue-600 dark:text-blue-400" />
           <span className="text-[11px] font-semibold leading-none tabular-nums text-theme-text-primary">×5</span>
         </span>
-        <span className="leading-none">clustered</span>
+        <span className="leading-none">聚合事件</span>
       </span>
     </Tooltip>
   )
@@ -2227,7 +2227,7 @@ export function chipKindLabel(kind: string): { label: string; abbreviated: boole
 // name owns the first row so it doesn't lose the width fight to metadata.
 function KindChip({ kind, title }: { kind: string; title?: string }) {
   const { label } = chipKindLabel(kind)
-  const tip = title ?? (kind ? undefined : 'Kubernetes event — its source object reports no kind')
+  const tip = title ?? (kind ? undefined : 'Kubernetes 事件——来源对象未报告资源类型')
   return (
     <Tooltip content={tip} disabled={!tip} wrapperClassName="shrink-0">
       <span
@@ -2287,7 +2287,7 @@ function ChildLaneLabel({ kind, group, showGroupChip, kindTitle, name, labelWidt
           // Centered ON this row's rail. bg keeps the line from striking the glyph.
           className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded bg-theme-surface p-1 text-theme-text-tertiary hover:bg-theme-elevated hover:text-theme-text-primary"
           style={{ left: selfRailPx }}
-          aria-label={expanded ? 'Collapse' : 'Expand'}
+          aria-label={expanded ? '折叠' : '展开'}
         >
           <CollapseChevron open={!!expanded} inheritColor className="w-4 h-4" />
         </button>
@@ -2313,8 +2313,8 @@ function ChildLaneLabel({ kind, group, showGroupChip, kindTitle, name, labelWidt
 // navigate-on-click. Filled + always visible when pinned; hover-reveal otherwise.
 function PinButton({ pinned, onToggle, alwaysVisible, isAppGroup }: { pinned: boolean; onToggle: () => void; alwaysVisible?: boolean; isAppGroup?: boolean }) {
   const title = isAppGroup
-    ? (pinned ? 'Unpin app' : 'Pin app — keep all its rows visible while you pan and zoom')
-    : (pinned ? 'Unpin' : 'Pin — keep this row visible while you pan and zoom')
+    ? (pinned ? '取消固定应用' : '固定应用——平移和缩放时保持其所有行可见')
+    : (pinned ? '取消固定' : '固定——平移和缩放时保持此行可见')
   return (
     <Tooltip content={title} wrapperClassName="shrink-0">
       <button
@@ -2325,7 +2325,7 @@ function PinButton({ pinned, onToggle, alwaysVisible, isAppGroup }: { pinned: bo
           pinned ? 'text-accent-text opacity-100' : 'text-theme-text-tertiary hover:text-theme-text-primary',
           !pinned && !alwaysVisible && 'opacity-0 group-hover/pin:opacity-100',
         )}
-        aria-label={isAppGroup ? (pinned ? 'Unpin app' : 'Pin app') : (pinned ? 'Unpin' : 'Pin')}
+        aria-label={isAppGroup ? (pinned ? '取消固定应用' : '固定应用') : (pinned ? '取消固定' : '固定')}
       >
         <Pin className={clsx('w-3.5 h-3.5', pinned && 'fill-current')} />
       </button>

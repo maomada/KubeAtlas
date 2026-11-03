@@ -533,11 +533,11 @@ describe('pinned resource lanes', () => {
         onTogglePin={() => {}}
       />,
     )
-    expect(html).toContain('Pinned')
+    expect(html).toContain('已固定')
     expect(html).toContain('web')
     expect(html).toContain('team-a')
     // Pinned row's toggle is the filled Unpin affordance.
-    expect(html).toContain('aria-label="Unpin"')
+    expect(html).toContain('aria-label="取消固定"')
   })
 
   it('renders a pinned row above the sorted lanes when the resource has events', () => {
@@ -553,7 +553,7 @@ describe('pinned resource lanes', () => {
         onTogglePin={() => {}}
       />,
     )
-    const pinnedIdx = html.indexOf('Pinned')
+    const pinnedIdx = html.indexOf('已固定')
     const webIdx = html.indexOf('web')
     expect(pinnedIdx).toBeGreaterThanOrEqual(0)
     // The pinned caption precedes the (duplicated) pinned row.
@@ -583,10 +583,10 @@ describe('pinned resource lanes', () => {
         onTogglePin={() => {}}
       />,
     )
-    expect(html).toContain('Pinned')
+    expect(html).toContain('已固定')
     expect(html).toContain('billing')
     // The pinned group's toggle shows the app-specific filled Unpin affordance.
-    expect(html).toContain('aria-label="Unpin app"')
+    expect(html).toContain('aria-label="取消固定应用"')
     expect(html).toContain('fill-current')
   })
 
@@ -851,7 +851,7 @@ describe('empty state is pin-aware', () => {
         onTogglePin={() => {}}
       />,
     )
-    expect(html).toContain('aria-label="Unpin"')
+    expect(html).toContain('aria-label="取消固定"')
   })
 })
 

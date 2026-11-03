@@ -250,7 +250,7 @@ function ValueCell({
   if (row.runtimeDependent) {
     const explanation = row.message || '容器启动时确定最终值。'
     return (
-      <Tooltip content={row.value ? `${explanation} Pod configuration: ${row.value}` : explanation} position="top">
+      <Tooltip content={row.value ? `${explanation} Pod 配置：${row.value}` : explanation} position="top">
         <span className="cursor-help border-b border-dotted border-theme-text-tertiary text-theme-text-tertiary" tabIndex={0}>启动时设置</span>
       </Tooltip>
     )
