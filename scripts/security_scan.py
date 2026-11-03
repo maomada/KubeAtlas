@@ -14,7 +14,7 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / ".github/security-rules.lock.json"
-ENGINE_VERSION = "1.145.0"
+ENGINE_VERSION = "1.180.0"
 EXTENSIONS = {".go", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 
 
@@ -73,10 +73,10 @@ def scan(config, targets, output):
         "semgrep", "scan", "--oss-only", "--metrics=off", "--disable-version-check",
         "--disable-nosem", "--strict", "--error", "--no-git-ignore",
         "--max-target-bytes=0", "--timeout=0", "--jobs=2",
-        "--config", str(config), "--json", *map(str, targets),
+        "--config", config.name, "--json", *map(str, targets),
     ]
     with output.open("w") as stream:
-        result = subprocess.run(command, env=env, stdout=stream, check=False)
+        result = subprocess.run(command, cwd=config.parent, env=env, stdout=stream, check=False)
     report = json.loads(output.read_text())
     passed = require_complete(report, targets, result.returncode)
     print(f"Scanned {len(targets)} files; findings: {len(report['results'])}; report: {output}")
@@ -124,8 +124,9 @@ def main():
             raise ValueError(f"Expected Semgrep {ENGINE_VERSION}, got {version}")
         lock = json.loads(LOCK.read_text())
         with tempfile.TemporaryDirectory(prefix="kubeatlas-sast-rules-") as directory:
-            config = Path(directory)
+            config = Path(directory) / "rules"
             prepare_rules(args.rules_source.resolve(), config, lock)
+            shutil.copyfile(ROOT / ".semgrepignore", config.parent / ".semgrepignore")
             if args.self_test:
                 self_test(config, output)
                 return 0
@@ -136,6 +137,12 @@ def main():
             source_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
             (output / "provenance.json").write_text(json.dumps({
                 "sourceSha": source_sha, "engine": version,
+                "event": os.environ.get("GITHUB_EVENT_NAME"),
+                "runUrl": (
+                    f"{os.environ['GITHUB_SERVER_URL']}/{os.environ['GITHUB_REPOSITORY']}"
+                    f"/actions/runs/{os.environ['GITHUB_RUN_ID']}"
+                    if os.environ.get("GITHUB_RUN_ID") else None
+                ),
                 "rulesCommit": lock["commit"], "ruleCount": lock["ruleCount"],
                 "lockSha256": hashlib.sha256(LOCK.read_bytes()).hexdigest(),
                 "targets": [str(path.relative_to(ROOT)) for path in targets],
