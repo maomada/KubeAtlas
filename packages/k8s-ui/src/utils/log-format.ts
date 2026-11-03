@@ -102,6 +102,7 @@ export function getLevelColor(level: LogLevel): string {
 /**
  * Highlight search query matches in text with a mark tag.
  * Returns HTML string safe for dangerouslySetInnerHTML.
+ * User-supplied regex must use the isolated log-search path.
  */
 export function highlightSearchMatches(
   text: string, query: string, isRegex = false, isCaseSensitive = false,

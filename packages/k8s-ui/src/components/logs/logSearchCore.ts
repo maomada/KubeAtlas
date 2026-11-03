@@ -6,6 +6,8 @@ export interface LogSearchResult {
 }
 
 const MAX_RANGES_PER_LINE = 1000
+const MAX_RANGES_PER_REQUEST = 100000
+const RANGE_LIMIT_ERROR = '正则搜索匹配结果超出资源限制，请缩小日志范围或简化表达式'
 
 export function searchLogLines(
   lines: string[],
@@ -15,6 +17,7 @@ export function searchLogLines(
   const regex = new RegExp(query, isCaseSensitive ? 'g' : 'gi')
   const matchIndices: number[] = []
   const ranges: Record<number, LogSearchRange[]> = {}
+  let totalRanges = 0
 
   lines.forEach((line, index) => {
     regex.lastIndex = 0
@@ -27,13 +30,16 @@ export function searchLogLines(
       matched = true
       const start = match.index
       const end = start + match[0].length
-      if (start < end && lineRanges.length < MAX_RANGES_PER_LINE) {
+      if (start < end) {
+        if (lineRanges.length >= MAX_RANGES_PER_LINE || totalRanges >= MAX_RANGES_PER_REQUEST) {
+          throw new Error(RANGE_LIMIT_ERROR)
+        }
         lineRanges.push([start, end])
+        totalRanges++
       }
       if (match[0].length === 0) {
         regex.lastIndex = start + 1
       }
-      if (lineRanges.length >= MAX_RANGES_PER_LINE) break
     }
 
     if (matched) {

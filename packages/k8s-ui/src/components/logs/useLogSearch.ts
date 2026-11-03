@@ -77,9 +77,48 @@ function createLogSearchWorker(): LogSearchWorker {
 }
 
 const EMPTY_RESULT: LogSearchResult = { matchIndices: [], ranges: {} }
+const EMPTY_ENTRIES: LogEntry[] = []
 const TIMEOUT_ERROR = '正则搜索超时，已取消；请简化表达式或缩小日志范围'
 const UNAVAILABLE_ERROR = '当前环境不支持隔离正则搜索'
 const WORKER_ERROR = '正则搜索失败，请简化表达式或缩小日志范围'
+
+interface LogSearchCriteria {
+  readonly query: string
+  readonly isRegex: boolean
+  readonly isCaseSensitive: boolean
+  readonly workerFactory: LogSearchWorkerFactory
+}
+
+interface LogSearchSnapshot {
+  readonly criteria: LogSearchCriteria | null
+  readonly entries: LogEntry[]
+  readonly result: LogSearchResult
+  readonly error: string | null
+}
+
+interface ActiveLogSearchJob {
+  id: number
+  criteria: LogSearchCriteria
+  entries: LogEntry[]
+  worker: LogSearchWorker
+  timeout: ReturnType<typeof setTimeout> | null
+  settled: boolean
+}
+
+const EMPTY_SNAPSHOT: LogSearchSnapshot = {
+  criteria: null,
+  entries: EMPTY_ENTRIES,
+  result: EMPTY_RESULT,
+  error: null,
+}
+
+function sameCriteria(left: LogSearchCriteria | null, right: LogSearchCriteria): boolean {
+  return left !== null &&
+    left.query === right.query &&
+    left.isRegex === right.isRegex &&
+    left.isCaseSensitive === right.isCaseSensitive &&
+    left.workerFactory === right.workerFactory
+}
 
 export function useLogSearch(
   entries: LogEntry[],
@@ -95,20 +134,16 @@ export function useLogSearch(
   const [mode, setMode] = useState<LogSearchMode>('highlight')
   const [currentMatch, setCurrentMatch] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
-  const [regexState, setRegexState] = useState({
-    result: EMPTY_RESULT,
-    error: null as string | null,
-    pending: false,
-  })
-  const resolvedCriteria = useRef<{
-    entries: LogEntry[]
-    query: string
-    isCaseSensitive: boolean
-  } | null>(null)
+  const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT)
+  const activeJob = useRef<ActiveLogSearchJob | null>(null)
   const requestId = useRef(0)
 
   // Deferring keeps the search input responsive while large log buffers are scanned.
   const deferredQuery = useDeferredValue(query)
+  const criteria = useMemo(
+    () => ({ query, isRegex, isCaseSensitive, workerFactory }),
+    [query, isRegex, isCaseSensitive, workerFactory],
+  )
 
   const literalSearch = useMemo(() => {
     if (!deferredQuery || isRegex) {
@@ -131,27 +166,33 @@ export function useLogSearch(
     }
   }, [entries, deferredQuery, isRegex, isCaseSensitive])
 
-  useEffect(() => {
-    if (!isRegex) {
-      requestId.current++
-      resolvedCriteria.current = null
-      setRegexState({ result: EMPTY_RESULT, error: null, pending: false })
-      return
-    }
+  const cancelActiveJob = useCallback(() => {
+    const job = activeJob.current
+    if (!job) return
+    activeJob.current = null
+    job.settled = true
+    requestId.current++
+    if (job.timeout !== null) clearTimeout(job.timeout)
+    job.worker.terminate()
+  }, [])
 
-    const id = ++requestId.current
-    resolvedCriteria.current = null
-    setRegexState({ result: EMPTY_RESULT, error: null, pending: Boolean(deferredQuery && query === deferredQuery) })
-    if (!deferredQuery || query !== deferredQuery) return
+  useEffect(() => {
+    return cancelActiveJob
+  }, [query, isRegex, isCaseSensitive, workerFactory, cancelActiveJob])
+
+  useEffect(() => {
+    if (!isRegex || !query || query !== deferredQuery || activeJob.current) return
+    const criteriaMatches = sameCriteria(snapshot.criteria, criteria)
+    if (criteriaMatches && (snapshot.error || snapshot.entries === entries)) return
 
     try {
-      new RegExp(deferredQuery, isCaseSensitive ? 'g' : 'gi')
+      new RegExp(query, isCaseSensitive ? 'g' : 'gi')
     } catch (error) {
-      resolvedCriteria.current = { entries, query: deferredQuery, isCaseSensitive }
-      setRegexState({
+      setSnapshot({
+        criteria,
+        entries,
         result: EMPTY_RESULT,
         error: error instanceof Error ? error.message : 'Invalid regex',
-        pending: false,
       })
       return
     }
@@ -160,27 +201,35 @@ export function useLogSearch(
     try {
       worker = workerFactory()
     } catch {
-      resolvedCriteria.current = { entries, query: deferredQuery, isCaseSensitive }
-      setRegexState({ result: EMPTY_RESULT, error: UNAVAILABLE_ERROR, pending: false })
+      setSnapshot({ criteria, entries, result: EMPTY_RESULT, error: UNAVAILABLE_ERROR })
       return
     }
 
-    let settled = false
+    const id = ++requestId.current
+    const job: ActiveLogSearchJob = {
+      id,
+      criteria,
+      entries,
+      worker,
+      timeout: null,
+      settled: false,
+    }
     const finish = (result: LogSearchResult, error: string | null) => {
-      if (settled || requestId.current !== id) return
-      settled = true
-      resolvedCriteria.current = { entries, query: deferredQuery, isCaseSensitive }
-      setRegexState({ result, error, pending: false })
+      if (job.settled || activeJob.current !== job || requestId.current !== id) return
+      job.settled = true
+      activeJob.current = null
+      if (job.timeout !== null) clearTimeout(job.timeout)
       worker.terminate()
+      setSnapshot({ criteria: job.criteria, entries: job.entries, result, error })
     }
 
-    const timeout = setTimeout(() => {
+    job.timeout = setTimeout(() => {
       finish(EMPTY_RESULT, TIMEOUT_ERROR)
     }, 2000)
+    activeJob.current = job
 
     worker.onmessage = event => {
       if (event.data.id !== id) return
-      clearTimeout(timeout)
       if ('error' in event.data) {
         finish(EMPTY_RESULT, event.data.error)
       } else {
@@ -188,42 +237,34 @@ export function useLogSearch(
       }
     }
     worker.onerror = () => {
-      clearTimeout(timeout)
       finish(EMPTY_RESULT, WORKER_ERROR)
     }
     try {
       worker.postMessage({
         id,
         lines: entries.map(entry => stripAnsi(entry.content)),
-        query: deferredQuery,
+        query,
         isCaseSensitive,
       })
     } catch {
-      clearTimeout(timeout)
       finish(EMPTY_RESULT, WORKER_ERROR)
     }
+  }, [entries, query, deferredQuery, isRegex, isCaseSensitive, workerFactory, criteria, snapshot])
 
-    return () => {
-      clearTimeout(timeout)
-      if (!settled) {
-        settled = true
-        worker.terminate()
-      }
-    }
-  }, [entries, query, deferredQuery, isRegex, isCaseSensitive, workerFactory])
-
-  const regexResultReady = !isRegex || (
+  const snapshotCriteriaMatches = sameCriteria(snapshot.criteria, criteria)
+  const regexResultMatches = isRegex &&
+    !!query &&
     query === deferredQuery &&
-    resolvedCriteria.current?.entries === entries &&
-    resolvedCriteria.current.query === deferredQuery &&
-    resolvedCriteria.current.isCaseSensitive === isCaseSensitive
-  )
-  const isSearching = isRegex && !!query && (!regexResultReady || regexState.pending)
-  const matchIndices = isRegex
-    ? (regexResultReady ? regexState.result.matchIndices : [])
-    : literalSearch.matchIndices
-  const ranges = isRegex && regexResultReady ? regexState.result.ranges : {}
-  const regexError = isRegex ? (regexResultReady ? regexState.error : null) : literalSearch.regexError
+    snapshotCriteriaMatches &&
+    snapshot.entries === entries
+  const regexError = isRegex && query && snapshotCriteriaMatches ? snapshot.error : null
+  const isSearching = isRegex && !!query && !regexError && !regexResultMatches
+  const matchIndices = !query
+    ? EMPTY_RESULT.matchIndices
+    : isRegex
+      ? (regexResultMatches ? snapshot.result.matchIndices : EMPTY_RESULT.matchIndices)
+      : literalSearch.matchIndices
+  const ranges = regexResultMatches ? snapshot.result.ranges : EMPTY_RESULT.ranges
 
   // Gate on the live query too, so clearing or closing search unfilters immediately
   // rather than after the deferred value catches up.
@@ -292,9 +333,10 @@ export function useLogSearch(
 
   const open = useCallback(() => setIsOpen(true), [])
   const close = useCallback(() => {
+    cancelActiveJob()
     setIsOpen(false)
     setQuery('')
-  }, [])
+  }, [cancelActiveJob])
 
   return {
     query,

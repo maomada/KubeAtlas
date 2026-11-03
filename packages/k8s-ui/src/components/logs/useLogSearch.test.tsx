@@ -71,8 +71,8 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 
-async function render(workerFactory: LogSearchWorkerFactory) {
-  await act(async () => root.render(<Harness workerFactory={workerFactory} />))
+async function render(workerFactory: LogSearchWorkerFactory, value = entries) {
+  await act(async () => root.render(<Harness workerFactory={workerFactory} value={value} />))
   await act(async () => {
     latest.setIsRegex(true)
     latest.setQuery('a')
@@ -113,6 +113,44 @@ describe('regex search worker lifecycle', () => {
     expect(latest.matchCount).toBe(0)
 
     await act(async () => workers[1].respond({ matchIndices: [1], ranges: { 1: [[0, 1]] } }))
+    expect(latest.matchIndices).toEqual([1])
+  })
+
+  it('coalesces streaming entries without extending the deadline and latches errors', async () => {
+    vi.useFakeTimers()
+    const workers: FakeWorker[] = []
+    const factory = () => {
+      const worker = new FakeWorker()
+      workers.push(worker)
+      return worker
+    }
+    await render(factory)
+
+    await act(async () => vi.advanceTimersByTime(1000))
+    const firstUpdate = [...entries, { ...entries[0], id: 3, content: 'gamma' }]
+    await act(async () => root.render(<Harness workerFactory={factory} value={firstUpdate} />))
+    const secondUpdate = [...firstUpdate, { ...entries[1], id: 4, content: 'delta' }]
+    await act(async () => root.render(<Harness workerFactory={factory} value={secondUpdate} />))
+    expect(workers).toHaveLength(1)
+    expect(workers[0].terminate).not.toHaveBeenCalled()
+    expect(latest.isSearching).toBe(true)
+    expect(latest.isFiltering).toBe(false)
+    expect(latest.filteredEntries).toHaveLength(secondUpdate.length)
+
+    await act(async () => vi.advanceTimersByTime(1000))
+    expect(workers[0].terminate).toHaveBeenCalledOnce()
+    expect(latest.regexError).toContain('正则搜索超时')
+
+    const latestEntries = [...secondUpdate, { ...entries[0], id: 5, content: 'epsilon' }]
+    await act(async () => root.render(<Harness workerFactory={factory} value={latestEntries} />))
+    expect(latest.regexError).toContain('正则搜索超时')
+    expect(workers).toHaveLength(1)
+
+    await act(async () => latest.setQuery('b'))
+    expect(workers).toHaveLength(2)
+    expect(workers[1].message?.lines).toEqual(latestEntries.map(entry => entry.content))
+    await act(async () => workers[1].respond({ matchIndices: [1], ranges: { 1: [[0, 1]] } }))
+    expect(latest.regexError).toBeNull()
     expect(latest.matchIndices).toEqual([1])
   })
 

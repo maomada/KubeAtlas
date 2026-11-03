@@ -22,4 +22,19 @@ describe('searchLogLines', () => {
       ranges: { 0: [], 1: [] },
     })
   })
+
+  it('allows exactly 1000 ranges per line and rejects the 1001st', () => {
+    expect(searchLogLines(['x'.repeat(1000)], 'x', true).ranges[0]).toHaveLength(1000)
+    expect(() => searchLogLines(['x'.repeat(1001)], 'x', true)).toThrow('正则搜索匹配结果超出资源限制')
+  })
+
+  it('allows exactly 100000 ranges per request and rejects an additional range', () => {
+    const atLimit = Array.from({ length: 100 }, () => 'x'.repeat(1000))
+    const overLimit = [...atLimit, 'x']
+
+    const result = searchLogLines(atLimit, 'x', true)
+    expect(result.matchIndices).toHaveLength(100)
+    expect(Object.values(result.ranges).reduce((total, lineRanges) => total + lineRanges.length, 0)).toBe(100000)
+    expect(() => searchLogLines(overLimit, 'x', true)).toThrow('正则搜索匹配结果超出资源限制')
+  })
 })
