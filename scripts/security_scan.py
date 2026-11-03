@@ -11,9 +11,12 @@ import subprocess
 import sys
 import tempfile
 
+from security_dispositions import evaluate
+
 
 ROOT = Path(__file__).resolve().parents[1]
 LOCK = ROOT / ".github/security-rules.lock.json"
+DISPOSITIONS = ROOT / ".github/security-dispositions.json"
 ENGINE_VERSION = "1.180.0"
 EXTENSIONS = {".go", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs"}
 
@@ -147,8 +150,16 @@ def main():
                 "lockSha256": hashlib.sha256(LOCK.read_bytes()).hexdigest(),
                 "targets": [str(path.relative_to(ROOT)) for path in targets],
             }, indent=2) + "\n")
-            passed, _ = scan(config, targets, output / "findings.json")
-            return 0 if passed else 1
+            _, report = scan(config, targets, output / "findings.json")
+            policy = json.loads(DISPOSITIONS.read_text())
+            decision = evaluate(report, policy, ROOT, targets, version,
+                                hashlib.sha256(LOCK.read_bytes()).hexdigest())
+            decision["sourceSha"] = source_sha
+            decision["policySha256"] = hashlib.sha256(DISPOSITIONS.read_bytes()).hexdigest()
+            decision["rawReportSha256"] = hashlib.sha256((output / "findings.json").read_bytes()).hexdigest()
+            (output / "dispositions.json").write_text(json.dumps(decision, indent=2) + "\n")
+            print(f"Reviewed exceptions: {len(decision['approved'])}; unresolved: {len(decision['unresolved'])}")
+            return 0 if decision["passed"] else 1
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f"Security scan blocked: {error}", file=sys.stderr)
         return 2
