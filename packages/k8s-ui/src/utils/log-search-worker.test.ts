@@ -64,7 +64,7 @@ describe('async log highlighting', () => {
     const assertion = expect(pending).rejects.toThrow('正则搜索超时')
     await vi.advanceTimersByTimeAsync(2000)
     await assertion
-    late({ data: { id: worker.request.id, result: { matchIndices: [], ranges: {} } } } as MessageEvent<LogSearchWorkerResponse>)
+    late({ data: { id: worker.request.id, result: { matchIndices: [], ranges: {} } } } as unknown as MessageEvent<LogSearchWorkerResponse>)
     expect(worker.terminate).toHaveBeenCalledOnce()
     expect(worker.onmessage).toBeNull()
   })
