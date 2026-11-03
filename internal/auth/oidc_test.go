@@ -180,6 +180,12 @@ func TestHandleCallback_ClearsVerifierWithSecure(t *testing.T) {
 	if !cleared.Secure {
 		t.Error("verifier deletion cookie must be Secure to evict a Secure cookie over HTTPS")
 	}
+	for _, name := range []string{oidcStateCookieName, oidcVerifierCookieName} {
+		cookie := cookieByName(w, name)
+		if cookie == nil || !cookie.Secure || !cookie.HttpOnly || cookie.MaxAge != -1 || cookie.Path != "/" {
+			t.Errorf("flow cookie %s must retain secure deletion attributes: %+v", name, cookie)
+		}
+	}
 }
 
 func TestHandleLogout_NoEndSessionEndpoint(t *testing.T) {
@@ -345,6 +351,7 @@ func TestHandleLogin_ForceLoginPrompt(t *testing.T) {
 	// Request with force-login cookie set
 	r := httptest.NewRequest("GET", "/auth/login", nil)
 	r.AddCookie(&http.Cookie{Name: oidcForceLoginCookieName, Value: "1"})
+	r.Header.Set("X-Forwarded-Proto", "https")
 	w := httptest.NewRecorder()
 
 	h.HandleLogin(w, r)
@@ -362,6 +369,9 @@ func TestHandleLogin_ForceLoginPrompt(t *testing.T) {
 	cleared := false
 	for _, c := range w.Result().Cookies() {
 		if c.Name == oidcForceLoginCookieName && c.MaxAge == -1 {
+			if !c.Secure || !c.HttpOnly || c.Path != "/" {
+				t.Errorf("force-login deletion must retain secure attributes: %+v", c)
+			}
 			cleared = true
 		}
 	}

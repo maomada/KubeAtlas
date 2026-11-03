@@ -6,12 +6,52 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
 	k8sexec "k8s.io/client-go/util/exec"
 )
+
+func TestPodFileListPath(t *testing.T) {
+	for input, want := range map[string]string{
+		"-delete":     "./-delete",
+		"./-delete":   "./-delete",
+		"!":           "./!",
+		"(":           "./(",
+		"logs":        "./logs",
+		"../logs":     "./../logs",
+		"/var/../tmp": "/tmp",
+		"/":           "/",
+	} {
+		if got := podFileListPath(input); got != want {
+			t.Errorf("podFileListPath(%q) = %q, want %q", input, got, want)
+		}
+	}
+}
+
+func TestPodFileListPathTreatsOptionsAsNames(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(dir, "-delete"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	marker := filepath.Join(dir, "keep")
+	if err := os.WriteFile(marker, []byte("keep"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("sh", "-c", "find "+shellQuote(podFileListPath("-delete"))+" -maxdepth 1 -print")
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil || strings.TrimSpace(string(out)) != "./-delete" {
+		t.Fatalf("expected a directory operand, got %q, %v", out, err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("listing removed another file: %v", err)
+	}
+}
 
 func TestPodFileTarCommand(t *testing.T) {
 	cmd := podFileTarCommand("/var/log", "app.log")
