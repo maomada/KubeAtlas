@@ -50,6 +50,16 @@ jobs:
           node-version: '24'
           cache: npm
       - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y rpm
+      - name: Reclaim unused runner SDK space
+        run: |
+          df -h /
+          for directory in /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost; do
+            if [ -d "$directory" ]; then
+              sudo du -sh "$directory"
+              sudo rm -rf -- "$directory"
+            fi
+          done
+          df -h /
       - run: go install github.com/goreleaser/goreleaser/v2@v2.13.3
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
       - run: python3 -m unittest discover -s scripts -p 'test_release*.py'
