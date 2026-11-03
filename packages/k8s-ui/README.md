@@ -2,6 +2,38 @@
 
 Shared, source-distributed Kubernetes UI components used by Radar.
 
+## Log search highlighting (breaking API change)
+
+`highlightSearchMatches(text, query, isRegex?, isCaseSensitive?, signal?)`
+now returns `Promise<string>`, including literal searches. Await the result
+outside React render and handle rejection. For synchronous literal-only rendering,
+use `highlightLiteralSearchMatches(text, query, isCaseSensitive?)`; it never
+interprets the query as regex syntax.
+
+```ts
+const controller = new AbortController()
+try {
+  const html = await highlightSearchMatches(text, query, true, false, controller.signal)
+  // Apply only if this is still the current request.
+  showHighlight(html)
+} catch (error) {
+  showSearchError(error)
+}
+// Call controller.abort() when the search is superseded or the view unmounts.
+```
+
+Regex matching operates on raw text in a module Worker; only returned ranges
+are used to generate escaped HTML. Invalid patterns reject instead of falling
+back to literal matching. Worker startup/failure, a two-second deadline and
+resource limits (1,000 nonempty matches per line; 100,000 per request) also reject;
+aborting rejects with `AbortError`. There is no synchronous regex fallback,
+including in SSR environments without Worker support.
+
+Consumers must bundle `new Worker(new URL(..., import.meta.url), { type: 'module' })`
+and allow the emitted same-origin Worker asset in CSP (`worker-src 'self'`).
+Workers are local assets, not CDN dependencies. The log viewer keeps literal
+rendering synchronous and uses Worker results for regex highlighting.
+
 ## Toast updates
 
 `useToast().showToast(message, { id })` updates an existing toast with that ID

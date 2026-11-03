@@ -4,6 +4,7 @@
  */
 
 import type { LogLevel } from './log-level'
+import { runLogRegexSearch } from './log-search-worker'
 
 export type TimestampFormat =
   | 'time-local'
@@ -101,27 +102,27 @@ export function getLevelColor(level: LogLevel): string {
 
 /**
  * Highlight search query matches in text with a mark tag.
- * Returns HTML string safe for dangerouslySetInnerHTML.
- * User-supplied regex must use the isolated log-search path.
+ * Resolves to HTML safe for dangerouslySetInnerHTML. Regex runs only in a Worker;
+ * invalid patterns, unavailable Workers, timeouts and cancellation reject.
  */
-export function highlightSearchMatches(
+export async function highlightSearchMatches(
   text: string, query: string, isRegex = false, isCaseSensitive = false,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (signal?.aborted) throw new DOMException('正则搜索已取消', 'AbortError')
+  if (!query) return escapeHtml(text)
+  if (!isRegex) return highlightLiteralSearchMatches(text, query, isCaseSensitive)
+  const { ranges } = await runLogRegexSearch([text], query, isCaseSensitive, signal)
+  return highlightRanges(text, ranges[0] ?? [])
+}
+
+export function highlightLiteralSearchMatches(
+  text: string, query: string, isCaseSensitive = false,
 ): string {
   if (!query) return escapeHtml(text)
   const escaped = escapeHtml(text)
   const flags = isCaseSensitive ? 'g' : 'gi'
-  let pattern: string
-  if (isRegex) {
-    try {
-      // Validate the regex first — if invalid, fall back to literal
-      new RegExp(query)
-      pattern = query
-    } catch {
-      pattern = escapeRegExp(escapeHtml(query))
-    }
-  } else {
-    pattern = escapeRegExp(escapeHtml(query))
-  }
+  const pattern = escapeRegExp(escapeHtml(query))
   const regex = new RegExp(`(${pattern})`, flags)
   return escaped.replace(regex, '<mark class="log-highlight">$1</mark>')
 }

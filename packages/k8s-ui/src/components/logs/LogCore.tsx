@@ -9,7 +9,7 @@ import { Input } from '../ui/Input'
 import { showApiError, showApiSuccess } from '../ui/Toast'
 import {
   formatLogTimestamp,
-  highlightSearchMatches,
+  highlightLiteralSearchMatches,
   highlightRanges,
   stripAnsi,
   ansiToHtml,
@@ -1329,7 +1329,7 @@ function LogLine({
     const plain = stripAnsi(entry.content)
     const highlighted = searchIsRegex
       ? highlightRanges(plain, searchRangesById.get(entry.id) ?? [])
-      : highlightSearchMatches(plain, searchQuery, false, searchIsCaseSensitive)
+      : highlightLiteralSearchMatches(plain, searchQuery, searchIsCaseSensitive)
     contentElement = (
       <span
         className={`${wordWrap ? 'whitespace-pre-wrap [overflow-wrap:anywhere]' : 'whitespace-pre'} ${levelColor}`}

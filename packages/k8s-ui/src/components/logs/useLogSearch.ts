@@ -5,22 +5,11 @@ import {
   type LogSearchRange,
   type LogSearchResult,
 } from './logSearchCore'
-import type {
-  LogSearchWorkerRequest,
-  LogSearchWorkerResponse,
-} from './logSearch.worker'
+import { createLogSearchWorker, type LogSearchWorker, type LogSearchWorkerFactory } from '../../utils/log-search-worker'
+export type { LogSearchWorker, LogSearchWorkerFactory } from '../../utils/log-search-worker'
 import { stripAnsi, escapeRegExp } from '../../utils/log-format'
 
 export type LogSearchMode = 'highlight' | 'only' | 'hide'
-
-export interface LogSearchWorker {
-  onmessage: ((event: MessageEvent<LogSearchWorkerResponse>) => void) | null
-  onerror: ((event: ErrorEvent) => void) | null
-  postMessage(message: LogSearchWorkerRequest): void
-  terminate(): void
-}
-
-export type LogSearchWorkerFactory = () => LogSearchWorker
 
 interface UseLogSearchReturn {
   query: string
@@ -67,13 +56,6 @@ export function applySearchMode<T extends { id: number }>(
   const matchedRecords = new Set(matchIndices.map(i => recordIdOf(entries[i])))
   const keepMatches = mode === 'only'
   return entries.filter(e => matchedRecords.has(recordIdOf(e)) === keepMatches)
-}
-
-function createLogSearchWorker(): LogSearchWorker {
-  if (typeof Worker === 'undefined') {
-    throw new Error('Worker unavailable')
-  }
-  return new Worker(new URL('./logSearch.worker.ts', import.meta.url), { type: 'module' })
 }
 
 const EMPTY_RESULT: LogSearchResult = { matchIndices: [], ranges: {} }
