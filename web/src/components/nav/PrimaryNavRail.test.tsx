@@ -17,6 +17,8 @@ function renderRail(whatsNew?: { unread: boolean; onOpen: () => void }) {
 describe("PrimaryNavRail", () => {
   it("always surfaces Capacity — the view reads cluster capacity across every node manager, not just Karpenter", () => {
     expect(renderRail()).toContain("容量");
+    expect(renderRail()).toContain("集群工作台");
+    expect(renderRail()).not.toContain("BY SKYHOOK");
   });
 
   it("shows What's new only when the host has notes, and marks it while unread", () => {

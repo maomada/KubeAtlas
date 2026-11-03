@@ -142,11 +142,11 @@ describe('PodRenderer resolved environment', () => {
       />,
     )
 
-    expect(html).toContain('2 variables')
-    expect(html).toContain('1 from Secrets')
-    expect(html).toContain('Secret values stay hidden until you reveal them.')
+    expect(html).toContain('2 个变量')
+    expect(html).toContain('1 个来自 Secret')
+    expect(html).toContain('Secret 值在主动显示前会保持隐藏。')
     expect(html).not.toContain('Value if restarted now')
-    expect(html).toContain('Only variables declared on the Pod are shown.')
+    expect(html).toContain('这里只显示 Pod 上声明的变量。')
     expect(html).not.toContain('Changes observed')
     expect(html).toContain('Secret<!-- -->/<!-- -->shared')
     expect(html).toContain('flex-wrap items-center gap-x-1.5 gap-y-0.5')
@@ -242,7 +242,7 @@ describe('PodRenderer resolved environment', () => {
     })
     expect(restartBlocked).toContain('Restart blocked')
     expect(restartBlocked).not.toContain('>Removed after start</span>')
-    expect(restartBlocked).toContain('>Status</span>')
+    expect(restartBlocked).toContain('>状态</span>')
 
     const startupBlocked = render({
       ...environment,
@@ -252,7 +252,7 @@ describe('PodRenderer resolved environment', () => {
       }],
     })
     expect(startupBlocked).toContain('Prevents start')
-    expect(startupBlocked).toContain('>Status</span>')
+    expect(startupBlocked).toContain('>状态</span>')
 
     const limitedHistory = render({
       ...environment,
@@ -272,7 +272,7 @@ describe('PodRenderer resolved environment', () => {
       }],
     })
     expect(changed).toContain('w-[42%]')
-    expect(changed).toContain('>Status</span>')
+    expect(changed).toContain('>状态</span>')
   })
 
   it('selects the first regular container instead of an init container', () => {

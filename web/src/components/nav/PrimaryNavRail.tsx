@@ -269,7 +269,7 @@ function BrandRow({
             KubeAtlas
           </span>
           <span className="text-[9px] mt-0.5 tracking-wide uppercase text-theme-text-tertiary">
-            by Skyhook
+            集群工作台
           </span>
         </span>
       </button>

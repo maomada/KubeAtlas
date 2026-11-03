@@ -45,11 +45,11 @@ export function TopologyControls({
   const groupItemRefs = useRef<(HTMLButtonElement | null)[]>([])
 
   const groupOptions: { value: GroupingMode; label: string }[] = [
-    ...(showNoGrouping ? [{ value: 'none' as GroupingMode, label: 'No Grouping' }] : []),
-    { value: 'namespace', label: 'By Namespace' },
-    { value: 'app', label: 'By App Label' },
+    ...(showNoGrouping ? [{ value: 'none' as GroupingMode, label: '不分组' }] : []),
+    { value: 'namespace', label: '按命名空间' },
+    { value: 'app', label: '按应用标签' },
   ]
-  const currentGroupLabel = groupOptions.find((o) => o.value === groupingMode)?.label ?? 'Grouping'
+  const currentGroupLabel = groupOptions.find((o) => o.value === groupingMode)?.label ?? '分组'
 
   const closeGroup = useCallback((restoreFocus = false) => {
     setGroupOpen(false)
@@ -110,10 +110,10 @@ export function TopologyControls({
               ? 'bg-indigo-600 text-white border-indigo-600'
               : 'bg-theme-surface/90 backdrop-blur text-theme-text-secondary border-theme-border hover:text-theme-text-primary'
           }`}
-          title="Show NetworkPolicy effects on edges"
+          title="显示 NetworkPolicy 对边的影响"
         >
           <ShieldCheck className="w-3.5 h-3.5" />
-          Policies
+          策略
         </button>
       )}
 
@@ -172,25 +172,24 @@ export function TopologyControls({
               : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated'
           }`}
         >
-          Resources
+          资源
         </button>
         <Tooltip
           position="bottom"
           content={
             <div className="space-y-1.5 text-left">
               <p className="text-theme-text-secondary">
-                How requests <em>should</em> route, derived from Ingress, Services and
-                routing CRDs (Traefik, Gateway API, Istio…) — not observed packets.
+                请求应如何路由（由 Ingress、Service 和路由 CRD（Traefik、Gateway API、Istio…）推导），而不是实际观测到的数据包。
               </p>
               {onNavigateToTraffic && (
                 <p className="text-theme-text-tertiary">
-                  Looking for observed, measured traffic?{' '}
+                  想查看实际观测的流量？{' '}
                   <button
                     type="button"
                     onClick={onNavigateToTraffic}
                     className="text-skyhook-400 hover:text-skyhook-300 underline underline-offset-2"
                   >
-                    Open Live Traffic →
+                    打开实时流量 →
                   </button>
                 </p>
               )}
@@ -205,7 +204,7 @@ export function TopologyControls({
                 : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated'
             }`}
           >
-            Network Flow <span className="opacity-70">(config)</span>
+            网络流 <span className="opacity-70">（配置）</span>
           </button>
         </Tooltip>
         {showFleetMode && (
@@ -216,7 +215,7 @@ export function TopologyControls({
                 ? 'bg-skyhook-600 text-white'
                 : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated'
             }`}
-            title="Cluster API fleet view — shows only CAPI resources and nodes"
+            title="集群 API 集群视图——仅显示 CAPI 资源和节点"
           >
             Fleet
           </button>

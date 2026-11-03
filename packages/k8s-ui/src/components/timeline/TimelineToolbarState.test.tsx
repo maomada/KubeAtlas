@@ -32,8 +32,8 @@ describe('TimelineList controlled vs fallback', () => {
 
   it('renders the shared toolbar chips (unified with the swimlane)', () => {
     const html = renderToString(<TimelineList events={EVENTS} isLoading={false} />)
-    expect(html).toContain('K8s Events')
-    expect(html).toContain('Problems')
+    expect(html).toContain('Kubernetes 事件')
+    expect(html).toContain('问题')
   })
 
   it('shows an explicit truncation message after host-side filtering', () => {
@@ -77,13 +77,13 @@ describe('TimelineSwimlanes controlled vs fallback', () => {
 
   it('renders the same shared toolbar chips as the list', () => {
     const html = renderToString(<TimelineSwimlanes events={EVENTS} />)
-    expect(html).toContain('K8s Events')
-    expect(html).toContain('Problems')
+    expect(html).toContain('Kubernetes 事件')
+    expect(html).toContain('问题')
   })
 
   it('renders the single View trigger (Sort + Group live in its popover)', () => {
     const html = renderToString(<TimelineSwimlanes events={EVENTS} />)
-    expect(html).toContain('>View<')
+    expect(html).toContain('>视图<')
   })
 })
 
@@ -101,10 +101,10 @@ describe('TimelineList routine activity toggle', () => {
     const html = renderToString(
       <TimelineList events={EVENTS} isLoading={false} routineEvents={ROUTINE} onShowRoutineChange={() => {}} />,
     )
-    expect(html).toContain('Show routine activity')
+    expect(html).toContain('显示常规活动')
     expect(html).toContain('type="checkbox"')
-    expect(html).toContain('· <!-- -->3 hidden')
-    expect(html).toContain('aria-label="About routine activity"')
+    expect(html).toContain('· <!-- -->3 已隐藏')
+    expect(html).toContain('aria-label="关于常规活动"')
   })
 
   it('counts only hidden rows the active filters would show', () => {
@@ -118,14 +118,14 @@ describe('TimelineList routine activity toggle', () => {
         onShowRoutineChange={() => {}}
       />,
     )
-    expect(html).toContain('2 routine events<!-- --> <!-- -->match')
+    expect(html).toContain('2<!-- --> 个常规事件匹配')
   })
 
   it('says none hidden when nothing matching is routine', () => {
     const html = renderToString(
       <TimelineList events={EVENTS} isLoading={false} search="web" onSearchChange={() => {}} routineEvents={[]} onShowRoutineChange={() => {}} />,
     )
-    expect(html).toContain('· <!-- -->none hidden')
+    expect(html).toContain('· <!-- -->没有隐藏项')
   })
 
   it('reads shown, with the count, once the user opts in', () => {
@@ -133,17 +133,17 @@ describe('TimelineList routine activity toggle', () => {
       <TimelineList events={[...EVENTS, ...ROUTINE]} isLoading={false} showRoutine routineEvents={ROUTINE} onShowRoutineChange={() => {}} />,
     )
     expect(html).toContain('checked=""')
-    expect(html).toContain('· <!-- -->3 shown')
+    expect(html).toContain('· <!-- -->3 已显示')
   })
 
   it('explains an empty list whose matching rows are all routine', () => {
     const html = renderToString(
       <TimelineList events={[]} isLoading={false} routineEvents={ROUTINE} onShowRoutineChange={() => {}} />,
     )
-    expect(html).toContain('All matching activity is routine')
-    expect(html).toContain('3 routine events<!-- --> <!-- -->match<!-- -->. Warnings and failures would show here.')
-    expect(html).toContain('Show routine activity')
-    expect(html).not.toContain('No activity found')
+    expect(html).toContain('匹配的活动均为常规活动')
+    expect(html).toContain('3<!-- --> 个常规事件匹配。警告和故障会显示在这里。')
+    expect(html).toContain('显示常规活动')
+    expect(html).not.toContain('未找到活动')
   })
 
   it('has no toggle when the host does not offer it', () => {
@@ -181,6 +181,6 @@ describe('TimelineList routine activity toggle', () => {
 
   it('keeps the (i) explanation reachable by keyboard', () => {
     const html = renderToString(<TimelineList events={EVENTS} isLoading={false} routineEvents={[]} onShowRoutineChange={() => {}} />)
-    expect(html).toContain('<button type="button" aria-label="About routine activity"')
+    expect(html).toContain('<button type="button" aria-label="关于常规活动"')
   })
 })

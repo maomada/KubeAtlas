@@ -1,6 +1,5 @@
 import type { TimelineEvent } from '../../types'
 import { isChangeEvent, isK8sEvent } from '../../types'
-import { pluralize } from '../../utils/pluralize'
 
 // Legacy single-value activity filter. Retained for the home-page deep-link
 // (`initialFilter`) compat path that seeds the multi-select from one preset.
@@ -119,15 +118,15 @@ export function describeActiveFilters(opts: {
 }): string {
   const parts: string[] = []
   const search = opts.search.trim()
-  if (search) parts.push(`search "${search}"`)
+  if (search) parts.push(`搜索“${search}”`)
   // Count what the user set (source segment + Problems toggle), not the raw key
   // array: the single Problems toggle expands to two keys (warnings+unhealthy),
   // which would otherwise read as "2 activity filters" for one pick.
   const sel = activityKeysToSelection(opts.activityFilter)
   const activityCount = (sel.source !== 'all' ? 1 : 0) + (sel.problemsOnly ? 1 : 0)
-  if (activityCount > 0) parts.push(pluralize(activityCount, 'activity filter'))
-  if (opts.kindFilter.length > 0) parts.push(pluralize(opts.kindFilter.length, 'kind'))
-  if (!opts.showDeleted) parts.push('deleted hidden')
+  if (activityCount > 0) parts.push(`${activityCount.toLocaleString()} 个活动筛选`)
+  if (opts.kindFilter.length > 0) parts.push(`${opts.kindFilter.length.toLocaleString()} 种资源类型`)
+  if (!opts.showDeleted) parts.push('已隐藏删除事件')
   return parts.join(' · ')
 }
 

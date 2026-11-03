@@ -159,16 +159,16 @@ function DateTimeField({ label, valueMs, onChange, nowMs }: {
           )}
           style={overlayTransitionStyle(isOpen, 'menu')}
           role="dialog"
-          aria-label={`Pick ${label.toLowerCase()} date and time`}
+          aria-label={`选择${label}日期和时间`}
         >
           <div className="mb-1.5 flex items-center justify-between">
-            <button type="button" onClick={prevMonth} aria-label="Previous month" className="rounded p-1 text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary">
+            <button type="button" onClick={prevMonth} aria-label="上个月" className="rounded p-1 text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary">
               <ChevronLeft className="h-3.5 w-3.5" />
             </button>
             <span className="text-xs font-semibold text-theme-text-primary">
               {new Date(viewY, viewM).toLocaleDateString([], { month: 'long', year: 'numeric' })}
             </span>
-            <button type="button" onClick={nextMonth} aria-label="Next month" className="rounded p-1 text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary">
+            <button type="button" onClick={nextMonth} aria-label="下个月" className="rounded p-1 text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary">
               <ChevronRight className="h-3.5 w-3.5" />
             </button>
           </div>
@@ -208,7 +208,7 @@ function DateTimeField({ label, valueMs, onChange, nowMs }: {
               className="rounded border border-theme-border bg-theme-elevated px-1.5 py-1 text-xs tabular-nums text-theme-text-primary focus:border-accent focus:outline-none"
             />
             <button type="button" onClick={() => { onChange(nowMs); setOpen(false) }} className="text-xs font-medium text-accent-text hover:underline">
-              Now
+              现在
             </button>
           </div>
         </div>
@@ -497,7 +497,7 @@ export function TimelineStrip({
     msToX(lens.toMs, selection, width) >= width - FULL_RANGE_EPS_PX
 
   const totalEvents = totalInQueryRange ?? buckets.reduce((sum, b) => sum + b.total, 0)
-  const gapsSuffix = gaps && gaps.length > 0 ? ` · ${gaps.length} gap${gaps.length > 1 ? 's' : ''}` : ''
+  const gapsSuffix = gaps && gaps.length > 0 ? ` · ${gaps.length} 个时间间隔` : ''
   // Windowed: show the zoomed span's time range + the loaded total ("events ·
   // Last 7d"). The per-window count is deliberately NOT shown here — from hourly
   // buckets it can only be approximate (reads "0 of N" on a sub-hour window over
@@ -505,10 +505,10 @@ export function TimelineStrip({
   // numbers for one thing, one of them wrong, erodes trust; the strip owns the
   // loaded total, the toolbar the visible count.
   const centerCaption = lens && !fullRange
-    ? `${bandTime(lens.fromMs)} — ${bandTime(lens.toMs)} · ${totalEvents.toLocaleString()} events · ${queryPillLabel}${gapsSuffix}`
+    ? `${bandTime(lens.fromMs)} — ${bandTime(lens.toMs)} · ${totalEvents.toLocaleString()} 个事件 · ${queryPillLabel}${gapsSuffix}`
     : lens && lensResizable && onLensChange
-      ? `${totalEvents.toLocaleString()} events · viewing full range — drag a handle to narrow${gapsSuffix}`
-      : `${totalEvents.toLocaleString()} events · ${queryPillLabel}${gapsSuffix}`
+      ? `${totalEvents.toLocaleString()} 个事件 · 查看完整范围——拖动控制点以缩小范围${gapsSuffix}`
+      : `${totalEvents.toLocaleString()} 个事件 · ${queryPillLabel}${gapsSuffix}`
 
   return (
     // ONE row: the range picker + window stepper cap the histogram on
@@ -553,15 +553,15 @@ export function TimelineStrip({
               )}
               style={overlayTransitionStyle(pickerShown, 'menu')}
               role="dialog"
-              aria-label="Time range picker"
+              aria-label="时间范围选择器"
             >
               <p className="border-b border-theme-border/60 px-4 py-2.5 text-[11px] leading-relaxed text-theme-text-secondary">
-                How much history to load. The blue band zooms into a slice of it.
+                选择要加载的历史范围。蓝色区域用于缩放查看其中一段。
               </p>
               {presets && presets.length > 0 && (
                 <div className="flex flex-col gap-2 border-b border-theme-border/60 px-4 py-3">
                   <span className="text-[10px] font-bold uppercase tracking-[0.07em] text-theme-text-tertiary">
-                    Presets <span className="font-normal normal-case tracking-normal">· apply instantly</span>
+                    预设 <span className="font-normal normal-case tracking-normal">· 立即应用</span>
                   </span>
                   <div className="flex flex-wrap gap-1.5">
                     {presets.map((p) => {
@@ -587,10 +587,10 @@ export function TimelineStrip({
                 </div>
               )}
               <div className="flex flex-col gap-2 px-4 py-3">
-                <span className="text-[10px] font-bold uppercase tracking-[0.07em] text-theme-text-tertiary">Custom</span>
+                <span className="text-[10px] font-bold uppercase tracking-[0.07em] text-theme-text-tertiary">自定义</span>
                 <div className="grid grid-cols-[1fr_1fr_auto] items-start gap-2">
-                  <DateTimeField label="From" valueMs={customFromMs} onChange={setCustomFromMs} nowMs={domain.toMs} />
-                  <DateTimeField label="To" valueMs={customToMs} onChange={setCustomToMs} nowMs={domain.toMs} />
+                  <DateTimeField label="开始" valueMs={customFromMs} onChange={setCustomFromMs} nowMs={domain.toMs} />
+                  <DateTimeField label="结束" valueMs={customToMs} onChange={setCustomToMs} nowMs={domain.toMs} />
                   {/* Label-height spacer keeps Apply on the INPUT row, not floated
                       to the top of the taller field columns. */}
                   <div className="flex flex-col gap-1">
@@ -601,17 +601,17 @@ export function TimelineStrip({
                       disabled={!customValid}
                       className="btn-brand rounded-md px-3.5 py-1.5 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-40"
                     >
-                      Apply
+                      应用
                     </button>
                   </div>
                 </div>
                 {!customValid && (
-                  <span className="text-[10px] text-amber-600 dark:text-amber-400">"To" must be after "From".</span>
+                  <span className="text-[10px] text-amber-600 dark:text-amber-400">“结束时间”必须晚于“开始时间”。</span>
                 )}
               </div>
               <div className="flex items-center justify-between gap-2 rounded-b-xl bg-theme-elevated px-4 py-1.5 text-[10.5px] text-theme-text-tertiary">
-                <span>Browser time · {Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
-                <span>History since {formatScrubberPill(domain.fromMs)}</span>
+                <span>浏览器时间 · {Intl.DateTimeFormat().resolvedOptions().timeZone}</span>
+                <span>历史范围始于 {formatScrubberPill(domain.fromMs)}</span>
               </div>
             </div>
           )}
@@ -619,14 +619,14 @@ export function TimelineStrip({
 
       {windowMs != null && lensResizable && (
         <div className="mt-[7px] shrink-0">
-          <span className="mb-1 block text-center text-[10.5px] font-bold uppercase leading-[13px] tracking-[0.08em] text-theme-text-tertiary">Zoom</span>
-          <Tooltip content="The slice shown in the lanes below — always within the loaded range" position="bottom" wrapperClassName="shrink-0">
+          <span className="mb-1 block text-center text-[10.5px] font-bold uppercase leading-[13px] tracking-[0.08em] text-theme-text-tertiary">缩放</span>
+          <Tooltip content="泳道中显示的时间片段，始终位于已加载范围内" position="bottom" wrapperClassName="shrink-0">
             <div className="inline-flex h-[34px] items-center overflow-hidden rounded-md border border-theme-border bg-theme-elevated">
-              <button type="button" aria-label="Zoom in" onClick={() => stepWindow(-1)} className="flex h-full w-[30px] items-center justify-center text-theme-text-secondary hover:bg-theme-hover">
+              <button type="button" aria-label="放大" onClick={() => stepWindow(-1)} className="flex h-full w-[30px] items-center justify-center text-theme-text-secondary hover:bg-theme-hover">
                 <Minus className="h-3 w-3" />
               </button>
               <span className="flex h-full items-center border-x border-theme-border-light px-2 text-[11.5px] font-semibold tabular-nums text-theme-text-primary">{formatLensDuration(windowMs)}</span>
-              <button type="button" aria-label="Zoom out" onClick={() => stepWindow(1)} className="flex h-full w-[30px] items-center justify-center text-theme-text-secondary hover:bg-theme-hover">
+              <button type="button" aria-label="缩小" onClick={() => stepWindow(1)} className="flex h-full w-[30px] items-center justify-center text-theme-text-secondary hover:bg-theme-hover">
                 <Plus className="h-3 w-3" />
               </button>
             </div>
@@ -758,7 +758,7 @@ export function TimelineStrip({
           <div
             role="slider"
             tabIndex={0}
-            aria-label="Visible window — drag to pan the lanes"
+            aria-label="可视时间窗口——拖动以平移泳道"
             aria-valuemin={selection.fromMs}
             aria-valuemax={selection.toMs}
             aria-valuenow={lens.fromMs}

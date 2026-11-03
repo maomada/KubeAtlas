@@ -41,11 +41,11 @@ const baseProps = {
 describe('TimelineToolbar SSR', () => {
   it('renders the two-axis activity control: source radiogroup + Problems toggle', () => {
     const html = renderToString(<TimelineToolbar {...baseProps} events={EVENTS} />)
-    expect(html).toContain('aria-label="Activity source"')
-    expect(html).toContain('>All<')
-    expect(html).toContain('>Changes<')
-    expect(html).toContain('>K8s Events<')
-    expect(html).toContain('>Problems<')
+    expect(html).toContain('aria-label="活动来源"')
+    expect(html).toContain('>全部<')
+    expect(html).toContain('>变更<')
+    expect(html).toContain('>Kubernetes 事件<')
+    expect(html).toContain('>问题<')
     // The old severity pills are gone — they were subsets posing as peers.
     expect(html).not.toContain('>Warnings<')
     expect(html).not.toContain('>Unhealthy<')
@@ -110,17 +110,17 @@ describe('TimelineToolbar SSR', () => {
     )
     // The trigger renders; the popover is closed on the server, so the Sort /
     // Group rows are not in the initial markup.
-    expect(withOpts).toContain('>View<')
-    expect(withOpts).not.toContain('role="radiogroup" aria-label="Lane sort"')
+    expect(withOpts).toContain('>视图<')
+    expect(withOpts).not.toContain('role="radiogroup" aria-label="泳道排序"')
     // The view toggle is labeled — the words themselves are the affordance.
-    expect(withOpts).toContain('>List<')
-    expect(withOpts).toContain('>Timeline<')
+    expect(withOpts).toContain('>列表<')
+    expect(withOpts).toContain('>时间线<')
 
     // List view (TimelineList) passes no viewOptions — no View trigger.
     const noOpts = renderToString(
       <TimelineToolbar {...baseProps} events={EVENTS} view="list" onViewChange={() => {}} />,
     )
-    expect(noOpts).not.toContain('>View<')
+    expect(noOpts).not.toContain('>视图<')
   })
 
   it('dims a zero-count chip in place instead of hiding it (position memory)', () => {
@@ -140,7 +140,7 @@ describe('TimelineToolbar SSR', () => {
   it('renders the Kinds chip with its own badge = selected kinds, hidden when none', () => {
     const none = renderToString(<TimelineToolbar {...baseProps} events={EVENTS} />)
     // Chip always renders its label; badge hidden with no selection.
-    expect(none).toContain('>Kinds<')
+    expect(none).toContain('>类型<')
     expect(none).not.toContain('bg-accent px-1.5')
 
     const two = renderToString(
@@ -156,7 +156,7 @@ describe('TimelineToolbar SSR', () => {
     )
     // Both popovers are closed on the server: the Kinds chip is present, but its
     // picker body and the View menu's Show-deleted switch are not yet in the DOM.
-    expect(html).toContain('>Kinds<')
+    expect(html).toContain('>类型<')
     expect(html).not.toContain('Filter kinds')
     expect(html).not.toContain('Show deleted')
   })
@@ -165,7 +165,7 @@ describe('TimelineToolbar SSR', () => {
     const html = renderToString(<TimelineToolbar {...baseProps} events={EVENTS} />)
     // Always a real text input, even when empty — the collapsed magnifier button
     // is retired for this toolbar.
-    expect(html).toContain('placeholder="Search..."')
+    expect(html).toContain('placeholder="搜索……"')
     expect(html).not.toContain('(press /)')
     expect(html).toContain('value=""')
     expect(html).not.toContain('aria-label="Search"')
@@ -183,9 +183,9 @@ describe('TimelineToolbar SSR', () => {
   it('places the search first in the filters row, before the activity segments', () => {
     const html = renderToString(<TimelineToolbar {...baseProps} events={EVENTS} />)
     // Founder-locked order: search leads the filters row.
-    const searchIdx = html.indexOf('placeholder="Search..."')
+    const searchIdx = html.indexOf('placeholder="搜索……"')
     expect(searchIdx).toBeGreaterThan(-1)
-    expect(searchIdx).toBeLessThan(html.indexOf('>All<'))
+    expect(searchIdx).toBeLessThan(html.indexOf('>全部<'))
   })
 
   it('renders the range dropdown only when range props are supplied', () => {
@@ -193,39 +193,39 @@ describe('TimelineToolbar SSR', () => {
       <TimelineToolbar
         {...baseProps}
         events={EVENTS}
-        rangeOptions={[{ value: '1h', label: '1 hour' }, { value: '24h', label: '24 hours' }]}
+        rangeOptions={[{ value: '1h', label: '1 小时' }, { value: '24h', label: '24 小时' }]}
         timeRange="1h"
         onTimeRangeChange={() => {}}
       />,
     )
-    expect(withRange).toContain('1 hour')
-    expect(withRange).toContain('24 hours')
+    expect(withRange).toContain('1 小时')
+    expect(withRange).toContain('24 小时')
 
     const withoutRange = renderToString(<TimelineToolbar {...baseProps} events={EVENTS} />)
-    expect(withoutRange).not.toContain('24 hours')
+    expect(withoutRange).not.toContain('24 小时')
   })
 
   it('renders swimlane-style counts (resources · events) and list-style (events only)', () => {
     const swim = renderToString(
       <TimelineToolbar {...baseProps} events={EVENTS} counts={{ resources: 4, events: 12 }} />,
     )
-    expect(swim).toContain('4 resources · ')
-    expect(swim).toContain('12 events')
+    expect(swim).toContain('4 个资源 · ')
+    expect(swim).toContain('12<!-- --> 个事件')
 
     const list = renderToString(
       <TimelineToolbar {...baseProps} events={EVENTS} counts={{ events: 12 }} />,
     )
-    expect(list).toContain('12 events')
-    expect(list).not.toContain('resources · ')
+    expect(list).toContain('12<!-- --> 个事件')
+    expect(list).not.toContain('资源 · ')
   })
 
   it('renders refresh only when onRefresh is given', () => {
     const withRefresh = renderToString(
       <TimelineToolbar {...baseProps} events={EVENTS} onRefresh={() => {}} />,
     )
-    expect(withRefresh).toContain('aria-label="Refresh"')
+    expect(withRefresh).toContain('aria-label="刷新"')
     const noRefresh = renderToString(<TimelineToolbar {...baseProps} events={EVENTS} />)
-    expect(noRefresh).not.toContain('aria-label="Refresh"')
+    expect(noRefresh).not.toContain('aria-label="刷新"')
   })
 
   it('normalizes an unmappable legacy multi-select to the widest reading (All, problems off)', () => {
@@ -257,7 +257,7 @@ describe('ViewMenu SSR', () => {
         }}
       />,
     )
-    expect(html).toContain('>View<')
+    expect(html).toContain('>视图<')
     expect(html).toContain('aria-haspopup="menu"')
     expect(html).toContain('aria-expanded="false"')
     // Closed on the server: the Sort/Group radio rows are not in the markup.
@@ -267,13 +267,13 @@ describe('ViewMenu SSR', () => {
   it('DeletedEventsToggle: labeled "Deleted", marked "Deleted hidden" when hiding', () => {
     const shown = renderToString(<DeletedEventsToggle showDeleted={true} onChange={() => {}} />)
     expect(shown).toContain('aria-pressed="false"')
-    expect(shown).toContain('Hide delete events')
-    expect(shown).toContain('>Deleted<')
-    expect(shown).not.toContain('Deleted hidden')
+    expect(shown).toContain('aria-label="隐藏删除事件"')
+    expect(shown).toContain('>已删除<')
+    expect(shown).not.toContain('已隐藏删除项')
     const hiding = renderToString(<DeletedEventsToggle showDeleted={false} onChange={() => {}} />)
     expect(hiding).toContain('aria-pressed="true"')
-    expect(hiding).toContain('Show delete events')
-    expect(hiding).toContain('Deleted hidden')
+    expect(hiding).toContain('显示删除事件')
+    expect(hiding).toContain('已隐藏删除项')
   })
 })
 
@@ -303,18 +303,18 @@ describe('activity two-axis mapping (source × problems ↔ ActivityFilterKey[])
 describe('PinnedOnlyToggle', () => {
   it('is hidden from the toolbar when nothing is pinned', () => {
     const html = renderToString(<TimelineToolbar {...baseProps} events={EVENTS} pinnedCount={0} pinnedOnly={false} onPinnedOnlyChange={() => {}} />)
-    expect(html).not.toContain('Show pinned rows only')
+    expect(html).not.toContain('仅显示已固定行')
   })
 
   it('renders in the toolbar once rows are pinned, quiet by default', () => {
     const html = renderToString(<TimelineToolbar {...baseProps} events={EVENTS} pinnedCount={2} pinnedOnly={false} onPinnedOnlyChange={() => {}} />)
-    expect(html).toContain('Show pinned rows only')
+    expect(html).toContain('仅显示已固定行')
     expect(html).toContain('aria-pressed="false"')
   })
 
   it('shows the engaged treatment when active', () => {
     const html = renderToString(<PinnedOnlyToggle pinnedOnly={true} pinnedCount={2} onChange={() => {}} />)
     expect(html).toContain('aria-pressed="true"')
-    expect(html).toContain('only')
+    expect(html).toContain('仅固定')
   })
 })

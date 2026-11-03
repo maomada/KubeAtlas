@@ -22,7 +22,7 @@ describe("TopologyFilterSidebar Calico policy category", () => {
       />,
     );
 
-    expect(html).toContain("Custom Resources");
+    expect(html).toContain("自定义资源");
     expect(html).not.toContain(">Networking<");
     expect(html).toContain(
       kind.includes("Staged") ? "text-amber-400" : "text-teal-400",

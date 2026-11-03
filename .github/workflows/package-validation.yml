@@ -1,0 +1,60 @@
+name: Package validation
+
+on:
+  pull_request:
+    paths:
+      - '.goreleaser.yaml'
+      - 'Makefile'
+      - 'LICENSE'
+      - 'NOTICE'
+      - 'README.md'
+      - 'docs/packaging.md'
+      - 'scripts/release_artifacts.py'
+      - 'scripts/release_github.py'
+      - 'scripts/test_release_artifacts.py'
+      - 'scripts/test_release_github.py'
+      - 'scripts/test_release_workflow.py'
+      - '.github/workflows/release-binaries.yml'
+      - '.github/workflows/package-validation.yml'
+      - 'cmd/**'
+      - 'internal/static/**'
+      - 'internal/portalui/**'
+      - 'web/**'
+  push:
+    branches: [main]
+    paths:
+      - '.goreleaser.yaml'
+      - 'Makefile'
+      - 'scripts/release_artifacts.py'
+      - 'scripts/release_github.py'
+      - 'scripts/test_release_artifacts.py'
+      - 'scripts/test_release_github.py'
+      - 'scripts/test_release_workflow.py'
+      - '.github/workflows/release-binaries.yml'
+      - '.github/workflows/package-validation.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y rpm
+      - run: go install github.com/goreleaser/goreleaser/v2@v2.13.3
+      - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - run: python3 -m unittest discover -s scripts -p 'test_release*.py'
+      - run: make release-binaries-dry KUBEATLAS_RELEASE_VERSION=0.0.0-ci SOURCE_SHA="$(git rev-parse HEAD)"
+      - run: |
+          for package in dist/release/*.deb; do dpkg-deb --info "$package"; dpkg-deb --contents "$package"; done
+          for package in dist/release/*.rpm; do rpm -qp --info "$package"; rpm -qp --list "$package"; done
+          python3 scripts/release_artifacts.py validate --directory dist/release

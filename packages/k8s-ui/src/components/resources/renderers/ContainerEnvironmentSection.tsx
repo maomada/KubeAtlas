@@ -78,9 +78,9 @@ export function ContainerEnvironmentSection({
     (sum, container) => sum + container.rows.filter(row => row.sensitive && !row.placeholder).length,
     0,
   )
-  const subtitle = total + ' variable' + (total === 1 ? '' : 's')
-    + (secretBacked ? ' · ' + secretBacked + ' from Secrets' : '')
-    + (unavailableSources ? ' · ' + unavailableSources + ' source' + (unavailableSources === 1 ? '' : 's') + ' unavailable' : '')
+  const subtitle = total + ' 个变量'
+    + (secretBacked ? ' · ' + secretBacked + ' 个来自 Secret' : '')
+    + (unavailableSources ? ' · ' + unavailableSources + ' 个来源不可用' : '')
 
   if (!active) return null
   const showStatus = active.rows.some(hasEnvironmentStatus)
@@ -98,26 +98,26 @@ export function ContainerEnvironmentSection({
       const value = await onReveal(active.name, row.name)
       setRevealed(current => ({ ...current, [key]: value }))
     } catch (error) {
-      setRevealErrors(current => ({ ...current, [key]: error instanceof Error ? error.message : 'Reveal failed' }))
+      setRevealErrors(current => ({ ...current, [key]: error instanceof Error ? error.message : '显示失败' }))
     } finally {
       setRevealing(current => withoutKey(current, key))
     }
   }
 
   return (
-    <Section title={'Environment Variables  ·  ' + subtitle} icon={List} defaultExpanded={false} contentClassName="pl-2">
+    <Section title={'环境变量  ·  ' + subtitle} icon={List} defaultExpanded={false} contentClassName="pl-2">
       <div className="@container/env min-w-0 space-y-3">
         <p className="text-xs text-theme-text-tertiary">
-          Shows values from the Pod's current configuration and where they come from. Secret values stay hidden until you reveal them.
+          显示 Pod 当前配置中的变量及其来源。Secret 值在主动显示前会保持隐藏。
         </p>
         <p className="text-xs text-theme-text-tertiary">
-          <Tooltip content="The cluster can add networking-related variables when the container starts. They are not stored on the Pod, so Radar cannot show them." position="right">
-            <span className="cursor-help border-b border-dotted border-theme-text-tertiary" tabIndex={0}>Only variables declared on the Pod are shown.</span>
+          <Tooltip content="容器启动时集群可能会添加网络相关变量。这些变量不会存储在 Pod 上，因此无法显示。" position="right">
+            <span className="cursor-help border-b border-dotted border-theme-text-tertiary" tabIndex={0}>这里只显示 Pod 上声明的变量。</span>
           </Tooltip>
         </p>
 
         {visibleContainers.length > 1 && (
-          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Container">
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="容器">
             {visibleContainers.map(container => (
               <button
                 key={container.name}
@@ -153,16 +153,16 @@ export function ContainerEnvironmentSection({
             </colgroup>
             <thead className="bg-theme-elevated text-theme-text-tertiary">
               <tr>
-                <th className="px-2 py-1.5 font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2">Variable</th>
+                <th className="px-2 py-1.5 font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2">变量名</th>
                 <th className="px-2 py-1.5 font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2">
-                  <ExplainedLabel label="Value" explanation="The value in the Pod's current configuration. A running container may still have an older value if its ConfigMap or Secret changed after it started." />
+                  <ExplainedLabel label="值" explanation="Pod 当前配置中的值。如果 ConfigMap 或 Secret 在容器启动后发生变化，正在运行的容器可能仍使用旧值。" />
                 </th>
                 <th className="px-1 py-1.5 text-center font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2 @min-[760px]/env:text-left">
-                  <ExplainedLabel label="Source" explanation="Where this variable gets its value." />
+                  <ExplainedLabel label="来源" explanation="此变量值的来源。" />
                 </th>
                 {showStatus && (
                   <th className="px-1 py-1.5 text-center font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2 @min-[760px]/env:text-left">
-                    <ExplainedLabel label="Status" explanation="A change since the container started, or a problem reading this value." />
+                  <ExplainedLabel label="状态" explanation="容器启动后发生的变化，或读取此值时遇到的问题。" />
                   </th>
                 )}
               </tr>
@@ -214,10 +214,10 @@ export function ContainerEnvironmentSection({
         </div>
 
         {active.truncated && (
-          <p className="text-xs text-warning-text">Some variables in this container were omitted.</p>
+          <p className="text-xs text-warning-text">此容器中的部分变量已省略。</p>
         )}
 
-        {environment.partial && <p className="text-xs text-warning-text">Some sources could not be read.</p>}
+        {environment.partial && <p className="text-xs text-warning-text">部分来源无法读取。</p>}
         {environment.truncated && <p className="text-xs text-warning-text">This Pod has more sources or variables than Radar can show at once.</p>}
         {environment.coverage.degraded && (
           <p className="text-xs text-warning-text">{environment.coverage.degradedReason || 'Recent changes could not be checked.'}</p>

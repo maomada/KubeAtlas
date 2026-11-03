@@ -106,12 +106,12 @@ export interface TimelineListProps {
 }
 
 const TIME_RANGES: { value: TimeRange; label: string }[] = [
-  { value: '5m', label: '5 min' },
-  { value: '30m', label: '30 min' },
-  { value: '1h', label: '1 hour' },
-  { value: '6h', label: '6 hours' },
-  { value: '24h', label: '24 hours' },
-  { value: 'all', label: 'All' },
+  { value: '5m', label: '5 分钟' },
+  { value: '30m', label: '30 分钟' },
+  { value: '1h', label: '1 小时' },
+  { value: '6h', label: '6 小时' },
+  { value: '24h', label: '24 小时' },
+  { value: 'all', label: '全部' },
 ]
 
 export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasLimitedAccess, namespaces, onViewChange, currentView = 'list', onResourceClick, initialFilter, initialTimeRange, rangeOptions = TIME_RANGES, hideRangeSelector = false, showDeleted: showDeletedProp, onShowDeletedChange, search: searchProp, onSearchChange, activityFilter: activityFilterProp, onActivityFilterChange, kindFilter: kindFilterProp, onKindFilterChange, onVisibleWindowChange, scrollToMs, compact = false, selectedEventId, onSelectEvent, truncatedAt, isTruncated, truncationMessage, showRoutine = false, onShowRoutineChange, routineEvents, foldPerResource }: TimelineListProps) {
@@ -304,8 +304,8 @@ export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasL
         .map(([key, items]) => {
           const d = new Date(key)
           const label = isNaN(d.getTime()) ? 'Unknown date'
-            : key === todayKey ? 'Today'
-            : key === yKey ? 'Yesterday'
+            : key === todayKey ? '今天'
+            : key === yKey ? '昨天'
             : d.getFullYear() === nowDate.getFullYear()
               ? d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })
               : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
@@ -341,11 +341,11 @@ export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasL
       }
     }
 
-    if (last5min.length > 0) groups.push({ label: 'Last 5 minutes', items: aggregateEvents(last5min) })
-    if (last30min.length > 0) groups.push({ label: 'Last 30 minutes', items: aggregateEvents(last30min) })
-    if (lastHour.length > 0) groups.push({ label: 'Last hour', items: aggregateEvents(lastHour) })
-    if (today.length > 0) groups.push({ label: 'Today', items: aggregateEvents(today) })
-    if (older.length > 0) groups.push({ label: 'Older', items: aggregateEvents(older) })
+    if (last5min.length > 0) groups.push({ label: '最近 5 分钟', items: aggregateEvents(last5min) })
+    if (last30min.length > 0) groups.push({ label: '最近 30 分钟', items: aggregateEvents(last30min) })
+    if (lastHour.length > 0) groups.push({ label: '最近 1 小时', items: aggregateEvents(lastHour) })
+    if (today.length > 0) groups.push({ label: '今天', items: aggregateEvents(today) })
+    if (older.length > 0) groups.push({ label: '更早', items: aggregateEvents(older) })
 
     return groups
   }, [filteredActivity, compact, foldPerResource, selectedEventId])
@@ -477,9 +477,9 @@ export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasL
                 <>
                   {canShowRoutine ? (
                     <>
-                      <p className="text-lg">All matching activity is routine</p>
+                      <p className="text-lg">匹配的活动均为常规活动</p>
                       <p className="text-sm mt-2 max-w-md text-center">
-                        {pluralize(routineCount, 'routine event')} {routineCount === 1 ? 'matches' : 'match'}. Warnings and failures would show here.
+                        {routineCount.toLocaleString()} 个常规事件匹配。警告和故障会显示在这里。
                       </p>
                       <div className="mt-4 flex items-center gap-2">
                         <button
@@ -488,7 +488,7 @@ export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasL
                           className="btn-brand flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm"
                         >
                           <Eye className="w-3.5 h-3.5" />
-                          Show routine activity
+                          显示常规活动
                         </button>
                         {activeFilters && (
                           <button
@@ -497,16 +497,16 @@ export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasL
                             className="flex items-center gap-2 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-lg text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary transition-colors"
                           >
                             <X className="w-3.5 h-3.5" />
-                            Clear filters
+                            清除筛选
                           </button>
                         )}
                       </div>
                     </>
                   ) : (
                     <>
-                      <p className="text-lg">No activity found</p>
+                      <p className="text-lg">未找到活动</p>
                       <p className="text-sm mt-2">
-                        {activeFilters || 'Activity will appear here when cluster changes occur'}
+                        {activeFilters || '集群发生变更时，活动会显示在这里'}
                       </p>
                     </>
                   )}
@@ -517,18 +517,18 @@ export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasL
                       className="mt-4 flex items-center gap-2 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-lg text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary transition-colors"
                     >
                       <X className="w-3.5 h-3.5" />
-                      Clear filters
+                      清除筛选
                     </button>
                   )}
                   {hasLimitedAccess && !activeFilters && (
                     <p className="flex items-center gap-1 text-sm mt-2 text-amber-400/80">
                       <Shield className="w-3.5 h-3.5" />
-                      Some resource types are not monitored due to RBAC restrictions
+                      由于 RBAC 限制，部分资源类型未受监控
                     </p>
                   )}
                   {namespaces && namespaces.length > 0 && (
                     <p className="text-sm mt-2 text-theme-text-secondary">
-                      Filtering by namespace: <span className="font-medium text-theme-text-primary">{namespaces.length === 1 ? namespaces[0] : `${namespaces.length} namespaces`}</span>
+                      按命名空间筛选：<span className="font-medium text-theme-text-primary">{namespaces.length === 1 ? namespaces[0] : `${namespaces.length} 个命名空间`}</span>
                     </p>
                   )}
                 </>
@@ -606,7 +606,7 @@ export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasL
             {truncatedAt != null && (isTruncated ?? events.length >= truncatedAt) && (
               <div className="flex items-center justify-center gap-2 py-4 text-sm text-theme-text-tertiary">
                 <Clock className="h-4 w-4 opacity-50" />
-                <span>{truncationMessage ?? `Showing the newest ${truncatedAt.toLocaleString()} events in this range — narrow the query to see older ones`}</span>
+                <span>{truncationMessage ?? `此范围仅显示最新的 ${truncatedAt.toLocaleString()} 个事件——缩小查询范围以查看更早的事件`}</span>
               </div>
             )}
           </div>
@@ -803,7 +803,7 @@ function ActivityCard({ item, expanded, onToggle, onResourceClick, compact, sele
 }
 
 const ROUTINE_ACTIVITY_INFO =
-  'The everyday steps Kubernetes takes on its own: pods being created, scheduled and started, replica sets scaling, and jobs that a CronJob ran successfully. Hidden by default to keep the list short. Warnings, failures and changes to your deployments, cron jobs and other top-level resources always show.'
+  'Kubernetes 自动执行的日常操作，例如 Pod 创建、调度和启动、ReplicaSet 扩缩容，以及 CronJob 成功运行的任务。默认隐藏以缩短列表；警告、故障以及对 Deployment、CronJob 和其他顶层资源的变更始终显示。'
 
 // Its own row under the toolbar: the filter row has no width to spare, and the
 // hide must stay visible at every width.
@@ -817,15 +817,15 @@ function RoutineActivityToggle({ shown, count, onChange }: { shown: boolean; cou
           onChange={(e) => onChange(e.target.checked)}
           className="h-3.5 w-3.5 rounded border-theme-border bg-theme-base"
         />
-        Show routine activity
+        显示常规活动
       </label>
       <Tooltip content={ROUTINE_ACTIVITY_INFO} delay={150} position="bottom" wrapperClassName="shrink-0">
-        <button type="button" aria-label="About routine activity" className="flex cursor-default rounded text-theme-text-tertiary/70 hover:text-theme-text-secondary">
+        <button type="button" aria-label="关于常规活动" className="flex cursor-default rounded text-theme-text-tertiary/70 hover:text-theme-text-secondary">
           <Info className="h-3.5 w-3.5" />
         </button>
       </Tooltip>
       <span className="tabular-nums text-theme-text-tertiary">
-        · {count > 0 ? `${count.toLocaleString()} ${shown ? 'shown' : 'hidden'}` : shown ? 'none match' : 'none hidden'}
+        · {count > 0 ? `${count.toLocaleString()} ${shown ? '已显示' : '已隐藏'}` : shown ? '没有匹配项' : '没有隐藏项'}
       </span>
     </div>
   )
@@ -1014,7 +1014,7 @@ function AggregatedActivityCard({ first, last, count, reason, expanded, onToggle
             <div className="flex items-start gap-2">
               <div className={clsx('w-2 h-2 rounded-full mt-1.5 shrink-0', dotColor)} />
               <div>
-                <div className="text-xs text-theme-text-tertiary">Last occurrence ({count}x total)</div>
+                <div className="text-xs text-theme-text-tertiary">最近一次出现（共 {count} 次）</div>
                 <div className="text-sm text-theme-text-secondary">
                   {new Date(last.timestamp).toLocaleString()}
                 </div>

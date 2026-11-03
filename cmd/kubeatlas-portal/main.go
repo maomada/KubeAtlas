@@ -23,11 +23,18 @@ import (
 
 const maxTokenMapBytes = 1 << 20
 
+var version = "dev"
+
 func main() {
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
 	dataFile := flag.String("data-file", "./portal-data/registry.json", "Persistent registry JSON file")
 	insecureCookie := flag.Bool("insecure-cookie", false, "Allow non-Secure viewer cookies for loopback HTTP development only")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("kubeatlas-portal %s\n", version)
+		return
+	}
 
 	credentials, err := loadCredentials()
 	if err != nil {

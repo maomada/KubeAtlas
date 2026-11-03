@@ -157,10 +157,10 @@ describe('describeActiveFilters', () => {
   })
 
   it('describes a single active filter', () => {
-    expect(describeActiveFilters({ ...none, search: 'dfasdf' })).toBe('search "dfasdf"')
-    expect(describeActiveFilters({ ...none, activityFilter: ['changes'] })).toBe('1 activity filter')
-    expect(describeActiveFilters({ ...none, kindFilter: ['Pod'] })).toBe('1 kind')
-    expect(describeActiveFilters({ ...none, showDeleted: false })).toBe('deleted hidden')
+    expect(describeActiveFilters({ ...none, search: 'dfasdf' })).toBe('搜索“dfasdf”')
+    expect(describeActiveFilters({ ...none, activityFilter: ['changes'] })).toBe('1 个活动筛选')
+    expect(describeActiveFilters({ ...none, kindFilter: ['Pod'] })).toBe('1 种资源类型')
+    expect(describeActiveFilters({ ...none, showDeleted: false })).toBe('已隐藏删除事件')
   })
 
   it('combines active filters in toolbar order with pluralization', () => {
@@ -172,13 +172,13 @@ describe('describeActiveFilters', () => {
         kindFilter: ['Pod', 'Service', 'ConfigMap'],
         showDeleted: false,
       }),
-    ).toBe('search "dfasdf" · 2 activity filters · 3 kinds · deleted hidden')
+    ).toBe('搜索“dfasdf” · 2 个活动筛选 · 3 种资源类型 · 已隐藏删除事件')
   })
 
   it('counts the two-axis Problems toggle as ONE activity filter, not two keys', () => {
     // source=all + Problems expands to keys [warnings, unhealthy] but is one pick;
     // counting raw keys read "2 activity filters" for a single toggle.
-    expect(describeActiveFilters({ ...none, activityFilter: ['warnings', 'unhealthy'] })).toBe('1 activity filter')
+    expect(describeActiveFilters({ ...none, activityFilter: ['warnings', 'unhealthy'] })).toBe('1 个活动筛选')
   })
 })
 

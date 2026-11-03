@@ -344,8 +344,8 @@ describe('EventDetailPanel cluster mode (a ×N pill exposes every member)', () =
       <EventDetailPanel events={ordered} selectedId={ordered[0].id} onSelectId={() => {}} onClose={() => {}} />,
     )
     // Honest summary: the "N events" badge + a member list with all four rows.
-    expect(html).toContain('events</span>')
-    expect(html).toContain('aria-label="Drawer events"')
+    expect(html).toContain('个事件</span>')
+    expect(html).toContain('aria-label="事件详情列表"')
     expect((html.match(/<li>/g) ?? []).length).toBe(4)
     expect(html).toContain('BackOff')
     expect(html).toContain('>add<')
@@ -380,10 +380,10 @@ describe('EventDetailPanel cluster mode (a ×N pill exposes every member)', () =
     )
     // One anatomy: the rail always renders — a single event is a rail of one.
     expect(html).toContain('Back-off restarting failed container')
-    expect(html).toContain('aria-label="Drawer events"')
+    expect(html).toContain('aria-label="事件详情列表"')
     expect((html.match(/<li/g) ?? []).length).toBe(1)
-    expect(html).toContain('1 of 1') // header stepper reflects the rail of one
-    expect(html).not.toContain(' events</span>') // no misleading "1 events" badge
+    expect(html).toContain('1 / 1') // header stepper reflects the rail of one
+    expect(html).not.toContain(' 个事件</span>') // no misleading "1 events" badge
   })
 
   it('N=1 with allEvents grows the rail with ±15-min correlated neighbors', () => {
@@ -393,19 +393,19 @@ describe('EventDetailPanel cluster mode (a ×N pill exposes every member)', () =
     const html = renderToString(
       <EventDetailPanel events={[single]} selectedId={single.id} onSelectId={() => {}} onClose={() => {}} allEvents={[single, neighbor, far]} />,
     )
-    expect(html).toContain('Within ±15 min')
+    expect(html).toContain('前后 15 分钟内')
     expect(html).toContain('>api<') // the neighbor joined the rail
     expect(html).not.toContain('>db<') // out-of-window event did not
-    expect(html).toContain('1 of 2')
+    expect(html).toContain('1 / 2')
   })
 })
 
 describe('toolbar lens controls (controlled vs uncontrolled)', () => {
   it('shows zoom buttons and the window label in uncontrolled mode', () => {
     const html = renderToString(<TimelineSwimlanes events={[]} />)
-    expect(html).toContain('aria-label="Zoom in"')
-    expect(html).toContain('aria-label="Zoom out"')
-    expect(html).toContain(' window')
+    expect(html).toContain('aria-label="放大"')
+    expect(html).toContain('aria-label="缩小"')
+    expect(html).toContain('窗口')
   })
 
   it('hides zoom buttons and the window label when controlled (viewWindow set)', () => {
@@ -417,9 +417,9 @@ describe('toolbar lens controls (controlled vs uncontrolled)', () => {
         onViewWindowChange={() => {}}
       />,
     )
-    expect(html).not.toContain('aria-label="Zoom in"')
-    expect(html).not.toContain('aria-label="Zoom out"')
-    expect(html).not.toContain(' window')
+    expect(html).not.toContain('aria-label="放大"')
+    expect(html).not.toContain('aria-label="缩小"')
+    expect(html).not.toContain('窗口')
   })
 
   it('hides the strip "→ Now" button when controlled — the scrubber chip owns the path back to now', () => {
@@ -629,7 +629,7 @@ describe('app-group name → Applications link', () => {
         grouping="app" appIndex={index} onAppClick={() => {}}
       />,
     )
-    expect(html).toContain('Open in Applications')
+    expect(html).toContain('在应用中打开')
   })
 
   it('renders no link without an onAppClick handler', () => {
@@ -639,7 +639,7 @@ describe('app-group name → Applications link', () => {
         grouping="app" appIndex={index}
       />,
     )
-    expect(html).not.toContain('Open in Applications')
+    expect(html).not.toContain('在应用中打开')
   })
 })
 

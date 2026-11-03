@@ -80,3 +80,32 @@ Legacy environment settings cannot enable them, and the Helm charts reject
 enabling those features. See [Usage Stats](usage-stats.md) and
 [Authentication](authentication.md#upstream-cloud-mode) for the retained
 compatibility boundaries. The independent Portal is not the upstream Cloud.
+
+## Binary archives and packages
+
+The separate `Release Binaries` workflow is manual-only. It accepts the
+full `source_sha`, strict SemVer `version`, and `publish=false` dry-run inputs.
+It checks main ancestry and exact-SHA CI and CodeQL evidence before building.
+Builds use trusted release tooling checked out separately from the selected
+source, have read-only permissions, and never log in to a registry.
+
+With `publish=true`, the protected `ghcr-publish` environment is required. The
+publisher downloads already-validated artifacts rather than rebuilding them,
+revalidates policy and hashes, and fails closed unless both versioned tag and
+GitHub Release endpoints return verified HTTP 404 responses. It creates a
+draft release targeting the exact source SHA, uploads only manifest-validated
+artifacts plus `checksums.txt` and `binary-manifest.json`, and publishes only
+after every upload succeeds. It never overwrites, deletes, retries, or creates
+a mutable `latest` tag. Partial state remains for reconciliation and requires
+a fresh version.
+
+Run the non-publishing local package dry run with:
+
+```sh
+KUBEATLAS_RELEASE_VERSION=1.2.3 make release-binaries-dry
+```
+
+See [Binary packages](packaging.md) for install/uninstall behavior, supported
+architectures, no-autostart guarantees, and source/version provenance. GHCR
+images/charts and GitHub Release binaries are separate authorization paths;
+this change claims no published package or release.
