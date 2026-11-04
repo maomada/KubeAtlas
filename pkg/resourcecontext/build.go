@@ -1455,7 +1455,7 @@ func valueOrEmpty(p *string) string {
 	return *p
 }
 
-func valueOrZero[T ~string](p *T) T {
+func valueOrZero[T interface{ ~string }](p *T) T {
 	var zero T
 	if p == nil {
 		return zero

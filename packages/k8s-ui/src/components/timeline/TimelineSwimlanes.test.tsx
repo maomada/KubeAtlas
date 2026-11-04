@@ -215,8 +215,8 @@ describe('clusterBreakdown (pill hover breakdown)', () => {
     expect(more).toBe(0)
     expect(lines).toEqual([
       { label: 'BackOff', count: 1 },
-      { label: 'Created', count: 1 },
-      { label: 'Modified', count: 2 },
+      { label: '已创建', count: 1 },
+      { label: '已修改', count: 2 },
     ])
   })
 
@@ -245,13 +245,13 @@ describe('clusterBreakdown (pill hover breakdown)', () => {
       4,
     )
     expect(lines).toHaveLength(4)
-    expect(lines[3]).toEqual({ label: 'Deleted', count: 1 })
+    expect(lines[3]).toEqual({ label: '已删除', count: 1 })
     expect(more).toBe(2)
   })
 
-  it('labels a reason-less warning as Warning', () => {
+  it('labels a reason-less warning in Chinese', () => {
     const { lines } = clusterBreakdown([mkEvent('w1', 'Warning')])
-    expect(lines).toEqual([{ label: 'Warning', count: 1 }])
+    expect(lines).toEqual([{ label: '警告', count: 1 }])
   })
 })
 
@@ -276,8 +276,9 @@ describe('bulk expand/collapse toggle (single morphing control)', () => {
     })
     // Flat lanes (no groups) → nothing expanded → the toggle offers Expand.
     const html = renderToString(<TimelineSwimlanes events={[ev('web')]} />)
-    expect(html).toContain('aria-label="Expand all resources"')
-    expect(html).not.toContain('aria-label="Collapse all resources"')
+    expect(html).toContain('>资源</span>')
+    expect(html).toContain('aria-label="展开所有资源"')
+    expect(html).not.toContain('aria-label="折叠所有资源"')
     // The "(E)" shortcut hint rides the custom Tooltip (not SSR'd) — the
     // aria-labels above are the state-aware affordance.
   })
@@ -291,10 +292,10 @@ describe('compact mode (embedded detail-view swimlane)', () => {
 
   it('hides the bulk expand/collapse toggle — flat lanes never nest', () => {
     const full = renderToString(<TimelineSwimlanes events={[ev('web')]} />)
-    expect(full).toContain('aria-label="Expand all resources"')
+    expect(full).toContain('aria-label="展开所有资源"')
     const compact = renderToString(<TimelineSwimlanes events={[ev('web')]} grouping="flat" compact />)
-    expect(compact).not.toContain('aria-label="Expand all resources"')
-    expect(compact).not.toContain('aria-label="Collapse all resources"')
+    expect(compact).not.toContain('aria-label="展开所有资源"')
+    expect(compact).not.toContain('aria-label="折叠所有资源"')
   })
 
   it('widens the label column (no namespace subtitle or tree competing for it)', () => {
@@ -344,8 +345,8 @@ describe('EventDetailPanel cluster mode (a ×N pill exposes every member)', () =
       <EventDetailPanel events={ordered} selectedId={ordered[0].id} onSelectId={() => {}} onClose={() => {}} />,
     )
     // Honest summary: the "N events" badge + a member list with all four rows.
-    expect(html).toContain('events</span>')
-    expect(html).toContain('aria-label="Drawer events"')
+    expect(html).toContain('个事件</span>')
+    expect(html).toContain('aria-label="事件详情列表"')
     expect((html.match(/<li>/g) ?? []).length).toBe(4)
     expect(html).toContain('BackOff')
     expect(html).toContain('>add<')
@@ -380,10 +381,10 @@ describe('EventDetailPanel cluster mode (a ×N pill exposes every member)', () =
     )
     // One anatomy: the rail always renders — a single event is a rail of one.
     expect(html).toContain('Back-off restarting failed container')
-    expect(html).toContain('aria-label="Drawer events"')
+    expect(html).toContain('aria-label="事件详情列表"')
     expect((html.match(/<li/g) ?? []).length).toBe(1)
-    expect(html).toContain('1 of 1') // header stepper reflects the rail of one
-    expect(html).not.toContain(' events</span>') // no misleading "1 events" badge
+    expect(html).toContain('1 / 1') // header stepper reflects the rail of one
+    expect(html).not.toContain(' 个事件</span>') // no misleading "1 events" badge
   })
 
   it('N=1 with allEvents grows the rail with ±15-min correlated neighbors', () => {
@@ -393,19 +394,19 @@ describe('EventDetailPanel cluster mode (a ×N pill exposes every member)', () =
     const html = renderToString(
       <EventDetailPanel events={[single]} selectedId={single.id} onSelectId={() => {}} onClose={() => {}} allEvents={[single, neighbor, far]} />,
     )
-    expect(html).toContain('Within ±15 min')
+    expect(html).toContain('前后 15 分钟内')
     expect(html).toContain('>api<') // the neighbor joined the rail
     expect(html).not.toContain('>db<') // out-of-window event did not
-    expect(html).toContain('1 of 2')
+    expect(html).toContain('1 / 2')
   })
 })
 
 describe('toolbar lens controls (controlled vs uncontrolled)', () => {
   it('shows zoom buttons and the window label in uncontrolled mode', () => {
     const html = renderToString(<TimelineSwimlanes events={[]} />)
-    expect(html).toContain('aria-label="Zoom in"')
-    expect(html).toContain('aria-label="Zoom out"')
-    expect(html).toContain(' window')
+    expect(html).toContain('aria-label="放大"')
+    expect(html).toContain('aria-label="缩小"')
+    expect(html).toContain('窗口')
   })
 
   it('hides zoom buttons and the window label when controlled (viewWindow set)', () => {
@@ -417,9 +418,9 @@ describe('toolbar lens controls (controlled vs uncontrolled)', () => {
         onViewWindowChange={() => {}}
       />,
     )
-    expect(html).not.toContain('aria-label="Zoom in"')
-    expect(html).not.toContain('aria-label="Zoom out"')
-    expect(html).not.toContain(' window')
+    expect(html).not.toContain('aria-label="放大"')
+    expect(html).not.toContain('aria-label="缩小"')
+    expect(html).not.toContain('窗口')
   })
 
   it('hides the strip "→ Now" button when controlled — the scrubber chip owns the path back to now', () => {
@@ -532,11 +533,11 @@ describe('pinned resource lanes', () => {
         onTogglePin={() => {}}
       />,
     )
-    expect(html).toContain('Pinned')
+    expect(html).toContain('已固定')
     expect(html).toContain('web')
     expect(html).toContain('team-a')
     // Pinned row's toggle is the filled Unpin affordance.
-    expect(html).toContain('aria-label="Unpin"')
+    expect(html).toContain('aria-label="取消固定"')
   })
 
   it('renders a pinned row above the sorted lanes when the resource has events', () => {
@@ -552,7 +553,7 @@ describe('pinned resource lanes', () => {
         onTogglePin={() => {}}
       />,
     )
-    const pinnedIdx = html.indexOf('Pinned')
+    const pinnedIdx = html.indexOf('已固定')
     const webIdx = html.indexOf('web')
     expect(pinnedIdx).toBeGreaterThanOrEqual(0)
     // The pinned caption precedes the (duplicated) pinned row.
@@ -582,10 +583,10 @@ describe('pinned resource lanes', () => {
         onTogglePin={() => {}}
       />,
     )
-    expect(html).toContain('Pinned')
+    expect(html).toContain('已固定')
     expect(html).toContain('billing')
     // The pinned group's toggle shows the app-specific filled Unpin affordance.
-    expect(html).toContain('aria-label="Unpin app"')
+    expect(html).toContain('aria-label="取消固定应用"')
     expect(html).toContain('fill-current')
   })
 
@@ -629,7 +630,7 @@ describe('app-group name → Applications link', () => {
         grouping="app" appIndex={index} onAppClick={() => {}}
       />,
     )
-    expect(html).toContain('Open in Applications')
+    expect(html).toContain('在应用中打开')
   })
 
   it('renders no link without an onAppClick handler', () => {
@@ -639,7 +640,7 @@ describe('app-group name → Applications link', () => {
         grouping="app" appIndex={index}
       />,
     )
-    expect(html).not.toContain('Open in Applications')
+    expect(html).not.toContain('在应用中打开')
   })
 })
 
@@ -850,7 +851,7 @@ describe('empty state is pin-aware', () => {
         onTogglePin={() => {}}
       />,
     )
-    expect(html).toContain('aria-label="Unpin"')
+    expect(html).toContain('aria-label="取消固定"')
   })
 })
 
@@ -998,9 +999,9 @@ describe('group collision chip (same kind+ns+name, different API group)', () => 
         viewWindow={{ fromMs: NOW - HOUR, toMs: NOW + HOUR }}
       />,
     )
-    // The chip is the "API group <g>" title; both groups get one.
-    expect(html).toContain('API group cluster.x-k8s.io')
-    expect(html).toContain('API group postgresql.cnpg.io')
+    // The chip is the "API 组 <g>" title; both groups get one.
+    expect(html).toContain('API 组 cluster.x-k8s.io')
+    expect(html).toContain('API 组 postgresql.cnpg.io')
   })
 
   it('renders NO group chip when the CRD lane is unique', () => {
@@ -1011,7 +1012,7 @@ describe('group collision chip (same kind+ns+name, different API group)', () => 
         viewWindow={{ fromMs: NOW - HOUR, toMs: NOW + HOUR }}
       />,
     )
-    expect(html).not.toContain('API group')
+    expect(html).not.toContain('API 组')
     // The group still rides the kind badge's title tooltip (non-intrusive).
     expect(html).toContain('postgresql.cnpg.io')
   })

@@ -505,6 +505,9 @@ jobs:
           python3 -m py_compile
           scripts/release_policy.py
           scripts/test_release_policy.py
+          scripts/release_artifacts.py
+          scripts/test_release_artifacts.py
+          scripts/release_github.py
           scripts/release_registry.py
           scripts/test_release_registry.py
           scripts/release_chart_package.py

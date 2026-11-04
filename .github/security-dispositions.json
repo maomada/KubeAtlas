@@ -1,0 +1,2770 @@
+{
+  "schemaVersion": 1,
+  "engine": "1.180.0",
+  "sourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+  "sourceTreeSha256": "f0d9c3270c3519085e9f2cb0fd40e36b1c525b901b0fb96a144f1be4d373b2d0",
+  "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
+  "rawFindingsSha256": "f3af6fd39b5e99e4c5a223ad90a6ec9764cf84686d3e32f38dd0f0cdbbf090a1",
+  "entries": [
+    {
+      "id": "SAST-001",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "cmd/desktop/env.go",
+        "start": {
+          "line": 157,
+          "col": 9
+        },
+        "end": {
+          "line": 158,
+          "col": 102
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "runLoginShell 仅由 getShellEnv 调用；keys 是 shellEnvVars 固定清单，shell 来自启动用户 SHELL/系统默认。查询值不拼进脚本；外部请求不选择命令。范围：不保证本地启动环境本身可信。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-002",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-fprintf-to-responsewriter",
+        "path": "cmd/desktop/proxy.go",
+        "start": {
+          "line": 33,
+          "col": 2
+        },
+        "end": {
+          "line": 72,
+          "col": 18
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "cmd/desktop/main.go 调用 NewRedirectHandler 时 serverAddr 固定为 net.JoinHostPort(127.0.0.1, ActualPort)。namespace(s) 经 url.QueryEscape 再插入固定脚本双引号字符串；不能注入引号/HTML闭合标签。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-003",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
+        "path": "cmd/explorer/main.go",
+        "start": {
+          "line": 274,
+          "col": 120
+        },
+        "end": {
+          "line": 274,
+          "col": 125
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "命中包含 ws:// 的错误消息字面量，不是创建 WebSocket 的调用；ValidateWebSocketURL 校验逻辑必须另外保留。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-004",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/ai/agent_claude.go",
+        "start": {
+          "line": 73,
+          "col": 9
+        },
+        "end": {
+          "line": 73,
+          "col": 49
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Agent 二进制由 resolveAgent 接收本地环境配置或 DetectAgents/lookupAgent 发现的路径；exec.CommandContext 使用 argv，不经 shell 拼接。Claude/OpenCode prompt 走 stdin；Codex/Cursor 作为单独参数。此结论只针对 shell 命令注入，不声称 AI full-local 工具权限已真实验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-005",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/ai/agent_codex.go",
+        "start": {
+          "line": 94,
+          "col": 9
+        },
+        "end": {
+          "line": 94,
+          "col": 49
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Agent 二进制由 resolveAgent 接收本地环境配置或 DetectAgents/lookupAgent 发现的路径；exec.CommandContext 使用 argv，不经 shell 拼接。Claude/OpenCode prompt 走 stdin；Codex/Cursor 作为单独参数。此结论只针对 shell 命令注入，不声称 AI full-local 工具权限已真实验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-006",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/ai/agent_cursor.go",
+        "start": {
+          "line": 110,
+          "col": 9
+        },
+        "end": {
+          "line": 110,
+          "col": 49
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Agent 二进制由 resolveAgent 接收本地环境配置或 DetectAgents/lookupAgent 发现的路径；exec.CommandContext 使用 argv，不经 shell 拼接。Claude/OpenCode prompt 走 stdin；Codex/Cursor 作为单独参数。此结论只针对 shell 命令注入，不声称 AI full-local 工具权限已真实验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-007",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/ai/agent_cursor.go",
+        "start": {
+          "line": 132,
+          "col": 10
+        },
+        "end": {
+          "line": 132,
+          "col": 51
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "仅对已发现/本地配置的 Agent 可执行路径运行固定 --help 或 --version 参数，不接收外部 shell 脚本。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-008",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/ai/agent_opencode.go",
+        "start": {
+          "line": 63,
+          "col": 9
+        },
+        "end": {
+          "line": 63,
+          "col": 49
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Agent 二进制由 resolveAgent 接收本地环境配置或 DetectAgents/lookupAgent 发现的路径；exec.CommandContext 使用 argv，不经 shell 拼接。Claude/OpenCode prompt 走 stdin；Codex/Cursor 作为单独参数。此结论只针对 shell 命令注入，不声称 AI full-local 工具权限已真实验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-009",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/ai/detect.go",
+        "start": {
+          "line": 209,
+          "col": 9
+        },
+        "end": {
+          "line": 209,
+          "col": 53
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "仅对已发现/本地配置的 Agent 可执行路径运行固定 --help 或 --version 参数，不接收外部 shell 脚本。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-010",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/app/browser.go",
+        "start": {
+          "line": 33,
+          "col": 10
+        },
+        "end": {
+          "line": 33,
+          "col": 36
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "browserCommand 接收 CLI 的 preferred browser 与启动 URL；exec.Command(browser,url) 是两个独立 argv，不把 URL 当 shell 代码。仅认可启动用户本地配置可信的边界。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-011",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.crypto.missing-ssl-minversion",
+        "path": "internal/auth/oidc.go",
+        "start": {
+          "line": 112,
+          "col": 32
+        },
+        "end": {
+          "line": 112,
+          "col": 57
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "已查 Go 1.26.10 实际工具链 crypto/tls/common.go:784-790：MinVersion=0 默认最低 TLS1.2。此处是客户端配置，非 server-side tls10server GODEBUG 兼容开关。本规则不证明证书验证策略安全；显式 insecure 配置仍仅限管理员选择，不能据本结论豁免。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-012",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.crypto.missing-ssl-minversion",
+        "path": "internal/auth/oidc.go",
+        "start": {
+          "line": 120,
+          "col": 32
+        },
+        "end": {
+          "line": 120,
+          "col": 68
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "已查 Go 1.26.10 实际工具链 crypto/tls/common.go:784-790：MinVersion=0 默认最低 TLS1.2。此处是客户端配置，非 server-side tls10server GODEBUG 兼容开关。本规则不证明证书验证策略安全；显式 insecure 配置仍仅限管理员选择，不能据本结论豁免。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-013",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+        "path": "internal/auth/oidc.go",
+        "start": {
+          "line": 410,
+          "col": 10
+        },
+        "end": {
+          "line": 418,
+          "col": 3
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Secure 非缺失，而是由请求 TLS 或可信 TLS 终止代理的 X-Forwarded-Proto=https 推导；HttpOnly=true。保留 HTTP/loopback 登录兼容。代理必须隔离入口并正确设置转发头，本条不确认错误部署安全。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-014",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+        "path": "internal/auth/oidc.go",
+        "start": {
+          "line": 426,
+          "col": 10
+        },
+        "end": {
+          "line": 433,
+          "col": 3
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Secure 非缺失，而是由请求 TLS 或可信 TLS 终止代理的 X-Forwarded-Proto=https 推导；HttpOnly=true。保留 HTTP/loopback 登录兼容。代理必须隔离入口并正确设置转发头，本条不确认错误部署安全。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-019",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+        "path": "internal/auth/oidc.go",
+        "start": {
+          "line": 679,
+          "col": 21
+        },
+        "end": {
+          "line": 687,
+          "col": 3
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Secure 非缺失，而是由请求 TLS 或可信 TLS 终止代理的 X-Forwarded-Proto=https 推导；HttpOnly=true。保留 HTTP/loopback 登录兼容。代理必须隔离入口并正确设置转发头，本条不确认错误部署安全。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-020",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.crypto.math-random-used",
+        "path": "internal/cloud/enrollment.go",
+        "start": {
+          "line": 9,
+          "col": 3
+        },
+        "end": {
+          "line": 9,
+          "col": 15
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "math/rand/v2 的唯一用途是 enrollment retryDelay 的 20% 时间抖动 rand.Int64N；不是 token/nonce/凭据生成。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-021",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
+        "path": "internal/cloud/url.go",
+        "start": {
+          "line": 132,
+          "col": 51
+        },
+        "end": {
+          "line": 132,
+          "col": 56
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "命中包含 ws:// 的错误消息字面量，不是创建 WebSocket 的调用；ValidateWebSocketURL 校验逻辑必须另外保留。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-022",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 318,
+          "col": 2
+        },
+        "end": {
+          "line": 318,
+          "col": 27
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "handleGetManifest 明确以 text/plain; charset=utf-8 返回 YAML；此处不作为 HTML 执行。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-023",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 685,
+          "col": 4
+        },
+        "end": {
+          "line": 685,
+          "col": 53
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-024",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 695,
+          "col": 5
+        },
+        "end": {
+          "line": 695,
+          "col": 54
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-025",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 702,
+          "col": 5
+        },
+        "end": {
+          "line": 702,
+          "col": 54
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-026",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 858,
+          "col": 4
+        },
+        "end": {
+          "line": 858,
+          "col": 53
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-027",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 869,
+          "col": 5
+        },
+        "end": {
+          "line": 869,
+          "col": 54
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-028",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 876,
+          "col": 5
+        },
+        "end": {
+          "line": 876,
+          "col": 54
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-029",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 1354,
+          "col": 4
+        },
+        "end": {
+          "line": 1354,
+          "col": 53
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-030",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 1361,
+          "col": 5
+        },
+        "end": {
+          "line": 1361,
+          "col": 54
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-031",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/helm/handlers.go",
+        "start": {
+          "line": 1368,
+          "col": 5
+        },
+        "end": {
+          "line": 1368,
+          "col": 54
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "此行所在 Helm upgrade/rollback/install stream handler 设置 text/event-stream，并在写入前 json.Marshal(event/error)；JSON 转义换行与 HTML 敏感字符，固定 data 帧，不是 HTML sink。逐行对应原始 finding 链接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-032",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.crypto.missing-ssl-minversion",
+        "path": "internal/helm/repository_http.go",
+        "start": {
+          "line": 186,
+          "col": 16
+        },
+        "end": {
+          "line": 186,
+          "col": 75
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "已查 Go 1.26.10 实际工具链 crypto/tls/common.go:784-790：MinVersion=0 默认最低 TLS1.2。此处是客户端配置，非 server-side tls10server GODEBUG 兼容开关。本规则不证明证书验证策略安全；显式 insecure 配置仍仅限管理员选择，不能据本结论豁免。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-033",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/images/handlers.go",
+        "start": {
+          "line": 167,
+          "col": 15
+        },
+        "end": {
+          "line": 167,
+          "col": 31
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "handleGetFile 设置 application/octet-stream 和 attachment 响应，写入镜像文件字节；该 sink 不是 HTML。下载文件本身可信性不在本结论内。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-034",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.unsafe-reflect-by-name",
+        "path": "internal/k8s/history_spec_coverage.go",
+        "start": {
+          "line": 474,
+          "col": 16
+        },
+        "end": {
+          "line": 474,
+          "col": 39
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "rootFieldsEqual 的 root 来自 internal/k8s/history.go 静态 diffRegistrations 的 backstopRoot（spec/webhooks），不是外部字段名。只读取并 DeepEqual 字段，不反射调用方法。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-035",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.unsafe-reflect-by-name",
+        "path": "internal/k8s/history_spec_coverage.go",
+        "start": {
+          "line": 474,
+          "col": 41
+        },
+        "end": {
+          "line": 474,
+          "col": 64
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "rootFieldsEqual 的 root 来自 internal/k8s/history.go 静态 diffRegistrations 的 backstopRoot（spec/webhooks），不是外部字段名。只读取并 DeepEqual 字段，不反射调用方法。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-036",
+      "finding": {
+        "check_id": "rules.go.lang.security.shared-url-struct-mutation",
+        "path": "internal/k8s/profile_target.go",
+        "start": {
+          "line": 45,
+          "col": 4
+        },
+        "end": {
+          "line": 45,
+          "col": 32
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "identity 是 CurrentProfileTarget 中新建的匿名局部 struct（User string），并非 url.URL，更不是共享 URL 对象。读取 activeSourceConfig 时持有 clientMu.RLock。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-037",
+      "finding": {
+        "check_id": "rules.go.lang.security.filepath-clean-misuse",
+        "path": "internal/portal/handler.go",
+        "start": {
+          "line": 135,
+          "col": 11
+        },
+        "end": {
+          "line": 135,
+          "col": 58
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "URL 分支先限定 /assets/，path.Clean 后再次限定 assets/，serveFile 从 fs.FS 读静态文件而非拼接 OS 路径；路径穿出 assets 后被拒绝。需保持静态 FS 的契约，不支持其指向不可信外部文件。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-038",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+        "path": "internal/portal/session.go",
+        "start": {
+          "line": 76,
+          "col": 21
+        },
+        "end": {
+          "line": 79,
+          "col": 3
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Secure=h.secureCookies，默认 true；仅 --insecure-cookie 显式允许关闭，cmd/kubeatlas-portal/main.go 同时拒绝非 loopback 监听。并非漏设 Secure。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-039",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-fprintf-to-responsewriter",
+        "path": "internal/server/ai_diagnose.go",
+        "start": {
+          "line": 588,
+          "col": 4
+        },
+        "end": {
+          "line": 588,
+          "col": 64
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "handleDiagnoseRunStream 设置 text/event-stream，此命中仅写 retry: 固定整数；没有用户 HTML 数据。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-040",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-fprintf-to-responsewriter",
+        "path": "internal/server/ai_diagnose.go",
+        "start": {
+          "line": 615,
+          "col": 16
+        },
+        "end": {
+          "line": 615,
+          "col": 89
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "同一 stream 设置 text/event-stream，事件正文先 json.Marshal；id 用 %d，事件类型来自内部事件协议。不是 HTML 渲染。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-041",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/server/cnpg_report.go",
+        "start": {
+          "line": 91,
+          "col": 15
+        },
+        "end": {
+          "line": 91,
+          "col": 28
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "handleCNPGClusterReport 设置 application/zip、attachment 和内容长度，写报告压缩包；不是 HTML。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-043",
+      "finding": {
+        "check_id": "rules.go.lang.security.filepath-clean-misuse",
+        "path": "internal/server/copy.go",
+        "start": {
+          "line": 292,
+          "col": 13
+        },
+        "end": {
+          "line": 292,
+          "col": 33
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "这是 Pod 容器内文件路径，不是宿主 filesystem 路径；isDownloadablePath 要求 POSIX 绝对文件路径，tar 名称加 ./，shell 参数单引号转义，调用 Kubernetes exec 使用请求对应凭据。产品明确允许有 exec 权限者读取容器任意可读文件，不承诺目录沙箱。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-044",
+      "finding": {
+        "check_id": "rules.go.lang.security.filepath-clean-misuse",
+        "path": "internal/server/copy.go",
+        "start": {
+          "line": 1184,
+          "col": 13
+        },
+        "end": {
+          "line": 1184,
+          "col": 33
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "这是 Pod 容器内文件路径，不是宿主 filesystem 路径；isDownloadablePath 要求 POSIX 绝对文件路径，tar 名称加 ./，shell 参数单引号转义，调用 Kubernetes exec 使用请求对应凭据。产品明确允许有 exec 权限者读取容器任意可读文件，不承诺目录沙箱。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-045",
+      "finding": {
+        "check_id": "rules.go.gorilla.security.audit.websocket-missing-origin-check",
+        "path": "internal/server/exec.go",
+        "start": {
+          "line": 30,
+          "col": 10
+        },
+        "end": {
+          "line": 30,
+          "col": 86
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "CheckOrigin 指向实际 browserOriginAllowed：拒绝 cross-site，校验 sameAuthorityOriginOK 或显式 trusted origin；不是无条件 return true。无 Origin 的非浏览器客户端按产品契约允许，仍受独立认证/RBAC约束。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-046",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/server/localterm_unix.go",
+        "start": {
+          "line": 38,
+          "col": 9
+        },
+        "end": {
+          "line": 38,
+          "col": 34
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "startShell 由 handleLocalTerminal 选择 getDefaultShell；localTerminalUnavailable 拒绝 auth-enabled、Cloud tunnel、in-cluster、共享监听和非 loopback URL，并再次做 browserOriginAllowed。此功能本就允许本机操作者启动 shell，不是外部脚本拼接。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-047",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.use-of-unsafe-block",
+        "path": "internal/server/localterm_windows.go",
+        "start": {
+          "line": 112,
+          "col": 3
+        },
+        "end": {
+          "line": 112,
+          "col": 22
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "unsafe.Pointer/Sizeof 仅用于 Windows ConPTY 的 HPCON 句柄和 StartupInfoEx ABI，既不是从请求读入的裸地址，也没有对任意内存的解引用。未运行 Windows 原生 API，保留平台验证限制。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-048",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.use-of-unsafe-block",
+        "path": "internal/server/localterm_windows.go",
+        "start": {
+          "line": 113,
+          "col": 3
+        },
+        "end": {
+          "line": 113,
+          "col": 21
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "unsafe.Pointer/Sizeof 仅用于 Windows ConPTY 的 HPCON 句柄和 StartupInfoEx ABI，既不是从请求读入的裸地址，也没有对任意内存的解引用。未运行 Windows 原生 API，保留平台验证限制。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-049",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.use-of-unsafe-block",
+        "path": "internal/server/localterm_windows.go",
+        "start": {
+          "line": 146,
+          "col": 15
+        },
+        "end": {
+          "line": 146,
+          "col": 53
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "unsafe.Pointer/Sizeof 仅用于 Windows ConPTY 的 HPCON 句柄和 StartupInfoEx ABI，既不是从请求读入的裸地址，也没有对任意内存的解引用。未运行 Windows 原生 API，保留平台验证限制。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-050",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-fprintf-to-responsewriter",
+        "path": "internal/server/logs.go",
+        "start": {
+          "line": 393,
+          "col": 2
+        },
+        "end": {
+          "line": 393,
+          "col": 60
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "sendSSEEvent 对 data json.Marshal 后写固定 SSE 帧；调用它的日志 handler 设置 text/event-stream，事件名是内部 connected/log/error/end 等字符串。不是 HTML sink。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-051",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/server/server.go",
+        "start": {
+          "line": 2055,
+          "col": 9
+        },
+        "end": {
+          "line": 2055,
+          "col": 22
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "handleTopology 将 topo json.Marshal，并设置 application/json 后写字节；不是 HTML sink。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-052",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/server/server.go",
+        "start": {
+          "line": 5039,
+          "col": 15
+        },
+        "end": {
+          "line": 5039,
+          "col": 38
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "handleCAPIClusterKubeconfig 明确 application/x-yaml + attachment 下载。此结论仅针对 XSS sink 告警，不以此推断 kubeconfig 授权路径已完整真实验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-053",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-fprintf-to-responsewriter",
+        "path": "internal/server/sse.go",
+        "start": {
+          "line": 1383,
+          "col": 3
+        },
+        "end": {
+          "line": 1383,
+          "col": 68
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "所在 handler 设置 text/event-stream，正文使用 json.Marshal，事件名来自内部固定事件协议；不是 HTML sink，JSON 防止正文换行跨帧。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-054",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-fprintf-to-responsewriter",
+        "path": "internal/server/sse.go",
+        "start": {
+          "line": 1410,
+          "col": 5
+        },
+        "end": {
+          "line": 1410,
+          "col": 58
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "所在 handler 设置 text/event-stream，正文使用 json.Marshal，事件名来自内部固定事件协议；不是 HTML sink，JSON 防止正文换行跨帧。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-055",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-fprintf-to-responsewriter",
+        "path": "internal/server/sse.go",
+        "start": {
+          "line": 1444,
+          "col": 5
+        },
+        "end": {
+          "line": 1444,
+          "col": 60
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "所在 handler 设置 text/event-stream，正文使用 json.Marshal，事件名来自内部固定事件协议；不是 HTML sink，JSON 防止正文换行跨帧。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-056",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-fprintf-to-responsewriter",
+        "path": "internal/server/sse.go",
+        "start": {
+          "line": 1448,
+          "col": 4
+        },
+        "end": {
+          "line": 1448,
+          "col": 64
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "所在 handler 设置 text/event-stream，正文使用 json.Marshal，事件名来自内部固定事件协议；不是 HTML sink，JSON 防止正文换行跨帧。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-057",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+        "path": "internal/server/traffic_handlers.go",
+        "start": {
+          "line": 487,
+          "col": 17
+        },
+        "end": {
+          "line": 487,
+          "col": 79
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "所在 handler 设置 text/event-stream，正文使用 json.Marshal，事件名来自内部固定事件协议；不是 HTML sink，JSON 防止正文换行跨帧。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-058",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.database.string-formatted-query",
+        "path": "internal/timeline/sqlite_store.go",
+        "start": {
+          "line": 248,
+          "col": 17
+        },
+        "end": {
+          "line": 248,
+          "col": 79
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "拼接列名的来源为当前循环内硬编码三个元素 owner_api_version/owner_uid/owner_evidence，未使用 PRAGMA 返回值或请求参数作为 SQL 标识符。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-059",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/updater/apply_linux.go",
+        "start": {
+          "line": 93,
+          "col": 9
+        },
+        "end": {
+          "line": 93,
+          "col": 26
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Relaunch 从 os.Executable 取得当前程序路径，再 exec.Command(exe) 无外部命令片段；本地进程重启属于预期能力。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-060",
+      "finding": {
+        "check_id": "rules.go.lang.security.potential-dos-via-decompression-bomb",
+        "path": "internal/updater/extract_zip.go",
+        "start": {
+          "line": 61,
+          "col": 13,
+          "offset": 1370
+        },
+        "end": {
+          "line": 61,
+          "col": 62,
+          "offset": 1419
+        }
+      },
+      "disposition": "mitigated",
+      "evidence": "Original unbounded extraction was a real risk, not a historical false positive. extractZip now calls extractZipWithLimit with a 1GiB aggregate budget. Each file checks UncompressedSize64 against remaining, actual reads use io.LimitReader(remaining+1), excess removes the current file and errors, and remaining is decremented across entries. Exact/oversize/aggregate/traversal synthetic ZIP tests passed on unchanged Go source at 0d76e0a. Scope: extracted bytes, not arbitrary archive CPU/file-count exhaustion or real updater acceptance.",
+      "approval": {
+        "approved": true,
+        "actor": "Devin",
+        "date": "2026-11-04",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "delegationMessageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
+      },
+      "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-061",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.js-open-redirect-from-function",
+        "path": "packages/k8s-ui/src/components/cluster-switcher/ClusterSwitcher.tsx",
+        "start": {
+          "line": 197,
+          "col": 30,
+          "offset": 6997
+        },
+        "end": {
+          "line": 197,
+          "col": 36,
+          "offset": 7003
+        }
+      },
+      "disposition": "mitigated",
+      "evidence": "Public href scheme risk fixed: resolveNavigationUrl parses against the current HTTP(S) page, allowlists http:/https:, rejects credentials and malformed URLs, and returns only the normalized URL. Invalid links show an inline error without navigation or callback. Cross-origin destinations intentionally remain available on explicit cluster selection; hosts must supply trusted destinations, not untrusted redirect parameters. Native Chrome at 7c2a68f rejected javascript/data/credentials with unchanged location, no callback/payload execution; relative navigation succeeded. This is not an allowlist of all external hosts.",
+      "approval": {
+        "approved": true,
+        "actor": "Devin",
+        "date": "2026-11-04",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "delegationMessageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
+      },
+      "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-062",
+      "finding": {
+        "check_id": "rules.typescript.react.security.audit.react-dangerouslysetinnerhtml",
+        "path": "packages/k8s-ui/src/components/logs/LogCore.tsx",
+        "start": {
+          "line": 1336,
+          "col": 44
+        },
+        "end": {
+          "line": 1336,
+          "col": 55
+        }
+      },
+      "reviewedSourceSha": "cdc2cb1e204d78c741e06b0b53395cde9c52cc24",
+      "evidence": "LogLine 的 highlighted 来自 highlightSearchMatches，先 escapeHtml 内容后仅插入固定 mark 标签；没有把 query 本身插入 HTML。正则 CPU 风险与本条 XSS 分开核查。 当前版本literal分支仍使用该转义helper；regex分支改为Worker数值范围，经highlightRanges逐段escapeHtml后插入固定mark标签。 当前literal调用名改为highlightLiteralSearchMatches，不接受正则开关；regex路径继续消费转义ranges。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-063",
+      "finding": {
+        "check_id": "rules.typescript.react.security.audit.react-dangerouslysetinnerhtml",
+        "path": "packages/k8s-ui/src/components/logs/LogCore.tsx",
+        "start": {
+          "line": 1356,
+          "col": 44
+        },
+        "end": {
+          "line": 1356,
+          "col": 48
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "LogLine html 来自 ansiToHtml，先 escapeHtml，再识别只有数字/分号的 SGR；样式来自固定表或 Number 值，无任意 CSS/标签字符串入口。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-064",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-redos",
+        "path": "packages/k8s-ui/src/components/resources/printer-columns.ts",
+        "start": {
+          "line": 153,
+          "col": 20
+        },
+        "end": {
+          "line": 153,
+          "col": 51
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "固定正则 ^(\\d+[smhdy])+$：数字和单位字符互不重叠，单位是强制分隔符，每轮唯一分段，无可指数重划分的嵌套量词。只解析 duration 数字，不执行生成代码。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-065",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+        "path": "packages/k8s-ui/src/components/resources/resource-utils-trivy.ts",
+        "start": {
+          "line": 133,
+          "col": 14
+        },
+        "end": {
+          "line": 133,
+          "col": 74
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "new RegExp 的 term 先替换所有正则元字符为字面量转义，不接受调用者自定义正则语法。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-067",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+        "path": "packages/k8s-ui/src/components/shared/GitOpsWriteWarning.tsx",
+        "start": {
+          "line": 60,
+          "col": 19
+        },
+        "end": {
+          "line": 60,
+          "col": 102
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "manager label 在构造 RegExp alternation 之前逐个 escapeRegExp；后续构造 React 文本节点/链接，不是 HTML。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-068",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-redos",
+        "path": "packages/k8s-ui/src/components/trace/reachMarks.ts",
+        "start": {
+          "line": 410,
+          "col": 10
+        },
+        "end": {
+          "line": 410,
+          "col": 66
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "固定 hostname 正则的点分隔符不在段内字符类中，锚定首尾，分段唯一；嵌套量词不是指数回溯的充分条件。本结论不表示输入无限大不耗内存。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-069",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+        "start": {
+          "line": 69,
+          "col": 26
+        },
+        "end": {
+          "line": 69,
+          "col": 61
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "CodeViewer 的 codeToHtml 使用固定 theme，无自定义 transformer。锁文件与安装库均为 Shiki4.5.0，其 @shikijs/core tokensToHast 把 token.content 建成 text node，再交 hast-util-to-html9.0.5 text handler 通过 stringifyEntities 转义 < 和 &；不是 raw/script/style node。fallback 在文本上下文转义 < >。html/htmlRef 仅从两条路径赋值，搜索用 TextNode/mark 而非拼入用户HTML。本条为源码/依赖审查，未新做浏览器攻击载荷验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-070",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.insecure-document-method",
+        "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+        "start": {
+          "line": 79,
+          "col": 7
+        },
+        "end": {
+          "line": 79,
+          "col": 42
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "CodeViewer 的 codeToHtml 使用固定 theme，无自定义 transformer。锁文件与安装库均为 Shiki4.5.0，其 @shikijs/core tokensToHast 把 token.content 建成 text node，再交 hast-util-to-html9.0.5 text handler 通过 stringifyEntities 转义 < 和 &；不是 raw/script/style node。fallback 在文本上下文转义 < >。html/htmlRef 仅从两条路径赋值，搜索用 TextNode/mark 而非拼入用户HTML。本条为源码/依赖审查，未新做浏览器攻击载荷验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-071",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.insecure-innerhtml",
+        "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+        "start": {
+          "line": 79,
+          "col": 7
+        },
+        "end": {
+          "line": 79,
+          "col": 42
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "CodeViewer 的 codeToHtml 使用固定 theme，无自定义 transformer。锁文件与安装库均为 Shiki4.5.0，其 @shikijs/core tokensToHast 把 token.content 建成 text node，再交 hast-util-to-html9.0.5 text handler 通过 stringifyEntities 转义 < 和 &；不是 raw/script/style node。fallback 在文本上下文转义 < >。html/htmlRef 仅从两条路径赋值，搜索用 TextNode/mark 而非拼入用户HTML。本条为源码/依赖审查，未新做浏览器攻击载荷验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-072",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.insecure-document-method",
+        "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+        "start": {
+          "line": 91,
+          "col": 7
+        },
+        "end": {
+          "line": 91,
+          "col": 53
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "CodeViewer 的 codeToHtml 使用固定 theme，无自定义 transformer。锁文件与安装库均为 Shiki4.5.0，其 @shikijs/core tokensToHast 把 token.content 建成 text node，再交 hast-util-to-html9.0.5 text handler 通过 stringifyEntities 转义 < 和 &；不是 raw/script/style node。fallback 在文本上下文转义 < >。html/htmlRef 仅从两条路径赋值，搜索用 TextNode/mark 而非拼入用户HTML。本条为源码/依赖审查，未新做浏览器攻击载荷验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-073",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.insecure-innerhtml",
+        "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+        "start": {
+          "line": 91,
+          "col": 7
+        },
+        "end": {
+          "line": 91,
+          "col": 53
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "CodeViewer 的 codeToHtml 使用固定 theme，无自定义 transformer。锁文件与安装库均为 Shiki4.5.0，其 @shikijs/core tokensToHast 把 token.content 建成 text node，再交 hast-util-to-html9.0.5 text handler 通过 stringifyEntities 转义 < 和 &；不是 raw/script/style node。fallback 在文本上下文转义 < >。html/htmlRef 仅从两条路径赋值，搜索用 TextNode/mark 而非拼入用户HTML。本条为源码/依赖审查，未新做浏览器攻击载荷验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-074",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.insecure-document-method",
+        "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+        "start": {
+          "line": 108,
+          "col": 7
+        },
+        "end": {
+          "line": 108,
+          "col": 44
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "CodeViewer 的 codeToHtml 使用固定 theme，无自定义 transformer。锁文件与安装库均为 Shiki4.5.0，其 @shikijs/core tokensToHast 把 token.content 建成 text node，再交 hast-util-to-html9.0.5 text handler 通过 stringifyEntities 转义 < 和 &；不是 raw/script/style node。fallback 在文本上下文转义 < >。html/htmlRef 仅从两条路径赋值，搜索用 TextNode/mark 而非拼入用户HTML。本条为源码/依赖审查，未新做浏览器攻击载荷验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-075",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.insecure-innerhtml",
+        "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+        "start": {
+          "line": 108,
+          "col": 7
+        },
+        "end": {
+          "line": 108,
+          "col": 44
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "CodeViewer 的 codeToHtml 使用固定 theme，无自定义 transformer。锁文件与安装库均为 Shiki4.5.0，其 @shikijs/core tokensToHast 把 token.content 建成 text node，再交 hast-util-to-html9.0.5 text handler 通过 stringifyEntities 转义 < 和 &；不是 raw/script/style node。fallback 在文本上下文转义 < >。html/htmlRef 仅从两条路径赋值，搜索用 TextNode/mark 而非拼入用户HTML。本条为源码/依赖审查，未新做浏览器攻击载荷验收。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-076",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.unsafe-formatstring",
+        "path": "packages/k8s-ui/src/hooks/useKeyboardShortcuts.tsx",
+        "start": {
+          "line": 194,
+          "col": 71
+        },
+        "end": {
+          "line": 194,
+          "col": 123
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "console.error 的动态 shortcut.id 来自应用代码注册的快捷键条目，不由按键事件或请求内容设置；异常对象作为第二参数。只限当前注册信任边界，不认可外部不可信插件注册。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-077",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.unsafe-formatstring",
+        "path": "packages/k8s-ui/src/hooks/useKeyboardShortcuts.tsx",
+        "start": {
+          "line": 226,
+          "col": 67
+        },
+        "end": {
+          "line": 226,
+          "col": 119
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "console.error 的动态 shortcut.id 来自应用代码注册的快捷键条目，不由按键事件或请求内容设置；异常对象作为第二参数。只限当前注册信任边界，不认可外部不可信插件注册。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-078",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.unsafe-formatstring",
+        "path": "packages/k8s-ui/src/hooks/useKeyboardShortcuts.tsx",
+        "start": {
+          "line": 234,
+          "col": 67
+        },
+        "end": {
+          "line": 234,
+          "col": 119
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "console.error 的动态 shortcut.id 来自应用代码注册的快捷键条目，不由按键事件或请求内容设置；异常对象作为第二参数。只限当前注册信任边界，不认可外部不可信插件注册。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-079",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-redos",
+        "path": "packages/k8s-ui/src/utils/applications.ts",
+        "start": {
+          "line": 461,
+          "col": 8
+        },
+        "end": {
+          "line": 461,
+          "col": 31
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "固定版本正则 ^\\d+(\\.\\d+)*$ 以数字类不含的点强制分隔，锚定首尾，不能指数重分组；输出仅版本数字数组。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-081",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 126,
+          "col": 17,
+          "offset": 3885
+        },
+        "end": {
+          "line": 126,
+          "col": 50,
+          "offset": 3918
+        }
+      },
+      "disposition": "false-positive",
+      "evidence": "Current hit is literal-only highlightLiteralSearchMatches: query passes escapeHtml then escapeRegExp escaping all ECMAScript regex metacharacters before a fixed capturing group and fixed g/gi flags. There is no raw user-regex branch here. Arbitrary regex uses asynchronous Worker ranges instead. Focused literal/escaping tests passed on unchanged source at 0d76e0a; native Chrome verified escaped HTML remains text at 7c2a68f. Does not waive input-size costs or classify the removed unsafe synchronous API as a false positive.",
+      "approval": {
+        "approved": true,
+        "actor": "Devin",
+        "date": "2026-11-04",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "delegationMessageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
+      },
+      "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-082",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 332,
+          "col": 19
+        },
+        "end": {
+          "line": 332,
+          "col": 44
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "ansiToHtml 先 escapeHtml(text)，styles 只由 resolveSgrStyles 的固定表/数字 SGR 参数产生，不能带引号/标签。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-083",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 338,
+          "col": 19
+        },
+        "end": {
+          "line": 338,
+          "col": 44
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "ansiToHtml 先 escapeHtml(text)，styles 只由 resolveSgrStyles 的固定表/数字 SGR 参数产生，不能带引号/标签。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-084",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 445,
+          "col": 32
+        },
+        "end": {
+          "line": 445,
+          "col": 89
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "highlightJson 对输入 escapeHtml 后 tokenizeJson，插值 value 是已转义文本，颜色由静态 SYNTAX_COLOR_* 常量提供；无原始 HTML 插入。log-format.test.ts 有 script 内容回归（本轮尚未执行）。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-085",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 446,
+          "col": 35
+        },
+        "end": {
+          "line": 446,
+          "col": 94
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "highlightJson 对输入 escapeHtml 后 tokenizeJson，插值 value 是已转义文本，颜色由静态 SYNTAX_COLOR_* 常量提供；无原始 HTML 插入。log-format.test.ts 有 script 内容回归（本轮尚未执行）。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-086",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 447,
+          "col": 35
+        },
+        "end": {
+          "line": 447,
+          "col": 94
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "highlightJson 对输入 escapeHtml 后 tokenizeJson，插值 value 是已转义文本，颜色由静态 SYNTAX_COLOR_* 常量提供；无原始 HTML 插入。log-format.test.ts 有 script 内容回归（本轮尚未执行）。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-087",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 448,
+          "col": 36
+        },
+        "end": {
+          "line": 448,
+          "col": 96
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "highlightJson 对输入 escapeHtml 后 tokenizeJson，插值 value 是已转义文本，颜色由静态 SYNTAX_COLOR_* 常量提供；无原始 HTML 插入。log-format.test.ts 有 script 内容回归（本轮尚未执行）。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-088",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 449,
+          "col": 33
+        },
+        "end": {
+          "line": 449,
+          "col": 90
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "highlightJson 对输入 escapeHtml 后 tokenizeJson，插值 value 是已转义文本，颜色由静态 SYNTAX_COLOR_* 常量提供；无原始 HTML 插入。log-format.test.ts 有 script 内容回归（本轮尚未执行）。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-089",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.unsafe-formatstring",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 528,
+          "col": 21
+        },
+        "end": {
+          "line": 528,
+          "col": 32
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "当前唯一调用链 useLogStream 使用固定默认 errorContext=\"Log stream error\"；事件 data 解析后的 error/message 放第二参数，不能选择 console 格式字符串。库消费者自定义 errorContext 的信任责任仍保留。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-090",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.unsafe-formatstring",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 530,
+          "col": 21
+        },
+        "end": {
+          "line": 530,
+          "col": 32
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "当前唯一调用链 useLogStream 使用固定默认 errorContext=\"Log stream error\"；事件 data 解析后的 error/message 放第二参数，不能选择 console 格式字符串。库消费者自定义 errorContext 的信任责任仍保留。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-091",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-redos",
+        "path": "packages/k8s-ui/src/utils/log-level.ts",
+        "start": {
+          "line": 163,
+          "col": 7
+        },
+        "end": {
+          "line": 163,
+          "col": 35
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "EXCEPTION_HEAD_RE 固定点分包名前缀的段内字符类不含点，末尾 Error/Exception 固定长度后缀；每段边界不含混。没有攻击者可修改的 regex 结构，也不同于 GO_PANIC_LINE_RE 的两个重叠点字符类。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-094",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-redos",
+        "path": "packages/k8s-ui/src/utils/validators.ts",
+        "start": {
+          "line": 85,
+          "col": 8
+        },
+        "end": {
+          "line": 85,
+          "col": 40
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "validateRFC1123Subdomain 在 regex 前强制 input.length <=253；固定正则处理最大长度有界，不受任意长输入造成失控回溯。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-095",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.crypto.missing-ssl-minversion",
+        "path": "pkg/argoapi/client.go",
+        "start": {
+          "line": 69,
+          "col": 34
+        },
+        "end": {
+          "line": 69,
+          "col": 46
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "已查 Go 1.26.10 实际工具链 crypto/tls/common.go:784-790：MinVersion=0 默认最低 TLS1.2。此处是客户端配置，非 server-side tls10server GODEBUG 兼容开关。本规则不证明证书验证策略安全；显式 insecure 配置仍仅限管理员选择，不能据本结论豁免。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-096",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+        "path": "pkg/auth/cookie.go",
+        "start": {
+          "line": 116,
+          "col": 10
+        },
+        "end": {
+          "line": 124,
+          "col": 3
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Secure 是调用者参数，不是缺失；internal/auth/middleware.go 在 OIDC 模式恒为 true，在 TLS/可信代理 HTTPS 时也为 true。删除 cookie 依请求 TLS 处理。HTTP 本地/代理错误配置不由本规则豁免。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-097",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+        "path": "pkg/auth/cookie.go",
+        "start": {
+          "line": 287,
+          "col": 10
+        },
+        "end": {
+          "line": 294,
+          "col": 3
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Secure 是调用者参数，不是缺失；internal/auth/middleware.go 在 OIDC 模式恒为 true，在 TLS/可信代理 HTTPS 时也为 true。删除 cookie 依请求 TLS 处理。HTTP 本地/代理错误配置不由本规则豁免。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-098",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.crypto.math-random-used",
+        "path": "pkg/ownership/ownershiptest/generate.go",
+        "start": {
+          "line": 5,
+          "col": 3
+        },
+        "end": {
+          "line": 5,
+          "col": 15
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "ownershiptest/generate.go 是确定性图生成器，rand.NewPCG 以测试 seed 生成所有权场景；不产生安全令牌或生产凭据。生产目标选择仍包含此文件，未排除。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-099",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.unsafe-formatstring",
+        "path": "web/src/api/client.ts",
+        "start": {
+          "line": 7384,
+          "col": 15
+        },
+        "end": {
+          "line": 7384,
+          "col": 41
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "debugNamespaceLog 的 label 在当前 App.tsx/client.ts 调用点均为固定阶段标签，动态 namespace/响应置独立 payload 对象。仅 localStorage 显式启用时输出；不会把运行时数据当格式字符串。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-100",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "web/src/components/cnpg/actions/CNPGScheduleActions.tsx",
+        "start": {
+          "line": 143,
+          "col": 31
+        },
+        "end": {
+          "line": 143,
+          "col": 85
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "含 <timestamp>/<you> 的模板字符串作为 writes[].summary/detail 普通确认文案传递，不是 dangerouslySetInnerHTML 或文档写入；React 以文本渲染。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-101",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "web/src/components/cnpg/recovery/CNPGRestoreValidation.tsx",
+        "start": {
+          "line": 180,
+          "col": 82
+        },
+        "end": {
+          "line": 180,
+          "col": 230
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "含 <timestamp>/<you> 的模板字符串作为 writes[].summary/detail 普通确认文案传递，不是 dangerouslySetInnerHTML 或文档写入；React 以文本渲染。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-102",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.prototype-pollution.prototype-pollution-loop",
+        "path": "web/src/components/cnpg/storageModel.ts",
+        "start": {
+          "line": 9,
+          "col": 5
+        },
+        "end": {
+          "line": 9,
+          "col": 17
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "setPath 非导出，只由本文件 buildResizeManifest 调用；sizePath 仅返回固定 [size] 或 [pvcTemplate,resources,requests,storage]，不采用外部 t.field 的分段，也不含 __proto__/constructor/prototype。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-103",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+        "path": "web/src/components/diagnose/AnalysisStory.tsx",
+        "start": {
+          "line": 193,
+          "col": 17
+        },
+        "end": {
+          "line": 195,
+          "col": 4
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "removeInlineMarker 的 index 实际来自固定 /#radar-evidence-(-?\\d+)/ 捕获，再 Number(match[2])，只在 target(index) 解析并 place 成功后调用；不是仅依赖 TS number 声明。不可能带入任意 regex 元字符结构。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-104",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+        "path": "web/src/components/diagnose/investigationCase.ts",
+        "start": {
+          "line": 484,
+          "col": 10
+        },
+        "end": {
+          "line": 484,
+          "col": 69
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "namesPod 的 name 在创建 RegExp 之前转义全部正则元字符，固定词边界框架不能被名字注入正则结构。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-105",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.unsafe-formatstring",
+        "path": "web/src/components/dock/NodeTerminalTab.tsx",
+        "start": {
+          "line": 36,
+          "col": 20
+        },
+        "end": {
+          "line": 36,
+          "col": 81
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "console.warn 的首参动态部分分别来自 Kubernetes node/namespace 名；合法 Kubernetes DNS 名称不含 % 格式指令，异常对象另作参数。该判断仅适用于真实 API 验证过的名称。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-107",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.unsafe-formatstring",
+        "path": "web/src/components/resources/ResourcesView.tsx",
+        "start": {
+          "line": 100,
+          "col": 22
+        },
+        "end": {
+          "line": 100,
+          "col": 130
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "console.warn 的首参动态部分分别来自 Kubernetes node/namespace 名；合法 Kubernetes DNS 名称不含 % 格式指令，异常对象另作参数。该判断仅适用于真实 API 验证过的名称。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-108",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+        "path": "web/src/components/ui/Omnibar.tsx",
+        "start": {
+          "line": 73,
+          "col": 14
+        },
+        "end": {
+          "line": 73,
+          "col": 67
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "Omnibar highlight 过滤空 token 后逐个 escapeRe，输出 React mark/text nodes；用户 token 不成为正则语法或 HTML。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-109",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "web/src/components/ui/searchCoverageNote.ts",
+        "start": {
+          "line": 157,
+          "col": 11
+        },
+        "end": {
+          "line": 157,
+          "col": 58
+        }
+      },
+      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+      "evidence": "say 将字符串保存为 OmnibarNotePart.text，<name> 是搜索帮助占位文本，不是 HTML sink；React 消费文本。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-110",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+        "path": "packages/k8s-ui/src/components/logs/logSearchCore.ts",
+        "start": {
+          "line": 17,
+          "col": 17,
+          "offset": 483
+        },
+        "end": {
+          "line": 17,
+          "col": 64,
+          "offset": 530
+        }
+      },
+      "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "evidence": "User regex remains potentially superlinear; this is an isolation mitigation, not a claim of safe regex complexity. Only logSearch.worker.ts imports searchLogLines at runtime; viewer/library use module Workers with 2s termination and cancellation, no synchronous fallback. Main-thread syntax prevalidation was removed. Ranges cap at 1000/line and 100000/request with explicit error. Native Chrome production-bundled fixture harness at 7c2a68f verified real Worker asset, catastrophic timeout with responsive UI, query/Escape/API abort and recovery, streaming fixed deadline, range error, HTML escaping, worker-src self success and none explicit rejection. Scope: this browser/worker boundary, not real-cluster integration or direct hypothetical imports of the core. Evidence: https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37?testRecording=63c031fe-94cc-4978-a927-f1577df0fd51; Worker SHA256 8557869ab62fc96f61787d8fa79287b4180088c8e1eac63413edea4a0524b408",
+      "approval": {
+        "approved": true,
+        "actor": "Devin",
+        "date": "2026-11-04",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "delegationMessageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
+      },
+      "disposition": "mitigated",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "previousReview": {
+        "holdReason": "Native browser Worker isolation evidence is still missing; user approval is recorded but does not waive the technical verification gap.",
+        "disposition": "hold",
+        "evidence": "用户正则 query 进入 new RegExp 并执行 exec，但产品运行时只有 logSearch.worker.ts 导入并调用该函数；hook 只导入类型。主线程通过独立 Worker、请求标识、2秒定时终止和取消处理结果；流更新不重置期限，错误对同一查询保持。每行最多1000段、每请求最多100000段，超限明确失败而非截断。生命周期用 fake Worker 单测验证，原生浏览器/CSP运行尚未验收；仅建议按这个隔离边界审查，不宣称正则自身线性或所有调用安全。 当前异步库API也使用同一Worker资产及range转义路径；fake Worker测试不是原生浏览器验收。仍未获逐项确认。",
+        "approval": {
+          "approved": true,
+          "actor": "maomada",
+          "date": "2026-11-03",
+          "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+          "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+          "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+        },
+        "reviewedSourceSha": "cdc2cb1e204d78c741e06b0b53395cde9c52cc24"
+      }
+    },
+    {
+      "id": "SAST-111",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.html-in-template-string",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 143,
+          "col": 13
+        },
+        "end": {
+          "line": 143,
+          "col": 86
+        }
+      },
+      "reviewedSourceSha": "cdc2cb1e204d78c741e06b0b53395cde9c52cc24",
+      "evidence": "Worker 返回数值范围；highlightRanges 对范围做文本长度/游标约束，对前缀、命中内容与尾部全部调用 escapeHtml，再拼接固定 mark 标签与固定类名。没有把 regex、原日志或 Worker 字符串直接当 HTML 插入。回归检查 <script> 与 & 在命中内外均被转义；该候选不覆盖其他同步 regex 调用或真实浏览器验收。 当前异步库API也使用同一Worker资产及range转义路径；fake Worker测试不是原生浏览器验收。仍未获逐项确认。",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-03",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+      },
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    }
+  ],
+  "previousReview": {
+    "sourceSha": "7e6bed921fece69b38e8ef6a0f4a26154557ba63",
+    "sourceTreeSha256": "0f2e4407f9baff8deb90f6d5ec4dc903553b0b2f14e254c9d217649bcbf4e90a",
+    "rawFindingsSha256": "6d2b36e7bd5348f67fbe3ecc9d6e1e8e08100b308ca30ba065f2afcc1879a997"
+  },
+  "revalidation": {
+    "sourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+    "actor": "Devin",
+    "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+    "evidence": "Reviewed complete 8bb96ff..7c2a68f diff and exact raw identities. Existing 97 approved findings and their source files are unchanged; changed production files contain none of those entries. Retained original approval/evidence and added explicit revalidation SHA. No rule or scanner changes. SAST-066 and SAST-106 no longer occur after fixed sanitized warning strings; original raw reports and historical ledger retained."
+  }
+}

@@ -3,9 +3,11 @@ project_name: kubeatlas
 
 before:
   hooks:
-    - sh -c "npm ci && npm --workspace web run build"
+    - sh -c "npm ci --prefer-offline --no-audit && npm --workspace web run build"
     - sh -c "rm -rf internal/static/dist && mkdir -p internal/static/dist"
     - sh -c "cp -r web/dist/* internal/static/dist/"
+    - sh -c "cd web && npx vite build --config vite.portal.config.ts"
+    - sh -c "touch internal/portalui/dist/.gitkeep"
 
 builds:
   - id: kubeatlas
@@ -21,21 +23,77 @@ builds:
     ignore:
       - goos: windows
         goarch: arm64
+  - id: kubeatlas-portal
+    main: ./cmd/kubeatlas-portal
+    binary: kubeatlas-portal
+    env:
+      - CGO_ENABLED=0
+    goos: [linux]
+    goarch: [amd64, arm64]
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
 
 archives:
-  - id: default
+  - id: kubeatlas
+    ids: [kubeatlas]
     formats: [tar.gz]
-    name_template: "{{ .ProjectName }}_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    name_template: "kubeatlas_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
       - goos: windows
         formats: [zip]
-    files: [LICENSE*, README*]
+    files: [LICENSE, NOTICE, README.md, docs/packaging.md]
+  - id: kubeatlas-portal
+    ids: [kubeatlas-portal]
+    formats: [tar.gz]
+    name_template: "kubeatlas-portal_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files: [LICENSE, NOTICE, README.md, docs/packaging.md]
+
+nfpms:
+  - id: kubeatlas
+    package_name: kubeatlas
+    ids: [kubeatlas]
+    formats: [deb, rpm]
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    maintainer: "KubeAtlas maintainers"
+    license: Apache-2.0
+    description: "Local-first Kubernetes visibility and diagnostics"
+    homepage: https://github.com/maomada/KubeAtlas
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/kubeatlas/LICENSE
+      - src: NOTICE
+        dst: /usr/share/doc/kubeatlas/NOTICE
+      - src: README.md
+        dst: /usr/share/doc/kubeatlas/README.md
+      - src: docs/packaging.md
+        dst: /usr/share/doc/kubeatlas/packaging.md
+  - id: kubeatlas-portal
+    package_name: kubeatlas-portal
+    ids: [kubeatlas-portal]
+    formats: [deb, rpm]
+    file_name_template: "{{ .PackageName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    maintainer: "KubeAtlas maintainers"
+    license: Apache-2.0
+    description: "KubeAtlas independent cluster portal"
+    homepage: https://github.com/maomada/KubeAtlas
+    bindir: /usr/bin
+    contents:
+      - src: LICENSE
+        dst: /usr/share/doc/kubeatlas-portal/LICENSE
+      - src: NOTICE
+        dst: /usr/share/doc/kubeatlas-portal/NOTICE
+      - src: README.md
+        dst: /usr/share/doc/kubeatlas-portal/README.md
+      - src: docs/packaging.md
+        dst: /usr/share/doc/kubeatlas-portal/packaging.md
 
 checksum:
   name_template: checksums.txt
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-next"
+  version_template: '{{ if .Env.KUBEATLAS_RELEASE_VERSION }}{{ .Env.KUBEATLAS_RELEASE_VERSION }}{{ else }}0.0.0-dev{{ end }}'
 
 release:
   disable: true

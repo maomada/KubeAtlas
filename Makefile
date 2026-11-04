@@ -1,4 +1,4 @@
-.PHONY: build install clean dev frontend backend portal test test-e2e test-chart lint help restart restart-fe kill watch-backend watch-frontend loadtest
+.PHONY: build install clean dev frontend embed portal-frontend backend portal test test-e2e test-chart lint help restart restart-fe kill watch-backend watch-frontend loadtest
 .PHONY: calico-demo calico-demo-down calico-demo-status
 .PHONY: kueue-demo kueue-demo-down kueue-demo-status kueue-demo-verify
 .PHONY: cilium-demo cilium-demo-down cilium-demo-status
@@ -74,9 +74,13 @@ backend:
 portal:
 	@echo "Building portal frontend and executable..."
 	@test -f node_modules/typescript-7/bin/tsc || (echo "Installing npm dependencies..." && npm ci --prefer-offline --no-audit)
-	cd web && npx vite build --config vite.portal.config.ts
+	$(MAKE) portal-frontend
 	@touch internal/portalui/dist/.gitkeep
 	go build -ldflags "$(LDFLAGS)" -o kubeatlas-portal ./cmd/kubeatlas-portal
+
+portal-frontend:
+	@echo "Building portal frontend..."
+	cd web && npx vite build --config vite.portal.config.ts
 
 # Build frontend (auto-installs deps if needed)
 frontend:
@@ -513,10 +517,22 @@ desktop-package-linux:
 # Release Targets
 # ============================================================================
 
-# Dry run goreleaser (no publish)
+# Dry run GoReleaser (no publish)
+KUBEATLAS_RELEASE_VERSION ?= 0.0.0-dev
+SOURCE_SHA ?= $(shell git rev-parse HEAD)
+RELEASE_ARTIFACT_TOOL ?= scripts/release_artifacts.py
+RELEASE_EVIDENCE_URLS ?=
+RELEASE_EVIDENCE_ARGS = $(foreach url,$(RELEASE_EVIDENCE_URLS),--evidence-url "$(url)")
 release-binaries-dry:
 	@command -v goreleaser >/dev/null 2>&1 || { echo "Error: goreleaser not found"; exit 1; }
-	goreleaser release --snapshot --clean
+	KUBEATLAS_RELEASE_VERSION="$(KUBEATLAS_RELEASE_VERSION)" goreleaser release --snapshot --clean
+	python3 "$(RELEASE_ARTIFACT_TOOL)" create \
+		--dist dist --output dist/release \
+		--source-sha "$(SOURCE_SHA)" --version "$(KUBEATLAS_RELEASE_VERSION)" \
+		$(RELEASE_EVIDENCE_ARGS)
+	python3 "$(RELEASE_ARTIFACT_TOOL)" validate --directory dist/release \
+		--source-sha "$(SOURCE_SHA)" --version "$(KUBEATLAS_RELEASE_VERSION)" \
+		$(RELEASE_EVIDENCE_ARGS)
 
 # Interactive release (remote via CI or local)
 release:

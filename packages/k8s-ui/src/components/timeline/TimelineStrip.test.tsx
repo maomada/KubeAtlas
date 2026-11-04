@@ -82,24 +82,36 @@ describe('query pill label — relative when live, absolute when frozen', () => 
   const buckets: ScrubberBucket[] = [{ startMs: 0, endMs: HOUR, total: 3, warnings: 0 }]
   const presets = [{ label: '24h', ms: 24 * HOUR }, { label: 'All', ms: 24 * HOUR * 7 }]
 
-  it('shows "Last 24h" for a live preset-width query (absolute range on hover)', () => {
+  it('shows the translated relative width for a live preset-width query (absolute range on hover)', () => {
     const html = renderToString(
       <TimelineStrip
         buckets={buckets} domain={query} selection={query} onSelectionChange={() => {}}
         presets={presets} liveState={{ kind: 'live', latched: true }}
       />,
     )
-    expect(html).toContain('Last 24h')
+    expect(html).toContain('最近 24h')
   })
 
-  it('shows "Last <width>" for a live non-preset width', () => {
+  it('shows the translated relative width for a live non-preset width', () => {
     const html = renderToString(
       <TimelineStrip
         buckets={buckets} domain={query} selection={{ fromMs: query.toMs - 5 * HOUR, toMs: query.toMs }}
         onSelectionChange={() => {}} presets={presets} liveState={{ kind: 'live', latched: true }}
       />,
     )
-    expect(html).toContain('Last 5h')
+    expect(html).toContain('最近 5h')
+  })
+
+  it('keeps the All preset sentinel while showing translated history copy', () => {
+    const allRange = { fromMs: 0, toMs: 7 * 24 * HOUR }
+    const html = renderToString(
+      <TimelineStrip
+        buckets={buckets} domain={allRange} selection={allRange} onSelectionChange={() => {}}
+        presets={presets} liveState={{ kind: 'live', latched: true }}
+      />,
+    )
+    expect(html).toContain('全部历史')
+    expect(html).not.toContain('All history')
   })
 
   it('keeps absolute stamps when frozen', () => {
@@ -109,8 +121,35 @@ describe('query pill label — relative when live, absolute when frozen', () => 
         presets={presets} liveState={{ kind: 'frozen', asOfMs: query.toMs }}
       />,
     )
-    expect(html).not.toContain('Last 24h')
+    expect(html).not.toContain('最近 24h')
     expect(html).toContain('—')
+  })
+
+  it('uses the same translated live label for both live chip states and a translated frozen return', () => {
+    const latched = renderToString(
+      <TimelineStrip
+        buckets={buckets} domain={query} selection={query} onSelectionChange={() => {}}
+        liveState={{ kind: 'live', latched: true }}
+      />,
+    )
+    expect(latched).toContain('实时')
+
+    const unlatched = renderToString(
+      <TimelineStrip
+        buckets={buckets} domain={query} selection={query} onSelectionChange={() => {}}
+        liveState={{ kind: 'live', latched: false }}
+      />,
+    )
+    expect(unlatched).toContain('实时')
+
+    const frozen = renderToString(
+      <TimelineStrip
+        buckets={buckets} domain={query} selection={query} onSelectionChange={() => {}}
+        liveState={{ kind: 'frozen', asOfMs: query.toMs, newEventCount: 3 }}
+      />,
+    )
+    expect(frozen).toContain('返回实时')
+    expect(frozen).toContain('新增 3 条')
   })
 })
 
@@ -132,7 +171,7 @@ describe('TimelineStrip render', () => {
       />,
     )
     // The stepper reflects the 4h window (its label rides the tooltip now).
-    expect(html).toContain('aria-label="Zoom in"')
+    expect(html).toContain('aria-label="放大"')
     expect(html).toContain('4h')
     expect(html).toContain('strip-histogram')
     expect(html).toContain('strip-lens')
@@ -142,7 +181,7 @@ describe('TimelineStrip render', () => {
     const html = renderToString(
       <TimelineStrip buckets={buckets} domain={query} selection={query} onSelectionChange={() => {}} />,
     )
-    expect(html).not.toContain('aria-label="Zoom out"')
+    expect(html).not.toContain('aria-label="缩小"')
   })
 })
 
@@ -162,7 +201,7 @@ describe('state caption: full range names the state, band always paints', () => 
     // The band (fill + grip + handles) stays visible even at full range — the
     // handles-only treatment made the window affordance nearly invisible.
     expect(html).toContain('strip-lens')
-    expect(html).toContain('viewing full range')
+    expect(html).toContain('查看完整范围')
   })
 
   it('renders the band + window-range caption and highlights in-window buckets when narrowed', () => {
@@ -176,19 +215,30 @@ describe('state caption: full range names the state, band always paints', () => 
     // The caption shows the window's time range + the exact loaded total (13); the
     // per-window count is NOT rendered here — from hourly buckets it can only be
     // approximate, and the toolbar already owns the exact "Showing" count.
-    expect(html).toContain('13 events ·')
+    expect(html).toContain('13 个事件 ·')
     // The in-window bucket (0–12h midpoint 6h is inside 4–8h) highlights accent;
     // the other stays neutral.
     expect(html).toContain('bg-accent/60')
   })
 
-  it('suffixes the end stamp with "· now" while live', () => {
+  it('suffixes the end stamp with "· 现在" while live', () => {
     const html = renderToString(
       <TimelineStrip
         buckets={buckets} domain={query} selection={query} onSelectionChange={() => {}}
         liveState={{ kind: 'live', latched: true }}
       />,
     )
-    expect(html).toContain('· now')
+    expect(html).toContain('· 现在')
+  })
+
+  it('explains the oldest unrecorded boundary in Chinese', () => {
+    const html = renderToString(
+      <TimelineStrip
+        buckets={buckets} domain={query} selection={query} onSelectionChange={() => {}}
+        historyUnavailableBeforeMs={8 * HOUR}
+      />,
+    )
+    expect(html).toContain('data-testid="strip-predata"')
+    expect(html).toContain('之前无记录')
   })
 })

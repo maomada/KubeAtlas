@@ -109,30 +109,30 @@ export function costIntegrationUnavailableMessage(
   switch (reason) {
     case 'query_error':
       return settingsAvailable
-        ? 'The selected cost source could not provide data. Check its connection in Settings → Metrics (OpenCost) or Settings → Cost (Kubecost).'
-        : 'The selected cost source could not provide data. Ask your operator to check its connection and query health.'
+        ? '所选成本来源无法提供数据。请在“设置 → 指标”（OpenCost）或“设置 → 成本”（Kubecost）中检查连接。'
+        : '所选成本来源无法提供数据。请联系运维人员检查连接和查询状态。'
     case 'no_cost_source':
       return settingsAvailable
-        ? 'No compatible cost source was found. Connect OpenCost metrics in Settings → Metrics or configure Kubecost in Settings → Cost.'
-        : 'No compatible cost source is configured for this cluster. Configure OpenCost metrics or Kubecost in the host application or KubeAtlas deployment.'
+        ? '未找到兼容的成本来源。请在“设置 → 指标”中连接 OpenCost 指标，或在“设置 → 成本”中配置 Kubecost。'
+        : '此集群未配置兼容的成本来源。请在宿主应用或 KubeAtlas 部署中配置 OpenCost 指标或 Kubecost。'
     case 'source_unavailable':
       return settingsAvailable
-        ? 'Kubecost Aggregator is unavailable. Check the URL, network path, and cluster ID in Settings → Cost.'
-        : 'Kubecost Aggregator is unavailable. Update this cluster’s cost-source configuration in the host application or KubeAtlas deployment.'
+        ? 'Kubecost Aggregator 不可用。请在“设置 → 成本”中检查 URL、网络路径和集群 ID。'
+        : 'Kubecost Aggregator 不可用。请在宿主应用或 KubeAtlas 部署中更新此集群的成本来源配置。'
     case 'metrics_settings_error':
-      return 'This cluster’s saved metrics settings need review before cost data can load. Review them in Settings → Metrics.'
+      return '加载成本数据前需要检查此集群保存的指标设置。请在“设置 → 指标”中检查。'
     case 'cost_settings_error':
-      return 'This cluster’s saved cost settings need review before cost data can load. Review them in Settings → Cost.'
+      return '加载成本数据前需要检查此集群保存的成本设置。请在“设置 → 成本”中检查。'
     case 'deployment_configuration_error':
-      return "KubeAtlas's operator-supplied cost or metrics configuration is invalid. Check local launch flags or the deployment environment variables and Helm values."
+      return 'KubeAtlas 的运维配置成本或指标配置无效。请检查本地启动参数、部署环境变量和 Helm values。'
     case 'authentication_error':
       return settingsAvailable
-        ? 'Kubecost rejected the configured API key. Update it in Settings → Cost.'
-        : 'Kubecost rejected the configured API key. Update this cluster’s credential in the host application or KubeAtlas deployment.'
+        ? 'Kubecost 拒绝了配置的 API 密钥。请在“设置 → 成本”中更新。'
+        : 'Kubecost 拒绝了配置的 API 密钥。请在宿主应用或 KubeAtlas 部署中更新此集群凭据。'
     case 'configuration_mismatch':
       return settingsAvailable
-        ? 'Saved Kubecost settings are not valid for this cluster. Update the cluster ID or local API key in Settings → Cost.'
-        : 'Kubecost settings are not valid for this cluster. Update the cluster ID or credential in the host application or KubeAtlas deployment.'
+        ? '保存的 Kubecost 设置不适用于此集群。请在“设置 → 成本”中更新集群 ID 或本地 API 密钥。'
+        : 'Kubecost 设置不适用于此集群。请在宿主应用或 KubeAtlas 部署中更新集群 ID 或凭据。'
     default:
       return undefined
   }

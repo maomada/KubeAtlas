@@ -409,14 +409,14 @@ export interface ClusterBreakdownLine {
 }
 
 function breakdownLabel(event: TimelineEvent): string {
-  if (isProblematicEvent(event)) return event.reason || 'Warning'
+  if (isProblematicEvent(event)) return event.reason || '警告'
   if (isChangeEvent(event)) {
-    if (event.eventType === 'add') return 'Created'
-    if (event.eventType === 'delete') return 'Deleted'
-    if (event.eventType === 'update') return 'Modified'
-    return 'Changed'
+    if (event.eventType === 'add') return '已创建'
+    if (event.eventType === 'delete') return '已删除'
+    if (event.eventType === 'update') return '已修改'
+    return '已变更'
   }
-  return event.reason || 'Event'
+  return event.reason || '事件'
 }
 
 /**
@@ -897,7 +897,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
   useRegisterShortcut({
     id: 'swimlane-escape',
     keys: 'Escape',
-    description: 'Close event detail',
+    description: '关闭事件详情',
     category: 'Timeline',
     scope: 'timeline',
     handler: () => {
@@ -918,7 +918,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
   useRegisterShortcut({
     id: 'swimlane-cluster-prev',
     keys: 'ArrowUp',
-    description: 'Previous clustered event',
+    description: '上一个聚合事件',
     category: 'Timeline',
     scope: 'timeline',
     handler: (e) => {
@@ -930,7 +930,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
   useRegisterShortcut({
     id: 'swimlane-cluster-next',
     keys: 'ArrowDown',
-    description: 'Next clustered event',
+    description: '下一个聚合事件',
     category: 'Timeline',
     scope: 'timeline',
     handler: (e) => {
@@ -1539,7 +1539,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
   }, [events, bounds])
 
   if (isLoading) {
-    return <PaneLoader label="Loading timeline…" className="h-full w-full" />
+    return <PaneLoader label="正在加载时间线…" className="h-full w-full" />
   }
 
   // Compute empty state info (but don't early return - we need the toolbar visible)
@@ -1647,7 +1647,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                 {hasVisibleChildren ? (
                   <button
                     onClick={() => toggleLane(lane.id)}
-                    aria-label={isExpanded ? 'Collapse' : 'Expand'}
+                    aria-label={isExpanded ? '折叠' : '展开'}
                     className="p-1 -m-0.5 text-theme-text-tertiary hover:text-theme-text-primary hover:bg-theme-elevated rounded"
                   >
                     <CollapseChevron open={isExpanded} inheritColor className="w-4 h-4" />
@@ -1664,7 +1664,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                      chip + namespace. Only the NAME navigates; the rest is inert. */
                   <div className="flex-1 min-w-0 flex flex-col gap-0.5">
                     <div className="flex items-center gap-1.5 min-w-0">
-                      <Tooltip content={lane.identityAmbiguous ? `${lane.name} · API group unknown` : lane.name} wrapperClassName="min-w-0 flex-1">
+                      <Tooltip content={lane.identityAmbiguous ? `${lane.name} · API 组未知` : lane.name} wrapperClassName="min-w-0 flex-1">
                         <span
                           onClick={lane.identityAmbiguous ? undefined : () => handleLaneOpen(lane.kind, lane.namespace, lane.name, lane.group, lane.identityResolved)}
                           className={clsx('min-w-0 w-full text-sm text-theme-text-primary', !lane.identityAmbiguous && 'hover:text-accent-text hover:underline cursor-pointer', compact ? 'font-medium' : 'font-semibold font-mono')}
@@ -1743,23 +1743,23 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
       {windowInsideGap(viewWindow, gaps) ? (
         <>
           {/* View window fully inside a recording gap: empty ≠ quiet. */}
-          <p className="text-lg">Nothing was recorded here — the connector was offline</p>
-          <p className="text-sm mt-1">Pan or zoom out — or drag the blue band on the strip above — to a recorded period</p>
+          <p className="text-lg">此处没有记录数据——连接器当时处于离线状态</p>
+          <p className="text-sm mt-1">平移或缩小视图，也可拖动上方时间条的蓝色区域移至有记录的时段</p>
         </>
       ) : hasFilteredEvents ? (
         <>
-          <p className="text-lg">No matching events</p>
+          <p className="text-lg">没有匹配的事件</p>
           <p className="text-sm mt-1">
-            {describeActiveFilters({ search: searchTerm, activityFilter, kindFilter, showDeleted }) || 'Try adjusting your filters'}
+            {describeActiveFilters({ search: searchTerm, activityFilter, kindFilter, showDeleted }) || '请尝试调整筛选条件'}
           </p>
-          {namespaces && namespaces.length > 0 && <p className="text-sm mt-1 text-theme-text-disabled">Searching in: {namespaces.length === 1 ? namespaces[0] : `${namespaces.length} namespaces`}</p>}
+          {namespaces && namespaces.length > 0 && <p className="text-sm mt-1 text-theme-text-disabled">搜索范围：{namespaces.length === 1 ? namespaces[0] : `${namespaces.length} 个命名空间`}</p>}
           <button
             type="button"
             onClick={clearAllFilters}
             className="mt-4 flex items-center gap-2 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-lg text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary transition-colors"
           >
             <X className="w-3.5 h-3.5" />
-            Clear filters
+            清除筛选
           </button>
         </>
       ) : viewWindow && events.length > 0 ? (
@@ -1767,16 +1767,16 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
           {/* Controlled window over loaded data: quiet ≠ waiting-for-live. Name
               the exact count sitting outside the window — the strip's bars show
               where, so point there instead of guessing at "a busier period". */}
-          <p className="text-lg">Nothing changed in this view</p>
-          <p className="text-sm mt-1">Only resources with activity are shown</p>
+          <p className="text-lg">此视图中没有变更</p>
+          <p className="text-sm mt-1">仅显示有活动的资源</p>
           <p className="text-sm mt-1">
-            {pluralize(events.length, 'event')} elsewhere in the query range — move the window on the strip above to see them
+            查询范围内其他时段还有 {events.length.toLocaleString()} 个事件——拖动上方时间条查看
           </p>
         </>
       ) : (
         <>
-          <p className="text-lg">No events yet</p>
-          <p className="text-sm mt-1">Events will appear here as resources change</p>
+          <p className="text-lg">暂无事件</p>
+          <p className="text-sm mt-1">资源发生变更时，事件会显示在这里</p>
           {namespaces && namespaces.length > 0 && (
             <p className="text-sm mt-2 text-theme-text-secondary">
               Filtering by namespace: <span className="font-medium text-theme-text-primary">{namespaces.length === 1 ? namespaces[0] : `${namespaces.length} namespaces`}</span>
@@ -1835,34 +1835,34 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
             this whole row is hidden there. */}
         {!controlled && (
           <div className="flex items-center gap-2 px-4 py-1.5">
-            <Tooltip content="Zoom in (Ctrl+scroll)">
+          <Tooltip content="放大（Ctrl+滚动）">
               <button
                 onClick={handleZoomIn}
-                aria-label="Zoom in"
+                aria-label="放大"
                 className="p-1.5 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded"
               >
                 <ZoomIn className="w-4 h-4" />
               </button>
             </Tooltip>
-            <Tooltip content="Zoom out (Ctrl+scroll)">
+          <Tooltip content="缩小（Ctrl+滚动）">
               <button
                 onClick={handleZoomOut}
-                aria-label="Zoom out"
+                aria-label="缩小"
                 className="p-1.5 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded"
               >
                 <ZoomOut className="w-4 h-4" />
               </button>
             </Tooltip>
             <span className="text-xs text-theme-text-tertiary">
-              {windowLabel} window
+              {windowLabel} 时间窗口
             </span>
             {showJumpToNow && (
-              <Tooltip content="Jump to current time">
+              <Tooltip content="跳转到当前时间">
                 <button
                   onClick={handleJumpToNow}
                   className="px-2 py-1 text-xs text-accent-text hover:underline hover:bg-theme-elevated rounded"
                 >
-                  → Now
+                  → 现在
                 </button>
               </Tooltip>
             )}
@@ -1875,24 +1875,24 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
           <>
             <div className="fixed inset-0 z-40" onClick={() => setShowLegend(false)} aria-hidden />
             <div className="absolute right-4 top-full z-50 mt-1 w-[280px] rounded-xl border border-theme-border bg-theme-surface p-4 shadow-theme-lg">
-              <div className="text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-theme-text-tertiary">Events</div>
+              <div className="text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-theme-text-tertiary">事件</div>
               <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-theme-text-secondary">
                 {/* One activity hue: shape carries the event class. */}
-                <MarkerLegendItem shape="triangle-up" colorClass="text-blue-600 dark:text-blue-400" label="created" description="Resource was created" />
-                <MarkerLegendItem shape="circle" colorClass="text-blue-600 dark:text-blue-400" label="modified" description="Resource change or informational Kubernetes event" />
-                <MarkerLegendItem shape="triangle-down" colorClass="text-blue-600 dark:text-blue-400" label="deleted" description="Resource was removed" />
-                <MarkerLegendItem shape="diamond" colorClass="text-amber-500 dark:text-amber-400" label="warning" description="Warning event (CrashLoopBackOff, Failed, etc.)" />
-                <MarkerLegendItem shape="ring" colorClass="text-theme-text-tertiary" label="historical" description="Inferred from resource metadata (creation time, etc.)" />
-                <ClusterLegendItem description="Nearby events collapsed into one pill" />
+                <MarkerLegendItem shape="triangle-up" colorClass="text-blue-600 dark:text-blue-400" label="已创建" description="资源已创建" />
+                <MarkerLegendItem shape="circle" colorClass="text-blue-600 dark:text-blue-400" label="已修改" description="资源变更或说明性 Kubernetes 事件" />
+                <MarkerLegendItem shape="triangle-down" colorClass="text-blue-600 dark:text-blue-400" label="已删除" description="资源已移除" />
+                <MarkerLegendItem shape="diamond" colorClass="text-amber-500 dark:text-amber-400" label="警告" description="警告事件（CrashLoopBackOff、Failed 等）" />
+                <MarkerLegendItem shape="ring" colorClass="text-theme-text-tertiary" label="历史记录" description="根据资源元数据推断（例如创建时间）" />
+                <ClusterLegendItem description="附近事件已合并为一个标记" />
               </div>
-              <div className="mt-3.5 text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-theme-text-tertiary">Health</div>
+              <div className="mt-3.5 text-[10px] font-bold uppercase leading-none tracking-[0.07em] text-theme-text-tertiary">健康状态</div>
               <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-2 text-xs text-theme-text-secondary">
                 {/* Exactly three status colors; everything else is gray. */}
-                <HealthLegendItem color={HEALTH_STRIP_COLORS.healthy} label="healthy" description="Resource is fully operational" />
-                <HealthLegendItem color={HEALTH_STRIP_COLORS.degraded} label="degraded" description="Unexpected partial availability" />
-                <HealthLegendItem color={HEALTH_STRIP_COLORS.unhealthy} label="unhealthy" description="Resource is failing or not ready" />
-                <HealthLegendItem color="bg-gray-400/50" label="no signal" description="Not a health state: rolling out, idle/suspended, or nothing observed yet" />
-                <HealthLegendItem label="mixed" swatchStyle={MIXED_HEALTH_STRIP_STYLE} description="members disagree — some OK, some degraded; expand or hover for who" />
+                <HealthLegendItem color={HEALTH_STRIP_COLORS.healthy} label="健康" description="资源运行正常" />
+                <HealthLegendItem color={HEALTH_STRIP_COLORS.degraded} label="降级" description="资源部分可用且状态异常" />
+                <HealthLegendItem color={HEALTH_STRIP_COLORS.unhealthy} label="不健康" description="资源运行失败或尚未就绪" />
+                <HealthLegendItem color="bg-gray-400/50" label="无状态信号" description="非健康状态：正在滚动更新、空闲或暂停，或尚无观测数据" />
+                <HealthLegendItem label="状态不一" swatchStyle={MIXED_HEALTH_STRIP_STYLE} description="成员状态不一致——部分正常、部分降级；展开或悬停查看详情" />
               </div>
             </div>
           </>
@@ -1913,7 +1913,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
           <div className="sticky top-0 z-30 bg-theme-surface border-b border-theme-border">
             <div className="flex">
               <div className={clsx('shrink-0 border-r border-theme-border px-3 h-8 flex items-center', laneLabelWidthClass)}>
-                <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-theme-text-tertiary">Resource</span>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-theme-text-tertiary">资源</span>
                 {/* Single morphing toggle: ≥half the groups open → offers
                     collapse-all; otherwise expand-all. Tooltip names the action
                     and its shortcut. ml-auto rides the Tooltip's own flex wrapper
@@ -1921,12 +1921,12 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                     inflates to the line-height and top-aligns the glyph). */}
                 {/* Flat compact lanes never nest, so bulk expand/collapse is a no-op. */}
                 {!compact && (
-                  <Tooltip content={mostlyExpanded ? 'Collapse all (E)' : 'Expand all (E)'} wrapperClassName="ml-auto">
+                  <Tooltip content={mostlyExpanded ? '折叠全部（E）' : '展开全部（E）'} wrapperClassName="ml-auto">
                     <button
                       type="button"
                       onClick={() => setAllExpanded(!mostlyExpanded)}
                       className="rounded p-1 text-theme-text-tertiary hover:bg-theme-elevated hover:text-theme-text-primary"
-                      aria-label={mostlyExpanded ? 'Collapse all resources' : 'Expand all resources'}
+                      aria-label={mostlyExpanded ? '折叠所有资源' : '展开所有资源'}
                     >
                       {mostlyExpanded
                         ? <ChevronsDownUp className="h-3.5 w-3.5" />
@@ -1980,7 +1980,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                           style={{ left: `${nowX}%` }}
                         >
                           <div className={clsx('h-2 w-0.5 bg-purple-500', nowX > 97 && 'translate-x-0.5')} />
-                          <span className="mt-0.5 whitespace-nowrap text-xs font-medium text-purple-500">Now</span>
+                          <span className="mt-0.5 whitespace-nowrap text-xs font-medium text-purple-500">现在</span>
                         </div>
                       )}
                     </>
@@ -1989,26 +1989,26 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                 {/* Extend affordances at the loaded-range edges. Stop propagation so
                     clicking doesn't also start a pan drag on the container. */}
                 {atPastEdge && (
-                  <Tooltip content="Start of loaded history — load earlier" position="bottom">
+                    <Tooltip content="已加载历史范围起点——加载更早的记录" position="bottom">
                     <button
                       type="button"
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => { e.stopPropagation(); onExtendRequest?.('past') }}
                       className="absolute left-0 top-1/2 z-30 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded border border-theme-border bg-theme-elevated text-theme-text-secondary shadow-theme-sm transition-colors hover:bg-theme-hover hover:text-theme-text-primary"
-                      aria-label="Extend the loaded range further into the past"
+                      aria-label="向过去扩展已加载范围"
                     >
                       <ChevronLeft className="h-3 w-3" />
                     </button>
                   </Tooltip>
                 )}
                 {atFutureEdge && (
-                  <Tooltip content="End of loaded history — load more recent" position="bottom">
+                    <Tooltip content="已加载历史范围终点——加载更新的记录" position="bottom">
                     <button
                       type="button"
                       onMouseDown={(e) => e.stopPropagation()}
                       onClick={(e) => { e.stopPropagation(); onExtendRequest?.('future') }}
                       className="absolute right-0 top-1/2 z-30 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded border border-theme-border bg-theme-elevated text-theme-text-secondary shadow-theme-sm transition-colors hover:bg-theme-hover hover:text-theme-text-primary"
-                      aria-label="Extend the loaded range further toward now"
+                      aria-label="向现在扩展已加载范围"
                     >
                       <ChevronRight className="h-3 w-3" />
                     </button>
@@ -2062,7 +2062,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                 >
                   {widthPx > GAP_LABEL_MIN_PX && (
                     <span className="whitespace-nowrap rounded bg-theme-surface/70 px-1 text-[10px] uppercase tracking-wide text-theme-text-tertiary">
-                      connector offline
+                      连接器离线
                     </span>
                   )}
                 </div>
@@ -2074,7 +2074,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
               <div data-testid="timeline-pinned-section">
                 <div className="flex">
                   <div className={clsx('shrink-0 border-r border-theme-border px-3 py-1.5', laneLabelWidthClass)}>
-                    <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-theme-text-tertiary">Pinned</span>
+                    <span className="text-[11px] font-semibold uppercase tracking-[0.1em] text-theme-text-tertiary">已固定</span>
                   </div>
                   <div className="flex-1" />
                 </div>
@@ -2099,7 +2099,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                         as the empty states. */}
                     <div className="flex items-center justify-center gap-2 py-6 text-sm text-theme-text-tertiary">
                       <Clock className="h-4 w-4 opacity-50" />
-                      <span>{compact ? 'Only resources with activity in this time span are shown' : 'The timeline shows only resources with activity in the loaded range'}</span>
+                      <span>{compact ? '仅显示此时间段内有活动的资源' : '时间线仅显示已加载范围内有活动的资源'}</span>
                     </div>
                   </>
                 )}
@@ -2170,7 +2170,7 @@ function ClusterLegendItem({ description }: { description: string }) {
           <MarkerGlyph shape="circle" size={8} className="text-blue-600 dark:text-blue-400" />
           <span className="text-[11px] font-semibold leading-none tabular-nums text-theme-text-primary">×5</span>
         </span>
-        <span className="leading-none">clustered</span>
+        <span className="leading-none">聚合事件</span>
       </span>
     </Tooltip>
   )
@@ -2227,7 +2227,7 @@ export function chipKindLabel(kind: string): { label: string; abbreviated: boole
 // name owns the first row so it doesn't lose the width fight to metadata.
 function KindChip({ kind, title }: { kind: string; title?: string }) {
   const { label } = chipKindLabel(kind)
-  const tip = title ?? (kind ? undefined : 'Kubernetes event — its source object reports no kind')
+  const tip = title ?? (kind ? undefined : 'Kubernetes 事件——来源对象未报告资源类型')
   return (
     <Tooltip content={tip} disabled={!tip} wrapperClassName="shrink-0">
       <span
@@ -2246,10 +2246,10 @@ function KindChip({ kind, title }: { kind: string; title?: string }) {
 // it reads as a subtle qualifier next to the kind badge, not a status pill.
 function GroupChip({ group }: { group: string }) {
   return (
-    <Tooltip content={`API group ${group}`} wrapperClassName="shrink-0">
+    <Tooltip content={`API 组 ${group}`} wrapperClassName="shrink-0">
       <span
         className="rounded bg-theme-hover px-1 py-px text-[10px] font-medium text-theme-text-tertiary ring-1 ring-inset ring-theme-border"
-        aria-label={`API group ${group}`}
+        aria-label={`API 组 ${group}`}
       >
         {group}
       </span>
@@ -2287,7 +2287,7 @@ function ChildLaneLabel({ kind, group, showGroupChip, kindTitle, name, labelWidt
           // Centered ON this row's rail. bg keeps the line from striking the glyph.
           className="absolute top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded bg-theme-surface p-1 text-theme-text-tertiary hover:bg-theme-elevated hover:text-theme-text-primary"
           style={{ left: selfRailPx }}
-          aria-label={expanded ? 'Collapse' : 'Expand'}
+          aria-label={expanded ? '折叠' : '展开'}
         >
           <CollapseChevron open={!!expanded} inheritColor className="w-4 h-4" />
         </button>
@@ -2313,8 +2313,8 @@ function ChildLaneLabel({ kind, group, showGroupChip, kindTitle, name, labelWidt
 // navigate-on-click. Filled + always visible when pinned; hover-reveal otherwise.
 function PinButton({ pinned, onToggle, alwaysVisible, isAppGroup }: { pinned: boolean; onToggle: () => void; alwaysVisible?: boolean; isAppGroup?: boolean }) {
   const title = isAppGroup
-    ? (pinned ? 'Unpin app' : 'Pin app — keep all its rows visible while you pan and zoom')
-    : (pinned ? 'Unpin' : 'Pin — keep this row visible while you pan and zoom')
+    ? (pinned ? '取消固定应用' : '固定应用——平移和缩放时保持其所有行可见')
+    : (pinned ? '取消固定' : '固定——平移和缩放时保持此行可见')
   return (
     <Tooltip content={title} wrapperClassName="shrink-0">
       <button
@@ -2325,7 +2325,7 @@ function PinButton({ pinned, onToggle, alwaysVisible, isAppGroup }: { pinned: bo
           pinned ? 'text-accent-text opacity-100' : 'text-theme-text-tertiary hover:text-theme-text-primary',
           !pinned && !alwaysVisible && 'opacity-0 group-hover/pin:opacity-100',
         )}
-        aria-label={isAppGroup ? (pinned ? 'Unpin app' : 'Pin app') : (pinned ? 'Unpin' : 'Pin')}
+        aria-label={isAppGroup ? (pinned ? '取消固定应用' : '固定应用') : (pinned ? '取消固定' : '固定')}
       >
         <Pin className={clsx('w-3.5 h-3.5', pinned && 'fill-current')} />
       </button>
@@ -2369,7 +2369,7 @@ function AppGroupLaneLabel({ lane, memberCount, onToggle, onAppClick }: { lane: 
       </Tooltip>
       <div className="min-w-0 flex-1 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5 min-w-0">
-          <Tooltip content={linkable ? 'Open in Applications' : (lane.title ?? lane.name)} wrapperClassName="min-w-0 flex-1">
+          <Tooltip content={linkable ? '在应用中打开' : (lane.title ?? lane.name)} wrapperClassName="min-w-0 flex-1">
             <span
               className={clsx(
                 'min-w-0 w-full text-sm font-semibold',
@@ -2380,7 +2380,7 @@ function AppGroupLaneLabel({ lane, memberCount, onToggle, onAppClick }: { lane: 
               // resource name routes to its detail; the row body still toggles expand.
               onClick={linkable ? (e) => { e.stopPropagation(); onAppClick!(lane.appKey!) } : undefined}
               role={linkable ? 'button' : undefined}
-              aria-label={linkable ? 'Open in Applications' : undefined}
+              aria-label={linkable ? '在应用中打开' : undefined}
             >
               <MiddleEllipsis text={lane.title ?? lane.name} className="block" />
             </span>
@@ -2693,14 +2693,14 @@ function ClusterPill({ cluster, selected, onClick, small }: {
     <Tooltip
       content={
         <div className="space-y-0.5">
-          <div className="font-medium">{cluster.count} events</div>
+          <div className="font-medium">{cluster.count} 个事件</div>
           {lines.map((line) => (
             <div key={line.label} className="tabular-nums">
               {line.count}× {line.label}
             </div>
           ))}
-          {more > 0 && <div className="text-theme-text-tertiary">…and {more} more</div>}
-          <div className="text-theme-text-tertiary">click to browse</div>
+          {more > 0 && <div className="text-theme-text-tertiary">…还有 {more} 个</div>}
+          <div className="text-theme-text-tertiary">点击浏览</div>
         </div>
       }
       position="top"
@@ -2709,7 +2709,7 @@ function ClusterPill({ cluster, selected, onClick, small }: {
       wrapperStyle={{ left: markerAnchor(cluster.x).left }}
     >
       <button
-        aria-label={`Open ${cluster.count} clustered events`}
+        aria-label={`打开 ${cluster.count} 个聚合事件`}
         className={clsx(
           'inline-flex items-center gap-1 rounded-full border border-theme-border bg-theme-surface shadow-theme-sm transition-transform',
           small ? 'px-1 py-px' : 'px-1.5 py-0.5',
@@ -2889,20 +2889,20 @@ function EventMarker({ event, x, selected, onClick, dimmed, small }: EventMarker
   // Get human-readable operation label with color indicator
   const getOperationLabel = () => {
     if (isProblematic) {
-      return `⚠ ${event.reason || 'Warning'}`
+      return `⚠ ${event.reason || '警告'}`
     }
     if (isChange) {
       switch (event.eventType) {
-        case 'add': return '● Created'
-        case 'delete': return '● Deleted'
-        case 'update': return '● Modified'
-        default: return '● Changed'
+        case 'add': return '● 已创建'
+        case 'delete': return '● 已删除'
+        case 'update': return '● 已修改'
+        default: return '● 已变更'
       }
     }
     if (event.reason) {
       return `● ${event.reason}`
     }
-    return '● Event'
+    return '● 事件'
   }
 
   const tooltipLines: string[] = []
@@ -2915,7 +2915,7 @@ function EventMarker({ event, x, selected, onClick, dimmed, small }: EventMarker
     tooltipLines.push(msg)
   }
   tooltipLines.push(formatRelativeAgeTime(event.timestamp))
-  if (isHistoricalEvent(event)) tooltipLines.push('(from metadata)')
+  if (isHistoricalEvent(event)) tooltipLines.push('(来自元数据)')
 
   const tooltipText = tooltipLines.join(' · ')
 
@@ -3126,7 +3126,7 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
       <div
         onPointerDown={(e) => { e.preventDefault(); resizeRef.current = { startY: e.clientY, startH: heightPx } }}
         className="group absolute -top-1.5 left-0 right-0 flex h-3 cursor-ns-resize items-center justify-center"
-        aria-label="Drag to resize"
+          aria-label="拖动以调整大小"
       >
         <span className="h-1 w-10 rounded-full bg-theme-border opacity-0 transition-opacity group-hover:opacity-100" />
       </div>
@@ -3141,12 +3141,12 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
           <span className={clsx('shrink-0 font-medium', isProblematic ? 'text-amber-700 dark:text-amber-300' : 'text-theme-text-primary')}>
             {selected.reason || selected.eventType}
           </span>
-          <span className="badge-sm shrink-0 bg-theme-elevated text-theme-text-secondary">{displayKind(selected.kind) || 'Event'}</span>
+          <span className="badge-sm shrink-0 bg-theme-elevated text-theme-text-secondary">{displayKind(selected.kind) || '事件'}</span>
           <span className="min-w-0 truncate font-medium text-theme-text-primary">{selected.name}</span>
-          {selected.namespace && <span className="shrink-0 text-xs text-theme-text-tertiary">in {selected.namespace}</span>}
+          {selected.namespace && <span className="shrink-0 text-xs text-theme-text-tertiary">位于 {selected.namespace}</span>}
           <span className="shrink-0 text-xs tabular-nums text-theme-text-tertiary">{formatFullTime(new Date(selected.timestamp))}</span>
           {events.length > 1 && (
-            <span className="badge-sm shrink-0 bg-theme-elevated text-theme-text-secondary">{events.length} events</span>
+            <span className="badge-sm shrink-0 bg-theme-elevated text-theme-text-secondary">{events.length} 个事件</span>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -3154,23 +3154,23 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
             onClick={() => step(-1)}
             disabled={selIdx <= 0}
             className="rounded p-1 text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary disabled:opacity-30"
-            aria-label="Previous event"
+            aria-label="上一个事件"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
-          <span className="text-xs tabular-nums text-theme-text-tertiary">{`${selIdx + 1} of ${railEvents.length}`}</span>
+          <span className="text-xs tabular-nums text-theme-text-tertiary">{`${selIdx + 1} / ${railEvents.length}`}</span>
           <button
             onClick={() => step(1)}
             disabled={selIdx >= railEvents.length - 1}
             className="rounded p-1 text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary disabled:opacity-30"
-            aria-label="Next event"
+            aria-label="下一个事件"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
-          <Tooltip content="Close (Esc)">
+          <Tooltip content="关闭（Esc）">
             <button
               onClick={onClose}
-              aria-label="Close"
+              aria-label="关闭"
               className="ml-1 rounded p-1.5 text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary"
             >
               <X className="h-4 w-4" />
@@ -3181,12 +3181,12 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
 
       <div className="flex min-h-0 flex-1">
         {/* The rail — always renders, even as a rail of one. */}
-        <ul className="w-72 shrink-0 overflow-auto border-r border-theme-border py-1" aria-label="Drawer events">
+        <ul className="w-72 shrink-0 overflow-auto border-r border-theme-border py-1" aria-label="事件详情列表">
           {railEvents.map((ev, i) => (
             <Fragment key={ev.id}>
               {i === neighborsFrom && (
                 <li aria-hidden className="mt-1 border-t border-theme-border px-3 pb-1 pt-2 text-[10px] font-bold uppercase tracking-[0.07em] text-theme-text-tertiary">
-                  Within ±15 min
+                  前后 15 分钟内
                 </li>
               )}
               <ClusterEventRow event={ev} active={ev.id === selected.id} onClick={() => onSelectId(ev.id)} />
@@ -3197,7 +3197,7 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
         {/* Detail pane: fields as properties, then message, diff, actions. */}
         <div className="min-w-0 flex-1 overflow-auto p-4">
           <dl className="grid grid-cols-[96px_1fr] items-baseline gap-x-3 gap-y-2 text-sm">
-            <dt className="text-xs text-theme-text-tertiary">Reason</dt>
+            <dt className="text-xs text-theme-text-tertiary">原因</dt>
             <dd className="flex flex-wrap items-center gap-2">
               <span className={clsx(
                 'font-medium',
@@ -3212,7 +3212,7 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
                 <span className="text-xs text-theme-text-tertiary">×{selected.count}</span>
               )}
             </dd>
-            <dt className="text-xs text-theme-text-tertiary">Resource</dt>
+            <dt className="text-xs text-theme-text-tertiary">资源</dt>
             <dd className="flex min-w-0 flex-wrap items-center gap-1.5">
               {/* The ONE click target for the resource — the same badge used by
                   every Radar drawer, so it reads as "this navigates". */}
@@ -3220,21 +3220,21 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
                 resourceRef={{ kind: selected.kind || 'Event', namespace: selected.namespace ?? '', name: selected.name, group }}
                 onClick={onResourceClick && canOpenResource ? openResource : undefined}
               />
-              {selected.namespace && <span className="text-xs text-theme-text-tertiary">in {selected.namespace}</span>}
+              {selected.namespace && <span className="text-xs text-theme-text-tertiary">位于 {selected.namespace}</span>}
             </dd>
-            <dt className="text-xs text-theme-text-tertiary">Time</dt>
+            <dt className="text-xs text-theme-text-tertiary">时间</dt>
             <dd className="flex items-center gap-2 tabular-nums">
               {formatFullTime(new Date(selected.timestamp))}
               {isHistorical && (
                 <span className="badge-sm bg-theme-hover text-theme-text-secondary">
                   <Clock className="h-3 w-3" />
-                  from metadata
+                  来自元数据
                 </span>
               )}
             </dd>
             {selected.healthState && selected.healthState !== 'unknown' && (
               <>
-                <dt className="text-xs text-theme-text-tertiary">Health</dt>
+                <dt className="text-xs text-theme-text-tertiary">健康状态</dt>
                 <dd><span className={clsx('badge-sm', getHealthBadgeColor(selected.healthState))}>{selected.healthState}</span></dd>
               </>
             )}

@@ -401,7 +401,7 @@ function DownloadConfirmation({ metadata, onConfirm, onCancel }: DownloadConfirm
           onClick={onConfirm}
           className="px-4 py-2 text-sm btn-brand rounded-lg"
         >
-          Download & View
+          Download &amp; View
         </button>
       </div>
     </div>

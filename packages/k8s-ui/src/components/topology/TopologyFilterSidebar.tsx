@@ -114,11 +114,11 @@ const RESOURCE_KINDS: {
 
 const CATEGORIES = [
   { id: 'gitops', label: 'GitOps' },
-  { id: 'networking', label: 'Networking' },
-  { id: 'workloads', label: 'Workloads' },
-  { id: 'config', label: 'Configuration' },
-  { id: 'scaling', label: 'Scaling' },
-  { id: 'custom', label: 'Custom Resources' },
+  { id: 'networking', label: '网络' },
+  { id: 'workloads', label: '工作负载' },
+  { id: 'config', label: '配置' },
+  { id: 'scaling', label: '扩缩容' },
+  { id: 'custom', label: '自定义资源' },
 ] as const
 
 interface TopologyFilterSidebarProps {
@@ -203,7 +203,7 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
         <button
           onClick={onToggleCollapse}
           className="p-2 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-lg transition-colors"
-          title="Expand filters"
+          title="展开筛选"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
@@ -240,11 +240,11 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
     <div className="w-56 flex flex-col bg-theme-surface/90 backdrop-blur border-r border-theme-border overflow-hidden">
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-theme-border">
-        <span className="text-sm font-medium text-theme-text-secondary">Filters</span>
+        <span className="text-sm font-medium text-theme-text-secondary">筛选</span>
         <button
           onClick={onToggleCollapse}
           className="p-1 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded transition-colors"
-          title="Collapse sidebar"
+          title="折叠侧栏"
         >
           <ChevronLeft className="w-4 h-4" />
         </button>
@@ -263,7 +263,7 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
           )}
         >
           <Eye className="w-3 h-3" />
-          Show All
+          全部显示
         </button>
         <button
           onClick={onHideAll}
@@ -276,7 +276,7 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
           )}
         >
           <EyeOff className="w-3 h-3" />
-          Hide All
+          全部隐藏
         </button>
       </div>
 
@@ -328,7 +328,7 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
           <div className="px-2 py-2 border-t border-theme-border/50">
             <div className="flex items-center gap-1 text-xs font-medium text-amber-400/80 uppercase tracking-wider px-1 mb-1">
               <Zap className="w-3 h-3" />
-              Hidden for Performance
+              为提升性能而隐藏
             </div>
             <div className="space-y-0.5">
               {hiddenKinds.map(kindName => {
@@ -352,7 +352,7 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
                         }
                       }}
                       className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-left transition-colors text-theme-text-tertiary hover:bg-amber-500/10 hover:text-amber-400/80"
-                      title="Hidden for performance - click to show"
+                      title="为保证性能已隐藏，点击显示"
                     >
                       <Icon className="w-4 h-4 shrink-0 opacity-50" />
                       <span className="flex-1 text-sm truncate opacity-70">{label}</span>
@@ -365,9 +365,9 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
                         <div className="flex items-start gap-2 mb-2">
                           <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
                           <div className="text-xs text-theme-text-secondary">
-                            <p className="font-medium text-amber-400">Performance Warning</p>
+                            <p className="font-medium text-amber-400">性能提示</p>
                             <p className="mt-1">
-                              Showing {label}s may slow down the topology view in large clusters.
+                              显示 {label} 可能会降低大型集群拓扑视图的速度。
                             </p>
                           </div>
                         </div>
@@ -380,13 +380,13 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
                             }}
                             className="flex-1 px-2 py-1 text-xs bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 rounded transition-colors"
                           >
-                            Show Anyway
+                            仍然显示
                           </button>
                           <button
                             onClick={() => setPendingConfirmKind(null)}
                             className="flex-1 px-2 py-1 text-xs bg-theme-elevated text-theme-text-secondary hover:bg-theme-hover rounded transition-colors"
                           >
-                            Cancel
+                            取消
                           </button>
                         </div>
                       </div>
@@ -419,9 +419,9 @@ export const TopologyFilterSidebar = memo(function TopologyFilterSidebar({
                 ? `Hidden by kind filter: ${filteredOutKinds.map(k => `${kindCounts.get(k.kind)} ${k.kind}`).join(', ')}`
                 : undefined}
             >
-              Showing {visible} of {total} resources
+              显示 {visible}/{total} 个资源
               {hidden > 0 && (
-                <span className="ml-1 text-amber-400 cursor-help">· {hidden} filtered</span>
+                <span className="ml-1 text-amber-400 cursor-help">· 已筛选 {hidden} 个</span>
               )}
             </div>
           )
