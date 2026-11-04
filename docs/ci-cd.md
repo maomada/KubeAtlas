@@ -5,14 +5,26 @@ that any image or chart has already been published. A maintainer may dispatch
 **Release GHCR** from `maomada/KubeAtlas` on `main` with a full lowercase 40-digit
 source SHA and a strict SemVer version (no `v` prefix or build metadata).
 The policy requires that SHA to be an ancestor of `main` and that the latest
-main-push CI and CodeQL runs for that exact SHA both succeeded.
+main-push CI and Semgrep CE runs for that exact SHA both succeeded.
+
+The required workflow files are `ci.yml` and `security.yml`. Missing, failed,
+cancelled, skipped or incomplete latest runs block release; a successful PR
+merge run does not substitute for a main-push run. CodeQL configuration and
+its prior eligibility failures are retained, but no longer satisfy or block
+this release source-selection check. Semgrep CE is not CodeQL-equivalent
+coverage; see [Standalone security scanning](security-scanning.md).
+
+The private account currently cannot enforce the intended protected-environment
+approval. Do not dispatch publication until its separately reviewed replacement
+is implemented and validated. This source-selection migration neither removes
+the environment requirement nor claims that a named environment enforces review.
 
 Run once with `publish=false` first. It builds each multi-platform image into
 an OCI archive and packages both charts using matching `version`, `appVersion`,
 image repositories, and image tags. The dry run proves neither GHCR
 permissions nor collision checks nor a successful registry push. Review the
 manifest artifact, archive checksums, build digests, chart checksums, and CI /
-CodeQL links before a separate explicit dispatch with `publish=true`.
+Semgrep CE links before a separate explicit dispatch with `publish=true`.
 
 The publish job uses the `ghcr-publish` environment and `GITHUB_TOKEN` with
 `packages:write`; builds have no registry login or package-write permission.
@@ -56,7 +68,7 @@ are public.
 Before any write, the workflow inspects all four versioned refs and blocks if
 one exists or if absence cannot be established. Images are copied from the
 exact archives built earlier; charts are pushed only after both image copies
-succeed. The release manifest records source SHA, version, CI/CodeQL evidence,
+succeed. The release manifest records source SHA, version, CI/Semgrep CE evidence,
 actor, workflow run, archive checksums, build digests, and final registry
 digests where known.
 
@@ -85,7 +97,7 @@ compatibility boundaries. The independent Portal is not the upstream Cloud.
 
 The separate `Release Binaries` workflow is manual-only. It accepts the
 full `source_sha`, strict SemVer `version`, and `publish=false` dry-run inputs.
-It checks main ancestry and exact-SHA CI and CodeQL evidence before building.
+It checks main ancestry and exact-SHA CI and Semgrep CE evidence before building.
 Builds use trusted release tooling checked out separately from the selected
 source, have read-only permissions, and never log in to a registry.
 

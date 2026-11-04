@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Full lowercase commit SHA on main with successful CI and CodeQL
+        description: Full lowercase commit SHA on main with successful CI and Semgrep CE
         required: true
         type: string
       version:
@@ -47,7 +47,7 @@ jobs:
       source_sha: ${{ steps.policy.outputs.source_sha }}
       version: ${{ steps.policy.outputs.version }}
       ci_url: ${{ steps.policy.outputs.ci_url }}
-      codeql_url: ${{ steps.policy.outputs.codeql_url }}
+      security_url: ${{ steps.policy.outputs.security_url }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -78,7 +78,7 @@ jobs:
               out.write(f"source_sha={evidence['sourceSha']}\n")
               out.write(f"version={evidence['version']}\n")
               out.write(f"ci_url={evidence['checks']['ci.yml']}\n")
-              out.write(f"codeql_url={evidence['checks']['codeql.yml']}\n")
+              out.write(f"security_url={evidence['checks']['security.yml']}\n")
           PY
 
   build:
@@ -127,7 +127,7 @@ jobs:
         env:
           KUBEATLAS_RELEASE_VERSION: ${{ needs.validate.outputs.version }}
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
-          RELEASE_EVIDENCE_URLS: ${{ needs.validate.outputs.ci_url }} ${{ needs.validate.outputs.codeql_url }}
+          RELEASE_EVIDENCE_URLS: ${{ needs.validate.outputs.ci_url }} ${{ needs.validate.outputs.security_url }}
         run: make release-binaries-dry RELEASE_ARTIFACT_TOOL=../trusted/scripts/release_artifacts.py
       - uses: actions/upload-artifact@v4
         with:
@@ -156,7 +156,7 @@ jobs:
       - name: Revalidate exact artifact set
         env:
           CI_URL: ${{ needs.validate.outputs.ci_url }}
-          CODEQL_URL: ${{ needs.validate.outputs.codeql_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
@@ -164,20 +164,20 @@ jobs:
           python3 trusted/scripts/release_artifacts.py validate --directory release \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
-            --evidence-url "$CI_URL" --evidence-url "$CODEQL_URL"
+            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
       - name: Record dry-run provenance
         env:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           VERSION: ${{ needs.validate.outputs.version }}
           CI_URL: ${{ needs.validate.outputs.ci_url }}
-          CODEQL_URL: ${{ needs.validate.outputs.codeql_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
         run: |
           {
             echo "## Binary release dry run"
             echo "- Source: \`$SOURCE_SHA\`"
             echo "- Version: \`$VERSION\`"
             echo "- CI: $CI_URL"
-            echo "- CodeQL: $CODEQL_URL"
+            echo "- Semgrep CE: $SECURITY_URL"
             echo "- No GitHub Release or registry write was attempted."
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -224,7 +224,7 @@ jobs:
         id: artifacts
         env:
           CI_URL: ${{ needs.validate.outputs.ci_url }}
-          CODEQL_URL: ${{ needs.validate.outputs.codeql_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
@@ -232,7 +232,7 @@ jobs:
           python3 trusted/scripts/release_artifacts.py validate --directory release \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
-            --evidence-url "$CI_URL" --evidence-url "$CODEQL_URL"
+            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
       - name: Fail-closed tag and release collision preflight
         id: preflight
         env:

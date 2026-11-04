@@ -56,7 +56,7 @@ build evidence URLs.
 
 GitHub Release binaries are a separate distribution channel from KubeAtlas
 GHCR images and charts. A future binary release requires the manually
-dispatched `Release Binaries` workflow, successful main CI and CodeQL for the
+dispatched `Release Binaries` workflow, successful main CI and Semgrep CE for the
 selected source SHA, and approval of the protected `ghcr-publish` environment.
 The environment is shared with the broader distribution controls; it does not
 grant builds registry credentials. `publish=false` performs a no-write dry run.

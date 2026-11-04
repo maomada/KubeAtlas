@@ -37,7 +37,7 @@ def create_manifest(
     run_id,
     run_url,
     ci_url,
-    codeql_url,
+    security_url,
     publish,
 ):
     root = Path(artifact_root)
@@ -77,11 +77,11 @@ def create_manifest(
         }
 
     return {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "repository": "maomada/KubeAtlas",
         "sourceSha": source_sha,
         "version": version,
-        "checks": {"ci": ci_url, "codeql": codeql_url},
+        "checks": {"ci": ci_url, "security": security_url},
         "actor": actor,
         "run": {"id": run_id, "url": run_url},
         "images": images,
@@ -164,7 +164,7 @@ def summary(manifest):
         f"- Actor: `{manifest['actor']}`",
         f"- Run: [{manifest['run']['id']}]({manifest['run']['url']})",
         f"- CI evidence: [{manifest['checks']['ci']}]({manifest['checks']['ci']})",
-        f"- CodeQL evidence: [{manifest['checks']['codeql']}]({manifest['checks']['codeql']})",
+        f"- Semgrep CE evidence: [{manifest['checks']['security']}]({manifest['checks']['security']})",
         f"- Publication status: **{manifest['publication']['status']}**",
         "",
         "### Images",
@@ -211,7 +211,7 @@ def main():
         "run-id",
         "run-url",
         "ci-url",
-        "codeql-url",
+        "security-url",
         "output",
     ):
         create.add_argument(f"--{argument}", required=True)
@@ -252,7 +252,7 @@ def main():
                 args.run_id,
                 args.run_url,
                 args.ci_url,
-                args.codeql_url,
+                args.security_url,
                 args.publish,
             )
             write_manifest(args.output, manifest)

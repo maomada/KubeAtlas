@@ -6,6 +6,18 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
+    def test_release_evidence_is_standalone_security_and_approval_is_retained(self):
+        for name in ("release.yml", "release-binaries.yml"):
+            with self.subTest(workflow=name):
+                workflow = (ROOT / ".github/workflows" / name).read_text()
+                self.assertIn("security_url", workflow)
+                self.assertIn("SECURITY_URL", workflow)
+                self.assertIn("security.yml", workflow)
+                self.assertNotIn("codeql", workflow.lower())
+                self.assertIn("name: ghcr-publish", workflow)
+                self.assertEqual(workflow.count("trusted/scripts/release_policy.py"), 2)
+        self.assertTrue((ROOT / ".github/workflows/codeql.yml").exists())
+
     def test_release_is_manual_and_write_permission_is_publish_only(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         self.assertIn("workflow_dispatch:", workflow)

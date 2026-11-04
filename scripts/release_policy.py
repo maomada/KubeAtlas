@@ -9,7 +9,7 @@ import subprocess
 import sys
 
 REPOSITORY = "maomada/KubeAtlas"
-WORKFLOWS = ("ci.yml", "codeql.yml")
+WORKFLOWS = ("ci.yml", "security.yml")
 VERSION = re.compile(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?")
 
 

@@ -60,7 +60,15 @@ python3 scripts/security_scan.py --rules-source /path/to/semgrep-rules --output 
 
 ## Migration state
 
-CodeQL and the release policy are retained during validation of this gate.
-Neither an unavailable CodeQL run nor a passing synthetic detection test alone
-is release authorization. Branch protection must require the actual replacement
-check after validation; a workflow file by itself does not enforce merge rules.
+Release source selection requires successful latest main-push `ci.yml` and
+`security.yml` runs for the exact selected SHA. Missing, failed, skipped,
+cancelled or incomplete runs block release; a PR merge run is not main-push
+evidence. Scanner errors, incomplete coverage and unreviewed findings fail the
+Security workflow before source selection can accept it.
+
+CodeQL configuration and historical eligibility failures remain intact. CodeQL
+is no longer a required release evidence source; that does not reclassify its
+failed runs as successful or imply equivalent coverage. GitHub branch rules
+are separate: this private account cannot enforce its current rulesets, and a
+workflow file alone does not enforce merge policy. Publication approval remains
+independently required; this migration does not configure or bypass it.

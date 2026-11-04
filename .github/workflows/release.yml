@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       source_sha:
-        description: Full lowercase commit SHA on main with successful CI and CodeQL
+        description: Full lowercase commit SHA on main with successful CI and Semgrep CE
         required: true
         type: string
       version:
@@ -51,7 +51,7 @@ jobs:
       source_sha: ${{ steps.policy.outputs.source_sha }}
       version: ${{ steps.policy.outputs.version }}
       ci_url: ${{ steps.policy.outputs.ci_url }}
-      codeql_url: ${{ steps.policy.outputs.codeql_url }}
+      security_url: ${{ steps.policy.outputs.security_url }}
     steps:
       - name: Check out trusted release policy
         uses: actions/checkout@v7
@@ -71,7 +71,7 @@ jobs:
       - name: Fetch main for ancestry validation
         run: git -C source fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
 
-      - name: Validate source, version, ancestry, CI, and CodeQL
+      - name: Validate source, version, ancestry, CI, and Semgrep CE
         id: policy
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -94,7 +94,7 @@ jobs:
               "source_sha": evidence["sourceSha"],
               "version": evidence["version"],
               "ci_url": evidence["checks"]["ci.yml"],
-              "codeql_url": evidence["checks"]["codeql.yml"],
+              "security_url": evidence["checks"]["security.yml"],
           }
           with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as destination:
               for name, value in outputs.items():
@@ -104,7 +104,7 @@ jobs:
               summary.write(f"- Source: `{evidence['sourceSha']}`\n")
               summary.write(f"- Version: `{evidence['version']}`\n")
               summary.write(f"- CI: [{evidence['checks']['ci.yml']}]({evidence['checks']['ci.yml']})\n")
-              summary.write(f"- CodeQL: [{evidence['checks']['codeql.yml']}]({evidence['checks']['codeql.yml']})\n")
+              summary.write(f"- Semgrep CE: [{evidence['checks']['security.yml']}]({evidence['checks']['security.yml']})\n")
           PY
 
   build-images:
@@ -251,14 +251,14 @@ jobs:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
           CI_URL: ${{ needs.validate.outputs.ci_url }}
-          CODEQL_URL: ${{ needs.validate.outputs.codeql_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
         run: |
           python3 trusted/scripts/release_manifest.py create \
             --artifact-root "$ARTIFACT_ROOT" \
             --source-sha "$SOURCE_SHA" --version "$RELEASE_VERSION" \
             --actor "$GITHUB_ACTOR" --run-id "$GITHUB_RUN_ID" \
             --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --ci-url "$CI_URL" --codeql-url "$CODEQL_URL" \
+            --ci-url "$CI_URL" --security-url "$SECURITY_URL" \
             --output "$MANIFEST"
           python3 trusted/scripts/release_manifest.py summary --manifest "$MANIFEST" >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
@@ -309,14 +309,14 @@ jobs:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
           CI_URL: ${{ needs.validate.outputs.ci_url }}
-          CODEQL_URL: ${{ needs.validate.outputs.codeql_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
         run: |
           python3 trusted/scripts/release_manifest.py create \
             --artifact-root "$ARTIFACT_ROOT" \
             --source-sha "$SOURCE_SHA" --version "$RELEASE_VERSION" \
             --actor "$GITHUB_ACTOR" --run-id "$GITHUB_RUN_ID" \
             --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
-            --ci-url "$CI_URL" --codeql-url "$CODEQL_URL" --publish \
+            --ci-url "$CI_URL" --security-url "$SECURITY_URL" --publish \
             --output "$MANIFEST"
       - name: Install skopeo
         run: |
@@ -341,7 +341,7 @@ jobs:
           python3 trusted/scripts/release_policy.py \
             --source-dir source --sha "$SOURCE_SHA" --version "$RELEASE_VERSION" \
             > "$RUNNER_TEMP/source-evidence.json"
-      - name: Update manifest with final CI and CodeQL evidence
+      - name: Update manifest with final CI and Semgrep CE evidence
         if: ${{ steps.revalidate.outcome == 'success' }}
         env:
           MANIFEST: ${{ runner.temp }}/release-manifest.json
@@ -355,7 +355,7 @@ jobs:
           evidence = json.load(open(evidence_path, encoding="utf-8"))
           manifest["checks"] = {
               "ci": evidence["checks"]["ci.yml"],
-              "codeql": evidence["checks"]["codeql.yml"],
+              "security": evidence["checks"]["security.yml"],
           }
           with open(manifest_path, "w", encoding="utf-8") as destination:
               json.dump(manifest, destination, indent=2, sort_keys=True)
