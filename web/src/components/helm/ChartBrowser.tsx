@@ -92,9 +92,9 @@ export function ChartBrowser({ onChartSelect }: ChartBrowserProps) {
       for (const repo of repositories) {
         try {
           await updateRepoSilentMutation.mutateAsync(repo.name)
-        } catch (err) {
+        } catch {
           failed.push(repo.name)
-          console.warn(`helm repo update failed for "${repo.name}":`, err)
+          console.warn('Helm repository update failed')
         }
       }
     } finally {

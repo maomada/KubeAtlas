@@ -34,6 +34,14 @@ and allow the emitted same-origin Worker asset in CSP (`worker-src 'self'`).
 Workers are local assets, not CDN dependencies. The log viewer keeps literal
 rendering synchronous and uses Worker results for regex highlighting.
 
+## Cluster navigation
+
+`ClusterSwitcherItem.href` accepts HTTP(S) and relative navigation targets.
+Executable schemes, malformed URLs and embedded credentials are rejected with
+an inline error, without invoking `onSelect`. Cross-origin HTTP(S) links remain
+supported for explicit cluster selection; hosts must only supply trusted cluster
+destinations. This component is not an automatic redirect endpoint.
+
 ## Toast updates
 
 `useToast().showToast(message, { id })` updates an existing toast with that ID
