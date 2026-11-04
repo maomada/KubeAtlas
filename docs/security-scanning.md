@@ -29,7 +29,10 @@ code, `cmd/testserver`, `testdata`, dependencies, generated Wails bindings,
 type declarations and built `dist` assets are outside this SAST scope. The
 selector is in `scripts/security_scan.py`; normal tests still run in CI.
 
-All findings block, irrespective of severity. Scanner/config/parse errors,
+All unreviewed findings block, irrespective of severity. Exact-source reviewed
+false positives and verified mitigations are separately recorded under
+`docs/security-dispositions.md`; the original scan is never filtered.
+Scanner/config/parse errors,
 missing or changed rules, incomplete file coverage, and empty scans also block.
 The job exercises a clean canary and deliberately unsafe Go/JS/TS fixtures;
 these are synthetic detection tests, not real-cluster or product acceptance.
@@ -38,8 +41,9 @@ JSON findings and exact source/rules provenance remain available on failure.
 This is **not CodeQL-equivalent coverage**: Community Edition lacks CodeQL's
 whole-program analysis and the paid Semgrep cross-file engine. This gate does
 not scan dependencies, secrets/history, runtime RBAC, or Helm configuration.
-Dependabot and existing tests remain separate. Passing means no findings from
-these pinned rules on this scope, not that the application is vulnerability-free.
+Dependabot and existing tests remain separate. Passing means complete scanning
+and no unresolved findings from these pinned rules on this scope, not that raw
+findings are absent or that the application is vulnerability-free.
 
 ## Local reproduction
 

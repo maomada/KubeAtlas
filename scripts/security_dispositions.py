@@ -36,7 +36,7 @@ def evaluate(report, policy, root, targets, engine, lock_hash):
         if entry["id"] in ids:
             raise ValueError("Duplicate disposition ID")
         ids.add(entry["id"])
-        if entry["disposition"] not in ("false-positive", "hold"):
+        if entry["disposition"] not in ("false-positive", "mitigated", "hold"):
             raise ValueError("Unknown disposition")
         if not entry["evidence"].strip() or not entry["reviewedSourceSha"].strip():
             raise ValueError("Disposition evidence missing")
@@ -57,7 +57,8 @@ def evaluate(report, policy, root, targets, engine, lock_hash):
         record = {"rule": key[0], "path": key[1], "start": item["start"], "end": item["end"]}
         if entry:
             record["id"] = entry["id"]
-        if entry and entry["disposition"] == "false-positive":
+            record["disposition"] = entry["disposition"]
+        if entry and entry["disposition"] in ("false-positive", "mitigated"):
             approved.append(record)
         else:
             unresolved.append(record)

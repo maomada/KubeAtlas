@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
   "engine": "1.180.0",
-  "sourceSha": "7e6bed921fece69b38e8ef6a0f4a26154557ba63",
-  "sourceTreeSha256": "0f2e4407f9baff8deb90f6d5ec4dc903553b0b2f14e254c9d217649bcbf4e90a",
+  "sourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+  "sourceTreeSha256": "f0d9c3270c3519085e9f2cb0fd40e36b1c525b901b0fb96a144f1be4d373b2d0",
   "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
-  "rawFindingsSha256": "6d2b36e7bd5348f67fbe3ecc9d6e1e8e08100b308ca30ba065f2afcc1879a997",
+  "rawFindingsSha256": "f3af6fd39b5e99e4c5a223ad90a6ec9764cf84686d3e32f38dd0f0cdbbf090a1",
   "entries": [
     {
       "id": "SAST-001",
@@ -30,7 +30,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-002",
@@ -56,7 +57,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-003",
@@ -82,7 +84,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-004",
@@ -108,7 +111,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-005",
@@ -134,7 +138,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-006",
@@ -160,7 +165,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-007",
@@ -186,7 +192,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-008",
@@ -212,7 +219,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-009",
@@ -238,7 +246,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-010",
@@ -264,7 +273,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-011",
@@ -290,7 +300,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-012",
@@ -316,7 +327,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-013",
@@ -342,7 +354,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-014",
@@ -368,7 +381,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-019",
@@ -394,7 +408,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-020",
@@ -420,7 +435,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-021",
@@ -446,7 +462,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-022",
@@ -472,7 +489,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-023",
@@ -498,7 +516,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-024",
@@ -524,7 +543,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-025",
@@ -550,7 +570,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-026",
@@ -576,7 +597,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-027",
@@ -602,7 +624,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-028",
@@ -628,7 +651,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-029",
@@ -654,7 +678,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-030",
@@ -680,7 +705,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-031",
@@ -706,7 +732,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-032",
@@ -732,7 +759,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-033",
@@ -758,7 +786,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-034",
@@ -784,7 +813,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-035",
@@ -810,7 +840,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-036",
@@ -836,7 +867,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-037",
@@ -862,7 +894,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-038",
@@ -888,7 +921,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-039",
@@ -914,7 +948,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-040",
@@ -940,7 +975,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-041",
@@ -966,7 +1002,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-043",
@@ -992,7 +1029,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-044",
@@ -1018,7 +1056,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-045",
@@ -1044,7 +1083,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-046",
@@ -1070,7 +1110,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-047",
@@ -1096,7 +1137,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-048",
@@ -1122,7 +1164,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-049",
@@ -1148,7 +1191,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-050",
@@ -1174,7 +1218,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-051",
@@ -1200,7 +1245,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-052",
@@ -1226,7 +1272,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-053",
@@ -1252,7 +1299,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-054",
@@ -1278,7 +1326,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-055",
@@ -1304,7 +1353,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-056",
@@ -1330,7 +1380,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-057",
@@ -1356,7 +1407,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-058",
@@ -1382,7 +1434,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-059",
@@ -1408,7 +1461,66 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-060",
+      "finding": {
+        "check_id": "rules.go.lang.security.potential-dos-via-decompression-bomb",
+        "path": "internal/updater/extract_zip.go",
+        "start": {
+          "line": 61,
+          "col": 13,
+          "offset": 1370
+        },
+        "end": {
+          "line": 61,
+          "col": 62,
+          "offset": 1419
+        }
+      },
+      "disposition": "mitigated",
+      "evidence": "Original unbounded extraction was a real risk, not a historical false positive. extractZip now calls extractZipWithLimit with a 1GiB aggregate budget. Each file checks UncompressedSize64 against remaining, actual reads use io.LimitReader(remaining+1), excess removes the current file and errors, and remaining is decremented across entries. Exact/oversize/aggregate/traversal synthetic ZIP tests passed on unchanged Go source at 0d76e0a. Scope: extracted bytes, not arbitrary archive CPU/file-count exhaustion or real updater acceptance.",
+      "approval": {
+        "approved": true,
+        "actor": "Devin",
+        "date": "2026-11-04",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "delegationMessageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
+      },
+      "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-061",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.js-open-redirect-from-function",
+        "path": "packages/k8s-ui/src/components/cluster-switcher/ClusterSwitcher.tsx",
+        "start": {
+          "line": 197,
+          "col": 30,
+          "offset": 6997
+        },
+        "end": {
+          "line": 197,
+          "col": 36,
+          "offset": 7003
+        }
+      },
+      "disposition": "mitigated",
+      "evidence": "Public href scheme risk fixed: resolveNavigationUrl parses against the current HTTP(S) page, allowlists http:/https:, rejects credentials and malformed URLs, and returns only the normalized URL. Invalid links show an inline error without navigation or callback. Cross-origin destinations intentionally remain available on explicit cluster selection; hosts must supply trusted destinations, not untrusted redirect parameters. Native Chrome at 7c2a68f rejected javascript/data/credentials with unchanged location, no callback/payload execution; relative navigation succeeded. This is not an allowlist of all external hosts.",
+      "approval": {
+        "approved": true,
+        "actor": "Devin",
+        "date": "2026-11-04",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "delegationMessageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
+      },
+      "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-062",
@@ -1434,7 +1546,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-063",
@@ -1460,7 +1573,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-064",
@@ -1486,7 +1600,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-065",
@@ -1512,7 +1627,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-067",
@@ -1538,7 +1654,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-068",
@@ -1564,7 +1681,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-069",
@@ -1590,7 +1708,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-070",
@@ -1616,7 +1735,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-071",
@@ -1642,7 +1762,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-072",
@@ -1668,7 +1789,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-073",
@@ -1694,7 +1816,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-074",
@@ -1720,7 +1843,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-075",
@@ -1746,7 +1870,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-076",
@@ -1772,7 +1897,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-077",
@@ -1798,7 +1924,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-078",
@@ -1824,7 +1951,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-079",
@@ -1850,7 +1978,37 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
+    },
+    {
+      "id": "SAST-081",
+      "finding": {
+        "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+        "path": "packages/k8s-ui/src/utils/log-format.ts",
+        "start": {
+          "line": 126,
+          "col": 17,
+          "offset": 3885
+        },
+        "end": {
+          "line": 126,
+          "col": 50,
+          "offset": 3918
+        }
+      },
+      "disposition": "false-positive",
+      "evidence": "Current hit is literal-only highlightLiteralSearchMatches: query passes escapeHtml then escapeRegExp escaping all ECMAScript regex metacharacters before a fixed capturing group and fixed g/gi flags. There is no raw user-regex branch here. Arbitrary regex uses asynchronous Worker ranges instead. Focused literal/escaping tests passed on unchanged source at 0d76e0a; native Chrome verified escaped HTML remains text at 7c2a68f. Does not waive input-size costs or classify the removed unsafe synchronous API as a false positive.",
+      "approval": {
+        "approved": true,
+        "actor": "Devin",
+        "date": "2026-11-04",
+        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+        "delegationMessageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
+      },
+      "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-082",
@@ -1876,7 +2034,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-083",
@@ -1902,7 +2061,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-084",
@@ -1928,7 +2088,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-085",
@@ -1954,7 +2115,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-086",
@@ -1980,7 +2142,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-087",
@@ -2006,7 +2169,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-088",
@@ -2032,7 +2196,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-089",
@@ -2058,7 +2223,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-090",
@@ -2084,7 +2250,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-091",
@@ -2110,7 +2277,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-094",
@@ -2136,7 +2304,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-095",
@@ -2162,7 +2331,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-096",
@@ -2188,7 +2358,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-097",
@@ -2214,7 +2385,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-098",
@@ -2240,7 +2412,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-099",
@@ -2266,7 +2439,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-100",
@@ -2292,7 +2466,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-101",
@@ -2318,7 +2493,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-102",
@@ -2344,7 +2520,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-103",
@@ -2370,7 +2547,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-104",
@@ -2396,7 +2574,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-105",
@@ -2422,7 +2601,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-107",
@@ -2448,7 +2628,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-108",
@@ -2474,7 +2655,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-109",
@@ -2500,7 +2682,8 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     },
     {
       "id": "SAST-110",
@@ -2509,25 +2692,41 @@
         "path": "packages/k8s-ui/src/components/logs/logSearchCore.ts",
         "start": {
           "line": 17,
-          "col": 17
+          "col": 17,
+          "offset": 483
         },
         "end": {
           "line": 17,
-          "col": 64
+          "col": 64,
+          "offset": 530
         }
       },
-      "reviewedSourceSha": "cdc2cb1e204d78c741e06b0b53395cde9c52cc24",
-      "evidence": "用户正则 query 进入 new RegExp 并执行 exec，但产品运行时只有 logSearch.worker.ts 导入并调用该函数；hook 只导入类型。主线程通过独立 Worker、请求标识、2秒定时终止和取消处理结果；流更新不重置期限，错误对同一查询保持。每行最多1000段、每请求最多100000段，超限明确失败而非截断。生命周期用 fake Worker 单测验证，原生浏览器/CSP运行尚未验收；仅建议按这个隔离边界审查，不宣称正则自身线性或所有调用安全。 当前异步库API也使用同一Worker资产及range转义路径；fake Worker测试不是原生浏览器验收。仍未获逐项确认。",
+      "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "evidence": "User regex remains potentially superlinear; this is an isolation mitigation, not a claim of safe regex complexity. Only logSearch.worker.ts imports searchLogLines at runtime; viewer/library use module Workers with 2s termination and cancellation, no synchronous fallback. Main-thread syntax prevalidation was removed. Ranges cap at 1000/line and 100000/request with explicit error. Native Chrome production-bundled fixture harness at 7c2a68f verified real Worker asset, catastrophic timeout with responsive UI, query/Escape/API abort and recovery, streaming fixed deadline, range error, HTML escaping, worker-src self success and none explicit rejection. Scope: this browser/worker boundary, not real-cluster integration or direct hypothetical imports of the core. Evidence: https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37?testRecording=63c031fe-94cc-4978-a927-f1577df0fd51; Worker SHA256 8557869ab62fc96f61787d8fa79287b4180088c8e1eac63413edea4a0524b408",
       "approval": {
         "approved": true,
-        "actor": "maomada",
-        "date": "2026-11-03",
+        "actor": "Devin",
+        "date": "2026-11-04",
         "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
-        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
-        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+        "delegationMessageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+        "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
       },
-      "disposition": "hold",
-      "holdReason": "Native browser Worker isolation evidence is still missing; user approval is recorded but does not waive the technical verification gap."
+      "disposition": "mitigated",
+      "holdReason": "Native browser Worker isolation evidence is still missing; user approval is recorded but does not waive the technical verification gap.",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+      "previousReview": {
+        "disposition": "hold",
+        "evidence": "用户正则 query 进入 new RegExp 并执行 exec，但产品运行时只有 logSearch.worker.ts 导入并调用该函数；hook 只导入类型。主线程通过独立 Worker、请求标识、2秒定时终止和取消处理结果；流更新不重置期限，错误对同一查询保持。每行最多1000段、每请求最多100000段，超限明确失败而非截断。生命周期用 fake Worker 单测验证，原生浏览器/CSP运行尚未验收；仅建议按这个隔离边界审查，不宣称正则自身线性或所有调用安全。 当前异步库API也使用同一Worker资产及range转义路径；fake Worker测试不是原生浏览器验收。仍未获逐项确认。",
+        "approval": {
+          "approved": true,
+          "actor": "maomada",
+          "date": "2026-11-03",
+          "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+          "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+          "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+        },
+        "reviewedSourceSha": "cdc2cb1e204d78c741e06b0b53395cde9c52cc24"
+      }
     },
     {
       "id": "SAST-111",
@@ -2553,7 +2752,19 @@
         "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
-      "disposition": "false-positive"
+      "disposition": "false-positive",
+      "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b"
     }
-  ]
+  ],
+  "previousReview": {
+    "sourceSha": "7e6bed921fece69b38e8ef6a0f4a26154557ba63",
+    "sourceTreeSha256": "0f2e4407f9baff8deb90f6d5ec4dc903553b0b2f14e254c9d217649bcbf4e90a",
+    "rawFindingsSha256": "6d2b36e7bd5348f67fbe3ecc9d6e1e8e08100b308ca30ba065f2afcc1879a997"
+  },
+  "revalidation": {
+    "sourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+    "actor": "Devin",
+    "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+    "evidence": "Reviewed complete 8bb96ff..7c2a68f diff and exact raw identities. Existing 97 approved findings and their source files are unchanged; changed production files contain none of those entries. Retained original approval/evidence and added explicit revalidation SHA. No rule or scanner changes. SAST-066 and SAST-106 no longer occur after fixed sanitized warning strings; original raw reports and historical ledger retained."
+  }
 }

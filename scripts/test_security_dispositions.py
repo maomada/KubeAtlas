@@ -43,6 +43,15 @@ class DispositionTests(unittest.TestCase):
         self.entry["disposition"] = "hold"
         self.assertFalse(self.evaluate()["passed"])
 
+    def test_mitigated_finding_retains_classification_and_requires_evidence(self):
+        self.entry["disposition"] = "mitigated"
+        result = self.evaluate()
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["approved"][0]["disposition"], "mitigated")
+        self.entry["evidence"] = ""
+        with self.assertRaises(ValueError):
+            self.evaluate()
+
     def test_source_and_rule_changes_require_new_review(self):
         for field in ("engine", "rulesLockSha256", "sourceTreeSha256"):
             with self.subTest(field=field):
