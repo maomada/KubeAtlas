@@ -167,18 +167,6 @@ export function useLogSearch(
     const criteriaMatches = sameCriteria(snapshot.criteria, criteria)
     if (criteriaMatches && (snapshot.error || snapshot.entries === entries)) return
 
-    try {
-      new RegExp(query, isCaseSensitive ? 'g' : 'gi')
-    } catch (error) {
-      setSnapshot({
-        criteria,
-        entries,
-        result: EMPTY_RESULT,
-        error: error instanceof Error ? error.message : 'Invalid regex',
-      })
-      return
-    }
-
     let worker: LogSearchWorker
     try {
       worker = workerFactory()

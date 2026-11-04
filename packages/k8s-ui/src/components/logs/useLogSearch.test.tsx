@@ -24,6 +24,11 @@ class FakeWorker implements LogSearchWorker {
     if (!this.message) throw new Error('worker was not called')
     this.onmessage?.({ data: { id: this.message.id, result } } as MessageEvent<LogSearchWorkerResponse>)
   }
+
+  reject(error: string) {
+    if (!this.message) throw new Error('worker was not called')
+    this.onmessage?.({ data: { id: this.message.id, error } } as MessageEvent<LogSearchWorkerResponse>)
+  }
 }
 
 const entries: LogEntry[] = [
@@ -155,14 +160,16 @@ describe('regex search worker lifecycle', () => {
   })
 
   it('keeps invalid-regex errors and refuses environments without workers', async () => {
-    const factory = vi.fn(() => new FakeWorker())
+    const worker = new FakeWorker()
+    const factory = vi.fn(() => worker)
     await act(async () => root.render(<Harness workerFactory={factory} />))
     await act(async () => {
       latest.setIsRegex(true)
       latest.setQuery('[')
     })
+    expect(factory).toHaveBeenCalledOnce()
+    await act(async () => worker.reject('Invalid regular expression: /[/: Unterminated character class'))
     expect(latest.regexError).toContain('Invalid regular expression')
-    expect(factory).not.toHaveBeenCalled()
 
     vi.stubGlobal('Worker', undefined)
     await act(async () => root.render(<Harness key="unavailable" />))
