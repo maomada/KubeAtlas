@@ -43,8 +43,10 @@ lost dry-run artifacts requires a fresh dry run and signature.
 
 ## Offline signing key custody
 
-Generate the production key only on the authorized offline LocalHands machine.
-These commands are instructions and were not run in this repository or CI. They
+Generate the production key only on the authorized user-controlled signing
+machine, outside the repository and CI. This separates signing from the
+publisher; it does not imply that a LocalHands-connected machine is air-gapped.
+Run these commands only on that machine, never in this repository or CI. They
 create a new dedicated user-owned directory and fail if that directory already
 exists; do not reuse a directory or overwrite an existing key:
 
@@ -77,14 +79,15 @@ fingerprint with `keyFingerprint` in a dry-run approval. Provision only
 `.github/release-signing-public.pem` through a reviewed commit; the workflow
 loads it from the trusted workflow checkout. Keep the private key and an
 encrypted, offline backup under user control with restricted access. Never put
-the private key in Git, CI, artifacts, workflow inputs, chat, or logs. No
-production key was generated here, and no production public key is currently
-provisioned.
+the private key in Git, CI, artifacts, workflow inputs, chat, or logs. A committed
+public key does not authorize a release by itself; each exact dry run still
+requires a separately reviewed signature.
 
 To approve a reviewed dry run, download `release-approval.json` from its
 `release-approval` artifact and inspect the exact targets, artifact hashes,
 source, version, workflow revision, evidence URLs, fingerprint, and expiry.
-Then sign and locally verify the unchanged manifest bytes:
+Then sign and locally verify the unchanged manifest bytes. The following
+`pkeyutl -rawin` commands require OpenSSL 3 or newer:
 
 ```bash
 key_dir="$HOME/.local/share/kubeatlas-release-signing"
@@ -98,6 +101,42 @@ openssl pkeyutl -verify -rawin -pubin \
   -in release-approval.json -sigfile release-approval.sig
 openssl base64 -A -in release-approval.sig
 ```
+
+On a signing machine with older OpenSSL, an existing Python `cryptography`
+installation with Ed25519 support can sign the same bytes without replacing
+the system OpenSSL. This is an alternative to the commands above, not a second
+signature format; CI still verifies the detached signature with OpenSSL. Do not
+upload the private key or move signing to CI to work around local tooling:
+
+```bash
+python3 - <<'PY'
+import base64
+from pathlib import Path
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+
+key_dir = Path.home() / '.local/share/kubeatlas-release-signing'
+with Path('release-approval.json').open('rb') as source:
+    manifest = source.read(64 * 1024 + 1)
+if not manifest or len(manifest) > 64 * 1024:
+    raise ValueError('Approval manifest is empty or exceeds 64 KiB')
+private_key = serialization.load_pem_private_key(
+    (key_dir / 'release-signing-private.pem').read_bytes(), password=None)
+public_key = serialization.load_pem_public_key(
+    (key_dir / 'release-signing-public.pem').read_bytes())
+if not isinstance(private_key, Ed25519PrivateKey) or not isinstance(public_key, Ed25519PublicKey):
+    raise ValueError('Both keys must be Ed25519')
+signature = private_key.sign(manifest)
+public_key.verify(signature, manifest)
+with Path('release-approval.sig').open('xb') as output:
+    output.write(signature)
+print(base64.b64encode(signature).decode('ascii'))
+PY
+```
+
+The fallback refuses to replace an existing signature. Both signing methods
+assume the manifest has already been reviewed; a successful cryptographic
+self-test is not real-artifact acceptance or release authorization.
 
 Provide the exact dry-run run ID and the resulting single-line base64 signature
 as `build_run_id` and `approval_signature` in a separate `publish=true`
