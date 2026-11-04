@@ -12,10 +12,18 @@ on:
         required: true
         type: string
       publish:
-        description: Publish after the protected environment approval
+        description: Publish using a signed approval from a successful dry run
         required: true
         default: false
         type: boolean
+      build_run_id:
+        description: Successful dry-run workflow run ID for publication
+        required: false
+        type: string
+      approval_signature:
+        description: Base64 Ed25519 signature of release-approval.json
+        required: false
+        type: string
 
 permissions:
   contents: read
@@ -34,9 +42,21 @@ jobs:
         env:
           GH_REPOSITORY: ${{ github.repository }}
           GH_REF: ${{ github.ref }}
+          PUBLISH: ${{ inputs.publish }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          APPROVAL_SIGNATURE: ${{ inputs.approval_signature }}
         run: |
           if [[ "$GH_REPOSITORY" != "maomada/KubeAtlas" || "$GH_REF" != "refs/heads/main" ]]; then
             echo "Release GHCR may only be dispatched from maomada/KubeAtlas on main." >&2
+            exit 1
+          fi
+          if [[ "$PUBLISH" == "true" ]]; then
+            if [[ -z "$BUILD_RUN_ID" || -z "$APPROVAL_SIGNATURE" ]]; then
+              echo "Publishing requires a dry-run ID and offline approval signature." >&2
+              exit 1
+            fi
+          elif [[ -n "$BUILD_RUN_ID" || -n "$APPROVAL_SIGNATURE" ]]; then
+            echo "Dry runs must not include a build run ID or approval signature." >&2
             exit 1
           fi
 
@@ -110,6 +130,7 @@ jobs:
   build-images:
     name: Build ${{ matrix.component }} OCI archive
     needs: validate
+    if: ${{ inputs.publish != true }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -188,6 +209,7 @@ jobs:
   charts:
     name: Package version-aligned Helm charts
     needs: validate
+    if: ${{ inputs.publish != true }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -261,16 +283,71 @@ jobs:
             --ci-url "$CI_URL" --security-url "$SECURITY_URL" \
             --output "$MANIFEST"
           python3 trusted/scripts/release_manifest.py summary --manifest "$MANIFEST" >> "$GITHUB_STEP_SUMMARY"
+      - name: Create offline approval manifest
+        id: create-offline-approval
+        env:
+          ARTIFACT_ROOT: ${{ runner.temp }}/release-artifacts
+          MANIFEST: ${{ runner.temp }}/release-approval.json
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          python3 trusted/scripts/release_approval.py create \
+            --channel ghcr --artifact-root "$ARTIFACT_ROOT" \
+            --source-sha "$SOURCE_SHA" --version "$RELEASE_VERSION" \
+            --ci-url "$CI_URL" --security-url "$SECURITY_URL" \
+            --output "$MANIFEST"
       - uses: actions/upload-artifact@v7
         with:
           name: release-manifest
           path: ${{ runner.temp }}/release-manifest.json
           if-no-files-found: error
           retention-days: 90
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-approval
+          path: ${{ runner.temp }}/release-approval.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Record dry-run provenance status
+        if: always()
+        env:
+          JOB_RESULT: ${{ job.status }}
+          VALIDATION_OUTCOME: ${{ needs.validate.result }}
+          APPROVAL_OUTCOME: ${{ steps.create-offline-approval.outcome }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          status = {
+              "workflowRun": os.environ["GITHUB_SERVER_URL"] + "/" + os.environ["GITHUB_REPOSITORY"] + "/actions/runs/" + os.environ["GITHUB_RUN_ID"],
+              "jobResult": os.environ["JOB_RESULT"],
+              "validation": os.environ["VALIDATION_OUTCOME"],
+              "approval": os.environ.get("APPROVAL_OUTCOME", "skipped"),
+          }
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "dry-run-status.json"), "w", encoding="utf-8") as output:
+              json.dump(status, output, indent=2, sort_keys=True)
+              output.write("\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as summary:
+              summary.write(f"## GHCR dry-run status: {status['jobResult']}\n")
+          PY
+      - name: Upload dry-run provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-dry-run-evidence
+          path: |
+            ${{ runner.temp }}/release-manifest.json
+            ${{ runner.temp }}/release-approval.json
+            ${{ runner.temp }}/dry-run-status.json
+          if-no-files-found: warn
+          retention-days: 90
 
   publish:
     name: Publish owned GHCR images and charts
-    needs: [validate, build-images, charts]
+    needs: validate
     if: ${{ inputs.publish == true }}
     runs-on: ubuntu-latest
     environment:
@@ -298,10 +375,42 @@ jobs:
           pattern: release-image-*
           path: ${{ runner.temp }}/release-artifacts/images
           merge-multiple: false
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
       - uses: actions/download-artifact@v8
         with:
           name: release-charts
           path: ${{ runner.temp }}/release-artifacts/charts
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-approval
+          path: ${{ runner.temp }}/approval
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
+      - name: Verify signed approval before setup or registry login
+        id: approval_first
+        env:
+          APPROVAL_SIGNATURE: ${{ inputs.approval_signature }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          ARTIFACT_ROOT: ${{ runner.temp }}/release-artifacts
+          APPROVAL_MANIFEST: ${{ runner.temp }}/approval/release-approval.json
+          SIGNATURE_EVIDENCE: ${{ runner.temp }}/release-approval.sig
+        run: |
+          python3 trusted/scripts/release_approval.py verify \
+            --channel ghcr --manifest "$APPROVAL_MANIFEST" \
+            --artifact-root "$ARTIFACT_ROOT" --source-sha "$SOURCE_SHA" \
+            --version "$RELEASE_VERSION" --build-run-id "$BUILD_RUN_ID" \
+            --signature-output "$SIGNATURE_EVIDENCE"
       - name: Create release manifest
         env:
           ARTIFACT_ROOT: ${{ runner.temp }}/release-artifacts
@@ -325,12 +434,6 @@ jobs:
       - uses: azure/setup-helm@v5
         with:
           version: v3.19.0
-      - name: Log in to GHCR for image inspection and copies
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Revalidate source after environment approval
         id: revalidate
         env:
@@ -361,6 +464,12 @@ jobs:
               json.dump(manifest, destination, indent=2, sort_keys=True)
               destination.write("\n")
           PY
+      - name: Log in to GHCR for image inspection and copies
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Check all four target refs before any push
         id: preflight
         env:
@@ -374,6 +483,23 @@ jobs:
           fi
           python3 trusted/scripts/release_manifest.py preflight \
             --manifest "$RUNNER_TEMP/release-manifest.json" --status passed
+      - name: Reverify offline approval immediately before publication
+        id: approval_second
+        env:
+          APPROVAL_SIGNATURE: ${{ inputs.approval_signature }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+          ARTIFACT_ROOT: ${{ runner.temp }}/release-artifacts
+          APPROVAL_MANIFEST: ${{ runner.temp }}/approval/release-approval.json
+        run: |
+          python3 trusted/scripts/release_approval.py verify \
+            --channel ghcr --manifest "$APPROVAL_MANIFEST" \
+            --artifact-root "$ARTIFACT_ROOT" --source-sha "$SOURCE_SHA" \
+            --version "$RELEASE_VERSION" --build-run-id "$BUILD_RUN_ID"
       - name: Copy KubeAtlas image archive to GHCR
         id: push-radar
         env:
@@ -464,5 +590,35 @@ jobs:
         with:
           name: release-manifest
           path: ${{ runner.temp }}/release-manifest.json
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Record approval gate status
+        if: always()
+        env:
+          FIRST_GATE: ${{ steps.approval_first.outcome }}
+          SECOND_GATE: ${{ steps.approval_second.outcome }}
+          JOB_RESULT: ${{ job.status }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          status = {
+              "firstGate": os.environ.get("FIRST_GATE", "skipped"),
+              "secondGate": os.environ.get("SECOND_GATE", "skipped"),
+              "jobResult": os.environ["JOB_RESULT"],
+          }
+          path = os.path.join(os.environ["RUNNER_TEMP"], "approval-gate-status.json")
+          with open(path, "w", encoding="utf-8") as output:
+              json.dump(status, output, indent=2, sort_keys=True)
+              output.write("\n")
+          PY
+      - name: Upload approval verification evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-approval-evidence
+          path: |
+            ${{ runner.temp }}/approval/release-approval.json
+            ${{ runner.temp }}/release-approval.sig
+            ${{ runner.temp }}/approval-gate-status.json
           if-no-files-found: warn
           retention-days: 90

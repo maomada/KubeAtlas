@@ -1,12 +1,18 @@
 # KubeAtlas binary packages
 
-The binary distribution contains two independent components:
+The full GoReleaser build validates 15 artifacts for two independent
+components:
 
-- `kubeatlas` — Linux and macOS archives for amd64 and arm64, plus a Windows
-  amd64 archive. Linux amd64 and arm64 DEB and RPM packages install
-  `/usr/bin/kubeatlas`.
-- `kubeatlas-portal` — Linux archives and DEB/RPM packages for amd64 and arm64.
-  Packages install `/usr/bin/kubeatlas-portal`.
+- `kubeatlas` — Linux and macOS archives for amd64 and arm64, a Windows amd64
+  archive, and Linux amd64/arm64 DEB and RPM packages.
+- `kubeatlas-portal` — Linux archives and Linux amd64/arm64 DEB and RPM
+  packages.
+
+The separate GitHub Release publication profile, when authorized, contains
+only eight Linux DEB/RPM packages (four for each component) and the KubeAtlas
+Windows amd64 ZIP. It does not publish Linux or macOS tar archives, macOS
+packages, or a Portal Windows binary. The full 15-artifact build remains
+validation and diagnostic evidence.
 
 Packages also install `LICENSE`, `NOTICE`, `README.md`, and this document
 under `/usr/share/doc/<component>`. Installation does not create users,
@@ -29,7 +35,8 @@ sudo rpm -i ./kubeatlas_VERSION_linux_amd64.rpm
 sudo rpm -i ./kubeatlas-portal_VERSION_linux_amd64.rpm
 ```
 
-For an archive, unpack it and install the requested binary manually:
+For a locally built archive that is not part of the GitHub Release selection,
+unpack it and install the requested binary manually:
 
 ```sh
 tar -xzf kubeatlas_vVERSION_linux_amd64.tar.gz
@@ -55,8 +62,17 @@ checksum to its component, platform, architecture, version, source commit, and
 build evidence URLs.
 
 GitHub Release binaries are a separate distribution channel from KubeAtlas
-GHCR images and charts. A future binary release requires the manually
-dispatched `Release Binaries` workflow, successful main CI and Semgrep CE for the
-selected source SHA, and approval of the protected `ghcr-publish` environment.
-The environment is shared with the broader distribution controls; it does not
-grant builds registry credentials. `publish=false` performs a no-write dry run.
+GHCR images and charts. The manually dispatched `Release Binaries` workflow
+requires successful main CI and Semgrep CE for the selected source SHA, a
+successful dry run including native Windows ZIP smoke, and a valid offline
+Ed25519 signature over the exact `release-approval.json` bytes. The approval
+binds the workflow revision, source/version, dry-run run, selected targets, and
+artifact hashes and expires within seven days. The workflow revalidates policy,
+artifacts, and tag/release collisions before writes. The `ghcr-publish`
+environment remains defense in depth; its name alone does not enforce review.
+
+Only the trusted workflow checkout's `.github/release-signing-public.pem` is
+used for verification. The private key stays outside GitHub and this
+repository. Until the authorized production public key is provisioned, the
+workflow blocks approval creation and publication. No release or package is
+published by the implementation change.

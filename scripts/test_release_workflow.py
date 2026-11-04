@@ -18,6 +18,53 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 self.assertEqual(workflow.count("trusted/scripts/release_policy.py"), 2)
         self.assertTrue((ROOT / ".github/workflows/codeql.yml").exists())
 
+    def test_offline_approval_binds_prior_dry_run_and_gates_both_workflows(self):
+        for name, first_write in (
+            ("release.yml", "skopeo copy --all --preserve-digests"),
+            ("release-binaries.yml", "Atomically create tag ref"),
+        ):
+            with self.subTest(workflow=name):
+                workflow = (ROOT / ".github/workflows" / name).read_text()
+                self.assertIn("build_run_id:", workflow)
+                self.assertIn("approval_signature:", workflow)
+                self.assertIn("release_approval.py create", workflow)
+                self.assertEqual(workflow.count("release_approval.py verify"), 2)
+                self.assertIn("name: release-approval", workflow)
+                publish = workflow.split("\n  publish:\n", 1)[1]
+                self.assertIn("needs: validate", publish)
+                self.assertNotIn("needs: [validate, build", publish)
+                self.assertIn("run-id: ${{ inputs.build_run_id }}", publish)
+                self.assertIn("github-token: ${{ secrets.GITHUB_TOKEN }}", publish)
+                self.assertIn("repository: maomada/KubeAtlas", publish)
+                self.assertLess(publish.index("Verify signed approval"), publish.index(first_write))
+                self.assertLess(
+                    publish.index("Reverify offline approval immediately before publication"),
+                    publish.index(first_write),
+                )
+                self.assertIn("if: always()", publish)
+                self.assertIn("if-no-files-found: warn", publish)
+
+    def test_binary_local_publication_profile_and_native_windows_smoke_gate_approval(self):
+        workflow = (ROOT / ".github/workflows/release-binaries.yml").read_text()
+        build = workflow.split("\n  build:\n", 1)[1].split("\n  windows-smoke:\n", 1)[0]
+        smoke = workflow.split("\n  windows-smoke:\n", 1)[1].split("\n  dry-run:\n", 1)[0]
+        dry_run = workflow.split("\n  dry-run:\n", 1)[1].split("\n  publish:\n", 1)[0]
+        publish = workflow.split("\n  publish:\n", 1)[1]
+        self.assertIn("if: ${{ inputs.publish != true }}", build)
+        self.assertIn("release_artifacts.py stage-local", build)
+        self.assertIn("name: kubeatlas-binary-release", build)
+        self.assertIn("name: kubeatlas-binary-publication", build)
+        self.assertIn("runs-on: windows-latest", smoke)
+        self.assertIn("release_windows_smoke.py", smoke)
+        self.assertIn("--version", (ROOT / "scripts/release_windows_smoke.py").read_text())
+        self.assertIn("--help", (ROOT / "scripts/release_windows_smoke.py").read_text())
+        self.assertIn("needs: [validate, build, windows-smoke]", dry_run)
+        self.assertIn("validate --profile local", dry_run)
+        self.assertIn("--channel binaries", dry_run)
+        self.assertIn("kubeatlas-binary-publication", publish)
+        self.assertIn("release-approval", publish)
+        self.assertNotIn("name: kubeatlas-binary-release\n", publish)
+
     def test_release_is_manual_and_write_permission_is_publish_only(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         self.assertIn("workflow_dispatch:", workflow)

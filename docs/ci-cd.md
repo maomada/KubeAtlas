@@ -14,28 +14,59 @@ its prior eligibility failures are retained, but no longer satisfy or block
 this release source-selection check. Semgrep CE is not CodeQL-equivalent
 coverage; see [Standalone security scanning](security-scanning.md).
 
-The private account currently cannot enforce the intended protected-environment
-approval. Do not dispatch publication until its separately reviewed replacement
-is implemented and validated. This source-selection migration neither removes
-the environment requirement nor claims that a named environment enforces review.
+Both release workflows use an offline Ed25519 approval in addition to the
+current source, ancestry, CI, Semgrep CE, artifact, and collision checks. A
+`publish=false` dispatch validates and builds immutable dry-run artifacts,
+then emits `release-approval.json`; it does not publish. Review the release
+manifest, exact artifact inventory, checksums, build metadata, and CI/Semgrep CE
+evidence before signing. Binary approval additionally requires the native
+`windows-latest` smoke of the actual Windows ZIP; that job checks its manifest
+hash, safely extracts it, and runs `kubeatlas.exe --version` and `--help` with
+checked exit codes. It does not configure kubeconfig or claim a cluster test.
 
-Run once with `publish=false` first. It builds each multi-platform image into
-an OCI archive and packages both charts using matching `version`, `appVersion`,
-image repositories, and image tags. The dry run proves neither GHCR
-permissions nor collision checks nor a successful registry push. Review the
-manifest artifact, archive checksums, build digests, chart checksums, and CI /
-Semgrep CE links before a separate explicit dispatch with `publish=true`.
+The approval binds the repository, action, channel, selected source and version,
+workflow path and SHA, dry-run run ID and attempt, CI/Semgrep CE run URLs,
+targets, key fingerprint, expiry, and every artifact's path, size, and SHA-256.
+The detached signature covers the exact JSON bytes. Do not edit or reformat the
+downloaded manifest before signing. The approval expires within seven days;
+publication rejects workflow reruns and verifies the signed dry-run run using a
+read-only GitHub Actions API query. The publication workflow downloads only the
+fixed artifact names from that exact run and never rebuilds after signing.
+
+To sign on the authorized offline machine, download `release-approval.json`
+from the dry-run's `release-approval` artifact, inspect it, and run:
+
+```sh
+openssl pkeyutl -sign -rawin \
+  -inkey /secure/path/release-signing-private.pem \
+  -in release-approval.json -out release-approval.sig
+openssl base64 -A -in release-approval.sig
+```
+
+Provide the exact dry-run run ID and the resulting single-line base64 signature
+as `build_run_id` and `approval_signature` in a separate `publish=true`
+dispatch. A dry-run must omit both inputs. Do not place the private key in this
+repository, workflow inputs, runner environment, or logs. Only
+`.github/release-signing-public.pem` from the trusted workflow checkout is used
+to verify approvals; an absent or invalid production key blocks approval
+creation/publication. No production public key is currently provisioned, so
+the workflows remain fail-closed until the authorized public key is installed.
+
+The approval signature is an application-level gate, not a claim that the
+`ghcr-publish` environment enforces review. Repository/workflow administrators
+can alter trusted workflow code or key configuration, and registry/release
+administrators can make independent changes; those administrators remain
+trusted. Keep deployment-branch restrictions and any environment protection
+as defense in depth, but do not treat the environment name as signature
+verification.
 
 The publish job uses the `ghcr-publish` environment and `GITHUB_TOKEN` with
 `packages:write`; builds have no registry login or package-write permission.
-The environment name alone does **not** enforce approval. A repository
-maintainer must configure required reviewers and restrict deployment branches
-to `main` in repository settings before enabling publication. GHCR can
+The environment name alone does **not** enforce approval. GHCR can
 automatically associate newly created packages with this repository when the
 first publication uses `GITHUB_TOKEN`. Existing packages must grant this
-repository Actions access. Review the intended package visibility and access
-policy before publishing; neither environment protection nor package
-visibility was configured by this change.
+repository Actions access. Review package visibility and access policy before
+any authorized publication; no registry publication is part of this change.
 
 Images:
 
@@ -65,12 +96,17 @@ For private GHCR images used by Portal, have the cluster operator provision that
 ServiceAccount's `imagePullSecrets` before installation. Do not assume packages
 are public.
 
-Before any write, the workflow inspects all four versioned refs and blocks if
-one exists or if absence cannot be established. Images are copied from the
-exact archives built earlier; charts are pushed only after both image copies
-succeed. The release manifest records source SHA, version, CI/Semgrep CE evidence,
-actor, workflow run, archive checksums, build digests, and final registry
-digests where known.
+The signature and exact artifact inventory are verified before registry login.
+After source-policy, artifact, and registry-collision checks, the signature,
+dry-run provenance, and inventory are verified again immediately before the
+first push. The workflow inspects all four versioned refs and blocks if one
+exists or if absence cannot be established. Images are copied from the exact
+archives built earlier; charts are pushed only after both image copies succeed.
+The release manifest records source SHA, version, CI/Semgrep CE evidence, actor,
+workflow run, archive checksums, build digests, and final registry digests where
+known. OCI/chart dry-run artifacts are retained for 14 days; approval and
+provenance artifacts are retained for 90 days, but the signed approval itself
+is valid for at most seven days.
 
 A registry can fail after some artifacts have been written. The workflow does
 not delete, retry, or overwrite artifacts. If a push is partial or its result
@@ -101,15 +137,26 @@ It checks main ancestry and exact-SHA CI and Semgrep CE evidence before building
 Builds use trusted release tooling checked out separately from the selected
 source, have read-only permissions, and never log in to a registry.
 
-With `publish=true`, the protected `ghcr-publish` environment is required. The
-publisher downloads already-validated artifacts rather than rebuilding them,
-revalidates policy and hashes, and fails closed unless both versioned tag and
-GitHub Release endpoints return verified HTTP 404 responses. It creates a
-draft release targeting the exact source SHA, uploads only manifest-validated
-artifacts plus `checksums.txt` and `binary-manifest.json`, and publishes only
-after every upload succeeds. It never overwrites, deletes, retries, or creates
-a mutable `latest` tag. Partial state remains for reconciliation and requires
-a fresh version.
+The full GoReleaser build and validation still cover 15 artifacts. A separate
+strict `local` publication profile stages only the eight Linux DEB/RPM packages
+for KubeAtlas and Portal plus the KubeAtlas Windows amd64 ZIP. Its schema-2
+manifest and checksum file make an 11-file publication artifact; the full
+15-file `kubeatlas-binary-release` artifact is diagnostic evidence only. No
+macOS or Linux tar archive is published. The native Windows smoke must pass
+before the dry-run emits an approval.
+
+With `publish=true`, the publisher downloads the signed approval and
+`kubeatlas-binary-publication` from the specified dry-run run, never the
+diagnostic artifact. It verifies the signature, run provenance, and inventory
+before setup, then reruns source policy and local-profile validation. After
+tag/release collision checks it verifies approval again immediately before
+creating the tag. The protected `ghcr-publish` environment is retained as
+defense in depth, not as the approval mechanism. The publisher fails closed
+unless both versioned tag and GitHub Release endpoints return verified HTTP 404
+responses. It creates a draft release targeting the exact source SHA and
+publishes only after every upload succeeds. It never overwrites, deletes,
+retries, or creates a mutable `latest` tag. Partial state remains for
+reconciliation and requires a fresh version.
 
 Run the non-publishing local package dry run with:
 
@@ -119,5 +166,6 @@ KUBEATLAS_RELEASE_VERSION=1.2.3 make release-binaries-dry
 
 See [Binary packages](packaging.md) for install/uninstall behavior, supported
 architectures, no-autostart guarantees, and source/version provenance. GHCR
-images/charts and GitHub Release binaries are separate authorization paths;
-this change claims no published package or release.
+images/charts and GitHub Release binaries are separate authorization paths.
+This implementation does not dispatch a release workflow or publish any
+artifact.

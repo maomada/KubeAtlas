@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -47,6 +48,20 @@ class ReleaseArtifactsTests(unittest.TestCase):
                     info.size = len(data)
                     archive.addfile(info, io.BytesIO(data))
 
+    def _create_full_release(self, version="1.2.3", source_sha="a" * 40):
+        for name in artifacts.expected_names(version):
+            path = self.dist / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if name.endswith(".tar.gz"):
+                self._make_archive(path)
+            elif name.endswith(".zip"):
+                self._make_archive(path, zip_archive=True)
+            else:
+                path.write_bytes(name.encode())
+        output = self.dist / "release"
+        artifacts.create_staged(self.dist, output, source_sha, version)
+        return output
+
     @staticmethod
     def _fake_elf(architecture):
         header = bytearray(20)
@@ -75,6 +90,67 @@ class ReleaseArtifactsTests(unittest.TestCase):
         (output / "unlisted").symlink_to(output / "checksums.txt")
         with self.assertRaisesRegex(ValueError, "files only"):
             artifacts.validate_staged(output)
+
+    def _create_full_release(self, version="1.2.3", source_sha="a" * 40):
+        for name in artifacts.expected_names(version):
+            path = self.dist / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if name.endswith(".tar.gz"):
+                self._make_archive(path)
+            elif name.endswith(".zip"):
+                self._make_archive(path, zip_archive=True)
+            else:
+                path.write_bytes(name.encode())
+        output = self.dist / "release"
+        artifacts.create_staged(self.dist, output, source_sha, version)
+        return output
+
+    def test_local_profile_selects_nine_assets_and_keeps_full_matrix_diagnostic(self):
+        version = "1.2.3"
+        source_sha = "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "local"
+        manifest = artifacts.create_local_staged(full, output, source_sha, version)
+        names = set(artifacts.local_asset_names(version))
+        self.assertEqual(len(names), 9)
+        self.assertEqual(len(manifest["artifacts"]), 9)
+        self.assertEqual(manifest["schemaVersion"], 2)
+        self.assertEqual(manifest["profile"], "local")
+        self.assertEqual(
+            {path.name for path in output.iterdir()},
+            set(artifacts.local_publication_names(version)),
+        )
+        self.assertEqual(len((output / "checksums.txt").read_text().splitlines()), 10)
+        full_manifest = json.loads((full / "binary-manifest.json").read_text())
+        self.assertEqual(full_manifest["schemaVersion"], 1)
+        self.assertEqual(len(full_manifest["artifacts"]), 15)
+        self.assertEqual(artifacts.validate_staged(output, profile="local")["profile"], "local")
+        with self.assertRaisesRegex(ValueError, "schema"):
+            artifacts.validate_staged(output)
+
+    def test_local_profile_rejects_omitted_extra_symlink_and_modified_payloads(self):
+        version = "1.2.3"
+        source_sha = "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "local"
+        artifacts.create_local_staged(full, output, source_sha, version)
+        artifact = output / artifacts.local_asset_names(version)[0]
+        original = artifact.read_bytes()
+        artifact.unlink()
+        with self.assertRaisesRegex(ValueError, "artifact set"):
+            artifacts.validate_staged(output, profile="local")
+        artifact.write_bytes(original)
+        (output / "extra").write_text("extra")
+        with self.assertRaisesRegex(ValueError, "artifact set"):
+            artifacts.validate_staged(output, profile="local")
+        (output / "extra").unlink()
+        (output / "symlink").symlink_to(artifact)
+        with self.assertRaisesRegex(ValueError, "files only"):
+            artifacts.validate_staged(output, profile="local")
+        (output / "symlink").unlink()
+        artifact.write_bytes(b"modified")
+        with self.assertRaises(ValueError):
+            artifacts.validate_staged(output, profile="local")
 
     def test_linux_elf_architecture_is_not_trusted_from_filename(self):
         import io
