@@ -2712,9 +2712,9 @@
         "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
       },
       "disposition": "mitigated",
-      "holdReason": "Native browser Worker isolation evidence is still missing; user approval is recorded but does not waive the technical verification gap.",
       "revalidatedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
       "previousReview": {
+        "holdReason": "Native browser Worker isolation evidence is still missing; user approval is recorded but does not waive the technical verification gap.",
         "disposition": "hold",
         "evidence": "用户正则 query 进入 new RegExp 并执行 exec，但产品运行时只有 logSearch.worker.ts 导入并调用该函数；hook 只导入类型。主线程通过独立 Worker、请求标识、2秒定时终止和取消处理结果；流更新不重置期限，错误对同一查询保持。每行最多1000段、每请求最多100000段，超限明确失败而非截断。生命周期用 fake Worker 单测验证，原生浏览器/CSP运行尚未验收；仅建议按这个隔离边界审查，不宣称正则自身线性或所有调用安全。 当前异步库API也使用同一Worker资产及range转义路径；fake Worker测试不是原生浏览器验收。仍未获逐项确认。",
         "approval": {
