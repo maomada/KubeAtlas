@@ -33,24 +33,78 @@ publication rejects workflow reruns and verifies the signed dry-run run using a
 read-only GitHub Actions API query. The publication workflow downloads only the
 fixed artifact names from that exact run and never rebuilds after signing.
 
-To sign on the authorized offline machine, download `release-approval.json`
-from the dry-run's `release-approval` artifact, inspect it, and run:
+`approvalId` is an audit UUID, not a consumed nonce. The same signed bytes may
+be used in another publish dispatch before expiry if no target writes have
+occurred. The publisher still rejects workflow reruns, and its collision checks
+block successful, partial, or unknown prior writes from being overwritten.
+Reconcile uncertain state and use a fresh version rather than retrying against
+existing targets. A changed workflow SHA or public key, an expired approval, or
+lost dry-run artifacts requires a fresh dry run and signature.
 
-```sh
+## Offline signing key custody
+
+Generate the production key only on the authorized offline LocalHands machine.
+These commands are instructions and were not run in this repository or CI. They
+create a new dedicated user-owned directory and fail if that directory already
+exists; do not reuse a directory or overwrite an existing key:
+
+```bash
+set -euo pipefail
+umask 077
+key_dir="$HOME/.local/share/kubeatlas-release-signing"
+if [ -e "$key_dir" ] || [ -L "$key_dir" ]; then
+  printf 'Refusing to reuse existing key directory: %s\n' "$key_dir" >&2
+  exit 1
+fi
+mkdir -m 700 "$key_dir"
+private_key="$key_dir/release-signing-private.pem"
+public_key="$key_dir/release-signing-public.pem"
+if [ -e "$private_key" ] || [ -L "$private_key" ] || \
+   [ -e "$public_key" ] || [ -L "$public_key" ]; then
+  printf 'Refusing to overwrite an existing signing key\n' >&2
+  exit 1
+fi
+openssl genpkey -algorithm Ed25519 -out "$private_key"
+openssl pkey -in "$private_key" -pubout -out "$public_key"
+chmod 600 "$private_key"
+chmod 644 "$public_key"
+openssl pkey -pubin -in "$public_key" -outform DER | openssl dgst -sha256
+```
+
+The final command prints the DER SubjectPublicKeyInfo SHA-256 fingerprint.
+After the public key is added to trusted `main`, compare its 64-digit
+fingerprint with `keyFingerprint` in a dry-run approval. Provision only
+`.github/release-signing-public.pem` through a reviewed commit; the workflow
+loads it from the trusted workflow checkout. Keep the private key and an
+encrypted, offline backup under user control with restricted access. Never put
+the private key in Git, CI, artifacts, workflow inputs, chat, or logs. No
+production key was generated here, and no production public key is currently
+provisioned.
+
+To approve a reviewed dry run, download `release-approval.json` from its
+`release-approval` artifact and inspect the exact targets, artifact hashes,
+source, version, workflow revision, evidence URLs, fingerprint, and expiry.
+Then sign and locally verify the unchanged manifest bytes:
+
+```bash
+key_dir="$HOME/.local/share/kubeatlas-release-signing"
+private_key="$key_dir/release-signing-private.pem"
+public_key="$key_dir/release-signing-public.pem"
 openssl pkeyutl -sign -rawin \
-  -inkey /secure/path/release-signing-private.pem \
+  -inkey "$private_key" \
   -in release-approval.json -out release-approval.sig
+openssl pkeyutl -verify -rawin -pubin \
+  -inkey "$public_key" \
+  -in release-approval.json -sigfile release-approval.sig
 openssl base64 -A -in release-approval.sig
 ```
 
 Provide the exact dry-run run ID and the resulting single-line base64 signature
 as `build_run_id` and `approval_signature` in a separate `publish=true`
-dispatch. A dry-run must omit both inputs. Do not place the private key in this
-repository, workflow inputs, runner environment, or logs. Only
+dispatch. A dry-run must omit both inputs. Only
 `.github/release-signing-public.pem` from the trusted workflow checkout is used
 to verify approvals; an absent or invalid production key blocks approval
-creation/publication. No production public key is currently provisioned, so
-the workflows remain fail-closed until the authorized public key is installed.
+creation/publication.
 
 The approval signature is an application-level gate, not a claim that the
 `ghcr-publish` environment enforces review. Repository/workflow administrators
@@ -150,7 +204,7 @@ With `publish=true`, the publisher downloads the signed approval and
 diagnostic artifact. It verifies the signature, run provenance, and inventory
 before setup, then reruns source policy and local-profile validation. After
 tag/release collision checks it verifies approval again immediately before
-creating the tag. The protected `ghcr-publish` environment is retained as
+creating the tag. The `ghcr-publish` environment is retained as
 defense in depth, not as the approval mechanism. The publisher fails closed
 unless both versioned tag and GitHub Release endpoints return verified HTTP 404
 responses. It creates a draft release targeting the exact source SHA and

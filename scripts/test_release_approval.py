@@ -373,6 +373,44 @@ class ReleaseApprovalTests(unittest.TestCase):
         with self.assertRaises(approval.ApprovalError):
             self._verify(manifest_path, artifact_root, signature=signature)
 
+    def test_oversized_manifest_read_is_bounded_before_parsing_or_signature_verification(self):
+        manifest_path, artifact_root = self._create()
+        manifest_path.write_bytes(b"x" * (approval.MAX_MANIFEST_BYTES + 128))
+        read_sizes = []
+        fdopen = os.fdopen
+
+        class ReadTracker:
+            def __init__(self, stream):
+                self.stream = stream
+
+            def __enter__(self):
+                self.stream.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self.stream.__exit__(*args)
+
+            def read(self, size=-1):
+                read_sizes.append(size)
+                return self.stream.read(size)
+
+        with patch.object(
+            approval.os,
+            "fdopen",
+            side_effect=lambda descriptor, *args, **kwargs: ReadTracker(
+                fdopen(descriptor, *args, **kwargs)
+            ),
+        ), patch.object(approval, "_load_json") as load_json:
+            with self.assertRaisesRegex(approval.ApprovalError, "exceeds 64 KiB"):
+                self._verify(
+                    manifest_path,
+                    artifact_root,
+                    signature="not-base64",
+                )
+
+        self.assertEqual(read_sizes, [approval.MAX_MANIFEST_BYTES + 1])
+        load_json.assert_not_called()
+
     def test_missing_and_non_ed25519_production_keys_fail_closed(self):
         missing_root = self.root / "missing-trusted"
         (missing_root / ".github").mkdir(parents=True)

@@ -26,6 +26,9 @@ WINDOWS_ARCHIVE_MEMBERS = {
     "README.md",
     "docs/packaging.md",
 }
+DOS_HEADER_SIZE = 64
+PE_HEADER_SIZE = 4 + 20 + 2
+MAX_PE_HEADER_OFFSET = 1024 * 1024
 
 
 class WindowsSmokeError(ValueError):
@@ -97,6 +100,33 @@ def _safe_members(archive: zipfile.ZipFile) -> list[zipfile.ZipInfo]:
     return entries
 
 
+def _validate_amd64_pe(executable: Path) -> None:
+    error_message = "kubeatlas.exe is not a valid AMD64 PE32+ executable"
+    try:
+        with executable.open("rb") as source:
+            dos_header = source.read(DOS_HEADER_SIZE)
+            if len(dos_header) != DOS_HEADER_SIZE or dos_header[:2] != b"MZ":
+                raise WindowsSmokeError(error_message)
+            pe_offset = int.from_bytes(dos_header[0x3C:0x40], "little")
+            if pe_offset < DOS_HEADER_SIZE or pe_offset > MAX_PE_HEADER_OFFSET:
+                raise WindowsSmokeError(error_message)
+            source.seek(0, os.SEEK_END)
+            if source.tell() < pe_offset + PE_HEADER_SIZE:
+                raise WindowsSmokeError(error_message)
+            source.seek(pe_offset)
+            pe_header = source.read(PE_HEADER_SIZE)
+    except OSError as error:
+        raise WindowsSmokeError("kubeatlas.exe PE header cannot be read") from error
+    if (
+        len(pe_header) != PE_HEADER_SIZE
+        or pe_header[:4] != b"PE\0\0"
+        or int.from_bytes(pe_header[4:6], "little") != 0x8664
+        or int.from_bytes(pe_header[20:22], "little") < 2
+        or int.from_bytes(pe_header[24:26], "little") != 0x20B
+    ):
+        raise WindowsSmokeError(error_message)
+
+
 def verify_and_extract(
     manifest_path: Path,
     archive_path: Path,
@@ -138,6 +168,7 @@ def verify_and_extract(
     executable = extract_dir / "kubeatlas.exe"
     if executable.is_symlink() or not executable.is_file():
         raise WindowsSmokeError("kubeatlas.exe is missing after extraction")
+    _validate_amd64_pe(executable)
     return executable
 
 

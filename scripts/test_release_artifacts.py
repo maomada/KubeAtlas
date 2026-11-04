@@ -48,20 +48,6 @@ class ReleaseArtifactsTests(unittest.TestCase):
                     info.size = len(data)
                     archive.addfile(info, io.BytesIO(data))
 
-    def _create_full_release(self, version="1.2.3", source_sha="a" * 40):
-        for name in artifacts.expected_names(version):
-            path = self.dist / name
-            path.parent.mkdir(parents=True, exist_ok=True)
-            if name.endswith(".tar.gz"):
-                self._make_archive(path)
-            elif name.endswith(".zip"):
-                self._make_archive(path, zip_archive=True)
-            else:
-                path.write_bytes(name.encode())
-        output = self.dist / "release"
-        artifacts.create_staged(self.dist, output, source_sha, version)
-        return output
-
     @staticmethod
     def _fake_elf(architecture):
         header = bytearray(20)

@@ -586,9 +586,15 @@ def verify_approval(
     if _is_within(manifest_path, artifact_root):
         raise ApprovalError("signed approval manifest must be outside the artifact directory")
     try:
-        manifest_bytes = manifest_path.read_bytes()
+        descriptor, _ = _open_regular(manifest_path)
+        with os.fdopen(descriptor, "rb") as source:
+            manifest_bytes = source.read(MAX_MANIFEST_BYTES + 1)
+    except ApprovalError:
+        raise
     except OSError as error:
         raise ApprovalError("signed approval manifest cannot be read") from error
+    if len(manifest_bytes) > MAX_MANIFEST_BYTES:
+        raise ApprovalError("approval manifest exceeds 64 KiB")
     manifest = _load_json(manifest_bytes)
     signature = _decode_signature(signature_base64)
     if signature_output is not None:
