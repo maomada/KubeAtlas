@@ -41,6 +41,32 @@ Reconcile uncertain state and use a fresh version rather than retrying against
 existing targets. A changed workflow SHA or public key, an expired approval, or
 lost dry-run artifacts requires a fresh dry run and signature.
 
+## CI compute controls
+
+CodeQL is manual-only while this private repository lacks Code Security
+eligibility. Its analysis configuration and failure history are retained; do
+not dispatch it until eligibility is confirmed. Semgrep still runs on main
+pushes, pull requests (including drafts) and its weekly schedule.
+
+Keep work-in-progress PRs as drafts and batch related fixes before pushing.
+Drafts retain unit tests, installer tests, workflow lint, release-policy tests
+and Semgrep, but defer multi-platform container builds and the full binary
+package matrix. Marking a PR ready triggers those builds for the current diff;
+check that exact revision before merging. A skipped draft job is not acceptance
+evidence. Superseded PR package-validation runs are cancelled; main-push runs
+remain independent. Package validation has a 60-minute fail-closed timeout.
+
+Changes to CI orchestration still select all CI jobs. Other `.github` changes
+no longer select unrelated application builds solely by directory; workflow
+lint and release-policy tests remain unconditional. Existing source/dependency
+filters still apply. Main CI still runs all jobs; main package-validation path
+filters, the full 15-artifact release build, native Windows smoke, exact-SHA
+main-push CI/Semgrep evidence, signatures and publication gates are unchanged.
+
+These controls reduce future repetition; they do not erase accrued charges,
+restore an exhausted Actions allowance, or change billing settings. Do not
+automatically retry account billing failures or increase spending limits.
+
 ## Offline signing key custody
 
 Generate the production key only on the authorized user-controlled signing

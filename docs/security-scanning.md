@@ -66,7 +66,9 @@ cancelled or incomplete runs block release; a PR merge run is not main-push
 evidence. Scanner errors, incomplete coverage and unreviewed findings fail the
 Security workflow before source selection can accept it.
 
-CodeQL configuration and historical eligibility failures remain intact. CodeQL
+CodeQL analysis configuration and historical eligibility failures remain intact.
+Its workflow is manual-only to avoid repeated ineligible builds and analyses;
+confirm Code Security eligibility before dispatching it. CodeQL
 is no longer a required release evidence source; that does not reclassify its
 failed runs as successful or imply equivalent coverage. GitHub branch rules
 are separate: this private account cannot enforce its current rulesets, and a

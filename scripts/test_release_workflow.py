@@ -6,6 +6,43 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
+    def test_codeql_is_manual_while_semgrep_remains_automatic(self):
+        codeql = (ROOT / ".github/workflows/codeql.yml").read_text()
+        self.assertIn("workflow_dispatch:", codeql)
+        self.assertNotRegex(codeql, r"(?m)^  (push|pull_request|schedule):")
+        self.assertIn("github/codeql-action/analyze@", codeql)
+        self.assertIn("language: [go, javascript-typescript]", codeql)
+        security = (ROOT / ".github/workflows/security.yml").read_text()
+        for event in ("push", "pull_request", "schedule"):
+            self.assertIn(f"  {event}:\n", security)
+        self.assertNotIn("github.event.pull_request.draft", security)
+
+    def test_heavy_builds_defer_drafts_but_run_when_ready_and_on_main(self):
+        ci = (ROOT / ".github/workflows/ci.yml").read_text()
+        package = (ROOT / ".github/workflows/package-validation.yml").read_text()
+        guard = "github.event_name != 'pull_request' || github.event.pull_request.draft == false"
+        for workflow in (ci, package):
+            self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", workflow)
+            self.assertIn("  push:\n    branches: [main]", workflow)
+            self.assertIn("github.event.pull_request.number || github.run_id", workflow)
+            self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
+        container = ci.split("  container-build:\n", 1)[1]
+        self.assertIn(f"if: needs.changes.outputs.containers == 'true' && ({guard})", container)
+        self.assertNotIn("github.event.pull_request.draft", ci.split("  container-build:\n", 1)[0])
+        self.assertIn(f"  validate:\n    if: {guard}\n", package)
+        self.assertIn("timeout-minutes: 60", package)
+        self.assertIn("make release-binaries-dry", package)
+        self.assertIn("scripts/release_artifacts.py validate --directory dist/release", package)
+
+    def test_ci_changes_select_all_jobs_without_broad_github_match(self):
+        ci = (ROOT / ".github/workflows/ci.yml").read_text()
+        orchestration = ci.split("            ci:\n", 1)[1].split("            pkg:\n", 1)[0]
+        self.assertIn("'.github/workflows/ci.yml'", orchestration)
+        self.assertIn("'.github/actions/**'", orchestration)
+        self.assertNotIn("'.github/**'", orchestration)
+        for name in ("pkg", "go", "web", "app", "helm", "containers"):
+            self.assertIn(f"{name}: ${{{{ github.event_name != 'pull_request' || steps.filter.outputs.ci == 'true'", ci)
+
     def test_release_evidence_is_standalone_security_and_approval_is_retained(self):
         for name in ("release.yml", "release-binaries.yml"):
             with self.subTest(workflow=name):
