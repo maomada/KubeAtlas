@@ -76,3 +76,15 @@ used for verification. The private key stays outside GitHub and this
 repository. Until the authorized production public key is provisioned, the
 workflow blocks approval creation and publication. No release or package is
 published by the implementation change.
+
+### Local build and acceptance bundle
+
+The separate local path is documented in [CI/CD](ci-cd.md#separate-local-release-path).
+It builds the full binary matrix once, stages only the fixed local publication
+profile, and validates images/charts without publishing. Its signed approval
+and evidence bundle use a local-only schema and cannot substitute for Actions
+approval or run provenance. Candidate builds are not releasable; offline
+approval requires a fresh clean main source/tooling commit. Native Windows,
+real-cluster, and isolated package-install acceptance remain explicit
+operator-attested gates and must not be inferred from cross-builds, fixtures,
+or package inspection.
