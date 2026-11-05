@@ -75,6 +75,46 @@ class OCIArchiveValidationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "exactly"):
             oci.validate_index(json.dumps(index).encode(), self._read_blob)
 
+    def test_explicit_amd64_matrix_rejects_multiarch_and_arm64_only(self):
+        selected = {("linux", "amd64")}
+        for manifests in (self.index["manifests"], self.index["manifests"][1:]):
+            with self.subTest(manifests=manifests):
+                index = {"schemaVersion": 2, "manifests": manifests}
+                with self.assertRaisesRegex(ValueError, "exactly"):
+                    oci.validate_index(json.dumps(index).encode(), self._read_blob, expected_platforms=selected)
+
+    def test_single_platform_archive_and_raw_image_require_explicit_profile(self):
+        descriptor = self.index["manifests"][0]
+        raw = self.blobs["blobs/sha256/" + descriptor["digest"].split(":")[1]]
+        raw_path = self.root / "raw.json"
+        raw_path.write_bytes(raw)
+        selected = {("linux", "amd64")}
+        for include_platform in (True, False):
+            with self.subTest(include_platform=include_platform):
+                entry = dict(descriptor)
+                if not include_platform:
+                    del entry["platform"]
+                archive = self._write_archive({"schemaVersion": 2, "manifests": [entry]})
+                result = oci.validate_archive(archive, raw_path, expected_platforms=selected)
+                self.assertEqual(result, {("linux", "amd64"): descriptor["digest"]})
+                with self.assertRaisesRegex(ValueError, "exactly"):
+                    oci.validate_archive(archive, raw_path)
+                with self.assertRaisesRegex(ValueError, "provenance labels"):
+                    oci.validate_archive(archive, raw_path, {"revision": "missing"}, expected_platforms=selected)
+
+    def test_single_platform_nested_index_preserves_raw_descriptor_check(self):
+        index = {"schemaVersion": 2, "manifests": self.index["manifests"][:1]}
+        raw = json.dumps(index).encode()
+        descriptor = self._add_blob(raw)
+        descriptor["mediaType"] = "application/vnd.oci.image.index.v1+json"
+        archive = self._write_archive({"schemaVersion": 2, "manifests": [descriptor]})
+        raw_path = self.root / "raw.json"
+        raw_path.write_bytes(raw)
+        self.assertEqual(set(oci.validate_archive(archive, raw_path, expected_platforms={("linux", "amd64")})), {("linux", "amd64")})
+        raw_path.write_bytes(self.raw_manifest)
+        with self.assertRaisesRegex(ValueError, "exactly"):
+            oci.validate_archive(archive, raw_path, expected_platforms={("linux", "amd64")})
+
     def test_index_rejects_extra_platform(self):
         index = json.loads(json.dumps(self.index))
         config = json.dumps(

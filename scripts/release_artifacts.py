@@ -22,6 +22,7 @@ from release_policy import validate_inputs
 
 REPOSITORY = "maomada/KubeAtlas"
 COMPONENTS = ("kubeatlas", "kubeatlas-portal")
+LOCAL_PROFILES = ("local", "local-linux", "local-linux-amd64")
 ARCHIVES = (
     ("kubeatlas", "linux", "amd64", ".tar.gz"),
     ("kubeatlas", "linux", "arm64", ".tar.gz"),
@@ -60,11 +61,12 @@ def expected_names(version: str) -> set[str]:
 
 
 def local_asset_names(version: str, profile: str = "local") -> list[str]:
-    if profile not in ("local", "local-linux"):
+    if profile not in LOCAL_PROFILES:
         raise ValueError(f"unsupported binary publication profile: {profile}")
     names = {
         f"{component}_{version}_linux_{architecture}{suffix}"
         for component, _, architecture, suffix in PACKAGES
+        if profile != "local-linux-amd64" or architecture == "amd64"
     }
     if profile == "local":
         names.add(f"kubeatlas_v{version}_windows_amd64.zip")
@@ -339,7 +341,7 @@ def validate_staged(
     evidence_urls: list[str] | None = None,
     profile: str = "full",
 ) -> dict:
-    if profile in ("local", "local-linux"):
+    if profile in LOCAL_PROFILES:
         return validate_local_staged(
             directory,
             manifest_path=manifest_path,
@@ -461,7 +463,7 @@ def validate_local_staged(
         raise ValueError("invalid local binary manifest schema")
     if type(manifest.get("schemaVersion")) is not int or manifest["schemaVersion"] != 2:
         raise ValueError("unsupported local binary manifest schema")
-    if profile not in ("local", "local-linux") or manifest.get("profile") != profile:
+    if profile not in LOCAL_PROFILES or manifest.get("profile") != profile:
         raise ValueError("unsupported local binary publication profile")
     version = manifest.get("version")
     source_sha = manifest.get("sourceSha")
@@ -652,13 +654,13 @@ def main() -> int:
     stage_local.add_argument("--source-sha", required=True)
     stage_local.add_argument("--version", required=True)
     stage_local.add_argument("--evidence-url", action="append", default=[])
-    stage_local.add_argument("--profile", choices=("local", "local-linux"), default="local")
+    stage_local.add_argument("--profile", choices=LOCAL_PROFILES, default="local")
     validate = subparsers.add_parser("validate")
     validate.add_argument("--directory", type=Path, required=True)
     validate.add_argument("--source-sha")
     validate.add_argument("--version")
     validate.add_argument("--evidence-url", action="append")
-    validate.add_argument("--profile", choices=("full", "local", "local-linux"), default="full")
+    validate.add_argument("--profile", choices=("full", *LOCAL_PROFILES), default="full")
     args = parser.parse_args()
     try:
         if args.command == "create":

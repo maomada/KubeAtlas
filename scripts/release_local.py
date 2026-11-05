@@ -32,7 +32,8 @@ import validate_oci_archive
 REPOSITORY = "maomada/KubeAtlas"
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
-PUBLICATION_PROFILE = "local-linux"
+PUBLICATION_PROFILE = "local-linux-amd64"
+IMAGE_PLATFORMS = frozenset({("linux", "amd64")})
 MANIFEST_SCHEMA = "kubeatlas-local-release/v1"
 RECEIPT_SCHEMA = "kubeatlas-local-receipt/v1"
 ACCEPTANCE_SCHEMA = "kubeatlas-local-acceptance/v1"
@@ -57,7 +58,7 @@ AUTOMATED_GATES = (
 EXTERNAL_GATES = ("real-cluster",) + tuple(
     f"package-install-{component}-linux-{arch}-{package}"
     for component in ("kubeatlas", "kubeatlas-portal")
-    for arch in ("amd64", "arm64")
+    for arch in ("amd64",)
     for package in ("deb", "rpm")
 )
 REQUIRED_GATES = frozenset(("build", *AUTOMATED_GATES, *EXTERNAL_GATES))
@@ -76,7 +77,7 @@ EXPECTED_REQUIRED_GATES = frozenset(
         "real-cluster",
         *(f"package-install-{component}-linux-{arch}-{package}"
           for component in ("kubeatlas", "kubeatlas-portal")
-          for arch in ("amd64", "arm64")
+          for arch in ("amd64",)
           for package in ("deb", "rpm")),
     }
 )
@@ -727,11 +728,11 @@ def _validate_acceptance(receipt: dict, gate: str, require_passed: bool = True) 
         expected_machine = {"amd64": {"x86_64", "amd64"}, "arm64": {"aarch64", "arm64"}}[arch]
         if (
             system != "Linux"
-            or execution["emulation"] not in ("native", "emulated")
+            or execution["emulation"] != "native"
             or execution["isolation"] not in ("container", "vm")
             or acceptance["componentVersions"].get(component) != VERSION
             or not acceptance["componentVersions"].get("distribution")
-            or (execution["emulation"] == "native" and machine.lower() not in expected_machine)
+            or machine.lower() not in expected_machine
         ):
             raise LocalReleaseError(f"package acceptance platform or version mismatch: {gate}")
 
@@ -1149,7 +1150,7 @@ def _run_buildx_component(
         "buildx",
         "build",
         "--platform",
-        "linux/amd64,linux/arm64",
+        ",".join(f"{os_name}/{arch}" for os_name, arch in sorted(IMAGE_PLATFORMS)),
         "--target",
         "full",
         "--provenance=false",
@@ -1170,7 +1171,7 @@ def _run_buildx_component(
     commands.extend(
         _run_commands(
             f"build-{component}",
-            [{"name": f"Build {component} multi-platform OCI archive", "argv": build_command}],
+            [{"name": f"Build {component} approved-platform OCI archive", "argv": build_command}],
             log_path,
             bundle,
             repo_root=repo_root,
@@ -1208,9 +1209,9 @@ def _run_buildx_component(
         raise LocalReleaseError(f"skopeo inspect failed; see {log_path.name}")
     _exclusive_write(raw_path, result.stdout)
     platforms = validate_oci_archive.validate_archive(
-        archive, raw_path, _expected_oci_labels(source_sha)
+        archive, raw_path, _expected_oci_labels(source_sha), expected_platforms=IMAGE_PLATFORMS
     )
-    if set(platforms) != validate_oci_archive.EXPECTED_PLATFORMS:
+    if set(platforms) != IMAGE_PLATFORMS:
         raise LocalReleaseError("OCI archive is missing a required platform")
     metadata = _load_json(metadata_path, f"{component} build metadata")
     build_digest = metadata.get("containerimage.digest")
@@ -1366,6 +1367,8 @@ def build_bundle(source_sha: str, bundle_path: Path, repo_root: Path = ROOT) -> 
         chart_command = [
             sys.executable,
             str(repo_root / "scripts" / "release_chart_package.py"),
+            "--platform",
+            "linux/amd64",
             "--source-dir",
             str(repo_root),
             "--output-dir",
@@ -1448,6 +1451,9 @@ def _validate_chart_archive(path: Path, name: str, source_sha: str) -> None:
         or not re.search(rf'(?m)^\s+tag:\s*["\']{re.escape(VERSION)}["\']\s*$', values)
     ):
         raise LocalReleaseError(f"packaged chart image metadata mismatch: {name}")
+    selector = json.dumps(release_chart_package.platform_node_selector("linux/amd64"))
+    if re.findall(r"(?m)^nodeSelector: (.*)$", values) != [selector]:
+        raise LocalReleaseError(f"packaged chart node selector does not match linux/amd64: {name}")
 
 
 def _expected_oci_labels(source_sha: str) -> dict[str, str]:
@@ -1485,9 +1491,9 @@ def _validate_bundle_artifacts(bundle: Path, source_sha: str) -> dict:
             raise LocalReleaseError(f"image archive metadata or checksum mismatch: {component}")
         raw = bundle / "evidence" / "reports" / f"{component}-raw-manifest.json"
         platforms = validate_oci_archive.validate_archive(
-            archive, raw, _expected_oci_labels(source_sha)
+            archive, raw, _expected_oci_labels(source_sha), expected_platforms=IMAGE_PLATFORMS
         )
-        if set(platforms) != validate_oci_archive.EXPECTED_PLATFORMS:
+        if set(platforms) != IMAGE_PLATFORMS:
             raise LocalReleaseError(f"image platform matrix mismatch: {component}")
         raw_digest = hashlib.sha256(_read_regular(raw, 1024 * 1024)).hexdigest()
         if metadata["buildDigest"] != f"sha256:{raw_digest}":

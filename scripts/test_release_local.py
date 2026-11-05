@@ -535,18 +535,18 @@ class LocalReleaseTests(unittest.TestCase):
             self.inventories,
         ) = make_bundle(self.root)
 
-    def test_local_linux_profile_keeps_all_nineteen_non_windows_gates_and_targets(self):
+    def test_local_amd64_profile_keeps_fifteen_gates_and_exact_targets(self):
         expected_packages = {
             f"{component}_{release_local.VERSION}_linux_{architecture}.{package}"
             for component in ("kubeatlas", "kubeatlas-portal")
-            for architecture in ("amd64", "arm64")
+            for architecture in ("amd64",)
             for package in ("deb", "rpm")
         }
         expected_metadata = {"binary-manifest.json", "checksums.txt"}
         expected_package_gates = {
             f"package-install-{component}-linux-{architecture}-{package}"
             for component in ("kubeatlas", "kubeatlas-portal")
-            for architecture in ("amd64", "arm64")
+            for architecture in ("amd64",)
             for package in ("deb", "rpm")
         }
         expected_gates = {
@@ -564,9 +564,10 @@ class LocalReleaseTests(unittest.TestCase):
             *expected_package_gates,
         }
 
-        self.assertEqual(release_local.PUBLICATION_PROFILE, "local-linux")
+        self.assertEqual(release_local.PUBLICATION_PROFILE, "local-linux-amd64")
+        self.assertEqual(release_local.IMAGE_PLATFORMS, {("linux", "amd64")})
         self.assertEqual(release_local.REQUIRED_GATES, expected_gates)
-        self.assertEqual(len(release_local.REQUIRED_GATES), 19)
+        self.assertEqual(len(release_local.REQUIRED_GATES), 15)
         self.assertNotIn("windows-native", release_local.REQUIRED_GATES)
         self.assertNotIn("windows-native", release_local.EXTERNAL_GATES)
         self.assertIn("windows-native", release_local.ACCEPTANCE_SCENARIOS)
@@ -574,13 +575,26 @@ class LocalReleaseTests(unittest.TestCase):
             release_local.expected_artifact_paths("binaries", release_local.VERSION)
         )
         self.assertEqual(selected_paths, expected_packages | expected_metadata)
-        self.assertEqual(len(expected_packages), 8)
+        self.assertEqual(len(expected_packages), 4)
         self.assertEqual(len(expected_metadata), 2)
         self.assertFalse(any(path.endswith(".zip") for path in selected_paths))
+        self.assertFalse(any("arm64" in path for path in selected_paths))
+        self.assertFalse(any("arm64" in gate for gate in release_local.REQUIRED_GATES))
         self.assertEqual(
             release_local._expected_targets()[-len(selected_paths):],
             sorted(selected_paths),
         )
+
+    def test_package_acceptance_requires_native_amd64_execution(self):
+        gate = "package-install-kubeatlas-linux-amd64-deb"
+        acceptance, execution, commands = external_acceptance(gate, self.inventories)
+        receipt = {"acceptance": acceptance, "commands": commands}
+        release_local._validate_acceptance(receipt, gate)
+        for mode, machine in (("emulated", "x86_64"), ("native", "aarch64")):
+            with self.subTest(mode=mode, machine=machine):
+                execution.update(emulation=mode, machine=machine)
+                with self.assertRaisesRegex(release_local.LocalReleaseError, "platform or version"):
+                    release_local._validate_acceptance(receipt, gate)
 
     def _prepare(self):
         with (

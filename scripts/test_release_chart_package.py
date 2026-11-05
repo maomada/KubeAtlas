@@ -47,6 +47,7 @@ class ReleaseChartPackageTests(unittest.TestCase):
                 self.assertIn(f'org.opencontainers.image.revision: "{SHA}"', metadata)
                 self.assertIn(f'repository: "{repository}"', values)
                 self.assertIn('tag: "0.1.0-test.1"', values)
+                self.assertIn("nodeSelector: {}", values)
             self.assertEqual(len((output / "SHA256SUMS").read_text().splitlines()), 2)
             self.assertEqual(
                 {path.name for path in output.iterdir()},
@@ -63,7 +64,7 @@ class ReleaseChartPackageTests(unittest.TestCase):
                 with tarfile.open(Path(command[4]) / f"{chart.name}-{version}.tgz", "w:gz") as archive:
                     archive.add(chart, arcname=chart.name)
 
-            package.package_charts(ROOT, output, version, SHA, runner=helm_package)
+            package.package_charts(ROOT, output, version, SHA, runner=helm_package, platform="linux/amd64")
             for name in package.CHARTS:
                 release_local._validate_chart_archive(
                     output / f"{name}-{version}.tgz", name, SHA
@@ -78,6 +79,20 @@ class ReleaseChartPackageTests(unittest.TestCase):
             }
             self.assertEqual(actual, expected)
             self.assertFalse((output / ".staged").exists())
+
+    def test_local_chart_requires_platform_selector_without_mutating_source(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for name, repository in package.CHARTS.items():
+                source = ROOT / "deploy" / "helm" / name
+                original = (source / "values.yaml").read_bytes()
+                staged = Path(temporary) / name
+                package.prepare_chart(source, staged, release_local.VERSION, SHA, repository)
+                archive_path = Path(temporary) / f"{name}.tgz"
+                with tarfile.open(archive_path, "w:gz") as archive:
+                    archive.add(staged, arcname=name)
+                with self.assertRaisesRegex(release_local.LocalReleaseError, "node selector"):
+                    release_local._validate_chart_archive(archive_path, name, SHA)
+                self.assertEqual((source / "values.yaml").read_bytes(), original)
 
     def test_invalid_source_sha_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -174,11 +174,12 @@ class LocalPublisherTests(unittest.TestCase):
             downloads = [event.removeprefix("download:") for event in events if event.startswith("download:")]
             self.assertEqual(uploads, expected_assets)
             self.assertEqual(downloads, expected_assets)
-            self.assertEqual(len(expected_assets), 10)
+            self.assertEqual(len(expected_assets), 6)
             self.assertEqual(
-                sum(name.endswith((".deb", ".rpm")) for name in expected_assets), 8
+                sum(name.endswith((".deb", ".rpm")) for name in expected_assets), 4
             )
             self.assertFalse(any(name.endswith(".zip") for name in expected_assets))
+            self.assertFalse(any("arm64" in name for name in expected_assets))
             self.assertEqual(events.count("image-copy"), 2)
             image_copies = [argv for argv in remote_commands if argv[:2] == ["skopeo", "copy"]]
             self.assertEqual(len(image_copies), 2)
@@ -193,6 +194,12 @@ class LocalPublisherTests(unittest.TestCase):
             self.assertTrue(all("--clobber" not in argv and "delete" not in argv for argv in remote_commands))
 
     def test_extra_windows_zip_is_rejected_before_any_remote_write(self):
+        self._assert_extra_asset_rejected(f"kubeatlas_v{release_local.VERSION}_windows_amd64.zip")
+
+    def test_extra_arm64_package_is_rejected_before_any_remote_write(self):
+        self._assert_extra_asset_rejected(f"kubeatlas_{release_local.VERSION}_linux_arm64.deb")
+
+    def _assert_extra_asset_rejected(self, extra_path):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             bundle = root / "bundle"
@@ -210,11 +217,14 @@ class LocalPublisherTests(unittest.TestCase):
                     ]
                     + [
                         {
-                            "path": f"kubeatlas_v{release_local.VERSION}_windows_amd64.zip",
+                            "path": extra_path,
                             "sha256": "f" * 64,
                         }
                     ],
-                    "ghcr": [],
+                    "ghcr": [
+                        {"path": path, "sha256": "0" * 64}
+                        for path in release_local.expected_artifact_paths("ghcr", release_local.VERSION)
+                    ],
                 }
             }
             commands = []

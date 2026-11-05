@@ -153,6 +153,32 @@ class ReleaseArtifactsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact set"):
             artifacts.validate_staged(output, profile="local-linux")
 
+    def test_local_amd64_profile_excludes_deferred_platforms(self):
+        version, source_sha = "1.2.3", "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "local-linux-amd64"
+        profile = "local-linux-amd64"
+        manifest = artifacts.create_local_staged(full, output, source_sha, version, profile=profile)
+        expected = {
+            f"{component}_{version}_linux_amd64.{suffix}"
+            for component in ("kubeatlas", "kubeatlas-portal")
+            for suffix in ("deb", "rpm")
+        }
+        self.assertEqual(set(artifacts.local_asset_names(version, profile)), expected)
+        self.assertEqual({p.name for p in output.iterdir()}, expected | {"binary-manifest.json", "checksums.txt"})
+        self.assertEqual(manifest["profile"], profile)
+        self.assertEqual(len(manifest["artifacts"]), 4)
+        artifacts.validate_staged(output, profile=profile)
+        for deferred in (f"kubeatlas_{version}_linux_arm64.deb", f"kubeatlas_v{version}_windows_amd64.zip"):
+            with self.subTest(deferred=deferred):
+                extra = output / deferred
+                extra.write_bytes((full / deferred).read_bytes())
+                with self.assertRaisesRegex(ValueError, "artifact set"):
+                    artifacts.validate_staged(output, profile=profile)
+                extra.unlink()
+        with self.assertRaisesRegex(ValueError, "publication profile"):
+            artifacts.validate_staged(output, profile="local-linux")
+
     def test_local_profile_rejects_omitted_extra_symlink_and_modified_payloads(self):
         version = "1.2.3"
         source_sha = "a" * 40

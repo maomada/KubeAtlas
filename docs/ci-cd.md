@@ -262,7 +262,7 @@ packages plus the KubeAtlas Windows amd64 ZIP, with a schema-2 manifest and
 checksums (11 files). The full 15-file `kubeatlas-binary-release` artifact is
 diagnostic evidence only. No macOS or Linux tar archive is published, and
 native Windows smoke remains required by that hosted profile. This unchanged
-hosted contract is distinct from the `local-linux` profile below and is not
+hosted contract is distinct from the `local-linux-amd64` profile below and is not
 authorized for the scoped 0.1.0 local publication.
 
 With `publish=true`, the publisher downloads the signed approval and
@@ -312,12 +312,16 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_local.py check \
   --source-sha "$SOURCE_SHA" --bundle "$BUNDLE" --rules-source "$RULES_SOURCE"
 ```
 
-The scoped 0.1.0 local profile is fixed to `local-linux`. The build still
-validates the full 15-artifact GoReleaser matrix, but stages only eight Linux
-DEB/RPM packages (KubeAtlas and Portal, amd64 and arm64), `binary-manifest.json`,
-and `checksums.txt`. The bundle also contains the two multiarch OCI archives
-and two Helm charts. The Windows ZIP is deferred: it is not published or
-accepted by this local profile, and no Windows acceptance is claimed. Fleet,
+The scoped 0.1.0 local profile is fixed to `local-linux-amd64`. The build still
+validates the full 15-artifact GoReleaser matrix as diagnostic evidence, but
+stages only four Linux amd64 DEB/RPM packages (KubeAtlas and Portal),
+`binary-manifest.json`, and `checksums.txt`. The bundle also contains two
+linux/amd64-only OCI archives and two Helm charts staged with Linux amd64
+node selectors; hosted chart defaults remain unchanged. Both OCI indexes and
+single-image manifests are validated against this exact platform set, including
+config provenance and preserved digests. The Windows ZIP and all arm64
+distributions are deferred: they are not published or accepted by this local
+profile, and no native acceptance is claimed for them. Fleet,
 macOS, and Portal Windows distributions are excluded. `LICENSE` and `NOTICE`
 remain in the binary packages. This does not change the hosted Actions
 `local` profile described above. A candidate branch is not releasable:
@@ -356,13 +360,14 @@ platform, context, component/environment versions, command records and exit
 status, scenario outcomes, limitations, artifact hashes, and report/log
 evidence hashes. Every required scenario is listed separately as `passed`,
 `untested`, or `failed`; untested or failed outcomes block approval. The fixed
-local-linux contract retains 19 gates: build, Linux CI, frontend, settings E2E,
+local-linux-amd64 contract retains 15 gates: build, Linux CI, frontend, settings E2E,
 Helm, release security, POSIX installers, Semgrep self-test and full scan,
-OCI/package validation, real-cluster acceptance, and eight per-package
-installation gates. Each Linux package gate requires isolated install,
-version, uninstall, and no-autostart evidence with explicit architecture and
-distribution details. Native Windows is not an active gate for this profile;
-Windows acceptance reports are rejected by its importer. Real-cluster
+OCI/package validation, real-cluster acceptance, and four per-package
+installation gates. Each Linux package gate requires native amd64 execution
+and isolated install, version, uninstall, and no-autostart evidence with explicit
+architecture and distribution details. Emulated installation reports are rejected.
+Windows and arm64 are not active gates for this profile; their acceptance
+reports are rejected by its importer. Real-cluster
 evidence must report the Kubernetes context and version and the main and Portal
 flows, including read-only/security boundaries. Emulation is reported
 explicitly and cannot substitute for native execution where a gate requires

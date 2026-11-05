@@ -80,12 +80,14 @@ published by the implementation change.
 ### Local build and acceptance bundle
 
 The separate local path is documented in [CI/CD](ci-cd.md#separate-local-release-path).
-For the scoped 0.1.0 local release, the fixed `local-linux` profile builds and
-validates the full binary matrix once, then selects only eight Linux DEB/RPM
-packages (KubeAtlas and Portal for amd64 and arm64), `binary-manifest.json`,
-and `checksums.txt`. The local bundle also contains both multiarch images and
-both Helm charts. The Windows ZIP is deferred, unpublished, and unaccepted in
-this profile; no Windows acceptance is claimed.
+For the scoped 0.1.0 local release, the fixed `local-linux-amd64` profile builds
+and validates the full binary matrix once as diagnostic evidence, then selects
+only four Linux amd64 DEB/RPM packages (KubeAtlas and Portal),
+`binary-manifest.json`, and `checksums.txt` (six binary-publication files).
+The local bundle also contains both linux/amd64-only images and both Helm
+charts staged with Linux amd64 node selectors. The Windows ZIP and all arm64
+distributions are deferred, unpublished, and unaccepted in this profile; no
+native acceptance is claimed for them. Hosted multiarch defaults are unchanged.
 
 During staging, each generated unsigned RPM is copied before correcting its
 `LONGARCHIVESIZE` field only when it matches installed `SIZE` but differs from
@@ -104,7 +106,7 @@ That hosted profile is not authorized for the scoped 0.1.0 local publication.
 Local approval and evidence use a local-only schema and cannot substitute for
 Actions approval or run provenance. Candidate builds are not releasable;
 offline approval requires a fresh clean main source/tooling commit. The
-remaining real-cluster gate and all eight isolated package install, version,
+remaining real-cluster gate and all four isolated native amd64 package install, version,
 uninstall, and no-autostart gates remain operator-attested requirements. They
-must not be inferred from cross-builds, fixtures, or package inspection. No
+must not be inferred from cross-builds, emulation, fixtures, or package inspection. No
 actual release publication is claimed.
