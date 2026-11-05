@@ -337,6 +337,16 @@ func (s *Store) Groups() []Group {
 	return result
 }
 
+func (s *Store) SourceMatches(clusterID, sourceID string) bool {
+	if s == nil || sourceID == "" {
+		return false
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	cluster, ok := s.clusters[clusterID]
+	return !s.closed && ok && cluster.SourceID == sourceID
+}
+
 func (s *Store) persistLocked(clusters map[string]Cluster, groups map[string]Group) (bool, error) {
 	state := persistedState{Version: stateVersion, Clusters: make([]Cluster, 0, len(clusters)), Groups: make([]Group, 0, len(groups))}
 	clusterIDs := make([]string, 0, len(clusters))
@@ -404,6 +414,7 @@ func writeStateFileWithSync(path string, data []byte, syncDirectory func(*os.Fil
 }
 
 func cloneSnapshot(snapshot Snapshot) Snapshot {
+	snapshot.RelationshipFacts = slices.Clone(snapshot.RelationshipFacts)
 	snapshot.Documents = slices.Clone(snapshot.Documents)
 	for i := range snapshot.Documents {
 		snapshot.Documents[i] = cloneDocument(snapshot.Documents[i])

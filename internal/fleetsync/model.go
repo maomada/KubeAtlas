@@ -25,13 +25,14 @@ type Document struct {
 }
 
 type Snapshot struct {
-	Version     int        `json:"version"`
-	ClusterID   string     `json:"clusterId"`
-	Name        string     `json:"name"`
-	SourceID    string     `json:"sourceId"`
-	ObservedAt  time.Time  `json:"observedAt"`
-	Documents   []Document `json:"documents"`
-	Limitations []string   `json:"limitations"`
+	Version           int                `json:"version"`
+	ClusterID         string             `json:"clusterId"`
+	Name              string             `json:"name"`
+	SourceID          string             `json:"sourceId"`
+	ObservedAt        time.Time          `json:"observedAt"`
+	Documents         []Document         `json:"documents"`
+	Limitations       []string           `json:"limitations"`
+	RelationshipFacts []RelationshipFact `json:"relationshipFacts"`
 }
 
 type Cluster struct {
@@ -62,10 +63,11 @@ type ClusterContext struct {
 }
 
 type AgentContext struct {
-	Mode        string           `json:"mode"`
-	Fleet       *Group           `json:"fleet,omitempty"`
-	Clusters    []ClusterContext `json:"clusters"`
-	Limitations []string         `json:"limitations"`
+	Mode        string             `json:"mode"`
+	Fleet       *Group             `json:"fleet,omitempty"`
+	Clusters    []ClusterContext   `json:"clusters"`
+	Limitations []string           `json:"limitations"`
+	Federation  *FederationContext `json:"federation,omitempty"`
 }
 
 func ValidateID(id string) bool { return validID.MatchString(id) }
@@ -78,6 +80,14 @@ func (s Snapshot) Validate(now time.Time) error {
 		return errors.New("invalid snapshot time or document count")
 	}
 	keys := make(map[string]bool)
+	if len(s.RelationshipFacts) > 20000 {
+		return errors.New("too many relationship facts")
+	}
+	for _, fact := range s.RelationshipFacts {
+		if !validRelationshipFact(fact) {
+			return errors.New("invalid relationship fact")
+		}
+	}
 	for _, d := range s.Documents {
 		if !slices.Contains([]string{"get_dashboard", "get_topology", "get_events", "list_resources", "get_resource"}, d.Tool) || !json.Valid(d.Input) {
 			return errors.New("invalid snapshot document")
@@ -118,6 +128,7 @@ func AssembleContext(selection Selection, clusters map[string]Cluster, groups ma
 		group.ClusterIDs = slices.Clone(group.ClusterIDs)
 		result.Mode, result.Fleet = "multi_cloud", &group
 		ids = group.ClusterIDs
+		result.Federation = AssembleRelationships(ids, clusters, now)
 		result.Limitations = append(result.Limitations, "Membership does not establish connectivity, failover, or application identity across clusters. Resource and topology IDs are local to each clusterId.")
 	} else if _, ok := clusters[selection.ClusterID]; !ok {
 		return result, errors.New("unknown clusterId")

@@ -16,31 +16,32 @@ import (
 const maxRequestBytes = 1 << 20
 
 func NewHandler(store *Store) http.Handler {
+	return NewHandlerWithBridge(store, nil)
+}
+
+func NewHandlerWithBridge(store *Store, bridge ToolBridge) http.Handler {
 	mcpServer := mcp.NewServer(&mcp.Implementation{Name: "kubeatlas-fleet-sync", Version: "1"}, nil)
-	registerTools(mcpServer, store)
+	registerTools(mcpServer, store, bridge)
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return mcpServer
 	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: maxRequestBytes})
-	return &handler{store: store, mcp: mcpHandler}
+	return &handler{store: store, bridge: bridge, mcp: mcpHandler}
 }
 
 type handler struct {
-	store *Store
-	mcp   http.Handler
+	store  *Store
+	bridge ToolBridge
+	mcp    http.Handler
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
-	if r.URL.Path == "/mcp-fleet" {
-		h.mcp.ServeHTTP(w, r)
+	if h.store == nil {
+		writeError(w, http.StatusServiceUnavailable, errors.New("Fleet synchronization is unavailable"))
 		return
 	}
-	if r.URL.Path == "/" {
-		if r.Method != http.MethodGet {
-			writeError(w, http.StatusMethodNotAllowed, errors.New("method not allowed"))
-			return
-		}
-		serveUI(w, r)
+	if r.URL.Path == "/mcp-fleet" {
+		h.mcp.ServeHTTP(w, r)
 		return
 	}
 	if r.URL.Path == "/healthz" {
@@ -53,18 +54,7 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.URL.Path {
 	case "/api/snapshots":
-		if requireMethod(w, r, http.MethodPost) {
-			return
-		}
-		var snapshot Snapshot
-		if !decodeRequest(w, r, MaxSnapshotBytes, &snapshot) {
-			return
-		}
-		if err := h.store.Ingest(snapshot); err != nil {
-			writeError(w, http.StatusBadRequest, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+		NewSnapshotHandler(h.store, "").ServeHTTP(w, r)
 	case "/api/clusters":
 		if requireMethod(w, r, http.MethodGet) {
 			return
@@ -100,6 +90,46 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		result, err := h.store.Resource(selection)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	case "/api/tools":
+		if requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		var selection Selection
+		if !decodeRequest(w, r, maxRequestBytes, &selection) {
+			return
+		}
+		if h.bridge == nil {
+			writeError(w, http.StatusServiceUnavailable, errors.New("live source tools are unavailable"))
+			return
+		}
+		result, err := h.bridge.ListClusterTools(r.Context(), selection)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	case "/api/call-tool":
+		if requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		var request ClusterToolCall
+		if !decodeRequest(w, r, maxRequestBytes, &request) {
+			return
+		}
+		if h.bridge == nil {
+			writeError(w, http.StatusServiceUnavailable, errors.New("live source tools are unavailable"))
+			return
+		}
+		result, err := h.bridge.CallClusterTool(r.Context(), request)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, ErrAgentUnavailable) {
+				status = http.StatusServiceUnavailable
+			}
+			writeError(w, status, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, result)
@@ -144,7 +174,7 @@ func (h *handler) serveFleet(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func registerTools(server *mcp.Server, store *Store) {
+func registerTools(server *mcp.Server, store *Store, bridge ToolBridge) {
 	mcp.AddTool[struct{}, any](server, &mcp.Tool{
 		Name:        "list_clusters",
 		Description: "List synchronized cluster observations and centrally configured multi-cloud groups. No live Kubernetes queries.",
@@ -174,6 +204,58 @@ func registerTools(server *mcp.Server, store *Store) {
 			return nil, nil, err
 		}
 		return textResult(result)
+	})
+	mcp.AddTool[Selection, any](server, &mcp.Tool{
+		Name:        "list_cluster_tools",
+		Description: "List original KubeAtlas MCP tool catalogs for exactly one clusterId or fleetId. Each source retains its configured read-only and exec mode; unavailable members have an empty catalog.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, selection Selection) (*mcp.CallToolResult, any, error) {
+		if bridge == nil {
+			return nil, nil, errors.New("live source tools are unavailable")
+		}
+		result, err := bridge.ListClusterTools(ctx, selection)
+		if err != nil {
+			return nil, nil, err
+		}
+		return textResult(result)
+	})
+	mcp.AddTool[ClusterToolCall, any](server, &mcp.Tool{
+		Name:        "call_cluster_tool",
+		Description: "Invoke one original MCP tool on one explicit clusterId, optionally requiring membership in fleetId. This may perform mutations; calls are never broadcast. If the source disconnects or times out after dispatch, the outcome is unknown and must be reconciled before retrying.",
+	}, func(ctx context.Context, _ *mcp.CallToolRequest, request ClusterToolCall) (*mcp.CallToolResult, any, error) {
+		if bridge == nil {
+			return nil, nil, errors.New("live source tools are unavailable")
+		}
+		result, err := bridge.CallClusterTool(ctx, request)
+		if err != nil {
+			return nil, nil, err
+		}
+		return result, nil, nil
+	})
+}
+
+func NewSnapshotHandler(store *Store, expectedClusterID string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Cache-Control", "no-store")
+		if requireMethod(w, r, http.MethodPost) {
+			return
+		}
+		if store == nil {
+			writeError(w, http.StatusServiceUnavailable, errors.New("Fleet synchronization is unavailable"))
+			return
+		}
+		var snapshot Snapshot
+		if !decodeRequest(w, r, MaxSnapshotBytes, &snapshot) {
+			return
+		}
+		if expectedClusterID != "" && snapshot.ClusterID != expectedClusterID {
+			writeError(w, http.StatusBadRequest, errors.New("snapshot clusterId does not match the upload route"))
+			return
+		}
+		if err := store.Ingest(snapshot); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 	})
 }
 

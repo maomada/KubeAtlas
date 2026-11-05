@@ -13,10 +13,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
 
+	"github.com/maomada/KubeAtlas/internal/fleetsync"
 	"github.com/maomada/KubeAtlas/internal/portal"
 	"github.com/maomada/KubeAtlas/internal/portalui"
 )
@@ -26,8 +28,13 @@ const maxTokenMapBytes = 1 << 20
 func main() {
 	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
 	dataFile := flag.String("data-file", "./portal-data/registry.json", "Persistent registry JSON file")
+	fleetDataFile := flag.String("fleet-data-file", "", "Persistent Fleet state JSON file (default: <data-file directory>/fleet/state.json)")
 	insecureCookie := flag.Bool("insecure-cookie", false, "Allow non-Secure viewer cookies for loopback HTTP development only")
 	flag.Parse()
+	if host, _, err := net.SplitHostPort(*listen); err == nil &&
+		host != "localhost" && !net.ParseIP(host).IsLoopback() {
+		log.Printf("WARNING: Portal is listening beyond loopback; use only on a trusted isolated development network, never on the public internet or in production")
+	}
 
 	credentials, err := loadCredentials()
 	if err != nil {
@@ -44,21 +51,30 @@ func main() {
 	if err != nil {
 		log.Fatalf("portal registry startup failed: %v", err)
 	}
+	if *fleetDataFile == "" {
+		*fleetDataFile = filepath.Join(filepath.Dir(*dataFile), "fleet", "state.json")
+	}
+	fleetStore, err := fleetsync.OpenStore(*fleetDataFile)
+	if err != nil {
+		log.Fatalf("portal Fleet state startup failed: %v", err)
+	}
+	defer fleetStore.Close()
 	static, err := fs.Sub(portalui.FS, "dist")
 	if err != nil {
 		log.Fatalf("portal web assets are unavailable; build the portal frontend and embed it")
 	}
-	handler, err := portal.NewHandler(registry, credentials, static)
+	handler, err := portal.NewHandler(registry, credentials, static, fleetStore)
 	if err != nil {
 		log.Fatalf("portal configuration is invalid: %v", err)
 	}
+	defer handler.Close()
 
 	server := &http.Server{
 		Addr:              *listen,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       10 * time.Second,
-		WriteTimeout:      15 * time.Second,
+		ReadTimeout:       2 * time.Minute,
+		WriteTimeout:      11 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    10 << 10,
 	}

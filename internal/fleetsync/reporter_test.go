@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -17,17 +18,26 @@ func TestReporterUploadsFullSnapshotToManager(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer store.Close()
-	server := httptest.NewServer(NewHandler(store))
+	config := reporterTestConfig("http://placeholder")
+	var gotPath, gotAuthorization string
+	snapshotHandler := NewSnapshotHandler(store, "east")
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotAuthorization = r.Header.Get("Authorization")
+		snapshotHandler.ServeHTTP(w, r)
+	}))
 	defer server.Close()
+	config.PortalURL = server.URL
 	snapshot := sampleCluster("east", time.Now().UTC()).Snapshot
-	reporter, err := NewReporter(ReporterConfig{
-		URL: server.URL, ClusterID: "east", Name: "east", Interval: minimumSyncInterval,
-	}, func(context.Context) (Snapshot, error) { return snapshot, nil })
+	reporter, err := NewReporter(config, func(context.Context) (Snapshot, error) { return snapshot, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := reporter.postSnapshot(context.Background(), snapshot); err != nil {
 		t.Fatal(err)
+	}
+	if gotPath != "/api/fleet/snapshots/east" || gotAuthorization != "Bearer "+config.Token {
+		t.Fatalf("upload route/auth = %q/%q", gotPath, gotAuthorization)
 	}
 	inventory := store.Inventory()
 	if len(inventory) != 1 || inventory[0].ClusterID != "east" || inventory[0].ObservedAt != snapshot.ObservedAt {
@@ -37,20 +47,24 @@ func TestReporterUploadsFullSnapshotToManager(t *testing.T) {
 
 func TestReporterConfigIsOptInAndRejectsIncompleteOrUnsafeURLs(t *testing.T) {
 	for _, key := range []string{
-		"KUBEATLAS_FLEET_URL", "KUBEATLAS_FLEET_CLUSTER_ID", "KUBEATLAS_FLEET_CLUSTER_NAME",
+		"KUBEATLAS_FLEET_SYNC_ENABLED", "KUBEATLAS_PORTAL_URL", "KUBEATLAS_PORTAL_CLUSTER_ID",
+		"KUBEATLAS_PORTAL_CLUSTER_NAME", "KUBEATLAS_PORTAL_TOKEN", "KUBEATLAS_PORTAL_ALLOW_HTTP",
 		"KUBEATLAS_FLEET_SYNC_INTERVAL",
 	} {
 		t.Setenv(key, "")
 	}
+	t.Setenv("KUBEATLAS_FLEET_URL", "https://old-manager.example")
+	t.Setenv("KUBEATLAS_FLEET_CLUSTER_ID", "old-cluster")
 	if _, enabled, err := ConfigFromEnv(); err != nil || enabled {
 		t.Fatalf("empty config: enabled=%v err=%v", enabled, err)
 	}
-	t.Setenv("KUBEATLAS_FLEET_CLUSTER_ID", "east")
+	t.Setenv("KUBEATLAS_FLEET_SYNC_ENABLED", "true")
 	if _, enabled, err := ConfigFromEnv(); err == nil || enabled {
 		t.Fatalf("incomplete config: enabled=%v err=%v", enabled, err)
 	}
-	t.Setenv("KUBEATLAS_FLEET_URL", "https://manager.example")
-	t.Setenv("KUBEATLAS_FLEET_CLUSTER_ID", "east")
+	t.Setenv("KUBEATLAS_PORTAL_URL", "https://portal.example")
+	t.Setenv("KUBEATLAS_PORTAL_CLUSTER_ID", "east")
+	t.Setenv("KUBEATLAS_PORTAL_TOKEN", strings.Repeat("t", 32))
 	config, enabled, err := ConfigFromEnv()
 	if err != nil || !enabled || config.Interval != defaultSyncInterval || config.ClusterID != "east" {
 		t.Fatalf("valid config = %+v enabled=%v err=%v", config, enabled, err)
@@ -59,10 +73,18 @@ func TestReporterConfigIsOptInAndRejectsIncompleteOrUnsafeURLs(t *testing.T) {
 		"https://user:pass@manager.example", "https://manager.example/?x=1",
 		"https://manager.example/#fragment", "ftp://manager.example",
 	} {
-		t.Setenv("KUBEATLAS_FLEET_URL", rawURL)
-		if _, enabled, err := ConfigFromEnv(); err == nil || !enabled {
+		t.Setenv("KUBEATLAS_PORTAL_URL", rawURL)
+		if _, enabled, err := ConfigFromEnv(); err == nil || enabled {
 			t.Errorf("accepted unsafe URL %q: enabled=%v err=%v", rawURL, enabled, err)
 		}
+	}
+	t.Setenv("KUBEATLAS_PORTAL_URL", "http://localhost")
+	if _, enabled, err := ConfigFromEnv(); err == nil || enabled {
+		t.Fatalf("HTTP without opt-in accepted: enabled=%v err=%v", enabled, err)
+	}
+	t.Setenv("KUBEATLAS_PORTAL_ALLOW_HTTP", "true")
+	if _, enabled, err := ConfigFromEnv(); err != nil || !enabled {
+		t.Fatalf("explicit HTTP allowance rejected: enabled=%v err=%v", enabled, err)
 	}
 }
 
@@ -73,9 +95,7 @@ func TestReporterDoesNotPostFailedCaptureAndUsesGenericError(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 	}))
 	defer server.Close()
-	reporter, err := NewReporter(ReporterConfig{
-		URL: server.URL, ClusterID: "east", Name: "east", Interval: minimumSyncInterval,
-	}, func(context.Context) (Snapshot, error) {
+	reporter, err := NewReporter(reporterTestConfig(server.URL), func(context.Context) (Snapshot, error) {
 		return Snapshot{}, errors.New("private cluster payload detail")
 	})
 	if err != nil {
@@ -120,9 +140,7 @@ func TestReporterDoesNotFollowRedirects(t *testing.T) {
 		w.WriteHeader(http.StatusTemporaryRedirect)
 	}))
 	defer redirect.Close()
-	reporter, err := NewReporter(ReporterConfig{
-		URL: redirect.URL, ClusterID: "east", Name: "east", Interval: minimumSyncInterval,
-	}, func(context.Context) (Snapshot, error) { return Snapshot{}, nil })
+	reporter, err := NewReporter(reporterTestConfig(redirect.URL), func(context.Context) (Snapshot, error) { return Snapshot{}, nil })
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,9 +160,7 @@ func TestReporterCancellationStopsCaptureWithoutUploading(t *testing.T) {
 	}))
 	defer server.Close()
 	started := make(chan struct{})
-	reporter, err := NewReporter(ReporterConfig{
-		URL: server.URL, ClusterID: "east", Name: "east", Interval: minimumSyncInterval,
-	}, func(ctx context.Context) (Snapshot, error) {
+	reporter, err := NewReporter(reporterTestConfig(server.URL), func(ctx context.Context) (Snapshot, error) {
 		close(started)
 		<-ctx.Done()
 		return Snapshot{}, ctx.Err()
@@ -167,5 +183,12 @@ func TestReporterCancellationStopsCaptureWithoutUploading(t *testing.T) {
 	}
 	if got := requests.Load(); got != 0 {
 		t.Fatalf("canceled capture uploaded %d requests", got)
+	}
+}
+
+func reporterTestConfig(portalURL string) ReporterConfig {
+	return ReporterConfig{
+		PortalURL: portalURL, Token: strings.Repeat("t", 32), ClusterID: "east",
+		Name: "east", Interval: minimumSyncInterval, AllowHTTP: true,
 	}
 }

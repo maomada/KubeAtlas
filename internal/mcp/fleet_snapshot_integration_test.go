@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/maomada/KubeAtlas/internal/fleetsync"
 	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/portal"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -45,10 +49,25 @@ func TestFleetSnapshotReporterManagerMCPIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 
+	registry, err := portal.OpenRegistry(filepath.Join(t.TempDir(), "portal", "registry.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tokens := map[string]string{
+		"east": "east-registration-token-with-at-least-32-bytes",
+		"west": "west-registration-token-with-at-least-32-bytes",
+	}
+	handler, err := portal.NewHandler(registry, portal.Credentials{
+		Tokens: tokens, Username: "fleet-viewer", Password: "fleet-viewer-password-long",
+		AllowInsecureCookies: true,
+	}, fstest.MapFS{"portal.html": &fstest.MapFile{Data: []byte("<html>Portal</html>")}}, store)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(handler.Close)
 	snapshotResponses := make(chan int, 2)
-	handler := fleetsync.NewHandler(store)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost && r.URL.Path == "/api/snapshots" {
+		if r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/fleet/snapshots/") {
 			tracked := &snapshotStatusWriter{ResponseWriter: w}
 			handler.ServeHTTP(tracked, r)
 			snapshotResponses <- tracked.status
@@ -57,6 +76,20 @@ func TestFleetSnapshotReporterManagerMCPIntegration(t *testing.T) {
 		handler.ServeHTTP(w, r)
 	}))
 	defer server.Close()
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewerClient := &http.Client{Jar: jar}
+	loginBody := bytes.NewBufferString(`{"username":"fleet-viewer","password":"fleet-viewer-password-long"}`)
+	login, err := viewerClient.Post(server.URL+"/api/auth/login", "application/json", loginBody)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = login.Body.Close()
+	if login.StatusCode != http.StatusNoContent {
+		t.Fatalf("Portal viewer login status = %d", login.StatusCode)
+	}
 
 	captureAndReport := func(clusterID, source, contextName, image string) (fleetsync.Snapshot, string) {
 		t.Helper()
@@ -95,7 +128,8 @@ func TestFleetSnapshotReporterManagerMCPIntegration(t *testing.T) {
 
 		captured := make(chan fleetsync.Snapshot, 1)
 		reporter, err := fleetsync.NewReporter(fleetsync.ReporterConfig{
-			URL: server.URL, ClusterID: clusterID, Name: contextName, Interval: 5 * time.Second,
+			PortalURL: server.URL, Token: tokens[clusterID], ClusterID: clusterID, Name: contextName,
+			Interval: 5 * time.Second, AllowHTTP: true,
 		}, func(captureCtx context.Context) (fleetsync.Snapshot, error) {
 			snapshot, err := CaptureFleetSnapshot(captureCtx, clusterID, contextName, binding)
 			if err == nil {
@@ -146,12 +180,12 @@ func TestFleetSnapshotReporterManagerMCPIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		request, err := http.NewRequest(http.MethodPut, server.URL+"/api/fleets/"+group.ID, bytes.NewReader(body))
+		request, err := http.NewRequest(http.MethodPut, server.URL+"/api/fleet/fleets/"+group.ID, bytes.NewReader(body))
 		if err != nil {
 			t.Fatal(err)
 		}
 		request.Header.Set("Content-Type", "application/json")
-		response, err := http.DefaultClient.Do(request)
+		response, err := viewerClient.Do(request)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -167,7 +201,7 @@ func TestFleetSnapshotReporterManagerMCPIntegration(t *testing.T) {
 	mcpCtx, mcpCancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer mcpCancel()
 	session, err := client.Connect(mcpCtx, &mcpsdk.StreamableClientTransport{
-		Endpoint: server.URL + "/mcp-fleet", DisableStandaloneSSE: true,
+		Endpoint: server.URL + "/mcp-fleet", HTTPClient: viewerClient, DisableStandaloneSSE: true,
 	}, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -224,12 +258,40 @@ func TestFleetSnapshotReporterManagerMCPIntegration(t *testing.T) {
 
 	for clusterID, canonical := range map[string]string{"east": eastResource, "west": westResource} {
 		var resource fleetsync.ClusterContext
-		callJSON("get_resource_context", map[string]any{
+		arguments := map[string]any{
 			"clusterId": clusterID, "kind": "pods", "namespace": "default", "name": "api",
-		}, &resource)
+		}
+		callJSON("get_resource_context", arguments, &resource)
 		if resource.ClusterID != clusterID || len(resource.Documents) != 1 ||
 			string(resource.Documents[0].Data) != canonical {
 			t.Fatalf("%s resource context did not preserve canonical get_resource: %+v", clusterID, resource)
+		}
+		requestBody, err := json.Marshal(fleetsync.ResourceSelection{
+			ClusterID: clusterID, Kind: "pods", Namespace: "default", Name: "api",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		restRequest, err := http.NewRequest(http.MethodPost, server.URL+"/api/fleet/resource-context", bytes.NewReader(requestBody))
+		if err != nil {
+			t.Fatal(err)
+		}
+		restRequest.Header.Set("Content-Type", "application/json")
+		restResponse, err := viewerClient.Do(restRequest)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if restResponse.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(restResponse.Body)
+			_ = restResponse.Body.Close()
+			t.Fatalf("%s REST resource context status = %d: %s", clusterID, restResponse.StatusCode, body)
+		}
+		var restResource fleetsync.ClusterContext
+		err = json.NewDecoder(restResponse.Body).Decode(&restResource)
+		_ = restResponse.Body.Close()
+		if err != nil || restResource.ClusterID != clusterID || len(restResource.Documents) != 1 ||
+			string(restResource.Documents[0].Data) != canonical {
+			t.Fatalf("%s REST resource context changed canonical payload: %+v err=%v", clusterID, restResource, err)
 		}
 	}
 	if eastResource == westResource {

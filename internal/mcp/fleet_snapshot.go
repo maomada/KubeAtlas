@@ -2,8 +2,6 @@ package mcp
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -29,11 +27,11 @@ func CaptureFleetSnapshot(ctx context.Context, clusterID, name, binding string) 
 	if cache == nil || binding == "" || k8s.ClusterSafetyBinding(ctx) != binding {
 		return fleetsync.Snapshot{}, errors.New("Fleet sync requires the configured cluster connection")
 	}
-	digest := sha256.Sum256([]byte(binding))
 	snapshot := fleetsync.Snapshot{
-		Version: fleetsync.Version, ClusterID: clusterID, Name: name, SourceID: hex.EncodeToString(digest[:]),
+		Version: fleetsync.Version, ClusterID: clusterID, Name: name, SourceID: fleetsync.SourceIDForBinding(binding),
 		ObservedAt: time.Now().UTC(), Documents: []fleetsync.Document{},
-		Limitations: []string{"Periodic full snapshots; collection is not an atomic Kubernetes transaction.", "Secret objects and live logs are not exported. Other payloads retain the original KubeAtlas MCP projections and may contain operationally sensitive information."},
+		Limitations:       []string{"Periodic full snapshots; collection is not an atomic Kubernetes transaction.", "Secret objects and live logs are not exported. Other payloads retain the original KubeAtlas MCP projections and may contain operationally sensitive information."},
+		RelationshipFacts: []fleetsync.RelationshipFact{},
 	}
 	bytesUsed := 0
 	add := func(tool string, input any, call func() (*mcpsdk.CallToolResult, any, error)) json.RawMessage {
@@ -122,7 +120,9 @@ func CaptureFleetSnapshot(ctx context.Context, clusterID, name, binding string) 
 		slices.SortFunc(list.Items, func(a, b struct {
 			Name      string `json:"name"`
 			Namespace string `json:"namespace"`
-		}) int { return strings.Compare(a.Namespace+"/"+a.Name, b.Namespace+"/"+b.Name) })
+		}) int {
+			return strings.Compare(a.Namespace+"/"+a.Name, b.Namespace+"/"+b.Name)
+		})
 		for _, resource := range list.Items {
 			if resource.Name == "" {
 				continue
@@ -132,7 +132,28 @@ func CaptureFleetSnapshot(ctx context.Context, clusterID, name, binding string) 
 				break
 			}
 			input := getResourceInput{Kind: item.resource, Group: item.group, Namespace: resource.Namespace, Name: resource.Name}
-			add("get_resource", input, func() (*mcpsdk.CallToolResult, any, error) { return handleGetResource(ctx, nil, input) })
+			data := add("get_resource", input, func() (*mcpsdk.CallToolResult, any, error) { return handleGetResource(ctx, nil, input) })
+			ref := fleetsync.EvidenceResource{Group: item.group, Kind: item.resource, Namespace: resource.Namespace, Name: resource.Name}
+			if len(data) > 0 {
+				if item.group == "" && slices.Contains([]string{"namespaces", "nodes", "pods", "services", "endpoints"}, item.resource) {
+					if raw, err := k8s.FetchResource(cache, item.resource, resource.Namespace, resource.Name); err == nil {
+						data, _ = json.Marshal(raw)
+					} else {
+						snapshot.Limitations = appendOnce(snapshot.Limitations, "Some original network/identity facts were unavailable; canonical MCP documents omit some IPs and UIDs.")
+					}
+				}
+				facts := fleetsync.ExtractRelationshipFacts(ref, data)
+				if len(facts) == 512 {
+					snapshot.Limitations = appendOnce(snapshot.Limitations, "A resource reached the 512 relationship-fact limit; additional facts may be omitted.")
+				}
+				encoded, _ := json.Marshal(facts)
+				if len(snapshot.RelationshipFacts)+len(facts) <= 20000 && bytesUsed+len(encoded) < fleetsync.MaxSnapshotBytes-(1<<20) {
+					snapshot.RelationshipFacts = append(snapshot.RelationshipFacts, facts...)
+					bytesUsed += len(encoded)
+				} else {
+					snapshot.Limitations = appendOnce(snapshot.Limitations, "Relationship facts truncated by snapshot size/count limits.")
+				}
+			}
 			details++
 		}
 	}

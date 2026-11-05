@@ -1,23 +1,19 @@
 # AI Integration (MCP)
 
-For the opt-in, multi-cluster `/mcp-fleet` endpoint, including default-off
-prepare/execute operations and durable audit, see
-[Fleet Manager](fleet.md). The existing endpoints below keep their single-cluster
-Context behavior.
+For Portal-integrated snapshot context and the live source-tool bridge, see
+[Fleet synchronization](fleet.md#portal-integrated-fleet-synchronization).
+Portal `/mcp-fleet` preserves the snapshot tools `list_clusters`,
+`get_agent_context`, and `get_resource_context`, and adds
+`list_cluster_tools` plus `call_cluster_tool`. The latter invokes one explicitly
+selected source tool and may mutate the source cluster, subject to that source's
+configured MCP mode and Kubernetes permissions. It never broadcasts a call.
+If a source disconnects or times out after dispatch, the outcome is unknown;
+reconcile before retrying. Portal viewer authentication gates this endpoint, but
+fine-grained per-viewer/per-cluster permissions are deferred.
 
-`/mcp-fleet` always exposes `list_clusters`, `get_fleet_overview`,
-`search_fleet_resources`, `get_fleet_resource`, `get_fleet_events`,
-`get_fleet_logs`, `diagnose_fleet_resource`, `get_fleet_relationships` and
-`get_fleet_topology`, plus the read-only `get_fleet_audit`. With
-`--fleet-writes`, it additionally exposes `prepare_fleet_operation` and
-`execute_fleet_operation`. Its companion
-`/api/fleet` routes provide inventory and separately authorized metadata
-management; neither endpoint changes the legacy `/mcp` contract.
-
-The separate `kubeatlas-fleet` snapshot manager also serves `/mcp-fleet` in its
-own process. Its tools read only synchronized snapshots and configured groups;
-they do not query live Kubernetes clusters or change the same-process endpoint
-described above. See [central snapshot synchronization](fleet.md#central-snapshot-synchronization-unauthenticated-development-prototype).
+The separate direct-connect `/mcp-fleet` endpoint remains part of the normal
+KubeAtlas process and has its own catalog and operation model. It is distinct
+from Portal-synchronized context and the original source-tool bridge.
 
 KubeAtlas includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that lets AI agents inspect, investigate, and operate your Kubernetes cluster.
 

@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,7 +12,7 @@ import (
 
 func TestFleetSyncSkipsCloudDisabledIncompleteAndUnboundModes(t *testing.T) {
 	validConfig := func() (fleetsync.ReporterConfig, bool, error) {
-		return fleetsync.ReporterConfig{URL: "http://localhost:9291", ClusterID: "east", Interval: 30 * time.Second}, true, nil
+		return fleetsync.ReporterConfig{PortalURL: "http://localhost:9290", Token: strings.Repeat("t", 32), ClusterID: "east", Interval: 30 * time.Second, AllowHTTP: true}, true, nil
 	}
 	for _, test := range []struct {
 		name      string
@@ -42,7 +43,7 @@ func TestFleetSyncSkipsCloudDisabledIncompleteAndUnboundModes(t *testing.T) {
 				func(context.Context, string, string, string) (fleetsync.Snapshot, error) {
 					return fleetsync.Snapshot{}, nil
 				},
-				func(context.Context, fleetsync.ReporterConfig, fleetsync.CaptureFunc) error {
+				func(context.Context, fleetsync.ReporterConfig, fleetsync.CaptureFunc, string) error {
 					startCalls++
 					return nil
 				})
@@ -54,7 +55,7 @@ func TestFleetSyncSkipsCloudDisabledIncompleteAndUnboundModes(t *testing.T) {
 }
 
 func TestFleetSyncPinsBindingAndStartupContext(t *testing.T) {
-	config := fleetsync.ReporterConfig{URL: "http://localhost:9291", ClusterID: "east", Interval: 30 * time.Second}
+	config := fleetsync.ReporterConfig{PortalURL: "http://localhost:9290", Token: strings.Repeat("t", 32), ClusterID: "east", Interval: 30 * time.Second, AllowHTTP: true}
 	currentContext := "context-a"
 	var capture fleetsync.CaptureFunc
 	called := false
@@ -70,7 +71,7 @@ func TestFleetSyncPinsBindingAndStartupContext(t *testing.T) {
 			}
 			return fleetsync.Snapshot{ClusterID: clusterID, Name: name}, nil
 		},
-		func(_ context.Context, got fleetsync.ReporterConfig, gotCapture fleetsync.CaptureFunc) error {
+		func(_ context.Context, got fleetsync.ReporterConfig, gotCapture fleetsync.CaptureFunc, _ string) error {
 			if got.Name != "East cluster" {
 				t.Fatalf("startup cluster name = %q", got.Name)
 			}

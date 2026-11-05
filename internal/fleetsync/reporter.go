@@ -9,8 +9,10 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
+	"unicode"
 )
 
 const (
@@ -21,10 +23,12 @@ const (
 )
 
 type ReporterConfig struct {
-	URL       string
+	PortalURL string
+	Token     string
 	ClusterID string
 	Name      string
 	Interval  time.Duration
+	AllowHTTP bool
 }
 
 type CaptureFunc func(context.Context) (Snapshot, error)
@@ -36,26 +40,42 @@ type Reporter struct {
 }
 
 func ConfigFromEnv() (ReporterConfig, bool, error) {
-	urlValue := os.Getenv("KUBEATLAS_FLEET_URL")
-	clusterID := os.Getenv("KUBEATLAS_FLEET_CLUSTER_ID")
-	name := os.Getenv("KUBEATLAS_FLEET_CLUSTER_NAME")
-	intervalValue := os.Getenv("KUBEATLAS_FLEET_SYNC_INTERVAL")
-	if urlValue == "" && clusterID == "" && name == "" && intervalValue == "" {
+	enabledValue := os.Getenv("KUBEATLAS_FLEET_SYNC_ENABLED")
+	if enabledValue == "" {
 		return ReporterConfig{}, false, nil
 	}
-	if urlValue == "" {
-		return ReporterConfig{}, false, errors.New("Fleet sync configuration is incomplete")
+	enabled, err := strconv.ParseBool(enabledValue)
+	if err != nil {
+		return ReporterConfig{}, false, errors.New("KUBEATLAS_FLEET_SYNC_ENABLED must be a boolean")
 	}
-	config := ReporterConfig{URL: urlValue, ClusterID: clusterID, Name: name, Interval: defaultSyncInterval}
+	if !enabled {
+		return ReporterConfig{}, false, nil
+	}
+	allowHTTP := false
+	if value := os.Getenv("KUBEATLAS_PORTAL_ALLOW_HTTP"); value != "" {
+		allowHTTP, err = strconv.ParseBool(value)
+		if err != nil {
+			return ReporterConfig{}, false, errors.New("KUBEATLAS_PORTAL_ALLOW_HTTP must be a boolean")
+		}
+	}
+	intervalValue := os.Getenv("KUBEATLAS_FLEET_SYNC_INTERVAL")
+	config := ReporterConfig{
+		PortalURL: os.Getenv("KUBEATLAS_PORTAL_URL"),
+		Token:     os.Getenv("KUBEATLAS_PORTAL_TOKEN"),
+		ClusterID: os.Getenv("KUBEATLAS_PORTAL_CLUSTER_ID"),
+		Name:      os.Getenv("KUBEATLAS_PORTAL_CLUSTER_NAME"),
+		Interval:  defaultSyncInterval,
+		AllowHTTP: allowHTTP,
+	}
 	if intervalValue != "" {
 		interval, err := time.ParseDuration(intervalValue)
 		if err != nil {
-			return ReporterConfig{}, true, errors.New("Fleet sync interval is invalid")
+			return ReporterConfig{}, false, errors.New("Fleet sync interval is invalid")
 		}
 		config.Interval = interval
 	}
 	if err := validateReporterConfig(config); err != nil {
-		return ReporterConfig{}, true, err
+		return ReporterConfig{}, false, err
 	}
 	return config, true, nil
 }
@@ -83,20 +103,31 @@ func NewReporter(config ReporterConfig, capture CaptureFunc) (*Reporter, error) 
 }
 
 func validateReporterConfig(config ReporterConfig) error {
-	if !ValidateID(config.ClusterID) || config.Interval < minimumSyncInterval {
-		return errors.New("Fleet sync cluster ID or interval is invalid")
+	if !ValidateID(config.ClusterID) || len(config.Token) < 32 || config.Interval < minimumSyncInterval {
+		return errors.New("Fleet sync identity or interval is invalid")
 	}
 	if strings.TrimSpace(config.Name) != "" && len(config.Name) > 256 {
 		return errors.New("Fleet sync cluster name is invalid")
 	}
-	parsed, err := url.Parse(config.URL)
-	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") ||
+	parsed, err := url.Parse(config.PortalURL)
+	if err != nil || (parsed.Scheme != "https" && !(parsed.Scheme == "http" && config.AllowHTTP)) ||
 		parsed.Host == "" || parsed.Hostname() == "" || parsed.User != nil ||
 		parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
-		strings.Contains(config.URL, "#") || parsed.Opaque != "" {
-		return errors.New("Fleet sync URL must be an HTTP or HTTPS URL without credentials, query, or fragment")
+		strings.Contains(config.PortalURL, "?") || strings.Contains(config.PortalURL, "#") ||
+		strings.Contains(config.PortalURL, "\\") || parsed.Opaque != "" ||
+		(parsed.Path != "" && parsed.Path != "/") || hasControl(config.PortalURL) {
+		return errors.New("Fleet sync Portal URL or HTTP allowance is invalid")
 	}
 	return nil
+}
+
+func hasControl(value string) bool {
+	for _, r := range value {
+		if unicode.IsControl(r) {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *Reporter) Run(ctx context.Context, onError func(error)) {
@@ -136,12 +167,13 @@ func (r *Reporter) postSnapshot(ctx context.Context, snapshot Snapshot) error {
 	if err != nil || len(data) > MaxSnapshotBytes {
 		return errors.New("snapshot exceeds the size limit")
 	}
-	endpoint := strings.TrimRight(r.config.URL, "/") + "/api/snapshots"
+	endpoint := strings.TrimRight(r.config.PortalURL, "/") + "/api/fleet/snapshots/" + r.config.ClusterID
 	request, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
 	if err != nil {
 		return errors.New("Fleet sync request could not be created")
 	}
 	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+r.config.Token)
 	response, err := r.client.Do(request)
 	if err != nil {
 		return errors.New("Fleet sync request failed")

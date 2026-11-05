@@ -1,54 +1,46 @@
-# Fleet Manager: managed connections and metadata API
+# Fleet synchronization and direct-connect modes
 
-KubeAtlas has two separate multi-cluster modes. The **central snapshot prototype**
-below accepts periodic read-only snapshots from existing KubeAtlas instances and
-composes per-cluster or operator-defined multi-cloud context from synchronized
-data. The **direct-connect Fleet mode** later in this document runs inside the
-normal KubeAtlas process and queries explicitly configured Kubernetes connections
-live. They have different binaries, storage, APIs and data freshness; enabling one
-does not enable or change the other.
+KubeAtlas supports Portal-integrated snapshot synchronization and a separate
+direct-connect Fleet mode. Portal synchronization lets independent KubeAtlas
+instances send snapshots and expose their original MCP tools through one Portal
+interface. Direct-connect Fleet remains inside a KubeAtlas process and queries
+explicitly configured Kubernetes connections live; it is unchanged by Portal
+synchronization.
 
-## Central snapshot synchronization (unauthenticated development prototype)
+## Portal-integrated Fleet synchronization
 
-This mode is for local development and isolated, trusted development networks
-only. It is unauthenticated and has no tenant isolation. It is not suitable for
-production, public deployment, or exposure through a public proxy/tunnel. Security,
-authentication and tenant isolation are explicitly deferred. The manager warns
-when configured on a non-loopback listener; that warning is not a security
-boundary. Its default listener is `127.0.0.1:9291`.
+The existing KubeAtlas Portal serves the Fleet workspace at `/fleet` and stores
+snapshots and groups alongside its registry. The default state path is
+`<data-file directory>/fleet/state.json`; `-fleet-data-file` can override it.
+Portal viewer login gates Fleet reads and group edits. Source instances use their
+existing per-cluster Portal registration tokens for uploads and outbound MCP
+channels. The Portal never dials source instances.
 
-Run the independent manager without starting a Kubernetes client, kubeconfig
-discovery, or the normal KubeAtlas server:
-
-```bash
-go run ./cmd/kubeatlas-fleet \
-  -listen 127.0.0.1:9291 \
-  -data-file ./fleet-data/state.json
-```
-
-The state file is versioned and bounded, stored with private file permissions,
-atomically replaced, and locked to one manager process. Its snapshot and group
-records are application data, not credentials.
-
-Opt in each local or in-cluster KubeAtlas instance with:
+Each source needs only outbound HTTPS/WSS connectivity to the configured Portal.
+For isolated local development, HTTP/WS can be enabled explicitly with
+`KUBEATLAS_PORTAL_ALLOW_HTTP=true`. Use only a trusted, isolated development
+network; do not expose Portal or sources to the public internet or deploy this
+mode in production. Portal viewers currently share Fleet context; per-viewer,
+per-cluster authorization is deferred. A tool call runs with the source
+KubeAtlas's configured MCP mode and Kubernetes identity.
 
 ```bash
-export KUBEATLAS_FLEET_URL=https://fleet-manager.internal.example
-export KUBEATLAS_FLEET_CLUSTER_ID=prod-east
-export KUBEATLAS_FLEET_CLUSTER_NAME="Production East"
+export KUBEATLAS_FLEET_SYNC_ENABLED=true
+export KUBEATLAS_PORTAL_URL=https://portal.example.internal
+export KUBEATLAS_PORTAL_CLUSTER_ID=prod-east
+export KUBEATLAS_PORTAL_CLUSTER_NAME="Production East"
 export KUBEATLAS_FLEET_SYNC_INTERVAL=30s
 ```
 
-`KUBEATLAS_FLEET_URL` and `KUBEATLAS_FLEET_CLUSTER_ID` are required together;
-name is optional, and the interval defaults to 30 seconds with a 5-second
-minimum. The URL must be HTTP or HTTPS and cannot include URL credentials, a
-query or a fragment. Requests do not follow redirects. For local development,
-use `http://127.0.0.1:9291`; a source running in a pod cannot reach the manager
-through its own loopback address, so configure a manager address reachable on
-your isolated development network. HTTPS is supported. The manager has no
-authentication feature, so network isolation remains the operator's
-responsibility. Do not use actual production clusters or expose either side
-publicly.
+Synchronization is off unless `KUBEATLAS_FLEET_SYNC_ENABLED` is true. The
+Portal URL, cluster ID, and registration token are required; the name is
+optional. The interval defaults to 30 seconds and has a 5-second minimum.
+Inject `KUBEATLAS_PORTAL_TOKEN` from a secret manager or process environment;
+do not place it in command history, committed files, or examples.
+`KUBEATLAS_PORTAL_ALLOW_HTTP` explicitly permits HTTP/WS; otherwise only
+HTTPS/WSS is accepted. URLs cannot contain credentials, query strings,
+fragments, or non-root paths, and redirects are not followed. Do not place
+tokens in URLs or commit them in configuration examples.
 
 Synchronization is sequential full-snapshot polling, not a delta stream. A
 capture is pinned to the cluster connection and kubeconfig context present when
@@ -73,55 +65,53 @@ operationally sensitive information. This mode is not a complete copy of all
 cluster data or logs.
 
 `observedAt` is the source capture time and `receivedAt` is assigned by the
-manager. Context marks a snapshot stale when either timestamp is more than
+Portal. Context marks a snapshot stale when either timestamp is more than
 three minutes old. Partial coverage and explicit limitations must be inspected;
 unavailable data is not evidence of absence.
 
-The standalone manager serves the browser UI at `/` and these JSON APIs:
+The Portal viewer APIs and source upload boundary are:
 
 | Method and path | Purpose |
 | --- | --- |
-| `GET /healthz` | Manager health |
-| `POST /api/snapshots` | Replace one complete cluster snapshot |
-| `GET /api/clusters` | Sorted `ClusterContext[]` inventory with documents omitted |
-| `GET /api/fleets` | Sorted `Group[]` |
-| `PUT /api/fleets/{id}` | Replace a group with `{ "id": "...", "name": "...", "clusterIds": [] }` |
-| `DELETE /api/fleets/{id}` | Delete a group without deleting cluster snapshots |
-| `POST /api/context` | Compose `{ "clusterId": "..." }` or `{ "fleetId": "..." }` |
-| `POST /api/resource-context` | Retrieve an explicit cluster's original synchronized `get_resource` payload |
+| `POST /api/fleet/snapshots/{clusterId}` | Source upload, scoped to that Portal registration token |
+| `GET /api/fleet/clusters` | Viewer inventory |
+| `GET /api/fleet/fleets`, `PUT/DELETE /api/fleet/fleets/{id}` | Viewer group management |
+| `POST /api/fleet/context` | Compose one cluster or group snapshot context |
+| `POST /api/fleet/resource-context` | Retrieve one original synchronized resource payload |
+| `POST /api/fleet/tools` | List each selected source's live MCP catalog and channel state |
+| `POST /api/fleet/call-tool` | Invoke one tool on one explicit source |
+| `/mcp-fleet` | Portal-authenticated unified MCP interface |
 
-For example, after two sources have uploaded `prod-east` and `prod-west`, assign
-them to a multi-cloud group and request its context:
-
-```http
-PUT /api/fleets/production
-Content-Type: application/json
-
-{"id":"production","name":"Production","clusterIds":["prod-east","prod-west"]}
-```
-
-```http
-POST /api/context
-Content-Type: application/json
-
-{"fleetId":"production"}
-```
+Fleet viewer APIs require the existing Portal viewer session. Source uploads and
+WebSocket channels use the existing bearer token for the same cluster ID;
+the upload URL ID must match the snapshot. There is no generic snapshot upload
+route exposed through viewer forwarding.
 
 An unknown member is returned as `unavailable` rather than silently removed.
-Membership is administrative grouping only: it does not establish connectivity,
-application identity, failover, or cross-cluster resource relationships. Every
-resource/topology reference stays inside its source cluster envelope. For one
-cluster, select its explicit `clusterId`; the synchronized KubeAtlas payload is
-not rewritten into a new cross-cluster interpretation.
+Group membership is administrative selection, not proof of identity or a
+resource relationship. Federation inference is evidence-based and scoped to the
+selected group: a Karmada `Cluster.spec.id` matching a source `kube-system`
+namespace UID can declare membership, and Karmada `ResourceBinding` or
+`ClusterResourceBinding` targets are compared with those declared members. IP
+candidates relate core Pod, Node, or Service address facts to Endpoints or
+EndpointSlice address references; they do not prove connectivity or federation.
+Overlapping addresses alone never establish federation. Ambiguous or stale
+evidence remains explicit; other federation controllers and DNS-only
+relationships are not inferred. Every canonical resource payload remains inside
+its source cluster envelope; selecting one cluster retains the original
+KubeAtlas payload semantics.
 
-The manager exposes `/mcp-fleet` as a separate Streamable HTTP endpoint with
-three tools: `list_clusters` (inventory and configured groups),
-`get_agent_context` (exactly one cluster or group), and
-`get_resource_context` (one explicit cluster and resource identity). All results
-come from synchronized storage, never live Kubernetes queries. Existing
-same-process direct Fleet endpoints/tools, the ordinary `/mcp`, Portal, and
-KubeAtlas deployment charts are unchanged. No deployment, release, or chart
-configuration is provided for this prototype.
+Snapshots provide periodically refreshed context; the live source-tool catalog
+and calls use an outbound WebSocket channel and may be unavailable independently
+of snapshot freshness. `/mcp-fleet` preserves `list_clusters`,
+`get_agent_context`, and `get_resource_context`, with additive
+`list_cluster_tools` and `call_cluster_tool`. The catalog exposes each source's
+original tool schemas, descriptions, annotations, and effective read-only/exec
+mode. Calls name exactly one cluster (and can require membership in a fleet);
+mutations are never broadcast. The source enforces its existing MCP mode and
+uses its own configured Kubernetes identity. Calls are not retried after
+dispatch. If the channel or deadline expires after dispatch, the result says the
+outcome is unknown; reconcile source state before trying again.
 
 ## Existing direct-connect Fleet mode
 

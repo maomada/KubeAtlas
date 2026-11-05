@@ -18,15 +18,39 @@ func StartFleetSync(ctx context.Context, cfg AppConfig) {
 		k8s.GetContextName,
 		func() string { return k8s.GetConnectionStatus().ClusterName },
 		mcppkg.CaptureFleetSnapshot,
-		func(ctx context.Context, config fleetsync.ReporterConfig, capture fleetsync.CaptureFunc) error {
+		func(ctx context.Context, config fleetsync.ReporterConfig, capture fleetsync.CaptureFunc, binding string) error {
 			reporter, err := fleetsync.NewReporter(config, capture)
 			if err != nil {
 				return err
 			}
-			log.Printf("[fleet-sync] periodic snapshot synchronization enabled (unauthenticated development prototype)")
+			var agent *fleetsync.AgentClient
+			var executor *mcppkg.FleetToolExecutor
+			if cfg.MCPEnabled {
+				executor, err = mcppkg.NewFleetToolExecutor(ctx, binding, !cfg.MCPReadOnly,
+					cfg.MCPExecTools && !cfg.MCPReadOnly && !cfg.DisableExec)
+				if err != nil {
+					return err
+				}
+				agent, err = fleetsync.NewAgentClient(config, fleetsync.SourceIDForBinding(binding), executor)
+				if err != nil {
+					executor.Close()
+					return err
+				}
+			}
+			log.Printf("[fleet-sync] authenticated Portal snapshot synchronization enabled")
 			go reporter.Run(ctx, func(error) {
 				log.Printf("[fleet-sync] snapshot attempt failed")
 			})
+			if agent != nil {
+				log.Printf("[fleet-sync] outbound Portal MCP channel enabled")
+				go agent.Run(ctx, func(error) {
+					log.Printf("[fleet-sync] MCP channel unavailable")
+				})
+				go func() {
+					<-ctx.Done()
+					executor.Close()
+				}()
+			}
 			return nil
 		})
 }
@@ -42,7 +66,7 @@ func startFleetSync(
 	currentContext func() string,
 	clusterName func() string,
 	captureSnapshot fleetCaptureFunc,
-	startReporter func(context.Context, fleetsync.ReporterConfig, fleetsync.CaptureFunc) error,
+	startReporter func(context.Context, fleetsync.ReporterConfig, fleetsync.CaptureFunc, string) error,
 ) bool {
 	if cloudMode {
 		log.Printf("[fleet-sync] synchronization disabled in Cloud mode")
@@ -69,7 +93,7 @@ func startFleetSync(
 		}
 	}
 	capture := pinnedFleetCapture(config, binding, startupContext, currentContext, captureSnapshot)
-	if err := startReporter(ctx, config, capture); err != nil {
+	if err := startReporter(ctx, config, capture, binding); err != nil {
 		log.Printf("[fleet-sync] synchronization disabled: invalid configuration")
 		return false
 	}

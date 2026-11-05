@@ -8,10 +8,10 @@ compatibility names rather than a source of CLI release artifacts.
 
 KubeAtlas Portal is an optional, independent registry and viewer for multiple
 KubeAtlas instances, including in-cluster installations and explicitly configured
-local CLI or Desktop processes. Each eligible KubeAtlas reports its own metadata
-outbound; the Portal does not connect to, scrape, proxy, or health-check those
-Radars. Registration does not change a KubeAtlas listener or expose a local KubeAtlas
-to the network.
+local CLI or Desktop processes. In addition to registration metadata, opted-in
+sources can upload canonical context snapshots and maintain an outbound MCP
+channel so viewers and Portal MCP clients can inspect or explicitly invoke the
+source's original tools. The Portal does not dial a source KubeAtlas.
 
 The Portal and its reporter are not present in older KubeAtlas binaries. Build and
 deploy a KubeAtlas binary/image that includes this feature; configuring Helm alone
@@ -41,12 +41,16 @@ record; it does not change its ID, token, or configured display name. Portal
 links and MCP endpoints address the KubeAtlas's currently selected context and are
 not pinned to the last heartbeat snapshot.
 
-Other metadata includes description, environment, region, public KubeAtlas URL,
-KubeAtlas version, effective connection state, effective auth mode, and effective
-MCP mode/endpoints. It does not include kubeconfig, Kubernetes credentials,
-errors, progress messages, health-check results, or node counts. Metadata is
-derived from operator configuration and KubeAtlas's effective runtime settings,
-not from browser input.
+Registration metadata includes description, environment, region, public
+KubeAtlas URL, version, effective connection/auth/MCP modes, and configured MCP
+endpoints. Those metadata fields do not include kubeconfig, Kubernetes
+credentials, errors, progress messages, health-check results, or node counts.
+Metadata is derived from operator configuration and KubeAtlas's effective
+runtime settings, not from browser input. Fleet synchronization is separate:
+when explicitly enabled it stores bounded canonical snapshots and exposes the
+source's original MCP catalog through a live outbound channel. See
+[Fleet synchronization](fleet.md#portal-integrated-fleet-synchronization) for
+its data, freshness, and trust limitations.
 
 ## Build the Portal image
 
@@ -76,8 +80,8 @@ Use different, high-entropy registration tokens per cluster. Do not use these
 placeholders as credentials. Do not store actual credentials in Helm values,
 chart files, command history, or this document. The Portal rejects duplicate
 tokens. The viewer username/password protect the UI and read API; registration
-tokens are only accepted by the ID-scoped registration API and are never
-accepted for viewer reads.
+tokens are accepted only by the ID-scoped registration, snapshot-upload, and
+agent-channel routes, never for viewer reads.
 
 After a version is published by the manual workflow, install the owned OCI
 chart and reference your existing Secret:
@@ -194,7 +198,19 @@ Do not expose an unauthenticated local KubeAtlas on an untrusted network. If a
 local instance must be reachable by remote Portal viewers, configure an
 appropriate trusted network path, TLS termination, and KubeAtlas authentication
 (for example, proxy or OIDC) independently of Portal viewer authentication.
-The Portal does not relay KubeAtlas credentials or proxy requests to the target.
+The Portal does not relay KubeAtlas credentials or proxy browser requests to the
+public KubeAtlas/MCP URLs. Fleet tool calls use a separate source-initiated
+channel under that source's configured MCP mode and Kubernetes identity.
+
+Fleet synchronization is opt-in with `KUBEATLAS_FLEET_SYNC_ENABLED=true` and
+uses the same Portal URL, cluster ID/name, registration token, HTTP allowance,
+and `KUBEATLAS_FLEET_SYNC_INTERVAL`. Snapshots are posted to a token-scoped
+Portal route; the original MCP catalog and calls use a source-initiated
+WebSocket to the same Portal origin. Use only a trusted isolated development
+network; do not expose this mode publicly or deploy it in production. Portal
+viewer sessions currently share Fleet context, and per-viewer, per-cluster
+permissions are deferred. Source-tool calls run under the source KubeAtlas MCP
+mode and Kubernetes identity. See [Fleet synchronization](fleet.md).
 
 `portalRegistration.enabled` cannot be combined with `cloud.enabled`. The
 Portal reporter is intentionally disabled for upstream Cloud mode.
@@ -202,11 +218,13 @@ Portal reporter is intentionally disabled for upstream Cloud mode.
 ## Access, rotation, and revocation
 
 The Portal provides `GET /healthz`, `/login`, and its static assets without
-authentication. Unauthenticated visits to `/` redirect to the standalone login
-page; no cluster data is embedded in that page. After login, the browser opens
-the overview at `/`. The overview and `GET /api/clusters` require a viewer
-session, not HTTP Basic Authentication. Existing viewer username/password
-environment variables and Secret keys are unchanged.
+authentication. Unauthenticated visits to `/` or `/fleet` redirect to the
+login page; neither embeds cluster data. After login, the browser opens the
+overview at `/`; Fleet deep links stay on the same Portal shell. The overview,
+Fleet viewer APIs, and `/mcp-fleet` require a viewer session, not HTTP Basic
+Authentication. Source uploads and agent channels use the existing scoped
+registration bearer token. Existing viewer username/password environment
+variables and Secret keys are unchanged.
 
 `POST /api/auth/login` accepts a JSON `username` and `password` and returns a
 host-only, `HttpOnly`, `Secure`, `SameSite=Strict` session cookie. Passwords are

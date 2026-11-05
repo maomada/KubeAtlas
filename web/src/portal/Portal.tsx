@@ -5,6 +5,7 @@ import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
 import { filterClusters, mcpClientConfig, safeExternalURL } from './model'
 import type { PortalCluster, PortalDirectory } from './model'
 import { ThemeToggle } from './ThemeToggle'
+import { FleetWorkspace } from './FleetWorkspace'
 
 const connectionLabels = { connected: '已连接', connecting: '连接中', disconnected: '未连接' }
 const authLabels = { none: '未启用认证', proxy: '代理认证', oidc: 'OIDC 登录' }
@@ -91,7 +92,7 @@ function ClusterCard({ cluster, outdated }: { cluster: PortalCluster; outdated: 
     </div>
     <footer className="flex flex-wrap items-center justify-between gap-3 border-t border-theme-border bg-theme-base px-5 py-3">
       <div className="text-xs leading-relaxed text-theme-text-tertiary"><span className="block">最近心跳</span><time dateTime={cluster.lastSeen}>{timestamp(cluster.lastSeen)}</time></div>
-      {radarURL ? <a href={radarURL} target="_blank" rel="noopener noreferrer" className="btn-brand inline-flex items-center gap-2 px-3 py-2 text-sm">打开 KubeAtlas <ArrowUpRight size={16} /></a> : <span className="text-xs text-theme-text-secondary">KubeAtlas 地址无效</span>}
+      <div className="flex flex-wrap items-center gap-3"><a href={`/fleet?cluster=${encodeURIComponent(cluster.id)}`} className="text-sm text-accent-text">查看同步上下文</a>{radarURL ? <a href={radarURL} target="_blank" rel="noopener noreferrer" className="btn-brand inline-flex items-center gap-2 px-3 py-2 text-sm">打开 KubeAtlas <ArrowUpRight size={16} /></a> : <span className="text-xs text-theme-text-secondary">KubeAtlas 地址无效</span>}</div>
     </footer>
   </article>
 }
@@ -110,6 +111,7 @@ function Onboarding() {
 }
 
 export function Portal() {
+  const fleetPage = window.location.pathname === '/fleet'
   const [directory, setDirectory] = useState<PortalDirectory>()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -181,8 +183,13 @@ export function Portal() {
         <a href="/" className="flex items-center gap-3" aria-label="KubeAtlas 集群门户首页"><Globe size={29} className="text-accent-text" /><span className="text-xl font-semibold">KubeAtlas</span><span className="border-l border-theme-border pl-3 text-sm text-theme-text-secondary">集群门户</span></a>
         <div className="flex items-center gap-3"><span className="hidden items-center gap-1.5 text-xs text-theme-text-tertiary sm:flex"><ShieldCheck size={14} />独立部署 · 凭据隔离</span><ThemeToggle /><button type="button" className="portal-control inline-flex items-center gap-2" onClick={logout} disabled={loggingOut}><LogOut size={16} />{loggingOut ? '正在退出…' : '退出登录'}</button></div>
       </div>
+      <nav aria-label="门户导航" className="mx-auto flex max-w-[1800px] gap-2 px-5 pb-3 lg:px-10">
+        <a href="/" aria-current={!fleetPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${!fleetPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>集群总览</a>
+        <a href="/fleet" aria-current={fleetPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${fleetPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>多云分组与上下文</a>
+      </nav>
     </header>
     <main className="mx-auto max-w-[1800px] px-5 py-8 lg:px-10">
+      {fleetPage ? <FleetWorkspace registeredClusters={clusters} /> : <>
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div><p className="portal-mono mb-2 text-xs text-accent-text">集群目录</p><h1 className="text-3xl font-semibold">集群总览</h1><p className="mt-3 max-w-2xl text-sm leading-relaxed text-theme-text-secondary">一个入口，连接所有 KubeAtlas。查看集群上报信息，进入独立控制台，或接入 MCP 工具。</p></div>
         <a href="#onboarding" className="portal-control inline-flex items-center gap-2"><BookOpen size={16} />集群接入指南 <ExternalLink size={14} /></a>
@@ -205,7 +212,8 @@ export function Portal() {
       </section>
       <p className="mt-5 flex items-start gap-2 text-xs leading-relaxed text-theme-text-tertiary"><Activity size={15} className="mt-0.5 shrink-0" />心跳仅表示 KubeAtlas 最近向门户报到，不代表集群健康，也不保证 KubeAtlas 页面或 MCP 接口可从你的网络访问。</p>
       <Onboarding />
-      <footer className="mt-8 flex flex-wrap justify-between gap-3 text-xs text-theme-text-tertiary"><span>KubeAtlas 集群门户 · 集中展示，独立访问</span><span>本地与集群内 KubeAtlas 均可选择注册</span></footer>
+      </>}
+      <footer className="mt-8 flex flex-wrap justify-between gap-3 text-xs text-theme-text-tertiary"><span>KubeAtlas 集群门户 · 实例目录与多云上下文</span><span>本地与集群内 KubeAtlas 主动同步，门户无需 kubeconfig</span></footer>
     </main>
   </div>
 }

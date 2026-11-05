@@ -49,6 +49,9 @@ func TestViewerSessionLifecycle(t *testing.T) {
 	if w := request("GET", "/", nil); w.Code != 303 || w.Header().Get("Location") != "/login" {
 		t.Fatalf("unauthenticated root: %d %v", w.Code, w.Header())
 	}
+	if w := request("GET", "/fleet", nil); w.Code != 303 || w.Header().Get("Location") != "/login" {
+		t.Fatalf("unauthenticated Fleet deep link: %d %v", w.Code, w.Header())
+	}
 	if w := request("GET", "/login", nil); w.Code != 200 || w.Body.String() != "login shell" {
 		t.Fatalf("public login shell: %d", w.Code)
 	}
@@ -64,6 +67,9 @@ func TestViewerSessionLifecycle(t *testing.T) {
 	}
 	if w := request("GET", "/", cookie); w.Code != 200 {
 		t.Fatalf("authenticated overview: %d", w.Code)
+	}
+	if w := request("GET", "/fleet", cookie); w.Code != 200 || w.Body.String() != "login shell" {
+		t.Fatalf("authenticated Fleet shell: %d %q", w.Code, w.Body.String())
 	}
 	if w := request("GET", "/login", cookie); w.Code != 303 || w.Header().Get("Location") != "/" {
 		t.Fatalf("authenticated login: %d", w.Code)
@@ -90,7 +96,7 @@ func TestViewerSessionLifecycle(t *testing.T) {
 		t.Fatal("expired session not removed")
 	}
 	cookie = loginForTest(t, h)
-	restarted, err := NewHandler(registry, Credentials{Username: testUsername, Password: testPassword}, nil)
+	restarted, err := NewHandler(registry, Credentials{Username: testUsername, Password: testPassword}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
