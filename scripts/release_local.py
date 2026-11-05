@@ -1860,6 +1860,12 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
         "build": {
             "go": "go1.26.",
             "goreleaser": "2.13.3",
+            "node": "v24.",
+            "npm": "",
+            "make": "",
+            "dpkg-deb": "",
+            "rpm": "",
+            "cpio": "",
             "docker": "",
             "skopeo": "",
             "helm": "v4.2.3",
@@ -1882,6 +1888,11 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
         "helm3": ["version", "--short"],
         "helmfile": ["--version"],
         "node": ["--version"],
+        "npm": ["--version"],
+        "make": ["--version"],
+        "dpkg-deb": ["--version"],
+        "rpm": ["--version"],
+        "cpio": ["--version"],
         "shellcheck": ["--version"],
         "semgrep": ["--version"],
     }
@@ -1903,6 +1914,11 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
             raise LocalReleaseError(f"required tool version is not satisfied: {tool}")
         versions[tool] = output.strip()
     if gate == "build":
+        for tool in ("rpm2cpio", "npx"):
+            executable = shutil.which(tool)
+            if executable is None:
+                raise LocalReleaseError(f"required tool is unavailable: {tool}")
+            versions[tool] = f"executable available: {executable}"
         try:
             result = subprocess.run(
                 ["docker", "buildx", "version"],

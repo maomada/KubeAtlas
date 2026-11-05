@@ -326,7 +326,9 @@ same clean commit as a fresh read-only GitHub `main` query.
 
 Prerequisites are the pinned Go/GoReleaser, Node, Helm 4.2.3, Helm 3.19.0,
 helm-unittest 1.1.0, helmfile, Docker Buildx, skopeo, ShellCheck, actionlint,
-and Semgrep 1.180.0 plus the exact locked rule checkout. The automated checks
+and Semgrep 1.180.0 plus the exact locked rule checkout. Build preflight also
+requires Make, npm/npx, and the package inspection tools `dpkg-deb`, `rpm`,
+`rpm2cpio`, and `cpio` before creating a bundle. The automated checks
 also require an explicitly configured isolated PostgreSQL test DSN in
 `KUBEATLAS_TEST_POSTGRES_DSN`; the script forces
 `KUBEATLAS_REQUIRE_POSTGRES_TESTS=1`. Missing tools, services, external

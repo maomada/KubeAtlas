@@ -430,6 +430,30 @@ def external_report(receipt: dict) -> dict:
     return report
 
 
+class BuildPreflightTests(unittest.TestCase):
+    def test_missing_package_tools_stop_before_bundle_creation(self):
+        versions = {"go": "go version go1.26.10", "goreleaser": "2.13.3",
+                    "node": "v24.19.0", "helm": "v4.2.3"}
+        for missing in ("rpm", "dpkg-deb", "cpio", "rpm2cpio", "npx"):
+            with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
+                bundle = Path(directory) / "not-created"
+
+                def run(argv, **kwargs):
+                    if argv[0] == missing:
+                        raise FileNotFoundError(missing)
+                    return subprocess.CompletedProcess(argv, 0, versions.get(argv[0], "test version"), "")
+
+                with (
+                    patch.object(release_local, "assert_authority", return_value=SOURCE_SHA),
+                    patch.object(release_local.subprocess, "run", side_effect=run) as commands,
+                    patch.object(release_local.shutil, "which", side_effect=lambda tool: None if tool == missing else f"/usr/bin/{tool}"),
+                    self.assertRaisesRegex(release_local.LocalReleaseError, f"required tool is unavailable: {missing}"),
+                ):
+                    release_local.build_bundle(SOURCE_SHA, bundle)
+                self.assertFalse(bundle.exists())
+                self.assertFalse(any(call.args[0][:2] == ["make", "release-binaries-dry"] for call in commands.call_args_list))
+
+
 class LocalReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
