@@ -94,6 +94,37 @@ class ReleaseChartPackageTests(unittest.TestCase):
                     release_local._validate_chart_archive(archive_path, name, SHA)
                 self.assertEqual((source / "values.yaml").read_bytes(), original)
 
+    def test_normalized_annotations_keep_exact_source_and_revision(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            for name, repository in package.CHARTS.items():
+                staged = Path(temporary) / name
+                package.prepare_chart(
+                    ROOT / "deploy" / "helm" / name, staged,
+                    release_local.VERSION, SHA, repository, platform="linux/amd64",
+                )
+                metadata_path = staged / "Chart.yaml"
+                original = metadata_path.read_text()
+                source = "https://github.com/maomada/KubeAtlas"
+                archive_path = Path(temporary) / f"{name}.tgz"
+                for quote in ('"', "'", ""):
+                    for field in (None, "source", "revision"):
+                        with self.subTest(name=name, quote=quote, field=field):
+                            actual_source = source + "/wrong" if field == "source" else source
+                            actual_sha = "b" * 40 if field == "revision" else SHA
+                            metadata_path.write_text(
+                                original.replace(f'"{source}"', f"{quote}{actual_source}{quote}")
+                                .replace(f'"{SHA}"', f"{quote}{actual_sha}{quote}")
+                            )
+                            with tarfile.open(archive_path, "w:gz") as archive:
+                                archive.add(staged, arcname=name)
+                            if field is None:
+                                release_local._validate_chart_archive(archive_path, name, SHA)
+                            else:
+                                with self.assertRaisesRegex(
+                                    release_local.LocalReleaseError, f"chart {field} does not match"
+                                ):
+                                    release_local._validate_chart_archive(archive_path, name, SHA)
+
     def test_invalid_source_sha_is_rejected(self):
         with tempfile.TemporaryDirectory() as temporary:
             with self.assertRaises(ValueError):

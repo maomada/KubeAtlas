@@ -1440,8 +1440,8 @@ def _validate_chart_archive(path: Path, name: str, source_sha: str) -> None:
         "name": rf"(?m)^name:\s*{re.escape(name)}\s*$",
         "version": rf"(?m)^version:\s*(?:{re.escape(VERSION)}|\"{re.escape(VERSION)}\"|'{re.escape(VERSION)}')\s*$",
         "appVersion": rf"(?m)^appVersion:\s*(?:{re.escape(VERSION)}|\"{re.escape(VERSION)}\"|'{re.escape(VERSION)}')\s*$",
-        "source": r'(?m)^\s+org\.opencontainers\.image\.source:\s*["\']https://github\.com/maomada/KubeAtlas["\']\s*$',
-        "revision": rf'(?m)^\s+org\.opencontainers\.image\.revision:\s*["\']{re.escape(source_sha)}["\']\s*$',
+        "source": r'(?m)^\s+org\.opencontainers\.image\.source:\s*(["\']?)https://github\.com/maomada/KubeAtlas\1\s*$',
+        "revision": rf'(?m)^\s+org\.opencontainers\.image\.revision:\s*(["\']?){re.escape(source_sha)}\1\s*$',
     }
     for field, pattern in expected.items():
         if not re.search(pattern, chart):
