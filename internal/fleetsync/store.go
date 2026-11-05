@@ -30,10 +30,13 @@ type persistedState struct {
 	Groups   []Group   `json:"groups"`
 }
 
+type stateWriter func(path string, data []byte) (committed bool, err error)
+
 type Store struct {
 	mu       sync.RWMutex
 	path     string
 	lock     *flock.Flock
+	write    stateWriter
 	clusters map[string]Cluster
 	groups   map[string]Group
 	closed   bool
@@ -66,7 +69,7 @@ func OpenStore(path string) (*Store, error) {
 		_ = lock.Close()
 		return nil, errors.New("Fleet state lock is unavailable")
 	}
-	store := &Store{path: absolute, lock: lock, clusters: map[string]Cluster{}, groups: map[string]Group{}}
+	store := &Store{path: absolute, lock: lock, write: writeStateFile, clusters: map[string]Cluster{}, groups: map[string]Group{}}
 	data, err := readStateFile(absolute)
 	if err != nil {
 		_ = store.Close()
@@ -213,11 +216,11 @@ func (s *Store) Ingest(snapshot Snapshot) error {
 	if len(allClusterIDs(next, s.groups)) > maxClusters {
 		return errors.New("cluster limit reached")
 	}
-	if err := s.persistLocked(next, s.groups); err != nil {
-		return err
+	committed, err := s.persistLocked(next, s.groups)
+	if committed {
+		s.clusters = next
 	}
-	s.clusters = next
-	return nil
+	return err
 }
 
 func (s *Store) PutGroup(group Group) error {
@@ -234,11 +237,11 @@ func (s *Store) PutGroup(group Group) error {
 	if len(next) > maxGroups || len(allClusterIDs(s.clusters, next)) > maxClusters {
 		return errors.New("Fleet group or cluster limit reached")
 	}
-	if err := s.persistLocked(s.clusters, next); err != nil {
-		return err
+	committed, err := s.persistLocked(s.clusters, next)
+	if committed {
+		s.groups = next
 	}
-	s.groups = next
-	return nil
+	return err
 }
 
 func (s *Store) DeleteGroup(id string) error {
@@ -255,11 +258,11 @@ func (s *Store) DeleteGroup(id string) error {
 	}
 	next := cloneGroups(s.groups)
 	delete(next, id)
-	if err := s.persistLocked(s.clusters, next); err != nil {
-		return err
+	committed, err := s.persistLocked(s.clusters, next)
+	if committed {
+		s.groups = next
 	}
-	s.groups = next
-	return nil
+	return err
 }
 
 func validateGroup(group Group) error {
@@ -334,7 +337,7 @@ func (s *Store) Groups() []Group {
 	return result
 }
 
-func (s *Store) persistLocked(clusters map[string]Cluster, groups map[string]Group) error {
+func (s *Store) persistLocked(clusters map[string]Cluster, groups map[string]Group) (bool, error) {
 	state := persistedState{Version: stateVersion, Clusters: make([]Cluster, 0, len(clusters)), Groups: make([]Group, 0, len(groups))}
 	clusterIDs := make([]string, 0, len(clusters))
 	for id := range clusters {
@@ -354,45 +357,50 @@ func (s *Store) persistLocked(clusters map[string]Cluster, groups map[string]Gro
 	}
 	data, err := json.Marshal(state)
 	if err != nil || len(data) > maxStateBytes {
-		return errors.New("Fleet state exceeds the size limit")
+		return false, errors.New("Fleet state exceeds the size limit")
 	}
-	return writeStateFile(s.path, data)
+	return s.write(s.path, data)
 }
 
-func writeStateFile(path string, data []byte) error {
+func writeStateFile(path string, data []byte) (bool, error) {
+	return writeStateFileWithSync(path, data, func(dir *os.File) error { return dir.Sync() })
+}
+
+func writeStateFileWithSync(path string, data []byte, syncDirectory func(*os.File) error) (bool, error) {
 	temp, err := os.CreateTemp(filepath.Dir(path), ".fleet-state-*")
 	if err != nil {
-		return errors.New("Fleet state cannot be written")
+		return false, errors.New("Fleet state cannot be written")
 	}
 	tempPath := temp.Name()
 	defer os.Remove(tempPath)
 	if err := temp.Chmod(0o600); err != nil {
 		_ = temp.Close()
-		return errors.New("Fleet state cannot be secured")
+		return false, errors.New("Fleet state cannot be secured")
 	}
 	if _, err := temp.Write(data); err != nil {
 		_ = temp.Close()
-		return errors.New("Fleet state cannot be written")
+		return false, errors.New("Fleet state cannot be written")
 	}
 	if err := temp.Sync(); err != nil {
 		_ = temp.Close()
-		return errors.New("Fleet state cannot be synchronized")
+		return false, errors.New("Fleet state cannot be synchronized")
 	}
 	if err := temp.Close(); err != nil {
-		return errors.New("Fleet state cannot be closed")
+		return false, errors.New("Fleet state cannot be closed")
 	}
 	if err := os.Rename(tempPath, path); err != nil {
-		return errors.New("Fleet state cannot be replaced")
+		return false, errors.New("Fleet state cannot be replaced")
 	}
+	committed := true
 	dir, err := os.Open(filepath.Dir(path))
 	if err != nil {
-		return errors.New("Fleet state directory cannot be synchronized")
+		return committed, errors.New("Fleet state directory cannot be synchronized")
 	}
 	defer dir.Close()
-	if err := dir.Sync(); err != nil {
-		return errors.New("Fleet state directory cannot be synchronized")
+	if err := syncDirectory(dir); err != nil {
+		return committed, errors.New("Fleet state directory cannot be synchronized")
 	}
-	return nil
+	return committed, nil
 }
 
 func cloneSnapshot(snapshot Snapshot) Snapshot {

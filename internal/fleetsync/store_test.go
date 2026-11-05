@@ -2,9 +2,11 @@ package fleetsync
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"testing"
 	"time"
 )
@@ -12,6 +14,41 @@ import (
 func testStatePath(t *testing.T) string {
 	t.Helper()
 	return filepath.Join(t.TempDir(), "fleet-state", "state.json")
+}
+
+func assertStoreMatchesDisk(t *testing.T, store *Store) {
+	t.Helper()
+	data, err := readStateFile(store.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	state, err := decodeState(data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	store.mu.RLock()
+	defer store.mu.RUnlock()
+	clusters := make([]Cluster, 0, len(store.clusters))
+	for _, cluster := range store.clusters {
+		clusters = append(clusters, cloneCluster(cluster))
+	}
+	sort.Slice(clusters, func(i, j int) bool { return clusters[i].ClusterID < clusters[j].ClusterID })
+	groups := make([]Group, 0, len(store.groups))
+	for _, group := range store.groups {
+		groups = append(groups, cloneGroup(group))
+	}
+	sort.Slice(groups, func(i, j int) bool { return groups[i].ID < groups[j].ID })
+	if !reflect.DeepEqual(state.Clusters, clusters) || !reflect.DeepEqual(state.Groups, groups) {
+		t.Fatalf("persisted state differs from memory:\ndisk: %+v\nmemory clusters: %+v\nmemory groups: %+v", state, clusters, groups)
+	}
+}
+
+func injectParentSyncFailure(store *Store) {
+	store.write = func(path string, data []byte) (bool, error) {
+		return writeStateFileWithSync(path, data, func(*os.File) error {
+			return errors.New("injected parent directory sync failure")
+		})
+	}
 }
 
 func TestStorePersistenceAndCopyIsolation(t *testing.T) {
@@ -205,5 +242,64 @@ func TestStoreRejectsNonStrictOrOversizedPersistedState(t *testing.T) {
 				t.Fatal("invalid state was accepted")
 			}
 		})
+	}
+}
+
+func TestStorePublishesCommittedStateAfterParentSyncFailure(t *testing.T) {
+	store, err := OpenStore(testStatePath(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	first := sampleCluster("east", time.Now().UTC()).Snapshot
+	if err := store.Ingest(first); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.PutGroup(Group{ID: "prod", Name: "Old name", ClusterIDs: []string{"east"}}); err != nil {
+		t.Fatal(err)
+	}
+	assertStoreMatchesDisk(t, store)
+
+	preRename := cloneSnapshot(first)
+	preRename.ObservedAt = first.ObservedAt.Add(time.Second)
+	store.write = func(string, []byte) (bool, error) {
+		return false, errors.New("injected pre-rename failure")
+	}
+	if err := store.Ingest(preRename); err == nil {
+		t.Fatal("pre-rename write failure was ignored")
+	}
+	assertStoreMatchesDisk(t, store)
+	if !store.Inventory()[0].ObservedAt.Equal(first.ObservedAt) {
+		t.Fatal("pre-rename failure changed in-memory snapshot")
+	}
+
+	committed := cloneSnapshot(first)
+	committed.ObservedAt = first.ObservedAt.Add(2 * time.Second)
+	injectParentSyncFailure(store)
+	if err := store.Ingest(committed); err == nil {
+		t.Fatal("parent directory sync failure was swallowed")
+	}
+	assertStoreMatchesDisk(t, store)
+	if !store.Inventory()[0].ObservedAt.Equal(committed.ObservedAt) {
+		t.Fatal("post-rename failure did not publish in-memory snapshot")
+	}
+
+	injectParentSyncFailure(store)
+	if err := store.PutGroup(Group{ID: "prod", Name: "New name", ClusterIDs: []string{"east"}}); err == nil {
+		t.Fatal("group parent directory sync failure was swallowed")
+	}
+	assertStoreMatchesDisk(t, store)
+	if groups := store.Groups(); len(groups) != 1 || groups[0].Name != "New name" {
+		t.Fatalf("post-rename group edit not published: %+v", groups)
+	}
+
+	injectParentSyncFailure(store)
+	if err := store.DeleteGroup("prod"); err == nil {
+		t.Fatal("group delete parent directory sync failure was swallowed")
+	}
+	assertStoreMatchesDisk(t, store)
+	if len(store.Groups()) != 0 {
+		t.Fatalf("post-rename group deletion not published: %+v", store.Groups())
 	}
 }
