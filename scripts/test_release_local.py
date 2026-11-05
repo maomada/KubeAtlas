@@ -160,13 +160,13 @@ def make_bundle(root: Path, include_gates: bool = True):
                             )
                         )
                     else:
-                        targets = sorted(
+                        targets = [
                             release_local.ROOT / name
                             for name in subprocess.check_output(
                                 ["git", "-C", str(release_local.ROOT), "ls-files", "-z"]
                             ).decode().split("\0")
                             if name and release_local.security_scan.production_source(name)
-                        )
+                        ]
                         lock_path = release_local.ROOT / ".github/security-rules.lock.json"
                         policy_path = release_local.ROOT / ".github/security-dispositions.json"
                         lock = release_local._load_json(lock_path, "rules")
@@ -534,6 +534,26 @@ class LocalReleaseTests(unittest.TestCase):
             self.context,
             self.inventories,
         ) = make_bundle(self.root)
+
+    def test_semgrep_provenance_uses_git_string_order_and_exact_targets(self):
+        receipt = release_local._load_json(
+            self.bundle / "evidence/receipts/semgrep-full.json", "receipt"
+        )
+        provenance_path = next(
+            self.bundle / "evidence" / item["path"]
+            for item in receipt["reports"]
+            if Path(item["path"]).name == "provenance.json"
+        )
+        provenance = release_local._load_json(provenance_path, "provenance")
+        targets = provenance["targets"]
+        self.assertEqual(targets, sorted(targets))
+        self.assertNotEqual(targets, [path.as_posix() for path in sorted(map(Path, targets))])
+        release_local._validate_semgrep_receipt(self.bundle, receipt, "semgrep-full", self.context)
+        for altered in (targets[:-1], targets + [targets[0]]):
+            with self.subTest(target_count=len(altered)):
+                provenance_path.write_text(json.dumps({**provenance, "targets": altered}))
+                with self.assertRaisesRegex(release_local.LocalReleaseError, "Semgrep provenance"):
+                    release_local._validate_semgrep_receipt(self.bundle, receipt, "semgrep-full", self.context)
 
     def test_local_amd64_profile_keeps_fifteen_gates_and_exact_targets(self):
         expected_packages = {

@@ -1757,14 +1757,14 @@ def _validate_semgrep_receipt(bundle: Path, receipt: dict, gate: str, context: d
     lock = _load_json(lock_path, "Semgrep rules lock")
     lock_hash = hashlib.sha256(_read_regular(lock_path)).hexdigest()
     policy = _load_json(policy_path, "Semgrep disposition policy")
-    targets = sorted(
-        ROOT / name
+    expected_names = sorted(
+        name
         for name in subprocess.check_output(
             ["git", "-C", str(ROOT), "ls-files", "-z"], text=False
         ).decode().split("\0")
         if name and security_scan.production_source(name)
     )
-    expected_names = [path.relative_to(ROOT).as_posix() for path in targets]
+    targets = [ROOT / name for name in expected_names]
     if (
         provenance.get("sourceSha") != context["sourceSha"]
         or provenance.get("engine") != security_scan.ENGINE_VERSION
