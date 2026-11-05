@@ -596,6 +596,7 @@ func main() {
 	rootCtx, rootCancel := startServer(srv, startupStart)
 	defer rootCancel()
 	app.StartPortalReporter(rootCtx, cfg)
+	app.StartFleetSync(rootCtx, cfg)
 
 	// Open browser — server is confirmed ready to accept connections
 	if !cfg.NoBrowser {

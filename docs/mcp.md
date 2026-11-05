@@ -14,6 +14,11 @@ Context behavior.
 `/api/fleet` routes provide inventory and separately authorized metadata
 management; neither endpoint changes the legacy `/mcp` contract.
 
+The separate `kubeatlas-fleet` snapshot manager also serves `/mcp-fleet` in its
+own process. Its tools read only synchronized snapshots and configured groups;
+they do not query live Kubernetes clusters or change the same-process endpoint
+described above. See [central snapshot synchronization](fleet.md#central-snapshot-synchronization-unauthenticated-development-prototype).
+
 KubeAtlas includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that lets AI agents inspect, investigate, and operate your Kubernetes cluster.
 
 ## Node drain timeouts

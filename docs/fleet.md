@@ -1,5 +1,130 @@
 # Fleet Manager: managed connections and metadata API
 
+KubeAtlas has two separate multi-cluster modes. The **central snapshot prototype**
+below accepts periodic read-only snapshots from existing KubeAtlas instances and
+composes per-cluster or operator-defined multi-cloud context from synchronized
+data. The **direct-connect Fleet mode** later in this document runs inside the
+normal KubeAtlas process and queries explicitly configured Kubernetes connections
+live. They have different binaries, storage, APIs and data freshness; enabling one
+does not enable or change the other.
+
+## Central snapshot synchronization (unauthenticated development prototype)
+
+This mode is for local development and isolated, trusted development networks
+only. It is unauthenticated and has no tenant isolation. It is not suitable for
+production, public deployment, or exposure through a public proxy/tunnel. Security,
+authentication and tenant isolation are explicitly deferred. The manager warns
+when configured on a non-loopback listener; that warning is not a security
+boundary. Its default listener is `127.0.0.1:9291`.
+
+Run the independent manager without starting a Kubernetes client, kubeconfig
+discovery, or the normal KubeAtlas server:
+
+```bash
+go run ./cmd/kubeatlas-fleet \
+  -listen 127.0.0.1:9291 \
+  -data-file ./fleet-data/state.json
+```
+
+The state file is versioned and bounded, stored with private file permissions,
+atomically replaced, and locked to one manager process. Its snapshot and group
+records are application data, not credentials.
+
+Opt in each local or in-cluster KubeAtlas instance with:
+
+```bash
+export KUBEATLAS_FLEET_URL=https://fleet-manager.internal.example
+export KUBEATLAS_FLEET_CLUSTER_ID=prod-east
+export KUBEATLAS_FLEET_CLUSTER_NAME="Production East"
+export KUBEATLAS_FLEET_SYNC_INTERVAL=30s
+```
+
+`KUBEATLAS_FLEET_URL` and `KUBEATLAS_FLEET_CLUSTER_ID` are required together;
+name is optional, and the interval defaults to 30 seconds with a 5-second
+minimum. The URL must be HTTP or HTTPS and cannot include URL credentials, a
+query or a fragment. Requests do not follow redirects. For local development,
+use `http://127.0.0.1:9291`; a source running in a pod cannot reach the manager
+through its own loopback address, so configure a manager address reachable on
+your isolated development network. HTTPS is supported. The manager has no
+authentication feature, so network isolation remains the operator's
+responsibility. Do not use actual production clusters or expose either side
+publicly.
+
+Synchronization is sequential full-snapshot polling, not a delta stream. A
+capture is pinned to the cluster connection and kubeconfig context present when
+the source starts; a missing stable cluster binding disables reporting instead
+of silently re-binding after a switch. A failed/canceled capture is not uploaded.
+Each successful upload replaces that source's complete prior snapshot, including
+removing details that are no longer present or reads that now fail. The current
+interval is measured after each attempt; an individual capture has a 90-second
+deadline and the HTTP client has a 30-second timeout.
+
+The snapshot reuses the canonical KubeAtlas MCP read projections for
+`get_dashboard`, both `get_topology` views, `get_events`, `list_resources`, and
+`get_resource`; it does not invent a second resource model. Single-cluster
+documents preserve those payloads inside the selected cluster envelope.
+Resource details are separately retrieved for at most 5,000 observed resources,
+the complete serialized snapshot is capped at 32 MiB, and collection is not an
+atomic Kubernetes transaction. Document-level read failures and omissions are
+represented as errors/limitations and replace old successful results; the
+absence of a document is not proof that a resource is absent. Secret objects
+and live logs are not exported. Other canonical payloads may still contain
+operationally sensitive information. This mode is not a complete copy of all
+cluster data or logs.
+
+`observedAt` is the source capture time and `receivedAt` is assigned by the
+manager. Context marks a snapshot stale when either timestamp is more than
+three minutes old. Partial coverage and explicit limitations must be inspected;
+unavailable data is not evidence of absence.
+
+The standalone manager serves the browser UI at `/` and these JSON APIs:
+
+| Method and path | Purpose |
+| --- | --- |
+| `GET /healthz` | Manager health |
+| `POST /api/snapshots` | Replace one complete cluster snapshot |
+| `GET /api/clusters` | Sorted `ClusterContext[]` inventory with documents omitted |
+| `GET /api/fleets` | Sorted `Group[]` |
+| `PUT /api/fleets/{id}` | Replace a group with `{ "id": "...", "name": "...", "clusterIds": [] }` |
+| `DELETE /api/fleets/{id}` | Delete a group without deleting cluster snapshots |
+| `POST /api/context` | Compose `{ "clusterId": "..." }` or `{ "fleetId": "..." }` |
+| `POST /api/resource-context` | Retrieve an explicit cluster's original synchronized `get_resource` payload |
+
+For example, after two sources have uploaded `prod-east` and `prod-west`, assign
+them to a multi-cloud group and request its context:
+
+```http
+PUT /api/fleets/production
+Content-Type: application/json
+
+{"id":"production","name":"Production","clusterIds":["prod-east","prod-west"]}
+```
+
+```http
+POST /api/context
+Content-Type: application/json
+
+{"fleetId":"production"}
+```
+
+An unknown member is returned as `unavailable` rather than silently removed.
+Membership is administrative grouping only: it does not establish connectivity,
+application identity, failover, or cross-cluster resource relationships. Every
+resource/topology reference stays inside its source cluster envelope. For one
+cluster, select its explicit `clusterId`; the synchronized KubeAtlas payload is
+not rewritten into a new cross-cluster interpretation.
+
+The manager exposes `/mcp-fleet` as a separate Streamable HTTP endpoint with
+three tools: `list_clusters` (inventory and configured groups),
+`get_agent_context` (exactly one cluster or group), and
+`get_resource_context` (one explicit cluster and resource identity). All results
+come from synchronized storage, never live Kubernetes queries. Existing
+same-process direct Fleet endpoints/tools, the ordinary `/mcp`, Portal, and
+KubeAtlas deployment charts are unchanged. No deployment, release, or chart
+configuration is provided for this prototype.
+
+## Existing direct-connect Fleet mode
+
 Fleet is opt-in. The same KubeAtlas process connects directly to multiple Kubernetes
 API servers, using a separate client, discovery client and informer cache for each
 connection. The existing UI and `/mcp` still use their original single-cluster
