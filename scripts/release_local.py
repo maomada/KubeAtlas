@@ -2094,7 +2094,9 @@ def import_acceptance(bundle_path: Path, report_path: Path, evidence_root: Path,
         "deployedImageDigests": report["deployedImageDigests"],
         "executables": report["executables"],
     }
-    _validate_acceptance({"acceptance": supplied}, gate, require_passed=False)
+    _validate_acceptance(
+        {"acceptance": supplied, "commands": report["commands"]}, gate, require_passed=False
+    )
     scenario_statuses = {item["status"] for item in supplied["scenarios"]}
     command_failed = any(item["exitStatus"] != 0 for item in report["commands"])
     expected_result = (

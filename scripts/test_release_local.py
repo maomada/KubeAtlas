@@ -544,6 +544,36 @@ class LocalReleaseTests(unittest.TestCase):
                 receipt, "windows-native", require_passed=False
             )
 
+    def test_windows_report_import_preserves_commands_and_runtime_evidence(self):
+        gate = "windows-native"
+        receipt_path = self.bundle / "evidence" / "receipts" / f"{gate}.json"
+        receipt = release_local._load_json(receipt_path, "fixture receipt")
+        acceptance = receipt["acceptance"]
+        report = {
+            key: value for key, value in receipt.items()
+            if key not in {"schema", "origin", "reports", "acceptance"}
+        }
+        report.update({
+            "schema": release_local.ACCEPTANCE_SCHEMA,
+            "origin": "operator-attested",
+            "evidence": receipt["reports"],
+            **{key: value for key, value in acceptance.items() if key != "execution"},
+        })
+        report_path = self.root / "windows-host-report.json"
+        report_path.write_bytes(release_local._canonical_json(report))
+        receipt_path.unlink()
+        with patch.object(release_local, "_clean_head", return_value=SOURCE_SHA):
+            release_local.import_acceptance(
+                self.bundle, report_path, self.bundle / "evidence", self.repo_root
+            )
+        imported = release_local.validate_receipts(
+            self.bundle, self.context, self.inventories,
+            required_gates=frozenset({gate}),
+        )[gate]
+        self.assertEqual(imported["commands"], receipt["commands"])
+        self.assertEqual(imported["acceptance"], acceptance)
+        self.assertEqual(imported["result"], "passed")
+
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO tests require POSIX")
     def test_fifo_path_is_rejected_without_blocking(self):
         fifo = self.root / "nonregular.fifo"
