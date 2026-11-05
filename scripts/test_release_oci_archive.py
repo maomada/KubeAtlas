@@ -23,13 +23,17 @@ class OCIArchiveValidationTests(unittest.TestCase):
         self.blobs[f"blobs/sha256/{digest}"] = content
         return {"digest": f"sha256:{digest}", "size": len(content)}
 
-    def _make_index(self, config_architecture=None):
+    def _make_index(self, config_architecture=None, labels_by_architecture=None):
         manifests = []
         for os_name, architecture in sorted(oci.EXPECTED_PLATFORMS):
+            config_values = {}
+            if labels_by_architecture is not None:
+                config_values["Labels"] = labels_by_architecture[architecture]
             config = json.dumps(
                 {
                     "os": os_name,
                     "architecture": config_architecture or architecture,
+                    "config": config_values,
                 },
                 separators=(",", ":"),
             ).encode()
@@ -101,6 +105,30 @@ class OCIArchiveValidationTests(unittest.TestCase):
                 json.dumps(bad_index).encode(),
                 self._read_blob,
             )
+
+    def test_expected_labels_are_checked_in_each_platform_config(self):
+        labels = {
+            "amd64": {
+                "org.opencontainers.image.source": "https://github.com/maomada/KubeAtlas",
+                "org.opencontainers.image.revision": "a" * 40,
+                "org.opencontainers.image.version": "0.1.0",
+            },
+            "arm64": {
+                "org.opencontainers.image.source": "https://github.com/maomada/KubeAtlas",
+                "org.opencontainers.image.revision": "a" * 40,
+                "org.opencontainers.image.version": "0.1.0",
+            },
+        }
+        index = self._make_index(labels_by_architecture=labels)
+        expected = dict(labels["amd64"])
+        self.assertEqual(
+            set(oci.validate_index(json.dumps(index).encode(), self._read_blob, expected)),
+            oci.EXPECTED_PLATFORMS,
+        )
+        labels["arm64"]["org.opencontainers.image.revision"] = "b" * 40
+        invalid = self._make_index(labels_by_architecture=labels)
+        with self.assertRaisesRegex(ValueError, "provenance labels"):
+            oci.validate_index(json.dumps(invalid).encode(), self._read_blob, expected)
 
     def test_archive_validates_skopeo_manifest_and_platform_blobs(self):
         archive_path = self._write_archive()

@@ -356,116 +356,50 @@ cryptographically independent host attestation. Test-only fixtures cannot
 satisfy these real acceptance gates. Pod-metrics availability and Hubble
 plaintext may be reported as limitations; they are not invented pass criteria.
 
-After every required receipt passes, prepare creates only an unsigned
-`approval.json`; it never signs:
+Use this non-passing JSON template as the report shape. Replace placeholders
+with observed values and list every required scenario; do not mark a scenario
+passed without its actual command and evidence:
 
-```sh
-python3 scripts/release_local.py prepare --source-sha "$SOURCE_SHA" --bundle "$BUNDLE"
+```json
+{
+  "schema": "kubeatlas-local-acceptance/v1",
+  "origin": "operator-attested",
+  "repository": "maomada/KubeAtlas",
+  "gate": "real-cluster",
+  "version": "0.1.0",
+  "sourceSha": "<full source SHA>",
+  "toolingSha": "<same clean tooling checkout SHA>",
+  "buildId": "<build UUID from the bundle>",
+  "artifactInventorySha256": "<bundle inventory digest>",
+  "executionPlatform": {
+    "system": "Linux",
+    "machine": "x86_64",
+    "emulation": false,
+    "isolation": "host"
+  },
+  "issuedAt": "<UTC RFC3339 timestamp>",
+  "completedAt": "<UTC RFC3339 timestamp>",
+  "commands": [],
+  "exitStatus": 1,
+  "result": "untested",
+  "context": "<actual Kubernetes context>",
+  "componentVersions": {
+    "kubeatlas": "0.1.0",
+    "kubeatlas-portal": "0.1.0",
+    "kubernetes": "<observed version>"
+  },
+  "limitations": ["<observed limitation, if any>"],
+  "scenarios": [
+    {"name": "main_readonly_api", "status": "untested", "details": "Not run."},
+    {"name": "main_readonly_mcp", "status": "untested", "details": "Not run."}
+  ],
+  "artifactHashes": {},
+  "deployedImageDigests": {},
+  "executables": {},
+  "toolVersions": {"kubectl": "<observed version>"},
+  "evidence": []
+}
 ```
-
-Transfer that manifest and its evidence to the authorized offline signing
-machine. Use the existing offline Ed25519 custody/signing procedure and the
-public key in `.github/release-signing-public.pem`; keep the production private
-key off this VM and out of the repository and logs. Return the detached
-`approval.sig` without replacing existing evidence. The approval is bound to
-the exact fixed targets and per-channel file hashes and expires within seven
-days. Revalidate without rebuilding:
-
-```sh
-python3 scripts/release_local.py verify --source-sha "$SOURCE_SHA" --bundle "$BUNDLE"
-```
-
-Publication is a separate, explicitly authorized operation. It requires a
-fresh main query and GitHub credentials via `GH_TOKEN` or `GITHUB_TOKEN`, plus
-a mode-0600-or-stricter preauthenticated GHCR authfile (PAT classic with
-`write:packages`, or an existing authfile):
-
-```sh
-python3 scripts/release_local.py publish --source-sha "$SOURCE_SHA" \
-  --bundle "$BUNDLE" --authfile "$HOME/.config/containers/auth.json"
-```
-
-The publisher preflights every fixed GHCR target and the GitHub tag/release
-before its first write. A durable version-scoped journal is created outside
-the bundle; any prior attempt or uncertain outcome blocks retries. No
-overwrite, delete, rollback, cleanup, or automatic retry is performed.
-Registry/GitHub writes are not globally atomic across machines, so use one
-publisher and reconcile partial publication manually before making any new
-release decision. The audit bundle remains separate from the published binary
-whitelist; retain it immutably with its signed approval. Do not log tokens,
-authfile contents, kubeconfigs, or environment dumps.
-
-Hosted Actions may remain unavailable because of account billing/spending
-limits; this is a cost/availability caveat, not a reason to weaken their
-validators. The local path does not dispatch workflows and does not create an
-Actions run ID.
-
-## Separate local release path
-
-The hosted Actions contract above remains unchanged and fail-closed. The local
-path uses its own `kubeatlas-local-release/v1` manifest and `origin: local`;
-neither local receipts nor signatures are valid Actions evidence, and Actions
-manifests are not accepted by the local verifier. Do not change
-`release_policy.py` or `release_approval.py` to bridge the two modes.
-
-Local build/check operations never publish. Run them on a clean checkout whose
-full `HEAD` equals the requested source SHA. The bundle must be outside the
-checkout, and a build is performed once only:
-
-```sh
-export SOURCE_SHA="$(git rev-parse HEAD)"
-export BUNDLE="$HOME/.local/state/kubeatlas-release/0.1.0-$SOURCE_SHA"
-export RULES_SOURCE="$HOME/semgrep-rules-reference"
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_local.py build \
-  --source-sha "$SOURCE_SHA" --bundle "$BUNDLE"
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_local.py check \
-  --source-sha "$SOURCE_SHA" --bundle "$BUNDLE" --rules-source "$RULES_SOURCE"
-```
-
-The build validates the full 15-artifact GoReleaser matrix but stages only the
-existing local profile: eight Linux DEB/RPM packages, the KubeAtlas Windows
-amd64 ZIP, two multiarch OCI archives, two Helm charts, metadata, and checksums.
-Fleet, macOS, and Portal Windows distributions are excluded. `LICENSE` and
-`NOTICE` remain in the binary packages. The local profile does not make a
-candidate branch releasable: approval preparation and verification require
-that the source and tooling checkout are the same clean commit as a fresh
-read-only GitHub `main` query.
-
-Prerequisites are the pinned Go/GoReleaser, Node, Helm 4.2.3, Helm 3.19.0,
-helm-unittest 1.1.0, helmfile, Docker Buildx, skopeo, ShellCheck, actionlint,
-and Semgrep 1.180.0 plus the exact locked rule checkout. The automated checks
-also require an explicitly configured isolated PostgreSQL test DSN in
-`KUBEATLAS_TEST_POSTGRES_DSN`; the script forces
-`KUBEATLAS_REQUIRE_POSTGRES_TESTS=1`. Missing tools, services, external
-acceptance, or receipts block preparation. No build/publish tools are
-installed automatically. Settings E2E is a fixture test, not a real cluster
-acceptance gate.
-
-External host reports are imported only after the operator has run the
-required scenarios. For example:
-
-```sh
-python3 scripts/release_local.py import-acceptance \
-  --bundle "$BUNDLE" --report /path/to/actual-host-report.json \
-  --evidence-dir /path/to/actual-host-evidence
-```
-
-The versioned report schema is `kubeatlas-local-acceptance/v1`. It binds the
-gate, source/tooling SHA, build UUID, artifact-inventory digest, runtime
-platform, context, component/environment versions, command records and exit
-status, scenario outcomes, limitations, artifact hashes, and report/log
-evidence hashes. Every required scenario is listed separately as `passed`,
-`untested`, or `failed`; untested or failed outcomes block approval. Windows
-requires native Windows AMD64, the actual ZIP smoke, both PowerShell fixture
-hosts, and the exact Windows Helm-refresh test. Linux package gates require
-isolated installs/uninstalls and explicit architecture/distribution details.
-Real-cluster evidence must report the Kubernetes context and version and the
-main and Portal flows, including read-only/security boundaries. Emulation is
-reported as such and does not satisfy native Windows. An operator-imported
-report is **operator-attested evidence reviewed by the offline signer**, not
-cryptographically independent host attestation. Test-only fixtures cannot
-satisfy these real acceptance gates. Pod-metrics availability and Hubble
-plaintext may be reported as limitations; they are not invented pass criteria.
 
 After every required receipt passes, prepare creates only an unsigned
 `approval.json`; it never signs:

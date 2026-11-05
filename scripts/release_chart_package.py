@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from release_policy import REPOSITORY, validate_inputs
@@ -103,27 +104,24 @@ def package_charts(source_dir, output_dir, version, source_sha, helm="helm", run
     validate_inputs(REPOSITORY, "refs/heads/main", source_sha, version)
     source_root = Path(source_dir)
     output_root = Path(output_dir)
-    staging_root = output_root / ".staged"
     output_root.mkdir(parents=True, exist_ok=True)
-    if staging_root.exists():
-        shutil.rmtree(staging_root)
-    staging_root.mkdir()
-
     archives = []
-    for name, repository in CHARTS.items():
-        staged_chart = staging_root / name
-        prepare_chart(
-            source_root / "deploy" / "helm" / name,
-            staged_chart,
-            version,
-            source_sha,
-            repository,
-        )
-        runner(
-            [helm, "package", str(staged_chart), "--destination", str(output_root)],
-            check=True,
-        )
-        archives.append(output_root / f"{name}-{version}.tgz")
+    with tempfile.TemporaryDirectory(prefix=".kubeatlas-chart-stage-", dir=output_root.parent) as temporary:
+        staging_root = Path(temporary)
+        for name, repository in CHARTS.items():
+            staged_chart = staging_root / name
+            prepare_chart(
+                source_root / "deploy" / "helm" / name,
+                staged_chart,
+                version,
+                source_sha,
+                repository,
+            )
+            runner(
+                [helm, "package", str(staged_chart), "--destination", str(output_root)],
+                check=True,
+            )
+            archives.append(output_root / f"{name}-{version}.tgz")
 
     checksums = []
     for archive in archives:

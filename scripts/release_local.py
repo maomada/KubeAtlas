@@ -15,6 +15,7 @@ import stat
 import subprocess
 import sys
 import tarfile
+import tempfile
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path, PurePosixPath
@@ -23,6 +24,8 @@ import release_approval
 import release_artifacts
 import release_chart_package
 import release_policy
+import security_dispositions
+import security_scan
 import validate_oci_archive
 
 
@@ -37,6 +40,7 @@ MAX_RECEIPT_AGE = timedelta(days=7)
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%SZ"
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 SHA256_PATTERN = re.compile(r"[0-9a-f]{64}")
+MAX_JSON_FILE_BYTES = 64 * 1024 * 1024
 
 AUTOMATED_GATES = (
     "linux-ci",
@@ -96,6 +100,8 @@ ACCEPTANCE_SCENARIOS = {
         "helm_portal_flow",
         "worker_csp_security",
         "readonly_boundaries",
+        "main_readonly_api",
+        "main_readonly_mcp",
     ),
 }
 for _gate in EXTERNAL_GATES:
@@ -138,16 +144,36 @@ def _canonical_json(value: object) -> bytes:
 def _load_json(path: Path, name: str = "JSON file") -> dict:
     try:
         descriptor, file_stat = _open_regular(path)
-        if file_stat.st_size > release_approval.MAX_MANIFEST_BYTES:
+        if file_stat.st_size > MAX_JSON_FILE_BYTES:
             os.close(descriptor)
-            raise LocalReleaseError(f"{name} exceeds 64 KiB")
+            raise LocalReleaseError(f"{name} exceeds its size limit")
         with os.fdopen(descriptor, "rb") as source:
-            data = source.read(release_approval.MAX_MANIFEST_BYTES + 1)
+            data = source.read(MAX_JSON_FILE_BYTES + 1)
     except LocalReleaseError:
         raise
     except OSError as error:
         raise LocalReleaseError(f"{name} cannot be read safely") from error
-    return release_approval._load_json(data)
+    try:
+        def object_pairs(pairs):
+            result = {}
+            for key, value in pairs:
+                if key in result:
+                    raise ValueError(f"duplicate JSON key: {key}")
+                result[key] = value
+            return result
+
+        value = json.loads(
+            data.decode("utf-8"),
+            object_pairs_hook=object_pairs,
+            parse_constant=lambda constant: (_ for _ in ()).throw(
+                ValueError(f"non-finite JSON constant: {constant}")
+            ),
+        )
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as error:
+        raise LocalReleaseError(f"{name} is not strict JSON") from error
+    if not isinstance(value, dict):
+        raise LocalReleaseError(f"{name} must be a JSON object")
+    return value
 
 
 def _assert_no_symlink_ancestors(path: Path) -> None:
@@ -165,7 +191,7 @@ def _assert_no_symlink_ancestors(path: Path) -> None:
 
 def _open_regular(path: Path) -> tuple[int, os.stat_result]:
     _assert_no_symlink_ancestors(path)
-    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
         descriptor = os.open(path, flags)
         file_stat = os.fstat(descriptor)
@@ -577,6 +603,8 @@ def _validate_acceptance(receipt: dict, gate: str, require_passed: bool = True) 
         "scenarios",
         "execution",
         "artifactHashes",
+        "deployedImageDigests",
+        "executables",
     }:
         raise LocalReleaseError(f"operator-attested acceptance receipt is incomplete: {gate}")
     if (
@@ -593,6 +621,8 @@ def _validate_acceptance(receipt: dict, gate: str, require_passed: bool = True) 
         or not isinstance(acceptance["limitations"], list)
         or any(not isinstance(item, str) for item in acceptance["limitations"])
         or not isinstance(acceptance["artifactHashes"], dict)
+        or not isinstance(acceptance["deployedImageDigests"], dict)
+        or not isinstance(acceptance["executables"], dict)
     ):
         raise LocalReleaseError(f"operator-attested acceptance context is incomplete: {gate}")
     scenarios = acceptance["scenarios"]
@@ -630,14 +660,32 @@ def _validate_acceptance(receipt: dict, gate: str, require_passed: bool = True) 
     if not isinstance(system, str) or not isinstance(machine, str) or not machine:
         raise LocalReleaseError(f"acceptance execution platform is invalid: {gate}")
     if gate == "windows-native":
+        powershell_51 = acceptance["componentVersions"].get("powershell_5_1", "")
+        powershell_7 = acceptance["componentVersions"].get("powershell_7", "")
+        executables = acceptance["executables"]
         if (
             system != "Windows"
             or machine.upper() not in {"AMD64", "X86_64"}
             or execution["emulation"] is not False
             or acceptance["componentVersions"].get("kubeatlas") != VERSION
-            or not all(
-                acceptance["componentVersions"].get(name)
-                for name in ("powershell_5_1", "powershell_7", "helm")
+            or not re.fullmatch(r"5\.1\.\d+(?:\.\d+)?", powershell_51)
+            or not re.fullmatch(r"7\.\d+(?:\.\d+)?", powershell_7)
+            or not acceptance["componentVersions"].get("helm")
+            or not isinstance(executables.get("powershell_5_1"), str)
+            or not executables["powershell_5_1"].lower().endswith(
+                r"\powershell.exe"
+            )
+            or not isinstance(executables.get("powershell_7"), str)
+            or not executables["powershell_7"].lower().endswith(r"\pwsh.exe")
+            or not any(
+                item["name"] == "powershell_5_1_installer_fixtures"
+                and item["argv"][0].lower() == executables["powershell_5_1"].lower()
+                for item in receipt["commands"]
+            )
+            or not any(
+                item["name"] == "powershell_7_installer_fixtures"
+                and item["argv"][0].lower() == executables["powershell_7"].lower()
+                for item in receipt["commands"]
             )
         ):
             raise LocalReleaseError("Windows native acceptance requires Windows AMD64 execution")
@@ -669,11 +717,35 @@ def _validate_acceptance(receipt: dict, gate: str, require_passed: bool = True) 
 
 
 def _validate_external_artifact_hashes(
-    receipt: dict, gate: str, inventories: dict[str, list[dict[str, object]]]
+    receipt: dict,
+    gate: str,
+    inventories: dict[str, list[dict[str, object]]],
+    bundle: Path,
 ) -> None:
     if gate == "real-cluster":
-        if receipt["acceptance"]["artifactHashes"]:
-            raise LocalReleaseError("cluster acceptance must not substitute artifact evidence")
+        ghcr_entries = {entry["path"]: entry["sha256"] for entry in inventories["ghcr"]}
+        expected = {
+            path: ghcr_entries[path]
+            for path in release_approval.expected_artifact_paths("ghcr", VERSION)
+            if path.endswith((".oci.tar", ".tgz"))
+        }
+        acceptance = receipt["acceptance"]
+        if acceptance["artifactHashes"] != expected:
+            raise LocalReleaseError("cluster acceptance must bind approved image and chart archives")
+        deployed = acceptance["deployedImageDigests"]
+        if set(deployed) != {"kubeatlas", "kubeatlas-portal"}:
+            raise LocalReleaseError("cluster acceptance must report both deployed image digests")
+        for component in ("kubeatlas", "kubeatlas-portal"):
+            image_metadata_path = (
+                bundle
+                / "ghcr"
+                / "images"
+                / f"release-image-{component}"
+                / f"{component}.metadata.json"
+            )
+            metadata = _load_json(image_metadata_path, "image metadata")
+            if deployed.get(component) != metadata.get("buildDigest"):
+                raise LocalReleaseError("observed cluster image digest differs from the approved build")
         return
     binary_entries = {entry["path"]: entry["sha256"] for entry in inventories["binaries"]}
     if gate == "windows-native":
@@ -738,6 +810,7 @@ def validate_receipts(
             "issuedAt",
             "completedAt",
             "commands",
+            "toolVersions",
             "exitStatus",
             "result",
             "reports",
@@ -760,6 +833,15 @@ def validate_receipts(
             or receipt["exitStatus"] != 0
             or receipt["result"] != "passed"
             or not _receipt_commands_valid(receipt["commands"])
+            or not isinstance(receipt["toolVersions"], dict)
+            or not receipt["toolVersions"]
+            or any(
+                not isinstance(name, str)
+                or not name
+                or not isinstance(version, str)
+                or not version.strip()
+                for name, version in receipt["toolVersions"].items()
+            )
             or not isinstance(receipt["executionPlatform"], dict)
         ):
             raise LocalReleaseError(f"gate receipt does not bind to this build: {gate}")
@@ -798,10 +880,14 @@ def validate_receipts(
                 kinds.add("log")
         if "log" not in kinds:
             raise LocalReleaseError(f"gate receipt is missing a nonempty log: {gate}")
+        if gate in AUTOMATED_GATES:
+            _validate_automated_receipt(bundle, receipt, gate)
+        elif gate == "build":
+            _validate_build_report(bundle, receipt, context)
         if gate in ACCEPTANCE_SCENARIOS:
             _validate_acceptance(receipt, gate)
             _validate_external_commands(receipt, gate)
-            _validate_external_artifact_hashes(receipt, gate, inventories)
+            _validate_external_artifact_hashes(receipt, gate, inventories, bundle)
         receipts[gate] = receipt
     return receipts
 
@@ -814,6 +900,7 @@ def _receipt(
     reports: list[dict],
     execution_platform: dict | None = None,
     acceptance: dict | None = None,
+    tool_versions: dict[str, str] | None = None,
 ) -> dict:
     receipt = {
         "schema": RECEIPT_SCHEMA,
@@ -830,6 +917,7 @@ def _receipt(
         "issuedAt": _format_time(_now()),
         "completedAt": _format_time(_now()),
         "commands": commands,
+        "toolVersions": {"python": sys.version.split()[0], **(tool_versions or {})},
         "exitStatus": 0,
         "result": "passed",
         "reports": reports,
@@ -883,6 +971,7 @@ def _run_commands(
         os.close(descriptor)
     try:
         with log_path.open("ab" if append else "xb") as log:
+            os.chmod(log_path, 0o600)
             for spec in specs:
                 argv = list(spec["argv"])
                 cwd = repo_root / spec.get("cwd", ".")
@@ -934,7 +1023,13 @@ def _report_records(bundle: Path, report_paths: list[Path]) -> list[dict]:
     return records
 
 
-def _write_build_receipt(bundle: Path, context: dict, commands: list[dict], report_paths: list[Path]) -> None:
+def _write_build_receipt(
+    bundle: Path,
+    context: dict,
+    commands: list[dict],
+    report_paths: list[Path],
+    tool_versions: dict[str, str],
+) -> None:
     inventories = artifact_inventories(bundle)
     reports = [
         _evidence_record(bundle, "logs/build.log", "log"),
@@ -943,7 +1038,7 @@ def _write_build_receipt(bundle: Path, context: dict, commands: list[dict], repo
     _write_receipt_file(
         bundle,
         "build",
-        _receipt("build", context, inventories, commands, reports),
+        _receipt("build", context, inventories, commands, reports, tool_versions=tool_versions),
     )
 
 
@@ -1058,6 +1153,7 @@ def _run_buildx_component(
             [{"name": f"Build {component} multi-platform OCI archive", "argv": build_command}],
             log_path,
             bundle,
+            repo_root=repo_root,
             append=True,
         )
     )
@@ -1091,7 +1187,9 @@ def _run_buildx_component(
     if result.returncode != 0:
         raise LocalReleaseError(f"skopeo inspect failed; see {log_path.name}")
     _exclusive_write(raw_path, result.stdout)
-    platforms = validate_oci_archive.validate_archive(archive, raw_path)
+    platforms = validate_oci_archive.validate_archive(
+        archive, raw_path, _expected_oci_labels(source_sha)
+    )
     if set(platforms) != validate_oci_archive.EXPECTED_PLATFORMS:
         raise LocalReleaseError("OCI archive is missing a required platform")
     metadata = _load_json(metadata_path, f"{component} build metadata")
@@ -1159,7 +1257,7 @@ def _run_buildx_component(
 
 def build_bundle(source_sha: str, bundle_path: Path, repo_root: Path = ROOT) -> Path:
     source_sha = assert_authority(source_sha, repo_root)
-    _validate_tools_for_gate("build")
+    tool_versions = _validate_tools_for_gate("build")
     bundle = _bundle_path(bundle_path, repo_root)
     if bundle.exists() or bundle.is_symlink():
         raise LocalReleaseError("build refuses to reuse an existing release bundle")
@@ -1169,6 +1267,7 @@ def build_bundle(source_sha: str, bundle_path: Path, repo_root: Path = ROOT) -> 
         bundle.mkdir(mode=0o700)
     except OSError as error:
         raise LocalReleaseError("release bundle directory could not be created exclusively") from error
+    os.chmod(bundle, 0o700)
     _ensure_evidence_dirs(bundle)
     context = _build_context(bundle, source_sha)
     log_path = bundle / "evidence" / "logs" / "build.log"
@@ -1197,7 +1296,18 @@ def build_bundle(source_sha: str, bundle_path: Path, repo_root: Path = ROOT) -> 
         )
         full_matrix = _check_full_matrix(source_sha, repo_root)
         full_report = bundle / "evidence" / "reports" / "full-matrix-inventory.json"
-        _exclusive_write(full_report, _canonical_json({"schema": "kubeatlas-full-matrix/v1", "artifacts": full_matrix}))
+        _exclusive_write(
+            full_report,
+            _canonical_json(
+                {
+                    "schema": "kubeatlas-full-matrix/v1",
+                    "repository": REPOSITORY,
+                    "version": VERSION,
+                    "sourceSha": source_sha,
+                    "artifacts": full_matrix,
+                }
+            ),
+        )
         report_paths.append(full_report)
         stage_command = [
             sys.executable,
@@ -1261,7 +1371,7 @@ def build_bundle(source_sha: str, bundle_path: Path, repo_root: Path = ROOT) -> 
             ]
         )
         context = _finish_context(bundle, context)
-        _write_build_receipt(bundle, context, commands, report_paths)
+        _write_build_receipt(bundle, context, commands, report_paths, tool_versions)
         return bundle
     finally:
         _clean_head(repo_root, source_sha)
@@ -1303,8 +1413,8 @@ def _validate_chart_archive(path: Path, name: str, source_sha: str) -> None:
         raise LocalReleaseError(f"chart archive is invalid: {path.name}") from error
     expected = {
         "name": rf"(?m)^name:\s*{re.escape(name)}\s*$",
-        "version": rf"(?m)^version:\s*{re.escape(VERSION)}\s*$",
-        "appVersion": rf"(?m)^appVersion:\s*['\"]?{re.escape(VERSION)}['\"]?\s*$",
+        "version": rf"(?m)^version:\s*(?:{re.escape(VERSION)}|\"{re.escape(VERSION)}\"|'{re.escape(VERSION)}')\s*$",
+        "appVersion": rf"(?m)^appVersion:\s*(?:{re.escape(VERSION)}|\"{re.escape(VERSION)}\"|'{re.escape(VERSION)}')\s*$",
         "source": r'(?m)^\s+org\.opencontainers\.image\.source:\s*["\']https://github\.com/maomada/KubeAtlas["\']\s*$',
         "revision": rf'(?m)^\s+org\.opencontainers\.image\.revision:\s*["\']{re.escape(source_sha)}["\']\s*$',
     }
@@ -1318,14 +1428,15 @@ def _validate_chart_archive(path: Path, name: str, source_sha: str) -> None:
         raise LocalReleaseError(f"packaged chart image metadata mismatch: {name}")
 
 
-def _validate_built_artifacts(bundle: Path, source_sha: str, repo_root: Path = ROOT) -> dict:
-    full = release_artifacts.validate_staged(
-        repo_root / "dist" / "release",
-        expected_source_sha=source_sha,
-        expected_version=VERSION,
-    )
-    if len(full["artifacts"]) != 15:
-        raise LocalReleaseError("full 15-artifact matrix validation failed")
+def _expected_oci_labels(source_sha: str) -> dict[str, str]:
+    return {
+        "org.opencontainers.image.source": f"https://github.com/{REPOSITORY}",
+        "org.opencontainers.image.revision": source_sha,
+        "org.opencontainers.image.version": VERSION,
+    }
+
+
+def _validate_bundle_artifacts(bundle: Path, source_sha: str) -> dict:
     binaries = release_artifacts.validate_staged(
         bundle / "binaries",
         expected_source_sha=source_sha,
@@ -1351,7 +1462,9 @@ def _validate_built_artifacts(bundle: Path, source_sha: str, repo_root: Path = R
         ):
             raise LocalReleaseError(f"image archive metadata or checksum mismatch: {component}")
         raw = bundle / "evidence" / "reports" / f"{component}-raw-manifest.json"
-        platforms = validate_oci_archive.validate_archive(archive, raw)
+        platforms = validate_oci_archive.validate_archive(
+            archive, raw, _expected_oci_labels(source_sha)
+        )
         if set(platforms) != validate_oci_archive.EXPECTED_PLATFORMS:
             raise LocalReleaseError(f"image platform matrix mismatch: {component}")
         raw_digest = hashlib.sha256(_read_regular(raw, 1024 * 1024)).hexdigest()
@@ -1374,7 +1487,28 @@ def _validate_built_artifacts(bundle: Path, source_sha: str, repo_root: Path = R
         if digest != checksums[filename]:
             raise LocalReleaseError(f"chart checksum mismatch: {filename}")
         _validate_chart_archive(path, name, source_sha)
-    return {"full": full, "binaries": binaries, "ghcr": ghcr_inventory}
+    return {"binaries": binaries, "ghcr": ghcr_inventory}
+
+
+def _validate_built_artifacts(bundle: Path, source_sha: str, repo_root: Path = ROOT) -> dict:
+    full = release_artifacts.validate_staged(
+        repo_root / "dist" / "release",
+        expected_source_sha=source_sha,
+        expected_version=VERSION,
+    )
+    if len(full["artifacts"]) != 15:
+        raise LocalReleaseError("full 15-artifact matrix validation failed")
+    selected = _validate_bundle_artifacts(bundle, source_sha)
+    return {"full": full, **selected}
+
+
+def _validate_bundle_content(bundle: Path, source_sha: str) -> dict:
+    try:
+        return _validate_bundle_artifacts(bundle, source_sha)
+    except LocalReleaseError:
+        raise
+    except (OSError, ValueError, KeyError, TypeError, tarfile.TarError) as error:
+        raise LocalReleaseError("release bundle content validation failed") from error
 
 
 def validate_built_artifacts_command(bundle: Path, source_sha: str) -> int:
@@ -1519,7 +1653,187 @@ HELM_BIN="${HELM3_BIN:-helm3}" helmfile -f ./deploy/helm/ unittest"""
     raise LocalReleaseError(f"unsupported local gate: {gate}")
 
 
-def _validate_tools_for_gate(gate: str) -> None:
+def _validate_build_report(bundle: Path, receipt: dict, context: dict) -> None:
+    records = {
+        item["path"]: item
+        for item in receipt["reports"]
+        if isinstance(item, dict) and isinstance(item.get("path"), str)
+    }
+    relative = "reports/full-matrix-inventory.json"
+    if relative not in records or records[relative]["kind"] != "report":
+        raise LocalReleaseError("build receipt must bind the complete matrix inventory report")
+    report = _load_json(bundle / "evidence" / relative, "full matrix inventory")
+    if set(report) != {"schema", "repository", "version", "sourceSha", "artifacts"}:
+        raise LocalReleaseError("full matrix inventory schema is invalid")
+    expected = set(release_artifacts.expected_names(VERSION))
+    artifacts = report["artifacts"]
+    if (
+        report["schema"] != "kubeatlas-full-matrix/v1"
+        or report["repository"] != REPOSITORY
+        or report["version"] != VERSION
+        or report["sourceSha"] != context["sourceSha"]
+        or not isinstance(artifacts, list)
+        or len(artifacts) != 15
+        or any(
+            not isinstance(item, dict)
+            or set(item) != {"path", "size", "sha256"}
+            or not isinstance(item["path"], str)
+            or type(item["size"]) is not int
+            or item["size"] <= 0
+            or not isinstance(item["sha256"], str)
+            or not SHA256_PATTERN.fullmatch(item["sha256"])
+            for item in artifacts
+        )
+        or {item["path"] for item in artifacts} != expected
+    ):
+        raise LocalReleaseError("full matrix inventory does not bind all 15 expected artifacts")
+
+
+def _validate_semgrep_receipt(bundle: Path, receipt: dict, gate: str, context: dict) -> None:
+    reports = {
+        Path(item["path"]).name: bundle / "evidence" / item["path"]
+        for item in receipt["reports"]
+        if item["kind"] == "report"
+    }
+    if gate == "semgrep-self-test":
+        if set(reports) != {"canary-clean.json", "canary-unsafe.json"}:
+            raise LocalReleaseError("Semgrep self-test receipt omits fixed canary reports")
+        clean = _load_json(reports["canary-clean.json"], "Semgrep clean canary")
+        unsafe = _load_json(reports["canary-unsafe.json"], "Semgrep unsafe canary")
+        for report in (clean, unsafe):
+            if report.get("errors") != [] or not isinstance(report.get("paths"), dict):
+                raise LocalReleaseError("Semgrep canary has scanner errors or no path inventory")
+        clean_targets = [Path(path) for path in clean["paths"].get("scanned", [])]
+        unsafe_targets = [Path(path) for path in unsafe["paths"].get("scanned", [])]
+        try:
+            security_scan.require_complete(clean, clean_targets, 0)
+            security_scan.require_complete(unsafe, unsafe_targets, 1)
+        except (ValueError, KeyError, TypeError) as error:
+            raise LocalReleaseError("Semgrep canary coverage or exit status is invalid") from error
+        detected = {
+            Path(item.get("path", "")).name
+            for item in unsafe.get("results", [])
+            if isinstance(item, dict)
+        }
+        if not {"unsafe.go", "unsafe.js", "unsafe.ts"}.issubset(detected):
+            raise LocalReleaseError("Semgrep unsafe canary did not detect every required language")
+        return
+
+    if set(reports) != {"findings.json", "provenance.json", "dispositions.json"}:
+        raise LocalReleaseError("Semgrep full receipt omits fixed findings, provenance, or disposition reports")
+    findings = _load_json(reports["findings.json"], "Semgrep findings")
+    provenance = _load_json(reports["provenance.json"], "Semgrep provenance")
+    dispositions = _load_json(reports["dispositions.json"], "Semgrep dispositions")
+    lock_path = ROOT / ".github" / "security-rules.lock.json"
+    policy_path = ROOT / ".github" / "security-dispositions.json"
+    lock = _load_json(lock_path, "Semgrep rules lock")
+    lock_hash = hashlib.sha256(_read_regular(lock_path)).hexdigest()
+    policy = _load_json(policy_path, "Semgrep disposition policy")
+    targets = sorted(
+        ROOT / name
+        for name in subprocess.check_output(
+            ["git", "-C", str(ROOT), "ls-files", "-z"], text=False
+        ).decode().split("\0")
+        if name and security_scan.production_source(name)
+    )
+    expected_names = [path.relative_to(ROOT).as_posix() for path in targets]
+    if (
+        provenance.get("sourceSha") != context["sourceSha"]
+        or provenance.get("engine") != security_scan.ENGINE_VERSION
+        or provenance.get("rulesCommit") != lock.get("commit")
+        or provenance.get("lockSha256") != lock_hash
+        or provenance.get("targets") != expected_names
+    ):
+        raise LocalReleaseError("Semgrep provenance is not bound to this source and locked ruleset")
+    returncode = 1 if findings.get("results") else 0
+    try:
+        security_scan.require_complete(findings, targets, returncode)
+        decision = security_dispositions.evaluate(
+            findings, policy, ROOT, targets, security_scan.ENGINE_VERSION, lock_hash
+        )
+    except (ValueError, KeyError, TypeError) as error:
+        raise LocalReleaseError("Semgrep scan or disposition policy validation failed") from error
+    expected_dispositions = {
+        **decision,
+        "sourceSha": context["sourceSha"],
+        "policySha256": hashlib.sha256(_read_regular(policy_path)).hexdigest(),
+        "rawReportSha256": hashlib.sha256(_read_regular(reports["findings.json"])).hexdigest(),
+    }
+    if dispositions != expected_dispositions or not decision["passed"] or decision["unresolved"]:
+        raise LocalReleaseError("Semgrep findings are unresolved or disposition provenance is invalid")
+
+
+def _validate_automated_receipt(bundle: Path, receipt: dict, gate: str) -> None:
+    required_tools = {
+        "linux-ci": {"go": "go1.26."},
+        "frontend": {"node": "v24."},
+        "settings-e2e": {"node": "v24."},
+        "helm": {"helm": "v4.2.3", "helm3": "v3.19.0", "helmfile": ""},
+        "release-security": {"go": "go1.26."},
+        "posix-installers": {"shellcheck": ""},
+        "semgrep-self-test": {"semgrep": "1.180.0"},
+        "semgrep-full": {"semgrep": "1.180.0"},
+        "package-oci": {"python": ""},
+    }[gate]
+    versions = receipt["toolVersions"]
+    if not set(required_tools).issubset(versions) or any(
+        not isinstance(versions.get(tool), str)
+        or not versions[tool].strip()
+        or prefix and prefix not in versions[tool]
+        for tool, prefix in required_tools.items()
+    ):
+        raise LocalReleaseError(f"{gate} receipt omits required tool versions")
+    specs, report_paths, _ = _gate_specs(bundle, Path("/"), gate)
+    commands = receipt["commands"]
+    if gate in {"semgrep-self-test", "semgrep-full"}:
+        argv = commands[0]["argv"]
+        try:
+            rules_source = Path(argv[argv.index("--rules-source") + 1])
+            output_value = argv[argv.index("--output") + 1]
+        except (ValueError, IndexError) as error:
+            raise LocalReleaseError("Semgrep command is missing its fixed rules/output arguments") from error
+        output_dir = Path(output_value.replace("$BUNDLE", str(bundle)))
+        if not output_dir.resolve().is_relative_to((bundle / "evidence" / "semgrep").resolve()):
+            raise LocalReleaseError("Semgrep output must remain in the signed evidence directory")
+        if not re.fullmatch(
+            rf"\$BUNDLE/evidence/semgrep/{re.escape(gate)}-[0-9a-f]{{32}}",
+            output_value,
+        ):
+            raise LocalReleaseError("Semgrep output directory does not match the fixed gate")
+        specs, report_paths, _ = _gate_specs(bundle, rules_source, gate)
+        report_paths = [output_dir / path.name for path in report_paths]
+        for spec in specs:
+            expected_argv = _display_argv(spec["argv"], bundle, ROOT)
+            actual = next((item for item in commands if item["name"] == spec["name"]), None)
+            if actual is None:
+                raise LocalReleaseError(f"{gate} receipt omits its fixed scanner command")
+            expected_argv[expected_argv.index("--output") + 1] = output_value
+            if actual["argv"] != expected_argv:
+                raise LocalReleaseError(f"{gate} command does not match the fixed scanner contract")
+    else:
+        if len(commands) != len(specs):
+            raise LocalReleaseError(f"{gate} receipt command count does not match the fixed gate")
+        for actual, spec in zip(commands, specs):
+            if (
+                actual["name"] != spec["name"]
+                or actual["argv"] != _display_argv(spec["argv"], bundle, ROOT)
+                or actual["cwd"] != spec.get("cwd", ".")
+            ):
+                raise LocalReleaseError(f"{gate} receipt command does not match the fixed gate contract")
+    expected_reports = {
+        path.relative_to(bundle / "evidence").as_posix() for path in report_paths
+    }
+    actual_reports = {
+        item["path"] for item in receipt["reports"] if item["kind"] == "report"
+    }
+    if actual_reports != expected_reports:
+        raise LocalReleaseError(f"{gate} receipt report roles do not match the fixed gate")
+    if gate.startswith("semgrep-"):
+        context = _load_context(bundle)
+        _validate_semgrep_receipt(bundle, receipt, gate, context)
+
+
+def _validate_tools_for_gate(gate: str) -> dict[str, str]:
     required = {
         "build": {
             "go": "go1.26.",
@@ -1530,17 +1844,31 @@ def _validate_tools_for_gate(gate: str) -> None:
         },
         "linux-ci": {"go": "go1.26."},
         "frontend": {"node": "v24."},
+        "settings-e2e": {"node": "v24."},
         "helm": {"helm": "v4.2.3", "helm3": "v3.19.0", "helmfile": ""},
         "release-security": {"go": "go1.26."},
         "posix-installers": {"shellcheck": ""},
         "semgrep-self-test": {"semgrep": "1.180.0"},
         "semgrep-full": {"semgrep": "1.180.0"},
     }.get(gate, {})
+    argument_map = {
+        "go": ["version"],
+        "goreleaser": ["--version"],
+        "docker": ["--version"],
+        "skopeo": ["--version"],
+        "helm": ["version", "--short"],
+        "helm3": ["version", "--short"],
+        "helmfile": ["--version"],
+        "node": ["--version"],
+        "shellcheck": ["--version"],
+        "semgrep": ["--version"],
+    }
+    versions = {}
     for tool, version_prefix in required.items():
         executable = os.environ.get("HELM3_BIN", "helm3") if tool == "helm3" else tool
         try:
             result = subprocess.run(
-                [executable, "--version" if tool in {"go", "helmfile"} else "--version"],
+                [executable, *argument_map[tool]],
                 capture_output=True,
                 text=True,
                 check=False,
@@ -1551,6 +1879,7 @@ def _validate_tools_for_gate(gate: str) -> None:
         output = f"{result.stdout}\n{result.stderr}"
         if result.returncode != 0 or version_prefix and version_prefix not in output:
             raise LocalReleaseError(f"required tool version is not satisfied: {tool}")
+        versions[tool] = output.strip()
     if gate == "build":
         try:
             result = subprocess.run(
@@ -1590,6 +1919,7 @@ def _validate_tools_for_gate(gate: str) -> None:
             raise LocalReleaseError("Helm 3 helm-unittest 1.1.0 is required") from error
         if result.returncode != 0 or not re.search(r"(?m)^unittest\s+1\.1\.0(?:\s|$)", result.stdout):
             raise LocalReleaseError("Helm 3 helm-unittest plugin 1.1.0 is required")
+    return versions
 
 
 def run_checks(bundle_path: Path, source_sha: str, rules_source: Path, repo_root: Path = ROOT) -> None:
@@ -1601,6 +1931,7 @@ def run_checks(bundle_path: Path, source_sha: str, rules_source: Path, repo_root
     context = _load_context(bundle)
     if context["sourceSha"] != source_sha:
         raise LocalReleaseError("release bundle source SHA does not match")
+    _validate_bundle_content(bundle, source_sha)
     rules_source = Path(os.path.abspath(rules_source))
     _assert_no_symlink_ancestors(rules_source)
     if rules_source.is_symlink() or not rules_source.is_dir():
@@ -1627,14 +1958,16 @@ def run_checks(bundle_path: Path, source_sha: str, rules_source: Path, repo_root
                 print(f"Reusing immutable local gate receipt: {gate}")
                 continue
             try:
-                _validate_tools_for_gate(gate)
+                tool_versions = _validate_tools_for_gate(gate)
                 specs, report_paths, env = _gate_specs(bundle, rules_source, gate)
                 if gate == "release-security":
-                    env["PYTHONPYCACHEPREFIX"] = str(
-                        bundle / "evidence" / "reports" / f"pycache-{uuid.uuid4().hex}"
-                    )
-                log_path = _timestamped_log(bundle, gate)
-                commands = _run_commands(gate, specs, log_path, bundle, repo_root, env)
+                    with tempfile.TemporaryDirectory(prefix="kubeatlas-pycache-") as cache:
+                        env["PYTHONPYCACHEPREFIX"] = cache
+                        log_path = _timestamped_log(bundle, gate)
+                        commands = _run_commands(gate, specs, log_path, bundle, repo_root, env)
+                else:
+                    log_path = _timestamped_log(bundle, gate)
+                    commands = _run_commands(gate, specs, log_path, bundle, repo_root, env)
                 for path in report_paths:
                     if not path.is_file() or path.is_symlink():
                         raise LocalReleaseError(f"{gate} did not produce required report evidence")
@@ -1642,7 +1975,14 @@ def run_checks(bundle_path: Path, source_sha: str, rules_source: Path, repo_root
                     _evidence_record(bundle, log_path.relative_to(bundle / "evidence").as_posix(), "log"),
                     *_report_records(bundle, report_paths),
                 ]
-                receipt = _receipt(gate, context, inventories, commands, reports)
+                receipt = _receipt(
+                    gate,
+                    context,
+                    inventories,
+                    commands,
+                    reports,
+                    tool_versions=tool_versions,
+                )
                 _write_receipt_file(bundle, gate, receipt)
                 print(f"Passed local gate: {gate}")
             except (LocalReleaseError, OSError, ValueError, subprocess.SubprocessError) as error:
@@ -1704,6 +2044,9 @@ def import_acceptance(bundle_path: Path, report_path: Path, evidence_root: Path,
         "scenarios",
         "evidence",
         "artifactHashes",
+        "deployedImageDigests",
+        "executables",
+        "toolVersions",
     }:
         raise LocalReleaseError("invalid external acceptance report schema")
     gate = report["gate"]
@@ -1724,6 +2067,14 @@ def import_acceptance(bundle_path: Path, report_path: Path, evidence_root: Path,
         or type(report["exitStatus"]) is not int
         or not 0 <= report["exitStatus"] <= 255
         or report["result"] not in ("passed", "failed", "untested")
+        or not isinstance(report["toolVersions"], dict)
+        or not report["toolVersions"]
+        or any(
+            not isinstance(name, str)
+            or not isinstance(version, str)
+            or not version.strip()
+            for name, version in report["toolVersions"].items()
+        )
         or not _receipt_commands_valid(
             report["commands"], allow_failures=True, allow_empty=True
         )
@@ -1740,6 +2091,8 @@ def import_acceptance(bundle_path: Path, report_path: Path, evidence_root: Path,
         "scenarios": report["scenarios"],
         "execution": report["executionPlatform"],
         "artifactHashes": report["artifactHashes"],
+        "deployedImageDigests": report["deployedImageDigests"],
+        "executables": report["executables"],
     }
     _validate_acceptance({"acceptance": supplied}, gate, require_passed=False)
     scenario_statuses = {item["status"] for item in supplied["scenarios"]}
@@ -1756,7 +2109,9 @@ def import_acceptance(bundle_path: Path, report_path: Path, evidence_root: Path,
     if expected_result == "passed" and not report["commands"]:
         raise LocalReleaseError("passing external acceptance requires recorded commands")
     _validate_external_commands(report, gate)
-    _validate_external_artifact_hashes({"acceptance": supplied}, gate, inventories)
+    _validate_external_artifact_hashes(
+        {"acceptance": supplied}, gate, inventories, bundle
+    )
     evidence_items = report["evidence"]
     if not isinstance(evidence_items, list) or not evidence_items:
         raise LocalReleaseError("external acceptance report has no evidence files")
@@ -1833,6 +2188,7 @@ def import_acceptance(bundle_path: Path, report_path: Path, evidence_root: Path,
         copied,
         execution_platform=report["executionPlatform"],
         acceptance=supplied,
+        tool_versions=report["toolVersions"],
     )
     receipt["issuedAt"] = report["issuedAt"]
     receipt["completedAt"] = report["completedAt"]
@@ -1927,6 +2283,7 @@ def prepare_approval(
     context = _load_context(bundle)
     if context["sourceSha"] != source_sha or context["toolingSha"] != source_sha:
         raise LocalReleaseError("release bundle does not match the current main source and tooling")
+    _validate_bundle_content(bundle, source_sha)
     inventories = artifact_inventories(bundle)
     receipts = validate_receipts(bundle, context, inventories, now)
     if set(receipts) != REQUIRED_GATES:
@@ -1953,9 +2310,12 @@ def prepare_approval(
         "evidence": evidence,
         "gates": sorted(REQUIRED_GATES),
     }
+    approval_bytes = _canonical_json(manifest)
+    if len(approval_bytes) > release_approval.MAX_MANIFEST_BYTES:
+        raise LocalReleaseError("approval manifest exceeds 64 KiB")
     _validate_manifest(manifest, context, inventories, evidence, issued, trusted_root=repo_root)
     output = bundle / "approval.json"
-    _exclusive_write(output, _canonical_json(manifest))
+    _exclusive_write(output, approval_bytes)
     return output
 
 
@@ -1972,6 +2332,7 @@ def verify_approval(
     context = _load_context(bundle)
     if context["sourceSha"] != source_sha or context["toolingSha"] != source_sha:
         raise LocalReleaseError("release bundle source/tooling SHA does not match current main")
+    _validate_bundle_content(bundle, source_sha)
     manifest_path = bundle / "approval.json"
     signature_path = bundle / "approval.sig"
     if manifest_path.is_symlink() or signature_path.is_symlink():
