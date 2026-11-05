@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import tarfile
 import tempfile
@@ -186,6 +188,7 @@ def _validate_deb(path: Path, component: str, architecture: str, version: str) -
 
 
 def _validate_rpm(path: Path, component: str, architecture: str, version: str) -> None:
+    _run(["rpm", "--checksig", "--nosignature", str(path)])
     fields = _run(
         ["rpm", "-qp", "--queryformat", "%{NAME}\\n%{VERSION}\\n%{RELEASE}\\n%{ARCH}\\n", str(path)]
     ).splitlines()
@@ -225,6 +228,73 @@ def _validate_rpm(path: Path, component: str, architecture: str, version: str) -
             capture_output=True,
         )
         _validate_elf_file(Path(tmp) / "usr/bin" / component, architecture, path.name)
+
+
+def _rpm_header(stream):
+    header = stream.read(16)
+    if len(header) != 16 or header[:8] != b"\x8e\xad\xe8\x01\x00\x00\x00\x00":
+        raise ValueError("invalid RPM header")
+    count, size = struct.unpack(">II", header[8:])
+    if count > 4096 or size > 16 * 1024 * 1024:
+        raise ValueError("RPM header exceeds inspection limits")
+    raw = stream.read(count * 16)
+    if len(raw) != count * 16:
+        raise ValueError("truncated RPM index")
+    entries = list(struct.iter_unpack(">IIII", raw))
+    data_start = stream.tell()
+    end = data_start + size
+    if end > os.fstat(stream.fileno()).st_size:
+        raise ValueError("truncated RPM header store")
+    stream.seek(end)
+    return entries, data_start, end
+
+
+def _normalize_rpm_payload_size(path: Path) -> None:
+    _run(["rpm", "--checksig", "--nosignature", str(path)])
+    fields = _run(["rpm", "-qp", "--queryformat", "%{SIZE}\n%{PAYLOADCOMPRESSOR}\n", str(path)]).splitlines()
+    if len(fields) != 2 or not fields[0].isdigit() or fields[1] != "gzip":
+        raise ValueError("unsupported RPM payload metadata")
+    installed_size = int(fields[0])
+    with path.open("r+b") as stream:
+        if stream.read(4) != b"\xed\xab\xee\xdb":
+            raise ValueError("invalid RPM lead")
+        stream.seek(96)
+        entries, data_start, signature_end = _rpm_header(stream)
+        if len(entries) != 4 or {entry[0] for entry in entries} != {62, 273, 1000, 1007}:
+            raise ValueError("RPM normalization accepts only unsigned rpmpack headers")
+        _, kind, offset, count = next(entry for entry in entries if entry[0] == 1007)
+        size_position = data_start + offset
+        if kind != 4 or count != 1 or offset % 4 or size_position + 4 > signature_end:
+            raise ValueError("invalid RPM archive-size field")
+        stream.seek(size_position)
+        declared_size = struct.unpack(">I", stream.read(4))[0]
+        stream.seek((signature_end + 7) // 8 * 8)
+        _rpm_header(stream)
+        actual_size = 0
+        with gzip.GzipFile(fileobj=stream, mode="rb") as payload:
+            while chunk := payload.read(1024 * 1024):
+                actual_size += len(chunk)
+                if actual_size > 1024 * 1024 * 1024:
+                    raise ValueError("RPM payload exceeds inspection limit")
+    if declared_size == actual_size:
+        return
+    if declared_size != installed_size or actual_size <= installed_size:
+        raise ValueError("unexpected RPM archive-size mismatch")
+    # rpmpack records installed bytes here; RPM expects the complete CPIO size.
+    with path.open("r+b") as stream:
+        stream.seek(size_position)
+        stream.write(struct.pack(">I", actual_size))
+        stream.flush()
+        os.fsync(stream.fileno())
+    try:
+        _run(["rpm", "--checksig", "--nosignature", str(path)])
+    except Exception:
+        with path.open("r+b") as stream:
+            stream.seek(size_position)
+            stream.write(struct.pack(">I", declared_size))
+            stream.flush()
+            os.fsync(stream.fileno())
+        raise
 
 
 def _artifact_metadata(name: str, version: str, source_sha: str) -> dict[str, object]:
@@ -483,6 +553,8 @@ def create_staged(
         if source.is_symlink() or not source.is_file():
             raise ValueError(f"missing expected artifact: {name}")
         shutil.copy2(source, output / name)
+        if name.endswith(".rpm"):
+            _normalize_rpm_payload_size(output / name)
     artifacts = [_artifact_metadata(name, version, source_sha) for name in names]
     for item in artifacts:
         item["checksum"] = sha256(output / item["filename"])

@@ -87,6 +87,16 @@ and `checksums.txt`. The local bundle also contains both multiarch images and
 both Helm charts. The Windows ZIP is deferred, unpublished, and unaccepted in
 this profile; no Windows acceptance is claimed.
 
+During staging, each generated unsigned RPM is copied before correcting its
+`LONGARCHIVESIZE` field only when it matches installed `SIZE` but differs from
+the bounded measured gzip/CPIO payload size. This handles the known rpmpack
+metadata issue ([upstream issue #60](https://github.com/google/rpmpack/issues/60));
+the raw GoReleaser `dist` RPMs remain unchanged. RPM digests are checked before
+and after correction, and the corrected copy must still pass native
+`rpm2cpio`/`cpio`, metadata, file-list, and ELF validation. This is content
+validation only: native package install, version, uninstall, and no-autostart
+acceptance remain required.
+
 This is separate from the unchanged hosted Actions `local` profile, which
 retains the eight Linux packages plus the KubeAtlas Windows ZIP (nine assets,
 11 files with manifest and checksums) and still requires native Windows smoke.
