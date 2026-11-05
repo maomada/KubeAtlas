@@ -60,6 +60,10 @@ class LocalPublisherTests(unittest.TestCase):
             image_raw = b'{"schemaVersion":2,"manifests":[]}'
 
             def runner(argv, **_kwargs):
+                if argv == ["skopeo", "copy", "--help"]:
+                    return subprocess.CompletedProcess(
+                        argv, 0, "Usage: copy\n--all\n--preserve-digests\n", ""
+                    )
                 remote_commands.append(argv)
                 if argv[:2] == ["gh", "--version"] or argv[:3] == ["helm", "version", "--short"]:
                     return subprocess.CompletedProcess(argv, 0, "version\n", "")
@@ -217,6 +221,10 @@ class LocalPublisherTests(unittest.TestCase):
 
             def runner(argv, **kwargs):
                 commands.append(argv)
+                if argv == ["skopeo", "copy", "--help"]:
+                    return subprocess.CompletedProcess(
+                        argv, 0, "Usage: copy\n--all\n--preserve-digests\n", ""
+                    )
                 return subprocess.CompletedProcess(argv, 0, "test version\n", "")
 
             with (
@@ -251,11 +259,49 @@ class LocalPublisherTests(unittest.TestCase):
             self.assertEqual(
                 commands,
                 [
+                    ["skopeo", "copy", "--help"],
                     ["gh", "--version"],
                     ["skopeo", "--version"],
                     ["helm", "version", "--short"],
                 ],
             )
+            self.assertFalse((root / "journal").exists())
+
+    def test_unsupported_skopeo_stops_before_publisher_preflights_or_journal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = root / "bundle"
+            bundle.mkdir()
+            authfile = root / "auth.json"
+            authfile.write_text("{}", encoding="utf-8")
+            authfile.chmod(0o600)
+            commands = []
+
+            def runner(argv, **kwargs):
+                commands.append(argv)
+                return subprocess.CompletedProcess(argv, 0, "Usage: copy\n--all\n", "")
+
+            with (
+                patch.dict(os.environ, {"GH_TOKEN": "test-only-token"}, clear=True),
+                patch.object(release_local, "verify_approval") as verify,
+                patch.object(release_registry, "inspect_targets") as registry_preflight,
+                patch.object(release_github, "preflight") as github_preflight,
+            ):
+                with self.assertRaisesRegex(
+                    publisher.PublisherError, "Skopeo capability preflight failed"
+                ):
+                    publisher.publish_release(
+                        bundle,
+                        "a" * 40,
+                        runner=runner,
+                        journal_dir=root / "journal",
+                        authfile_path=authfile,
+                    )
+
+            self.assertEqual(commands, [["skopeo", "copy", "--help"]])
+            verify.assert_not_called()
+            registry_preflight.assert_not_called()
+            github_preflight.assert_not_called()
             self.assertFalse((root / "journal").exists())
 
     def test_missing_github_credentials_blocks_before_any_command(self):
@@ -285,6 +331,10 @@ class LocalPublisherTests(unittest.TestCase):
             commands = []
 
             def runner(argv, **kwargs):
+                if argv == ["skopeo", "copy", "--help"]:
+                    return subprocess.CompletedProcess(
+                        argv, 0, "Usage: copy\n--all\n--preserve-digests\n", ""
+                    )
                 commands.append(argv)
                 return subprocess.CompletedProcess(argv, 0, "tool version", "")
 
@@ -425,6 +475,10 @@ class LocalPublisherTests(unittest.TestCase):
 
                 def runner(argv, **kwargs):
                     commands.append(argv)
+                    if argv == ["skopeo", "copy", "--help"]:
+                        return subprocess.CompletedProcess(
+                            argv, 0, "Usage: copy\n--all\n--preserve-digests\n", ""
+                        )
                     return subprocess.CompletedProcess(argv, 0, "", "")
 
                 with (
@@ -445,7 +499,7 @@ class LocalPublisherTests(unittest.TestCase):
                             journal_dir=root / "journal",
                             authfile_path=authfile,
                         )
-                self.assertEqual(commands, [])
+                self.assertEqual(commands, [["skopeo", "copy", "--help"]])
                 self.assertFalse((root / "journal").exists())
 
     def test_asset_map_is_exactly_the_signed_whitelist(self):

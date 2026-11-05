@@ -1855,6 +1855,25 @@ def _validate_automated_receipt(bundle: Path, receipt: dict, gate: str) -> None:
         _validate_semgrep_receipt(bundle, receipt, gate, context)
 
 
+def require_skopeo_copy_capabilities(runner=None) -> None:
+    try:
+        result = (runner or subprocess.run)(
+            ["skopeo", "copy", "--help"],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=30,
+            env=_command_environment(),
+        )
+    except (OSError, subprocess.SubprocessError) as error:
+        raise LocalReleaseError("cannot inspect required Skopeo copy capabilities") from error
+    help_text = "\n".join(
+        text for text in (result.stdout, result.stderr) if isinstance(text, str)
+    )
+    if result.returncode != 0 or not {"--all", "--preserve-digests"} <= set(help_text.split()):
+        raise LocalReleaseError("Skopeo copy must support --all and --preserve-digests")
+
+
 def _validate_tools_for_gate(gate: str) -> dict[str, str]:
     required = {
         "build": {
@@ -1919,6 +1938,7 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
             if executable is None:
                 raise LocalReleaseError(f"required tool is unavailable: {tool}")
             versions[tool] = f"executable available: {executable}"
+        require_skopeo_copy_capabilities()
         try:
             result = subprocess.run(
                 ["docker", "buildx", "version"],

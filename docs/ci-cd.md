@@ -336,6 +336,11 @@ acceptance, or receipts block preparation. No build/publish tools are
 installed automatically. Settings E2E is a fixture test, not a real cluster
 acceptance gate.
 
+Skopeo copy must advertise both `--all` and `--preserve-digests`. Build
+preflight rejects unsupported Skopeo before creating a candidate bundle;
+publisher preflight checks the same capabilities before GitHub/GHCR checks,
+remote operations, or journal creation.
+
 External host reports are imported only after the operator has run the
 required scenarios. For example:
 

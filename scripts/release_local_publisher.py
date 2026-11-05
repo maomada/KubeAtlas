@@ -336,6 +336,10 @@ def publish_release(
     if authfile_value is None:
         raise PublisherError("--authfile or GHCR_AUTHFILE must name a preauthenticated GHCR authfile")
     authfile = _authfile(Path(authfile_value))
+    try:
+        release_local.require_skopeo_copy_capabilities(runner)
+    except release_local.LocalReleaseError as error:
+        raise PublisherError("Skopeo capability preflight failed; no remote writes were made") from error
     manifest = release_local.verify_approval(
         bundle, source_sha, repo_root, main_sha_getter=main_sha_getter
     )

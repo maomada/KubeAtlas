@@ -430,6 +430,42 @@ def external_report(receipt: dict) -> dict:
     return report
 
 
+class SkopeoCapabilityTests(unittest.TestCase):
+    def test_copy_help_must_succeed_and_advertise_both_required_flags(self):
+        supported = subprocess.CompletedProcess(
+            ["skopeo", "copy", "--help"],
+            0,
+            "Usage: skopeo copy [options]\n  --all\n  --preserve-digests\n",
+            "",
+        )
+        release_local.require_skopeo_copy_capabilities(
+            lambda argv, **_kwargs: supported
+        )
+
+        for result in (
+            subprocess.CompletedProcess(
+                ["skopeo", "copy", "--help"], 0, "--all\n", ""
+            ),
+            subprocess.CompletedProcess(
+                ["skopeo", "copy", "--help"], 1, "--all --preserve-digests", ""
+            ),
+        ):
+            with self.subTest(result=result.returncode, stdout=result.stdout):
+                with self.assertRaisesRegex(
+                    release_local.LocalReleaseError, "must support --all"
+                ):
+                    release_local.require_skopeo_copy_capabilities(
+                        lambda argv, **_kwargs: result
+                    )
+
+        with self.assertRaisesRegex(
+            release_local.LocalReleaseError, "cannot inspect required Skopeo"
+        ):
+            release_local.require_skopeo_copy_capabilities(
+                lambda *_args, **_kwargs: (_ for _ in ()).throw(OSError("unavailable"))
+            )
+
+
 class BuildPreflightTests(unittest.TestCase):
     def test_missing_package_tools_stop_before_bundle_creation(self):
         versions = {"go": "go version go1.26.10", "goreleaser": "2.13.3",
@@ -452,6 +488,38 @@ class BuildPreflightTests(unittest.TestCase):
                     release_local.build_bundle(SOURCE_SHA, bundle)
                 self.assertFalse(bundle.exists())
                 self.assertFalse(any(call.args[0][:2] == ["make", "release-binaries-dry"] for call in commands.call_args_list))
+
+    def test_unsupported_skopeo_fails_before_bundle_creation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / "not-created"
+            versions = {
+                "go": "go version go1.26.10",
+                "goreleaser": "2.13.3",
+                "node": "v24.19.0",
+                "helm": "v4.2.3",
+            }
+
+            def run(argv, **kwargs):
+                if argv == ["skopeo", "copy", "--help"]:
+                    return subprocess.CompletedProcess(argv, 0, "Usage: copy --all\n", "")
+                return subprocess.CompletedProcess(
+                    argv, 0, versions.get(argv[0], "test version"), ""
+                )
+
+            with (
+                patch.object(release_local, "assert_authority", return_value=SOURCE_SHA),
+                patch.object(release_local.subprocess, "run", side_effect=run) as commands,
+                patch.object(release_local.shutil, "which", return_value="/usr/bin/tool"),
+                self.assertRaisesRegex(
+                    release_local.LocalReleaseError, "Skopeo copy must support"
+                ),
+            ):
+                release_local.build_bundle(SOURCE_SHA, bundle)
+
+            self.assertFalse(bundle.exists())
+            self.assertFalse(
+                any(call.args[0][:2] == ["make", "release-binaries-dry"] for call in commands.call_args_list)
+            )
 
 
 class LocalReleaseTests(unittest.TestCase):
