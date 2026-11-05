@@ -55,5 +55,5 @@ retained in the policy history. No old raw finding is deleted from its report.
 
 This CI decision is not a GitHub-enforced merge restriction. The repository's
 current private-account ruleset page says rules will not be enforced. No GitHub
-settings, CodeQL configuration or release policy are changed here. Semgrep CE is
+settings or CodeQL configuration are changed by dispositions. Semgrep CE is
 not equivalent coverage to CodeQL, and publication remains independently gated.

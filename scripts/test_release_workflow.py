@@ -6,6 +6,102 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
+    def test_codeql_is_manual_while_semgrep_remains_automatic(self):
+        codeql = (ROOT / ".github/workflows/codeql.yml").read_text()
+        self.assertIn("workflow_dispatch:", codeql)
+        self.assertNotRegex(codeql, r"(?m)^  (push|pull_request|schedule):")
+        self.assertIn("github/codeql-action/analyze@", codeql)
+        self.assertIn("language: [go, javascript-typescript]", codeql)
+        security = (ROOT / ".github/workflows/security.yml").read_text()
+        for event in ("push", "pull_request", "schedule"):
+            self.assertIn(f"  {event}:\n", security)
+        self.assertNotIn("github.event.pull_request.draft", security)
+
+    def test_heavy_builds_defer_drafts_but_run_when_ready_and_on_main(self):
+        ci = (ROOT / ".github/workflows/ci.yml").read_text()
+        package = (ROOT / ".github/workflows/package-validation.yml").read_text()
+        guard = "github.event_name != 'pull_request' || github.event.pull_request.draft == false"
+        for workflow in (ci, package):
+            self.assertIn("types: [opened, synchronize, reopened, ready_for_review]", workflow)
+            self.assertIn("  push:\n    branches: [main]", workflow)
+            self.assertIn("github.event.pull_request.number || github.run_id", workflow)
+            self.assertIn("cancel-in-progress: ${{ github.event_name == 'pull_request' }}", workflow)
+        container = ci.split("  container-build:\n", 1)[1]
+        self.assertIn(f"if: needs.changes.outputs.containers == 'true' && ({guard})", container)
+        self.assertNotIn("github.event.pull_request.draft", ci.split("  container-build:\n", 1)[0])
+        self.assertIn(f"  validate:\n    if: {guard}\n", package)
+        self.assertIn("timeout-minutes: 60", package)
+        self.assertIn("make release-binaries-dry", package)
+        self.assertIn("scripts/release_artifacts.py validate --directory dist/release", package)
+
+    def test_ci_changes_select_all_jobs_without_broad_github_match(self):
+        ci = (ROOT / ".github/workflows/ci.yml").read_text()
+        orchestration = ci.split("            ci:\n", 1)[1].split("            pkg:\n", 1)[0]
+        self.assertIn("'.github/workflows/ci.yml'", orchestration)
+        self.assertIn("'.github/actions/**'", orchestration)
+        self.assertNotIn("'.github/**'", orchestration)
+        for name in ("pkg", "go", "web", "app", "helm", "containers"):
+            self.assertIn(f"{name}: ${{{{ github.event_name != 'pull_request' || steps.filter.outputs.ci == 'true'", ci)
+
+    def test_release_evidence_is_standalone_security_and_approval_is_retained(self):
+        for name in ("release.yml", "release-binaries.yml"):
+            with self.subTest(workflow=name):
+                workflow = (ROOT / ".github/workflows" / name).read_text()
+                self.assertIn("security_url", workflow)
+                self.assertIn("SECURITY_URL", workflow)
+                self.assertIn("security.yml", workflow)
+                self.assertNotIn("codeql", workflow.lower())
+                self.assertIn("name: ghcr-publish", workflow)
+                self.assertEqual(workflow.count("trusted/scripts/release_policy.py"), 2)
+        self.assertTrue((ROOT / ".github/workflows/codeql.yml").exists())
+
+    def test_offline_approval_binds_prior_dry_run_and_gates_both_workflows(self):
+        for name, first_write in (
+            ("release.yml", "skopeo copy --all --preserve-digests"),
+            ("release-binaries.yml", "Atomically create tag ref"),
+        ):
+            with self.subTest(workflow=name):
+                workflow = (ROOT / ".github/workflows" / name).read_text()
+                self.assertIn("build_run_id:", workflow)
+                self.assertIn("approval_signature:", workflow)
+                self.assertIn("release_approval.py create", workflow)
+                self.assertEqual(workflow.count("release_approval.py verify"), 2)
+                self.assertIn("name: release-approval", workflow)
+                publish = workflow.split("\n  publish:\n", 1)[1]
+                self.assertIn("needs: validate", publish)
+                self.assertNotIn("needs: [validate, build", publish)
+                self.assertIn("run-id: ${{ inputs.build_run_id }}", publish)
+                self.assertIn("github-token: ${{ secrets.GITHUB_TOKEN }}", publish)
+                self.assertIn("repository: maomada/KubeAtlas", publish)
+                self.assertLess(publish.index("Verify signed approval"), publish.index(first_write))
+                self.assertLess(
+                    publish.index("Reverify offline approval immediately before publication"),
+                    publish.index(first_write),
+                )
+                self.assertIn("if: always()", publish)
+                self.assertIn("if-no-files-found: warn", publish)
+
+    def test_binary_local_publication_profile_and_native_windows_smoke_gate_approval(self):
+        workflow = (ROOT / ".github/workflows/release-binaries.yml").read_text()
+        build = workflow.split("\n  build:\n", 1)[1].split("\n  windows-smoke:\n", 1)[0]
+        smoke = workflow.split("\n  windows-smoke:\n", 1)[1].split("\n  dry-run:\n", 1)[0]
+        dry_run = workflow.split("\n  dry-run:\n", 1)[1].split("\n  publish:\n", 1)[0]
+        publish = workflow.split("\n  publish:\n", 1)[1]
+        self.assertIn("if: ${{ inputs.publish != true }}", build)
+        self.assertIn("release_artifacts.py stage-local", build)
+        self.assertIn("name: kubeatlas-binary-release", build)
+        self.assertIn("name: kubeatlas-binary-publication", build)
+        self.assertIn("runs-on: windows-latest", smoke)
+        self.assertIn("release_windows_smoke.py", smoke)
+        self.assertIn("--version", (ROOT / "scripts/release_windows_smoke.py").read_text())
+        self.assertIn("--help", (ROOT / "scripts/release_windows_smoke.py").read_text())
+        self.assertIn("needs: [validate, build, windows-smoke]", dry_run)
+        self.assertIn("validate --profile local", dry_run)
+        self.assertIn("--channel binaries", dry_run)
+        self.assertIn("kubeatlas-binary-publication", publish)
+        self.assertIn("release-approval", publish)
+        self.assertNotIn("name: kubeatlas-binary-release\n", publish)
+
     def test_release_is_manual_and_write_permission_is_publish_only(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()
         self.assertIn("workflow_dispatch:", workflow)

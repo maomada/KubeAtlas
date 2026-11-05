@@ -4,7 +4,16 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
 export default defineConfig({
-  plugins: [tailwindcss(), react()],
+  plugins: [
+    tailwindcss(),
+    react(),
+    {
+      name: 'portal-embed-marker',
+      generateBundle() {
+        this.emitFile({ type: 'asset', fileName: '.gitkeep', source: '' })
+      },
+    },
+  ],
   build: {
     outDir: '../internal/portalui/dist',
     emptyOutDir: true,

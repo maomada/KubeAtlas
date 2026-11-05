@@ -4,11 +4,13 @@
 from __future__ import annotations
 
 import argparse
+import gzip
 import hashlib
 import json
 import os
 import re
 import shutil
+import struct
 import subprocess
 import tarfile
 import tempfile
@@ -20,6 +22,7 @@ from release_policy import validate_inputs
 
 REPOSITORY = "maomada/KubeAtlas"
 COMPONENTS = ("kubeatlas", "kubeatlas-portal")
+LOCAL_PROFILES = ("local", "local-linux", "local-linux-amd64")
 ARCHIVES = (
     ("kubeatlas", "linux", "amd64", ".tar.gz"),
     ("kubeatlas", "linux", "arm64", ".tar.gz"),
@@ -55,6 +58,23 @@ def expected_names(version: str) -> set[str]:
         for component, os_name, arch, suffix in PACKAGES
     )
     return names
+
+
+def local_asset_names(version: str, profile: str = "local") -> list[str]:
+    if profile not in LOCAL_PROFILES:
+        raise ValueError(f"unsupported binary publication profile: {profile}")
+    names = {
+        f"{component}_{version}_linux_{architecture}{suffix}"
+        for component, _, architecture, suffix in PACKAGES
+        if profile != "local-linux-amd64" or architecture == "amd64"
+    }
+    if profile == "local":
+        names.add(f"kubeatlas_v{version}_windows_amd64.zip")
+    return sorted(names)
+
+
+def local_publication_names(version: str, profile: str = "local") -> list[str]:
+    return sorted({*local_asset_names(version, profile), "binary-manifest.json", "checksums.txt"})
 
 
 def _package_version(version: str) -> str:
@@ -170,6 +190,7 @@ def _validate_deb(path: Path, component: str, architecture: str, version: str) -
 
 
 def _validate_rpm(path: Path, component: str, architecture: str, version: str) -> None:
+    _run(["rpm", "--checksig", "--nosignature", str(path)])
     fields = _run(
         ["rpm", "-qp", "--queryformat", "%{NAME}\\n%{VERSION}\\n%{RELEASE}\\n%{ARCH}\\n", str(path)]
     ).splitlines()
@@ -209,6 +230,73 @@ def _validate_rpm(path: Path, component: str, architecture: str, version: str) -
             capture_output=True,
         )
         _validate_elf_file(Path(tmp) / "usr/bin" / component, architecture, path.name)
+
+
+def _rpm_header(stream):
+    header = stream.read(16)
+    if len(header) != 16 or header[:8] != b"\x8e\xad\xe8\x01\x00\x00\x00\x00":
+        raise ValueError("invalid RPM header")
+    count, size = struct.unpack(">II", header[8:])
+    if count > 4096 or size > 16 * 1024 * 1024:
+        raise ValueError("RPM header exceeds inspection limits")
+    raw = stream.read(count * 16)
+    if len(raw) != count * 16:
+        raise ValueError("truncated RPM index")
+    entries = list(struct.iter_unpack(">IIII", raw))
+    data_start = stream.tell()
+    end = data_start + size
+    if end > os.fstat(stream.fileno()).st_size:
+        raise ValueError("truncated RPM header store")
+    stream.seek(end)
+    return entries, data_start, end
+
+
+def _normalize_rpm_payload_size(path: Path) -> None:
+    _run(["rpm", "--checksig", "--nosignature", str(path)])
+    fields = _run(["rpm", "-qp", "--queryformat", "%{SIZE}\n%{PAYLOADCOMPRESSOR}\n", str(path)]).splitlines()
+    if len(fields) != 2 or not fields[0].isdigit() or fields[1] != "gzip":
+        raise ValueError("unsupported RPM payload metadata")
+    installed_size = int(fields[0])
+    with path.open("r+b") as stream:
+        if stream.read(4) != b"\xed\xab\xee\xdb":
+            raise ValueError("invalid RPM lead")
+        stream.seek(96)
+        entries, data_start, signature_end = _rpm_header(stream)
+        if len(entries) != 4 or {entry[0] for entry in entries} != {62, 273, 1000, 1007}:
+            raise ValueError("RPM normalization accepts only unsigned rpmpack headers")
+        _, kind, offset, count = next(entry for entry in entries if entry[0] == 1007)
+        size_position = data_start + offset
+        if kind != 4 or count != 1 or offset % 4 or size_position + 4 > signature_end:
+            raise ValueError("invalid RPM archive-size field")
+        stream.seek(size_position)
+        declared_size = struct.unpack(">I", stream.read(4))[0]
+        stream.seek((signature_end + 7) // 8 * 8)
+        _rpm_header(stream)
+        actual_size = 0
+        with gzip.GzipFile(fileobj=stream, mode="rb") as payload:
+            while chunk := payload.read(1024 * 1024):
+                actual_size += len(chunk)
+                if actual_size > 1024 * 1024 * 1024:
+                    raise ValueError("RPM payload exceeds inspection limit")
+    if declared_size == actual_size:
+        return
+    if declared_size != installed_size or actual_size <= installed_size:
+        raise ValueError("unexpected RPM archive-size mismatch")
+    # rpmpack records installed bytes here; RPM expects the complete CPIO size.
+    with path.open("r+b") as stream:
+        stream.seek(size_position)
+        stream.write(struct.pack(">I", actual_size))
+        stream.flush()
+        os.fsync(stream.fileno())
+    try:
+        _run(["rpm", "--checksig", "--nosignature", str(path)])
+    except Exception:
+        with path.open("r+b") as stream:
+            stream.seek(size_position)
+            stream.write(struct.pack(">I", declared_size))
+            stream.flush()
+            os.fsync(stream.fileno())
+        raise
 
 
 def _artifact_metadata(name: str, version: str, source_sha: str) -> dict[str, object]:
@@ -251,7 +339,21 @@ def validate_staged(
     expected_source_sha: str | None = None,
     expected_version: str | None = None,
     evidence_urls: list[str] | None = None,
+    profile: str = "full",
 ) -> dict:
+    if profile in LOCAL_PROFILES:
+        return validate_local_staged(
+            directory,
+            manifest_path=manifest_path,
+            expected_source_sha=expected_source_sha,
+            expected_version=expected_version,
+            evidence_urls=evidence_urls,
+            profile=profile,
+        )
+    if profile != "full":
+        raise ValueError(f"unsupported binary publication profile: {profile}")
+    if directory.is_symlink() or not directory.is_dir():
+        raise ValueError("artifact directory must be a real directory")
     manifest_path = manifest_path or directory / "binary-manifest.json"
     if manifest_path.is_symlink() or not manifest_path.is_file():
         raise ValueError("binary-manifest.json is missing")
@@ -334,6 +436,105 @@ def validate_staged(
     return manifest
 
 
+def validate_local_staged(
+    directory: Path,
+    manifest_path: Path | None = None,
+    expected_source_sha: str | None = None,
+    expected_version: str | None = None,
+    evidence_urls: list[str] | None = None,
+    profile: str = "local",
+) -> dict:
+    if directory.is_symlink() or not directory.is_dir():
+        raise ValueError("local publication directory must be a real directory")
+    manifest_path = manifest_path or directory / "binary-manifest.json"
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ValueError("binary-manifest.json is missing")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if not isinstance(manifest, dict):
+        raise ValueError("invalid local binary manifest schema")
+    if set(manifest) != {
+        "schemaVersion",
+        "profile",
+        "repository",
+        "version",
+        "sourceSha",
+        "artifacts",
+    }:
+        raise ValueError("invalid local binary manifest schema")
+    if type(manifest.get("schemaVersion")) is not int or manifest["schemaVersion"] != 2:
+        raise ValueError("unsupported local binary manifest schema")
+    if profile not in LOCAL_PROFILES or manifest.get("profile") != profile:
+        raise ValueError("unsupported local binary publication profile")
+    version = manifest.get("version")
+    source_sha = manifest.get("sourceSha")
+    if not isinstance(version, str) or not isinstance(source_sha, str):
+        raise ValueError("manifest version and sourceSha are required")
+    validate_inputs(REPOSITORY, "refs/heads/main", source_sha, version)
+    if manifest.get("repository") != REPOSITORY:
+        raise ValueError("manifest repository mismatch")
+    if expected_source_sha is not None and source_sha != expected_source_sha:
+        raise ValueError("manifest source SHA does not match the selected source")
+    if expected_version is not None and version != expected_version:
+        raise ValueError("manifest version does not match the selected version")
+    expected = set(local_asset_names(version, profile))
+    entries = list(directory.iterdir())
+    if any(path.is_symlink() or not path.is_file() for path in entries):
+        raise ValueError("local publication directory must contain files only")
+    actual = {path.name for path in entries}
+    allowed = expected | {"checksums.txt", "binary-manifest.json"}
+    if actual != allowed:
+        raise ValueError(
+            f"local artifact set mismatch: expected {sorted(allowed)!r}, got {sorted(actual)!r}"
+        )
+    artifacts = manifest.get("artifacts")
+    if not isinstance(artifacts, list) or any(not isinstance(item, dict) for item in artifacts):
+        raise ValueError("local manifest artifact set does not match the publication profile")
+    filenames = [item.get("filename") for item in artifacts]
+    if any(not isinstance(name, str) for name in filenames):
+        raise ValueError("manifest artifact filenames must be strings")
+    if len(filenames) != len(set(filenames)):
+        raise ValueError("duplicate manifest artifact entry")
+    if filenames != sorted(expected):
+        raise ValueError("local manifest artifact set does not match the publication profile")
+    checksums_path = directory / "checksums.txt"
+    if checksums_path.is_symlink() or not checksums_path.is_file():
+        raise ValueError("checksums.txt is missing")
+    checksums = {}
+    for line in checksums_path.read_text(encoding="utf-8").splitlines():
+        fields = line.split()
+        if len(fields) != 2 or not re.fullmatch(r"[0-9a-f]{64}", fields[0]):
+            raise ValueError("invalid checksums.txt entry")
+        _safe_name(fields[1])
+        if fields[1] in checksums:
+            raise ValueError(f"duplicate checksum entry: {fields[1]}")
+        checksums[fields[1]] = fields[0]
+    if set(checksums) != expected | {"binary-manifest.json"}:
+        raise ValueError("checksums.txt does not cover the exact local staged set")
+    for item in artifacts:
+        name = item.get("filename")
+        _safe_name(name)
+        if Path(name).name != name:
+            raise ValueError(f"unsafe artifact filename: {name!r}")
+        expected_metadata = _artifact_metadata(name, version, source_sha)
+        expected_metadata["checksum"] = sha256(directory / name)
+        expected_metadata["evidenceUrls"] = _evidence_urls(source_sha, evidence_urls)
+        if item != expected_metadata:
+            raise ValueError(f"artifact metadata mismatch: {name}")
+        if checksums.get(name) != item.get("checksum"):
+            raise ValueError(f"artifact metadata or checksum mismatch: {name}")
+        if name.endswith(".zip"):
+            _validate_archive(directory / name, item["component"], ".zip")
+        elif name.endswith(".deb"):
+            _validate_deb(directory / name, item["component"], item["architecture"], version)
+        elif name.endswith(".rpm"):
+            _validate_rpm(directory / name, item["component"], item["architecture"], version)
+        else:
+            raise ValueError(f"unsupported local publication artifact: {name}")
+    if checksums["binary-manifest.json"] != sha256(manifest_path):
+        raise ValueError("binary-manifest.json checksum mismatch")
+    return manifest
+
+
 def create_staged(
     dist: Path,
     output: Path,
@@ -354,6 +555,8 @@ def create_staged(
         if source.is_symlink() or not source.is_file():
             raise ValueError(f"missing expected artifact: {name}")
         shutil.copy2(source, output / name)
+        if name.endswith(".rpm"):
+            _normalize_rpm_payload_size(output / name)
     artifacts = [_artifact_metadata(name, version, source_sha) for name in names]
     for item in artifacts:
         item["checksum"] = sha256(output / item["filename"])
@@ -374,6 +577,68 @@ def create_staged(
     return manifest
 
 
+def create_local_staged(
+    dist: Path,
+    output: Path,
+    source_sha: str,
+    version: str,
+    evidence_urls: list[str] | None = None,
+    profile: str = "local",
+) -> dict:
+    names = local_asset_names(version, profile)
+    validate_staged(
+        dist,
+        expected_source_sha=source_sha,
+        expected_version=version,
+        evidence_urls=evidence_urls,
+        profile="full",
+    )
+    dist_resolved = dist.resolve()
+    output_resolved = output.resolve()
+    if output.is_symlink():
+        raise ValueError("local publication output directory must not be a symlink")
+    if output_resolved == dist_resolved or output_resolved.is_relative_to(dist_resolved) or dist_resolved.is_relative_to(output_resolved):
+        raise ValueError("local publication staging must use a separate directory")
+    output.mkdir(parents=True, exist_ok=True)
+    if any(output.iterdir()):
+        raise ValueError("local publication output directory must be empty")
+    for name in names:
+        source = dist / name
+        if source.is_symlink() or not source.is_file():
+            raise ValueError(f"missing expected artifact: {name}")
+        shutil.copy2(source, output / name)
+    artifacts = [_artifact_metadata(name, version, source_sha) for name in names]
+    for item in artifacts:
+        item["checksum"] = sha256(output / item["filename"])
+        item["evidenceUrls"] = _evidence_urls(source_sha, evidence_urls)
+    manifest = {
+        "schemaVersion": 2,
+        "profile": profile,
+        "repository": REPOSITORY,
+        "version": version,
+        "sourceSha": source_sha,
+        "artifacts": artifacts,
+    }
+    manifest_path = output / "binary-manifest.json"
+    manifest_path.write_text(
+        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    (output / "checksums.txt").write_text(
+        _checksum_lines(output, names + ["binary-manifest.json"]),
+        encoding="utf-8",
+    )
+    validate_staged(
+        output,
+        manifest_path,
+        expected_source_sha=source_sha,
+        expected_version=version,
+        evidence_urls=evidence_urls,
+        profile=profile,
+    )
+    return manifest
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -383,21 +648,32 @@ def main() -> int:
     create.add_argument("--source-sha", required=True)
     create.add_argument("--version", required=True)
     create.add_argument("--evidence-url", action="append", default=[])
+    stage_local = subparsers.add_parser("stage-local")
+    stage_local.add_argument("--dist", type=Path, required=True)
+    stage_local.add_argument("--output", type=Path, required=True)
+    stage_local.add_argument("--source-sha", required=True)
+    stage_local.add_argument("--version", required=True)
+    stage_local.add_argument("--evidence-url", action="append", default=[])
+    stage_local.add_argument("--profile", choices=LOCAL_PROFILES, default="local")
     validate = subparsers.add_parser("validate")
     validate.add_argument("--directory", type=Path, required=True)
     validate.add_argument("--source-sha")
     validate.add_argument("--version")
     validate.add_argument("--evidence-url", action="append")
+    validate.add_argument("--profile", choices=("full", *LOCAL_PROFILES), default="full")
     args = parser.parse_args()
     try:
         if args.command == "create":
             create_staged(args.dist, args.output, args.source_sha, args.version, args.evidence_url)
+        elif args.command == "stage-local":
+            create_local_staged(args.dist, args.output, args.source_sha, args.version, args.evidence_url, args.profile)
         else:
             validate_staged(
                 args.directory,
                 expected_source_sha=args.source_sha,
                 expected_version=args.version,
                 evidence_urls=args.evidence_url,
+                profile=args.profile,
             )
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         parser.error(str(error))

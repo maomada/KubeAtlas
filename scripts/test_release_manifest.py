@@ -40,10 +40,17 @@ class ReleaseManifestTests(unittest.TestCase):
             "42",
             "https://github.com/maomada/KubeAtlas/actions/runs/42",
             "https://github.com/maomada/KubeAtlas/actions/runs/ci",
-            "https://github.com/maomada/KubeAtlas/actions/runs/codeql",
+            "https://github.com/maomada/KubeAtlas/actions/runs/security",
             False,
         )
         self.assertEqual(result["publication"]["status"], "dry-run")
+        self.assertEqual(result["schemaVersion"], 2)
+        self.assertEqual(result["checks"], {
+            "ci": "https://github.com/maomada/KubeAtlas/actions/runs/ci",
+            "security": "https://github.com/maomada/KubeAtlas/actions/runs/security",
+        })
+        self.assertIn("Semgrep CE evidence", manifest.summary(result))
+        self.assertNotIn("CodeQL", manifest.summary(result))
         self.assertEqual(result["images"]["kubeatlas"]["buildDigest"], "sha256:" + "b" * 64)
         self.assertEqual(result["charts"]["kubeatlas"]["reference"], "ghcr.io/maomada/charts/kubeatlas:1.2.3")
 
@@ -57,7 +64,7 @@ class ReleaseManifestTests(unittest.TestCase):
             "42",
             "https://github.com/maomada/KubeAtlas/actions/runs/42",
             "https://github.com/maomada/KubeAtlas/actions/runs/ci",
-            "https://github.com/maomada/KubeAtlas/actions/runs/codeql",
+            "https://github.com/maomada/KubeAtlas/actions/runs/security",
             True,
         )
         manifest.write_manifest(output, result)
@@ -76,7 +83,7 @@ class ReleaseManifestTests(unittest.TestCase):
             "42",
             "https://github.com/maomada/KubeAtlas/actions/runs/42",
             "https://github.com/maomada/KubeAtlas/actions/runs/ci",
-            "https://github.com/maomada/KubeAtlas/actions/runs/codeql",
+            "https://github.com/maomada/KubeAtlas/actions/runs/security",
             False,
         )
         self.assertIn("does not prove registry permissions, collision checks, or a successful push", manifest.summary(result))

@@ -1,3 +1,6 @@
+import gzip
+import json
+import struct
 import tempfile
 import unittest
 from pathlib import Path
@@ -19,6 +22,9 @@ class ReleaseArtifactsTests(unittest.TestCase):
         for validator in self.package_validators:
             validator.start()
             self.addCleanup(validator.stop)
+        self.rpm_normalizer = patch.object(artifacts, "_normalize_rpm_payload_size")
+        self.rpm_normalizer.start()
+        self.addCleanup(self.rpm_normalizer.stop)
 
     def test_package_version_uses_native_prerelease_separator(self):
         self.assertEqual(artifacts._package_version("1.2.3"), "1.2.3")
@@ -75,6 +81,127 @@ class ReleaseArtifactsTests(unittest.TestCase):
         (output / "unlisted").symlink_to(output / "checksums.txt")
         with self.assertRaisesRegex(ValueError, "files only"):
             artifacts.validate_staged(output)
+
+    def _create_full_release(self, version="1.2.3", source_sha="a" * 40):
+        for name in artifacts.expected_names(version):
+            path = self.dist / name
+            path.parent.mkdir(parents=True, exist_ok=True)
+            if name.endswith(".tar.gz"):
+                self._make_archive(path)
+            elif name.endswith(".zip"):
+                self._make_archive(path, zip_archive=True)
+            else:
+                path.write_bytes(name.encode())
+        output = self.dist / "release"
+        artifacts.create_staged(self.dist, output, source_sha, version)
+        return output
+
+    def test_local_profile_selects_nine_assets_and_keeps_full_matrix_diagnostic(self):
+        version = "1.2.3"
+        source_sha = "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "local"
+        manifest = artifacts.create_local_staged(full, output, source_sha, version)
+        names = set(artifacts.local_asset_names(version))
+        self.assertEqual(len(names), 9)
+        self.assertEqual(len(manifest["artifacts"]), 9)
+        self.assertEqual(manifest["schemaVersion"], 2)
+        self.assertEqual(manifest["profile"], "local")
+        self.assertEqual(
+            {path.name for path in output.iterdir()},
+            set(artifacts.local_publication_names(version)),
+        )
+        self.assertEqual(len((output / "checksums.txt").read_text().splitlines()), 10)
+        full_manifest = json.loads((full / "binary-manifest.json").read_text())
+        self.assertEqual(full_manifest["schemaVersion"], 1)
+        self.assertEqual(len(full_manifest["artifacts"]), 15)
+        self.assertEqual(artifacts.validate_staged(output, profile="local")["profile"], "local")
+        with self.assertRaisesRegex(ValueError, "publication profile"):
+            artifacts.validate_staged(output, profile="local-linux")
+        with self.assertRaisesRegex(ValueError, "schema"):
+            artifacts.validate_staged(output)
+
+    def test_local_linux_profile_stages_eight_packages_and_rejects_windows_zip(self):
+        version = "1.2.3"
+        source_sha = "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "local-linux"
+        manifest = artifacts.create_local_staged(
+            full, output, source_sha, version, profile="local-linux"
+        )
+        names = set(artifacts.local_asset_names(version, "local-linux"))
+
+        self.assertEqual(len(artifacts.expected_names(version)), 15)
+        self.assertEqual(len(names), 8)
+        self.assertEqual(len(manifest["artifacts"]), 8)
+        self.assertEqual(manifest["profile"], "local-linux")
+        self.assertEqual(
+            {path.name for path in output.iterdir()},
+            set(artifacts.local_publication_names(version, "local-linux")),
+        )
+        self.assertEqual(len({path.name for path in output.iterdir()}), 10)
+        self.assertEqual(len((output / "checksums.txt").read_text().splitlines()), 9)
+        self.assertEqual(
+            artifacts.validate_staged(output, profile="local-linux")["profile"],
+            "local-linux",
+        )
+        with self.assertRaisesRegex(ValueError, "publication profile"):
+            artifacts.validate_staged(output, profile="local")
+
+        windows_zip = f"kubeatlas_v{version}_windows_amd64.zip"
+        (output / windows_zip).write_bytes((full / windows_zip).read_bytes())
+        with self.assertRaisesRegex(ValueError, "artifact set"):
+            artifacts.validate_staged(output, profile="local-linux")
+
+    def test_local_amd64_profile_excludes_deferred_platforms(self):
+        version, source_sha = "1.2.3", "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "local-linux-amd64"
+        profile = "local-linux-amd64"
+        manifest = artifacts.create_local_staged(full, output, source_sha, version, profile=profile)
+        expected = {
+            f"{component}_{version}_linux_amd64.{suffix}"
+            for component in ("kubeatlas", "kubeatlas-portal")
+            for suffix in ("deb", "rpm")
+        }
+        self.assertEqual(set(artifacts.local_asset_names(version, profile)), expected)
+        self.assertEqual({p.name for p in output.iterdir()}, expected | {"binary-manifest.json", "checksums.txt"})
+        self.assertEqual(manifest["profile"], profile)
+        self.assertEqual(len(manifest["artifacts"]), 4)
+        artifacts.validate_staged(output, profile=profile)
+        for deferred in (f"kubeatlas_{version}_linux_arm64.deb", f"kubeatlas_v{version}_windows_amd64.zip"):
+            with self.subTest(deferred=deferred):
+                extra = output / deferred
+                extra.write_bytes((full / deferred).read_bytes())
+                with self.assertRaisesRegex(ValueError, "artifact set"):
+                    artifacts.validate_staged(output, profile=profile)
+                extra.unlink()
+        with self.assertRaisesRegex(ValueError, "publication profile"):
+            artifacts.validate_staged(output, profile="local-linux")
+
+    def test_local_profile_rejects_omitted_extra_symlink_and_modified_payloads(self):
+        version = "1.2.3"
+        source_sha = "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "local"
+        artifacts.create_local_staged(full, output, source_sha, version)
+        artifact = output / artifacts.local_asset_names(version)[0]
+        original = artifact.read_bytes()
+        artifact.unlink()
+        with self.assertRaisesRegex(ValueError, "artifact set"):
+            artifacts.validate_staged(output, profile="local")
+        artifact.write_bytes(original)
+        (output / "extra").write_text("extra")
+        with self.assertRaisesRegex(ValueError, "artifact set"):
+            artifacts.validate_staged(output, profile="local")
+        (output / "extra").unlink()
+        (output / "symlink").symlink_to(artifact)
+        with self.assertRaisesRegex(ValueError, "files only"):
+            artifacts.validate_staged(output, profile="local")
+        (output / "symlink").unlink()
+        artifact.write_bytes(b"modified")
+        with self.assertRaises(ValueError):
+            artifacts.validate_staged(output, profile="local")
 
     def test_linux_elf_architecture_is_not_trusted_from_filename(self):
         import io
@@ -216,6 +343,176 @@ class ReleaseArtifactsTests(unittest.TestCase):
             ValueError, "maintainer scripts"
         ):
             artifacts._validate_deb(package, "kubeatlas", "amd64", "1.2.3")
+
+
+class RpmPayloadSizeNormalizerTests(unittest.TestCase):
+    _HEADER_MAGIC = b"\x8e\xad\xe8\x01\x00\x00\x00\x00"
+    _SIGNATURE_TAGS = (62, 273, 1000, 1007)
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.directory = Path(self.temporary.name)
+
+    @classmethod
+    def _header(cls, entries, store):
+        indexes = b"".join(struct.pack(">IIII", *entry) for entry in entries)
+        return cls._HEADER_MAGIC + struct.pack(">II", len(entries), len(store)) + indexes + store
+
+    @classmethod
+    def _synthetic_rpm(cls, payload, installed_size, declared_size, signature_tags=None):
+        tags = cls._SIGNATURE_TAGS if signature_tags is None else signature_tags
+        store = bytearray()
+        entries = []
+        for tag in sorted(tags):
+            offset = len(store)
+            value = declared_size if tag == 1007 else tag
+            store.extend(struct.pack(">I", value))
+            entries.append((tag, 4, offset, 1))
+        signature = cls._header(entries, store)
+        lead = b"\xed\xab\xee\xdb" + b"\0" * 92
+        padding = b"\0" * (-(len(lead) + len(signature)) % 8)
+        main_header = cls._header([], b"")
+        return lead + signature + padding + main_header + gzip.compress(payload, mtime=0)
+
+    @staticmethod
+    def _archive_size_info(path):
+        raw = path.read_bytes()
+        count, _ = struct.unpack(">II", raw[104:112])
+        indexes_start = 112
+        store_start = indexes_start + count * 16
+        for index in range(count):
+            tag, _, offset, _ = struct.unpack_from(">IIII", raw, indexes_start + index * 16)
+            if tag == 1007:
+                position = store_start + offset
+                return struct.unpack_from(">I", raw, position)[0], position
+        raise AssertionError("synthetic RPM has no archive-size tag")
+
+    @staticmethod
+    def _native_run(installed_size, fail_digest_check=None):
+        digest_checks = 0
+
+        def run(command):
+            nonlocal digest_checks
+            if command[:2] == ["rpm", "--checksig"]:
+                digest_checks += 1
+                if digest_checks == fail_digest_check:
+                    raise ValueError("RPM digest check failed")
+                return "digests OK"
+            if command[:3] == ["rpm", "-qp", "--queryformat"]:
+                return f"{installed_size}\ngzip\n"
+            raise AssertionError(command)
+
+        return run
+
+    def _write_synthetic_rpm(self, name, payload, installed_size, declared_size, signature_tags=None):
+        path = self.directory / name
+        path.write_bytes(
+            self._synthetic_rpm(payload, installed_size, declared_size, signature_tags)
+        )
+        return path
+
+    def test_known_installed_size_mismatch_is_corrected_and_idempotent(self):
+        installed_size = 1024
+        payload = b"synthetic cpio payload" + b"x" * 2048
+        path = self._write_synthetic_rpm(
+            "known-mismatch.rpm", payload, installed_size, installed_size
+        )
+        original = path.read_bytes()
+        original_size, size_position = self._archive_size_info(path)
+        self.assertEqual(original_size, installed_size)
+
+        with patch.object(artifacts, "_run", side_effect=self._native_run(installed_size)) as run:
+            artifacts._normalize_rpm_payload_size(path)
+            corrected = path.read_bytes()
+            corrected_size, _ = self._archive_size_info(path)
+            self.assertEqual(corrected_size, len(payload))
+            expected = bytearray(original)
+            expected[size_position : size_position + 4] = struct.pack(">I", len(payload))
+            self.assertEqual(corrected, bytes(expected))
+
+            artifacts._normalize_rpm_payload_size(path)
+            self.assertEqual(path.read_bytes(), corrected)
+
+        self.assertEqual(run.call_count, 5)
+
+    def test_unexpected_mismatch_is_rejected_unchanged(self):
+        path = self._write_synthetic_rpm(
+            "unexpected-mismatch.rpm", b"x" * 2048, 1024, 512
+        )
+        original = path.read_bytes()
+
+        with patch.object(artifacts, "_run", side_effect=self._native_run(1024)):
+            with self.assertRaisesRegex(ValueError, "unexpected RPM archive-size mismatch"):
+                artifacts._normalize_rpm_payload_size(path)
+
+        self.assertEqual(path.read_bytes(), original)
+
+    def test_signed_or_unrecognized_signature_tags_are_rejected_unchanged(self):
+        for tags in (
+            (62, 273, 1000, 1002, 1007),
+            (62, 1000, 1007),
+        ):
+            with self.subTest(tags=tags):
+                path = self._write_synthetic_rpm(
+                    f"signature-{len(tags)}.rpm",
+                    b"x" * 2048,
+                    1024,
+                    1024,
+                    signature_tags=tags,
+                )
+                original = path.read_bytes()
+
+                with patch.object(artifacts, "_run", side_effect=self._native_run(1024)):
+                    with self.assertRaisesRegex(ValueError, "unsigned rpmpack headers"):
+                        artifacts._normalize_rpm_payload_size(path)
+
+                self.assertEqual(path.read_bytes(), original)
+
+    def test_truncated_gzip_and_oversized_header_are_rejected_unchanged(self):
+        installed_size = 1024
+        payload = b"x" * 2048
+        truncated = self._synthetic_rpm(payload, installed_size, installed_size)[:-3]
+        truncated_path = self.directory / "truncated-gzip.rpm"
+        truncated_path.write_bytes(truncated)
+        with patch.object(artifacts, "_run", side_effect=self._native_run(installed_size)):
+            with self.assertRaises((EOFError, OSError)):
+                artifacts._normalize_rpm_payload_size(truncated_path)
+        self.assertEqual(truncated_path.read_bytes(), truncated)
+
+        oversized = (
+            b"\xed\xab\xee\xdb"
+            + b"\0" * 92
+            + self._HEADER_MAGIC
+            + struct.pack(">II", 4097, 0)
+        )
+        oversized_path = self.directory / "oversized-header.rpm"
+        oversized_path.write_bytes(oversized)
+        with patch.object(artifacts, "_run", side_effect=self._native_run(installed_size)):
+            with self.assertRaisesRegex(ValueError, "RPM header exceeds inspection limits"):
+                artifacts._normalize_rpm_payload_size(oversized_path)
+        self.assertEqual(oversized_path.read_bytes(), oversized)
+
+    def test_digest_failures_before_and_after_correction_are_rejected_unchanged(self):
+        installed_size = 1024
+        payload = b"x" * 2048
+        for fail_digest_check in (1, 2):
+            with self.subTest(fail_digest_check=fail_digest_check):
+                path = self._write_synthetic_rpm(
+                    f"digest-failure-{fail_digest_check}.rpm",
+                    payload,
+                    installed_size,
+                    installed_size,
+                )
+                original = path.read_bytes()
+                with patch.object(
+                    artifacts,
+                    "_run",
+                    side_effect=self._native_run(installed_size, fail_digest_check),
+                ):
+                    with self.assertRaisesRegex(ValueError, "RPM digest check failed"):
+                        artifacts._normalize_rpm_payload_size(path)
+                self.assertEqual(path.read_bytes(), original)
 
 
 if __name__ == "__main__":

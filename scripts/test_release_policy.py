@@ -39,30 +39,43 @@ class ReleasePolicyTests(unittest.TestCase):
                     policy.validate_inputs(repository, ref, sha, version)
 
     def test_latest_attempt_must_pass_not_historical_success(self):
-        for changes in (
-            {"status": "in_progress", "conclusion": None},
-            {"conclusion": "failure"}, {"conclusion": "cancelled"},
-            {"conclusion": "skipped"},
-        ):
-            with self.subTest(changes=changes):
-                with self.assertRaises(ValueError):
-                    policy.require_success([{"workflow_runs": [run(), run(2, **changes)]}], SHA, "ci.yml")
-        self.assertEqual(
-            policy.require_success([{"workflow_runs": [run(1, conclusion="failure"), run(2)]}], SHA, "ci.yml"),
-            "https://example.test/run",
-        )
+        for workflow in policy.WORKFLOWS:
+            path = f".github/workflows/{workflow}"
+            for changes in (
+                {"status": "in_progress", "conclusion": None},
+                {"conclusion": "failure"}, {"conclusion": "cancelled"},
+                {"conclusion": "skipped"}, {"conclusion": "neutral"},
+                {"conclusion": "timed_out"},
+            ):
+                with self.subTest(workflow=workflow, changes=changes):
+                    with self.assertRaises(ValueError):
+                        policy.require_success([{"workflow_runs": [run(path=path), run(2, path=path, **changes)]}], SHA, workflow)
+            self.assertEqual(
+                policy.require_success([{"workflow_runs": [run(1, path=path, conclusion="failure"), run(2, path=path)]}], SHA, workflow),
+                "https://example.test/run",
+            )
 
     def test_other_sha_event_branch_repository_or_workflow_is_not_evidence(self):
-        for key, value in (
-            ("head_sha", "b" * 40), ("event", "pull_request"),
-            ("head_branch", "feature"), ("head_repository", {"full_name": "other/radar"}),
-            ("path", ".github/workflows/other.yml"),
-        ):
-            with self.subTest(key=key):
-                with self.assertRaises(ValueError):
-                    policy.require_success([{"workflow_runs": [run(**{key: value})]}], SHA, "ci.yml")
+        for workflow in policy.WORKFLOWS:
+            for key, value in (
+                ("head_sha", "b" * 40), ("event", "pull_request"),
+                ("head_branch", "feature"), ("head_repository", {"full_name": "other/radar"}),
+                ("path", ".github/workflows/other.yml"),
+            ):
+                with self.subTest(workflow=workflow, key=key):
+                    args = {"path": f".github/workflows/{workflow}", key: value}
+                    with self.assertRaises(ValueError):
+                        policy.require_success([{"workflow_runs": [run(**args)]}], SHA, workflow)
+            with self.assertRaises(ValueError):
+                policy.require_success([{"workflow_runs": []}], SHA, workflow)
+
+    def test_standalone_security_is_required_and_codeql_is_not_a_substitute(self):
+        self.assertEqual(policy.WORKFLOWS, ("ci.yml", "security.yml"))
+        codeql = run(path=".github/workflows/codeql.yml")
         with self.assertRaises(ValueError):
-            policy.require_success([{"workflow_runs": []}], SHA, "ci.yml")
+            policy.require_success([{"workflow_runs": [codeql]}], SHA, "security.yml")
+        security = run(path=".github/workflows/security.yml")
+        self.assertEqual(policy.require_success([{"workflow_runs": [security]}], SHA, "security.yml"), security["html_url"])
 
     @patch.dict("os.environ", {"GITHUB_REPOSITORY": policy.REPOSITORY, "GITHUB_REF": "refs/heads/main"})
     @patch("release_policy.subprocess.run")
@@ -71,15 +84,16 @@ class ReleasePolicyTests(unittest.TestCase):
         import subprocess
 
         ci = run()
-        codeql = copy.deepcopy(ci)
-        codeql["path"] = ".github/workflows/codeql.yml"
+        security = copy.deepcopy(ci)
+        security["path"] = ".github/workflows/security.yml"
         execute.side_effect = [
             subprocess.CompletedProcess([], 0),
             subprocess.CompletedProcess([], 0, json.dumps([{"workflow_runs": [ci]}])),
-            subprocess.CompletedProcess([], 0, json.dumps([{"workflow_runs": [codeql]}])),
+            subprocess.CompletedProcess([], 0, json.dumps([{"workflow_runs": [security]}])),
         ]
         self.assertEqual(set(policy.validate_source("source", SHA, "1.0.0")["checks"]), set(policy.WORKFLOWS))
         self.assertEqual(execute.call_args_list[0].args[0], ["git", "-C", "source", "merge-base", "--is-ancestor", SHA, "origin/main"])
+        self.assertIn("/security.yml/runs?", execute.call_args_list[2].args[0][-1])
         execute.side_effect = subprocess.CalledProcessError(1, ["git"])
         with self.assertRaises(subprocess.CalledProcessError):
             policy.validate_source("source", SHA, "1.0.0")
