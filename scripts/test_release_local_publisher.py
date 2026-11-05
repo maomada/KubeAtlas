@@ -25,7 +25,7 @@ class LocalPublisherTests(unittest.TestCase):
             authfile.write_text("{}", encoding="utf-8")
             authfile.chmod(0o600)
             for channel in ("binaries", "ghcr"):
-                for relative in release_local.release_approval.expected_artifact_paths(
+                for relative in release_local.expected_artifact_paths(
                     channel, release_local.VERSION
                 ):
                     path = bundle / channel / relative
@@ -164,14 +164,17 @@ class LocalPublisherTests(unittest.TestCase):
                 )
 
             expected_assets = sorted(
-                release_local.release_approval.expected_artifact_paths(
-                    "binaries", release_local.VERSION
-                )
+                release_local.expected_artifact_paths("binaries", release_local.VERSION)
             )
             uploads = [event.removeprefix("upload:") for event in events if event.startswith("upload:")]
             downloads = [event.removeprefix("download:") for event in events if event.startswith("download:")]
             self.assertEqual(uploads, expected_assets)
             self.assertEqual(downloads, expected_assets)
+            self.assertEqual(len(expected_assets), 10)
+            self.assertEqual(
+                sum(name.endswith((".deb", ".rpm")) for name in expected_assets), 8
+            )
+            self.assertFalse(any(name.endswith(".zip") for name in expected_assets))
             self.assertEqual(events.count("image-copy"), 2)
             image_copies = [argv for argv in remote_commands if argv[:2] == ["skopeo", "copy"]]
             self.assertEqual(len(image_copies), 2)
@@ -184,6 +187,76 @@ class LocalPublisherTests(unittest.TestCase):
             self.assertLess(events.index("tag"), events.index("draft"))
             self.assertEqual(events[-1], "expose")
             self.assertTrue(all("--clobber" not in argv and "delete" not in argv for argv in remote_commands))
+
+    def test_extra_windows_zip_is_rejected_before_any_remote_write(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            bundle = root / "bundle"
+            bundle.mkdir()
+            authfile = root / "auth.json"
+            authfile.write_text("{}", encoding="utf-8")
+            authfile.chmod(0o600)
+            expected = release_local.expected_artifact_paths(
+                "binaries", release_local.VERSION
+            )
+            manifest = {
+                "artifacts": {
+                    "binaries": [
+                        {"path": path, "sha256": "0" * 64} for path in expected
+                    ]
+                    + [
+                        {
+                            "path": f"kubeatlas_v{release_local.VERSION}_windows_amd64.zip",
+                            "sha256": "f" * 64,
+                        }
+                    ],
+                    "ghcr": [],
+                }
+            }
+            commands = []
+
+            def runner(argv, **kwargs):
+                commands.append(argv)
+                return subprocess.CompletedProcess(argv, 0, "test version\n", "")
+
+            with (
+                patch.dict(os.environ, {"GH_TOKEN": "test-only-token"}, clear=True),
+                patch.object(release_local, "verify_approval", return_value=manifest),
+                patch.object(
+                    release_registry,
+                    "inspect_targets",
+                    return_value=[{"status": "absent"}] * 4,
+                ),
+                patch.object(
+                    release_github,
+                    "preflight",
+                    return_value=[
+                        {"path": "repo", "status": "authenticated"},
+                        {"path": "tag", "status": "absent"},
+                        {"path": "release", "status": "absent"},
+                    ],
+                ),
+            ):
+                with self.assertRaisesRegex(
+                    publisher.PublisherError, "exact supported publication profile"
+                ):
+                    publisher.publish_release(
+                        bundle,
+                        "a" * 40,
+                        runner=runner,
+                        journal_dir=root / "journal",
+                        authfile_path=authfile,
+                    )
+
+            self.assertEqual(
+                commands,
+                [
+                    ["gh", "--version"],
+                    ["skopeo", "--version"],
+                    ["helm", "version", "--short"],
+                ],
+            )
+            self.assertFalse((root / "journal").exists())
 
     def test_missing_github_credentials_blocks_before_any_command(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -376,9 +449,7 @@ class LocalPublisherTests(unittest.TestCase):
                 self.assertFalse((root / "journal").exists())
 
     def test_asset_map_is_exactly_the_signed_whitelist(self):
-        expected = release_local.release_approval.expected_artifact_paths(
-            "binaries", release_local.VERSION
-        )
+        expected = release_local.expected_artifact_paths("binaries", release_local.VERSION)
         manifest = {
             "artifacts": {
                 "binaries": [

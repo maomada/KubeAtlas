@@ -359,7 +359,7 @@ def publish_release(
         main_sha_getter = lambda: release_local.query_main_sha()
     binaries = _artifact_map(manifest, bundle, "binaries")
     ghcr = _artifact_map(manifest, bundle, "ghcr")
-    expected_binary_paths = set(release_approval.expected_artifact_paths("binaries", VERSION))
+    expected_binary_paths = set(release_local.expected_artifact_paths("binaries", VERSION))
     expected_ghcr_paths = set(release_approval.expected_artifact_paths("ghcr", VERSION))
     if set(binaries) != expected_binary_paths or set(ghcr) != expected_ghcr_paths:
         raise PublisherError("signed inventory does not match the exact supported publication profile")

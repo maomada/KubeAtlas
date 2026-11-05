@@ -32,6 +32,7 @@ import validate_oci_archive
 REPOSITORY = "maomada/KubeAtlas"
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = "0.1.0"
+PUBLICATION_PROFILE = "local-linux"
 MANIFEST_SCHEMA = "kubeatlas-local-release/v1"
 RECEIPT_SCHEMA = "kubeatlas-local-receipt/v1"
 ACCEPTANCE_SCHEMA = "kubeatlas-local-acceptance/v1"
@@ -53,7 +54,7 @@ AUTOMATED_GATES = (
     "semgrep-full",
     "package-oci",
 )
-EXTERNAL_GATES = ("windows-native", "real-cluster") + tuple(
+EXTERNAL_GATES = ("real-cluster",) + tuple(
     f"package-install-{component}-linux-{arch}-{package}"
     for component in ("kubeatlas", "kubeatlas-portal")
     for arch in ("amd64", "arm64")
@@ -72,7 +73,6 @@ EXPECTED_REQUIRED_GATES = frozenset(
         "semgrep-self-test",
         "semgrep-full",
         "package-oci",
-        "windows-native",
         "real-cluster",
         *(f"package-install-{component}-linux-{arch}-{package}"
           for component in ("kubeatlas", "kubeatlas-portal")
@@ -107,7 +107,7 @@ ACCEPTANCE_SCENARIOS = {
 for _gate in EXTERNAL_GATES:
     if _gate.startswith("package-install-"):
         ACCEPTANCE_SCENARIOS[_gate] = ("install", "version", "uninstall", "no_autostart")
-if REQUIRED_GATES != EXPECTED_REQUIRED_GATES or set(ACCEPTANCE_SCENARIOS) != set(EXTERNAL_GATES):
+if REQUIRED_GATES != EXPECTED_REQUIRED_GATES or set(ACCEPTANCE_SCENARIOS) != set(EXTERNAL_GATES) | {"windows-native"}:
     raise RuntimeError("local release gate definitions are incomplete")
 
 ALLOWED_EVIDENCE_DIRS = {"logs", "receipts", "reports", "semgrep", "imports"}
@@ -412,10 +412,30 @@ def _ensure_bundle_layout(bundle: Path, signed: bool = False) -> None:
             raise LocalReleaseError(f"release bundle directory is unsafe: {name}")
 
 
+def expected_artifact_paths(channel: str, version: str = VERSION) -> list[str]:
+    if channel == "binaries":
+        return release_artifacts.local_publication_names(version, PUBLICATION_PROFILE)
+    return release_approval.expected_artifact_paths(channel, version)
+
+
+def _binary_inventory(root: Path) -> list[dict[str, object]]:
+    _assert_no_symlink_ancestors(root)
+    if not root.is_dir():
+        raise LocalReleaseError("binary artifact root must be a real directory")
+    paths = sorted(root.iterdir())
+    if [path.name for path in paths] != expected_artifact_paths("binaries"):
+        raise LocalReleaseError("binary artifact set does not match the Linux-only publication profile")
+    inventory = []
+    for path in paths:
+        size, digest = _hash_file(path)
+        inventory.append({"path": path.name, "size": size, "sha256": digest})
+    return inventory
+
+
 def artifact_inventories(bundle: Path) -> dict[str, list[dict[str, object]]]:
     _ensure_bundle_layout(bundle)
     return {
-        "binaries": release_approval._inventory(bundle / "binaries", "binaries", VERSION),
+        "binaries": _binary_inventory(bundle / "binaries"),
         "ghcr": release_approval._inventory(bundle / "ghcr", "ghcr", VERSION),
     }
 
@@ -1313,6 +1333,8 @@ def build_bundle(source_sha: str, bundle_path: Path, repo_root: Path = ROOT) -> 
             sys.executable,
             str(repo_root / "scripts" / "release_artifacts.py"),
             "stage-local",
+            "--profile",
+            PUBLICATION_PROFILE,
             "--dist",
             str(repo_root / "dist" / "release"),
             "--output",
@@ -1441,7 +1463,7 @@ def _validate_bundle_artifacts(bundle: Path, source_sha: str) -> dict:
         bundle / "binaries",
         expected_source_sha=source_sha,
         expected_version=VERSION,
-        profile="local",
+        profile=PUBLICATION_PROFILE,
     )
     ghcr_inventory = release_approval._inventory(bundle / "ghcr", "ghcr", VERSION)
     for component in ("kubeatlas", "kubeatlas-portal"):
@@ -2202,7 +2224,8 @@ def import_acceptance(bundle_path: Path, report_path: Path, evidence_root: Path,
 def _expected_targets() -> list[str]:
     return [
         *release_approval.expected_targets("ghcr", VERSION),
-        *release_approval.expected_targets("binaries", VERSION),
+        f"github-release:v{VERSION}",
+        *expected_artifact_paths("binaries"),
     ]
 
 

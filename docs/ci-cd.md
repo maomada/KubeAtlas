@@ -256,13 +256,14 @@ It checks main ancestry and exact-SHA CI and Semgrep CE evidence before building
 Builds use trusted release tooling checked out separately from the selected
 source, have read-only permissions, and never log in to a registry.
 
-The full GoReleaser build and validation still cover 15 artifacts. A separate
-strict `local` publication profile stages only the eight Linux DEB/RPM packages
-for KubeAtlas and Portal plus the KubeAtlas Windows amd64 ZIP. Its schema-2
-manifest and checksum file make an 11-file publication artifact; the full
-15-file `kubeatlas-binary-release` artifact is diagnostic evidence only. No
-macOS or Linux tar archive is published. The native Windows smoke must pass
-before the dry-run emits an approval.
+The hosted Actions workflow still validates the full 15-artifact GoReleaser
+matrix and uses its strict `local` publication profile: eight Linux DEB/RPM
+packages plus the KubeAtlas Windows amd64 ZIP, with a schema-2 manifest and
+checksums (11 files). The full 15-file `kubeatlas-binary-release` artifact is
+diagnostic evidence only. No macOS or Linux tar archive is published, and
+native Windows smoke remains required by that hosted profile. This unchanged
+hosted contract is distinct from the `local-linux` profile below and is not
+authorized for the scoped 0.1.0 local publication.
 
 With `publish=true`, the publisher downloads the signed approval and
 `kubeatlas-binary-publication` from the specified dry-run run, never the
@@ -311,14 +312,17 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_local.py check \
   --source-sha "$SOURCE_SHA" --bundle "$BUNDLE" --rules-source "$RULES_SOURCE"
 ```
 
-The build validates the full 15-artifact GoReleaser matrix but stages only the
-existing local profile: eight Linux DEB/RPM packages, the KubeAtlas Windows
-amd64 ZIP, two multiarch OCI archives, two Helm charts, metadata, and checksums.
-Fleet, macOS, and Portal Windows distributions are excluded. `LICENSE` and
-`NOTICE` remain in the binary packages. The local profile does not make a
-candidate branch releasable: approval preparation and verification require
-that the source and tooling checkout are the same clean commit as a fresh
-read-only GitHub `main` query.
+The scoped 0.1.0 local profile is fixed to `local-linux`. The build still
+validates the full 15-artifact GoReleaser matrix, but stages only eight Linux
+DEB/RPM packages (KubeAtlas and Portal, amd64 and arm64), `binary-manifest.json`,
+and `checksums.txt`. The bundle also contains the two multiarch OCI archives
+and two Helm charts. The Windows ZIP is deferred: it is not published or
+accepted by this local profile, and no Windows acceptance is claimed. Fleet,
+macOS, and Portal Windows distributions are excluded. `LICENSE` and `NOTICE`
+remain in the binary packages. This does not change the hosted Actions
+`local` profile described above. A candidate branch is not releasable:
+approval preparation and verification require that source and tooling are the
+same clean commit as a fresh read-only GitHub `main` query.
 
 Prerequisites are the pinned Go/GoReleaser, Node, Helm 4.2.3, Helm 3.19.0,
 helm-unittest 1.1.0, helmfile, Docker Buildx, skopeo, ShellCheck, actionlint,
@@ -344,17 +348,22 @@ gate, source/tooling SHA, build UUID, artifact-inventory digest, runtime
 platform, context, component/environment versions, command records and exit
 status, scenario outcomes, limitations, artifact hashes, and report/log
 evidence hashes. Every required scenario is listed separately as `passed`,
-`untested`, or `failed`; untested or failed outcomes block approval. Windows
-requires native Windows AMD64, the actual ZIP smoke, both PowerShell fixture
-hosts, and the exact Windows Helm-refresh test. Linux package gates require
-isolated installs/uninstalls and explicit architecture/distribution details.
-Real-cluster evidence must report the Kubernetes context and version and the
-main and Portal flows, including read-only/security boundaries. Emulation is
-reported as such and does not satisfy native Windows. An operator-imported
-report is **operator-attested evidence reviewed by the offline signer**, not
-cryptographically independent host attestation. Test-only fixtures cannot
-satisfy these real acceptance gates. Pod-metrics availability and Hubble
-plaintext may be reported as limitations; they are not invented pass criteria.
+`untested`, or `failed`; untested or failed outcomes block approval. The fixed
+local-linux contract retains 19 gates: build, Linux CI, frontend, settings E2E,
+Helm, release security, POSIX installers, Semgrep self-test and full scan,
+OCI/package validation, real-cluster acceptance, and eight per-package
+installation gates. Each Linux package gate requires isolated install,
+version, uninstall, and no-autostart evidence with explicit architecture and
+distribution details. Native Windows is not an active gate for this profile;
+Windows acceptance reports are rejected by its importer. Real-cluster
+evidence must report the Kubernetes context and version and the main and Portal
+flows, including read-only/security boundaries. Emulation is reported
+explicitly and cannot substitute for native execution where a gate requires
+it. An operator-imported report is **operator-attested evidence reviewed by
+the offline signer**, not cryptographically independent host attestation.
+Test-only fixtures cannot satisfy these real acceptance gates. Pod-metrics
+availability and Hubble plaintext may be reported as limitations; they are not
+invented pass criteria.
 
 Use this non-passing JSON template as the report shape. Replace placeholders
 with observed values and list every required scenario; do not mark a scenario

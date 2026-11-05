@@ -50,7 +50,7 @@ def make_bundle(root: Path, include_gates: bool = True):
     ):
         (bundle / directory).mkdir(parents=True, exist_ok=True)
     for channel in ("binaries", "ghcr"):
-        for relative in release_approval.expected_artifact_paths(channel, release_local.VERSION):
+        for relative in release_local.expected_artifact_paths(channel, release_local.VERSION):
             path = bundle / channel / relative
             path.parent.mkdir(parents=True, exist_ok=True)
             if relative.endswith(".metadata.json"):
@@ -412,6 +412,24 @@ def external_acceptance(gate: str, inventories: dict):
     return acceptance, execution, commands
 
 
+def external_report(receipt: dict) -> dict:
+    acceptance = receipt["acceptance"]
+    report = {
+        key: value
+        for key, value in receipt.items()
+        if key not in {"schema", "origin", "reports", "acceptance"}
+    }
+    report.update(
+        {
+            "schema": release_local.ACCEPTANCE_SCHEMA,
+            "origin": "operator-attested",
+            "evidence": receipt["reports"],
+            **{key: value for key, value in acceptance.items() if key != "execution"},
+        }
+    )
+    return report
+
+
 class LocalReleaseTests(unittest.TestCase):
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
@@ -424,6 +442,53 @@ class LocalReleaseTests(unittest.TestCase):
             self.context,
             self.inventories,
         ) = make_bundle(self.root)
+
+    def test_local_linux_profile_keeps_all_nineteen_non_windows_gates_and_targets(self):
+        expected_packages = {
+            f"{component}_{release_local.VERSION}_linux_{architecture}.{package}"
+            for component in ("kubeatlas", "kubeatlas-portal")
+            for architecture in ("amd64", "arm64")
+            for package in ("deb", "rpm")
+        }
+        expected_metadata = {"binary-manifest.json", "checksums.txt"}
+        expected_package_gates = {
+            f"package-install-{component}-linux-{architecture}-{package}"
+            for component in ("kubeatlas", "kubeatlas-portal")
+            for architecture in ("amd64", "arm64")
+            for package in ("deb", "rpm")
+        }
+        expected_gates = {
+            "build",
+            "linux-ci",
+            "frontend",
+            "settings-e2e",
+            "helm",
+            "release-security",
+            "posix-installers",
+            "semgrep-self-test",
+            "semgrep-full",
+            "package-oci",
+            "real-cluster",
+            *expected_package_gates,
+        }
+
+        self.assertEqual(release_local.PUBLICATION_PROFILE, "local-linux")
+        self.assertEqual(release_local.REQUIRED_GATES, expected_gates)
+        self.assertEqual(len(release_local.REQUIRED_GATES), 19)
+        self.assertNotIn("windows-native", release_local.REQUIRED_GATES)
+        self.assertNotIn("windows-native", release_local.EXTERNAL_GATES)
+        self.assertIn("windows-native", release_local.ACCEPTANCE_SCENARIOS)
+        selected_paths = set(
+            release_local.expected_artifact_paths("binaries", release_local.VERSION)
+        )
+        self.assertEqual(selected_paths, expected_packages | expected_metadata)
+        self.assertEqual(len(expected_packages), 8)
+        self.assertEqual(len(expected_metadata), 2)
+        self.assertFalse(any(path.endswith(".zip") for path in selected_paths))
+        self.assertEqual(
+            release_local._expected_targets()[-len(selected_paths):],
+            sorted(selected_paths),
+        )
 
     def _prepare(self):
         with (
@@ -544,22 +609,13 @@ class LocalReleaseTests(unittest.TestCase):
                 receipt, "windows-native", require_passed=False
             )
 
-    def test_windows_report_import_preserves_commands_and_runtime_evidence(self):
-        gate = "windows-native"
+    def test_real_cluster_report_import_preserves_commands_and_runtime_evidence(self):
+        gate = "real-cluster"
         receipt_path = self.bundle / "evidence" / "receipts" / f"{gate}.json"
         receipt = release_local._load_json(receipt_path, "fixture receipt")
         acceptance = receipt["acceptance"]
-        report = {
-            key: value for key, value in receipt.items()
-            if key not in {"schema", "origin", "reports", "acceptance"}
-        }
-        report.update({
-            "schema": release_local.ACCEPTANCE_SCHEMA,
-            "origin": "operator-attested",
-            "evidence": receipt["reports"],
-            **{key: value for key, value in acceptance.items() if key != "execution"},
-        })
-        report_path = self.root / "windows-host-report.json"
+        report = external_report(receipt)
+        report_path = self.root / "cluster-host-report.json"
         report_path.write_bytes(release_local._canonical_json(report))
         receipt_path.unlink()
         with patch.object(release_local, "_clean_head", return_value=SOURCE_SHA):
@@ -573,6 +629,29 @@ class LocalReleaseTests(unittest.TestCase):
         self.assertEqual(imported["commands"], receipt["commands"])
         self.assertEqual(imported["acceptance"], acceptance)
         self.assertEqual(imported["result"], "passed")
+
+    def test_windows_report_import_is_rejected_without_creating_a_receipt(self):
+        receipt = release_local._load_json(
+            self.bundle / "evidence" / "receipts" / "real-cluster.json",
+            "fixture receipt",
+        )
+        report = external_report(receipt)
+        report["gate"] = "windows-native"
+        report_path = self.root / "windows-host-report.json"
+        report_path.write_bytes(release_local._canonical_json(report))
+        receipt_path = self.bundle / "evidence" / "receipts" / "windows-native.json"
+        import_path = self.bundle / "evidence" / "imports" / "windows-native"
+
+        with (
+            patch.object(release_local, "_clean_head", return_value=SOURCE_SHA),
+            self.assertRaisesRegex(release_local.LocalReleaseError, "unapproved gate"),
+        ):
+            release_local.import_acceptance(
+                self.bundle, report_path, self.bundle / "evidence", self.repo_root
+            )
+
+        self.assertFalse(receipt_path.exists())
+        self.assertFalse(import_path.exists())
 
     @unittest.skipUnless(hasattr(os, "mkfifo"), "FIFO tests require POSIX")
     def test_fifo_path_is_rejected_without_blocking(self):

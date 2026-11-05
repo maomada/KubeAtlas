@@ -111,8 +111,42 @@ class ReleaseArtifactsTests(unittest.TestCase):
         self.assertEqual(full_manifest["schemaVersion"], 1)
         self.assertEqual(len(full_manifest["artifacts"]), 15)
         self.assertEqual(artifacts.validate_staged(output, profile="local")["profile"], "local")
+        with self.assertRaisesRegex(ValueError, "publication profile"):
+            artifacts.validate_staged(output, profile="local-linux")
         with self.assertRaisesRegex(ValueError, "schema"):
             artifacts.validate_staged(output)
+
+    def test_local_linux_profile_stages_eight_packages_and_rejects_windows_zip(self):
+        version = "1.2.3"
+        source_sha = "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "local-linux"
+        manifest = artifacts.create_local_staged(
+            full, output, source_sha, version, profile="local-linux"
+        )
+        names = set(artifacts.local_asset_names(version, "local-linux"))
+
+        self.assertEqual(len(artifacts.expected_names(version)), 15)
+        self.assertEqual(len(names), 8)
+        self.assertEqual(len(manifest["artifacts"]), 8)
+        self.assertEqual(manifest["profile"], "local-linux")
+        self.assertEqual(
+            {path.name for path in output.iterdir()},
+            set(artifacts.local_publication_names(version, "local-linux")),
+        )
+        self.assertEqual(len({path.name for path in output.iterdir()}), 10)
+        self.assertEqual(len((output / "checksums.txt").read_text().splitlines()), 9)
+        self.assertEqual(
+            artifacts.validate_staged(output, profile="local-linux")["profile"],
+            "local-linux",
+        )
+        with self.assertRaisesRegex(ValueError, "publication profile"):
+            artifacts.validate_staged(output, profile="local")
+
+        windows_zip = f"kubeatlas_v{version}_windows_amd64.zip"
+        (output / windows_zip).write_bytes((full / windows_zip).read_bytes())
+        with self.assertRaisesRegex(ValueError, "artifact set"):
+            artifacts.validate_staged(output, profile="local-linux")
 
     def test_local_profile_rejects_omitted_extra_symlink_and_modified_payloads(self):
         version = "1.2.3"

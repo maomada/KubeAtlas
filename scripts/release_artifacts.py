@@ -57,17 +57,20 @@ def expected_names(version: str) -> set[str]:
     return names
 
 
-def local_asset_names(version: str) -> list[str]:
+def local_asset_names(version: str, profile: str = "local") -> list[str]:
+    if profile not in ("local", "local-linux"):
+        raise ValueError(f"unsupported binary publication profile: {profile}")
     names = {
         f"{component}_{version}_linux_{architecture}{suffix}"
         for component, _, architecture, suffix in PACKAGES
     }
-    names.add(f"kubeatlas_v{version}_windows_amd64.zip")
+    if profile == "local":
+        names.add(f"kubeatlas_v{version}_windows_amd64.zip")
     return sorted(names)
 
 
-def local_publication_names(version: str) -> list[str]:
-    return sorted({*local_asset_names(version), "binary-manifest.json", "checksums.txt"})
+def local_publication_names(version: str, profile: str = "local") -> list[str]:
+    return sorted({*local_asset_names(version, profile), "binary-manifest.json", "checksums.txt"})
 
 
 def _package_version(version: str) -> str:
@@ -266,13 +269,14 @@ def validate_staged(
     evidence_urls: list[str] | None = None,
     profile: str = "full",
 ) -> dict:
-    if profile == "local":
+    if profile in ("local", "local-linux"):
         return validate_local_staged(
             directory,
             manifest_path=manifest_path,
             expected_source_sha=expected_source_sha,
             expected_version=expected_version,
             evidence_urls=evidence_urls,
+            profile=profile,
         )
     if profile != "full":
         raise ValueError(f"unsupported binary publication profile: {profile}")
@@ -366,6 +370,7 @@ def validate_local_staged(
     expected_source_sha: str | None = None,
     expected_version: str | None = None,
     evidence_urls: list[str] | None = None,
+    profile: str = "local",
 ) -> dict:
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("local publication directory must be a real directory")
@@ -386,7 +391,7 @@ def validate_local_staged(
         raise ValueError("invalid local binary manifest schema")
     if type(manifest.get("schemaVersion")) is not int or manifest["schemaVersion"] != 2:
         raise ValueError("unsupported local binary manifest schema")
-    if manifest.get("profile") != "local":
+    if profile not in ("local", "local-linux") or manifest.get("profile") != profile:
         raise ValueError("unsupported local binary publication profile")
     version = manifest.get("version")
     source_sha = manifest.get("sourceSha")
@@ -399,7 +404,7 @@ def validate_local_staged(
         raise ValueError("manifest source SHA does not match the selected source")
     if expected_version is not None and version != expected_version:
         raise ValueError("manifest version does not match the selected version")
-    expected = set(local_asset_names(version))
+    expected = set(local_asset_names(version, profile))
     entries = list(directory.iterdir())
     if any(path.is_symlink() or not path.is_file() for path in entries):
         raise ValueError("local publication directory must contain files only")
@@ -504,7 +509,9 @@ def create_local_staged(
     source_sha: str,
     version: str,
     evidence_urls: list[str] | None = None,
+    profile: str = "local",
 ) -> dict:
+    names = local_asset_names(version, profile)
     validate_staged(
         dist,
         expected_source_sha=source_sha,
@@ -521,7 +528,6 @@ def create_local_staged(
     output.mkdir(parents=True, exist_ok=True)
     if any(output.iterdir()):
         raise ValueError("local publication output directory must be empty")
-    names = local_asset_names(version)
     for name in names:
         source = dist / name
         if source.is_symlink() or not source.is_file():
@@ -533,7 +539,7 @@ def create_local_staged(
         item["evidenceUrls"] = _evidence_urls(source_sha, evidence_urls)
     manifest = {
         "schemaVersion": 2,
-        "profile": "local",
+        "profile": profile,
         "repository": REPOSITORY,
         "version": version,
         "sourceSha": source_sha,
@@ -554,7 +560,7 @@ def create_local_staged(
         expected_source_sha=source_sha,
         expected_version=version,
         evidence_urls=evidence_urls,
-        profile="local",
+        profile=profile,
     )
     return manifest
 
@@ -574,18 +580,19 @@ def main() -> int:
     stage_local.add_argument("--source-sha", required=True)
     stage_local.add_argument("--version", required=True)
     stage_local.add_argument("--evidence-url", action="append", default=[])
+    stage_local.add_argument("--profile", choices=("local", "local-linux"), default="local")
     validate = subparsers.add_parser("validate")
     validate.add_argument("--directory", type=Path, required=True)
     validate.add_argument("--source-sha")
     validate.add_argument("--version")
     validate.add_argument("--evidence-url", action="append")
-    validate.add_argument("--profile", choices=("full", "local"), default="full")
+    validate.add_argument("--profile", choices=("full", "local", "local-linux"), default="full")
     args = parser.parse_args()
     try:
         if args.command == "create":
             create_staged(args.dist, args.output, args.source_sha, args.version, args.evidence_url)
         elif args.command == "stage-local":
-            create_local_staged(args.dist, args.output, args.source_sha, args.version, args.evidence_url)
+            create_local_staged(args.dist, args.output, args.source_sha, args.version, args.evidence_url, args.profile)
         else:
             validate_staged(
                 args.directory,
