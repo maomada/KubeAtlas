@@ -1,7 +1,11 @@
 package portal
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -14,30 +18,172 @@ import (
 )
 
 type fakeFleetExecutor struct {
-	name    string
-	isError bool
-	calls   atomic.Int32
-	block   bool
+	name      string
+	isError   bool
+	calls     atomic.Int32
+	block     bool
+	schema    map[string]any
+	arguments chan map[string]any
 }
 
 func (e *fakeFleetExecutor) ListTools(context.Context) ([]*mcpsdk.Tool, error) {
+	schema := e.schema
+	if schema == nil {
+		schema = map[string]any{"type": "object"}
+	}
 	return []*mcpsdk.Tool{{
-		Name: "inspect", Description: e.name, InputSchema: map[string]any{"type": "object"},
+		Name: "inspect", Description: e.name, InputSchema: schema,
 		Annotations: &mcpsdk.ToolAnnotations{ReadOnlyHint: true},
 	}}, nil
 }
 
-func (e *fakeFleetExecutor) CallTool(ctx context.Context, _ string, _ map[string]any) (*mcpsdk.CallToolResult, error) {
+func (e *fakeFleetExecutor) CallTool(ctx context.Context, _ string, arguments map[string]any) (*mcpsdk.CallToolResult, error) {
 	e.calls.Add(1)
 	if e.block {
 		<-ctx.Done()
 		return nil, ctx.Err()
+	}
+	if e.arguments != nil {
+		e.arguments <- arguments
 	}
 	return &mcpsdk.CallToolResult{
 		Content:           []mcpsdk.Content{&mcpsdk.TextContent{Text: e.name}},
 		StructuredContent: map[string]any{"source": e.name},
 		IsError:           e.isError,
 	}, nil
+}
+
+func TestFleetBridgeMCPClientFederatesToolsThroughAuthenticatedPortal(t *testing.T) {
+	h, endpoint, tokens := newAgentHubFixture(t, []string{"east", "west"})
+	eastSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"region": map[string]any{"type": "string", "description": "East region"},
+		},
+		"required": []string{"region"},
+	}
+	westSchema := map[string]any{
+		"type": "object",
+		"properties": map[string]any{
+			"shard": map[string]any{"type": "integer", "description": "West shard"},
+		},
+		"required": []string{"shard"},
+	}
+	east := &fakeFleetExecutor{name: "east-result", schema: eastSchema, arguments: make(chan map[string]any, 1)}
+	west := &fakeFleetExecutor{name: "west-result", isError: true, schema: westSchema, arguments: make(chan map[string]any, 1)}
+	startTestAgent(t, endpoint, "east", tokens["east"], fleetsync.SourceIDForBinding("east-binding"), east)
+	startTestAgent(t, endpoint, "west", tokens["west"], fleetsync.SourceIDForBinding("west-binding"), west)
+	waitForAgentState(t, h.agentHub, fleetsync.Selection{FleetID: "group"}, "connected")
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	viewerClient := &http.Client{Jar: jar}
+	loginBody, err := json.Marshal(map[string]string{"username": testUsername, "password": testPassword})
+	if err != nil {
+		t.Fatal(err)
+	}
+	login, err := viewerClient.Post(endpoint+"/api/auth/login", "application/json", bytes.NewReader(loginBody))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = login.Body.Close()
+	if login.StatusCode != http.StatusNoContent {
+		t.Fatalf("Portal viewer login status = %d", login.StatusCode)
+	}
+
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "fleet-portal-sdk-test", Version: "1"}, nil)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	session, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{
+		Endpoint: endpoint + "/mcp-fleet", HTTPClient: viewerClient, DisableStandaloneSSE: true,
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer session.Close()
+
+	catalogResult, err := session.CallTool(ctx, &mcpsdk.CallToolParams{
+		Name: "list_cluster_tools", Arguments: map[string]any{"fleetId": "group"},
+	})
+	if err != nil || catalogResult.IsError || len(catalogResult.Content) != 1 {
+		t.Fatalf("list_cluster_tools result = %+v, err = %v", catalogResult, err)
+	}
+	catalogText, ok := catalogResult.Content[0].(*mcpsdk.TextContent)
+	if !ok {
+		t.Fatalf("list_cluster_tools content type = %T", catalogResult.Content[0])
+	}
+	var catalog []fleetsync.ClusterTools
+	if err := json.Unmarshal([]byte(catalogText.Text), &catalog); err != nil {
+		t.Fatalf("decode list_cluster_tools result: %v", err)
+	}
+	byCluster := make(map[string]fleetsync.ClusterTools, len(catalog))
+	for _, item := range catalog {
+		byCluster[item.ClusterID] = item
+	}
+	for clusterID, expectedSchema := range map[string]map[string]any{"east": eastSchema, "west": westSchema} {
+		item, ok := byCluster[clusterID]
+		if !ok || item.State != "connected" || len(item.Tools) != 1 || item.Tools[0].Name != "inspect" {
+			t.Fatalf("%s catalog = %+v", clusterID, item)
+		}
+		gotSchema, err := json.Marshal(item.Tools[0].InputSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantSchema, err := json.Marshal(expectedSchema)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(gotSchema, wantSchema) {
+			t.Fatalf("%s input schema = %s, want original %s", clusterID, gotSchema, wantSchema)
+		}
+	}
+
+	for _, tc := range []struct {
+		clusterID string
+		argument  map[string]any
+		executor  *fakeFleetExecutor
+		wantText  string
+		wantError bool
+	}{
+		{"east", map[string]any{"region": "east-1"}, east, "east-result", false},
+		{"west", map[string]any{"shard": 7}, west, "west-result", true},
+	} {
+		result, err := session.CallTool(ctx, &mcpsdk.CallToolParams{
+			Name: "call_cluster_tool",
+			Arguments: map[string]any{
+				"clusterId": tc.clusterID, "fleetId": "group", "tool": "inspect", "arguments": tc.argument,
+			},
+		})
+		if err != nil || result == nil {
+			t.Fatalf("%s call_cluster_tool result = %+v, err = %v", tc.clusterID, result, err)
+		}
+		if len(result.Content) != 1 {
+			t.Fatalf("%s content = %+v", tc.clusterID, result.Content)
+		}
+		content, ok := result.Content[0].(*mcpsdk.TextContent)
+		if !ok || content.Text != tc.wantText {
+			t.Fatalf("%s content = %#v, want %q", tc.clusterID, result.Content[0], tc.wantText)
+		}
+		structured, ok := result.StructuredContent.(map[string]any)
+		if !ok || structured["source"] != tc.wantText {
+			t.Fatalf("%s structured content = %#v", tc.clusterID, result.StructuredContent)
+		}
+		if result.IsError != tc.wantError {
+			t.Fatalf("%s IsError = %v, want %v", tc.clusterID, result.IsError, tc.wantError)
+		}
+		select {
+		case gotArguments := <-tc.executor.arguments:
+			gotJSON, _ := json.Marshal(gotArguments)
+			wantJSON, _ := json.Marshal(tc.argument)
+			if !bytes.Equal(gotJSON, wantJSON) {
+				t.Fatalf("%s source arguments = %s, want %s", tc.clusterID, gotJSON, wantJSON)
+			}
+		case <-ctx.Done():
+			t.Fatalf("%s source did not receive tool arguments", tc.clusterID)
+		}
+	}
 }
 
 func TestFleetBridgeDispatchesExplicitSourceAndPreservesNativeResults(t *testing.T) {

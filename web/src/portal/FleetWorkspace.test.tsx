@@ -67,3 +67,21 @@ it('only extracts selectable canonical resource list items', () => {
   expect(resourceItems({ tool: 'list_resources', input: { kind: 'pods' }, data: { items: [{ name: 'api', namespace: 'default' }, null, { namespace: 'default' }] } })).toEqual([{ name: 'api', namespace: 'default' }])
   expect(resourceItems({ tool: 'get_resource', input: {}, data: { items: [{ name: 'api' }] } })).toEqual([])
 })
+
+it('keeps a pending tool catalog when opening a document in the same scope', async () => {
+  let resolveTools!: (response: Response) => void
+  const pendingTools = new Promise<Response>(resolve => { resolveTools = resolve })
+  const cluster = { clusterId: 'east', state: 'current', observedAt: '2026-01-01T00:00:00Z', receivedAt: '', documents: [{ tool: 'get_dashboard', input: {}, data: { nodes: 1 } }], limitations: [] }
+  vi.stubGlobal('fetch', vi.fn((url: string) => {
+    if (url.endsWith('/tools')) return pendingTools
+    const data = url.endsWith('/context') ? { mode: 'multi_cloud', clusters: [cluster], limitations: [] }
+      : url.endsWith('/fleets') ? [{ id: 'prod', name: 'Production', clusterIds: ['east'] }] : [cluster]
+    return Promise.resolve(new Response(JSON.stringify(data)))
+  }))
+  await act(async () => root.render(<FleetWorkspace registeredClusters={[]} />))
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '预览上下文')!.click())
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'get_dashboard')!.click())
+  await act(async () => resolveTools(new Response(JSON.stringify([{ clusterId: 'east', state: 'connected', tools: [{ name: 'inspect', inputSchema: { type: 'object' } }] }]))))
+  expect(host.textContent).toContain('inspect')
+  expect(host.textContent).not.toContain('正在读取工具通道')
+})

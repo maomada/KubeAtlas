@@ -46,6 +46,9 @@ Synchronization is sequential full-snapshot polling, not a delta stream. A
 capture is pinned to the cluster connection and kubeconfig context present when
 the source starts; a missing stable cluster binding disables reporting instead
 of silently re-binding after a switch. A failed/canceled capture is not uploaded.
+The live MCP tool executor is also pinned to its startup operation context. A
+context switch, retry, or namespace rescope cancels its MCP sessions and outbound
+channel; restart KubeAtlas to establish a channel under the new operation.
 Each successful upload replaces that source's complete prior snapshot, including
 removing details that are no longer present or reads that now fail. The current
 interval is measured after each attempt; an individual capture has a 90-second

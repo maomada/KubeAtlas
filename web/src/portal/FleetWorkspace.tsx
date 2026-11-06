@@ -62,6 +62,7 @@ export function FleetWorkspace({ registeredClusters }: { registeredClusters: Por
   const [view, setView] = useState<DocumentView>()
   const [contextBusy, setContextBusy] = useState(false)
   const sequence = useRef(0)
+  const toolSequence = useRef(0)
 
   useEffect(() => {
     let active = true
@@ -70,10 +71,11 @@ export function FleetWorkspace({ registeredClusters }: { registeredClusters: Por
     }).catch(cause => { if (active) setLoadError(message(cause)) }).finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [revision])
-  useEffect(() => () => { sequence.current++ }, [])
+  useEffect(() => () => { sequence.current++; toolSequence.current++ }, [])
 
   function clearContext(nextScope = scope) {
     sequence.current++
+    toolSequence.current++
     setScope(nextScope)
     setContext(undefined)
     setToolCatalog(undefined)
@@ -87,14 +89,15 @@ export function FleetWorkspace({ registeredClusters }: { registeredClusters: Por
     clearContext(nextScope)
     if (!nextScope) return
     const request = sequence.current
+    const toolRequest = toolSequence.current
     setContextBusy(true)
     try {
       const [kind, id] = nextScope.split(':')
       const result = await fleetRequest<AgentContext>('/context', 'POST', kind === 'fleet' ? { fleetId: id } : { clusterId: id })
       if (request === sequence.current) setContext(result)
       void fleetRequest<ClusterTools[]>('/tools', 'POST', kind === 'fleet' ? { fleetId: id } : { clusterId: id }).then(catalog => {
-        if (request === sequence.current) setToolCatalog(catalog)
-      }).catch(cause => { if (request === sequence.current) setToolError(message(cause)) })
+        if (toolRequest === toolSequence.current) setToolCatalog(catalog)
+      }).catch(cause => { if (toolRequest === toolSequence.current) setToolError(message(cause)) })
     } catch (cause) { if (request === sequence.current) setError(message(cause)) }
     finally { if (request === sequence.current) setContextBusy(false) }
   }

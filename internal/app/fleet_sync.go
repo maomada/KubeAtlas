@@ -43,11 +43,12 @@ func StartFleetSync(ctx context.Context, cfg AppConfig) {
 			})
 			if agent != nil {
 				log.Printf("[fleet-sync] outbound Portal MCP channel enabled")
-				go agent.Run(ctx, func(error) {
+				agentCtx := executor.LifetimeContext()
+				go agent.Run(agentCtx, func(error) {
 					log.Printf("[fleet-sync] MCP channel unavailable")
 				})
 				go func() {
-					<-ctx.Done()
+					<-agentCtx.Done()
 					executor.Close()
 				}()
 			}
