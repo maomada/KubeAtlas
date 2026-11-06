@@ -6,6 +6,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ReleaseWorkflowTests(unittest.TestCase):
+    def test_portal_image_injects_version_into_binary(self):
+        dockerfile = (ROOT / "Dockerfile.portal").read_text()
+        build_command = next(
+            line for line in dockerfile.splitlines()
+            if line.startswith("RUN ") and "go build" in line
+        )
+        self.assertIn("ARG VERSION=dev", dockerfile)
+        self.assertIn('-ldflags "-s -w -X main.version=${VERSION}"', build_command)
+        self.assertIn("./cmd/kubeatlas-portal", build_command)
+
     def test_codeql_is_manual_while_semgrep_remains_automatic(self):
         codeql = (ROOT / ".github/workflows/codeql.yml").read_text()
         self.assertIn("workflow_dispatch:", codeql)
