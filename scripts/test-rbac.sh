@@ -61,11 +61,39 @@ fi
 if [[ "$SKIP_BUILD" == true ]]; then
   BINARY_PROVENANCE="unknown (--skip-build)"
 else
-  BINARY_PROVENANCE="make build from checkout $SOURCE_SHA ($SOURCE_STATE)"
+  BINARY_DIR="${KUBEATLAS_BIN%/*}"
+  if [[ "$BINARY_DIR" == "$KUBEATLAS_BIN" ]]; then
+    BINARY_DIR="."
+  elif [[ -z "$BINARY_DIR" ]]; then
+    BINARY_DIR="/"
+  fi
+  BINARY_PATH="$(cd -- "$BINARY_DIR" && pwd -P)/${KUBEATLAS_BIN##*/}"
+  DEFAULT_BINARY_PATH="$(pwd -P)/kubeatlas"
+  if [[ "$BINARY_PATH" == "$DEFAULT_BINARY_PATH" ]]; then
+    BINARY_PROVENANCE="make build from checkout $SOURCE_SHA ($SOURCE_STATE)"
+  else
+    BINARY_PROVENANCE="unknown (custom KUBEATLAS_BIN override)"
+  fi
 fi
 read -r BINARY_SHA _ < <(sha256sum "$KUBEATLAS_BIN")
 if ! BINARY_VERSION="$("$KUBEATLAS_BIN" --version 2>&1)"; then
   echo "KubeAtlas binary --version preflight failed." >&2
+  exit 1
+fi
+if ! python3 - "$PORT" <<'PY'
+import socket
+import sys
+
+sock = socket.socket()
+try:
+    sock.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+then
+  echo "Port $PORT is already in use; refusing to start KubeAtlas." >&2
   exit 1
 fi
 
@@ -454,6 +482,10 @@ for _ in $(seq 1 30); do
     exit 1
   fi
   if curl -fsS --max-time 2 "http://localhost:$PORT/api/health" >/dev/null 2>&1; then
+    if ! kill -0 "$KUBEATLAS_PID" 2>/dev/null; then
+      echo "KubeAtlas exited during readiness; see $LOGFILE" >&2
+      exit 1
+    fi
     READY=true
     break
   fi

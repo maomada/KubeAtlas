@@ -120,20 +120,27 @@ binary is `./kubeatlas`; `KUBEATLAS_BIN` may select an explicit test binary.
 The script prints its binary SHA-256, version, checkout SHA/state, selected
 context, and external evidence directory. It snapshots the selected context
 into a private kubeconfig and passes that same frozen file and context to
-kubectl and KubeAtlas. Run-unique namespaces, ClusterRoles, and bindings use
-create-only API operations. The fixed CRD name is checked for collision and
-created only when absent.
+kubectl and KubeAtlas. It refuses to start if its loopback port is occupied
+and rechecks the child process after HTTP readiness. Run-unique namespaces,
+ClusterRoles, and bindings use create-only API operations. The fixed CRD name
+is checked for collision and created only when absent.
 
 Each successful create is durably recorded in an external, non-secret JSONL
 ledger with kind, API version, namespace, name, UID, and the run-owner label.
 Cleanup walks only successful ledger entries in reverse order, rechecks the
-live UID and owner label, and sends server-side delete preconditions for UID
-and resourceVersion. Uncertain create responses are never inferred to be
-owned or deleted; the ledger is retained for manual reconciliation. Cleanup
-failure makes the harness fail, even if the behavioral assertions passed.
+live UID and owner label using structured `kubectl get` results, and sends
+server-side delete preconditions for UID and resourceVersion. A successful
+delete request is followed by `kubectl wait --for=delete --timeout=30s` for that
+exact resource to become absent; timeout or lookup failure makes cleanup fail,
+with no destructive retry.
+Uncertain create responses are never inferred to be owned or deleted; the
+ledger is retained for manual reconciliation. Cleanup failure makes the
+harness fail, even if the behavioral assertions passed.
 Evidence defaults to `~/.kubeatlas/test-runs` (override with
 `KUBEATLAS_RBAC_EVIDENCE_DIR`); private kubeconfig material is removed on
-exit. These safeguards do not make the harness suitable for a shared cluster.
+exit. A custom `KUBEATLAS_BIN` outside the checkout's `./kubeatlas` output
+reports provenance as unknown, even when the script runs `make build`. These
+safeguards do not make the harness suitable for a shared cluster.
 
 `scripts/visual-test-start.sh` starts `./kubeatlas --no-browser`, checks for an
 active recorded instance and a free local port, and fails on early child exit

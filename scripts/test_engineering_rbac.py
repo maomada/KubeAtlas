@@ -42,6 +42,24 @@ if "config" in args:
 
 if "get" in args and not any(item.startswith("--raw=") for item in args):
     index = args.index("get")
+    if "-o" in args and args[args.index("-o") + 1] == "json":
+        if os.environ.get("FAKE_GET_CREDENTIAL_ERROR") == "1":
+            print("credential executable not found", file=sys.stderr)
+            raise SystemExit(1)
+        reference = args[index + 1]
+        _, name = reference.rsplit("/", 1)
+        namespace = value_after("--namespace") if "--namespace" in args else ""
+        obj = next(
+            (
+                item for item in state
+                if item["metadata"]["name"] == name
+                and item["metadata"].get("namespace", "") == namespace
+            ),
+            None,
+        )
+        if obj is not None:
+            print(json.dumps(obj))
+        raise SystemExit(0)
     resource = args[index + 1]
     name = args[index + 2]
     if os.environ.get("FAKE_EXISTING_NAMESPACE") == name and resource in ("namespace", "namespaces"):
@@ -51,6 +69,22 @@ if "get" in args and not any(item.startswith("--raw=") for item in args):
     raise SystemExit(0)
 
 if "wait" in args:
+    if "--for=delete" not in args:
+        raise SystemExit(0)
+    reference = args[args.index("--for=delete") + 1]
+    name = reference.rsplit("/", 1)[1]
+    namespace = value_after("--namespace") if "--namespace" in args else ""
+    pending = next(
+        (
+            item for item in state
+            if item["metadata"]["name"] == name
+            and item["metadata"].get("namespace", "") == namespace
+        ),
+        None,
+    )
+    if pending is not None:
+        print("simulated deletion still pending", file=sys.stderr)
+        raise SystemExit(1)
     raise SystemExit(0)
 
 if "create" in args and "--dry-run=client" in args:
@@ -84,15 +118,6 @@ if "create" in args:
     raise SystemExit(0)
 
 raw = next((item.split("=", 1)[1] for item in args if item.startswith("--raw=")), None)
-if "get" in args and raw:
-    name = raw.rstrip("/").split("/")[-1]
-    obj = next((item for item in state if item["metadata"]["name"] == name), None)
-    if obj is None:
-        print('Error from server (NotFound): object not found', file=sys.stderr)
-        raise SystemExit(1)
-    print(json.dumps(obj))
-    raise SystemExit(0)
-
 if "delete" in args and raw:
     options = json.loads(sys.stdin.read())
     if os.environ.get("FAKE_FAIL_DELETE") == "1":
@@ -104,7 +129,8 @@ if "delete" in args and raw:
         raise SystemExit(1)
     assert options["preconditions"]["uid"] == item["metadata"]["uid"]
     assert options["preconditions"]["resourceVersion"] == item["metadata"]["resourceVersion"]
-    state.remove(item)
+    if os.environ.get("FAKE_PENDING_DELETE") != "1":
+        state.remove(item)
     save()
     print("{}")
     raise SystemExit(0)
@@ -220,9 +246,20 @@ class EngineeringRBACTests(unittest.TestCase):
         for call in calls:
             self.assertIn(f"--kubeconfig={self.kubeconfig}", call)
             self.assertIn("--context=test-context", call)
+            self.assertTrue(
+                any(item in call for item in ("--request-timeout=15s", "--request-timeout=35s"))
+            )
+        get_call = next(call for call in calls if "get" in call)
+        self.assertIn("--request-timeout=15s", get_call)
+        self.assertIn("namespaces/owned-one", get_call)
+        self.assertIn("--request-timeout=15s", delete_calls[0])
         delete_record = next(record for record in records if record["status"] == "created")
         self.assertEqual(delete_record["uid"], "uid-owned-one")
         self.assertIn("Uncertain residue retained", cleanup.stderr)
+        wait_call = next(call for call in calls if "wait" in call)
+        self.assertIn("--for=delete", wait_call)
+        self.assertIn("--timeout=30s", wait_call)
+        self.assertIn("--request-timeout=35s", wait_call)
 
     def test_cleanup_deletes_created_objects_in_reverse_ledger_order(self):
         self.assertEqual(self.call_helper("create", self.create_manifest("first")).returncode, 0)
@@ -235,6 +272,88 @@ class EngineeringRBACTests(unittest.TestCase):
              for call in delete_calls],
             ["/api/v1/namespaces/second", "/api/v1/namespaces/first"],
         )
+        self.assertEqual(len([call for call in self.read_calls() if "wait" in call]), 2)
+
+    def test_cleanup_get_and_wait_use_group_qualified_namespaced_resource(self):
+        manifest = (
+            "apiVersion: rbac.authorization.k8s.io/v1\nkind: Role\nmetadata:\n"
+            "  name: namespaced-role\n  namespace: rbac-fixture\n"
+        )
+        self.assertEqual(self.call_helper("create", manifest).returncode, 0)
+        cleanup = self.call_helper("cleanup")
+        self.assertEqual(cleanup.returncode, 0, cleanup.stderr)
+        calls = self.read_calls()
+        get_call = next(call for call in calls if "get" in call)
+        wait_call = next(call for call in calls if "wait" in call)
+        self.assertIn("roles.rbac.authorization.k8s.io/namespaced-role", get_call)
+        self.assertIn("--namespace", get_call)
+        self.assertIn("rbac-fixture", get_call)
+        self.assertIn("roles.rbac.authorization.k8s.io/namespaced-role", wait_call)
+        self.assertIn("rbac-fixture", wait_call)
+
+    def test_cleanup_accepts_only_successful_empty_get_as_already_absent(self):
+        self.assertEqual(self.call_helper("create", self.create_manifest("already-absent")).returncode, 0)
+        self.state.write_text("[]", encoding="utf-8")
+        cleanup = self.call_helper("cleanup")
+        self.assertEqual(cleanup.returncode, 0, cleanup.stderr)
+        self.assertIn("Already absent", cleanup.stdout)
+        self.assertFalse(any("delete" in call or "wait" in call for call in self.read_calls()))
+
+    def test_cleanup_preserves_credential_not_found_error_and_never_deletes(self):
+        self.assertEqual(self.call_helper("create", self.create_manifest("credential-error")).returncode, 0)
+        cleanup = self.call_helper(
+            "cleanup",
+            extra_env={"FAKE_GET_CREDENTIAL_ERROR": "1"},
+        )
+        self.assertNotEqual(cleanup.returncode, 0)
+        self.assertIn("kubectl get failed (exit 1)", cleanup.stderr)
+        calls = self.read_calls()
+        self.assertTrue(any("--ignore-not-found" in call and "-o" in call for call in calls))
+        self.assertFalse(any("delete" in call for call in calls))
+        self.assertNotIn("Already absent", cleanup.stdout)
+
+    def test_cleanup_refuses_replacement_uid_and_owner_label(self):
+        for replacement, description in (
+            ({"uid": "uid-replacement"}, "UID mismatch"),
+            (
+                {"labels": {"kubeatlas.dev/engineering-test-run": "rbac-other"}},
+                "owner label mismatch",
+            ),
+        ):
+            with self.subTest(description=description):
+                self.ledger.unlink(missing_ok=True)
+                self.state.unlink(missing_ok=True)
+                self.count.unlink(missing_ok=True)
+                self.log.unlink(missing_ok=True)
+                created = self.call_helper("create", self.create_manifest("replaced"))
+                self.assertEqual(created.returncode, 0, created.stderr)
+                state = json.loads(self.state.read_text())
+                metadata = state[0]["metadata"]
+                if "uid" in replacement:
+                    metadata["uid"] = replacement["uid"]
+                else:
+                    metadata["labels"].update(replacement["labels"])
+                self.state.write_text(json.dumps(state), encoding="utf-8")
+
+                cleanup = self.call_helper("cleanup")
+                self.assertNotEqual(cleanup.returncode, 0)
+                self.assertIn(description, cleanup.stderr)
+                self.assertFalse(any("delete" in call for call in self.read_calls()))
+
+    def test_pending_deletion_is_reported_as_cleanup_failure_without_retry(self):
+        created = self.call_helper("create", self.create_manifest("pending-delete"))
+        self.assertEqual(created.returncode, 0, created.stderr)
+        cleanup = self.call_helper(
+            "cleanup",
+            extra_env={"FAKE_PENDING_DELETE": "1"},
+        )
+        self.assertNotEqual(cleanup.returncode, 0)
+        self.assertIn("Deletion requested", cleanup.stdout)
+        self.assertNotIn("Deletion confirmed absent", cleanup.stdout)
+        self.assertIn("wait for deletion failed", cleanup.stderr)
+        calls = self.read_calls()
+        self.assertEqual(sum("delete" in call for call in calls), 1)
+        self.assertEqual(sum("wait" in call for call in calls), 1)
 
     def test_cleanup_failure_is_nonzero_and_shell_preserves_test_status(self):
         created = self.call_helper("create", self.create_manifest("cleanup-fails"))

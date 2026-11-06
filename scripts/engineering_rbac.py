@@ -13,34 +13,41 @@ from urllib.parse import quote
 
 OWNER_LABEL = "kubeatlas.dev/engineering-test-run"
 RESOURCES = {
-    ("v1", "Namespace"): (False, "/api/v1/namespaces"),
-    ("v1", "Pod"): (True, "/api/v1/namespaces/{namespace}/pods"),
-    ("v1", "Secret"): (True, "/api/v1/namespaces/{namespace}/secrets"),
+    ("v1", "Namespace"): (False, "namespaces", "/api/v1/namespaces"),
+    ("v1", "Pod"): (True, "pods", "/api/v1/namespaces/{namespace}/pods"),
+    ("v1", "Secret"): (True, "secrets", "/api/v1/namespaces/{namespace}/secrets"),
     ("rbac.authorization.k8s.io/v1", "Role"): (
-        True, "/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/roles"
+        True, "roles.rbac.authorization.k8s.io",
+        "/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/roles"
     ),
     ("rbac.authorization.k8s.io/v1", "RoleBinding"): (
-        True, "/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/rolebindings"
+        True, "rolebindings.rbac.authorization.k8s.io",
+        "/apis/rbac.authorization.k8s.io/v1/namespaces/{namespace}/rolebindings"
     ),
     ("rbac.authorization.k8s.io/v1", "ClusterRole"): (
-        False, "/apis/rbac.authorization.k8s.io/v1/clusterroles"
+        False, "clusterroles.rbac.authorization.k8s.io",
+        "/apis/rbac.authorization.k8s.io/v1/clusterroles"
     ),
     ("rbac.authorization.k8s.io/v1", "ClusterRoleBinding"): (
-        False, "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings"
+        False, "clusterrolebindings.rbac.authorization.k8s.io",
+        "/apis/rbac.authorization.k8s.io/v1/clusterrolebindings"
     ),
     ("apiextensions.k8s.io/v1", "CustomResourceDefinition"): (
-        False, "/apis/apiextensions.k8s.io/v1/customresourcedefinitions"
+        False, "customresourcedefinitions.apiextensions.k8s.io",
+        "/apis/apiextensions.k8s.io/v1/customresourcedefinitions"
     ),
     ("test.skyhook.io/v1", "RadarTest"): (
-        False, "/apis/test.skyhook.io/v1/radartests"
+        False, "radartests.test.skyhook.io",
+        "/apis/test.skyhook.io/v1/radartests"
     ),
 }
 
 
-def kubectl(kubeconfig, context, args, input_text=None):
+def kubectl(kubeconfig, context, args, input_text=None, request_timeout="15s"):
     return subprocess.run(
         [
             "kubectl",
+            f"--request-timeout={request_timeout}",
             f"--kubeconfig={kubeconfig}",
             f"--context={context}",
             *args,
@@ -80,7 +87,7 @@ def object_identity(obj):
         raise ValueError("manifest is missing apiVersion, kind, or name")
     if identity["kind"] == "List" or (identity["apiVersion"], identity["kind"]) not in RESOURCES:
         raise ValueError("manifest must be one supported fixture object")
-    namespaced, _ = RESOURCES[(identity["apiVersion"], identity["kind"])]
+    namespaced, _, _ = RESOURCES[(identity["apiVersion"], identity["kind"])]
     if namespaced != bool(identity["namespace"]):
         raise ValueError("fixture namespace does not match its resource scope")
     return identity
@@ -200,7 +207,7 @@ def resource_url(record):
     api_version = record.get("apiVersion")
     if (api_version, kind) not in RESOURCES:
         raise ValueError("ledger contains an unsupported resource")
-    namespaced, template = RESOURCES[(api_version, kind)]
+    namespaced, _, template = RESOURCES[(api_version, kind)]
     name = record.get("name")
     namespace = record.get("namespace", "")
     if not isinstance(name, str) or not name or namespaced != bool(namespace):
@@ -211,16 +218,52 @@ def resource_url(record):
     return template.format(**values) + "/" + values["name"]
 
 
-def get_object(args, url):
-    result = kubectl(args.kubeconfig, args.context, ["get", f"--raw={url}"])
+def resource_reference(record):
+    key = (record.get("apiVersion"), record.get("kind"))
+    if key not in RESOURCES:
+        raise ValueError("ledger contains an unsupported resource")
+    namespaced, resource, _ = RESOURCES[key]
+    name = record.get("name")
+    namespace = record.get("namespace", "")
+    if (
+        not isinstance(name, str)
+        or not name
+        or not isinstance(namespace, str)
+        or namespaced != bool(namespace)
+    ):
+        raise ValueError("ledger resource identity is incomplete")
+    return namespaced, f"{resource}/{name}", namespace
+
+
+def get_object(args, record):
+    namespaced, reference, namespace = resource_reference(record)
+    command = ["get", reference, "--ignore-not-found", "-o", "json"]
+    if namespaced:
+        command.extend(["--namespace", namespace])
+    result = kubectl(args.kubeconfig, args.context, command)
     if result.returncode:
-        if "notfound" in result.stderr.casefold() or "not found" in result.stderr.casefold():
-            return None
         raise RuntimeError(f"kubectl get failed (exit {result.returncode})")
+    if not result.stdout.strip():
+        return None
     try:
         return json.loads(result.stdout)
     except json.JSONDecodeError as error:
         raise RuntimeError("kubectl get returned invalid JSON") from error
+
+
+def wait_for_deletion(args, record):
+    namespaced, reference, namespace = resource_reference(record)
+    command = ["wait", "--for=delete", reference, "--timeout=30s"]
+    if namespaced:
+        command.extend(["--namespace", namespace])
+    result = kubectl(
+        args.kubeconfig,
+        args.context,
+        command,
+        request_timeout="35s",
+    )
+    if result.returncode:
+        raise RuntimeError(f"kubectl wait for deletion failed (exit {result.returncode})")
 
 
 def delete_owned(args, record):
@@ -228,7 +271,7 @@ def delete_owned(args, record):
     if not isinstance(label, dict) or label.get("key") != OWNER_LABEL or label.get("value") != args.owner:
         raise ValueError("ledger owner label does not match this run")
     url = resource_url(record)
-    obj = get_object(args, url)
+    obj = get_object(args, record)
     if obj is None:
         print(f"Already absent: {record['kind']} {record.get('namespace', '')}/{record['name']}.")
         return
@@ -260,7 +303,10 @@ def delete_owned(args, record):
     )
     if result.returncode:
         raise RuntimeError(f"kubectl delete failed (exit {result.returncode})")
-    print(f"Deleted owned {record['kind']} {record.get('namespace', '')}/{record['name']}.")
+    description = f"{record['kind']} {record.get('namespace', '')}/{record['name']}"
+    print(f"Deletion requested for owned {description}.")
+    wait_for_deletion(args, record)
+    print(f"Deletion confirmed absent: {description}.")
 
 
 def cleanup(args):

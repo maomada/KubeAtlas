@@ -3,6 +3,7 @@ import os
 from pathlib import Path
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
@@ -22,6 +23,8 @@ import sys
 import time
 
 url = sys.argv[-1]
+with open(os.environ["FAKE_CURL_LOG"], "a", encoding="utf-8") as stream:
+    stream.write(url + "\n")
 mode = os.environ.get("FAKE_CURL_MODE", "failure")
 if url.endswith("/api/health"):
     if mode == "delay-success":
@@ -72,6 +75,7 @@ fi
 
 
 FAKE_SLEEP = "#!/usr/bin/env bash\nexit 0\n"
+FAKE_MAKE = "#!/usr/bin/env bash\nexit 0\n"
 
 
 class EngineeringScriptTests(unittest.TestCase):
@@ -84,13 +88,19 @@ class EngineeringScriptTests(unittest.TestCase):
         self.kubectl_log = self.root / "kubectl.jsonl"
         self.kubectl_state = self.root / "kubectl-state.json"
         self.kubectl_count = self.root / "kubectl-count"
+        self.curl_log = self.root / "curl.log"
         self.app_args = self.root / "app-args.json"
         self.app = self.bin / "kubeatlas-test"
         self.write_executable(self.bin / "kubectl", FAKE_KUBECTL)
         self.write_executable(self.bin / "curl", FAKE_CURL)
         self.write_executable(self.bin / "git", FAKE_GIT)
         self.write_executable(self.bin / "sleep", FAKE_SLEEP)
+        self.write_executable(self.bin / "make", FAKE_MAKE)
         self.write_executable(self.app, FAKE_APP)
+        port_socket = socket.socket()
+        port_socket.bind(("127.0.0.1", 0))
+        self.port = port_socket.getsockname()[1]
+        port_socket.close()
         self.env = {
             **os.environ,
             "PATH": f"{self.bin}{os.pathsep}{os.environ['PATH']}",
@@ -99,12 +109,13 @@ class EngineeringScriptTests(unittest.TestCase):
             "FAKE_KUBECTL_LOG": str(self.kubectl_log),
             "FAKE_KUBECTL_STATE": str(self.kubectl_state),
             "FAKE_KUBECTL_COUNT": str(self.kubectl_count),
+            "FAKE_CURL_LOG": str(self.curl_log),
             "FAKE_APP_ARGS": str(self.app_args),
             "FAKE_CURL_MODE": "failure",
             "NS_ALICE": "rbac-alice",
             "NS_BOB": "rbac-bob",
             "KUBEATLAS_RBAC_EVIDENCE_DIR": str(self.root / "rbac-evidence"),
-            "PORT": "9389",
+            "PORT": str(self.port),
         }
 
     def write_executable(self, path, content):
@@ -212,6 +223,60 @@ class EngineeringScriptTests(unittest.TestCase):
                        if line.startswith("RBAC evidence directory retained: "))
         self.assertTrue((Path(run_dir) / "ledger.jsonl").is_file())
         self.assertTrue((Path(run_dir) / "kubeatlas.log").is_file())
+
+    def test_rbac_busy_port_has_no_cluster_calls_or_server_launch(self):
+        port_socket = socket.socket()
+        port_socket.bind(("127.0.0.1", 0))
+        port_socket.listen()
+        try:
+            port = port_socket.getsockname()[1]
+            result = self.run_rbac(
+                args=("--skip-build", "--yes"),
+                env={"PORT": str(port)},
+            )
+        finally:
+            port_socket.close()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn(f"Port {port} is already in use", result.stderr)
+        self.assertEqual(self.kubectl_calls(), [])
+        self.assertFalse(self.app_args.exists())
+
+    def test_rbac_rechecks_child_after_http_readiness(self):
+        result = self.run_rbac(
+            args=("--skip-build", "--yes"),
+            env={"FAKE_APP_MODE": "exit", "FAKE_CURL_MODE": "delay-success"},
+        )
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("exited during readiness", result.stderr)
+        self.assertEqual(
+            self.curl_log.read_text(encoding="utf-8").splitlines(),
+            [f"http://localhost:{self.env['PORT']}/api/health"],
+        )
+
+    def test_rbac_external_binary_override_has_unknown_build_provenance(self):
+        source = RBAC.read_text(encoding="utf-8").split("MUTATIONS_STARTED=true", 1)[0]
+        helper_dir = str(ROOT / "scripts")
+        source = source.replace(
+            'SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"',
+            f'SCRIPT_DIR="{helper_dir}"',
+        )
+        fixture_script = self.root / "rbac-binary-provenance.sh"
+        fixture_script.write_text(source + "\nexit 0\n", encoding="utf-8")
+        result = subprocess.run(
+            ["/bin/bash", str(fixture_script), "--yes"],
+            text=True,
+            capture_output=True,
+            env={**self.env, "KUBEATLAS_BIN": str(self.app)},
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Building KubeAtlas...", result.stdout)
+        self.assertIn("unknown (custom KUBEATLAS_BIN override)", result.stdout)
+        self.assertNotIn("make build from checkout", result.stdout)
+        self.assertIn("Binary SHA-256:", result.stdout)
+        self.assertIn("Binary version: kubeatlas test-version", result.stdout)
+        self.assertFalse(self.app_args.exists())
+        self.assertFalse(any("create" in call or "delete" in call for call in self.kubectl_calls()))
 
     def test_rbac_cleanup_failure_changes_successful_test_exit_to_nonzero(self):
         source = RBAC.read_text(encoding="utf-8").split("# --- Helpers ---", 1)[0]

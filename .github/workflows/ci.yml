@@ -609,16 +609,24 @@ jobs:
       - name: Run engineering regressions
         run: python3 -m unittest discover -s scripts -p 'test_engineering*.py'
       - name: Check shell syntax
-        run: bash -n scripts/test-rbac.sh scripts/visual-test-start.sh
+        run: |
+          set -euo pipefail
+          for script in scripts/test-rbac.sh scripts/visual-test-start.sh; do
+            bash -n "$script"
+          done
       - name: ShellCheck changed shell scripts
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
           HEAD_SHA: ${{ github.sha }}
         run: |
+          set -euo pipefail
           if [[ "$BASE_SHA" =~ ^0{40}$ ]]; then
             BASE_SHA="$(git rev-parse "$HEAD_SHA^")"
           fi
-          mapfile -t changed_shell < <(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- '*.sh')
+          changed_shell_file="$(mktemp "$RUNNER_TEMP/changed-shell.XXXXXX")"
+          trap 'rm -f -- "$changed_shell_file"' EXIT
+          git diff --diff-filter=ACMR --name-only -z "$BASE_SHA" "$HEAD_SHA" -- '*.sh' > "$changed_shell_file"
+          mapfile -d '' -t changed_shell < "$changed_shell_file"
           if ((${#changed_shell[@]})); then
             shellcheck "${changed_shell[@]}"
           else

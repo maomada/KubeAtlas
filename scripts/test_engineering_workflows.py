@@ -1,6 +1,9 @@
 import fnmatch
+import os
 from pathlib import Path
 import re
+import subprocess
+import tempfile
 import unittest
 
 from engineering_gate import CI_JOBS, package_results
@@ -27,6 +30,33 @@ EXPECTED_PACKAGE_PATHS = [
 def job_block(workflow, job):
     section = workflow.split(f"  {job}:\n", 1)[1]
     return re.split(r"\n  [a-z][a-z0-9-]*:\n", section, maxsplit=1)[0]
+
+
+def workflow_step_script(workflow, name):
+    lines = workflow.splitlines()
+    marker = f"- name: {name}"
+    start = next(index for index, line in enumerate(lines) if line.strip() == marker)
+    run = next(index for index in range(start + 1, len(lines)) if lines[index].strip() == "run: |")
+    script = []
+    for line in lines[run + 1:]:
+        if not line.strip():
+            script.append("")
+            continue
+        if len(line) - len(line.lstrip()) < 10:
+            break
+        script.append(line[10:])
+    return "\n".join(script).rstrip() + "\n"
+
+
+def run_workflow_script(script, cwd, env):
+    return subprocess.run(
+        ["bash", "--noprofile", "--norc", "-e", "-o", "pipefail", "-c", script],
+        cwd=cwd,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
 
 
 class EngineeringWorkflowTests(unittest.TestCase):
@@ -110,6 +140,94 @@ class EngineeringWorkflowTests(unittest.TestCase):
         tests = job_block(self.ci, "engineering-tests")
         self.assertIn("python3 -m unittest discover -s scripts -p 'test_engineering*.py'", tests)
         self.assertIn("shellcheck \"${changed_shell[@]}\"", tests)
+        self.assertIn("git diff --diff-filter=ACMR --name-only -z", tests)
+        self.assertIn("mapfile -d '' -t changed_shell < \"$changed_shell_file\"", tests)
+
+    def test_ci_shell_syntax_step_checks_second_script(self):
+        script = workflow_step_script(self.ci, "Check shell syntax")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            scripts = root / "scripts"
+            scripts.mkdir()
+            (scripts / "test-rbac.sh").write_text("echo valid\n", encoding="utf-8")
+            (scripts / "visual-test-start.sh").write_text("if broken\n", encoding="utf-8")
+            result = run_workflow_script(script, root, os.environ.copy())
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("syntax error", result.stderr)
+
+    def test_ci_shellcheck_fails_when_git_diff_fails(self):
+        script = workflow_step_script(self.ci, "ShellCheck changed shell scripts")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bin_dir = root / "bin"
+            runner_temp = root / "runner-temp"
+            bin_dir.mkdir()
+            runner_temp.mkdir()
+            shellcheck_marker = root / "shellcheck-called"
+            fake_git = bin_dir / "git"
+            fake_git.write_text(
+                "#!/usr/bin/env bash\n"
+                "echo 'git diff failed: invalid base' >&2\n"
+                "exit 128\n",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            fake_shellcheck = bin_dir / "shellcheck"
+            fake_shellcheck.write_text(
+                "#!/usr/bin/env bash\n"
+                'touch "$SHELLCHECK_MARKER"\n',
+                encoding="utf-8",
+            )
+            fake_shellcheck.chmod(0o755)
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                "BASE_SHA": "invalid-base",
+                "HEAD_SHA": "valid-head",
+                "RUNNER_TEMP": str(runner_temp),
+                "SHELLCHECK_MARKER": str(shellcheck_marker),
+            }
+            result = run_workflow_script(script, root, env)
+            self.assertFalse(shellcheck_marker.exists())
+            self.assertEqual(list(runner_temp.iterdir()), [])
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("invalid base", result.stderr)
+
+    def test_ci_shellcheck_preserves_filenames_with_spaces(self):
+        script = workflow_step_script(self.ci, "ShellCheck changed shell scripts")
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            bin_dir = root / "bin"
+            runner_temp = root / "runner-temp"
+            bin_dir.mkdir()
+            runner_temp.mkdir()
+            shellcheck_args = root / "shellcheck-args"
+            fake_git = bin_dir / "git"
+            fake_git.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf 'scripts/with space.sh\\0'\n",
+                encoding="utf-8",
+            )
+            fake_git.chmod(0o755)
+            fake_shellcheck = bin_dir / "shellcheck"
+            fake_shellcheck.write_text(
+                "#!/usr/bin/env bash\n"
+                "printf '%s\\n' \"$@\" > \"$SHELLCHECK_ARGS_FILE\"\n",
+                encoding="utf-8",
+            )
+            fake_shellcheck.chmod(0o755)
+            env = {
+                **os.environ,
+                "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
+                "BASE_SHA": "base",
+                "HEAD_SHA": "head",
+                "RUNNER_TEMP": str(runner_temp),
+                "SHELLCHECK_ARGS_FILE": str(shellcheck_args),
+            }
+            result = run_workflow_script(script, root, env)
+            shellcheck_output = shellcheck_args.read_text(encoding="utf-8")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(shellcheck_output, "scripts/with space.sh\n")
 
     def test_package_and_security_gates_are_mandatory_and_terminal(self):
         package_gate = job_block(self.package, "required-gates")
