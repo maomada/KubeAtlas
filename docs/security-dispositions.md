@@ -57,3 +57,22 @@ This CI decision is not a GitHub-enforced merge restriction. The repository's
 current private-account ruleset page says rules will not be enforced. No GitHub
 settings or CodeQL configuration are changed by dispositions. Semgrep CE is
 not equivalent coverage to CodeQL, and publication remains independently gated.
+
+## Portal Fleet integration review
+
+Source `25828e1f1e87df69726ca76374e4e617e587a64b` retains the 101 previously
+reviewed raw findings and adds SAST-112, the Gorilla missing-origin-check audit.
+The pinned Gorilla Upgrader supplies a same-host check when `CheckOrigin` is nil;
+it does not accept arbitrary browser origins. The reachable source-channel route
+also rejects cross-site Fetch Metadata and requires a cluster registration bearer
+token before upgrading. An absent Origin remains valid for outbound Go clients.
+`TestFleetChannelOriginAndBearerBoundary` covers these handshake boundaries.
+SAST-112 is classified as a false positive for this rule, not a general security
+approval of the Fleet feature.
+
+Existing finding files are unchanged from main except the CLI entrypoint, Portal
+handler and server route file. Their four existing sinks and relevant guards are
+unchanged; only finding positions moved. Their prior evidence and approvals are
+retained, with explicit source revalidation and previous positions. The review
+history preserves prior fingerprints. No scanner rule, exclusion or gate was
+relaxed; the source-tree fingerprint still requires review after later changes.

@@ -12,6 +12,8 @@ import (
 	"path"
 	"strings"
 	"unicode"
+
+	"github.com/maomada/KubeAtlas/internal/fleetsync"
 )
 
 const maxStaticAssetBytes = 8 << 20
@@ -32,9 +34,12 @@ type Handler struct {
 	password      [32]byte
 	sessions      *viewerSessions
 	secureCookies bool
+	fleetStore    *fleetsync.Store
+	fleetHandler  http.Handler
+	agentHub      *AgentHub
 }
 
-func NewHandler(registry *Registry, credentials Credentials, static fs.FS) (*Handler, error) {
+func NewHandler(registry *Registry, credentials Credentials, static fs.FS, fleetStore *fleetsync.Store) (*Handler, error) {
 	if registry == nil {
 		return nil, errors.New("portal registry is required")
 	}
@@ -56,12 +61,22 @@ func NewHandler(registry *Registry, credentials Credentials, static fs.FS) (*Han
 		tokens[id] = hash
 		authorized[id] = struct{}{}
 	}
-	return &Handler{
+	handler := &Handler{
 		registry: registry, static: static, tokens: tokens, authorized: authorized,
 		username: sha256.Sum256([]byte(credentials.Username)),
 		password: sha256.Sum256([]byte(credentials.Password)),
 		sessions: newViewerSessions(), secureCookies: !credentials.AllowInsecureCookies,
-	}, nil
+		fleetStore: fleetStore,
+	}
+	handler.agentHub = NewAgentHub(fleetStore)
+	handler.fleetHandler = fleetsync.NewHandlerWithBridge(fleetStore, handler.agentHub)
+	return handler, nil
+}
+
+func (h *Handler) Close() {
+	if h != nil && h.agentHub != nil {
+		h.agentHub.Close()
+	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -76,6 +91,40 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
+	case strings.HasPrefix(r.URL.Path, "/api/fleet/snapshots/"):
+		h.sourceSnapshot(w, r)
+	case strings.HasPrefix(r.URL.Path, "/api/fleet/agents/"):
+		h.sourceAgentChannel(w, r)
+	case r.URL.Path == "/mcp-fleet":
+		if !h.requireViewer(w, r) {
+			return
+		}
+		if !sameSiteRequest(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if h.fleetStore == nil {
+			writeFleetHTTPError(w, http.StatusServiceUnavailable, "Fleet synchronization is unavailable")
+			return
+		}
+		h.fleetHandler.ServeHTTP(w, r)
+	case isFleetViewerRoute(r.URL.Path):
+		if !h.requireViewer(w, r) {
+			return
+		}
+		if !sameSiteRequest(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
+		}
+		if h.fleetStore == nil {
+			writeFleetHTTPError(w, http.StatusServiceUnavailable, "Fleet synchronization is unavailable")
+			return
+		}
+		clone := r.Clone(r.Context())
+		urlCopy := *r.URL
+		urlCopy.Path = "/api" + strings.TrimPrefix(urlCopy.Path, "/api/fleet")
+		clone.URL = &urlCopy
+		h.fleetHandler.ServeHTTP(w, clone)
 	case r.URL.Path == "/api/auth/login":
 		h.login(w, r)
 	case r.URL.Path == "/api/auth/logout":
@@ -112,13 +161,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.register(w, r)
-	case r.URL.Path == "/" || r.URL.Path == "/login":
+	case r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/fleet":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		loggedIn := h.hasViewerSession(r)
-		if r.URL.Path == "/" && !loggedIn {
+		if (r.URL.Path == "/" || r.URL.Path == "/fleet") && !loggedIn {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
@@ -141,6 +190,60 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func isFleetViewerRoute(path string) bool {
+	switch path {
+	case "/api/fleet/clusters", "/api/fleet/fleets", "/api/fleet/context",
+		"/api/fleet/resource-context", "/api/fleet/tools", "/api/fleet/call-tool":
+		return true
+	}
+	if !strings.HasPrefix(path, "/api/fleet/fleets/") {
+		return false
+	}
+	id := strings.TrimPrefix(path, "/api/fleet/fleets/")
+	return !strings.Contains(id, "/") && fleetsync.ValidateID(id)
+}
+
+func (h *Handler) sourceSnapshot(w http.ResponseWriter, r *http.Request) {
+	if !sameSiteRequest(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if r.URL.RawQuery != "" || r.URL.ForceQuery {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/fleet/snapshots/")
+	tokenHash, allowed := h.tokens[id]
+	if !allowed || !fleetsync.ValidateID(id) || !authorizedBearer(r, tokenHash) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	fleetsync.NewSnapshotHandler(h.fleetStore, id).ServeHTTP(w, r)
+}
+
+func (h *Handler) sourceAgentChannel(w http.ResponseWriter, r *http.Request) {
+	if !sameSiteRequest(r) {
+		http.Error(w, "forbidden", http.StatusForbidden)
+		return
+	}
+	if r.URL.RawQuery != "" || r.URL.ForceQuery {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	id := strings.TrimPrefix(r.URL.Path, "/api/fleet/agents/")
+	if !strings.HasSuffix(id, "/channel") {
+		http.NotFound(w, r)
+		return
+	}
+	id = strings.TrimSuffix(id, "/channel")
+	tokenHash, allowed := h.tokens[id]
+	if !allowed || !fleetsync.ValidateID(id) || !authorizedBearer(r, tokenHash) {
+		http.Error(w, "unauthorized", http.StatusUnauthorized)
+		return
+	}
+	h.agentHub.ServeAgentChannel(w, r, id)
 }
 
 func (h *Handler) register(w http.ResponseWriter, r *http.Request) {

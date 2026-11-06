@@ -52,11 +52,11 @@ export function Login() {
         <div className="mb-6 inline-flex rounded-2xl border border-theme-border bg-theme-surface p-4 text-accent-text"><Globe size={36} /></div>
         <p className="portal-mono mb-3 text-xs text-accent-text">KubeAtlas 集群门户</p>
         <h1 className="text-3xl font-semibold leading-tight lg:text-4xl">一个入口，<br />连接所有 KubeAtlas。</h1>
-        <p className="mt-5 max-w-md text-base leading-relaxed text-theme-text-secondary">登录集中式门户，查看纳管实例、进入集群控制台，获取 MCP Server 接入信息。</p>
+        <p className="mt-5 max-w-md text-base leading-relaxed text-theme-text-secondary">登录集中式门户，查看纳管实例、管理多云分组，为 Agent 选择同步上下文。</p>
         <div className="mt-8 hidden space-y-5 lg:block">
           {[
             { icon: Layers, title: '统一实例目录', detail: '本地与集群内 KubeAtlas，按环境与心跳状态检索。' },
-            { icon: Plug, title: 'MCP 接入信息', detail: '集中查看接口地址，复制客户端连接配置。' },
+            { icon: Plug, title: '多云上下文与 MCP', detail: '在门户内按单集群或多云分组提供同步模型与关系。' },
             { icon: ShieldCheck, title: '独立认证边界', detail: '门户不代理集群操作，各 KubeAtlas 保留自己的认证。' },
           ].map(item => <div key={item.title} className="flex items-start gap-3"><item.icon size={20} className="mt-0.5 shrink-0 text-accent-text" /><div><p className="text-sm font-medium">{item.title}</p><p className="mt-1 text-sm text-theme-text-secondary">{item.detail}</p></div></div>)}
         </div>
@@ -72,7 +72,7 @@ export function Login() {
           {error && <p role="alert" className="rounded-lg border border-theme-border bg-theme-base p-3 text-sm text-theme-text-secondary">{error}</p>}
           <button type="submit" className="btn-brand flex w-full items-center justify-center gap-2 py-3 text-sm font-medium" disabled={busy}>{busy ? <LoaderCircle size={17} className="animate-spin" /> : null}{busy ? '正在登录…' : '登录'}{!busy && <ArrowRight size={17} />}</button>
         </form>
-        <p className="mt-6 border-t border-theme-border pt-5 text-xs leading-relaxed text-theme-text-tertiary">此账号仅用于访问门户目录，不是 Kubernetes 或目标 KubeAtlas 的登录凭据。忘记密码请联系门户管理员。</p>
+        <p className="mt-6 border-t border-theme-border pt-5 text-xs leading-relaxed text-theme-text-tertiary">此账号用于门户目录及同步上下文，不是 Kubernetes 或目标 KubeAtlas 的登录凭据。忘记密码请联系门户管理员。</p>
       </section>
     </main>
     <footer className="px-6 pb-6 text-center text-xs text-theme-text-tertiary">KubeAtlas Portal · 独立部署，集中访问</footer>

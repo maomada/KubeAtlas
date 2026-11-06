@@ -40,7 +40,7 @@ func testHandler(t *testing.T, path string) (*Handler, *Registry) {
 	handler, err := NewHandler(registry, Credentials{
 		Tokens:   map[string]string{"cluster-a": testToken, "cluster-b": "other-token-with-at-least-thirty-two-characters"},
 		Username: testUsername, Password: testPassword,
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -238,7 +238,7 @@ func TestViewerUsernameValidationAndEmbeddedAssetServing(t *testing.T) {
 		"portal.html":   &fstest.MapFile{Data: []byte("<html>portal</html>")},
 		"assets/app.js": &fstest.MapFile{Data: []byte("console.log('portal')")},
 	}
-	handler, err := NewHandler(registry, credentials, static)
+	handler, err := NewHandler(registry, credentials, static, nil)
 	if err != nil {
 		t.Fatalf("short valid username rejected: %v", err)
 	}
@@ -252,7 +252,7 @@ func TestViewerUsernameValidationAndEmbeddedAssetServing(t *testing.T) {
 	}
 	for _, username := range []string{"", "user:name", "user\nname"} {
 		credentials.Username = username
-		if _, err := NewHandler(registry, credentials, nil); err == nil {
+		if _, err := NewHandler(registry, credentials, nil, nil); err == nil {
 			t.Errorf("invalid username %q accepted", username)
 		}
 	}
