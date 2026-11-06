@@ -3,36 +3,8 @@ name: Package validation
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - '.goreleaser.yaml'
-      - 'Makefile'
-      - 'LICENSE'
-      - 'NOTICE'
-      - 'README.md'
-      - 'docs/packaging.md'
-      - 'scripts/release_artifacts.py'
-      - 'scripts/release_github.py'
-      - 'scripts/test_release_artifacts.py'
-      - 'scripts/test_release_github.py'
-      - 'scripts/test_release_workflow.py'
-      - '.github/workflows/release-binaries.yml'
-      - '.github/workflows/package-validation.yml'
-      - 'cmd/**'
-      - 'internal/static/**'
-      - 'internal/portalui/**'
-      - 'web/**'
   push:
     branches: [main]
-    paths:
-      - '.goreleaser.yaml'
-      - 'Makefile'
-      - 'scripts/release_artifacts.py'
-      - 'scripts/release_github.py'
-      - 'scripts/test_release_artifacts.py'
-      - 'scripts/test_release_github.py'
-      - 'scripts/test_release_workflow.py'
-      - '.github/workflows/release-binaries.yml'
-      - '.github/workflows/package-validation.yml'
 
 permissions:
   contents: read
@@ -42,8 +14,27 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    name: Select package validation
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      packages: ${{ github.event_name == 'push' && 'true' || steps.filter.outputs.packages }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+        id: filter
+        if: github.event_name == 'pull_request'
+        with:
+          filters: .github/package-paths.yml
+
   validate:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    needs: changes
+    if: needs.changes.outputs.packages == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -78,3 +69,26 @@ jobs:
           for package in dist/release/*.deb; do dpkg-deb --info "$package"; dpkg-deb --contents "$package"; done
           for package in dist/release/*.rpm; do rpm -qp --info "$package"; rpm -qp --list "$package"; done
           python3 scripts/release_artifacts.py validate --directory dist/release
+
+  required-gates:
+    name: Package required gates
+    if: always()
+    needs:
+      - changes
+      - validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Emit package gate receipt
+        run: python3 scripts/engineering_gate.py receipt --gate packages --output "$RUNNER_TEMP/packages.json"
+      - name: Preserve package gate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-packages-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/packages.json
+          if-no-files-found: error

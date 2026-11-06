@@ -43,6 +43,10 @@ lost dry-run artifacts requires a fresh dry run and signature.
 
 ## CI compute controls
 
+Development task ownership, exact-SHA evidence and terminal/cross-workflow gate
+validation are defined in [Engineering workflow](engineering-workflow.md).
+Those gates do not replace the separate release authorization described here.
+
 CodeQL is manual-only while this private repository lacks Code Security
 eligibility. Its analysis configuration and failure history are retained; do
 not dispatch it until eligibility is confirmed. Semgrep still runs on main
@@ -56,12 +60,23 @@ check that exact revision before merging. A skipped draft job is not acceptance
 evidence. Superseded PR package-validation runs are cancelled; main-push runs
 remain independent. Package validation has a 60-minute fail-closed timeout.
 
-Changes to CI orchestration still select all CI jobs. Other `.github` changes
-no longer select unrelated application builds solely by directory; workflow
-lint and release-policy tests remain unconditional. Existing source/dependency
-filters still apply. Main CI still runs all jobs; main package-validation path
-filters, the full 15-artifact release build, native Windows smoke, exact-SHA
-main-push CI/Semgrep evidence, signatures and publication gates are unchanged.
+CI orchestration changes, the engineering gate planner/tests, and the central
+package selector select all CI jobs. Other `.github` changes do not select
+unrelated application builds solely by directory; workflow lint,
+release-policy tests, and engineering regressions remain unconditional. CI's
+`required-gates` receipt records jobs skipped by plan as `not_required_by_plan`;
+a selected job skipped, failed, cancelled, or missing blocks the terminal
+gate.
+
+Package validation always starts its lightweight selector; its inputs are
+centralized in `.github/package-paths.yml`. Main pushes always select package
+validation. Pull requests use the strict filter result, so paths outside that
+list are `not_required_by_plan`. A draft PR defers selected heavy package and
+container builds, but the terminal required-gates jobs fail rather than
+representing those selected skips as passing evidence. Marking a PR ready
+triggers the deferred checks for the current diff. The full package build
+steps, 60-minute timeout, native Windows smoke, exact-SHA main-push
+CI/Semgrep evidence, signatures, and publication gates are unchanged.
 
 These controls reduce future repetition; they do not erase accrued charges,
 restore an exhausted Actions allowance, or change billing settings. Do not

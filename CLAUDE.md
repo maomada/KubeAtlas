@@ -18,6 +18,9 @@ KubeAtlas is an independently maintained Kubernetes visibility tool — local-fi
 
 ## Reference Docs — MUST READ before making changes
 
+For multi-agent work, branch authorization, review/QA handoffs and gate evidence,
+read [docs/engineering-workflow.md](docs/engineering-workflow.md) first.
+
 Not everything is in this file. The following files contain critical details that are **not duplicated here** — this file keeps the cross-cutting rules; per-area depth (gating rationale, lifecycle rules, scope semantics) lives in the files below. You MUST read the matching row's files **before editing** in that area — do not guess or rely on memory. If your area has no row, the handler's or package's own doc comments are the spec; read them first.
 
 | When you are... | Read this file FIRST |

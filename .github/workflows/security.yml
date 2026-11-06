@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   schedule:
     - cron: '0 9 * * 1'
 
@@ -49,3 +50,25 @@ jobs:
           path: ${{ runner.temp }}/security/
           if-no-files-found: error
           retention-days: 14
+
+  required-gates:
+    name: Security required gates
+    if: always()
+    needs:
+      - sast
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Emit security gate receipt
+        run: python3 scripts/engineering_gate.py receipt --gate security --output "$RUNNER_TEMP/security-receipt.json"
+      - name: Preserve security gate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-security-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/security-receipt.json
+          if-no-files-found: error
