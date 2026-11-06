@@ -1,4 +1,5 @@
 import type { ReadGap, ReadNameSet, ReadNarrowing } from './read-coverage'
+import type { PrinterColumnDef } from '../components/resources/printer-columns'
 
 export interface ResourceReadScope {
   type: 'cluster' | 'all_namespaces' | 'namespaces'
@@ -28,7 +29,7 @@ export interface ResourceListResponse<T> {
   kind?: string
   /** Omitted for the core group. */
   group?: string
-  columns?: import('../components/resources/printer-columns').PrinterColumnDef[] | null
+  columns?: PrinterColumnDef[] | null
   cells?: Record<string, unknown[]> | null
 }
 

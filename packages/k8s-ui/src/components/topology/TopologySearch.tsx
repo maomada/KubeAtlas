@@ -141,7 +141,7 @@ export function TopologySearch({ nodes, onNodeSelect, onZoomToNode, allNodes, vi
   useRegisterShortcut({
     id: 'topology-search',
     keys: '/',
-    description: 'Search topology',
+    description: '搜索拓扑',
     category: 'Search',
     scope: 'topology',
     handler: () => {
@@ -152,7 +152,7 @@ export function TopologySearch({ nodes, onNodeSelect, onZoomToNode, allNodes, vi
   useRegisterShortcut({
     id: 'topology-search-close',
     keys: 'Escape',
-    description: 'Close search',
+    description: '关闭搜索',
     category: 'Topology',
     scope: 'topology',
     handler: () => { if (isOpen) handleClose() },
@@ -220,7 +220,7 @@ export function TopologySearch({ nodes, onNodeSelect, onZoomToNode, allNodes, vi
         className="pointer-events-auto flex items-center gap-2 px-3 py-2 bg-theme-surface/90 backdrop-blur border border-theme-border rounded-lg text-theme-text-secondary hover:text-theme-text-primary hover:border-theme-border-light transition-colors"
       >
         <Search className="w-4 h-4" />
-        <span className="text-sm">Search</span>
+        <span className="text-sm">搜索</span>
         <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 text-xs bg-theme-elevated rounded border border-theme-border-light">
           /
         </kbd>
@@ -246,7 +246,7 @@ export function TopologySearch({ nodes, onNodeSelect, onZoomToNode, allNodes, vi
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleInputKeyDown}
-                placeholder="Search resources by name, kind, or namespace..."
+                placeholder="按名称、类型或命名空间搜索资源……"
                 className="flex-1 bg-transparent text-theme-text-primary placeholder-theme-text-disabled outline-none text-sm"
                 autoFocus
               />
@@ -268,7 +268,7 @@ export function TopologySearch({ nodes, onNodeSelect, onZoomToNode, allNodes, vi
               {query && filteredNodes.length === 0 && (
                 <div className="px-4 py-8 text-center text-theme-text-tertiary">
                   <Search className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                  <p>No resources found for "{query}"{viewModeLabel ? ` in ${viewModeLabel}` : ''}</p>
+                  <p>未找到与“{query}”匹配的资源{viewModeLabel ? `（${viewModeLabel}）` : ''}</p>
                   {hiddenMatchCount > 0 && (
                     <p className="mt-2 text-xs text-amber-400">
                       {hiddenMatchCount} {hiddenMatchCount === 1 ? 'match is' : 'matches are'} hidden by the current view{viewModeLabel ? ` (${viewModeLabel})` : ''}. Switch view to see them.
@@ -332,11 +332,11 @@ export function TopologySearch({ nodes, onNodeSelect, onZoomToNode, allNodes, vi
                   <span className="flex items-center gap-1">
                     <kbd className="px-1 py-0.5 bg-theme-elevated rounded">↑</kbd>
                     <kbd className="px-1 py-0.5 bg-theme-elevated rounded">↓</kbd>
-                    <span>Navigate</span>
+                    <span>导航</span>
                   </span>
                   <span className="flex items-center gap-1">
                     <kbd className="px-1.5 py-0.5 bg-theme-elevated rounded">Enter</kbd>
-                    <span>Zoom to resource</span>
+                    <span>定位资源</span>
                   </span>
                 </div>
               </div>
@@ -345,7 +345,7 @@ export function TopologySearch({ nodes, onNodeSelect, onZoomToNode, allNodes, vi
             {/* Empty state with hints */}
             {!query && (
               <div className="px-4 py-6 text-center text-theme-text-tertiary">
-                <p className="text-sm mb-3">Search for resources in the topology</p>
+                <p className="text-sm mb-3">在拓扑中搜索资源</p>
                 <div className="flex flex-wrap justify-center gap-2 text-xs">
                   <span className="px-2 py-1 bg-theme-elevated/50 rounded">nginx</span>
                   <span className="px-2 py-1 bg-theme-elevated/50 rounded">service/api</span>

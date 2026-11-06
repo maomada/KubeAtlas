@@ -210,7 +210,38 @@ const LEADING_ANSI_RE = /^(?:\x1b\[[0-9;]*m)+/
 
 // `goroutine 1 [running]:`, `main.main()`, `net/http.(*conn).serve(0xc000112000, {0x1a2b3c, 0x4})`,
 // `created by net/http.(*Server).Serve in goroutine 1`
-const GO_PANIC_LINE_RE = /^(?:goroutine \d+ \[[^\]]*\]:$|created by \S+|[\w./-]*[\w)\]]\.[\w*().[\]{}-]*\((?:[^()]|\([^()]*\))*\)$)/
+function isGoPanicLine(content: string): boolean {
+  if (content.startsWith('goroutine ')) return /^goroutine \d+ \[[^\]]*\]:$/.test(content)
+  if (content.startsWith('created by ')) return /^created by \S+/.test(content)
+  if (!content.endsWith(')')) return false
+
+  let depth = 0
+  let open = -1
+  for (let i = content.length - 2; i >= 0; i--) {
+    if (content[i] === ')') {
+      if (++depth > 1) return false
+    } else if (content[i] === '(') {
+      if (depth === 0) {
+        open = i
+        break
+      }
+      depth--
+    }
+  }
+  if (open < 0) return false
+
+  // Track both sides of the package/function dot without retrying every dot.
+  let packagePath = true
+  let packageEnd = false
+  let functionName = false
+  for (let i = 0; i < open; i++) {
+    const char = content[i]
+    functionName = (functionName && /[\w*().[\]{}-]/.test(char)) || (packageEnd && char === '.')
+    packageEnd = packagePath && /[\w)\]]/.test(char)
+    packagePath = packagePath && /[\w./-]/.test(char)
+  }
+  return functionName
+}
 
 /**
  * Lines that continue the previous line's record rather than starting a new
@@ -234,10 +265,10 @@ function looksLikeUnindentedFrame(content: string): boolean {
   if (/^[}\])]+[;,]?$/.test(content)) return true
   // A Go panic prints its goroutine header and function frames unindented;
   // only the file:line under each frame is indented.
-  if (content.startsWith('goroutine ') || content.startsWith('created by ')) return GO_PANIC_LINE_RE.test(content)
+  if (content.startsWith('goroutine ') || content.startsWith('created by ')) return isGoPanicLine(content)
   const paren = content.indexOf('(')
   if (paren <= 0 || !content.endsWith(')') || content.lastIndexOf(' ', paren) !== -1) return false
-  return GO_PANIC_LINE_RE.test(content)
+  return isGoPanicLine(content)
 }
 
 interface AssociableEntry {

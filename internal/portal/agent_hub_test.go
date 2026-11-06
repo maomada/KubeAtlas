@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gorilla/websocket"
 	"github.com/maomada/KubeAtlas/internal/fleetsync"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
@@ -327,6 +328,57 @@ func TestFleetChannelRejectsWrongRegistrationTokenAndSourceIdentity(t *testing.T
 	}
 	if got := executor.calls.Load(); got != 0 {
 		t.Fatalf("rejected source executed %d calls", got)
+	}
+}
+
+func TestFleetChannelOriginAndBearerBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		origin    string
+		fetchSite string
+		badToken  bool
+		want      int
+	}{
+		{name: "outbound client without origin", want: http.StatusSwitchingProtocols},
+		{name: "same origin", origin: "same", want: http.StatusSwitchingProtocols},
+		{name: "foreign origin", origin: "https://attacker.invalid", want: http.StatusForbidden},
+		{name: "opaque origin", origin: "null", want: http.StatusForbidden},
+		{name: "malformed origin", origin: "://", want: http.StatusForbidden},
+		{name: "cross site metadata", fetchSite: "cross-site", want: http.StatusForbidden},
+		{name: "same origin without valid bearer", origin: "same", badToken: true, want: http.StatusUnauthorized},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, endpoint, tokens := newAgentHubFixture(t, []string{"east"})
+			headers := http.Header{}
+			token := tokens["east"]
+			if tc.badToken {
+				token = "invalid"
+			}
+			headers.Set("Authorization", "Bearer "+token)
+			if tc.origin == "same" {
+				headers.Set("Origin", endpoint)
+			} else if tc.origin != "" {
+				headers.Set("Origin", tc.origin)
+			}
+			if tc.fetchSite != "" {
+				headers.Set("Sec-Fetch-Site", tc.fetchSite)
+			}
+			dialer := websocket.Dialer{HandshakeTimeout: 3 * time.Second}
+			conn, response, err := dialer.Dial("ws"+strings.TrimPrefix(endpoint, "http")+"/api/fleet/agents/east/channel", headers)
+			if conn != nil {
+				defer conn.Close()
+			}
+			if response == nil {
+				t.Fatalf("missing handshake response: %v", err)
+			}
+			defer response.Body.Close()
+			if response.StatusCode != tc.want {
+				t.Fatalf("handshake status = %d, want %d; error = %v", response.StatusCode, tc.want, err)
+			}
+			if tc.want == http.StatusSwitchingProtocols && err != nil {
+				t.Fatalf("allowed handshake failed: %v", err)
+			}
+		})
 	}
 }
 

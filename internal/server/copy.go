@@ -58,10 +58,7 @@ func (s *Server) handlePodFileList(w http.ResponseWriter, r *http.Request) {
 		dirPath = "/"
 	}
 
-	// Clean the path to prevent traversal.
-	// Use path.Clean (POSIX) not filepath.Clean — the path runs inside a Linux
-	// container, but filepath is OS-specific and converts to backslashes on Windows.
-	dirPath = path.Clean(dirPath)
+	dirPath = podFileListPath(dirPath)
 
 	client := s.getClientForRequest(r)
 	config := s.getConfigForRequest(r)
@@ -121,6 +118,15 @@ func (s *Server) handlePodFileList(w http.ResponseWriter, r *http.Request) {
 
 	nodes, totalFiles := parseFindOutput(stdout.String(), dirPath)
 	s.writeJSON(w, PodFilesystem{Root: buildRootNode(dirPath, nodes), TotalFiles: totalFiles})
+}
+
+func podFileListPath(value string) string {
+	cleaned := path.Clean(value)
+	// Shell quoting alone does not stop find expressions or ls options.
+	if !path.IsAbs(cleaned) {
+		return "./" + cleaned
+	}
+	return cleaned
 }
 
 // listFilesWithLS is a fallback when find is not available

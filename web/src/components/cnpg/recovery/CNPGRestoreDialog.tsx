@@ -283,7 +283,7 @@ export function CNPGRestoreDialog({ namespace, entry, onClose }: { namespace: st
       <>
       <div className="mb-4 flex flex-wrap items-center gap-2 text-xs text-theme-text-tertiary" aria-label="Restore steps">
         <span className={setupStep === 'source' ? 'font-semibold text-accent-text' : undefined}>1. Recovery point</span><span aria-hidden>→</span>
-        <span className={setupStep === 'target' ? 'font-semibold text-accent-text' : undefined}>2. New Cluster</span><span aria-hidden>→</span><span>3. Review & create</span>
+        <span className={setupStep === 'target' ? 'font-semibold text-accent-text' : undefined}>2. New Cluster</span><span aria-hidden>→</span><span>3. Review &amp; create</span>
       </div>
       {manifest !== null && <button type="button" className="btn-secondary mb-4 px-3 py-1.5 text-xs" onClick={() => setEditingManifest(true)}>Continue editing current YAML</button>}
       {source?.kind === 'objectStore' && source.backupName && <label className="mb-4 flex items-start gap-2 text-sm text-theme-text-secondary">

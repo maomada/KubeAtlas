@@ -14,10 +14,10 @@ describe('resourceKindForCostWorkload', () => {
 
 describe('costUnavailableMessage', () => {
   it('gives actionable Kubecost source and authentication guidance', () => {
-    expect(costUnavailableMessage('source_unavailable')).toContain('Settings → Cost')
-    expect(costUnavailableMessage('authentication_error')).toContain('API key')
-    expect(costUnavailableMessage('configuration_mismatch')).toContain('not valid for this cluster')
-    expect(costUnavailableMessage('deployment_configuration_error')).toContain('launch flags')
+    expect(costUnavailableMessage('source_unavailable')).toContain('设置 → 成本')
+    expect(costUnavailableMessage('authentication_error')).toContain('API 密钥')
+    expect(costUnavailableMessage('configuration_mismatch')).toContain('不适用于此集群')
+    expect(costUnavailableMessage('deployment_configuration_error')).toContain('本地启动参数')
     expect(costUnavailableMessage('deployment_configuration_error')).toContain('Helm values')
   })
 
@@ -29,7 +29,7 @@ describe('costUnavailableMessage', () => {
   })
 
   it('does not point embedded deployments at standalone Settings', () => {
-    expect(costUnavailableMessage('no_cost_source', { settingsAvailable: false })).toContain('host application')
+    expect(costUnavailableMessage('no_cost_source', { settingsAvailable: false })).toContain('宿主应用')
     expect(costUnavailableMessage('no_cost_source', { settingsAvailable: false })).not.toContain('Settings')
   })
 })

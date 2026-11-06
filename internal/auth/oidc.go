@@ -452,11 +452,7 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(oidcForceLoginCookieName); err == nil && cookie.Value == "1" {
 		authOpts = append(authOpts, oauth2.SetAuthURLParam("prompt", "login"))
 		// Clear the cookie — only force login once
-		http.SetCookie(w, &http.Cookie{
-			Name:   oidcForceLoginCookieName,
-			Path:   "/",
-			MaxAge: -1,
-		})
+		http.SetCookie(w, h.clearFlowCookie(oidcForceLoginCookieName, r))
 	}
 
 	// PKCE (opt-in): generate a per-request verifier, stash it in a cookie for
@@ -503,11 +499,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// Clear the state cookie. Clear the verifier cookie at the same point (after
 	// state is validated) so a stale PKCE secret never lingers past a successful
 	// state check, regardless of what happens next in the exchange.
-	http.SetCookie(w, &http.Cookie{
-		Name:   oidcStateCookieName,
-		Path:   "/",
-		MaxAge: -1,
-	})
+	http.SetCookie(w, h.clearFlowCookie(oidcStateCookieName, r))
 	if h.pkceEnabled {
 		http.SetCookie(w, h.clearFlowCookie(oidcVerifierCookieName, r))
 	}

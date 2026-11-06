@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from release_policy import REPOSITORY, validate_inputs
@@ -79,7 +80,13 @@ def _replace_image_values(content, repository, version):
     return "\n".join(lines) + "\n"
 
 
-def prepare_chart(source_chart, destination, version, source_sha, repository):
+def platform_node_selector(platform):
+    if platform != "linux/amd64":
+        raise ValueError(f"Unsupported chart platform: {platform}")
+    return {"kubernetes.io/os": "linux", "kubernetes.io/arch": "amd64"}
+
+
+def prepare_chart(source_chart, destination, version, source_sha, repository, platform=None):
     shutil.copytree(source_chart, destination)
     metadata_path = destination / "Chart.yaml"
     metadata = metadata_path.read_text()
@@ -94,36 +101,40 @@ def prepare_chart(source_chart, destination, version, source_sha, repository):
     metadata_path.write_text(metadata)
 
     values_path = destination / "values.yaml"
-    values_path.write_text(
-        _replace_image_values(values_path.read_text(), repository, version)
-    )
+    values = _replace_image_values(values_path.read_text(), repository, version)
+    if platform is not None:
+        selector = json.dumps(platform_node_selector(platform))
+        values, count = re.subn(
+            r"(?m)^nodeSelector: *\{\} *$", lambda _: f"nodeSelector: {selector}", values
+        )
+        if count != 1:
+            raise ValueError("Expected one empty chart nodeSelector before platform staging")
+    values_path.write_text(values)
 
 
-def package_charts(source_dir, output_dir, version, source_sha, helm="helm", runner=subprocess.run):
+def package_charts(source_dir, output_dir, version, source_sha, helm="helm", runner=subprocess.run, platform=None):
     validate_inputs(REPOSITORY, "refs/heads/main", source_sha, version)
     source_root = Path(source_dir)
     output_root = Path(output_dir)
-    staging_root = output_root / ".staged"
     output_root.mkdir(parents=True, exist_ok=True)
-    if staging_root.exists():
-        shutil.rmtree(staging_root)
-    staging_root.mkdir()
-
     archives = []
-    for name, repository in CHARTS.items():
-        staged_chart = staging_root / name
-        prepare_chart(
-            source_root / "deploy" / "helm" / name,
-            staged_chart,
-            version,
-            source_sha,
-            repository,
-        )
-        runner(
-            [helm, "package", str(staged_chart), "--destination", str(output_root)],
-            check=True,
-        )
-        archives.append(output_root / f"{name}-{version}.tgz")
+    with tempfile.TemporaryDirectory(prefix=".kubeatlas-chart-stage-", dir=output_root.parent) as temporary:
+        staging_root = Path(temporary)
+        for name, repository in CHARTS.items():
+            staged_chart = staging_root / name
+            prepare_chart(
+                source_root / "deploy" / "helm" / name,
+                staged_chart,
+                version,
+                source_sha,
+                repository,
+                platform=platform,
+            )
+            runner(
+                [helm, "package", str(staged_chart), "--destination", str(output_root)],
+                check=True,
+            )
+            archives.append(output_root / f"{name}-{version}.tgz")
 
     checksums = []
     for archive in archives:
@@ -140,10 +151,11 @@ def main():
     parser.add_argument("--version", required=True)
     parser.add_argument("--sha", required=True)
     parser.add_argument("--helm", default="helm")
+    parser.add_argument("--platform", choices=("linux/amd64",))
     args = parser.parse_args()
     try:
         archives = package_charts(
-            args.source_dir, args.output_dir, args.version, args.sha, helm=args.helm
+            args.source_dir, args.output_dir, args.version, args.sha, helm=args.helm, platform=args.platform
         )
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print(f"Chart packaging failed: {error}", file=sys.stderr)

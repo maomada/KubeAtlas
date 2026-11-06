@@ -611,7 +611,6 @@ export function SettingsDialog({
               <h2 id="settings-dialog-title" className="text-lg font-semibold text-theme-text-primary">设置</h2>
               <span className="break-all text-[11px] text-theme-text-tertiary">
                 KubeAtlas{versionInfo?.currentVersion ? ` v${versionInfo.currentVersion.replace(/^v/, '')}` : ''}
-                <span className="text-theme-text-disabled"> · Skyhook 出品</span>
               </span>
               <UpdateNotification placement="settings" />
             </div>

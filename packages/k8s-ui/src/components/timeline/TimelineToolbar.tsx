@@ -20,7 +20,6 @@ import { type ShortcutScope } from '../../hooks/useKeyboardShortcuts'
 import { useRefreshAnimation } from '../../hooks/useRefreshAnimation'
 import { useAnimatedUnmount } from '../../hooks/useAnimatedUnmount'
 import { TRANSITION_MENU, overlayExitMs, overlayTransitionStyle } from '../../utils/animation'
-import { pluralize } from '../../utils/pluralize'
 import type { TimelineEvent, TimeRange } from '../../types'
 import type { TimelineGrouping } from '../../utils/resource-hierarchy'
 import type { ActivityFilterKey, ActivitySource, ActivityStats } from './timeline-filters'
@@ -39,16 +38,16 @@ export interface TimelineViewOptions {
 
 // The lane orderings, in the order they read in the menu (default first).
 const SORT_OPTIONS: { value: TimelineSort; label: string; tooltip: string }[] = [
-  { value: 'importance', label: 'Importance', tooltip: 'Rank lanes by interestingness — health problems, activity, and variety float to the top.' },
-  { value: 'recent', label: 'Recent activity', tooltip: 'Order lanes by their most recent event in view — what just moved bubbles to the top.' },
-  { value: 'name', label: 'Name (A→Z)', tooltip: 'Alphabetical by lane name (app groups by their title), case-insensitive.' },
+  { value: 'importance', label: '重要程度', tooltip: '按关注度排列泳道——健康问题、活动和多样性更高的排在前面。' },
+  { value: 'recent', label: '最近活动', tooltip: '按当前视图中最新事件排列泳道，最近发生变化的排在前面。' },
+  { value: 'name', label: '名称（A→Z）', tooltip: '按泳道名称字母顺序排列（应用组按标题排列），不区分大小写。' },
 ]
 
 // The 3-way grouping choices, in escalating-detail order (most grouped → flat).
 const GROUPING_OPTIONS: { value: TimelineGrouping; label: string; tooltip: string }[] = [
-  { value: 'app', label: 'Application', tooltip: 'Group lanes into the applications defined by the server (workload grouping + evidence).' },
-  { value: 'owner', label: 'Workload', tooltip: 'Group by owning workload (Deployment→ReplicaSet→Pod, Service→Deployment).' },
-  { value: 'flat', label: 'None', tooltip: 'No grouping — every resource is its own lane (K8s Events still attach to their owner).' },
+  { value: 'app', label: '应用', tooltip: '按服务端定义的应用分组泳道（工作负载分组和证据）。' },
+  { value: 'owner', label: '工作负载', tooltip: '按所属工作负载分组（Deployment→ReplicaSet→Pod，Service→Deployment）。' },
+  { value: 'flat', label: '不分组', tooltip: '每个资源单独作为一个泳道（Kubernetes 事件仍附加到所属资源）。' },
 ]
 
 export interface TimelineToolbarProps {
@@ -185,34 +184,34 @@ export function TimelineToolbar({
             scope={searchScope}
             shortcutId={searchShortcutId}
             className={searchClassName}
-            placeholder="Search..."
+            placeholder="搜索……"
           />
 
           {/* Activity filter — two orthogonal axes: a single-select SOURCE pick
               (which stream) plus a PROBLEMS toggle (only the severity slice of
               the picked source). Zero-count chips dim in place rather than
               disappearing — position memory without visual weight. */}
-          <div role="radiogroup" aria-label="Activity source" className="flex shrink-0 items-center gap-1.5">
+          <div role="radiogroup" aria-label="活动来源" className="flex shrink-0 items-center gap-1.5">
             <SourceChip
               active={activitySel.source === 'all'}
               onClick={() => setSource('all')}
-              label="All"
+              label="全部"
               count={stats.total}
-              tooltip="Everything — resource changes and K8s Events"
+              tooltip="全部活动——资源变更和 Kubernetes 事件"
             />
             <SourceChip
               active={activitySel.source === 'changes'}
               onClick={() => setSource('changes')}
-              label="Changes"
+              label="变更"
               count={stats.changes}
-              tooltip="Spec & status changes to the resource itself — creates, updates, deletes"
+              tooltip="资源本身的规格和状态变更——创建、更新、删除"
             />
             <SourceChip
               active={activitySel.source === 'k8s_events'}
               onClick={() => setSource('k8s_events')}
-              label="K8s Events"
+              label="Kubernetes 事件"
               count={stats.k8sEvents}
-              tooltip="Native Kubernetes Event objects — what the cluster reported: scheduling, image pulls, restarts (Normal + Warning)"
+              tooltip="原生 Kubernetes Event 对象——集群报告的调度、镜像拉取和重启（Normal + Warning）"
             />
           </div>
           <ProblemsToggle
@@ -264,10 +263,10 @@ export function TimelineToolbar({
             <span className="min-w-0 truncate text-xs text-theme-text-tertiary">
               {/* "Showing": the visible-slice count, worded apart from the
                   strip's loaded total so the two numbers don't read as one. */}
-              {counts.resources !== undefined && `Showing ${pluralize(counts.resources, 'resource')} · `}
-              {counts.resources === undefined && 'Showing '}
-              {pluralize(counts.events, 'event')}
-              {countsFiltered && ' (filtered)'}
+              {counts.resources !== undefined && `显示 ${counts.resources.toLocaleString()} 个资源 · `}
+              {counts.resources === undefined && '显示 '}
+              {counts.events.toLocaleString()} 个事件
+              {countsFiltered && '（已筛选）'}
             </span>
           )}
 
@@ -277,12 +276,12 @@ export function TimelineToolbar({
           {viewOptions && <ViewMenu viewOptions={viewOptions} />}
 
           {onRefresh && (
-            <Tooltip content="Refresh" position="bottom" wrapperClassName="shrink-0">
+            <Tooltip content="刷新" position="bottom" wrapperClassName="shrink-0">
               <button
                 type="button"
                 onClick={handleRefresh}
                 disabled={isRefreshAnimating}
-                aria-label="Refresh"
+                aria-label="刷新"
                 className="p-2 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-lg disabled:opacity-50"
               >
                 <RefreshCw className={clsx('w-4 h-4', isRefreshAnimating && 'animate-spin')} />
@@ -304,7 +303,7 @@ export function TimelineToolbar({
                   : 'border-theme-border-light text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary',
               )}
             >
-              Legend
+              图例
             </button>
           )}
 
@@ -324,7 +323,7 @@ export function TimelineToolbar({
                 )}
               >
                 <List className="w-4 h-4" />
-                List
+                列表
               </button>
               <button
                 type="button"
@@ -335,7 +334,7 @@ export function TimelineToolbar({
                 )}
               >
                 <GanttChart className="w-4 h-4" />
-                Timeline
+                时间线
               </button>
             </div>
           )}
@@ -392,9 +391,9 @@ function ProblemsToggle({ active, count, source, onClick }: {
 }) {
   const dead = !active && count === 0
   const tooltip =
-    source === 'changes' ? 'Only changes that left the resource unhealthy or degraded.'
-    : source === 'k8s_events' ? 'Only Warning-type events (e.g. ImagePullBackOff, FailedScheduling).'
-    : 'Only problem activity: Warning events and changes that left a resource unhealthy or degraded. Combines with the source pick.'
+    source === 'changes' ? '仅显示导致资源不健康或状态降级的变更。'
+    : source === 'k8s_events' ? '仅显示 Warning 类型事件（例如 ImagePullBackOff、FailedScheduling）。'
+    : '仅显示问题活动：Warning 事件，以及导致资源不健康或状态降级的变更。此筛选会与活动来源组合使用。'
   return (
     <Tooltip content={tooltip} position="bottom" disabled={dead} wrapperClassName="shrink-0">
       <button
@@ -411,7 +410,7 @@ function ProblemsToggle({ active, count, source, onClick }: {
         )}
       >
         <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500" aria-hidden />
-        <span>Problems</span>
+        <span>问题</span>
         <span className={clsx('tabular-nums text-xs', active ? 'text-amber-700/80 dark:text-amber-400/80' : 'text-theme-text-tertiary')}>
           {count.toLocaleString()}
         </span>
@@ -496,14 +495,14 @@ export function ViewMenu({ viewOptions }: { viewOptions: TimelineViewOptions }) 
         )}
       >
         <SlidersHorizontal className="h-4 w-4" />
-        <span>View</span>
+        <span>视图</span>
         <ChevronDown className="w-3.5 h-3.5 text-theme-text-tertiary" />
       </button>
 
       {shouldRender && (
         <div
           role="menu"
-          aria-label="View options"
+          aria-label="视图选项"
           inert={!open}
           className={clsx(
             'absolute right-0 top-full z-50 mt-1 min-w-[14rem] origin-top-right rounded-lg border border-theme-border bg-theme-elevated p-2 shadow-theme-lg',
@@ -513,17 +512,17 @@ export function ViewMenu({ viewOptions }: { viewOptions: TimelineViewOptions }) 
           )}
           style={overlayTransitionStyle(isOpen, 'menu')}
         >
-          <span className="block px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-theme-text-tertiary">Sort</span>
+          <span className="block px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-theme-text-tertiary">排序</span>
           <SegmentedRadioGroup
-            label="Lane sort"
+            label="泳道排序"
             options={SORT_OPTIONS}
             value={viewOptions.sort.value}
             onChange={(v) => { viewOptions.sort.onChange(v); setOpen(false) }}
           />
           <span aria-hidden className="my-2 block h-px bg-theme-border" />
-          <span className="block px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-theme-text-tertiary">Group by</span>
+          <span className="block px-2 pb-1 text-[10px] font-bold uppercase tracking-[0.08em] text-theme-text-tertiary">分组方式</span>
           <SegmentedRadioGroup
-            label="Lane grouping"
+            label="泳道分组"
             options={GROUPING_OPTIONS}
             value={viewOptions.grouping.value}
             onChange={(v) => { viewOptions.grouping.onChange(v); setOpen(false) }}
@@ -548,14 +547,14 @@ export function PinnedOnlyToggle({
   return (
     <Tooltip
       content={pinnedOnly
-        ? 'Showing pinned rows only. Click to show all rows again.'
-        : `Show only the ${pinnedCount} pinned row${pinnedCount === 1 ? '' : 's'} (resources and apps).`}
+        ? '仅显示已固定的行。点击可重新显示全部行。'
+        : `仅显示 ${pinnedCount} 个已固定的行（资源和应用）。`}
       position="bottom"
     >
       <button
         type="button"
         aria-pressed={pinnedOnly}
-        aria-label={pinnedOnly ? 'Show all rows' : 'Show pinned rows only'}
+        aria-label={pinnedOnly ? '显示全部行' : '仅显示已固定行'}
         onClick={() => onChange(!pinnedOnly)}
         className={clsx(
           'flex h-9 items-center gap-1.5 rounded-lg border px-2.5 text-sm transition-colors',
@@ -565,7 +564,7 @@ export function PinnedOnlyToggle({
         )}
       >
         <Pin className="h-4 w-4" />
-        {pinnedOnly && <span className="text-xs font-medium">only</span>}
+        {pinnedOnly && <span className="text-xs font-medium">仅固定</span>}
       </button>
     </Tooltip>
   )
@@ -585,14 +584,14 @@ export function DeletedEventsToggle({
   return (
     <Tooltip
       content={showDeleted
-        ? 'Delete events are shown. Click to hide them — resources whose only events are deletions will disappear from the list.'
-        : 'Delete events are hidden (resources with only deletions are not listed). Click to show them.'}
+        ? '当前显示删除事件。点击隐藏后，仅有删除事件的资源也会从列表中消失。'
+        : '当前隐藏删除事件（仅有删除事件的资源不会列出）。点击可显示。'}
       position="bottom"
     >
       <button
         type="button"
         aria-pressed={!showDeleted}
-        aria-label={showDeleted ? 'Hide delete events' : 'Show delete events'}
+        aria-label={showDeleted ? '隐藏删除事件' : '显示删除事件'}
         onClick={() => onChange(!showDeleted)}
         // Dashed pill like Kinds: Deleted is SCOPE (which resources exist),
         // not an event type — the dashed family marks the scope controls.
@@ -604,7 +603,7 @@ export function DeletedEventsToggle({
         )}
       >
         <Trash2 className="h-4 w-4" />
-        <span>{showDeleted ? 'Deleted' : 'Deleted hidden'}</span>
+        <span>{showDeleted ? '已删除' : '已隐藏删除项'}</span>
       </button>
     </Tooltip>
   )
@@ -737,7 +736,7 @@ function KindsMenu({ kindFilter, onKindFilterChange, kindOptions }: KindsMenuPro
         )}
       >
         <Boxes className="w-4 h-4" />
-        <span>Kinds</span>
+        <span>类型</span>
         {activeCount > 0 && (
           <span className="inline-flex min-w-[1.25rem] justify-center rounded-full bg-accent px-1.5 text-xs font-medium text-white tabular-nums">
             {activeCount}
@@ -778,11 +777,11 @@ function KindsMenu({ kindFilter, onKindFilterChange, kindOptions }: KindsMenuPro
             onDone={() => setOpen(false)}
             search={search}
             onSearchChange={setSearch}
-            searchPlaceholder="Filter kinds"
-            summaryEmptyLabel="All kinds"
-            noItemsLabel="No kinds available."
+            searchPlaceholder="筛选类型"
+            summaryEmptyLabel="全部类型"
+            noItemsLabel="没有可用类型。"
             clearAllDisabled={activeCount === 0}
-            clearAllAriaLabel="Clear kind selection"
+            clearAllAriaLabel="清除类型选择"
           />
         </div>,
         document.body,

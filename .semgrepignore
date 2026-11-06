@@ -1,0 +1,1 @@
+# Target selection is explicit in scripts/security_scan.py; no implicit test ignores.

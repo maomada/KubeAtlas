@@ -329,7 +329,7 @@ function ProtectionGuide({
                     onOpenOperator()
                   }}
                 >
-                  Operator & plugin prerequisites →
+                  Operator &amp; plugin prerequisites →
                 </button>
               )}
               {onOpenYaml && (

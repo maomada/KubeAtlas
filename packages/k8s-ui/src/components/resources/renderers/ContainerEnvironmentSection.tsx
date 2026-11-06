@@ -78,9 +78,9 @@ export function ContainerEnvironmentSection({
     (sum, container) => sum + container.rows.filter(row => row.sensitive && !row.placeholder).length,
     0,
   )
-  const subtitle = total + ' variable' + (total === 1 ? '' : 's')
-    + (secretBacked ? ' · ' + secretBacked + ' from Secrets' : '')
-    + (unavailableSources ? ' · ' + unavailableSources + ' source' + (unavailableSources === 1 ? '' : 's') + ' unavailable' : '')
+  const subtitle = total + ' 个变量'
+    + (secretBacked ? ' · ' + secretBacked + ' 个来自 Secret' : '')
+    + (unavailableSources ? ' · ' + unavailableSources + ' 个来源不可用' : '')
 
   if (!active) return null
   const showStatus = active.rows.some(hasEnvironmentStatus)
@@ -98,26 +98,26 @@ export function ContainerEnvironmentSection({
       const value = await onReveal(active.name, row.name)
       setRevealed(current => ({ ...current, [key]: value }))
     } catch (error) {
-      setRevealErrors(current => ({ ...current, [key]: error instanceof Error ? error.message : 'Reveal failed' }))
+      setRevealErrors(current => ({ ...current, [key]: error instanceof Error ? error.message : '显示失败' }))
     } finally {
       setRevealing(current => withoutKey(current, key))
     }
   }
 
   return (
-    <Section title={'Environment Variables  ·  ' + subtitle} icon={List} defaultExpanded={false} contentClassName="pl-2">
+    <Section title={'环境变量  ·  ' + subtitle} icon={List} defaultExpanded={false} contentClassName="pl-2">
       <div className="@container/env min-w-0 space-y-3">
         <p className="text-xs text-theme-text-tertiary">
-          Shows values from the Pod's current configuration and where they come from. Secret values stay hidden until you reveal them.
+          显示 Pod 当前配置中的变量及其来源。Secret 值在主动显示前会保持隐藏。
         </p>
         <p className="text-xs text-theme-text-tertiary">
-          <Tooltip content="The cluster can add networking-related variables when the container starts. They are not stored on the Pod, so Radar cannot show them." position="right">
-            <span className="cursor-help border-b border-dotted border-theme-text-tertiary" tabIndex={0}>Only variables declared on the Pod are shown.</span>
+          <Tooltip content="容器启动时集群可能会添加网络相关变量。这些变量不会存储在 Pod 上，因此无法显示。" position="right">
+            <span className="cursor-help border-b border-dotted border-theme-text-tertiary" tabIndex={0}>这里只显示 Pod 上声明的变量。</span>
           </Tooltip>
         </p>
 
         {visibleContainers.length > 1 && (
-          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="Container">
+          <div className="flex flex-wrap gap-1.5" role="tablist" aria-label="容器">
             {visibleContainers.map(container => (
               <button
                 key={container.name}
@@ -153,16 +153,16 @@ export function ContainerEnvironmentSection({
             </colgroup>
             <thead className="bg-theme-elevated text-theme-text-tertiary">
               <tr>
-                <th className="px-2 py-1.5 font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2">Variable</th>
+                <th className="px-2 py-1.5 font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2">变量名</th>
                 <th className="px-2 py-1.5 font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2">
-                  <ExplainedLabel label="Value" explanation="The value in the Pod's current configuration. A running container may still have an older value if its ConfigMap or Secret changed after it started." />
+                  <ExplainedLabel label="值" explanation="Pod 当前配置中的值。如果 ConfigMap 或 Secret 在容器启动后发生变化，正在运行的容器可能仍使用旧值。" />
                 </th>
                 <th className="px-1 py-1.5 text-center font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2 @min-[760px]/env:text-left">
-                  <ExplainedLabel label="Source" explanation="Where this variable gets its value." />
+                  <ExplainedLabel label="来源" explanation="此变量值的来源。" />
                 </th>
                 {showStatus && (
                   <th className="px-1 py-1.5 text-center font-medium @min-[760px]/env:px-3 @min-[760px]/env:py-2 @min-[760px]/env:text-left">
-                    <ExplainedLabel label="Status" explanation="A change since the container started, or a problem reading this value." />
+                  <ExplainedLabel label="状态" explanation="容器启动后发生的变化，或读取此值时遇到的问题。" />
                   </th>
                 )}
               </tr>
@@ -174,7 +174,7 @@ export function ContainerEnvironmentSection({
                 return (
                   <tr key={row.name} className="align-top">
                     <td className="min-w-0 break-all px-2 py-1.5 font-mono text-theme-text-primary @min-[760px]/env:px-3 @min-[760px]/env:py-2">
-                      {row.placeholder ? 'All variables from this source' : row.name}
+                      {row.placeholder ? '此来源中的所有变量' : row.name}
                     </td>
                     <td className="min-w-0 px-2 py-1.5 font-mono text-theme-text-primary @min-[760px]/env:px-3 @min-[760px]/env:py-2">
                       <ValueCell
@@ -214,15 +214,15 @@ export function ContainerEnvironmentSection({
         </div>
 
         {active.truncated && (
-          <p className="text-xs text-warning-text">Some variables in this container were omitted.</p>
+          <p className="text-xs text-warning-text">此容器中的部分变量已省略。</p>
         )}
 
-        {environment.partial && <p className="text-xs text-warning-text">Some sources could not be read.</p>}
-        {environment.truncated && <p className="text-xs text-warning-text">This Pod has more sources or variables than Radar can show at once.</p>}
+        {environment.partial && <p className="text-xs text-warning-text">部分来源无法读取。</p>}
+        {environment.truncated && <p className="text-xs text-warning-text">此 Pod 的来源或变量过多，当前无法全部显示。</p>}
         {environment.coverage.degraded && (
-          <p className="text-xs text-warning-text">{environment.coverage.degradedReason || 'Recent changes could not be checked.'}</p>
+          <p className="text-xs text-warning-text">{environment.coverage.degradedReason || '无法检查近期变化。'}</p>
         )}
-        {environment.coverage.saturated && <p className="text-xs text-warning-text">Some recent changes may not be shown.</p>}
+        {environment.coverage.saturated && <p className="text-xs text-warning-text">部分近期变化可能未显示。</p>}
       </div>
     </Section>
   )
@@ -248,18 +248,18 @@ function ValueCell({
   revealEnabled: boolean
 }) {
   if (row.runtimeDependent) {
-    const explanation = row.message || 'The final value is decided when the container starts.'
+    const explanation = row.message || '容器启动时确定最终值。'
     return (
-      <Tooltip content={row.value ? `${explanation} Pod configuration: ${row.value}` : explanation} position="top">
-        <span className="cursor-help border-b border-dotted border-theme-text-tertiary text-theme-text-tertiary" tabIndex={0}>Set at startup</span>
+      <Tooltip content={row.value ? `${explanation} Pod 配置：${row.value}` : explanation} position="top">
+        <span className="cursor-help border-b border-dotted border-theme-text-tertiary text-theme-text-tertiary" tabIndex={0}>启动时设置</span>
       </Tooltip>
     )
   }
   if (row.state === 'missing') {
     if (row.optional) {
       return (
-        <Tooltip content={row.message || 'This optional variable is not set.'} position="top">
-          <span className="cursor-help border-b border-dotted border-theme-text-tertiary text-theme-text-tertiary" tabIndex={0}>Not set</span>
+        <Tooltip content={row.message || '此可选变量未设置。'} position="top">
+          <span className="cursor-help border-b border-dotted border-theme-text-tertiary text-theme-text-tertiary" tabIndex={0}>未设置</span>
         </Tooltip>
       )
     }
@@ -276,9 +276,9 @@ function ValueCell({
               onClick={onReveal}
               disabled={!revealEnabled || revealing}
               className="text-theme-text-tertiary transition-colors hover:text-theme-text-primary disabled:cursor-not-allowed disabled:opacity-40"
-              aria-label={revealed ? 'Hide value' : 'Reveal value'}
+              aria-label={revealed ? '隐藏值' : '显示值'}
             >
-              <Tooltip content={revealed ? 'Hide Secret value' : 'Reveal this Secret value'} delay={150}>
+              <Tooltip content={revealed ? '隐藏 Secret 值' : '显示此 Secret 值'} delay={150}>
                 {revealed ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </Tooltip>
             </button>
@@ -286,9 +286,9 @@ function ValueCell({
           {revealed && (
             <ValueCopyButton onCopy={onCopy} copied={copied} />
           )}
-          {revealing && <span className="text-theme-text-tertiary">Loading…</span>}
+          {revealing && <span className="text-theme-text-tertiary">正在加载…</span>}
         </div>
-        {revealed?.encoding === 'base64' && <div className="text-theme-text-tertiary">Base64-encoded binary value</div>}
+        {revealed?.encoding === 'base64' && <div className="text-theme-text-tertiary">Base64 编码的二进制值</div>}
         {revealError && <div className="text-theme-text-secondary">{revealError}</div>}
       </div>
     )
@@ -311,9 +311,9 @@ function ValueCopyButton({ onCopy, copied }: { onCopy: () => void; copied: boole
         'shrink-0 text-theme-text-tertiary transition-[color,opacity] hover:text-theme-text-primary focus-visible:opacity-100',
         copied ? 'opacity-100' : 'opacity-0 group-hover/value:opacity-100 group-focus-within/value:opacity-100',
       )}
-      aria-label={copied ? 'Value copied' : 'Copy value'}
+      aria-label={copied ? '值已复制' : '复制值'}
     >
-      <Tooltip content={copied ? 'Copied' : 'Copy value'} delay={150}>
+      <Tooltip content={copied ? '已复制' : '复制值'} delay={150}>
         {copied
           ? <Check className="h-3.5 w-3.5 text-green-400" aria-hidden />
           : <Copy className="h-3.5 w-3.5" aria-hidden />}
@@ -347,7 +347,7 @@ function CompactSourceCell({
       onClick={navigate}
     >
       {compactSourceIcon(source.kind)}
-      <span className="sr-only">{navigate ? `View ${source.kind}/${source.name}` : source.kind}</span>
+      <span className="sr-only">{navigate ? `查看 ${source.kind}/${source.name}` : displaySourceKind(source.kind)}</span>
     </Badge>
   )
 
@@ -368,16 +368,23 @@ function compactSourceIcon(kind: string) {
   return <Equal className={className} aria-hidden />
 }
 
+function displaySourceKind(kind: string) {
+  if (kind === 'Direct') return '直接设置'
+  if (kind === 'Container resources') return '容器资源'
+  if (kind === 'Variable') return '变量'
+  return kind
+}
+
 function compactSourceExplanation(row: PodEnvironmentRow, canNavigate: boolean) {
   let explanation = describeSource(row.source)
   if ((row.dependencies?.length ?? 0) > 0) {
-    explanation += ' It also uses ' + formatSources(row.dependencies!) + '.'
+    explanation += ' 同时还使用 ' + formatSources(row.dependencies!) + '。'
   }
   if ((row.shadowedSources?.length ?? 0) > 0) {
-    explanation += ' Overrides earlier ' + formatSources(row.shadowedSources!) + '.'
+    explanation += ' 覆盖了更早的来源 ' + formatSources(row.shadowedSources!) + '。'
   }
   if (canNavigate) {
-    explanation += ` Click to view the ${row.source.kind}.`
+    explanation += ` 点击查看 ${displaySourceKind(row.source.kind)}。`
   }
   return explanation
 }
@@ -395,7 +402,7 @@ function SourceCell({
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-1.5">
       <SourceLabel source={row.source} namespace={namespace} onNavigate={onNavigate} />
-      {dependencies.length > 0 && <span className="text-theme-text-tertiary">using</span>}
+      {dependencies.length > 0 && <span className="text-theme-text-tertiary">使用</span>}
       {dependencies.map((dependency, index) => (
         <SourceLabel
           key={dependency.kind + '\u0000' + dependency.name + '\u0000' + dependency.key + '\u0000' + index}
@@ -405,9 +412,9 @@ function SourceCell({
         />
       ))}
       {(row.shadowedSources?.length ?? 0) > 0 && (
-        <Tooltip content={'Earlier source' + (row.shadowedSources!.length === 1 ? ': ' : 's: ') + formatSources(row.shadowedSources!)}>
+        <Tooltip content={'更早的来源：' + formatSources(row.shadowedSources!)}>
           <span className="cursor-help border-b border-dotted border-theme-text-tertiary text-theme-text-tertiary" tabIndex={0}>
-            overrides {row.shadowedSources!.length} earlier source{row.shadowedSources!.length === 1 ? '' : 's'}
+            覆盖了 {row.shadowedSources!.length} 个更早的来源
           </span>
         </Tooltip>
       )}
@@ -426,7 +433,7 @@ function SourceLabel({
 }) {
   if ((source.kind === 'Secret' || source.kind === 'ConfigMap') && source.name) {
     const explanation = describeSource(source)
-    const navigationHint = onNavigate ? ` Click to view the ${source.kind}.` : ''
+    const navigationHint = onNavigate ? ` 点击查看 ${displaySourceKind(source.kind)}。` : ''
     return (
       <span className="inline-flex min-w-0 max-w-full flex-wrap items-center gap-x-1.5 gap-y-0.5">
         <Tooltip content={explanation + navigationHint} position="top" wrapperClassName="min-w-0">
@@ -447,18 +454,12 @@ function SourceLabel({
   }
   if (source.kind === 'Variable' && source.variable) {
     return (
-      <Tooltip content={`This value uses the earlier ${source.variable} environment variable.`}>
+      <Tooltip content={`使用较早定义的 ${source.variable} 环境变量。`}>
         <span className="cursor-help border-b border-dotted border-theme-text-tertiary font-mono text-theme-text-secondary" tabIndex={0}>{source.variable}</span>
       </Tooltip>
     )
   }
-  const label = source.kind === 'Direct'
-    ? 'Set directly'
-    : source.kind === 'Pod'
-      ? 'Pod'
-      : source.kind === 'Container resources'
-        ? 'Container resources'
-        : source.kind
+  const label = displaySourceKind(source.kind)
   const explanation = describeSource(source)
   return (
     <Tooltip content={explanation}>
@@ -468,25 +469,25 @@ function SourceLabel({
 }
 
 function describeSource(source: PodEnvironmentSource) {
-  if (source.kind === 'Direct') return 'Set directly in this container\'s configuration.'
+  if (source.kind === 'Direct') return '直接配置于此容器。'
   if (source.kind === 'Secret') {
-    return `Secret/${source.name} stores sensitive configuration${source.key ? `; this value uses its ${source.key} key` : ''}. The value stays hidden until you reveal it.`
+    return `Secret/${source.name} 中存储敏感配置${source.key ? `；此值使用其 ${source.key} 键` : ''}。显示前会保持隐藏。`
   }
   if (source.kind === 'ConfigMap') {
-    return `ConfigMap/${source.name} stores non-sensitive configuration${source.key ? `; this value uses its ${source.key} key` : ''}.`
+    return `ConfigMap/${source.name} 中存储非敏感配置${source.key ? `；此值使用其 ${source.key} 键` : ''}。`
   }
   if (source.kind === 'Pod') {
-    return `Comes from the Pod itself${source.key ? ` (${source.key})` : ''}, such as its name, namespace, IP, or assigned node. The running container read this value when it started.`
+    return `来自 Pod 本身${source.key ? `（${source.key}）` : ''}，例如名称、命名空间、IP 或分配的节点。正在运行的容器在启动时读取此值。`
   }
   if (source.kind === 'Container resources') {
-    return `Calculated from a container's CPU or memory request or limit${source.key ? ` (${source.key})` : ''}. The running container read this value when it started.`
+    return `根据容器 CPU 或内存请求或限制计算${source.key ? `（${source.key}）` : ''}。正在运行的容器在启动时读取此值。`
   }
-  if (source.kind === 'Variable') return `Uses the earlier ${source.variable} environment variable.`
-  return `Value source: ${source.kind}.`
+  if (source.kind === 'Variable') return `使用较早定义的 ${source.variable} 环境变量。`
+  return `值来源：${source.kind}。`
 }
 
 function formatSources(sources: PodEnvironmentSource[]) {
-  return sources.map(source => source.kind
+  return sources.map(source => displaySourceKind(source.kind)
     + (source.name ? '/' + source.name : source.variable ? '/' + source.variable : '')
     + (source.key ? '[' + source.key + ']' : '')).join(', ')
 }
@@ -499,16 +500,16 @@ function CompactStatusCell({ row }: { row: PodEnvironmentRow }) {
   }
   if (row.evidence) {
     const label = row.evidence.kind === 'added'
-      ? 'Added after start'
+      ? '启动后新增'
       : row.evidence.kind === 'removed'
-        ? 'Removed after start'
-        : 'Changed after start'
+        ? '启动后移除'
+        : '启动后变更'
     return <CompactStatusBadge label={label} explanation={changeEvidenceExplanation(row.evidence)} severity="warning" icon={<History className="h-3.5 w-3.5" aria-hidden />} />
   }
-  if (row.state === 'denied') return <CompactStatusBadge label="Access needed" explanation={row.message} severity="info" icon={<LockKeyhole className="h-3.5 w-3.5" aria-hidden />} />
-  if (row.runtimeDependent) return <CompactStatusBadge label="At startup" explanation={row.message} severity="neutral" icon={<Minus className="h-3.5 w-3.5" aria-hidden />} />
-  if (row.state === 'missing' && row.optional) return <CompactStatusBadge label="Not set" explanation={row.message} severity="neutral" icon={<Minus className="h-3.5 w-3.5" aria-hidden />} />
-  if (row.state === 'unavailable') return <CompactStatusBadge label="Unavailable" explanation={row.message} severity="neutral" icon={<CircleOff className="h-3.5 w-3.5" aria-hidden />} />
+  if (row.state === 'denied') return <CompactStatusBadge label="需要访问权限" explanation={row.message} severity="info" icon={<LockKeyhole className="h-3.5 w-3.5" aria-hidden />} />
+  if (row.runtimeDependent) return <CompactStatusBadge label="启动时设置" explanation={row.message} severity="neutral" icon={<Minus className="h-3.5 w-3.5" aria-hidden />} />
+  if (row.state === 'missing' && row.optional) return <CompactStatusBadge label="未设置" explanation={row.message} severity="neutral" icon={<Minus className="h-3.5 w-3.5" aria-hidden />} />
+  if (row.state === 'unavailable') return <CompactStatusBadge label="不可用" explanation={row.message} severity="neutral" icon={<CircleOff className="h-3.5 w-3.5" aria-hidden />} />
   return null
 }
 
@@ -543,28 +544,28 @@ function StatusCell({ row }: { row: PodEnvironmentRow }) {
   }
   if (row.evidence) {
     const label = row.evidence.kind === 'added'
-      ? 'Added after start'
+      ? '启动后新增'
       : row.evidence.kind === 'removed'
-        ? 'Removed after start'
-        : 'Changed after start'
+        ? '启动后移除'
+        : '启动后变更'
     return <StatusBadge explanation={changeEvidenceExplanation(row.evidence)}><Badge severity="warning" size="sm">{label}</Badge></StatusBadge>
   }
-  if (row.state === 'denied') return <StatusBadge explanation={row.message}><Badge severity="info" size="sm">Access needed</Badge></StatusBadge>
-  if (row.runtimeDependent) return <StatusBadge explanation={row.message}><Badge severity="neutral" size="sm">At startup</Badge></StatusBadge>
-  if (row.state === 'missing' && row.optional) return <StatusBadge explanation={row.message}><Badge severity="neutral" size="sm">Not set</Badge></StatusBadge>
-  if (row.state === 'unavailable') return <StatusBadge explanation={row.message}><Badge severity="neutral" size="sm">Unavailable</Badge></StatusBadge>
+  if (row.state === 'denied') return <StatusBadge explanation={row.message}><Badge severity="info" size="sm">需要访问权限</Badge></StatusBadge>
+  if (row.runtimeDependent) return <StatusBadge explanation={row.message}><Badge severity="neutral" size="sm">启动时设置</Badge></StatusBadge>
+  if (row.state === 'missing' && row.optional) return <StatusBadge explanation={row.message}><Badge severity="neutral" size="sm">未设置</Badge></StatusBadge>
+  if (row.state === 'unavailable') return <StatusBadge explanation={row.message}><Badge severity="neutral" size="sm">不可用</Badge></StatusBadge>
   return null
 }
 
 function missingStatus(row: PodEnvironmentRow) {
-  const label = row.missingImpact === 'restartBlocked' ? 'Restart blocked' : 'Prevents start'
+  const label = row.missingImpact === 'restartBlocked' ? '重启受阻' : '阻止启动'
   const explanation = [row.message, changeEvidenceExplanation(row.evidence)].filter(Boolean).join(' ')
   return { label, explanation }
 }
 
 function changeEvidenceExplanation(evidence?: PodEnvironmentEvidence) {
   if (!evidence) return undefined
-  return [evidence.message, `Change observed at ${formatLogTimestamp(evidence.changedAt, 'iso-utc')}.`].filter(Boolean).join(' ')
+  return [evidence.message, `变更时间：${formatLogTimestamp(evidence.changedAt, 'iso-utc')}。`].filter(Boolean).join(' ')
 }
 
 function hasEnvironmentStatus(row: PodEnvironmentRow) {

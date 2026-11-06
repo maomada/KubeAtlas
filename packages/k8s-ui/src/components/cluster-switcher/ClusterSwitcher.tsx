@@ -13,6 +13,7 @@ import { Input } from '../ui/Input'
 import { MiddleEllipsis } from '../ui/MiddleEllipsis'
 import { StatusDot, type StatusTone } from '../ui/status-tone'
 import { useKeepInViewport } from '../../hooks/useKeepInViewport'
+import { resolveNavigationUrl } from '../../utils/navigation-url'
 
 export interface ClusterSwitcherItem {
   id: string
@@ -31,7 +32,7 @@ export interface ClusterSwitcherItem {
   group?: { key: string; label?: string }
   disabled?: boolean
   status?: StatusTone
-  /** Hard navigation target. Takes precedence over the parent's `onSelect`. */
+  /** HTTP(S) or relative navigation target. Takes precedence over `onSelect`. */
   href?: string
   /** Native tooltip — useful on disabled rows to explain why the row is inert.
    *  ClusterName supplies its own tooltip for the cluster name itself; this
@@ -104,6 +105,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
   label,
 }, ref) => {
   const [isOpen, setIsOpen] = useState(false)
+  const [navigationError, setNavigationError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -149,6 +151,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
 
   useEffect(() => {
     if (!isOpen) return
+    setNavigationError(null)
     setSearch('')
     setHighlightedIndex(-1)
     requestAnimationFrame(() => searchInputRef.current?.focus())
@@ -184,11 +187,17 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
 
   const select = (item: ClusterSwitcherItem) => {
     if (item.disabled || item.id === currentId) return
-    setIsOpen(false)
     if (item.href) {
-      window.location.href = item.href
+      const target = resolveNavigationUrl(item.href, window.location.href)
+      if (!target) {
+        setNavigationError('集群链接无效，仅支持 HTTP(S) 地址')
+        return
+      }
+      setIsOpen(false)
+      window.location.href = target
       return
     }
+    setIsOpen(false)
     onSelect?.(item)
   }
 
@@ -437,8 +446,9 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
             <div className="border-t border-theme-border bg-theme-base">{footerSlot}</div>
           )}
 
-          {errorSlot && (
+          {(navigationError || errorSlot) && (
             <div className="px-3 py-2 bg-red-500/10 border-t border-red-500/20">
+              {navigationError && <p role="alert">{navigationError}</p>}
               {errorSlot}
             </div>
           )}

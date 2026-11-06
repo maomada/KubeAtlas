@@ -57,8 +57,8 @@ describe('cost source presentation', () => {
   })
 
   it('does not point embedded users at standalone Settings', () => {
-    expect(costIntegrationUnavailableMessage('no_cost_source', true)).toContain('Settings → Metrics')
-    expect(costIntegrationUnavailableMessage('no_cost_source', false)).toContain('host application')
+    expect(costIntegrationUnavailableMessage('no_cost_source', true)).toContain('设置 → 指标')
+    expect(costIntegrationUnavailableMessage('no_cost_source', false)).toContain('宿主应用')
     expect(costIntegrationUnavailableMessage('source_unavailable', false)).not.toContain('Settings')
     expect(costIntegrationUnavailableMessage('authentication_error', false)).not.toContain('Settings')
   })
@@ -66,10 +66,10 @@ describe('cost source presentation', () => {
 
 it('gives connection guidance without claiming an unreachable source ran a query', () => {
   const standalone = costIntegrationUnavailableMessage('query_error', true)
-  expect(standalone).toContain('Settings → Metrics')
-  expect(standalone).toContain('Settings → Cost')
+  expect(standalone).toContain('设置 → 指标')
+  expect(standalone).toContain('设置 → 成本')
   expect(standalone).not.toContain('query failed')
   const embedded = costIntegrationUnavailableMessage('query_error', false)
-  expect(embedded).toContain('Ask your operator')
+  expect(embedded).toContain('联系运维人员')
   expect(embedded).not.toContain('Settings')
 })

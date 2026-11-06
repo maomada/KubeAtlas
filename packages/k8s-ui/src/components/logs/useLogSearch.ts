@@ -1,6 +1,12 @@
 import { useState, useMemo, useCallback, useDeferredValue, useEffect, useRef } from 'react'
 import type { VirtuosoHandle } from 'react-virtuoso'
 import type { LogEntry } from './useLogBuffer'
+import {
+  type LogSearchRange,
+  type LogSearchResult,
+} from './logSearchCore'
+import { createLogSearchWorker, type LogSearchWorker, type LogSearchWorkerFactory } from '../../utils/log-search-worker'
+export type { LogSearchWorker, LogSearchWorkerFactory } from '../../utils/log-search-worker'
 import { stripAnsi, escapeRegExp } from '../../utils/log-format'
 
 export type LogSearchMode = 'highlight' | 'only' | 'hide'
@@ -18,13 +24,16 @@ interface UseLogSearchReturn {
   setMode: (mode: LogSearchMode) => void
   /** Whether the query currently narrows the visible lines (only/hide with a non-empty, valid query) */
   isFiltering: boolean
+  isSearching: boolean
   matchCount: number
   currentMatch: number
   /** Indices into the entries array that match */
   matchIndices: number[]
+  /** Regex match ranges keyed by entry index in the input entries array. */
+  ranges: Record<number, LogSearchRange[]>
   /** The lines left after applying the mode: matching lines for `only`, non-matching for `hide` */
   filteredEntries: LogEntry[]
-  /** Error message when regex is invalid (null when valid) */
+  /** Error message when regex search cannot be completed */
   regexError: string | null
   goToNext: () => void
   goToPrev: () => void
@@ -49,12 +58,57 @@ export function applySearchMode<T extends { id: number }>(
   return entries.filter(e => matchedRecords.has(recordIdOf(e)) === keepMatches)
 }
 
+const EMPTY_RESULT: LogSearchResult = { matchIndices: [], ranges: {} }
+const EMPTY_ENTRIES: LogEntry[] = []
+const TIMEOUT_ERROR = '正则搜索超时，已取消；请简化表达式或缩小日志范围'
+const UNAVAILABLE_ERROR = '当前环境不支持隔离正则搜索'
+const WORKER_ERROR = '正则搜索失败，请简化表达式或缩小日志范围'
+
+interface LogSearchCriteria {
+  readonly query: string
+  readonly isRegex: boolean
+  readonly isCaseSensitive: boolean
+  readonly workerFactory: LogSearchWorkerFactory
+}
+
+interface LogSearchSnapshot {
+  readonly criteria: LogSearchCriteria | null
+  readonly entries: LogEntry[]
+  readonly result: LogSearchResult
+  readonly error: string | null
+}
+
+interface ActiveLogSearchJob {
+  id: number
+  criteria: LogSearchCriteria
+  entries: LogEntry[]
+  worker: LogSearchWorker
+  timeout: ReturnType<typeof setTimeout> | null
+  settled: boolean
+}
+
+const EMPTY_SNAPSHOT: LogSearchSnapshot = {
+  criteria: null,
+  entries: EMPTY_ENTRIES,
+  result: EMPTY_RESULT,
+  error: null,
+}
+
+function sameCriteria(left: LogSearchCriteria | null, right: LogSearchCriteria): boolean {
+  return left !== null &&
+    left.query === right.query &&
+    left.isRegex === right.isRegex &&
+    left.isCaseSensitive === right.isCaseSensitive &&
+    left.workerFactory === right.workerFactory
+}
+
 export function useLogSearch(
   entries: LogEntry[],
   virtuosoRef: React.RefObject<VirtuosoHandle | null>,
   /** Id of the record an entry belongs to (its first line's id); defaults to the entry itself */
   recordIdOf?: (entry: LogEntry) => number,
   onNavigate?: () => void,
+  workerFactory: LogSearchWorkerFactory = createLogSearchWorker,
 ): UseLogSearchReturn {
   const [query, setQuery] = useState('')
   const [isRegex, setIsRegex] = useState(false)
@@ -62,25 +116,24 @@ export function useLogSearch(
   const [mode, setMode] = useState<LogSearchMode>('highlight')
   const [currentMatch, setCurrentMatch] = useState(0)
   const [isOpen, setIsOpen] = useState(false)
+  const [snapshot, setSnapshot] = useState(EMPTY_SNAPSHOT)
+  const activeJob = useRef<ActiveLogSearchJob | null>(null)
+  const requestId = useRef(0)
 
-  // The scan strips ANSI and regex-tests every buffered line — on a multi-MB
-  // buffer that's too slow to run synchronously per keystroke. Deferring lets
-  // the input echo immediately while the match set catches up.
+  // Deferring keeps the search input responsive while large log buffers are scanned.
   const deferredQuery = useDeferredValue(query)
+  const criteria = useMemo(
+    () => ({ query, isRegex, isCaseSensitive, workerFactory }),
+    [query, isRegex, isCaseSensitive, workerFactory],
+  )
 
-  const { matchIndices, regexError } = useMemo(() => {
-    if (!deferredQuery) {
+  const literalSearch = useMemo(() => {
+    if (!deferredQuery || isRegex) {
       return { matchIndices: [] as number[], regexError: null }
     }
 
     try {
-      let pattern: RegExp
-      if (isRegex) {
-        pattern = new RegExp(deferredQuery, isCaseSensitive ? 'g' : 'gi')
-      } else {
-        pattern = new RegExp(escapeRegExp(deferredQuery), isCaseSensitive ? 'g' : 'gi')
-      }
-
+      const pattern = new RegExp(escapeRegExp(deferredQuery), isCaseSensitive ? 'g' : 'gi')
       const indices: number[] = []
       for (let i = 0; i < entries.length; i++) {
         const plain = stripAnsi(entries[i].content)
@@ -95,9 +148,97 @@ export function useLogSearch(
     }
   }, [entries, deferredQuery, isRegex, isCaseSensitive])
 
+  const cancelActiveJob = useCallback(() => {
+    const job = activeJob.current
+    if (!job) return
+    activeJob.current = null
+    job.settled = true
+    requestId.current++
+    if (job.timeout !== null) clearTimeout(job.timeout)
+    job.worker.terminate()
+  }, [])
+
+  useEffect(() => {
+    return cancelActiveJob
+  }, [query, isRegex, isCaseSensitive, workerFactory, cancelActiveJob])
+
+  useEffect(() => {
+    if (!isRegex || !query || query !== deferredQuery || activeJob.current) return
+    const criteriaMatches = sameCriteria(snapshot.criteria, criteria)
+    if (criteriaMatches && (snapshot.error || snapshot.entries === entries)) return
+
+    let worker: LogSearchWorker
+    try {
+      worker = workerFactory()
+    } catch {
+      setSnapshot({ criteria, entries, result: EMPTY_RESULT, error: UNAVAILABLE_ERROR })
+      return
+    }
+
+    const id = ++requestId.current
+    const job: ActiveLogSearchJob = {
+      id,
+      criteria,
+      entries,
+      worker,
+      timeout: null,
+      settled: false,
+    }
+    const finish = (result: LogSearchResult, error: string | null) => {
+      if (job.settled || activeJob.current !== job || requestId.current !== id) return
+      job.settled = true
+      activeJob.current = null
+      if (job.timeout !== null) clearTimeout(job.timeout)
+      worker.terminate()
+      setSnapshot({ criteria: job.criteria, entries: job.entries, result, error })
+    }
+
+    job.timeout = setTimeout(() => {
+      finish(EMPTY_RESULT, TIMEOUT_ERROR)
+    }, 2000)
+    activeJob.current = job
+
+    worker.onmessage = event => {
+      if (event.data.id !== id) return
+      if ('error' in event.data) {
+        finish(EMPTY_RESULT, event.data.error)
+      } else {
+        finish(event.data.result, null)
+      }
+    }
+    worker.onerror = () => {
+      finish(EMPTY_RESULT, WORKER_ERROR)
+    }
+    try {
+      worker.postMessage({
+        id,
+        lines: entries.map(entry => stripAnsi(entry.content)),
+        query,
+        isCaseSensitive,
+      })
+    } catch {
+      finish(EMPTY_RESULT, WORKER_ERROR)
+    }
+  }, [entries, query, deferredQuery, isRegex, isCaseSensitive, workerFactory, criteria, snapshot])
+
+  const snapshotCriteriaMatches = sameCriteria(snapshot.criteria, criteria)
+  const regexResultMatches = isRegex &&
+    !!query &&
+    query === deferredQuery &&
+    snapshotCriteriaMatches &&
+    snapshot.entries === entries
+  const regexError = isRegex && query && snapshotCriteriaMatches ? snapshot.error : null
+  const isSearching = isRegex && !!query && !regexError && !regexResultMatches
+  const matchIndices = !query
+    ? EMPTY_RESULT.matchIndices
+    : isRegex
+      ? (regexResultMatches ? snapshot.result.matchIndices : EMPTY_RESULT.matchIndices)
+      : literalSearch.matchIndices
+  const ranges = regexResultMatches ? snapshot.result.ranges : EMPTY_RESULT.ranges
+
   // Gate on the live query too, so clearing or closing search unfilters immediately
   // rather than after the deferred value catches up.
-  const isFiltering = mode !== 'highlight' && !!query && !!deferredQuery && !regexError
+  const isFiltering = mode !== 'highlight' && !!query && !!deferredQuery && !regexError && !isSearching
   const filteredEntries = useMemo(
     () => (isFiltering ? applySearchMode(entries, matchIndices, mode, recordIdOf) : entries),
     [entries, isFiltering, mode, matchIndices, recordIdOf],
@@ -107,7 +248,7 @@ export function useLogSearch(
     return new Map(filteredEntries.map((e, i) => [e.id, i]))
   }, [mode, isFiltering, filteredEntries])
 
-  // Reset current match when search criteria change (but not when new entries arrive during streaming)
+  // Reset current match when search criteria change (but not when new entries arrive during streaming).
   const prevCriteria = useRef({ query, isRegex, isCaseSensitive })
   useEffect(() => {
     if (
@@ -162,9 +303,10 @@ export function useLogSearch(
 
   const open = useCallback(() => setIsOpen(true), [])
   const close = useCallback(() => {
+    cancelActiveJob()
     setIsOpen(false)
     setQuery('')
-  }, [])
+  }, [cancelActiveJob])
 
   return {
     query,
@@ -177,9 +319,11 @@ export function useLogSearch(
     mode,
     setMode,
     isFiltering,
+    isSearching,
     matchCount: matchIndices.length,
     currentMatch,
     matchIndices,
+    ranges,
     filteredEntries,
     regexError,
     goToNext,

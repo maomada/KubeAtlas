@@ -49,7 +49,8 @@ def _read_descriptor(descriptor, blob_reader, description):
     return blob
 
 
-def validate_index(index_bytes, blob_reader):
+def validate_index(index_bytes, blob_reader, expected_labels=None, expected_platforms=None):
+    expected_platforms = EXPECTED_PLATFORMS if expected_platforms is None else expected_platforms
     index = _load_json(index_bytes, "OCI image index")
     if index.get("schemaVersion") != 2 or not isinstance(index.get("manifests"), list):
         raise ValueError("OCI image index must have schemaVersion 2 and a manifests array")
@@ -79,10 +80,18 @@ def validate_index(index_bytes, blob_reader):
         config = _load_json(config_bytes, f"{operating_system}/{architecture} image config")
         if config.get("os") != operating_system or config.get("architecture") != architecture:
             raise ValueError(f"{operating_system}/{architecture} image config does not match its descriptor")
+        if expected_labels is not None:
+            labels = config.get("config", {}).get("Labels")
+            if not isinstance(labels, dict) or any(
+                labels.get(key) != value for key, value in expected_labels.items()
+            ):
+                raise ValueError(
+                    f"{operating_system}/{architecture} image config provenance labels do not match"
+                )
         platforms[platform_key] = descriptor["digest"]
 
-    if set(platforms) != EXPECTED_PLATFORMS:
-        expected = sorted(f"{os}/{architecture}" for os, architecture in EXPECTED_PLATFORMS)
+    if set(platforms) != set(expected_platforms):
+        expected = sorted(f"{os}/{architecture}" for os, architecture in expected_platforms)
         actual = sorted(f"{os}/{architecture}" for os, architecture in platforms)
         raise ValueError(f"OCI platforms must be exactly {expected}; found {actual}")
     return platforms
@@ -101,7 +110,26 @@ def _read_archive_member(archive, name):
     return stream.read()
 
 
-def _validate_archive_index(index_bytes, blob_reader):
+def validate_manifest(manifest_bytes, blob_reader, expected_labels=None, expected_platforms=None):
+    manifest = _load_json(manifest_bytes, "OCI manifest")
+    if "manifests" in manifest:
+        return validate_index(manifest_bytes, blob_reader, expected_labels, expected_platforms)
+    config = _load_json(
+        _read_descriptor(manifest.get("config"), blob_reader, "OCI image config"),
+        "OCI image config",
+    )
+    index = {
+        "schemaVersion": 2,
+        "manifests": [{
+            "digest": f"sha256:{hashlib.sha256(manifest_bytes).hexdigest()}",
+            "size": len(manifest_bytes),
+            "platform": {"os": config.get("os"), "architecture": config.get("architecture")},
+        }],
+    }
+    return validate_index(json.dumps(index).encode(), blob_reader, expected_labels, expected_platforms)
+
+
+def _validate_archive_index(index_bytes, blob_reader, expected_labels=None, expected_platforms=None):
     root_index = _load_json(index_bytes, "OCI archive root index")
     descriptors = root_index.get("manifests")
     if root_index.get("schemaVersion") != 2 or not isinstance(descriptors, list):
@@ -119,12 +147,15 @@ def _validate_archive_index(index_bytes, blob_reader):
         if "platform" in descriptor:
             raise ValueError("OCI archive root index descriptor must not declare a platform")
         platform_index = _read_descriptor(descriptor, blob_reader, "OCI archive root index")
-        return validate_index(platform_index, blob_reader)
+        return validate_index(platform_index, blob_reader, expected_labels, expected_platforms)
 
-    return validate_index(index_bytes, blob_reader)
+    if len(descriptors) == 1 and isinstance(descriptors[0], dict) and "platform" not in descriptors[0]:
+        manifest = _read_descriptor(descriptors[0], blob_reader, "OCI archive image")
+        return validate_manifest(manifest, blob_reader, expected_labels, expected_platforms)
+    return validate_index(index_bytes, blob_reader, expected_labels, expected_platforms)
 
 
-def validate_archive(archive_path, raw_manifest_path=None):
+def validate_archive(archive_path, raw_manifest_path=None, expected_labels=None, expected_platforms=None):
     try:
         archive = tarfile.open(archive_path, "r:*")
     except (OSError, tarfile.TarError) as error:
@@ -139,10 +170,10 @@ def validate_archive(archive_path, raw_manifest_path=None):
         def read_blob(name):
             return _read_archive_member(archive, name)
 
-        platforms = _validate_archive_index(index_bytes, read_blob)
+        platforms = _validate_archive_index(index_bytes, read_blob, expected_labels, expected_platforms)
         if raw_manifest_path is not None:
             raw_manifest = Path(raw_manifest_path).read_bytes()
-            raw_platforms = validate_index(raw_manifest, read_blob)
+            raw_platforms = validate_manifest(raw_manifest, read_blob, expected_labels, expected_platforms)
             if raw_platforms != platforms:
                 raise ValueError("skopeo raw manifest does not match the OCI archive platform descriptors")
         return platforms
@@ -186,6 +217,9 @@ def main():
     validate_parser = subparsers.add_parser("validate")
     validate_parser.add_argument("--archive", required=True)
     validate_parser.add_argument("--raw-manifest")
+    validate_parser.add_argument("--expected-source")
+    validate_parser.add_argument("--expected-revision")
+    validate_parser.add_argument("--expected-version")
 
     copy_parser = subparsers.add_parser("verify-copy")
     copy_parser.add_argument("--layout", required=True)
@@ -195,7 +229,16 @@ def main():
     args = parser.parse_args()
     try:
         if args.command == "validate":
-            platforms = validate_archive(args.archive, args.raw_manifest)
+            expected_labels = None
+            if any((args.expected_source, args.expected_revision, args.expected_version)):
+                if not all((args.expected_source, args.expected_revision, args.expected_version)):
+                    raise ValueError("all expected OCI provenance labels must be supplied together")
+                expected_labels = {
+                    "org.opencontainers.image.source": args.expected_source,
+                    "org.opencontainers.image.revision": args.expected_revision,
+                    "org.opencontainers.image.version": args.expected_version,
+                }
+            platforms = validate_archive(args.archive, args.raw_manifest, expected_labels)
             result = {
                 f"{operating_system}/{architecture}": digest
                 for (operating_system, architecture), digest in sorted(platforms.items())

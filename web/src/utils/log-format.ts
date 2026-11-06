@@ -2,6 +2,7 @@ export {
   formatLogTimestamp,
   getLevelColor,
   highlightSearchMatches,
+  highlightLiteralSearchMatches,
   escapeHtml,
   stripAnsi,
   ansiToHtml,

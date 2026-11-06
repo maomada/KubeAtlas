@@ -25,12 +25,19 @@ import (
 
 const maxTokenMapBytes = 1 << 20
 
+var version = "dev"
+
 func main() {
+	showVersion := flag.Bool("version", false, "Print version and exit")
 	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
 	dataFile := flag.String("data-file", "./portal-data/registry.json", "Persistent registry JSON file")
 	fleetDataFile := flag.String("fleet-data-file", "", "Persistent Fleet state JSON file (default: <data-file directory>/fleet/state.json)")
 	insecureCookie := flag.Bool("insecure-cookie", false, "Allow non-Secure viewer cookies for loopback HTTP development only")
 	flag.Parse()
+	if *showVersion {
+		fmt.Printf("kubeatlas-portal %s\n", version)
+		return
+	}
 	if host, _, err := net.SplitHostPort(*listen); err == nil &&
 		host != "localhost" && !net.ParseIP(host).IsLoopback() {
 		log.Printf("WARNING: Portal is listening beyond loopback; use only on a trusted isolated development network, never on the public internet or in production")

@@ -1,5 +1,3 @@
-//go:build darwin || windows
-
 package updater
 
 import (
@@ -11,14 +9,23 @@ import (
 	"strings"
 )
 
-// extractZip extracts a zip file to the given directory.
+const maxZipExtractedBytes int64 = 1 << 30
+
 func extractZip(zipPath, destDir string) error {
+	return extractZipWithLimit(zipPath, destDir, maxZipExtractedBytes)
+}
+
+func extractZipWithLimit(zipPath, destDir string, maxBytes int64) error {
+	if maxBytes <= 0 {
+		return fmt.Errorf("invalid zip extraction limit")
+	}
 	r, err := zip.OpenReader(zipPath)
 	if err != nil {
 		return err
 	}
 	defer r.Close()
 
+	remaining := maxBytes
 	for _, f := range r.File {
 		target := filepath.Join(destDir, f.Name)
 		// Guard against zip slip
@@ -31,6 +38,9 @@ func extractZip(zipPath, destDir string) error {
 				return fmt.Errorf("create directory %s: %w", f.Name, err)
 			}
 			continue
+		}
+		if f.UncompressedSize64 > uint64(remaining) {
+			return fmt.Errorf("zip exceeds extracted size limit of %d bytes", maxBytes)
 		}
 
 		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
@@ -48,11 +58,17 @@ func extractZip(zipPath, destDir string) error {
 			return err
 		}
 
-		if _, err := io.Copy(outFile, rc); err != nil {
+		n, err := io.Copy(outFile, io.LimitReader(rc, remaining+1))
+		if err != nil || n > remaining {
 			outFile.Close()
 			rc.Close()
+			os.Remove(target)
+			if err == nil {
+				return fmt.Errorf("zip exceeds extracted size limit of %d bytes", maxBytes)
+			}
 			return err
 		}
+		remaining -= n
 
 		// A failed close can mean a truncated write; swallowing it would let
 		// the updater install a corrupt binary.

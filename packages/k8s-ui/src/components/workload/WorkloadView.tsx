@@ -3955,7 +3955,7 @@ function ConfigurationInputsCard({
           )}
         </div>
         <div className="min-w-0">
-          <div className="mb-1 text-xs font-medium text-theme-text-tertiary">Policy & storage</div>
+          <div className="mb-1 text-xs font-medium text-theme-text-tertiary">Policy &amp; storage</div>
           {policyRefs.length > 0 && onSwitchToTopology ? (
             <button type="button" onClick={onSwitchToTopology} className="text-left text-xs text-theme-text-secondary hover:text-accent-text">
               {policyRefs.length} related resource{policyRefs.length === 1 ? '' : 's'} in Topology

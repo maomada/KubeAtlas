@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 permissions:
   contents: read
@@ -26,7 +27,7 @@ jobs:
     uses: ./.github/workflows/installers.yml
 
   # Decides which jobs a PR needs from every file it changes, not only those in
-  # the latest push. Pushes to main, and any PR touching .github/,
+  # the latest push. Pushes to main, and any PR touching CI orchestration,
   # run every job, so a gap in these filters surfaces on main at the latest.
   changes:
     name: Detect changes
@@ -48,7 +49,8 @@ jobs:
           predicate-quantifier: some-with-excludes
           filters: |
             ci:
-              - '.github/**'
+              - '.github/workflows/ci.yml'
+              - '.github/actions/**'
             pkg:
               - 'pkg/**'
               - 'testdata/**'
@@ -505,6 +507,9 @@ jobs:
           python3 -m py_compile
           scripts/release_policy.py
           scripts/test_release_policy.py
+          scripts/release_artifacts.py
+          scripts/test_release_artifacts.py
+          scripts/release_github.py
           scripts/release_registry.py
           scripts/test_release_registry.py
           scripts/release_chart_package.py
@@ -532,7 +537,7 @@ jobs:
   container-build:
     name: Container build (${{ matrix.component }})
     needs: changes
-    if: needs.changes.outputs.containers == 'true'
+    if: needs.changes.outputs.containers == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false

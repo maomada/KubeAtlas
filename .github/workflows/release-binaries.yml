@@ -1,0 +1,483 @@
+name: Release Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Full lowercase commit SHA on main with successful CI and Semgrep CE
+        required: true
+        type: string
+      version:
+        description: Strict SemVer without v prefix or build metadata
+        required: true
+        type: string
+      publish:
+        description: Publish using a signed approval from a successful dry run
+        required: true
+        default: false
+        type: boolean
+      build_run_id:
+        description: Successful dry-run workflow run ID for publication
+        required: false
+        type: string
+      approval_signature:
+        description: Base64 Ed25519 signature of release-approval.json
+        required: false
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: owned-binary-release
+  cancel-in-progress: false
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require canonical repository main
+        env:
+          REPOSITORY: ${{ github.repository }}
+          REF: ${{ github.ref }}
+          PUBLISH: ${{ inputs.publish }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          APPROVAL_SIGNATURE: ${{ inputs.approval_signature }}
+        run: |
+          test "$REPOSITORY" = maomada/KubeAtlas
+          test "$REF" = refs/heads/main
+          if [[ "$PUBLISH" == "true" ]]; then
+            if [[ -z "$BUILD_RUN_ID" || -z "$APPROVAL_SIGNATURE" ]]; then
+              echo "Publishing requires a dry-run ID and offline approval signature." >&2
+              exit 1
+            fi
+          elif [[ -n "$BUILD_RUN_ID" || -n "$APPROVAL_SIGNATURE" ]]; then
+            echo "Dry runs must not include a build run ID or approval signature." >&2
+            exit 1
+          fi
+
+  validate:
+    needs: guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      source_sha: ${{ steps.policy.outputs.source_sha }}
+      version: ${{ steps.policy.outputs.version }}
+      ci_url: ${{ steps.policy.outputs.ci_url }}
+      security_url: ${{ steps.policy.outputs.security_url }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - run: git -C source fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+      - name: Validate source policy
+        id: policy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 trusted/scripts/release_policy.py --source-dir source \
+            --sha "$SOURCE_SHA" --version "$VERSION" \
+            > "$RUNNER_TEMP/source-evidence.json"
+          python3 - "$RUNNER_TEMP/source-evidence.json" "$GITHUB_OUTPUT" <<'PY'
+          import json, sys
+          evidence = json.load(open(sys.argv[1], encoding="utf-8"))
+          with open(sys.argv[2], "a", encoding="utf-8") as out:
+              out.write(f"source_sha={evidence['sourceSha']}\n")
+              out.write(f"version={evidence['version']}\n")
+              out.write(f"ci_url={evidence['checks']['ci.yml']}\n")
+              out.write(f"security_url={evidence['checks']['security.yml']}\n")
+          PY
+
+  build:
+    needs: validate
+    if: ${{ inputs.publish != true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-go@v7
+        with:
+          go-version: '1.26'
+          cache: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+          cache-dependency-path: source/package-lock.json
+      - name: Install package inspection tools
+        run: sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
+      - name: Reclaim unused runner SDK space
+        run: |
+          df -h /
+          for directory in /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/share/boost; do
+            if [ -d "$directory" ]; then
+              sudo du -sh "$directory"
+              sudo rm -rf -- "$directory"
+            fi
+          done
+          df -h /
+      - name: Install pinned GoReleaser
+        run: go install github.com/goreleaser/goreleaser/v2@v2.13.3
+      - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - name: Build and validate package set without publishing
+        working-directory: source
+        env:
+          KUBEATLAS_RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          RELEASE_EVIDENCE_URLS: ${{ needs.validate.outputs.ci_url }} ${{ needs.validate.outputs.security_url }}
+        run: make release-binaries-dry RELEASE_ARTIFACT_TOOL=../trusted/scripts/release_artifacts.py
+      - name: Stage the strict local publication profile
+        working-directory: source
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
+        run: |
+          python3 ../trusted/scripts/release_artifacts.py stage-local \
+            --dist dist/release --output dist/publication \
+            --source-sha "$SOURCE_SHA" --version "$VERSION" \
+            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kubeatlas-binary-release
+          path: source/dist/release
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kubeatlas-binary-publication
+          path: source/dist/publication
+          if-no-files-found: error
+          retention-days: 14
+
+  windows-smoke:
+    name: Native Windows ZIP smoke
+    needs: [validate, build]
+    if: ${{ inputs.publish != true }}
+    runs-on: windows-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          sparse-checkout: |
+            scripts
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-binary-release
+          path: release
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Verify and run the actual Windows release binary
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+          RELEASE_DIR: release
+          EXTRACT_DIR: ${{ runner.temp }}/kubeatlas-windows-smoke
+        shell: pwsh
+        run: |
+          python trusted/scripts/release_windows_smoke.py `
+            --manifest "$env:RELEASE_DIR/binary-manifest.json" `
+            --archive "$env:RELEASE_DIR/kubeatlas_v$($env:VERSION)_windows_amd64.zip" `
+            --extract-dir "$env:EXTRACT_DIR" `
+            --version "$env:VERSION"
+
+  dry-run:
+    needs: [validate, build, windows-smoke]
+    if: ${{ inputs.publish != true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: kubeatlas-binary-release
+          path: release-full
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-binary-publication
+          path: release
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          sparse-checkout: |
+            scripts
+            .github
+          persist-credentials: false
+      - name: Revalidate exact artifact set
+        env:
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
+          python3 trusted/scripts/release_artifacts.py validate --directory release-full \
+            --source-sha "$SOURCE_SHA" \
+            --version "$VERSION" \
+            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
+          python3 trusted/scripts/release_artifacts.py validate --profile local --directory release \
+            --source-sha "$SOURCE_SHA" \
+            --version "$VERSION" \
+            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
+      - name: Create offline approval manifest
+        id: create-offline-approval
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          python3 trusted/scripts/release_approval.py create \
+            --channel binaries --artifact-root release \
+            --source-sha "$SOURCE_SHA" --version "$VERSION" \
+            --ci-url "$CI_URL" --security-url "$SECURITY_URL" \
+            --output "$RUNNER_TEMP/release-approval.json"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: release-approval
+          path: ${{ runner.temp }}/release-approval.json
+          if-no-files-found: error
+          retention-days: 90
+      - name: Record dry-run provenance
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
+        run: |
+          {
+            echo "## Binary release dry run"
+            echo "- Source: \`$SOURCE_SHA\`"
+            echo "- Version: \`$VERSION\`"
+            echo "- CI: $CI_URL"
+            echo "- Semgrep CE: $SECURITY_URL"
+            echo "- No GitHub Release or registry write was attempted."
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Upload dry-run approval provenance
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: kubeatlas-binary-dry-run-evidence
+          path: |
+            ${{ runner.temp }}/release-approval.json
+          if-no-files-found: warn
+          retention-days: 90
+
+  publish:
+    needs: validate
+    if: ${{ inputs.publish == true }}
+    runs-on: ubuntu-latest
+    environment:
+      name: ghcr-publish
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          sparse-checkout: |
+            scripts
+            .github
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          path: source
+          fetch-depth: 0
+          persist-credentials: false
+      - run: git -C source fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-binary-publication
+          path: release
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-approval
+          path: approval
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
+      - name: Verify signed approval before setup or release writes
+        id: approval_first
+        env:
+          APPROVAL_SIGNATURE: ${{ inputs.approval_signature }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          python3 trusted/scripts/release_approval.py verify \
+            --channel binaries --manifest approval/release-approval.json \
+            --artifact-root release --source-sha "$SOURCE_SHA" \
+            --version "$VERSION" --build-run-id "$BUILD_RUN_ID" \
+            --signature-output "$RUNNER_TEMP/release-approval.sig"
+      - name: Revalidate source after approval
+        id: source_policy
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          git -C trusted rev-parse HEAD
+          python3 trusted/scripts/release_policy.py --source-dir source \
+            --sha "$SOURCE_SHA" \
+            --version "$VERSION" \
+            > "$RUNNER_TEMP/post-approval-source-evidence.json"
+      - name: Validate selected local publication profile
+        id: artifacts
+        env:
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
+          python3 trusted/scripts/release_artifacts.py validate --profile local --directory release \
+            --source-sha "$SOURCE_SHA" \
+            --version "$VERSION" \
+            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
+      - name: Fail-closed tag and release collision preflight
+        id: preflight
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: python3 trusted/scripts/release_github.py --version "$VERSION" --source-sha "$SOURCE_SHA" --evidence "$RUNNER_TEMP/collision.json"
+      - name: Reverify offline approval immediately before publication
+        id: approval_second
+        env:
+          APPROVAL_SIGNATURE: ${{ inputs.approval_signature }}
+          BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          python3 trusted/scripts/release_approval.py verify \
+            --channel binaries --manifest approval/release-approval.json \
+            --artifact-root release --source-sha "$SOURCE_SHA" \
+            --version "$VERSION" --build-run-id "$BUILD_RUN_ID"
+      - name: Atomically create tag ref at selected source
+        id: tag_ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: python3 trusted/scripts/release_github.py --create-tag --version "$VERSION" --source-sha "$SOURCE_SHA" --evidence "$RUNNER_TEMP/tag-ref.json"
+      - name: Create immutable draft release
+        id: draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          gh release create "v$VERSION" --repo maomada/KubeAtlas \
+            --verify-tag --draft --target "$SOURCE_SHA" \
+            --title "KubeAtlas $VERSION" \
+            --notes "Binary artifacts for source $SOURCE_SHA."
+      - name: Upload validated artifacts
+        id: upload
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: gh release upload "v$VERSION" release/* --repo maomada/KubeAtlas
+      - name: Finalize only after every upload succeeded
+        id: finalize
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          prerelease=()
+          [[ "$VERSION" == *-* ]] && prerelease=(--prerelease)
+          gh release edit "v$VERSION" --repo maomada/KubeAtlas \
+            --draft=false --latest=false "${prerelease[@]}"
+      - name: Write nonsecret provenance status
+        if: always()
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          ACTOR: ${{ github.actor }}
+          ARTIFACTS: ${{ steps.artifacts.outcome }}
+          SOURCE_POLICY: ${{ steps.source_policy.outcome }}
+          APPROVAL_FIRST: ${{ steps.approval_first.outcome }}
+          APPROVAL_SECOND: ${{ steps.approval_second.outcome }}
+          PREFLIGHT: ${{ steps.preflight.outcome }}
+          TAG_REF: ${{ steps.tag_ref.outcome }}
+          DRAFT: ${{ steps.draft.outcome }}
+          UPLOAD: ${{ steps.upload.outcome }}
+          FINALIZE: ${{ steps.finalize.outcome }}
+        run: |
+          mkdir -p "$RUNNER_TEMP"
+          python3 - <<'PY'
+          import json, os
+          keys = ("SOURCE_POLICY", "ARTIFACTS", "APPROVAL_FIRST", "APPROVAL_SECOND",
+                  "PREFLIGHT", "TAG_REF", "DRAFT", "UPLOAD", "FINALIZE")
+          result = {key.lower(): os.environ.get(key, "skipped") for key in keys}
+          result.update(repository="maomada/KubeAtlas", sourceSha=os.environ.get("SOURCE_SHA", ""),
+                        version=os.environ.get("VERSION", ""), workflowRun=os.environ.get("RUN_URL", ""),
+                        actor=os.environ.get("ACTOR", ""))
+          result["status"] = "published" if result["finalize"] == "success" else "partial-or-blocked"
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "release-status.json"), "w", encoding="utf-8") as f:
+              json.dump(result, f, indent=2, sort_keys=True)
+              f.write("\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
+              f.write(f"## Binary release status: {result['status']}\n")
+              f.write(f"- Source: `{result['sourceSha']}`\n- Version: `{result['version']}`\n")
+              f.write(f"- Workflow: {result['workflowRun']}\n")
+          PY
+      - name: Upload nonsecret provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kubeatlas-binary-release-evidence
+          path: |
+            ${{ runner.temp }}/collision.json
+            ${{ runner.temp }}/tag-ref.json
+            ${{ runner.temp }}/post-approval-source-evidence.json
+            ${{ runner.temp }}/release-status.json
+            approval/release-approval.json
+            ${{ runner.temp }}/release-approval.sig
+          if-no-files-found: warn
+          retention-days: 90

@@ -2770,8 +2770,8 @@ export function getCellFilterValue(resource: any, column: string, kind: string):
   if (typeof val === 'number') return String(val)
   if (typeof val === 'object') return '' // Skip objects/arrays — not filterable
   return String(val)
-  } catch (err) {
-    console.warn(`[getCellFilterValue] Failed for kind=${kind} column=${column}:`, err)
+  } catch {
+    console.warn('[getCellFilterValue] Failed to read resource filter value')
     return ''
   }
 }

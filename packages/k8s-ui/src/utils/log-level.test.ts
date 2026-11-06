@@ -11,6 +11,24 @@ import {
 } from './log-level'
 import { applySearchMode } from '../components/logs/useLogSearch'
 
+describe('Go frame recognition', () => {
+  it.each([
+    ['main.main()', true],
+    ['net/http.(*conn).serve(0xc000112000, {0x1a2b3c, 0x4})', true],
+    ['example.org/pkg.F[go.shape.int](arg(inner))', true],
+    ['pkg.func(arg(nested(deeper)))', false],
+    ['plain.message without a frame', false],
+    ['goroutine 1 [running]:', true],
+    ['created by net/http.(*Server).Serve in goroutine 1', true],
+  ] as const)('classifies %s', (line, expected) => {
+    expect(isContinuationLine(line)).toBe(expected)
+  })
+
+  it('rejects long dotted non-frame names', () => {
+    expect(isContinuationLine('a.'.repeat(100_000) + '!()')).toBe(false)
+  })
+})
+
 // Lines taken from real clusters (lightly shortened), grouped by the library that wrote them.
 const CASES: [string, string, LogLevel, LevelSource][] = [
   // klog — most Kubernetes controllers
