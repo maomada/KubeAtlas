@@ -1,118 +1,290 @@
 #!/usr/bin/env bash
 #
-# Live end-to-end RBAC test for Radar's auth-enabled mode.
+# Live end-to-end RBAC test for KubeAtlas auth-enabled mode.
 #
-# Spins up Radar with --auth-mode=proxy, applies test RoleBindings for two
-# imaginary users (alice, bob) restricted to different namespaces, and
-# verifies via curl that:
+# Requires an explicitly selected disposable cluster. Namespaces, fixture
+# ClusterRoles and ClusterRoleBindings are run-unique; the CRD is create-only
+# and a collision is refused. Cleanup uses only the durable UID ledger.
 #
-#   1. REST reads filter to each user's allowed namespaces
-#   2. MCP reads filter the same way
-#   3. The cache stays cluster-wide — alice's pick doesn't shrink bob's view
-#   4. Cluster-only kinds (Nodes) are hidden from non-admin users
-#   5. Picking a denied namespace is rejected
-#
-# Requires: kubectl, jq, curl, a working cluster. Pre-built radar binary
-# (run `make build` first) or pass --skip-build to skip rebuilding.
-#
-# WARNING: This script applies ClusterRoleBindings and RoleBindings to the
-# CURRENT cluster. Only run against a local kind/minikube cluster, never
-# against shared/prod infrastructure. The script asks for confirmation
-# unless --yes is passed. RBAC objects are cleaned up on exit (trap).
+# WARNING: never run against a shared or production cluster.
 
 set -euo pipefail
 
-# --- Config ---
-CTX=$(kubectl config current-context)
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PORT="${PORT:-9389}"
 AUTH_SECRET="rbac-test-secret-do-not-use-in-prod-1234567890"
-NS_ALICE="${NS_ALICE:-radar-rbac-alice}"
-NS_BOB="${NS_BOB:-radar-rbac-bob}"
-KUBEATLAS_BIN="${KUBEATLAS_BIN:-./radar}"
+KUBEATLAS_BIN="${KUBEATLAS_BIN:-./kubeatlas}"
 SKIP_BUILD=false
 ASSUME_YES=false
+SHOW_HELP=false
 
-# --- Arg parsing ---
 for arg in "$@"; do
   case "$arg" in
     --skip-build) SKIP_BUILD=true ;;
     --yes|-y) ASSUME_YES=true ;;
-    --help|-h) sed -n '2,/^$/p' "$0" | sed 's/^# \?//'; exit 0 ;;
+    --help|-h) SHOW_HELP=true ;;
     *) echo "unknown flag: $arg" >&2; exit 2 ;;
   esac
 done
+if [[ "$SHOW_HELP" == true ]]; then
+  sed -n '2,/^$/p' "$0" | sed 's/^# \?//'
+  printf 'Usage: %s [--skip-build] [--yes|-y]\n' "$0"
+  printf 'Set KUBEATLAS_TEST_CONTEXT explicitly; NS_ALICE and NS_BOB may override the run-unique defaults.\n'
+  exit 0
+fi
 
-# --- Colors ---
+CTX="${KUBEATLAS_TEST_CONTEXT:-}"
+[[ -n "$CTX" ]] || {
+  echo "KUBEATLAS_TEST_CONTEXT is required; the current context is never selected implicitly." >&2
+  exit 2
+}
+
+for bin in kubectl jq curl python3 sha256sum git; do
+  command -v "$bin" >/dev/null 2>&1 || { echo "missing required dependency: $bin" >&2; exit 1; }
+done
+if [[ "$SKIP_BUILD" != true ]]; then
+  command -v make >/dev/null 2>&1 || { echo "missing required dependency: make" >&2; exit 1; }
+  echo "Building KubeAtlas..."
+  make build >/dev/null
+fi
+[[ -x "$KUBEATLAS_BIN" ]] || {
+  echo "KubeAtlas binary not found or not executable at $KUBEATLAS_BIN." >&2
+  exit 1
+}
+
+SOURCE_SHA="$(git rev-parse HEAD)"
+if [[ -z "$(git status --porcelain)" ]]; then
+  SOURCE_STATE=clean
+else
+  SOURCE_STATE=dirty
+fi
+if [[ "$SKIP_BUILD" == true ]]; then
+  BINARY_PROVENANCE="unknown (--skip-build)"
+else
+  BINARY_DIR="${KUBEATLAS_BIN%/*}"
+  if [[ "$BINARY_DIR" == "$KUBEATLAS_BIN" ]]; then
+    BINARY_DIR="."
+  elif [[ -z "$BINARY_DIR" ]]; then
+    BINARY_DIR="/"
+  fi
+  BINARY_PATH="$(cd -- "$BINARY_DIR" && pwd -P)/${KUBEATLAS_BIN##*/}"
+  DEFAULT_BINARY_PATH="$(pwd -P)/kubeatlas"
+  if [[ "$BINARY_PATH" == "$DEFAULT_BINARY_PATH" ]]; then
+    BINARY_PROVENANCE="make build from checkout $SOURCE_SHA ($SOURCE_STATE)"
+  else
+    BINARY_PROVENANCE="unknown (custom KUBEATLAS_BIN override)"
+  fi
+fi
+read -r BINARY_SHA _ < <(sha256sum "$KUBEATLAS_BIN")
+if ! BINARY_VERSION="$("$KUBEATLAS_BIN" --version 2>&1)"; then
+  echo "KubeAtlas binary --version preflight failed." >&2
+  exit 1
+fi
+if ! python3 - "$PORT" <<'PY'
+import socket
+import sys
+
+sock = socket.socket()
+try:
+    sock.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+then
+  echo "Port $PORT is already in use; refusing to start KubeAtlas." >&2
+  exit 1
+fi
+
+RUN_ID="$(python3 -c 'import uuid; print(uuid.uuid4().hex[:12])')"
+RUN_OWNER="rbac-$RUN_ID"
+NS_ALICE="${NS_ALICE:-kubeatlas-rbac-alice-$RUN_ID}"
+NS_BOB="${NS_BOB:-kubeatlas-rbac-bob-$RUN_ID}"
+[[ "$NS_ALICE" != "$NS_BOB" ]] || { echo "NS_ALICE and NS_BOB must differ." >&2; exit 2; }
+CR_PODS="kubeatlas-rbac-$RUN_ID-pods-only"
+CR_NODES="kubeatlas-rbac-$RUN_ID-nodes-only"
+CRB_CAROL="kubeatlas-rbac-$RUN_ID-carol"
+CRB_ERIN="kubeatlas-rbac-$RUN_ID-erin"
+CRD_NAME="radartests.test.skyhook.io"
+RUN_DIR=""
+LEDGER=""
+FROZEN_KUBECONFIG=""
+KUBEATLAS_PID=""
+MUTATIONS_STARTED=false
+FAILS=0
+
 G='\033[0;32m'; R='\033[0;31m'; Y='\033[1;33m'; B='\033[1;34m'; N='\033[0m'
 ok()   { echo -e "${G}✓${N} $1"; }
 fail() { echo -e "${R}✗${N} $1"; FAILS=$((FAILS+1)); }
 info() { echo -e "${B}→${N} $1"; }
 warn() { echo -e "${Y}⚠${N} $1"; }
 
-FAILS=0
-KUBEATLAS_PID=""
-
-# --- Cleanup trap ---
-cleanup() {
-  set +e
-  if [[ -n "$KUBEATLAS_PID" ]]; then
-    info "stopping radar (pid $KUBEATLAS_PID)"
-    kill "$KUBEATLAS_PID" 2>/dev/null
-    wait "$KUBEATLAS_PID" 2>/dev/null
-  fi
-  info "removing test RBAC + namespaces + CRD"
-  kubectl delete clusterrolebinding "radar-rbac-test-impersonator" "radar-rbac-test-carol" "radar-rbac-test-erin" --ignore-not-found >/dev/null 2>&1
-  kubectl delete clusterrole "radar-rbac-test-pods-only" "radar-rbac-test-nodes-only" --ignore-not-found >/dev/null 2>&1
-  kubectl delete -n "$NS_ALICE" rolebinding "radar-test-alice" "radar-test-dave-a" "radar-test-frank" "radar-test-frank-view" --ignore-not-found >/dev/null 2>&1
-  kubectl delete -n "$NS_ALICE" role "radar-rbac-test-secret-reader" --ignore-not-found >/dev/null 2>&1
-  kubectl delete -n "$NS_BOB" rolebinding "radar-test-bob" "radar-test-dave-b" --ignore-not-found >/dev/null 2>&1
-  kubectl delete namespace "$NS_ALICE" "$NS_BOB" --ignore-not-found >/dev/null 2>&1
-  # Delete CRD instances first, then the CRD itself
-  kubectl delete radartests.test.skyhook.io --all --ignore-not-found >/dev/null 2>&1
-  kubectl delete crd radartests.test.skyhook.io --ignore-not-found >/dev/null 2>&1
-}
-trap cleanup EXIT
-
-# --- Safety check ---
 echo
-echo -e "${Y}This will apply test RBAC objects to: ${B}${CTX}${N}"
-if [[ "$ASSUME_YES" != "true" ]]; then
-  read -rp "Continue? [y/N] " ans
+echo -e "${Y}This will create disposable RBAC fixtures in context: ${B}${CTX}${N}"
+if [[ "$ASSUME_YES" != true ]]; then
+  if ! IFS= read -r -p "Continue? [y/N] " ans; then
+    echo "aborted (no confirmation)" >&2
+    exit 1
+  fi
   [[ "$ans" =~ ^[Yy]$ ]] || { echo "aborted"; exit 1; }
 fi
 
-# --- Pre-flight: dependencies ---
-for bin in kubectl jq curl; do
-  command -v "$bin" >/dev/null || { echo "missing: $bin"; exit 1; }
-done
+umask 077
+EVIDENCE_ROOT="${KUBEATLAS_RBAC_EVIDENCE_DIR:-${HOME}/.kubeatlas/test-runs}"
+if ! python3 - "$EVIDENCE_ROOT" "$SCRIPT_DIR/.." <<'PY'
+import sys
+from pathlib import Path
 
-# --- Build (unless skipped) ---
-if [[ "$SKIP_BUILD" != "true" ]]; then
-  info "building radar (run with --skip-build to skip)"
-  make build >/dev/null
+evidence = Path(sys.argv[1]).resolve()
+repository = Path(sys.argv[2]).resolve()
+if evidence == repository or repository in evidence.parents:
+    raise SystemExit(1)
+PY
+then
+  echo "RBAC evidence directory must be outside the repository." >&2
+  exit 1
 fi
-[[ -x "$KUBEATLAS_BIN" ]] || { echo "radar binary not found at $KUBEATLAS_BIN — run make build"; exit 1; }
+mkdir -p -- "$EVIDENCE_ROOT"
+RUN_DIR="$(mktemp -d "$EVIDENCE_ROOT/kubeatlas-rbac-${RUN_ID}.XXXXXX")"
+chmod 700 "$RUN_DIR"
+LEDGER="$RUN_DIR/ledger.jsonl"
+: > "$LEDGER"
+chmod 600 "$LEDGER"
+FROZEN_KUBECONFIG="$RUN_DIR/kubeconfig"
+remove_private_kubeconfig() {
+  [[ -z "$FROZEN_KUBECONFIG" ]] || rm -f -- "$FROZEN_KUBECONFIG"
+}
+trap remove_private_kubeconfig EXIT
 
-# --- Set up test fixtures ---
-info "creating test namespaces and pods"
-kubectl create namespace "$NS_ALICE" --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-kubectl create namespace "$NS_BOB"   --dry-run=client -o yaml | kubectl apply -f - >/dev/null
+if ! kubectl --context "$CTX" config view --raw --flatten --minify > "$FROZEN_KUBECONFIG" 2>/dev/null; then
+  echo "Unable to snapshot the selected kubeconfig; no cluster resources were changed." >&2
+  exit 1
+fi
+chmod 600 "$FROZEN_KUBECONFIG"
+kubectl --kubeconfig "$FROZEN_KUBECONFIG" --context "$CTX" config set current-context "$CTX" >/dev/null 2>&1
+FROZEN_CONTEXT="$(kubectl --kubeconfig "$FROZEN_KUBECONFIG" --context "$CTX" config current-context 2>/dev/null)"
+[[ "$FROZEN_CONTEXT" == "$CTX" ]] || {
+  echo "Frozen kubeconfig does not select KUBEATLAS_TEST_CONTEXT; no resources were changed." >&2
+  exit 1
+}
 
-kubectl run -n "$NS_ALICE" rbac-test-pod-a --image=registry.k8s.io/pause:3.9 --restart=Never \
-  --dry-run=client -o yaml 2>/dev/null | kubectl apply -f - >/dev/null
-kubectl run -n "$NS_BOB"   rbac-test-pod-b --image=registry.k8s.io/pause:3.9 --restart=Never \
-  --dry-run=client -o yaml 2>/dev/null | kubectl apply -f - >/dev/null
+kubectl_safe() {
+  kubectl --kubeconfig "$FROZEN_KUBECONFIG" --context "$CTX" "$@"
+}
+for namespace in "$NS_ALICE" "$NS_BOB"; do
+  if ! existing="$(kubectl_safe get namespace "$namespace" --ignore-not-found -o name 2>/dev/null)"; then
+    echo "Unable to check namespace collision for $namespace; no resources were changed." >&2
+    exit 1
+  fi
+  [[ -z "$existing" ]] || {
+    echo "Refusing to adopt existing namespace $namespace; no resources were changed." >&2
+    exit 1
+  }
+done
+if ! existing_crd="$(kubectl_safe get crd "$CRD_NAME" --ignore-not-found -o name 2>/dev/null)"; then
+  echo "Unable to check CRD collision; no resources were changed." >&2
+  exit 1
+fi
+[[ -z "$existing_crd" ]] || {
+  echo "Refusing to adopt existing CRD $CRD_NAME; no resources were changed." >&2
+  exit 1
+}
 
-# Seed a Secret in NS_ALICE so per-namespace Secret RBAC tests have something
-# to leak (or correctly hide). When the chart grants the SA cluster-wide
-# secrets (rbac.secrets / rbac.helm / auth.mode != "none" / cloud.enabled),
-# the cache holds it and per-user RBAC must decide visibility on read.
-kubectl create secret generic -n "$NS_ALICE" rbac-test-secret-a \
-  --from-literal=token=ignored \
-  --dry-run=client -o yaml 2>/dev/null | kubectl apply -f - >/dev/null
+cleanup() {
+  local original_status=$?
+  local cleanup_status=0
+  trap - EXIT
+  set +e
+  if [[ -n "$KUBEATLAS_PID" ]] && kill -0 "$KUBEATLAS_PID" 2>/dev/null; then
+    info "stopping KubeAtlas (pid $KUBEATLAS_PID)"
+    kill "$KUBEATLAS_PID" 2>/dev/null || cleanup_status=1
+    wait "$KUBEATLAS_PID" 2>/dev/null
+    wait_status=$?
+    [[ "$wait_status" -eq 0 || "$wait_status" -eq 143 ]] || cleanup_status=1
+  fi
+  if [[ "$MUTATIONS_STARTED" == true ]]; then
+    info "cleaning only UID-ledgered run fixtures"
+    python3 "$SCRIPT_DIR/engineering_rbac.py" cleanup \
+      --ledger "$LEDGER" --kubeconfig "$FROZEN_KUBECONFIG" \
+      --context "$CTX" --owner "$RUN_OWNER" || cleanup_status=1
+  fi
+  remove_private_kubeconfig
+  if [[ "$cleanup_status" -ne 0 ]]; then
+    echo "Cleanup failed or residue is uncertain; review ledger: $LEDGER" >&2
+    [[ "$original_status" -ne 0 ]] || original_status=1
+  fi
+  echo "RBAC evidence directory retained: $RUN_DIR"
+  exit "$original_status"
+}
+trap cleanup EXIT
+
+create_owned() {
+  python3 "$SCRIPT_DIR/engineering_rbac.py" create \
+    --ledger "$LEDGER" --kubeconfig "$FROZEN_KUBECONFIG" \
+    --context "$CTX" --owner "$RUN_OWNER"
+}
+
+info "Source checkout: $SOURCE_SHA ($SOURCE_STATE)"
+info "Binary provenance: $BINARY_PROVENANCE"
+info "Binary SHA-256: $BINARY_SHA"
+info "Binary version: $BINARY_VERSION"
+info "Frozen context: $CTX"
+info "Run ledger: $LEDGER"
+
+MUTATIONS_STARTED=true
+info "creating run-unique namespaces, pods and Secret"
+create_owned <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: $NS_ALICE
+EOF
+create_owned <<EOF
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: $NS_BOB
+EOF
+create_owned <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rbac-test-pod-a
+  namespace: $NS_ALICE
+spec:
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    imagePullPolicy: IfNotPresent
+  restartPolicy: Never
+EOF
+create_owned <<EOF
+apiVersion: v1
+kind: Pod
+metadata:
+  name: rbac-test-pod-b
+  namespace: $NS_BOB
+spec:
+  containers:
+  - name: pause
+    image: registry.k8s.io/pause:3.9
+    imagePullPolicy: IfNotPresent
+  restartPolicy: Never
+EOF
+create_owned <<EOF
+apiVersion: v1
+kind: Secret
+metadata:
+  name: rbac-test-secret-a
+  namespace: $NS_ALICE
+type: Opaque
+stringData:
+  token: ignored
+EOF
 
 info "installing test CRD (cluster-scoped, not in static cluster-only list)"
-cat <<'EOF' | kubectl apply -f - >/dev/null
+create_owned <<'EOF'
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
@@ -136,36 +308,70 @@ spec:
             type: object
             x-kubernetes-preserve-unknown-fields: true
 EOF
-# Wait for CRD to be Established (apiserver picks up the new schema)
-kubectl wait --for condition=Established crd/radartests.test.skyhook.io --timeout=10s >/dev/null 2>&1 || true
-# Create a couple of instances so list returns non-empty
-cat <<'EOF' | kubectl apply -f - >/dev/null
+kubectl_safe wait --for=condition=Established "crd/$CRD_NAME" --timeout=10s >/dev/null
+create_owned <<'EOF'
 apiVersion: test.skyhook.io/v1
 kind: RadarTest
 metadata:
   name: rbac-test-cluster-scoped-1
----
+EOF
+create_owned <<'EOF'
 apiVersion: test.skyhook.io/v1
 kind: RadarTest
 metadata:
   name: rbac-test-cluster-scoped-2
 EOF
 
-info "applying RoleBindings (alice→${NS_ALICE}, bob→${NS_BOB}, carol→cluster-wide pods only, dave→${NS_ALICE}+${NS_BOB}, erin→nodes-only) + impersonate ClusterRoleBinding"
-cat <<EOF | kubectl apply -f - >/dev/null
+info "creating run-scoped ClusterRoles and bindings"
+create_owned <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: $CR_PODS
+rules:
+- apiGroups: [""]
+  resources: ["pods", "namespaces"]
+  verbs: ["get", "list", "watch"]
+EOF
+create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: radar-rbac-test-impersonator
+  name: $CRB_CAROL
 subjects:
-- kind: ServiceAccount
-  name: default
-  namespace: default
+- kind: User
+  name: carol
 roleRef:
   kind: ClusterRole
-  name: cluster-admin
+  name: $CR_PODS
   apiGroup: rbac.authorization.k8s.io
----
+EOF
+create_owned <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: $CR_NODES
+rules:
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch"]
+EOF
+create_owned <<EOF
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: $CRB_ERIN
+subjects:
+- kind: User
+  name: erin
+roleRef:
+  kind: ClusterRole
+  name: $CR_NODES
+  apiGroup: rbac.authorization.k8s.io
+EOF
+
+info "creating namespaced RoleBindings and Secret reader fixtures"
+create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -178,7 +384,8 @@ roleRef:
   kind: ClusterRole
   name: view
   apiGroup: rbac.authorization.k8s.io
----
+EOF
+create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -191,32 +398,8 @@ roleRef:
   kind: ClusterRole
   name: view
   apiGroup: rbac.authorization.k8s.io
----
-# carol: cluster-wide pod read ONLY — verifies that "list pods cluster-wide"
-# isn't treated as cluster-admin for cluster-scoped resources.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: radar-rbac-test-pods-only
-rules:
-- apiGroups: [""]
-  resources: ["pods", "namespaces"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: radar-rbac-test-carol
-subjects:
-- kind: User
-  name: carol
-roleRef:
-  kind: ClusterRole
-  name: radar-rbac-test-pods-only
-  apiGroup: rbac.authorization.k8s.io
----
-# dave: multi-namespace user (verifies dashboard aggregation doesn't leak
-# beyond allowed namespaces).
+EOF
+create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -229,7 +412,8 @@ roleRef:
   kind: ClusterRole
   name: view
   apiGroup: rbac.authorization.k8s.io
----
+EOF
+create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -242,36 +426,8 @@ roleRef:
   kind: ClusterRole
   name: view
   apiGroup: rbac.authorization.k8s.io
----
-# erin: cluster-scoped read for nodes ONLY, no namespace access at all.
-# Verifies cluster-scoped reads aren't blocked by the noNamespaceAccess
-# short-circuit when the user has explicit cluster-scoped RBAC.
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: radar-rbac-test-nodes-only
-rules:
-- apiGroups: [""]
-  resources: ["nodes"]
-  verbs: ["get", "list", "watch"]
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: radar-rbac-test-erin
-subjects:
-- kind: User
-  name: erin
-roleRef:
-  kind: ClusterRole
-  name: radar-rbac-test-nodes-only
-  apiGroup: rbac.authorization.k8s.io
----
-# frank: view in NS_ALICE PLUS explicit secret list/get. Same namespace
-# ceiling as alice (who is bound to view, which excludes secrets) — frank
-# is the positive control. He must see Secrets where alice can't, proving
-# the per-namespace SAR gate honors RBAC grants rather than blanket-denying
-# secrets to all namespace-bound users.
+EOF
+create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -281,7 +437,8 @@ rules:
 - apiGroups: [""]
   resources: ["secrets"]
   verbs: ["get", "list", "watch"]
----
+EOF
+create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -294,10 +451,8 @@ roleRef:
   kind: Role
   name: radar-rbac-test-secret-reader
   apiGroup: rbac.authorization.k8s.io
----
-# frank also needs view (pods/services/etc.) so DiscoverNamespaces picks
-# up NS_ALICE as accessible. Without the view-binding, list-pods SAR fails
-# and AllowedNamespaces is empty, so the secret-only Role wouldn't matter.
+EOF
+create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
@@ -312,33 +467,52 @@ roleRef:
   apiGroup: rbac.authorization.k8s.io
 EOF
 
-# --- Boot Radar ---
-info "starting radar on port $PORT (auth-mode=proxy)"
-nohup "$KUBEATLAS_BIN" --port "$PORT" --auth-mode=proxy --auth-secret="$AUTH_SECRET" --no-browser \
-  > "/tmp/radar-rbac-test-$PORT.log" 2>&1 &
+info "starting KubeAtlas on port $PORT (auth-mode=proxy)"
+KUBECONFIG="$FROZEN_KUBECONFIG" nohup "$KUBEATLAS_BIN" \
+  --port "$PORT" --kubeconfig "$FROZEN_KUBECONFIG" \
+  --auth-mode=proxy --auth-secret="$AUTH_SECRET" --no-browser \
+  > "$RUN_DIR/kubeatlas.log" 2>&1 &
 KUBEATLAS_PID=$!
+LOGFILE="$RUN_DIR/kubeatlas.log"
 
-# Wait for ready (up to 30s)
-for i in $(seq 1 30); do
-  if curl -sf "http://localhost:$PORT/api/health" >/dev/null 2>&1; then
-    break
-  fi
+READY=false
+for _ in $(seq 1 30); do
   if ! kill -0 "$KUBEATLAS_PID" 2>/dev/null; then
-    echo "radar exited early — see /tmp/radar-rbac-test-$PORT.log"
+    echo "KubeAtlas exited early; see $LOGFILE" >&2
     exit 1
   fi
+  if curl -fsS --max-time 2 "http://localhost:$PORT/api/health" >/dev/null 2>&1; then
+    if ! kill -0 "$KUBEATLAS_PID" 2>/dev/null; then
+      echo "KubeAtlas exited during readiness; see $LOGFILE" >&2
+      exit 1
+    fi
+    READY=true
+    break
+  fi
   sleep 1
 done
-ok "radar ready at http://localhost:$PORT"
+[[ "$READY" == true ]] || { echo "KubeAtlas readiness timed out; see $LOGFILE" >&2; exit 1; }
+ok "KubeAtlas ready at http://localhost:$PORT"
 
-# Need cluster-connected before running tests. Poll for state=connected.
-for i in $(seq 1 30); do
-  state=$(curl -sf "http://localhost:$PORT/api/connection" | jq -r '.state // empty' 2>/dev/null || true)
-  [[ "$state" == "connected" ]] && break
+state=""
+CONNECTED=false
+for _ in $(seq 1 30); do
+  if ! kill -0 "$KUBEATLAS_PID" 2>/dev/null; then
+    echo "KubeAtlas exited before connecting; see $LOGFILE" >&2
+    exit 1
+  fi
+  if state="$(curl -fsS --max-time 2 "http://localhost:$PORT/api/connection" | jq -r '.state // empty' 2>/dev/null)"; then
+    if [[ "$state" == "connected" ]]; then
+      CONNECTED=true
+      break
+    fi
+  else
+    state=""
+  fi
   sleep 1
 done
-[[ "$state" == "connected" ]] || { echo "radar didn't connect to cluster: state=$state"; exit 1; }
-ok "radar connected to cluster"
+[[ "$CONNECTED" == true ]] || { echo "KubeAtlas did not connect to cluster: state=$state; see $LOGFILE" >&2; exit 1; }
+ok "KubeAtlas connected to the frozen cluster context"
 
 # --- Helpers ---
 as_user() {
@@ -352,9 +526,9 @@ as_user() {
 }
 
 mcp_response() {
-  local user=$1 tool=$2 args=$3
+  local user=$1 tool=$2 json_args=$3
   local body
-  body=$(jq -n --arg t "$tool" --argjson a "$args" \
+  body=$(jq -n --arg t "$tool" --argjson a "$json_args" \
     '{jsonrpc:"2.0",id:1,method:"tools/call",params:{name:$t,arguments:$a}}')
   curl -s -X POST -H "X-Forwarded-User: $user" \
     -H 'Content-Type: application/json' \
@@ -369,8 +543,8 @@ mcp_call() {
 }
 
 expect_mcp_denied() {
-  local desc=$1 user=$2 tool=$3 args=$4
-  if mcp_response "$user" "$tool" "$args" | jq -e '.result.isError == true and .result.structuredContent.error_code == "user_forbidden" and (.result.content[0].text | fromjson | .error_code == "user_forbidden")' >/dev/null; then
+  local desc=$1 user=$2 tool=$3 json_args=$4
+  if mcp_response "$user" "$tool" "$json_args" | jq -e '.result.isError == true and .result.structuredContent.error_code == "user_forbidden" and (.result.content[0].text | fromjson | .error_code == "user_forbidden")' >/dev/null; then
     ok "$desc"
   else
     fail "$desc — expected explicit RBAC error"
@@ -758,6 +932,6 @@ if [[ "$FAILS" -eq 0 ]]; then
   echo -e "${G}All checks passed.${N}"
   exit 0
 else
-  echo -e "${R}$FAILS check(s) failed. See log: /tmp/radar-rbac-test-$PORT.log${N}"
+  echo -e "${R}$FAILS check(s) failed. See log: $LOGFILE${N}"
   exit 1
 fi

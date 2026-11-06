@@ -1,89 +1,145 @@
-#!/bin/bash
-# Start a Radar instance for visual testing.
+#!/usr/bin/env bash
+# Start a KubeAtlas instance for visual testing.
 # Usage: ./scripts/visual-test-start.sh [--skip-build]
-#
-# Outputs a state file at .playwright-mcp/visual-test-state.env that
-# the stop script and the /visual-test command can source.
 
 set -euo pipefail
 
 SKIP_BUILD=false
-if [[ "${1:-}" == "--skip-build" ]]; then
-  SKIP_BUILD=true
-fi
+for arg in "$@"; do
+  case "$arg" in
+    --skip-build) SKIP_BUILD=true ;;
+    *) echo "Unknown argument: $arg" >&2; exit 2 ;;
+  esac
+done
 
-PORT=$((9300 + RANDOM % 100))
-TIMESTAMP=$(date +%Y%m%d-%H%M%S)
-SSDIR=".playwright-mcp/visual-test/$TIMESTAMP"
-LOGFILE="/tmp/radar-visual-test-$PORT.log"
 STATEFILE=".playwright-mcp/visual-test-state.env"
-
-active_screenshot_dir=""
 if [[ -f "$STATEFILE" ]]; then
-  source "$STATEFILE"
-  if [[ -n "${KUBEATLAS_PID:-}" && -n "${SCREENSHOT_DIR:-}" ]] && kill -0 "$KUBEATLAS_PID" 2>/dev/null; then
-    active_screenshot_dir="$SCREENSHOT_DIR"
+  existing_pid=""
+  while IFS='=' read -r key value; do
+    if [[ "$key" == "KUBEATLAS_PID" ]]; then
+      existing_pid="$value"
+      break
+    fi
+  done < "$STATEFILE"
+  if [[ "$existing_pid" =~ ^[0-9]+$ ]] && kill -0 "$existing_pid" 2>/dev/null; then
+    echo "A visual-test process is already recorded in $STATEFILE (pid $existing_pid)." >&2
+    exit 1
   fi
 fi
 
-# Prune empty screenshot dirs left by prior runs that captured nothing.
-if [[ -d .playwright-mcp/visual-test ]]; then
-  while IFS= read -r -d '' dir; do
-    if [[ -n "$active_screenshot_dir" && "$dir" == "$active_screenshot_dir" ]]; then
-      continue
-    fi
-    rmdir "$dir" 2>/dev/null || true
-  done < <(find .playwright-mcp/visual-test -mindepth 1 -maxdepth 1 -type d -empty -print0 2>/dev/null)
-fi
+for bin in curl sha256sum git python3; do
+  command -v "$bin" >/dev/null 2>&1 || { echo "Missing required dependency: $bin" >&2; exit 1; }
+done
 
-mkdir -p "$SSDIR"
-
-# Build unless skipped
 if [[ "$SKIP_BUILD" == false ]]; then
-  echo "Building Radar..."
+  command -v make >/dev/null 2>&1 || { echo "Missing required dependency: make" >&2; exit 1; }
+  echo "Building KubeAtlas..."
   make build
 fi
 
-# Check binary exists
-if [[ ! -f ./radar ]]; then
-  echo "ERROR: ./radar binary not found. Run 'make build' first." >&2
+if [[ ! -x ./kubeatlas ]]; then
+  echo "ERROR: ./kubeatlas binary not found or not executable. Run 'make build' first." >&2
   exit 1
 fi
 
-# Launch
-echo "Starting Radar on port $PORT..."
-./radar -port "$PORT" -no-browser > "$LOGFILE" 2>&1 &
+SOURCE_SHA="$(git rev-parse HEAD)"
+if [[ -z "$(git status --porcelain)" ]]; then
+  SOURCE_STATE=clean
+else
+  SOURCE_STATE=dirty
+fi
+if [[ "$SKIP_BUILD" == true ]]; then
+  BINARY_PROVENANCE="unknown (--skip-build)"
+else
+  BINARY_PROVENANCE="make build from checkout $SOURCE_SHA ($SOURCE_STATE)"
+fi
+read -r BINARY_SHA _ < <(sha256sum ./kubeatlas)
+if ! BINARY_VERSION="$(./kubeatlas --version 2>&1)"; then
+  echo "ERROR: ./kubeatlas --version failed." >&2
+  exit 1
+fi
+
+PORT=$((9300 + RANDOM % 100))
+TIMESTAMP="$(date +%Y%m%d-%H%M%S)"
+SSDIR=".playwright-mcp/visual-test/$TIMESTAMP"
+LOGFILE="/tmp/kubeatlas-visual-test-$PORT.log"
+if ! python3 - "$PORT" <<'PY'
+import socket
+import sys
+
+sock = socket.socket()
+try:
+    sock.bind(("127.0.0.1", int(sys.argv[1])))
+except OSError:
+    raise SystemExit(1)
+finally:
+    sock.close()
+PY
+then
+  echo "Port $PORT is already in use; refusing to reuse an existing server." >&2
+  exit 1
+fi
+if [[ -d .playwright-mcp/visual-test ]]; then
+  while IFS= read -r -d '' dir; do
+    rmdir "$dir" 2>/dev/null || true
+  done < <(find .playwright-mcp/visual-test -mindepth 1 -maxdepth 1 -type d -empty -print0 2>/dev/null)
+fi
+mkdir -p "$SSDIR"
+
+PID=""
+STATE_WRITTEN=false
+stop_unpublished_child() {
+  if [[ -n "$PID" && "$STATE_WRITTEN" != true ]]; then
+    if kill -0 "$PID" 2>/dev/null; then
+      kill "$PID" 2>/dev/null || true
+    fi
+    wait "$PID" 2>/dev/null || true
+  fi
+}
+trap stop_unpublished_child EXIT
+
+echo "Source checkout: $SOURCE_SHA ($SOURCE_STATE)"
+echo "Binary provenance: $BINARY_PROVENANCE"
+echo "Binary SHA-256: $BINARY_SHA"
+echo "Binary version: $BINARY_VERSION"
+echo "Starting KubeAtlas on port $PORT..."
+./kubeatlas --port "$PORT" --no-browser > "$LOGFILE" 2>&1 &
 PID=$!
 
-# Wait for ready
-echo -n "Waiting for Radar to be ready"
-for i in $(seq 1 30); do
-  if curl -s "http://localhost:$PORT/api/dashboard" > /dev/null 2>&1; then
-    echo " ready!"
+echo -n "Waiting for KubeAtlas to be ready"
+READY=false
+for _ in $(seq 1 30); do
+  if ! kill -0 "$PID" 2>/dev/null; then
+    echo " exited early"
+    echo "KubeAtlas failed to start. Check logs: $LOGFILE" >&2
+    exit 1
+  fi
+  if curl -fsS --max-time 2 "http://127.0.0.1:$PORT/api/health" >/dev/null 2>&1; then
+    if ! kill -0 "$PID" 2>/dev/null; then
+      echo " exited during readiness"
+      echo "KubeAtlas failed to start. Check logs: $LOGFILE" >&2
+      exit 1
+    fi
+    READY=true
     break
   fi
   echo -n "."
   sleep 1
-  if [[ $i -eq 30 ]]; then
-    echo " TIMEOUT"
-    echo "Radar failed to start. Check logs: $LOGFILE" >&2
-    kill "$PID" 2>/dev/null || true
-    exit 1
-  fi
 done
+if [[ "$READY" != true ]]; then
+  echo " TIMEOUT"
+  echo "KubeAtlas failed to start. Check logs: $LOGFILE" >&2
+  exit 1
+fi
+echo " ready!"
 
-# Write state file
-cat > "$STATEFILE" <<EOF
-KUBEATLAS_PID=$PID
-KUBEATLAS_PORT=$PORT
-SCREENSHOT_DIR=$SSDIR
-KUBEATLAS_LOG=$LOGFILE
-KUBEATLAS_URL=http://localhost:$PORT
-EOF
+printf 'KUBEATLAS_PID=%s\nKUBEATLAS_PORT=%s\nSCREENSHOT_DIR=%s\nKUBEATLAS_LOG=%s\nKUBEATLAS_URL=http://127.0.0.1:%s\n' \
+  "$PID" "$PORT" "$SSDIR" "$LOGFILE" "$PORT" > "$STATEFILE"
+STATE_WRITTEN=true
 
 echo ""
 echo "=== Visual Test Ready ==="
-echo "  URL:          http://localhost:$PORT"
+echo "  URL:          http://127.0.0.1:$PORT"
 echo "  PID:          $PID"
 echo "  Screenshots:  $SSDIR"
 echo "  Logs:         $LOGFILE"

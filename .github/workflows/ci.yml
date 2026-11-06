@@ -50,7 +50,12 @@ jobs:
           filters: |
             ci:
               - '.github/workflows/ci.yml'
+              - '.github/workflows/package-validation.yml'
+              - '.github/workflows/security.yml'
               - '.github/actions/**'
+              - '.github/package-paths.yml'
+              - 'scripts/engineering_gate.py'
+              - 'scripts/test_engineering*.py'
             pkg:
               - 'pkg/**'
               - 'testdata/**'
@@ -590,3 +595,75 @@ jobs:
             --layout "$LAYOUT" \
             --raw-manifest "$RAW_MANIFEST" \
             --tag "$LAYOUT_TAG"
+
+  engineering-tests:
+    name: Engineering script regressions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Run engineering regressions
+        run: python3 -m unittest discover -s scripts -p 'test_engineering*.py'
+      - name: Check shell syntax
+        run: |
+          set -euo pipefail
+          for script in scripts/test-rbac.sh scripts/visual-test-start.sh; do
+            bash -n "$script"
+          done
+      - name: ShellCheck changed shell scripts
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [[ "$BASE_SHA" =~ ^0{40}$ ]]; then
+            BASE_SHA="$(git rev-parse "$HEAD_SHA^")"
+          fi
+          changed_shell_file="$(mktemp "$RUNNER_TEMP/changed-shell.XXXXXX")"
+          trap 'rm -f -- "$changed_shell_file"' EXIT
+          git diff --diff-filter=ACMR --name-only -z "$BASE_SHA" "$HEAD_SHA" -- '*.sh' > "$changed_shell_file"
+          mapfile -d '' -t changed_shell < "$changed_shell_file"
+          if ((${#changed_shell[@]})); then
+            shellcheck "${changed_shell[@]}"
+          else
+            echo "No changed shell scripts."
+          fi
+
+  required-gates:
+    name: CI required gates
+    if: always()
+    needs:
+      - installers
+      - changes
+      - release-policy
+      - workflow-lint
+      - engineering-tests
+      - pkg
+      - backend
+      - backend-server
+      - repo-hygiene
+      - frontend
+      - k8s-ui
+      - settings-browser
+      - helm
+      - container-build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      NEEDS_JSON: ${{ toJSON(needs) }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Emit CI gate receipt
+        run: python3 scripts/engineering_gate.py receipt --gate ci --output "$RUNNER_TEMP/ci.json"
+      - name: Preserve CI gate receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: engineering-ci-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/ci.json
+          if-no-files-found: error

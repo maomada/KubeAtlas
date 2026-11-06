@@ -1,0 +1,72 @@
+# Copy for a task and record approvals; this example grants no permissions.
+schema: kubeatlas-engineering-task/v1
+task_id: example-portal-readonly-change
+repository: maomada/KubeAtlas
+owner: human-maintainer
+coordinator: lead-agent
+writer: implementation-agent
+reviewer: independent-review-agent
+qa: qa-agent
+intent: "Describe the user-visible change and why it is needed"
+non_goals:
+  - "No unrelated Fleet architecture change or release publication"
+baseline:
+  target_branch: main
+  base_sha: "<full-40-character-SHA>"
+  integration_head_sha: null
+dependencies: []
+workspace:
+  isolation: separate-clone
+  branch: "devin/<task-id>-<short-slug>"
+  remote_branch_exception_approved: false
+ownership:
+  write_paths: ["<exclusive-owned-path>"]
+  shared_contract_paths: ["<lead-owned-API-or-registration-path>"]
+  reviewer_must_not_author_own_approval: true
+acceptance:
+  - id: AC-1
+    behavior: "Describe observable behavior, including a negative authorization case"
+    required_evidence_kind: real-api-kind
+    command_or_scenario: "<existing exact command, or separately approved new harness>"
+verification:
+  planner_revision: "<trusted-check-plan-revision>"
+  focused_commands: []
+  final_required_gates: []
+  max_fix_rounds: 2
+  external_blockers_do_not_count_as_pass: true
+evidence:
+  task_head_sha: null
+  tested_sha: null
+  tested_tree_sha: null
+  reviewed_sha: null
+  source_sha: null
+  tooling_sha: null
+  artifact_sha256: {}
+  execution_kind: null # static|unit|mock-api|real-api-kind|real-external-cluster|native-container|native-host|real-browser
+  environment_id: null
+  kube_context: null
+  cluster_uid: null
+  kubeconfig_path_ref: null # reference only; never include file contents
+  tool_versions: {}
+  command_exit_statuses: []
+  scenario_results: [] # passed|failed|untested|blocked_external|not_required_by_plan
+  evidence_index_sha256: null
+  cleanup_result: null
+permissions:
+  repository_write: false
+  git_push: false
+  cluster_write: false
+  permitted_cluster_ids: []
+  permitted_resource_scope: []
+  merge: false
+  signing: false
+  publication: false
+  paid_service_change: false
+handoff:
+  changed_paths: []
+  decisions: []
+  unresolved_risks: []
+  evidence_locations: []
+  processes_to_reuse: []
+  resources_to_cleanup: []
+  next_owner: null

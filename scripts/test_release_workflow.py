@@ -39,7 +39,10 @@ class ReleaseWorkflowTests(unittest.TestCase):
         container = ci.split("  container-build:\n", 1)[1]
         self.assertIn(f"if: needs.changes.outputs.containers == 'true' && ({guard})", container)
         self.assertNotIn("github.event.pull_request.draft", ci.split("  container-build:\n", 1)[0])
-        self.assertIn(f"  validate:\n    if: {guard}\n", package)
+        validate = package.split("  validate:\n", 1)[1].split("\n  required-gates:", 1)[0]
+        self.assertIn("needs: changes", validate)
+        self.assertIn("needs.changes.outputs.packages == 'true'", validate)
+        self.assertIn(guard, validate)
         self.assertIn("timeout-minutes: 60", package)
         self.assertIn("make release-binaries-dry", package)
         self.assertIn("scripts/release_artifacts.py validate --directory dist/release", package)
