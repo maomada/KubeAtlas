@@ -772,6 +772,89 @@ func TestOldConnectionCleanupCannotRemoveNewGeneration(t *testing.T) {
 	_ = hub.Close()
 }
 
+func TestDisconnectRejectsAuthenticationAlreadyInProgress(t *testing.T) {
+	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")
+	validated := make(chan struct{})
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	unblock := func() { releaseOnce.Do(func() { close(release) }) }
+	var rotated, oldReturnedSuccess atomic.Bool
+	hub, err := New(Config{AuthenticateAgent: func(ctx context.Context, token, claimedID string) (AgentIdentity, error) {
+		if token == "token-beta" {
+			return AgentIdentity{ClusterID: "beta", Name: "Beta"}, nil
+		}
+		if token == "token-new" && rotated.Load() {
+			return AgentIdentity{ClusterID: "alpha", Name: "Alpha"}, nil
+		}
+		if token != "token-old" || rotated.Load() {
+			return AgentIdentity{}, errors.New("invalid credential")
+		}
+		close(validated)
+		select {
+		case <-release:
+			oldReturnedSuccess.Store(true)
+			return AgentIdentity{ClusterID: "alpha", Name: "Alpha"}, nil
+		case <-ctx.Done():
+			return AgentIdentity{}, ctx.Err()
+		}
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewServer(hub)
+	t.Cleanup(server.Close)
+	t.Cleanup(func() { _ = hub.Close() })
+	t.Cleanup(unblock)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+	t.Cleanup(cancel)
+	type handshakeResult struct {
+		status int
+		err    error
+	}
+	completed := make(chan handshakeResult, 1)
+	go func() {
+		dialer := websocket.Dialer{HandshakeTimeout: 30 * time.Second}
+		conn, response, err := dialer.DialContext(ctx, cloudWebSocketEndpoint(server.URL)+"/agent?cluster_id=alpha", http.Header{
+			"Authorization":                  {"Bearer token-old"},
+			"X-Radar-Kubernetes-Credentials": {"impersonate"},
+		})
+		if conn != nil {
+			_ = conn.Close()
+		}
+		result := handshakeResult{err: err}
+		if response != nil {
+			result.status = response.StatusCode
+			if response.Body != nil {
+				_ = response.Body.Close()
+			}
+		}
+		completed <- result
+	}()
+	select {
+	case <-validated:
+	case <-time.After(3 * time.Second):
+		t.Fatal("old credential was not validated")
+	}
+	startSource(t, cloudWebSocketEndpoint(server.URL), "beta", "token-beta", http.NotFoundHandler())
+	beta := waitForAgent(t, hub, "beta")
+	rotated.Store(true)
+	hub.Disconnect("alpha")
+	unblock()
+	select {
+	case result := <-completed:
+		if !oldReturnedSuccess.Load() || result.err == nil || result.status != http.StatusUnauthorized {
+			t.Fatalf("stale successful authentication was not rejected: status=%d err=%v", result.status, result.err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stale handshake did not finish")
+	}
+	startSource(t, cloudWebSocketEndpoint(server.URL), "alpha", "token-new", http.NotFoundHandler())
+	waitForAgent(t, hub, "alpha")
+	if current := waitForAgent(t, hub, "beta"); current.ConnectionID != beta.ConnectionID {
+		t.Fatal("rotation disrupted another cluster's session")
+	}
+}
+
 func TestCanceledOpenIsBoundedAndDoesNotCloseSession(t *testing.T) {
 	clientConn, peerConn := net.Pipe()
 	releaseWrite := make(chan struct{})

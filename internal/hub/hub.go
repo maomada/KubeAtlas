@@ -108,11 +108,13 @@ type Hub struct {
 	mu     sync.RWMutex
 	config Config
 	agents map[string]*agentState
+	epochs map[string]uint64
 	closed bool
 }
 
 type agentState struct {
 	mu        sync.Mutex
+	epoch     uint64
 	agent     Agent
 	session   *yamux.Session
 	conn      *websocket.Conn
@@ -127,7 +129,7 @@ func New(config Config) (*Hub, error) {
 	if config.AuthenticateAgent == nil {
 		return nil, errors.New("hub agent authenticator is required")
 	}
-	return &Hub{config: config, agents: make(map[string]*agentState)}, nil
+	return &Hub{config: config, agents: make(map[string]*agentState), epochs: make(map[string]uint64)}, nil
 }
 
 func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -177,6 +179,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unsupported Kubernetes credential mode", http.StatusForbidden)
 		return
 	}
+	h.mu.RLock()
+	epoch := h.epochs[claimedID]
+	h.mu.RUnlock()
 	identity, err := h.config.AuthenticateAgent(r.Context(), token, claimedID)
 	if err != nil || identity.ClusterID != claimedID || !validDisplayName(identity.Name, maxNameBytes) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -197,6 +202,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	state := &agentState{
+		epoch: epoch,
 		agent: Agent{
 			ClusterID: claimedID, Name: identity.Name, Version: version,
 			CredentialMode: "impersonate", ConnectionID: connectionID,
@@ -205,7 +211,9 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		slots: make(chan struct{}, maxAgentStreams),
 	}
 	if err := h.reserve(state); err != nil {
-		if errors.Is(err, errDuplicateAgent) {
+		if errors.Is(err, errAgentCredentialChanged) {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+		} else if errors.Is(err, errDuplicateAgent) {
 			http.Error(w, "cluster agent already connected", http.StatusConflict)
 		} else {
 			http.Error(w, "hub is unavailable", http.StatusServiceUnavailable)
@@ -248,6 +256,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 var errDuplicateAgent = errors.New("duplicate agent")
 var errHubClosed = errors.New("hub closed")
+var errAgentCredentialChanged = errors.New("agent credential changed")
 
 func (h *Hub) reserve(state *agentState) error {
 	h.mu.Lock()
@@ -257,6 +266,9 @@ func (h *Hub) reserve(state *agentState) error {
 	}
 	if h.closed {
 		return errHubClosed
+	}
+	if state.epoch != h.epochs[state.agent.ClusterID] {
+		return errAgentCredentialChanged
 	}
 	if _, exists := h.agents[state.agent.ClusterID]; exists {
 		return errDuplicateAgent
@@ -321,8 +333,11 @@ func (h *Hub) Agents() []Agent {
 	return result
 }
 
+// Disconnect also invalidates authentication already in progress. Credential
+// rotation/revocation must persist first, then call Disconnect before returning.
 func (h *Hub) Disconnect(clusterID string) {
 	h.mu.Lock()
+	h.epochs[clusterID]++
 	state := h.agents[clusterID]
 	delete(h.agents, clusterID)
 	h.mu.Unlock()
