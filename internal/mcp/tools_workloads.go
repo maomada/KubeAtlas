@@ -730,7 +730,7 @@ type manageNodeInput struct {
 	DeleteEmptyDirData *bool  `json:"delete_empty_dir_data,omitempty" jsonschema:"evict pods with emptyDir volumes (default true, set false to skip them)"`
 	Force              bool   `json:"force,omitempty" jsonschema:"force evict pods not managed by a controller (default false)"`
 	WaitForDeletion    *bool  `json:"wait_for_deletion,omitempty" jsonschema:"default true; false returns once evictions are accepted (pods may still be terminating)"`
-	Timeout            int    `json:"timeout,omitempty" jsonschema:"drain deadline in seconds; 0 = server default (2m when waiting)"`
+	Timeout            int    `json:"timeout,omitempty" jsonschema:"drain deadline in seconds, 1-600; omit for the server default (2m when waiting, 60s otherwise)"`
 }
 
 func handleManageNode(ctx context.Context, req *mcp.CallToolRequest, input manageNodeInput) (*mcp.CallToolResult, any, error) {

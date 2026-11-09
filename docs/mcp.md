@@ -1273,6 +1273,20 @@ selector change.
 
 ### Write Tools
 
+The published input schemas include enums for management `action`, apply `mode`
+and `patch_type`. Replica counts must be non-negative. Explicit `limit` values
+must be positive and no larger than the per-tool maximum described in the
+schema; omit the parameter to use its existing default. Zero is not an alias
+for omission in MCP requests.
+
+Explicit timeout values are positive seconds: `manage_node` accepts up to 600,
+`query_prometheus` up to 180, and `wait_for`/`exec_pod` up to 45. Omission retains
+each tool's documented default. Out-of-range MCP inputs are rejected before
+the handler runs, not silently clamped; argument-name correction and accepted
+parameter hints still apply. Conditional limits such as cost trend versus row
+views retain their per-view rules, so schema defaults do not inject a limit
+where that parameter is prohibited.
+
 | Tool | Description | Parameters |
 |------|-------------|------------|
 | `apply_resource` | Create or update a Kubernetes resource from YAML. Supports multi-document YAML, per-document partial-failure results, server-side dry-run preview, and SSA ownership-conflict reporting. | `yaml` (required), `mode` (optional: `apply` or `create`, default `apply`), `dry_run` (optional, default false), `namespace` (optional, override), `verify` (optional, default true: real mutations return post-mutation state, submitted-vs-live diff, workload rollout/pods, and related issues; dry runs return a preview diff), `force` (optional, default false: take SSA field ownership from other managers) |

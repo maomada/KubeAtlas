@@ -297,6 +297,7 @@ func addTool[In, Out any](s *mcpsdk.Server, t *mcpsdk.Tool, h mcpsdk.ToolHandler
 }
 
 func addToolWithRegistry[In, Out any](registry *toolParamRegistry, s *mcpsdk.Server, t *mcpsdk.Tool, h mcpsdk.ToolHandlerFor[In, Out]) {
+	t = constrainToolInput[In](t)
 	accepted, required := structJSONFields(reflect.TypeFor[In]())
 	registry.mu.Lock()
 	registry.names[t.Name] = accepted
