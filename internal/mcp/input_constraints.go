@@ -49,6 +49,7 @@ var toolInputConstraints = map[string]map[string]inputConstraint{
 	"get_events":           {"limit": inputRange(1, 100)},
 	"get_changes":          {"limit": inputRange(1, 50)},
 	"search":               {"limit": inputRange(1, 500)},
+	"list_resources":       {"limit": inputRange(1, resourcePageMaxLimit)},
 	"issues":               {"limit": inputRange(1, 1000)},
 	"get_cluster_audit":    {"limit": inputRange(1, 100)},
 	"get_runtime_versions": {"limit": inputRange(1, 200)},

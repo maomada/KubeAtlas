@@ -22,7 +22,7 @@ import (
 // what the caller may read of target (nil: every namespace); gaps carries what
 // the caller's own access already withheld. Each namespace is a separate read
 // unit: one that fails is a gap, and the list fails only when none succeeds.
-func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, group string, target readTarget, namespaces []string, gaps gapSet, clusterScoped bool, contextMode string) (*mcp.CallToolResult, any, error) {
+func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, group string, target readTarget, namespaces []string, gaps gapSet, clusterScoped bool, contextMode string, pages ...*resourcePageRequest) (*mcp.CallToolResult, any, error) {
 	dynamicCache := k8s.GetDynamicResourceCache()
 	discovery := k8s.GetResourceDiscovery()
 	current := func() bool {
@@ -194,6 +194,14 @@ func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, g
 		rawItems, readAll = items, true
 	}
 
+	var pageRequest *resourcePageRequest
+	if len(pages) > 0 {
+		pageRequest = pages[0]
+	}
+	rawItems, page, err := paginateResources(rawItems, pageRequest)
+	if err != nil {
+		return nil, nil, err
+	}
 	allItems := make([]any, 0, len(rawItems))
 	for _, item := range rawItems {
 		allItems = append(allItems, aicontext.MinifyUnstructured(item, aicontext.LevelSummary))
@@ -216,7 +224,7 @@ func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, g
 	if !current() {
 		return nil, nil, errConnectionChanged()
 	}
-	return listResult(ctx, collector.resource, allItems, listCoverageFor(clusterScoped, target, read, readAll, gaps.gaps(ctx, resourceapi.MCPSetLimit, clusterScoped)))
+	return listResult(ctx, collector.resource, allItems, listCoverageFor(clusterScoped, target, read, readAll, gaps.gaps(ctx, resourceapi.MCPSetLimit, clusterScoped)), page)
 }
 
 // readErrorCodeOf classifies one namespace's failed dynamic read. An API
