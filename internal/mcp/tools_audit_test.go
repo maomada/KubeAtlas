@@ -3,7 +3,6 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -97,7 +96,7 @@ func TestAuditSettingsAgreeBetweenResourceAndAggregate(t *testing.T) {
 				if summary == nil || summary.Scope == nil || aggregate.Scope == nil {
 					t.Fatal("missing audit scope")
 				}
-				if !reflect.DeepEqual(summary.Scope.DisabledChecks, aggregate.Scope.DisabledChecks) || !reflect.DeepEqual(summary.Scope.IgnoredNamespacePatterns, aggregate.Scope.IgnoredNamespacePatterns) {
+				if !slices.Equal(summary.Scope.DisabledChecks, aggregate.Scope.DisabledChecks) || !slices.Equal(summary.Scope.IgnoredNamespacePatterns, aggregate.Scope.IgnoredNamespacePatterns) {
 					t.Fatal("settings scope diverged")
 				}
 				if tc.ignored && ns != "app" {
