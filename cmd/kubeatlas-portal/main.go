@@ -33,6 +33,7 @@ func main() {
 	dataFile := flag.String("data-file", "./portal-data/registry.json", "Persistent registry JSON file")
 	fleetDataFile := flag.String("fleet-data-file", "", "Persistent Fleet state JSON file (default: <data-file directory>/fleet/state.json)")
 	insecureCookie := flag.Bool("insecure-cookie", false, "Allow non-Secure viewer cookies for loopback HTTP development only")
+	mcpAllowedHosts := flag.String("mcp-allowed-hosts", os.Getenv("KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS"), "Comma-separated exact external host[:port] authorities allowed for /mcp-fleet behind a trusted proxy; no wildcards")
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("kubeatlas-portal %s\n", version)
@@ -48,6 +49,11 @@ func main() {
 		log.Fatal(err)
 	}
 	credentials.AllowInsecureCookies = *insecureCookie
+	if strings.TrimSpace(*mcpAllowedHosts) != "" {
+		for _, host := range strings.Split(*mcpAllowedHosts, ",") {
+			credentials.MCPAllowedHosts = append(credentials.MCPAllowedHosts, strings.TrimSpace(host))
+		}
+	}
 	if *insecureCookie {
 		host, _, err := net.SplitHostPort(*listen)
 		if err != nil || (host != "localhost" && !net.ParseIP(host).IsLoopback()) {

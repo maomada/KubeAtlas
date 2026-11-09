@@ -112,6 +112,23 @@ dedicated hostname with ingress path `/` and `pathType: Prefix`; the Portal
 chart rejects subpath ingress. Do not configure a reverse-proxy prefix for the
 Portal. Public KubeAtlas and MCP target URLs may still include path prefixes.
 
+### Fleet MCP behind a loopback reverse proxy
+
+When TLS terminates at a trusted proxy forwarding to a loopback Portal listener,
+the MCP SDK's default DNS-rebinding protection rejects a preserved external
+`Host`. Configure the Portal process with `--mcp-allowed-hosts` or
+`KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS`, for example `portal.example:9445`.
+Use the exact authority the proxy forwards, including the port when present;
+multiple entries are comma-separated. Schemes, paths and wildcards are rejected.
+
+With this option, `/mcp-fleet` accepts only configured authorities and loopback
+hosts, replacing the SDK's loopback-only Host check with that explicit allowlist.
+Without it, the SDK default remains enabled. Viewer login, session checks,
+cross-origin protection and request-size limits remain enforced. Forwarded-Host
+headers do not grant trust. The proxy must preserve the external Host and Origin,
+reject unexpected public hosts, and be the only externally reachable entrypoint.
+This option does not configure TLS, grant cluster access, or enable production use.
+
 ## Configure KubeAtlas registration
 
 The KubeAtlas Helm chart defaults `portalRegistration.enabled` to `false`. For

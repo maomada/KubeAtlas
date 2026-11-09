@@ -23,6 +23,7 @@ type Credentials struct {
 	Username             string
 	Password             string
 	AllowInsecureCookies bool
+	MCPAllowedHosts      []string
 }
 
 type Handler struct {
@@ -69,7 +70,12 @@ func NewHandler(registry *Registry, credentials Credentials, static fs.FS, fleet
 		fleetStore: fleetStore,
 	}
 	handler.agentHub = NewAgentHub(fleetStore)
-	handler.fleetHandler = fleetsync.NewHandlerWithBridge(fleetStore, handler.agentHub)
+	var err error
+	handler.fleetHandler, err = fleetsync.NewHandlerWithMCPHosts(fleetStore, handler.agentHub, credentials.MCPAllowedHosts)
+	if err != nil {
+		handler.Close()
+		return nil, err
+	}
 	return handler, nil
 }
 

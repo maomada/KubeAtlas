@@ -596,7 +596,6 @@ func main() {
 	rootCtx, rootCancel := startServer(srv, startupStart)
 	defer rootCancel()
 	app.StartPortalReporter(rootCtx, cfg)
-	app.StartFleetSync(rootCtx, cfg)
 
 	// Open browser — server is confirmed ready to accept connections
 	if !cfg.NoBrowser {
@@ -614,6 +613,7 @@ func main() {
 
 	// Now initialize cluster connection and caches (browser will see progress via SSE)
 	app.InitializeCluster()
+	app.StartFleetSync(rootCtx, cfg)
 	k8s.LogTiming(" Total startup (to connected): %v", time.Since(startupStart))
 
 	// With a Hub configured, dial out to it and serve the existing router

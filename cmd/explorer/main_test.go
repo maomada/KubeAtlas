@@ -1,9 +1,53 @@
 package main
 
 import (
+	"go/ast"
+	"go/parser"
+	"go/token"
 	"reflect"
 	"testing"
 )
+
+func TestFleetSyncStartsAfterClusterInitialization(t *testing.T) {
+	file, err := parser.ParseFile(token.NewFileSet(), "main.go", nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var initialize, fleet token.Pos
+	for _, declaration := range file.Decls {
+		main, ok := declaration.(*ast.FuncDecl)
+		if !ok || main.Name.Name != "main" {
+			continue
+		}
+		for _, statement := range main.Body.List {
+			expression, ok := statement.(*ast.ExprStmt)
+			if !ok {
+				continue
+			}
+			call, ok := expression.X.(*ast.CallExpr)
+			if !ok {
+				continue
+			}
+			selector, ok := call.Fun.(*ast.SelectorExpr)
+			if !ok {
+				continue
+			}
+			pkg, ok := selector.X.(*ast.Ident)
+			if !ok || pkg.Name != "app" {
+				continue
+			}
+			switch selector.Sel.Name {
+			case "InitializeCluster":
+				initialize = call.Pos()
+			case "StartFleetSync":
+				fleet = call.Pos()
+			}
+		}
+	}
+	if initialize == token.NoPos || fleet == token.NoPos || fleet <= initialize {
+		t.Fatal("Fleet sync must start after initialization rotates the Kubernetes operation context")
+	}
+}
 
 func TestHeaderFlagSet(t *testing.T) {
 	cases := []struct {

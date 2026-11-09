@@ -90,6 +90,16 @@ WebSocket channels use the existing bearer token for the same cluster ID;
 the upload URL ID must match the snapshot. There is no generic snapshot upload
 route exposed through viewer forwarding.
 
+For a TLS proxy forwarding an external Host to a loopback Portal listener, use
+the Portal's [explicit MCP Host allowlist](portal.md#fleet-mcp-behind-a-loopback-reverse-proxy).
+This is separate from the direct-connect application's MCP settings.
+
+The source MCP executor starts after initial cluster initialization has rotated
+the Kubernetes operation context. A later context switch or operation-generation
+reset still invalidates that executor and cancels in-flight calls; it does not
+silently retarget the registered source. Restart the source process to establish
+a new pinned channel after such a reset.
+
 An unknown member is returned as `unavailable` rather than silently removed.
 Group membership is administrative selection, not proof of identity or a
 resource relationship. Federation inference is evidence-based and scoped to the

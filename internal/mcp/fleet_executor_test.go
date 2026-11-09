@@ -127,3 +127,32 @@ func TestFleetExecutorRejectsCancelledOperationGenerationWithSameBinding(t *test
 		t.Fatalf("CallTool after operation cancellation = %v", err)
 	}
 }
+
+func TestFleetExecutorStartsOnPostInitializationGeneration(t *testing.T) {
+	t.Cleanup(k8s.ResetTestState)
+	k8s.ResetTestState()
+	t.Cleanup(k8s.SetTestLocalMode())
+	t.Cleanup(k8s.SetTestProfileSource("/test/team", "dev", "reader"))
+	beforeInitialization := k8s.OperationContext()
+	k8s.CancelOngoingOperations()
+	if beforeInitialization.Err() == nil {
+		t.Fatal("startup operation context was not cancelled")
+	}
+	if err := k8s.InitTestResourceCache(fake.NewClientset()); err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	executor, err := NewFleetToolExecutor(ctx, k8s.ClusterSafetyBinding(ctx), false, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer executor.Close()
+	if _, err := executor.ListTools(ctx); err != nil {
+		t.Fatalf("post-initialization catalog: %v", err)
+	}
+	result, err := executor.CallTool(ctx, "get_dashboard", map[string]any{})
+	if err != nil || result == nil || result.IsError {
+		t.Fatalf("post-initialization tool call: result=%+v err=%v", result, err)
+	}
+}

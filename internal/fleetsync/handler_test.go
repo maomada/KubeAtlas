@@ -14,6 +14,21 @@ import (
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
+func TestFleetMCPAllowedHostsValidation(t *testing.T) {
+	for _, host := range []string{"", "*", "*.example.com", "https://portal.example", "portal.example/path", "user@portal.example", "portal.example?", "portal.example#", "portal.example:", "portal.example:abc", "portal.example:0", "portal.example:65536", "portal.example\n"} {
+		t.Run(host, func(t *testing.T) {
+			if _, err := NewHandlerWithMCPHosts(nil, nil, []string{host}); err == nil {
+				t.Fatalf("accepted invalid authority %q", host)
+			}
+		})
+	}
+	for _, host := range []string{"portal.example", "portal.example:443", "10.0.101.165:9445", "[2001:db8::1]:9445"} {
+		if _, err := NewHandlerWithMCPHosts(nil, nil, []string{host}); err != nil {
+			t.Fatalf("rejected authority %q: %v", host, err)
+		}
+	}
+}
+
 func newTestHandler(t *testing.T) (*Store, http.Handler) {
 	t.Helper()
 	store, err := OpenStore(testStatePath(t))

@@ -14,9 +14,10 @@ kinds, resource ownership, and permissions. The example grants no permissions.
 Do not store credentials, kubeconfig contents, or private keys in it.
 
 Use a separate clone/worktree and one writer per branch. Changes to shared
-contracts belong to the coordinator, not concurrent writers. A temporary remote
-branch is an explicit exception to the maintainer's `main`/`fleet-manager`
-branch policy; record its authorization and eventual retirement decision.
+contracts belong to the coordinator, not concurrent writers. Temporary remote
+branches are allowed for development and fixes; do not request a new exception
+under the retired `main`/`fleet-manager`-only policy. Record the branch's scope
+and eventual retirement decision.
 Do not delete branches or assume `fleet-manager` remains a required long-lived
 track without a maintainer decision. Do not create a stack unless requested.
 

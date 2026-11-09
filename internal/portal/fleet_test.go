@@ -6,12 +6,106 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/fstest"
 	"time"
 
 	"github.com/maomada/KubeAtlas/internal/fleetsync"
 )
+
+func TestPortalFleetMCPProxyHostProtection(t *testing.T) {
+	for _, configured := range []bool{false, true} {
+		name := "default"
+		if configured {
+			name = "explicit-proxy-hosts"
+		}
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			registry, err := OpenRegistry(filepath.Join(dir, "registry.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			store, err := fleetsync.OpenStore(filepath.Join(dir, "fleet", "state.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer store.Close()
+			credentials := Credentials{Username: testUsername, Password: testPassword}
+			if configured {
+				credentials.MCPAllowedHosts = []string{"10.0.101.165:9445", "portal.example:443", "[2001:db8::1]:9445"}
+			}
+			handler, err := NewHandler(registry, credentials, nil, store)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer handler.Close()
+			server := httptest.NewServer(handler)
+			defer server.Close()
+			cookie := loginForTest(t, handler)
+			externalStatus := http.StatusForbidden
+			if configured {
+				externalStatus = http.StatusOK
+			}
+			for _, test := range []struct {
+				name, host, origin, site, forwarded string
+				noSession                           bool
+				want                                int
+			}{
+				{name: "loopback", host: "localhost:9290", want: http.StatusOK},
+				{name: "external IP", host: "10.0.101.165:9445", want: externalStatus},
+				{name: "external DNS", host: "portal.example:443", origin: "https://portal.example:443", want: externalStatus},
+				{name: "external IPv6", host: "[2001:db8::1]:9445", want: externalStatus},
+				{name: "unknown", host: "attacker.example", want: http.StatusForbidden},
+				{name: "wrong port", host: "10.0.101.165:9446", want: http.StatusForbidden},
+				{name: "suffix", host: "portal.example.attacker:443", want: http.StatusForbidden},
+				{name: "forwarded host is not trusted", host: "attacker.example", forwarded: "10.0.101.165:9445", want: http.StatusForbidden},
+				{name: "cross origin", host: "10.0.101.165:9445", origin: "https://attacker.example", want: http.StatusForbidden},
+				{name: "cross site", host: "10.0.101.165:9445", site: "cross-site", want: http.StatusForbidden},
+				{name: "no session", host: "10.0.101.165:9445", noSession: true, want: http.StatusUnauthorized},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					for _, method := range []string{"initialize", "tools/list"} {
+						body := `{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}`
+						if method == "initialize" {
+							body = `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"proxy-test","version":"1"}}}`
+						}
+						req, err := http.NewRequest(http.MethodPost, server.URL+"/mcp-fleet", strings.NewReader(body))
+						if err != nil {
+							t.Fatal(err)
+						}
+						req.Host = test.host
+						req.Header.Set("Content-Type", "application/json")
+						req.Header.Set("Accept", "application/json, text/event-stream")
+						req.Header.Set("Origin", test.origin)
+						req.Header.Set("Sec-Fetch-Site", test.site)
+						req.Header.Set("X-Forwarded-Host", test.forwarded)
+						if !test.noSession {
+							req.AddCookie(cookie)
+						}
+						response, err := server.Client().Do(req)
+						if err != nil {
+							t.Fatal(err)
+						}
+						defer response.Body.Close()
+						if response.StatusCode != test.want {
+							t.Fatalf("%s status=%d want=%d", method, response.StatusCode, test.want)
+						}
+						if test.want == http.StatusOK {
+							var rpc struct {
+								Result json.RawMessage
+								Error  json.RawMessage
+							}
+							if err := json.NewDecoder(response.Body).Decode(&rpc); err != nil || len(rpc.Result) == 0 || len(rpc.Error) != 0 {
+								t.Fatalf("%s RPC response=%+v err=%v", method, rpc, err)
+							}
+						}
+					}
+				})
+			}
+		})
+	}
+}
 
 func TestPortalFleetScopeAndPersistence(t *testing.T) {
 	dir := t.TempDir()

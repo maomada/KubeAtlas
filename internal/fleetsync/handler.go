@@ -7,7 +7,10 @@ import (
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
 
 	mcp "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -20,12 +23,58 @@ func NewHandler(store *Store) http.Handler {
 }
 
 func NewHandlerWithBridge(store *Store, bridge ToolBridge) http.Handler {
+	return newHandler(store, bridge, nil)
+}
+
+// NewHandlerWithMCPHosts allows exact external authorities behind a trusted proxy.
+// It replaces the SDK's loopback-only check with an explicit Host allowlist.
+func NewHandlerWithMCPHosts(store *Store, bridge ToolBridge, hosts []string) (http.Handler, error) {
+	allowed := make(map[string]bool, len(hosts))
+	for _, host := range hosts {
+		parsed, err := url.Parse("https://" + host)
+		if err != nil || host == "" || strings.ContainsAny(host, "*\\ \t\r\n") || parsed.Host != host ||
+			parsed.Hostname() == "" || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || strings.Contains(host, "#") {
+			return nil, errors.New("Fleet MCP allowed hosts must be exact host[:port] authorities without wildcards")
+		}
+		if strings.HasSuffix(host, ":") {
+			return nil, errors.New("Fleet MCP allowed host has an empty port")
+		}
+		if port := parsed.Port(); port != "" {
+			value, err := strconv.Atoi(port)
+			if err != nil || value < 1 || value > 65535 {
+				return nil, errors.New("Fleet MCP allowed host has an invalid port")
+			}
+		}
+		allowed[strings.ToLower(host)] = true
+	}
+	return newHandler(store, bridge, allowed), nil
+}
+
+func newHandler(store *Store, bridge ToolBridge, allowedHosts map[string]bool) http.Handler {
 	mcpServer := mcp.NewServer(&mcp.Implementation{Name: "kubeatlas-fleet-sync", Version: "1"}, nil)
 	registerTools(mcpServer, store, bridge)
 	mcpHandler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return mcpServer
-	}, &mcp.StreamableHTTPOptions{Stateless: true, JSONResponse: true, MaxRequestBodyBytes: maxRequestBytes})
-	return &handler{store: store, bridge: bridge, mcp: mcpHandler}
+	}, &mcp.StreamableHTTPOptions{
+		Stateless: true, JSONResponse: true, MaxRequestBodyBytes: maxRequestBytes,
+		DisableLocalhostProtection: len(allowedHosts) > 0,
+	})
+	protected := http.NewCrossOriginProtection().Handler(mcpHandler)
+	return &handler{store: store, bridge: bridge, mcp: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if len(allowedHosts) > 0 && !allowedHosts[strings.ToLower(r.Host)] && !loopbackHost(r.Host) {
+			http.Error(w, "forbidden MCP Host", http.StatusForbidden)
+			return
+		}
+		protected.ServeHTTP(w, r)
+	})}
+}
+
+func loopbackHost(authority string) bool {
+	host := authority
+	if parsed, _, err := net.SplitHostPort(authority); err == nil {
+		host = parsed
+	}
+	return strings.EqualFold(host, "localhost") || net.ParseIP(strings.Trim(host, "[]")).IsLoopback()
 }
 
 type handler struct {
