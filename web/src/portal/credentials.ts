@@ -17,6 +17,12 @@ export interface IssuedCredential {
   token: string
 }
 
+export interface CredentialCluster {
+  id: string
+  name: string
+  revokedAt?: string
+}
+
 export function credentialStatus(credential: MCPCredential, now: number): 'active' | 'expired' | 'revoked' | 'unknown' {
   if (credential.revokedAt) return 'revoked'
   const expires = Date.parse(credential.expiresAt)
@@ -38,7 +44,19 @@ export function openCodeFleetConfig(endpoint: string): string {
 }
 
 export async function credentialsRequest<T>(path = '', method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(apiUrl(`/mcp/credentials${path}`), {
+  return managementRequest<T>(`/mcp/credentials${path}`, method, body, signal)
+}
+
+export async function credentialClusters(signal: AbortSignal): Promise<CredentialCluster[]> {
+  const data = await managementRequest<{ clusters: CredentialCluster[] }>('/hub/clusters', 'GET', undefined, signal)
+  if (!Array.isArray(data.clusters) || !data.clusters.every(cluster => cluster && typeof cluster.id === 'string' && typeof cluster.name === 'string')) {
+    throw new Error('门户返回的 Hub 集群目录无效。')
+  }
+  return data.clusters.filter(cluster => !cluster.revokedAt)
+}
+
+async function managementRequest<T>(path: string, method: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(apiUrl(path), {
     method, credentials: getCredentialsMode(), cache: 'no-store',
     headers: { ...getAuthHeaders(), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -49,6 +67,7 @@ export async function credentialsRequest<T>(path = '', method = 'GET', body?: un
     throw new Error('门户登录已失效，请重新登录；MCP 凭据有独立的有效期。')
   }
   if (!response.ok) {
+    if (path === '/hub/clusters' && response.status === 404) throw new Error('请确认 Portal 已启用 Hub 模式。')
     let message = `请求失败（HTTP ${response.status}）`
     if (response.headers.get('Content-Type')?.includes('application/json')) {
       const error = await response.json()

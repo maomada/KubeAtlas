@@ -183,13 +183,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		h.register(w, r)
-	case r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/fleet":
+	case r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/fleet" || r.URL.Path == "/mcp-access":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		loggedIn := h.hasViewerSession(r)
-		if (r.URL.Path == "/" || r.URL.Path == "/fleet") && !loggedIn {
+		if r.URL.Path != "/login" && !loggedIn {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}

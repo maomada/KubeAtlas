@@ -7,7 +7,6 @@ import { MCPCredentials } from './MCPCredentials'
 import { Portal } from './Portal'
 import { credentialStatus, openCodeFleetConfig } from './credentials'
 import type { MCPCredential } from './credentials'
-import type { PortalCluster } from './model'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let host: HTMLDivElement
@@ -16,7 +15,7 @@ const credential: MCPCredential = {
   id: 'credential-1', label: 'OpenCode', clusterIds: ['east'], readOnly: true,
   createdAt: '2026-01-01T00:00:00Z', expiresAt: '2026-01-01T08:00:00Z', refreshUntil: '2026-01-31T00:00:00Z',
 }
-const cluster = { id: 'east', name: 'East' } as PortalCluster
+const cluster = { id: 'east', name: 'East' }
 const response = (data: unknown) => new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } })
 const button = (label: string) => [...host.querySelectorAll('button')].find(button => button.textContent === label)!
 
@@ -59,6 +58,7 @@ it('generates an OpenCode environment reference, rejects credential-bearing URLs
 it('issues scoped credentials once, hides the secret after dismissal, and confirms revocation', async () => {
   let records: MCPCredential[] = []
   const fetch = vi.fn((url: string, options?: RequestInit) => {
+    if (url === '/api/hub/clusters') return Promise.resolve(response({ clusters: [cluster, { id: 'revoked', name: 'Revoked', revokedAt: credential.createdAt }] }))
     if (url.endsWith('/revoke')) {
       records = [{ ...credential, revokedAt: credential.createdAt }]
       return Promise.resolve(new Response(null, { status: 204 }))
@@ -70,7 +70,8 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
     return Promise.resolve(response({ credentials: records, serverTime: credential.createdAt }))
   })
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<MCPCredentials clusters={[cluster]} />))
+  await act(async () => root.render(<Portal />))
+  expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
   expect(button('生成限时 Token').disabled).toBe(true)
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
@@ -86,18 +87,33 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
   expect(fetch.mock.calls.some(([url]) => url.endsWith('/revoke'))).toBe(false)
   await act(async () => button('确认撤销').click())
   expect(host.textContent).toContain('已撤销')
-  expect(fetch.mock.calls.every(([url]) => url.startsWith('/api/mcp/credentials'))).toBe(true)
+  expect(fetch.mock.calls.every(([url]) => url.startsWith('/api/mcp/credentials') || url === '/api/hub/clusters')).toBe(true)
 })
 
 it('surfaces uncertain creation failures without retrying the mutation', async () => {
-  const fetch = vi.fn((_url: string, options?: RequestInit) => options?.method === 'POST'
+  const fetch = vi.fn((url: string, options?: RequestInit) => url === '/api/hub/clusters'
+    ? Promise.resolve(response({ clusters: [cluster] })) : options?.method === 'POST'
     ? Promise.reject(new Error('network interruption'))
     : Promise.resolve(response({ credentials: [], serverTime: credential.createdAt })))
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<MCPCredentials clusters={[cluster]} />))
+  await act(async () => root.render(<MCPCredentials />))
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   expect(host.textContent).toContain('生成结果可能未确认')
   expect(fetch.mock.calls.filter(([, options]) => options?.method === 'POST')).toHaveLength(1)
   expect(host.querySelector('[aria-label="新生成的 MCP Token"]')).toBeNull()
+})
+
+it('fails closed when the Hub directory cannot be read, without falling back to registrations', async () => {
+  const fetch = vi.fn((url: string) => Promise.resolve(url === '/api/hub/clusters'
+    ? new Response(null, { status: 503 })
+    : response({ credentials: [credential], serverTime: credential.createdAt })))
+  vi.stubGlobal('fetch', fetch)
+  await act(async () => root.render(<Portal />))
+  expect(host.textContent).toContain('集群目录读取失败')
+  expect(button('生成限时 Token').closest('fieldset')!.disabled).toBe(true)
+  expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
+  await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(fetch.mock.calls).toHaveLength(2)
+  expect(fetch.mock.calls.some(([url]) => url === '/api/clusters')).toBe(false)
 })

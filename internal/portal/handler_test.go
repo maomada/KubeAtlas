@@ -250,6 +250,28 @@ func TestViewerUsernameValidationAndEmbeddedAssetServing(t *testing.T) {
 			t.Fatalf("%s status = %d, want 200: %s", path, response.Code, response.Body.String())
 		}
 	}
+	for _, path := range []string{"/", "/fleet", "/mcp-access"} {
+		request := httptest.NewRequest(http.MethodGet, path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login" {
+			t.Fatalf("unauthenticated %s did not redirect to login", path)
+		}
+	}
+	login := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(`{"username":"p","password":"`+testPassword+`"}`))
+	login.Header.Set("Content-Type", "application/json")
+	loggedIn := httptest.NewRecorder()
+	handler.ServeHTTP(loggedIn, login)
+	if loggedIn.Code != http.StatusNoContent || len(loggedIn.Result().Cookies()) != 1 {
+		t.Fatal("fixture login failed")
+	}
+	request := httptest.NewRequest(http.MethodGet, "/mcp-access", nil)
+	request.AddCookie(loggedIn.Result().Cookies()[0])
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "<html>portal</html>") {
+		t.Fatal("credential route did not serve the authenticated Portal app")
+	}
 	for _, username := range []string{"", "user:name", "user\nname"} {
 		credentials.Username = username
 		if _, err := NewHandler(registry, credentials, nil, nil); err == nil {

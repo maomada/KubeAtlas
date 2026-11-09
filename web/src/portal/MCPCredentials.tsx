@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Check, Copy, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge } from '@maomada/k8s-ui/components/ui/Badge'
-import { credentialStatus, credentialsRequest, openCodeFleetConfig } from './credentials'
-import type { IssuedCredential, MCPCredential } from './credentials'
-import type { PortalCluster } from './model'
+import { credentialClusters, credentialStatus, credentialsRequest, openCodeFleetConfig } from './credentials'
+import type { CredentialCluster, IssuedCredential, MCPCredential } from './credentials'
 
 const statusLabels = { active: '有效', expired: '已过期', revoked: '已撤销', unknown: '有效期未知' }
 const statusTones = { active: 'success', expired: 'warning', revoked: 'neutral', unknown: 'warning' } as const
@@ -26,7 +25,10 @@ function CopyValue({ value, label }: { value: string; label: string }) {
   </div>
 }
 
-export function MCPCredentials({ clusters, directoryError }: { clusters: PortalCluster[]; directoryError?: string }) {
+export function MCPCredentials() {
+  const [clusters, setClusters] = useState<CredentialCluster[]>([])
+  const [directoryError, setDirectoryError] = useState('')
+  const [directoryLoading, setDirectoryLoading] = useState(true)
   const [credentials, setCredentials] = useState<MCPCredential[]>()
   const [loadError, setLoadError] = useState('')
   const [actionError, setActionError] = useState('')
@@ -52,6 +54,15 @@ export function MCPCredentials({ clusters, directoryError }: { clusters: PortalC
   useEffect(() => {
     const controller = new AbortController()
     setLoading(true)
+    setDirectoryLoading(true)
+    setClusters([])
+    credentialClusters(controller.signal).then(data => {
+      if (controller.signal.aborted) return
+      setClusters(data)
+      setDirectoryError('')
+    }).catch(error => {
+      if (!controller.signal.aborted) setDirectoryError(errorMessage(error))
+    }).finally(() => { if (!controller.signal.aborted) setDirectoryLoading(false) })
     credentialsRequest<{ credentials: MCPCredential[]; serverTime: string }>('', 'GET', undefined, controller.signal).then(data => {
       if (controller.signal.aborted) return
       if (!Array.isArray(data.credentials) || !Number.isFinite(Date.parse(data.serverTime))) throw new Error('门户返回的凭据列表无效。')
@@ -66,7 +77,7 @@ export function MCPCredentials({ clusters, directoryError }: { clusters: PortalC
 
   async function create(event: FormEvent) {
     event.preventDefault()
-    if (busy || issued || !selectedIDs.length || !label.trim()) return
+    if (busy || issued || loading || directoryLoading || loadError || directoryError || !selectedIDs.length || !label.trim()) return
     setBusy('create')
     setActionError('')
     try {
@@ -108,14 +119,14 @@ export function MCPCredentials({ clusters, directoryError }: { clusters: PortalC
       <section className="portal-card p-5 lg:p-6" aria-labelledby="create-credential-title">
         <h2 id="create-credential-title" className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck size={20} className="text-accent-text" />生成访问凭据</h2>
         <form onSubmit={create} className="mt-5 space-y-4">
-          <fieldset disabled={Boolean(busy || issued)} className="space-y-4">
+          <fieldset disabled={Boolean(busy || issued || loading || directoryLoading || loadError || directoryError)} className="space-y-4">
             <label className="block text-sm">名称<input required maxLength={100} value={label} onChange={event => setLabel(event.target.value)} className="portal-control mt-2 w-full" placeholder="例如：我的 OpenCode" /></label>
             <label className="block text-sm">有效期<select value={ttlSeconds} onChange={event => setTTL(Number(event.target.value))} className="portal-control mt-2 w-full"><option value={900}>15 分钟</option><option value={3600}>1 小时</option><option value={28800}>8 小时</option><option value={86400}>24 小时</option><option value={604800}>7 天</option></select></label>
             <fieldset><legend className="mb-2 text-sm">允许访问的集群 · 至少选择一个</legend>
               {directoryError && <p role="alert" className="mb-2 text-xs text-warning-text">集群目录读取失败：{directoryError}。请恢复连接后刷新。</p>}
               <div className="max-h-60 space-y-2 overflow-auto rounded-lg border border-theme-border bg-theme-base p-3">
                 {clusters.map(cluster => <label key={cluster.id} className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={selectedIDs.includes(cluster.id)} onChange={event => setClusterIds(event.target.checked ? [...selectedIDs, cluster.id] : selectedIDs.filter(id => id !== cluster.id))} /><span className="min-w-0 break-words">{cluster.name}<span className="portal-mono ml-2 text-xs text-theme-text-tertiary">{cluster.id}</span></span></label>)}
-                {!clusters.length && <p className="text-sm text-theme-text-secondary">尚无可选集群，请先完成集群注册。</p>}
+                {directoryLoading ? <p role="status" className="text-sm text-theme-text-secondary">正在读取 Hub 集群目录…</p> : !clusters.length && !directoryError && <p className="text-sm text-theme-text-secondary">尚无可选集群，请先在 Hub 中配置集群。</p>}
               </div>
             </fieldset>
             <label className="block text-sm">操作范围<select value={readOnly ? 'read' : 'write'} onChange={event => setReadOnly(event.target.value === 'read')} className="portal-control mt-2 w-full"><option value="read">只读 · 查询与诊断</option><option value="write">读写 · 允许来源提供的写操作</option></select></label>

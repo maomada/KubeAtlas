@@ -139,6 +139,7 @@ export function Portal() {
     }
   }
   useEffect(() => {
+    if (credentialsPage) return
     let disposed = false
     let timer: number | undefined
     const controller = new AbortController()
@@ -164,7 +165,7 @@ export function Portal() {
     }
     void load()
     return () => { disposed = true; controller.abort(); window.clearTimeout(timer) }
-  }, [refresh])
+  }, [refresh, credentialsPage])
 
   const clusters = directory?.clusters ?? []
   const environments = [...new Set(clusters.map(cluster => cluster.environment).filter(Boolean))].sort()
@@ -192,7 +193,7 @@ export function Portal() {
       </nav>
     </header>
     <main className="mx-auto max-w-[1800px] px-5 py-8 lg:px-10">
-      {credentialsPage ? <MCPCredentials clusters={clusters} directoryError={error} /> : fleetPage ? <FleetWorkspace registeredClusters={clusters} /> : <>
+      {credentialsPage ? <MCPCredentials /> : fleetPage ? <FleetWorkspace registeredClusters={clusters} /> : <>
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div><p className="portal-mono mb-2 text-xs text-accent-text">集群目录</p><h1 className="text-3xl font-semibold">集群总览</h1><p className="mt-3 max-w-2xl text-sm leading-relaxed text-theme-text-secondary">一个入口，连接所有 KubeAtlas。查看集群上报信息，进入独立控制台，或接入 MCP 工具。</p></div>
         <a href="#onboarding" className="portal-control inline-flex items-center gap-2"><BookOpen size={16} />集群接入指南 <ExternalLink size={14} /></a>
