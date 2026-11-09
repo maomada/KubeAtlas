@@ -26,6 +26,11 @@ export interface MCPToolInfo {
 
 export const MCP_TOOL_CATALOG: MCPToolInfo[] = [
   {
+    name: 'get_capabilities',
+    desc: '查看当前源端已注册的操作、缓存依赖状态与可选快照采集范围。不是健康检查，也不代表 Kubernetes RBAC 授权。',
+    params: [],
+  },
+  {
     name: 'get_dashboard',
     desc: '集群或命名空间健康概览：资源数量、失败的 Pod、不健康的工作负载、近期警告事件和 Helm 状态。深入查看具体资源前可从此处开始。',
     params: [{ arg: 'namespace', desc: '筛选指定命名空间' }],

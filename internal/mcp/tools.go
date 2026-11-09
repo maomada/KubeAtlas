@@ -61,6 +61,7 @@ import (
 // correct interpretation, not every response field.
 func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramRegistry *toolParamRegistry) {
 	boolPtr := func(b bool) *bool { return &b }
+	registeredExec := includeWrites && includeExec && execToolsEnabled.Load()
 	// Kubernetes API tools have a closed domain; optional container execution
 	// can reach external services and has its own annotations.
 	readOnly := &mcp.ToolAnnotations{
@@ -86,6 +87,12 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 		DestructiveHint: boolPtr(false),
 		OpenWorldHint:   boolPtr(false),
 	}
+
+	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
+		Name:        "get_capabilities",
+		Description: "Cached source facts, not grants.",
+		Annotations: readOnly,
+	}, logToolCall("get_capabilities", sourceCapabilitiesHandler(includeWrites, registeredExec)))
 
 	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
 		Name: "get_dashboard",
@@ -685,7 +692,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 	}, logToolCall("manage_node", handleManageNode))
 
 	// Tools that run commands in the cluster: opt-in (--mcp-exec-tools).
-	if includeExec && execToolsEnabled.Load() {
+	if registeredExec {
 		registerExecTools(server, paramRegistry, &mcp.ToolAnnotations{
 			DestructiveHint: boolPtr(true),
 			OpenWorldHint:   boolPtr(true),

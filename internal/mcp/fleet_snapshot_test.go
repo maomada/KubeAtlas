@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"slices"
 	"strings"
 	"testing"
 
@@ -96,5 +97,58 @@ func TestCaptureFleetSnapshotRejectsCanceledCapture(t *testing.T) {
 	cancel()
 	if _, err := CaptureFleetSnapshot(canceled, "east", "East", binding); err == nil {
 		t.Fatal("canceled capture returned a snapshot")
+	}
+}
+
+func TestCaptureFleetSnapshotSkipsUnsupportedInventories(t *testing.T) {
+	ctx, binding := setupFleetSnapshotTest(t)
+	fixture := &collectionDiscoveryFixture{lists: []*metav1.APIResourceList{
+		{GroupVersion: "v1", APIResources: []metav1.APIResource{
+			{Name: "pods", Kind: "Pod", Namespaced: true, Verbs: []string{"get", "list", "watch"}},
+			{Name: "secrets", Kind: "Secret", Namespaced: true, Verbs: []string{"get", "list", "watch"}},
+			{Name: "componentstatuses", Kind: "ComponentStatus", Verbs: []string{"get", "list"}},
+		}},
+		{GroupVersion: "metrics.k8s.io/v1beta1", APIResources: []metav1.APIResource{{Name: "pods", Kind: "PodMetrics", Namespaced: true, Verbs: []string{"get", "list"}}}},
+	}}
+	restore, err := k8s.SetTestResourceDiscovery(fixture)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(restore)
+	snapshot, err := CaptureFleetSnapshot(ctx, "east", "East", binding)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if snapshot.Coverage == nil || !snapshot.Coverage.DiscoveryComplete || snapshot.Capabilities != nil {
+		t.Fatal("missing collection evidence or invented runtime capabilities")
+	}
+	foundPod := false
+	for _, document := range snapshot.Documents {
+		if document.Tool != "list_resources" && document.Tool != "get_resource" {
+			continue
+		}
+		var input listResourcesInput
+		if err := json.Unmarshal(document.Input, &input); err != nil {
+			t.Fatal(err)
+		}
+		if input.Kind != "pods" || input.Group != "" {
+			t.Fatalf("unsupported/secret inventory became a document: %s %s", document.Tool, document.Input)
+		}
+		if document.Error != "" {
+			t.Fatalf("supported pod read failed: %s", document.Error)
+		}
+		foundPod = true
+	}
+	if !foundPod {
+		t.Fatal("supported inventory missing")
+	}
+	var skipped []string
+	for _, kind := range snapshot.Coverage.UnsupportedKinds {
+		skipped = append(skipped, kind.Group+"/"+kind.Resource+":"+kind.Reason)
+	}
+	for _, want := range []string{"/componentstatuses:missing_verbs:watch", "metrics.k8s.io/pods:missing_verbs:watch", "resource.k8s.io/resourceclaims:api_not_served"} {
+		if !slices.Contains(skipped, want) {
+			t.Fatalf("missing skip evidence %s", want)
+		}
 	}
 }
