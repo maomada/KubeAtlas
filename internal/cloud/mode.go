@@ -21,16 +21,21 @@ const cloudModeEnvVar = "KUBEATLAS_CLOUD_MODE"
 // emission per process so a malformed env var doesn't spam logs on
 // every per-request capability check.
 var warnedUnparseable atomic.Bool
+var selfHostedMode atomic.Bool
 
-// Mode reports whether Radar is running under Radar Cloud. The env
-// var is re-read on each call (cheap — single syscall) so tests using
-// t.Setenv work as expected. The unparseable-value warning is rate-
-// limited via warnedUnparseable; a misconfigured env logs once at the
-// first read.
+// SetSelfHostedMode sets the process-local mode used by the self-hosted Hub
+// source agent without changing the legacy environment contract.
+func SetSelfHostedMode(enabled bool) {
+	selfHostedMode.Store(enabled)
+}
+
+// Mode reports whether the process uses a Hub tunnel. The legacy env var is
+// re-read on each call so tests using t.Setenv work as expected.
 func Mode() bool {
+	selfHosted := selfHostedMode.Load()
 	raw, present := os.LookupEnv(cloudModeEnvVar)
 	if !present || raw == "" {
-		return false
+		return selfHosted
 	}
 	parsed, err := strconv.ParseBool(raw)
 	if err != nil {
@@ -43,7 +48,7 @@ func Mode() bool {
 		if warnedUnparseable.CompareAndSwap(false, true) {
 			log.Printf("[cloud] WARNING: %s=%q is not a valid bool — treating as false. Use 'true' or 'false'.", cloudModeEnvVar, raw)
 		}
-		return false
+		return selfHosted
 	}
-	return parsed
+	return selfHosted || parsed
 }
