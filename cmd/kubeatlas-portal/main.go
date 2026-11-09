@@ -43,6 +43,10 @@ func main() {
 		fmt.Printf("kubeatlas-portal %s\n", version)
 		return
 	}
+	fleetStateFile := effectiveFleetStatePath(*dataFile, *hubStateFile, *fleetDataFile)
+	if err := preflightStatePaths(*dataFile, *hubStateFile, fleetStateFile); err != nil {
+		log.Fatalf("portal state path configuration is invalid: %v", err)
+	}
 	if host, _, err := net.SplitHostPort(*listen); err == nil &&
 		host != "localhost" && !net.ParseIP(host).IsLoopback() {
 		log.Printf("WARNING: Portal is listening beyond loopback; use only on a trusted isolated development network, never on the public internet or in production")
@@ -72,11 +76,8 @@ func main() {
 		log.Fatalf("portal registry startup failed: %v", err)
 	}
 	var fleetStore *fleetsync.Store
-	if credentials.Hub == nil || *fleetDataFile != "" {
-		if *fleetDataFile == "" {
-			*fleetDataFile = filepath.Join(filepath.Dir(*dataFile), "fleet", "state.json")
-		}
-		fleetStore, err = fleetsync.OpenStore(*fleetDataFile)
+	if fleetStateFile != "" {
+		fleetStore, err = fleetsync.OpenStore(fleetStateFile)
 		if err != nil {
 			log.Fatalf("portal Fleet state startup failed: %v", err)
 		}
@@ -167,4 +168,125 @@ func configureHub(credentials *portal.Credentials, stateFile, groups string) err
 	}
 	credentials.Hub = config
 	return nil
+}
+
+func effectiveFleetStatePath(dataFile, hubStateFile, fleetDataFile string) string {
+	if fleetDataFile != "" {
+		return fleetDataFile
+	}
+	if hubStateFile != "" {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(dataFile), "fleet", "state.json")
+}
+
+func preflightStatePaths(registryPath, hubPath, fleetPath string) error {
+	type statePath struct {
+		role     string
+		path     string
+		resolved string
+	}
+	paths := []statePath{{role: "--data-file", path: registryPath}}
+	if hubPath != "" {
+		paths = append(paths, statePath{role: "--hub-state-file", path: hubPath})
+	}
+	if fleetPath != "" {
+		paths = append(paths, statePath{role: "--fleet-data-file", path: fleetPath})
+	}
+	for i := range paths {
+		resolved, err := resolveStatePath(paths[i].path)
+		if err != nil {
+			return fmt.Errorf("cannot resolve %s state path %q: %w", paths[i].role, paths[i].path, err)
+		}
+		paths[i].resolved = resolved
+	}
+	for i := 0; i < len(paths); i++ {
+		for j := i + 1; j < len(paths); j++ {
+			same := paths[i].resolved == paths[j].resolved
+			if !same {
+				left, leftExists, err := existingStatePath(paths[i].resolved)
+				if err != nil {
+					return fmt.Errorf("cannot inspect %s state path %q: %w", paths[i].role, paths[i].path, err)
+				}
+				right, rightExists, err := existingStatePath(paths[j].resolved)
+				if err != nil {
+					return fmt.Errorf("cannot inspect %s state path %q: %w", paths[j].role, paths[j].path, err)
+				}
+				same = leftExists && rightExists && os.SameFile(left, right)
+			}
+			if same {
+				return fmt.Errorf("state path collision: %s and %s refer to the same file", paths[i].role, paths[j].role)
+			}
+		}
+	}
+	return nil
+}
+
+func resolveStatePath(path string) (string, error) {
+	if path == "" {
+		return "", errors.New("path is empty")
+	}
+	path = filepath.FromSlash(filepath.ToSlash(path))
+	for _, component := range strings.Split(path, string(filepath.Separator)) {
+		if component == ".." {
+			return "", errors.New("parent traversal is not permitted in state paths")
+		}
+	}
+	var current string
+	var components []string
+	if filepath.IsAbs(path) {
+		volume := filepath.VolumeName(path)
+		remainder := strings.TrimPrefix(path, volume)
+		current = volume + string(filepath.Separator)
+		components = strings.Split(strings.TrimLeft(remainder, string(filepath.Separator)), string(filepath.Separator))
+	} else {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return "", err
+		}
+		current, err = filepath.EvalSymlinks(cwd)
+		if err != nil {
+			return "", err
+		}
+		components = strings.Split(path, string(filepath.Separator))
+	}
+	for _, component := range components {
+		switch component {
+		case "", ".":
+			continue
+		}
+		candidate := filepath.Join(current, component)
+		info, err := os.Lstat(candidate)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+				current = candidate
+				continue
+			}
+			return "", err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			current, err = filepath.EvalSymlinks(candidate)
+			if err != nil {
+				return "", err
+			}
+			current, err = filepath.Abs(current)
+			if err != nil {
+				return "", err
+			}
+			continue
+		}
+		current = candidate
+	}
+	return filepath.Clean(current), nil
+}
+
+func existingStatePath(path string) (os.FileInfo, bool, error) {
+	info, err := os.Stat(path)
+	if errors.Is(err, fs.ErrNotExist) && !errors.Is(err, syscall.ENOTDIR) {
+		return nil, false, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+	return info, true, nil
 }

@@ -32,12 +32,13 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it('integrates credential management into the Portal rather than a separate app', () => {
+it('keeps MCP navigation hidden during server rendering until Hub status is checked', () => {
   const html = renderToStaticMarkup(<Portal />)
   expect(html).toContain('aria-label="门户导航"')
   expect(html).toContain('退出登录')
-  expect(html).toContain('href="/mcp-access" aria-current="page"')
-  expect(html).toContain('生成访问凭据')
+  expect(html).toContain('正在检查 Hub 模式')
+  expect(html).not.toContain('href="/mcp-access"')
+  expect(html).not.toContain('生成访问凭据')
   expect(html).not.toContain('搜索集群')
 })
 
@@ -58,6 +59,7 @@ it('generates an OpenCode environment reference, rejects credential-bearing URLs
 it('issues scoped credentials once, hides the secret after dismissal, and confirms revocation', async () => {
   let records: MCPCredential[] = []
   const fetch = vi.fn((url: string, options?: RequestInit) => {
+    if (url === '/api/hub') return Promise.resolve(response({ enabled: true }))
     if (url === '/api/hub/clusters') return Promise.resolve(response({ clusters: [cluster, { id: 'revoked', name: 'Revoked', revokedAt: credential.createdAt }] }))
     if (url.endsWith('/revoke')) {
       records = [{ ...credential, revokedAt: credential.createdAt }]
@@ -87,7 +89,7 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
   expect(fetch.mock.calls.some(([url]) => url.endsWith('/revoke'))).toBe(false)
   await act(async () => button('确认撤销').click())
   expect(host.textContent).toContain('已撤销')
-  expect(fetch.mock.calls.every(([url]) => url.startsWith('/api/mcp/credentials') || url === '/api/hub/clusters')).toBe(true)
+  expect(fetch.mock.calls.every(([url]) => url.startsWith('/api/mcp/credentials') || url === '/api/hub' || url === '/api/hub/clusters')).toBe(true)
 })
 
 it('surfaces uncertain creation failures without retrying the mutation', async () => {
@@ -105,15 +107,76 @@ it('surfaces uncertain creation failures without retrying the mutation', async (
 })
 
 it('fails closed when the Hub directory cannot be read, without falling back to registrations', async () => {
-  const fetch = vi.fn((url: string) => Promise.resolve(url === '/api/hub/clusters'
-    ? new Response(null, { status: 503 })
-    : response({ credentials: [credential], serverTime: credential.createdAt })))
+  const fetch = vi.fn((url: string, options?: RequestInit) => Promise.resolve(options?.method === 'POST'
+    ? response({})
+    : url === '/api/hub'
+      ? response({ enabled: true })
+      : url === '/api/hub/clusters'
+        ? new Response(null, { status: 503 })
+        : response({ credentials: [credential], serverTime: credential.createdAt })))
   vi.stubGlobal('fetch', fetch)
   await act(async () => root.render(<Portal />))
   expect(host.textContent).toContain('集群目录读取失败')
   expect(button('生成限时 Token').closest('fieldset')!.disabled).toBe(true)
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-  expect(fetch.mock.calls).toHaveLength(2)
+  expect(fetch.mock.calls).toHaveLength(3)
+  expect(fetch.mock.calls.some(([url]) => url === '/api/clusters')).toBe(false)
+  expect(fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
+})
+
+it('hides MCP navigation when Hub is disabled while keeping home directory polling', async () => {
+  window.history.replaceState({}, '', '/')
+  const fetch = vi.fn((url: string) => Promise.resolve(url === '/api/hub'
+    ? new Response(null, { status: 404 })
+    : response({ clusters: [], serverTime: credential.createdAt, staleAfterSeconds: 90 })))
+  vi.stubGlobal('fetch', fetch)
+  await act(async () => root.render(<Portal />))
+  expect(host.querySelector('a[href="/mcp-access"]')).toBeNull()
+  expect(fetch.mock.calls.some(([url]) => url === '/api/hub')).toBe(true)
+  expect(fetch.mock.calls.some(([url]) => url === '/api/clusters')).toBe(true)
+})
+
+it('shows Hub-disabled guidance on direct credential visits without management requests', async () => {
+  const fetch = vi.fn((url: string) => {
+    expect(url).toBe('/api/hub')
+    return Promise.resolve(new Response(null, { status: 404 }))
+  })
+  vi.stubGlobal('fetch', fetch)
+  await act(async () => root.render(<Portal />))
+  expect(host.textContent).toContain('Hub 模式未启用')
+  expect(host.textContent).toContain('--hub-state-file')
+  expect(host.querySelector('a[href="/mcp-access"]')).toBeNull()
+  expect(host.textContent).not.toContain('生成访问凭据')
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/hub'])
+})
+
+it.each([
+  { label: 'network failure', firstResponse: () => Promise.reject(new Error('network interruption')) },
+  { label: '403 response', firstResponse: () => Promise.resolve(new Response(null, { status: 403 })) },
+  { label: '5xx response', firstResponse: () => Promise.resolve(new Response(null, { status: 503 })) },
+  { label: 'malformed metadata', firstResponse: () => Promise.resolve(response({ enabled: 'true' })) },
+])('allows retry after $label during Hub availability lookup', async ({ firstResponse }) => {
+  let availabilityRequests = 0
+  const fetch = vi.fn((url: string) => {
+    if (url === '/api/hub') {
+      availabilityRequests++
+      return availabilityRequests === 1 ? firstResponse() : Promise.resolve(response({ enabled: true }))
+    }
+    if (url === '/api/hub/clusters') return Promise.resolve(response({ clusters: [cluster] }))
+    return Promise.resolve(response({ credentials: [], serverTime: credential.createdAt }))
+  })
+  vi.stubGlobal('fetch', fetch)
+  await act(async () => root.render(<Portal />))
+  expect(host.textContent).toContain('无法确认 Hub 状态')
+  expect(host.textContent).not.toContain('Hub 模式未启用')
+  expect(host.querySelector('a[href="/mcp-access"]')).toBeNull()
+  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/hub'])
+
+  await act(async () => button('重试').click())
+  expect(host.querySelector('a[href="/mcp-access"]')).not.toBeNull()
+  expect(host.textContent).toContain('生成访问凭据')
+  expect(fetch.mock.calls.some(([url]) => url === '/api/hub/clusters')).toBe(true)
+  expect(fetch.mock.calls.some(([url]) => url === '/api/mcp/credentials')).toBe(true)
   expect(fetch.mock.calls.some(([url]) => url === '/api/clusters')).toBe(false)
 })

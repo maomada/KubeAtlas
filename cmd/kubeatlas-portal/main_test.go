@@ -53,6 +53,149 @@ func TestLoadCredentialsHubMode(t *testing.T) {
 	}
 }
 
+func TestStatePaths(t *testing.T) {
+	root := t.TempDir()
+	registryPath := filepath.Join(root, "registry.json")
+	hubPath := filepath.Join(root, "hub.json")
+
+	t.Run("plain duplicate", func(t *testing.T) {
+		err := preflightStatePaths(registryPath, registryPath, "")
+		if err == nil || !strings.Contains(err.Error(), "--data-file and --hub-state-file") {
+			t.Fatalf("expected registry/Hub path collision, got %v", err)
+		}
+	})
+
+	t.Run("relative duplicate", func(t *testing.T) {
+		cwd, err := os.Getwd()
+		if err != nil {
+			t.Fatal(err)
+		}
+		relativePath := filepath.Base(root) + "-relative-state.json"
+		err = preflightStatePaths(relativePath, filepath.Join(cwd, relativePath), "")
+		if err == nil || !strings.Contains(err.Error(), "state path collision") {
+			t.Fatalf("expected relative/absolute path collision, got %v", err)
+		}
+	})
+
+	t.Run("explicit Fleet collision", func(t *testing.T) {
+		err := preflightStatePaths(registryPath, hubPath, hubPath)
+		if err == nil || !strings.Contains(err.Error(), "--hub-state-file and --fleet-data-file") {
+			t.Fatalf("expected Hub/Fleet path collision, got %v", err)
+		}
+	})
+
+	t.Run("symlink parent with missing leaf", func(t *testing.T) {
+		targetDir := filepath.Join(root, "target")
+		if err := os.Mkdir(targetDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		linkDir := filepath.Join(root, "alias")
+		if err := os.Symlink(targetDir, linkDir); err != nil {
+			t.Fatal(err)
+		}
+		err := preflightStatePaths(filepath.Join(targetDir, "state.json"), filepath.Join(linkDir, "state.json"), "")
+		if err == nil || !strings.Contains(err.Error(), "state path collision") {
+			t.Fatalf("expected missing-leaf symlink alias collision, got %v", err)
+		}
+	})
+
+	t.Run("existing hardlink alias", func(t *testing.T) {
+		first := filepath.Join(root, "hardlink-a.json")
+		second := filepath.Join(root, "hardlink-b.json")
+		if err := os.WriteFile(first, []byte("{}"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Link(first, second); err != nil {
+			t.Skipf("hard links are unavailable: %v", err)
+		}
+		err := preflightStatePaths(first, second, "")
+		if err == nil || !strings.Contains(err.Error(), "state path collision") {
+			t.Fatalf("expected SameFile alias collision, got %v", err)
+		}
+	})
+
+	t.Run("symlink and parent traversal", func(t *testing.T) {
+		targetDir := filepath.Join(root, "target", "nested")
+		if err := os.MkdirAll(targetDir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+		linkDir := filepath.Join(root, "nested-alias")
+		if err := os.Symlink(targetDir, linkDir); err != nil {
+			t.Fatal(err)
+		}
+		throughLink := linkDir + string(filepath.Separator) + ".." + string(filepath.Separator) + "state.json"
+		direct := filepath.Join(root, "target", "state.json")
+		err := preflightStatePaths(throughLink, direct, "")
+		if err == nil || !strings.Contains(err.Error(), "parent traversal is not permitted") {
+			t.Fatalf("expected ambiguous symlink/.. path rejection, got %v", err)
+		}
+	})
+
+	t.Run("rejects parent traversal after a missing component", func(t *testing.T) {
+		ambiguous := filepath.Join(root, "missing") + string(filepath.Separator) + ".." + string(filepath.Separator) + "state.json"
+		err := preflightStatePaths(ambiguous, filepath.Join(root, "state.json"), "")
+		if err == nil || !strings.Contains(err.Error(), "parent traversal is not permitted") {
+			t.Fatalf("expected missing-path traversal rejection, got %v", err)
+		}
+	})
+
+	t.Run("distinct paths and effective Fleet modes", func(t *testing.T) {
+		defaultFleet := filepath.Join(root, "fleet", "state.json")
+		if got := effectiveFleetStatePath(registryPath, "", ""); got != defaultFleet {
+			t.Fatalf("standalone default Fleet path = %q, want %q", got, defaultFleet)
+		}
+		if got := effectiveFleetStatePath(registryPath, hubPath, ""); got != "" {
+			t.Fatalf("Hub-only Fleet path = %q, want none", got)
+		}
+		explicitFleet := filepath.Join(root, "explicit-fleet.json")
+		if got := effectiveFleetStatePath(registryPath, hubPath, explicitFleet); got != explicitFleet {
+			t.Fatalf("explicit Hub Fleet path = %q, want %q", got, explicitFleet)
+		}
+		if err := preflightStatePaths(registryPath, hubPath, explicitFleet); err != nil {
+			t.Fatalf("distinct active paths rejected: %v", err)
+		}
+		if err := preflightStatePaths(registryPath, "", defaultFleet); err != nil {
+			t.Fatalf("standalone default Fleet path rejected: %v", err)
+		}
+		if err := preflightStatePaths(registryPath, hubPath, ""); err != nil {
+			t.Fatalf("Hub-only paths rejected: %v", err)
+		}
+	})
+
+	t.Run("CLI rejects collision before parsing stores", func(t *testing.T) {
+		sentinelPath := filepath.Join(root, "sentinel.json")
+		sentinel := []byte("preserve this invalid store")
+		if err := os.WriteFile(sentinelPath, sentinel, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("go", "run", ".", "--data-file", sentinelPath, "--hub-state-file", sentinelPath)
+		cmd.Dir = "."
+		for _, entry := range os.Environ() {
+			if !strings.HasPrefix(entry, "KUBEATLAS_PORTAL_TOKENS=") &&
+				!strings.HasPrefix(entry, "KUBEATLAS_PORTAL_HUB_STATE_FILE=") {
+				cmd.Env = append(cmd.Env, entry)
+			}
+		}
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			t.Fatalf("CLI accepted colliding state paths: %s", output)
+		}
+		if !strings.Contains(string(output), "state path collision: --data-file and --hub-state-file") {
+			t.Fatalf("CLI did not reject paths before store parsing: %s", output)
+		}
+		if strings.Contains(string(output), "decode portal registry") {
+			t.Fatalf("CLI parsed the sentinel registry before rejecting paths: %s", output)
+		}
+		got, err := os.ReadFile(sentinelPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != string(sentinel) {
+			t.Fatalf("CLI changed sentinel file: got %q, want %q", got, sentinel)
+		}
+	})
+}
+
 type testRoundTripper func(*http.Request) (*http.Response, error)
 
 func (f testRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }

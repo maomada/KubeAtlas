@@ -7,6 +7,7 @@ import type { PortalCluster, PortalDirectory } from './model'
 import { ThemeToggle } from './ThemeToggle'
 import { FleetWorkspace } from './FleetWorkspace'
 import { MCPCredentials } from './MCPCredentials'
+import { hubAvailability } from './credentials'
 
 const connectionLabels = { connected: '已连接', connecting: '连接中', disconnected: '未连接' }
 const authLabels = { none: '未启用认证', proxy: '代理认证', oidc: 'OIDC 登录' }
@@ -122,6 +123,14 @@ export function Portal() {
   const [environment, setEnvironment] = useState('')
   const [status, setStatus] = useState('')
   const [loggingOut, setLoggingOut] = useState(false)
+  const [hubStatus, setHubStatus] = useState<'loading' | 'enabled' | 'disabled' | 'error'>('loading')
+  const [hubError, setHubError] = useState('')
+  const [hubRetry, setHubRetry] = useState(0)
+  function retryHubCheck() {
+    setHubStatus('loading')
+    setHubError('')
+    setHubRetry(value => value + 1)
+  }
   async function logout() {
     setLoggingOut(true)
     setError('')
@@ -138,6 +147,17 @@ export function Portal() {
       setLoggingOut(false)
     }
   }
+  useEffect(() => {
+    const controller = new AbortController()
+    void hubAvailability(controller.signal).then(enabled => {
+      if (!controller.signal.aborted) setHubStatus(enabled ? 'enabled' : 'disabled')
+    }).catch(cause => {
+      if (controller.signal.aborted) return
+      setHubError(cause instanceof Error ? cause.message : '无法读取 Hub 状态。')
+      setHubStatus('error')
+    })
+    return () => controller.abort()
+  }, [hubRetry])
   useEffect(() => {
     if (credentialsPage) return
     let disposed = false
@@ -189,11 +209,16 @@ export function Portal() {
       <nav aria-label="门户导航" className="mx-auto flex max-w-[1800px] gap-2 px-5 pb-3 lg:px-10">
         <a href="/" aria-current={!fleetPage && !credentialsPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${!fleetPage && !credentialsPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>集群总览</a>
         <a href="/fleet" aria-current={fleetPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${fleetPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>多云分组与上下文</a>
-        <a href="/mcp-access" aria-current={credentialsPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${credentialsPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>MCP 访问凭据</a>
+        {hubStatus === 'enabled' && <a href="/mcp-access" aria-current={credentialsPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${credentialsPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>MCP 访问凭据</a>}
       </nav>
     </header>
     <main className="mx-auto max-w-[1800px] px-5 py-8 lg:px-10">
-      {credentialsPage ? <MCPCredentials /> : fleetPage ? <FleetWorkspace registeredClusters={clusters} /> : <>
+      {credentialsPage ? hubStatus === 'enabled' ? <MCPCredentials /> : hubStatus === 'loading'
+        ? <div role="status" className="portal-card p-8 text-sm text-theme-text-secondary">正在检查 Hub 模式…</div>
+        : hubStatus === 'disabled'
+          ? <section role="status" className="portal-card p-6"><h1 className="text-xl font-semibold">Hub 模式未启用</h1><p className="mt-3 text-sm leading-relaxed text-theme-text-secondary">MCP 访问凭据需要 Portal Hub。启动门户时配置 <code>--hub-state-file</code> 后重新检查。</p><button type="button" className="portal-control mt-4" onClick={retryHubCheck}>重新检查</button></section>
+          : <section role="alert" className="portal-card p-6"><h1 className="text-xl font-semibold">无法确认 Hub 状态</h1><p className="mt-3 text-sm leading-relaxed text-theme-text-secondary">{hubError}</p><button type="button" className="portal-control mt-4" onClick={retryHubCheck}>重试</button></section>
+        : fleetPage ? <FleetWorkspace registeredClusters={clusters} /> : <>
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div><p className="portal-mono mb-2 text-xs text-accent-text">集群目录</p><h1 className="text-3xl font-semibold">集群总览</h1><p className="mt-3 max-w-2xl text-sm leading-relaxed text-theme-text-secondary">一个入口，连接所有 KubeAtlas。查看集群上报信息，进入独立控制台，或接入 MCP 工具。</p></div>
         <a href="#onboarding" className="portal-control inline-flex items-center gap-2"><BookOpen size={16} />集群接入指南 <ExternalLink size={14} /></a>

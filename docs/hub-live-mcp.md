@@ -12,8 +12,18 @@ Run `kubeatlas-portal --hub-state-file ./portal-data/hub/state.json` with the
 existing `KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD` supplied
 through your secret manager. `KUBEATLAS_PORTAL_HUB_STATE_FILE` is the equivalent
 environment setting. Without this option, standalone Portal behavior is unchanged.
-The Hub state path must be different from the legacy registry and Fleet paths.
-The state store persists token digests, not bearer values.
+Startup rejects collisions among active `--data-file`, `--hub-state-file` and
+`--fleet-data-file` paths before opening any store. Standalone mode uses
+`<registry-directory>/fleet/state.json` when `--fleet-data-file` is omitted;
+Hub-only mode has no Fleet store unless that flag is explicitly supplied.
+Preflight resolves absolute paths and existing symlink aliases, including a
+symlinked parent with a not-yet-created state file, and also detects existing
+same-file aliases. Unresolvable paths fail closed without creating or changing
+state. Paths containing `..` are rejected because state stores normalize paths
+differently. Store-specific file and permission checks still apply, including
+Hub state-file symlink rejection. This startup check does not protect against
+privileged concurrent filesystem replacement. The state store persists token
+digests, not bearer values.
 
 Hub-only mode needs neither `KUBEATLAS_PORTAL_TOKENS` nor a Fleet snapshot store.
 An explicitly supplied `--fleet-data-file` opens optional legacy storage; it does
