@@ -136,6 +136,10 @@ func logToolCall[In any](
 				deletion.Confirm = ""
 				loggedInput = deletion
 			}
+			if listing, ok := loggedInput.(listResourcesInput); ok {
+				listing.Cursor = ""
+				loggedInput = listing
+			}
 			args, _ := json.Marshal(loggedInput)
 			log.Printf("\033[1;35m[MCP]\033[0m \033[1m%s\033[0m %s", name, string(args))
 		}
@@ -160,6 +164,12 @@ func logToolCall[In any](
 		}
 		if structured, ok := readErrorResult(err); ok {
 			result, extra, err = structured, nil, nil
+		}
+		if result != nil {
+			if result.Meta == nil {
+				result.Meta = mcp.Meta{}
+			}
+			result.Meta["kubeatlas/observedAt"] = time.Now().UTC().Format(time.RFC3339Nano)
 		}
 
 		bytes := resultBytes(result)

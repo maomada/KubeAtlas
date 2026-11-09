@@ -81,6 +81,12 @@ const (
 	ObjectNotFound Code = "object_not_found"
 	// ListTooLarge: the list is over the request's size budget.
 	ListTooLarge Code = "list_too_large"
+	// InvalidParameters: paging requires a valid limit and cursor combination.
+	InvalidParameters Code = "invalid_parameters"
+	// InvalidCursor: a continuation cannot be verified for this query/identity.
+	InvalidCursor Code = "invalid_cursor"
+	// CursorExpired: the original traversal's continuation lifetime has ended.
+	CursorExpired Code = "cursor_expired"
 	// FilterEvalFailed: a search filter could not be evaluated on objects
 	// Radar did read, so whether they match is unknown.
 	FilterEvalFailed Code = "filter_eval_failed"
@@ -147,6 +153,9 @@ var actions = map[Code]Action{
 	NamespaceRequired:          ActionChangeRequest,
 	ObjectNotFound:             ActionNone,
 	ListTooLarge:               ActionChangeRequest,
+	InvalidParameters:          ActionChangeRequest,
+	InvalidCursor:              ActionChangeRequest,
+	CursorExpired:              ActionChangeRequest,
 	FilterEvalFailed:           ActionChangeRequest,
 	FindingsScanIncomplete:     ActionChangeRequest,
 	ClusterConnecting:          ActionRetry,
@@ -198,6 +207,7 @@ func AffectsWholeCluster(c Code) bool {
 // object_not_found is an
 // answer, not a failure.
 var precedence = []Code{
+	InvalidParameters, InvalidCursor, CursorExpired,
 	NamespaceRequired, KindUnknown, KindNotWatchable, KindNotSearchable, ListTooLarge,
 	ClusterDisconnected, ClusterConnecting, ConnectionChanged,
 	KindSyncPending, UserPermissionCheckFailed,

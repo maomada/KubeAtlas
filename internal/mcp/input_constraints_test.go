@@ -63,6 +63,7 @@ func TestToolInputConstraintsPublished(t *testing.T) {
 		{"get_events", "limit", 100},
 		{"get_changes", "limit", 50},
 		{"search", "limit", 500},
+		{"list_resources", "limit", 200},
 		{"issues", "limit", 1000},
 		{"get_cluster_audit", "limit", 100},
 		{"get_runtime_versions", "limit", 200},
