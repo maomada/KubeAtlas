@@ -1,0 +1,61 @@
+import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
+import { safeExternalURL } from './model'
+
+export interface MCPCredential {
+  id: string
+  label: string
+  clusterIds: string[]
+  readOnly: boolean
+  createdAt: string
+  expiresAt: string
+  refreshUntil: string
+  revokedAt?: string
+}
+
+export interface IssuedCredential {
+  credential: MCPCredential
+  token: string
+}
+
+export function credentialStatus(credential: MCPCredential, now: number): 'active' | 'expired' | 'revoked' | 'unknown' {
+  if (credential.revokedAt) return 'revoked'
+  const expires = Date.parse(credential.expiresAt)
+  if (!Number.isFinite(expires) || !Number.isFinite(now)) return 'unknown'
+  return expires <= now ? 'expired' : 'active'
+}
+
+export function openCodeFleetConfig(endpoint: string): string {
+  const url = safeExternalURL(endpoint)
+  if (!url) throw new Error('请输入不含凭据、查询参数或片段的 HTTP / HTTPS 地址。')
+  return JSON.stringify({
+    mcp: {
+      'kubeatlas-fleet': {
+        type: 'remote', url, oauth: false,
+        headers: { Authorization: 'Bearer {env:KUBEATLAS_MCP_TOKEN}' },
+      },
+    },
+  }, null, 2)
+}
+
+export async function credentialsRequest<T>(path = '', method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {
+  const response = await fetch(apiUrl(`/mcp/credentials${path}`), {
+    method, credentials: getCredentialsMode(), cache: 'no-store',
+    headers: { ...getAuthHeaders(), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
+    body: body === undefined ? undefined : JSON.stringify(body),
+    signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000),
+  })
+  if (response.status === 401) {
+    window.location.replace('/login?expired=1')
+    throw new Error('门户登录已失效，请重新登录；MCP 凭据有独立的有效期。')
+  }
+  if (!response.ok) {
+    let message = `请求失败（HTTP ${response.status}）`
+    if (response.headers.get('Content-Type')?.includes('application/json')) {
+      const error = await response.json()
+      if (typeof error.message === 'string') message = error.message
+      else if (typeof error.error === 'string') message = error.error
+    }
+    throw new Error(message)
+  }
+  return response.status === 204 ? undefined as T : await response.json() as T
+}

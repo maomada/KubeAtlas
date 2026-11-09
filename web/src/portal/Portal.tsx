@@ -6,6 +6,7 @@ import { filterClusters, mcpClientConfig, safeExternalURL } from './model'
 import type { PortalCluster, PortalDirectory } from './model'
 import { ThemeToggle } from './ThemeToggle'
 import { FleetWorkspace } from './FleetWorkspace'
+import { MCPCredentials } from './MCPCredentials'
 
 const connectionLabels = { connected: '已连接', connecting: '连接中', disconnected: '未连接' }
 const authLabels = { none: '未启用认证', proxy: '代理认证', oidc: 'OIDC 登录' }
@@ -112,6 +113,7 @@ function Onboarding() {
 
 export function Portal() {
   const fleetPage = window.location.pathname === '/fleet'
+  const credentialsPage = window.location.pathname === '/mcp-access'
   const [directory, setDirectory] = useState<PortalDirectory>()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(true)
@@ -184,12 +186,13 @@ export function Portal() {
         <div className="flex items-center gap-3"><span className="hidden items-center gap-1.5 text-xs text-theme-text-tertiary sm:flex"><ShieldCheck size={14} />独立部署 · 凭据隔离</span><ThemeToggle /><button type="button" className="portal-control inline-flex items-center gap-2" onClick={logout} disabled={loggingOut}><LogOut size={16} />{loggingOut ? '正在退出…' : '退出登录'}</button></div>
       </div>
       <nav aria-label="门户导航" className="mx-auto flex max-w-[1800px] gap-2 px-5 pb-3 lg:px-10">
-        <a href="/" aria-current={!fleetPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${!fleetPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>集群总览</a>
+        <a href="/" aria-current={!fleetPage && !credentialsPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${!fleetPage && !credentialsPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>集群总览</a>
         <a href="/fleet" aria-current={fleetPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${fleetPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>多云分组与上下文</a>
+        <a href="/mcp-access" aria-current={credentialsPage ? 'page' : undefined} className={`rounded-lg px-4 py-2 text-sm ${credentialsPage ? 'bg-accent-muted font-medium text-accent-text' : 'text-theme-text-secondary hover:bg-theme-hover'}`}>MCP 访问凭据</a>
       </nav>
     </header>
     <main className="mx-auto max-w-[1800px] px-5 py-8 lg:px-10">
-      {fleetPage ? <FleetWorkspace registeredClusters={clusters} /> : <>
+      {credentialsPage ? <MCPCredentials clusters={clusters} directoryError={error} /> : fleetPage ? <FleetWorkspace registeredClusters={clusters} /> : <>
       <div className="flex flex-wrap items-end justify-between gap-5">
         <div><p className="portal-mono mb-2 text-xs text-accent-text">集群目录</p><h1 className="text-3xl font-semibold">集群总览</h1><p className="mt-3 max-w-2xl text-sm leading-relaxed text-theme-text-secondary">一个入口，连接所有 KubeAtlas。查看集群上报信息，进入独立控制台，或接入 MCP 工具。</p></div>
         <a href="#onboarding" className="portal-control inline-flex items-center gap-2"><BookOpen size={16} />集群接入指南 <ExternalLink size={14} /></a>
