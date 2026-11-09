@@ -58,7 +58,11 @@ func TestAuditSettingsAgreeBetweenResourceAndAggregate(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "api", Namespace: ns},
 			Spec: appsv1.DeploymentSpec{
 				Replicas: new(int32(1)),
-				Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "app:v1"}}}},
+				Selector: &metav1.LabelSelector{MatchLabels: map[string]string{"app": "api"}},
+				Template: corev1.PodTemplateSpec{
+					ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app": "api"}},
+					Spec:       corev1.PodSpec{Containers: []corev1.Container{{Name: "app", Image: "app:v1"}}},
+				},
 			},
 		})
 	}
