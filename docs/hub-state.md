@@ -47,7 +47,8 @@ writers can alter grants; protect it and its backups as authentication state.
 
 - At most 100 clusters and 100 groups; IDs match
   `^[a-z0-9][a-z0-9-]{0,62}$`.
-- Names are nonempty and at most 256 bytes. Cluster descriptions are at most
+- Cluster and group names are nonempty, at most 256 bytes, and have no leading
+  or trailing whitespace (including Unicode whitespace). Cluster descriptions are at most
   1000 bytes; environment and region are at most 128 bytes each.
 - User-controlled text is valid UTF-8 without control characters. Required
   text cannot be whitespace-only.

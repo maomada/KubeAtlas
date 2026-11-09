@@ -58,8 +58,12 @@ func validText(value string, limit int, required bool) bool {
 	return true
 }
 
+func validName(name string) bool {
+	return validText(name, 256, true) && strings.TrimSpace(name) == name
+}
+
 func validCluster(c ClusterInput) bool {
-	return idPattern.MatchString(c.ID) && validText(c.Name, 256, true) && validText(c.Description, 1000, false) && validText(c.Environment, 128, false) && validText(c.Region, 128, false)
+	return idPattern.MatchString(c.ID) && validName(c.Name) && validText(c.Description, 1000, false) && validText(c.Environment, 128, false) && validText(c.Region, 128, false)
 }
 
 func validOwner(owner string) bool { return validText(owner, maxStoreBytes, true) }
@@ -117,7 +121,7 @@ func validFile(file storeFile) bool {
 	}
 	for id, g := range file.Groups {
 		ids, err := scope(g.ClusterIDs, file.Clusters, true)
-		if id != g.ID || !idPattern.MatchString(id) || !validText(g.Name, 256, true) || err != nil || !slices.Equal(ids, g.ClusterIDs) || !validTimes(g.CreatedAt, g.UpdatedAt, nil) {
+		if id != g.ID || !idPattern.MatchString(id) || !validName(g.Name) || err != nil || !slices.Equal(ids, g.ClusterIDs) || !validTimes(g.CreatedAt, g.UpdatedAt, nil) {
 			return false
 		}
 	}

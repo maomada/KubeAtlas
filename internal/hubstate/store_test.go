@@ -598,6 +598,58 @@ func TestCapacityAndRetention(t *testing.T) {
 	errorCode(t, err, "capacity_exceeded")
 }
 
+func TestNameWhitespaceValidation(t *testing.T) {
+	for _, name := range []string{" Alpha", "Alpha ", "\u00a0Alpha\u00a0"} {
+		t.Run(name, func(t *testing.T) {
+			s, _ := testStore(t)
+			cluster(t, s, "alpha")
+			if _, err := s.SaveGroup(GroupInput{ID: "team", Name: "Alpha Team"}); err != nil {
+				t.Fatal(err)
+			}
+			_, err := s.CreateCluster(ClusterInput{ID: "beta", Name: name})
+			errorCode(t, err, "invalid_parameters")
+			_, err = s.UpdateCluster("alpha", ClusterInput{ID: "alpha", Name: name})
+			errorCode(t, err, "invalid_parameters")
+			for _, id := range []string{"new-team", "team"} {
+				_, err = s.SaveGroup(GroupInput{ID: id, Name: name})
+				errorCode(t, err, "invalid_parameters")
+			}
+			for _, section := range []string{"clusters", "groups"} {
+				file := s.next(s.now())
+				if section == "clusters" {
+					c := file.Clusters["alpha"]
+					c.Name = name
+					file.Clusters["alpha"] = c
+				} else {
+					g := file.Groups["team"]
+					g.Name = name
+					file.Groups["team"] = g
+				}
+				data, err := json.Marshal(file)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(s.path, data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				_, err = OpenStore(s.path)
+				errorCode(t, err, "store_unavailable")
+			}
+		})
+	}
+	s, _ := testStore(t)
+	if _, err := s.CreateCluster(ClusterInput{ID: "alpha", Name: "Alpha Cluster", Description: " description "}); err != nil {
+		t.Fatal(err)
+	}
+	p, err := s.Issue(" owner ", IssueInput{Label: " label ", ClusterIDs: []string{"alpha"}})
+	if err != nil || p.Credential.OwnerID != " owner " || p.Credential.Label != " label " {
+		t.Fatal("non-name text semantics changed")
+	}
+	if _, err := OpenStore(s.path); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestTextValidation(t *testing.T) {
 	s, _ := testStore(t)
 	for _, input := range []ClusterInput{

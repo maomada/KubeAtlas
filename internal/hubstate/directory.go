@@ -164,7 +164,7 @@ func (s *Store) Cluster(id string) (Cluster, bool) {
 }
 
 func (s *Store) SaveGroup(input GroupInput) (Group, error) {
-	if !idPattern.MatchString(input.ID) || !validText(input.Name, 256, true) {
+	if !idPattern.MatchString(input.ID) || !validName(input.Name) {
 		return Group{}, failure("invalid_parameters")
 	}
 	s.mu.Lock()
