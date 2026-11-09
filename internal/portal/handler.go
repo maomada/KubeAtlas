@@ -24,6 +24,7 @@ type Credentials struct {
 	Password             string
 	AllowInsecureCookies bool
 	MCPAllowedHosts      []string
+	Hub                  *HubConfig
 }
 
 type Handler struct {
@@ -38,6 +39,7 @@ type Handler struct {
 	fleetStore    *fleetsync.Store
 	fleetHandler  http.Handler
 	agentHub      *AgentHub
+	liveHub       *portalHub
 }
 
 func NewHandler(registry *Registry, credentials Credentials, static fs.FS, fleetStore *fleetsync.Store) (*Handler, error) {
@@ -76,10 +78,20 @@ func NewHandler(registry *Registry, credentials Credentials, static fs.FS, fleet
 		handler.Close()
 		return nil, err
 	}
+	if credentials.Hub != nil {
+		handler.liveHub, err = newPortalHub(credentials)
+		if err != nil {
+			handler.Close()
+			return nil, err
+		}
+	}
 	return handler, nil
 }
 
 func (h *Handler) Close() {
+	if h != nil && h.liveHub != nil {
+		_ = h.liveHub.transport.Close()
+	}
 	if h != nil && h.agentHub != nil {
 		h.agentHub.Close()
 	}
@@ -93,6 +105,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	if h.serveHub(w, r) {
 		return
 	}
 

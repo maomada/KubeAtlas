@@ -43,10 +43,11 @@ type Config struct {
 }
 
 type Principal struct {
-	UserID     string
-	Groups     []string
-	ClusterIDs []string
-	ReadOnly   bool
+	CredentialID string
+	UserID       string
+	Groups       []string
+	ClusterIDs   []string
+	ReadOnly     bool
 }
 
 type Agent struct {
