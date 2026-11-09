@@ -13,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/maomada/KubeAtlas/internal/cloud"
 )
 
 func validHubStartupFlags(t *testing.T) hubStartupFlags {
@@ -184,6 +186,37 @@ func TestResolveHubStartupStandaloneDoesNotChangeDefaults(t *testing.T) {
 	}
 	if got.Enabled || got.AuthMode != "" || got.UserHeader != "" || got.GroupsHeader != "" {
 		t.Fatalf("standalone startup was changed: %+v", got)
+	}
+}
+
+func TestLegacyHubOriginHintsDoNotEnableAgentConfiguration(t *testing.T) {
+	t.Setenv("KUBEATLAS_HUB_URL", "https://legacy-hub.example.test")
+	t.Setenv("KUBEATLAS_HUB_APP_URL", "https://legacy-app.example.test")
+	t.Setenv("KUBEATLAS_AGENT_HUB_URL", "")
+	t.Setenv("KUBEATLAS_AGENT_HUB_CLUSTER_ID", "")
+	t.Setenv("KUBEATLAS_AGENT_HUB_TOKEN_FILE", "")
+	t.Setenv("KUBEATLAS_AGENT_HUB_CA_FILE", "")
+
+	apiURL, appURL, err := cloud.ResolveHubOriginsFromEnv()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if apiURL != "https://legacy-hub.example.test" || appURL != "https://legacy-app.example.test" {
+		t.Fatalf("legacy origin hints changed: api=%q app=%q", apiURL, appURL)
+	}
+
+	env := hubStartupEnvironmentDefaults()
+	startup, err := resolveHubStartup(hubStartupFlags{
+		URL:       env.URL,
+		ClusterID: env.ClusterID,
+		TokenFile: env.TokenFile,
+		CAFile:    env.CAFile,
+	})
+	if err != nil {
+		t.Fatalf("legacy origin hints required agent configuration: %v", err)
+	}
+	if startup.Enabled {
+		t.Fatal("legacy origin hints enabled the source agent")
 	}
 }
 

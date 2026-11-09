@@ -16,20 +16,23 @@ variables). The CA file is optional:
 
 | Option | Environment variable | Meaning |
 | --- | --- | --- |
-| `--hub-url` | `KUBEATLAS_HUB_URL` | Root HTTP(S) Portal origin |
-| `--hub-cluster-id` | `KUBEATLAS_HUB_CLUSTER_ID` | Stable cluster ID |
-| `--hub-token-file` | `KUBEATLAS_HUB_TOKEN_FILE` | File containing the cluster bearer token |
-| `--hub-ca-file` | `KUBEATLAS_HUB_CA_FILE` | Optional CA bundle for a private Hub certificate |
+| `--hub-url` | `KUBEATLAS_AGENT_HUB_URL` | Root HTTP(S) Portal origin |
+| `--hub-cluster-id` | `KUBEATLAS_AGENT_HUB_CLUSTER_ID` | Stable cluster ID |
+| `--hub-token-file` | `KUBEATLAS_AGENT_HUB_TOKEN_FILE` | File containing the cluster bearer token |
+| `--hub-ca-file` | `KUBEATLAS_AGENT_HUB_CA_FILE` | Optional CA bundle for a private Hub certificate |
 
 For example:
 
 ```sh
-KUBEATLAS_HUB_URL=https://portal.example.test \
-KUBEATLAS_HUB_CLUSTER_ID=prod-east-1 \
-KUBEATLAS_HUB_TOKEN_FILE=/var/run/secrets/kubeatlas/hub-token \
-KUBEATLAS_HUB_CA_FILE=/var/run/secrets/kubeatlas/hub-ca.crt \
+KUBEATLAS_AGENT_HUB_URL=https://portal.example.test \
+KUBEATLAS_AGENT_HUB_CLUSTER_ID=prod-east-1 \
+KUBEATLAS_AGENT_HUB_TOKEN_FILE=/var/run/secrets/kubeatlas/hub-token \
+KUBEATLAS_AGENT_HUB_CA_FILE=/var/run/secrets/kubeatlas/hub-ca.crt \
 ./kubeatlas
 ```
+
+The existing `KUBEATLAS_HUB_URL` and `KUBEATLAS_HUB_APP_URL` variables remain
+origin-only hints; they do not enable the source agent.
 
 The URL is an origin, not an agent endpoint: the source derives `/agent` and
 uses `wss`. It rejects credentials, query strings, fragments and subpaths.

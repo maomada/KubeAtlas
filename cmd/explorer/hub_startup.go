@@ -20,6 +20,22 @@ const maxHubTokenBytes = 4096
 
 var hubClusterIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
+type hubStartupEnvironment struct {
+	URL       string
+	ClusterID string
+	TokenFile string
+	CAFile    string
+}
+
+func hubStartupEnvironmentDefaults() hubStartupEnvironment {
+	return hubStartupEnvironment{
+		URL:       os.Getenv("KUBEATLAS_AGENT_HUB_URL"),
+		ClusterID: os.Getenv("KUBEATLAS_AGENT_HUB_CLUSTER_ID"),
+		TokenFile: os.Getenv("KUBEATLAS_AGENT_HUB_TOKEN_FILE"),
+		CAFile:    os.Getenv("KUBEATLAS_AGENT_HUB_CA_FILE"),
+	}
+}
+
 type hubStartupFlags struct {
 	URL                   string
 	ClusterID             string
