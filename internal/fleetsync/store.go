@@ -414,6 +414,8 @@ func writeStateFileWithSync(path string, data []byte, syncDirectory func(*os.Fil
 }
 
 func cloneSnapshot(snapshot Snapshot) Snapshot {
+	snapshot.Coverage = cloneCollectionCoverage(snapshot.Coverage)
+	snapshot.Capabilities = cloneSourceCapabilities(snapshot.Capabilities)
 	snapshot.RelationshipFacts = slices.Clone(snapshot.RelationshipFacts)
 	snapshot.Documents = slices.Clone(snapshot.Documents)
 	for i := range snapshot.Documents {

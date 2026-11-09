@@ -25,14 +25,16 @@ type Document struct {
 }
 
 type Snapshot struct {
-	Version           int                `json:"version"`
-	ClusterID         string             `json:"clusterId"`
-	Name              string             `json:"name"`
-	SourceID          string             `json:"sourceId"`
-	ObservedAt        time.Time          `json:"observedAt"`
-	Documents         []Document         `json:"documents"`
-	Limitations       []string           `json:"limitations"`
-	RelationshipFacts []RelationshipFact `json:"relationshipFacts"`
+	Version           int                 `json:"version"`
+	ClusterID         string              `json:"clusterId"`
+	Name              string              `json:"name"`
+	SourceID          string              `json:"sourceId"`
+	ObservedAt        time.Time           `json:"observedAt"`
+	Documents         []Document          `json:"documents"`
+	Limitations       []string            `json:"limitations"`
+	RelationshipFacts []RelationshipFact  `json:"relationshipFacts"`
+	Coverage          *CollectionCoverage `json:"coverage,omitempty"`
+	Capabilities      *SourceCapabilities `json:"capabilities,omitempty"`
 }
 
 type Cluster struct {
