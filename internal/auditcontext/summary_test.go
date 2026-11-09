@@ -4,8 +4,11 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/settings"
 	bpaudit "github.com/maomada/KubeAtlas/pkg/audit"
 	"github.com/maomada/KubeAtlas/pkg/checks"
+	"k8s.io/client-go/kubernetes/fake"
 )
 
 func TestSummarizeFindingsUsesCanonicalPostureSeverity(t *testing.T) {
@@ -35,6 +38,28 @@ func TestSummarizeFindingsUsesCanonicalPostureSeverity(t *testing.T) {
 	}
 	if got := []string{matched[0].CheckID, matched[1].CheckID}; !reflect.DeepEqual(got, []string{"runAsRoot", "missingResourceRequests"}) {
 		t.Errorf("matched order = %v, want severity-descending order", got)
+	}
+}
+
+func TestSummarizeResourceExplicitSettingsScopeWithoutFindings(t *testing.T) {
+	if err := k8s.InitTestResourceCache(fake.NewClientset()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(k8s.ResetTestState)
+	settings.SetOperatorConfig(&settings.OperatorConfig{Version: 1, Audit: &settings.AuditConfig{IgnoredNamespaces: []string{"*-system", "dev-*"}, DisabledChecks: []string{"singleReplica"}}})
+	t.Cleanup(func() { settings.SetOperatorConfig(nil) })
+	for _, ns := range []string{"hero-system", "dev-app", "app"} {
+		summary, findings := SummarizeResource(k8s.GetResourceCache(), "apps", "Deployment", ns, "api", nil)
+		if summary == nil || summary.Scope == nil || summary.Count != 0 || len(findings) != 0 {
+			t.Fatalf("scope missing for empty result: %+v", summary)
+		}
+		wantStatus := "skipped"
+		if ns == "app" {
+			wantStatus = "checked"
+		}
+		if summary.Scope.Status != wantStatus || !reflect.DeepEqual(summary.Scope.DisabledChecks, []string{"singleReplica"}) {
+			t.Fatalf("scope = %+v", summary.Scope)
+		}
 	}
 }
 
