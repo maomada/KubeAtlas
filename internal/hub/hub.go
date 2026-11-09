@@ -118,6 +118,7 @@ type agentState struct {
 	conn      *websocket.Conn
 	active    bool
 	closed    bool
+	done      chan struct{}
 	slots     chan struct{}
 	closeOnce sync.Once
 }
@@ -200,6 +201,7 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			ClusterID: claimedID, Name: identity.Name, Version: version,
 			CredentialMode: "impersonate", ConnectionID: connectionID,
 		},
+		done:  make(chan struct{}),
 		slots: make(chan struct{}, maxAgentStreams),
 	}
 	if err := h.reserve(state); err != nil {
@@ -250,6 +252,9 @@ var errHubClosed = errors.New("hub closed")
 func (h *Hub) reserve(state *agentState) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	if state.done == nil {
+		state.done = make(chan struct{})
+	}
 	if h.closed {
 		return errHubClosed
 	}
@@ -377,6 +382,7 @@ func (s *agentState) shutdown() {
 		s.mu.Lock()
 		s.closed = true
 		s.active = false
+		close(s.done)
 		session, conn := s.session, s.conn
 		s.mu.Unlock()
 		if session != nil {

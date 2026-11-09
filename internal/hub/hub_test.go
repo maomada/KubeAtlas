@@ -1,11 +1,14 @@
 package hub
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -15,6 +18,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/hashicorp/yamux"
 
 	"github.com/maomada/KubeAtlas/internal/auth"
 	"github.com/maomada/KubeAtlas/internal/cloud"
@@ -428,6 +432,38 @@ func TestHubEnforcesScopeReadOnlyPathAndCancellation(t *testing.T) {
 	}
 }
 
+func TestPreCanceledContextDoesNotDispatch(t *testing.T) {
+	hub, server := newTestHub(t)
+	endpoint := cloudWebSocketEndpoint(server.URL)
+	var sourceRequests atomic.Int32
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		sourceRequests.Add(1)
+		w.WriteHeader(http.StatusNoContent)
+	})
+	startSource(t, endpoint, "alpha", "token-alpha", handler)
+	waitForAgent(t, hub, "alpha")
+	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	request, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/mcp", strings.NewReader("{}"))
+	_, err = client.Transport.RoundTrip(request)
+	var tunnelErr *Error
+	if !errors.As(err, &tunnelErr) || tunnelErr.OutcomeUnknown {
+		t.Fatalf("pre-canceled request error = %v, want typed known pre-dispatch error", err)
+	}
+	if got := sourceRequests.Load(); got != 0 {
+		t.Fatalf("source received %d requests for a pre-canceled context", got)
+	}
+	state := agentStateFor(t, hub, "alpha")
+	if state.session.NumStreams() != 0 {
+		t.Fatalf("pre-canceled request opened %d yamux streams", state.session.NumStreams())
+	}
+}
+
 func TestHubPinnedClientDoesNotReplayAfterReconnect(t *testing.T) {
 	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")
 	hub, server := newTestHub(t)
@@ -734,4 +770,341 @@ func TestOldConnectionCleanupCannotRemoveNewGeneration(t *testing.T) {
 		t.Fatal("stale connection cleanup removed the replacement generation")
 	}
 	_ = hub.Close()
+}
+
+func TestCanceledOpenIsBoundedAndDoesNotCloseSession(t *testing.T) {
+	clientConn, peerConn := net.Pipe()
+	releaseWrite := make(chan struct{})
+	writeBlocked := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseGate := func() { releaseOnce.Do(func() { close(releaseWrite) }) }
+	gatedConn := &gatedWriteConn{Conn: clientConn, blocked: writeBlocked, release: releaseWrite}
+	config := yamux.DefaultConfig()
+	config.StreamOpenTimeout = 0
+	config.StreamCloseTimeout = 100 * time.Millisecond
+	config.LogOutput = io.Discard
+	session, err := yamux.Client(gatedConn, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+	serverSession, err := yamux.Server(peerConn, config.Clone())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		releaseGate()
+		_ = session.Close()
+		_ = serverSession.Close()
+	})
+	go serveYamuxHTTP(serverSession)
+
+	hub, err := New(Config{AuthenticateAgent: func(context.Context, string, string) (AgentIdentity, error) {
+		return AgentIdentity{}, nil
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := &agentState{
+		agent: Agent{ClusterID: "alpha"}, session: session, active: true,
+		done: make(chan struct{}), slots: make(chan struct{}, maxAgentStreams),
+	}
+	hub.agents["alpha"] = state
+	transport := &tunnelRoundTripper{
+		hub: hub, state: state, clusterID: "alpha",
+		principal: Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}},
+	}
+
+	const requests = maxAgentStreams
+	cancels := make([]context.CancelFunc, requests)
+	results := make([]chan error, requests)
+	for i := range requests {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancels[i] = cancel
+		results[i] = make(chan error, 1)
+		request, _ := http.NewRequestWithContext(ctx, http.MethodPost, "http://localhost/mcp", strings.NewReader("{}"))
+		go func(result chan error) {
+			_, requestErr := transport.RoundTrip(request)
+			result <- requestErr
+		}(results[i])
+		if i == 0 {
+			select {
+			case <-writeBlocked:
+			case <-time.After(time.Second):
+				t.Fatal("yamux stream open did not stall at the gated transport write")
+			}
+		}
+	}
+	waitForSlotCount(t, state, maxAgentStreams)
+	for i, cancel := range cancels {
+		cancel()
+		select {
+		case err := <-results[i]:
+			var tunnelErr *Error
+			if !errors.As(err, &tunnelErr) || tunnelErr.OutcomeUnknown {
+				t.Fatalf("canceled open error = %v, want typed pre-dispatch error", err)
+			}
+		case <-time.After(250 * time.Millisecond):
+			t.Fatal("canceled OpenStream caller did not return promptly")
+		}
+	}
+	waitForSlotCount(t, state, maxAgentStreams)
+	if session.IsClosed() {
+		t.Fatal("canceled stream opens closed the shared yamux session")
+	}
+	queuedCtx, cancelQueued := context.WithCancel(context.Background())
+	defer cancelQueued()
+	queuedRequest, _ := http.NewRequestWithContext(queuedCtx, http.MethodPost, "http://localhost/mcp", strings.NewReader("{}"))
+	queuedResult := make(chan error, 1)
+	go func() {
+		_, requestErr := transport.RoundTrip(queuedRequest)
+		queuedResult <- requestErr
+	}()
+	select {
+	case err := <-queuedResult:
+		t.Fatalf("request beyond the owned-open bound returned early: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseGate()
+	select {
+	case err := <-queuedResult:
+		if err != nil {
+			t.Fatalf("request after bounded open cleanup failed: %v", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("queued request did not proceed after open cleanup")
+	}
+	waitForSlotCount(t, state, 0)
+	if session.IsClosed() {
+		t.Fatal("open cancellation closed the unrelated session")
+	}
+}
+
+type gatedWriteConn struct {
+	net.Conn
+	blocked chan struct{}
+	release <-chan struct{}
+	once    sync.Once
+}
+
+func (c *gatedWriteConn) Write(data []byte) (int, error) {
+	c.once.Do(func() {
+		close(c.blocked)
+		<-c.release
+	})
+	return c.Conn.Write(data)
+}
+
+func serveYamuxHTTP(session *yamux.Session) {
+	for {
+		stream, err := session.AcceptStream()
+		if err != nil {
+			return
+		}
+		go func(stream *yamux.Stream) {
+			defer stream.Close()
+			request, err := http.ReadRequest(bufio.NewReader(stream))
+			if err != nil {
+				return
+			}
+			if request.Body != nil {
+				_, _ = io.Copy(io.Discard, request.Body)
+				_ = request.Body.Close()
+			}
+			_, _ = io.WriteString(stream, "HTTP/1.1 204 No Content\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+		}(stream)
+	}
+}
+
+func TestDisconnectWakesRequestQueuedBehindUnreadBodies(t *testing.T) {
+	hub, server := newTestHub(t)
+	endpoint := cloudWebSocketEndpoint(server.URL)
+	ready := make(chan struct{}, maxAgentStreams)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseHandlers := func() { releaseOnce.Do(func() { close(release) }) }
+	defer releaseHandlers()
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		ready <- struct{}{}
+		select {
+		case <-release:
+		case <-r.Context().Done():
+		}
+	})
+	startSource(t, endpoint, "alpha", "token-alpha", handler)
+	waitForAgent(t, hub, "alpha")
+	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	responses := make([]*http.Response, maxAgentStreams)
+	responseResults := make(chan struct {
+		index    int
+		response *http.Response
+		err      error
+	}, maxAgentStreams)
+	for i := range responses {
+		request, _ := http.NewRequest(http.MethodGet, "http://localhost/mcp", nil)
+		go func(index int) {
+			response, requestErr := client.Do(request)
+			responseResults <- struct {
+				index    int
+				response *http.Response
+				err      error
+			}{index, response, requestErr}
+		}(i)
+	}
+	for range responses {
+		select {
+		case result := <-responseResults:
+			if result.err != nil {
+				t.Fatalf("stream request failed: %v", result.err)
+			}
+			responses[result.index] = result.response
+		case <-time.After(3 * time.Second):
+			t.Fatal("source did not return response headers for all stream slots")
+		}
+	}
+	for range maxAgentStreams {
+		select {
+		case <-ready:
+		case <-time.After(time.Second):
+			t.Fatal("source handler did not retain all response streams")
+		}
+	}
+	state := agentStateFor(t, hub, "alpha")
+	if got := len(state.slots); got != maxAgentStreams {
+		t.Fatalf("retained response slots = %d, want %d", got, maxAgentStreams)
+	}
+
+	queuedRequest, _ := http.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader("{}"))
+	queuedResult := make(chan error, 1)
+	go func() {
+		_, requestErr := client.Transport.RoundTrip(queuedRequest)
+		queuedResult <- requestErr
+	}()
+	select {
+	case err := <-queuedResult:
+		t.Fatalf("request without a slot returned before disconnect: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+	go hub.Disconnect("alpha")
+	select {
+	case err := <-queuedResult:
+		var tunnelErr *Error
+		if !errors.As(err, &tunnelErr) {
+			t.Fatalf("queued request error = %v, want typed source error", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("disconnect did not wake the queued request")
+	}
+	for _, response := range responses {
+		if response != nil {
+			_ = response.Body.Close()
+		}
+	}
+	releaseHandlers()
+}
+
+func TestHubBoundsSourceResponseHeadersAndHandlesInterimResponses(t *testing.T) {
+	hub, server := newTestHub(t)
+	endpoint := cloudWebSocketEndpoint(server.URL)
+	oversized := "private-marker-" + strings.Repeat("x", maxResponseHeaderBytes+1)
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Query().Get("case") {
+		case "large":
+			w.Header().Set("X-Untrusted", oversized)
+			w.WriteHeader(http.StatusOK)
+		case "interim":
+			connection, _, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer connection.Close()
+			_, _ = io.WriteString(connection, "HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 204 No Content\r\nContent-Length: 0\r\n\r\n")
+		default:
+			if r.Header.Get("Expect") != "" {
+				http.Error(w, "Expect was forwarded", http.StatusBadRequest)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+		}
+	})
+	startSource(t, endpoint, "alpha", "token-alpha", handler)
+	waitForAgent(t, hub, "alpha")
+	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	largeRequest, _ := http.NewRequest(http.MethodGet, "http://localhost/mcp?case=large", nil)
+	_, err = client.Do(largeRequest)
+	var tunnelErr *Error
+	if !errors.As(err, &tunnelErr) || !tunnelErr.OutcomeUnknown || strings.Contains(err.Error(), "private-marker") {
+		t.Fatalf("oversized response error = %v, want generic typed unknown-outcome error", err)
+	}
+	validRequest, _ := http.NewRequest(http.MethodGet, "http://localhost/mcp", nil)
+	validRequest.Header["expect"] = []string{"100-continue"}
+	validResponse, err := client.Do(validRequest)
+	if err != nil {
+		t.Fatalf("valid request after oversized response failed: %v", err)
+	}
+	validResponse.Body.Close()
+
+	interimRequest, _ := http.NewRequest(http.MethodGet, "http://localhost/mcp?case=interim", nil)
+	interimResponse, err := client.Do(interimRequest)
+	if err != nil {
+		t.Fatalf("request after informational response failed: %v", err)
+	}
+	if interimResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("final response status = %d, want 204", interimResponse.StatusCode)
+	}
+	interimResponse.Body.Close()
+}
+
+func TestUpgradeGateAndStrippingAreCaseInsensitive(t *testing.T) {
+	for _, headers := range []http.Header{
+		{"upgrade": []string{"websocket"}},
+		{"connection": []string{"keep-alive, Upgrade"}},
+	} {
+		request, _ := http.NewRequest(http.MethodGet, "http://localhost/mcp", nil)
+		request.Header = headers
+		if validateMCPRequest(request, false) == nil {
+			t.Errorf("accepted lowercase upgrade headers: %v", headers)
+		}
+	}
+	headers := http.Header{
+		"connection":           []string{"keep-alive"},
+		"expect":               []string{"100-continue"},
+		"upgrade":              []string{"websocket"},
+		"mcp-session-id":       []string{"session"},
+		"mcp-protocol-version": []string{"2025-03-26"},
+		"accept":               []string{"application/json, text/event-stream"},
+	}
+	stripInboundHeaders(headers)
+	for _, key := range []string{"connection", "expect", "upgrade"} {
+		if hasHeaderName(headers, key) {
+			t.Errorf("forwarded hop-by-hop header %q", key)
+		}
+	}
+	for _, key := range []string{"Mcp-Session-Id", "Mcp-Protocol-Version", "Accept"} {
+		if !hasHeaderName(headers, key) {
+			t.Errorf("stripped MCP header %q", key)
+		}
+	}
+}
+
+func waitForSlotCount(t *testing.T, state *agentState, count int) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if len(state.slots) == count {
+			return
+		}
+		time.Sleep(time.Millisecond)
+	}
+	t.Fatalf("slot count = %d, want %d", len(state.slots), count)
 }
