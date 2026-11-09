@@ -11,7 +11,6 @@ import (
 
 	"github.com/maomada/KubeAtlas/internal/fleetsync"
 	"github.com/maomada/KubeAtlas/internal/k8s"
-	"github.com/maomada/KubeAtlas/pkg/resourceid"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -72,34 +71,13 @@ func CaptureFleetSnapshot(ctx context.Context, clusterID, name, binding string) 
 	}
 	add("get_events", eventsInput{Limit: 100}, func() (*mcpsdk.CallToolResult, any, error) { return handleGetEvents(ctx, nil, eventsInput{Limit: 100}) })
 
-	type kind struct{ group, resource string }
-	kinds := map[kind]bool{}
-	for _, builtin := range resourceid.Builtins {
-		kinds[kind{builtin.Group, builtin.Resource}] = true
+	plan := currentCollectionPlan()
+	snapshot.Coverage = &plan.coverage
+	for _, limitation := range plan.coverage.Limitations {
+		snapshot.Limitations = appendOnce(snapshot.Limitations, limitation)
 	}
-	if discovery := k8s.GetResourceDiscovery(); discovery != nil {
-		catalog := discovery.Catalog()
-		if !catalog.Complete {
-			snapshot.Limitations = append(snapshot.Limitations, "API discovery is incomplete; undiscovered resource kinds may be missing.")
-		}
-		for _, resource := range catalog.Resources {
-			if !strings.Contains(resource.Name, "/") && slices.Contains(resource.Verbs, "list") && slices.Contains(resource.Verbs, "get") {
-				kinds[kind{resource.Group, resource.Name}] = true
-			}
-		}
-	} else {
-		snapshot.Limitations = append(snapshot.Limitations, "API discovery unavailable; only built-in resource kinds were attempted.")
-	}
-	ordered := make([]kind, 0, len(kinds))
-	for item := range kinds {
-		if item.group == "" && item.resource == "secrets" {
-			continue
-		}
-		ordered = append(ordered, item)
-	}
-	slices.SortFunc(ordered, func(a, b kind) int { return strings.Compare(a.group+"/"+a.resource, b.group+"/"+b.resource) })
 	details := 0
-	for _, item := range ordered {
+	for _, item := range plan.kinds {
 		if ctx.Err() != nil {
 			break
 		}
