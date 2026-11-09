@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"github.com/maomada/KubeAtlas/internal/fleetsync"
+	"github.com/maomada/KubeAtlas/internal/hubmcp"
+	"github.com/maomada/KubeAtlas/internal/hubstate"
 	"github.com/maomada/KubeAtlas/internal/portal"
 	"github.com/maomada/KubeAtlas/internal/portalui"
 )
@@ -32,6 +34,8 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
 	dataFile := flag.String("data-file", "./portal-data/registry.json", "Persistent registry JSON file")
 	fleetDataFile := flag.String("fleet-data-file", "", "Persistent Fleet state JSON file (default: <data-file directory>/fleet/state.json)")
+	hubStateFile := flag.String("hub-state-file", os.Getenv("KUBEATLAS_PORTAL_HUB_STATE_FILE"), "Enable live Hub mode with this persistent state JSON file; no snapshot fallback")
+	hubGroups := flag.String("hub-groups", os.Getenv("KUBEATLAS_PORTAL_HUB_GROUPS"), "Comma-separated Kubernetes identity groups for the Portal user in Hub mode; grants still require cluster RBAC")
 	insecureCookie := flag.Bool("insecure-cookie", false, "Allow non-Secure viewer cookies for loopback HTTP development only")
 	mcpAllowedHosts := flag.String("mcp-allowed-hosts", os.Getenv("KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS"), "Comma-separated exact external host[:port] authorities allowed for /mcp-fleet behind a trusted proxy; no wildcards")
 	flag.Parse()
@@ -44,9 +48,12 @@ func main() {
 		log.Printf("WARNING: Portal is listening beyond loopback; use only on a trusted isolated development network, never on the public internet or in production")
 	}
 
-	credentials, err := loadCredentials()
+	credentials, err := loadCredentials(*hubStateFile != "")
 	if err != nil {
 		log.Fatal(err)
+	}
+	if err := configureHub(&credentials, *hubStateFile, *hubGroups); err != nil {
+		log.Fatalf("portal Hub configuration is invalid: %v", err)
 	}
 	credentials.AllowInsecureCookies = *insecureCookie
 	if strings.TrimSpace(*mcpAllowedHosts) != "" {
@@ -64,14 +71,17 @@ func main() {
 	if err != nil {
 		log.Fatalf("portal registry startup failed: %v", err)
 	}
-	if *fleetDataFile == "" {
-		*fleetDataFile = filepath.Join(filepath.Dir(*dataFile), "fleet", "state.json")
+	var fleetStore *fleetsync.Store
+	if credentials.Hub == nil || *fleetDataFile != "" {
+		if *fleetDataFile == "" {
+			*fleetDataFile = filepath.Join(filepath.Dir(*dataFile), "fleet", "state.json")
+		}
+		fleetStore, err = fleetsync.OpenStore(*fleetDataFile)
+		if err != nil {
+			log.Fatalf("portal Fleet state startup failed: %v", err)
+		}
+		defer fleetStore.Close()
 	}
-	fleetStore, err := fleetsync.OpenStore(*fleetDataFile)
-	if err != nil {
-		log.Fatalf("portal Fleet state startup failed: %v", err)
-	}
-	defer fleetStore.Close()
 	static, err := fs.Sub(portalui.FS, "dist")
 	if err != nil {
 		log.Fatalf("portal web assets are unavailable; build the portal frontend and embed it")
@@ -115,8 +125,11 @@ func main() {
 	}
 }
 
-func loadCredentials() (portal.Credentials, error) {
+func loadCredentials(hubMode bool) (portal.Credentials, error) {
 	rawTokens := os.Getenv("KUBEATLAS_PORTAL_TOKENS")
+	if rawTokens == "" && hubMode {
+		rawTokens = "{}"
+	}
 	if len(rawTokens) > maxTokenMapBytes {
 		return portal.Credentials{}, fmt.Errorf("KUBEATLAS_PORTAL_TOKENS exceeds %d bytes", maxTokenMapBytes)
 	}
@@ -133,4 +146,25 @@ func loadCredentials() (portal.Credentials, error) {
 		Tokens: tokens, Username: os.Getenv("KUBEATLAS_PORTAL_USERNAME"),
 		Password: os.Getenv("KUBEATLAS_PORTAL_PASSWORD"),
 	}, nil
+}
+
+func configureHub(credentials *portal.Credentials, stateFile, groups string) error {
+	if stateFile == "" {
+		if groups != "" {
+			return errors.New("--hub-groups requires --hub-state-file")
+		}
+		return nil
+	}
+	store, err := hubstate.OpenStore(stateFile)
+	if err != nil {
+		return err
+	}
+	config := &portal.HubConfig{Store: store, MCPFactory: hubmcp.New}
+	if groups != "" {
+		for _, group := range strings.Split(groups, ",") {
+			config.Groups = append(config.Groups, strings.TrimSpace(group))
+		}
+	}
+	credentials.Hub = config
+	return nil
 }

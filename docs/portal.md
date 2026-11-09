@@ -1,5 +1,11 @@
 # Self-hosted KubeAtlas Portal
 
+An opt-in [live Hub mode](hub-live-mcp.md) now routes MCP through outbound Agent
+tunnels with independent scoped PATs, without requiring Fleet snapshots. Enable
+it with `--hub-state-file`; the registration/snapshot behavior described below is
+the legacy standalone mode and remains the default. Cloud-style OAuth and
+management UI are not provided by this switch.
+
 This repository's OCI images and charts are available only for versions
 actually published by the manual workflow described in [`ci-cd.md`](ci-cd.md).
 CLI installer scripts and direct update checks use this repository's GitHub
