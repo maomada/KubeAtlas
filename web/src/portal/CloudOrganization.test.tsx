@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CloudMembers, CloudSSO, PendingMembership, type HubMember } from './CloudOrganization'
 import { Login } from './Login'
 import { setApiBase } from '../api/config'
+import { ThemeToggle } from './ThemeToggle'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let host: HTMLDivElement
@@ -30,6 +31,9 @@ afterEach(() => {
   client.clear()
   host.remove()
   setApiBase('/api')
+  localStorage.clear()
+  document.documentElement.classList.remove('dark')
+  document.documentElement.style.colorScheme = ''
   vi.unstubAllGlobals()
 })
 async function render(node: ReactNode) {
@@ -91,4 +95,31 @@ it('offers SSO through the fixed Portal route while retaining local recovery log
   expect(host.querySelector('a[href="/api/auth/oidc/login"]')).not.toBeNull()
   expect(host.querySelector('input[autocomplete="current-password"]')).not.toBeNull()
   expect(host.innerHTML).not.toContain('untrusted.example')
+})
+
+it('retains the login theme on a fresh pending page and synchronizes native preferences', async () => {
+  localStorage.setItem('radar-theme', 'light')
+  await render(<ThemeToggle />)
+  await act(async () => host.querySelector('button')!.click())
+  expect(localStorage.getItem('kubeatlas-portal-theme')).toBe('dark')
+  await render(null)
+  document.documentElement.classList.remove('dark')
+  document.documentElement.style.colorScheme = ''
+  await render(<PendingMembership member={member} retry={() => undefined} />)
+  expect(document.documentElement.classList.contains('dark')).toBe(true)
+  expect(document.documentElement.style.colorScheme).toBe('dark')
+  expect(localStorage.getItem('radar-theme')).toBe('dark')
+  await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="切换浅色主题"]')!.click())
+  expect(document.documentElement.style.colorScheme).toBe('light')
+  expect(localStorage.getItem('kubeatlas-portal-theme')).toBe('light')
+  expect(localStorage.getItem('radar-theme')).toBe('light')
+  await act(async () => window.dispatchEvent(new StorageEvent('storage', { key: 'radar-theme', newValue: 'dark' })))
+  expect(document.documentElement.style.colorScheme).toBe('dark')
+})
+
+it('keeps existing native-theme preferences when no Portal preference exists', async () => {
+  localStorage.setItem('radar-theme', 'dark')
+  await render(<ThemeToggle />)
+  expect(document.documentElement.style.colorScheme).toBe('dark')
+  expect(localStorage.getItem('kubeatlas-portal-theme')).toBe('dark')
 })

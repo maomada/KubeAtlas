@@ -4,6 +4,7 @@ import { Badge } from '@maomada/k8s-ui'
 import { Building2, KeyRound, Pencil, Search, ShieldCheck, Users } from 'lucide-react'
 import { cloudRequest, useCloudQuery, type HubCluster } from './cloudApi'
 import { CloudDialog, CloudError, CloudLink, CloudLoading, CopyButton } from './CloudShared'
+import { ThemeToggle } from './ThemeToggle'
 
 export interface HubMember {
   id: string
@@ -44,7 +45,7 @@ export function PendingMembership({ member, retry }: { member: HubMember; retry:
     <strong className="cloud-account-identity">{member.displayName}</strong>
     <p>No cluster access or MCP credentials have been granted.</p>
     {error !== undefined && <CloudError error={error} />}
-    <div className="cloud-row-actions"><button className="cloud-button" onClick={retry}>Check approval</button><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>Sign out</button></div>
+    <div className="cloud-row-actions"><ThemeToggle /><button className="cloud-button" onClick={retry}>Check approval</button><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>Sign out</button></div>
   </div>
 }
 

@@ -19,6 +19,7 @@ import { MCPCredentials } from './MCPCredentials'
 import { credentialStatus, type MCPCredential } from './credentials'
 import { Portal } from './Portal'
 import { cloudViewHref, navigateCloud, useCloudLocation } from './cloudNavigation'
+import { usePortalTheme } from './usePortalTheme'
 
 const NativeRadar = lazy(() => import('../RadarApp').then(module => ({ default: module.RadarApp })))
 const managementClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } })
@@ -46,6 +47,7 @@ export function PortalEntry() {
 }
 
 function PortalMode() {
+  usePortalTheme()
   const mode = useCloudQuery<{ enabled: boolean; userId: string; member?: HubMember }>('/hub')
   if (mode.isPending) return <CloudLoading label="Loading Portal…" />
   if ((mode.error instanceof CloudRequestError && mode.error.status === 404) || mode.data?.enabled === false) return <Portal />
@@ -101,7 +103,7 @@ function CloudShell({ userId, member }: { userId: string; member?: HubMember }) 
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
   const [panel, setPanel] = useState<'help' | 'account' | 'notifications' | 'setup'>()
-  const [dark, setDark] = useState(() => { try { return localStorage.getItem('radar-theme') === 'dark' } catch { return false } })
+  const [dark, setDark] = usePortalTheme()
   const [actionError, setActionError] = useState<unknown>()
   const [namespaceError, setNamespaceError] = useState<{ client: QueryClient; error: unknown }>()
   const [pendingNamespace, setPendingNamespace] = useState(false)
@@ -118,12 +120,6 @@ function CloudShell({ userId, member }: { userId: string; member?: HubMember }) 
   const credentialTime = Date.parse(credentials.data?.serverTime ?? '')
   const setupDone = Number(clusters.some(item => item.state === 'connected')) + Number(credentials.data?.credentials.some(credential => credentialStatus(credential, credentialTime) === 'active') ?? false)
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-    document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
-    try { localStorage.setItem('radar-theme', dark ? 'dark' : 'light') } catch { /* Browser preferences are optional. */ }
-    window.dispatchEvent(new StorageEvent('storage', { key: 'radar-theme', newValue: dark ? 'dark' : 'light' }))
-  }, [dark])
   useEffect(() => {
     const openSearch = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
