@@ -51,6 +51,33 @@ function PortalMode() {
   return <CloudShell userId={mode.data.userId} />
 }
 
+function ClusterNamespacePicker({ id, client, connected, view, search, pending, onApply, onError }: {
+  id: string
+  client: QueryClient
+  connected: boolean
+  view: string
+  search: string
+  pending: boolean
+  onApply: (namespaces: string[]) => void
+  onError: (error: unknown) => void
+}) {
+  const namespace = useQuery<NamespaceScope>({
+    queryKey: ['namespace-scope'],
+    queryFn: ({ signal }) => cloudRequest('/cluster/namespace-scope', { base: clusterBase(id), signal }),
+    enabled: connected,
+    staleTime: 30000,
+  }, client)
+  const apiResources = useQuery<APIResource[]>({
+    queryKey: ['api-resources'],
+    queryFn: ({ signal }) => cloudRequest('/api-resources', { base: clusterBase(id), signal }),
+    enabled: connected,
+    staleTime: 5 * 60 * 1000,
+  }, client)
+  const filter = namespaceFilterDisabled(view.split('/')[1], view, search, apiResources.data)
+  useEffect(() => { onError(namespace.error) }, [namespace.error, onError])
+  return <NamespacePicker scope={namespace.data} loading={namespace.isPending} pending={pending} disabled={filter.disabled} disabledTooltip={filter.tooltip} onApply={onApply} variant="segment" label="Namespace" />
+}
+
 function CloudShell({ userId }: { userId: string }) {
   const location = useCloudLocation()
   const directory = useCloudQuery<{ clusters: HubCluster[] }>('/hub/clusters')
@@ -64,24 +91,15 @@ function CloudShell({ userId }: { userId: string }) {
   const [panel, setPanel] = useState<'help' | 'account' | 'notifications' | 'setup'>()
   const [dark, setDark] = useState(() => { try { return localStorage.getItem('radar-theme') === 'dark' } catch { return false } })
   const [actionError, setActionError] = useState<unknown>()
+  const [namespaceError, setNamespaceError] = useState<{ client: QueryClient; error: unknown }>()
   const [pendingNamespace, setPendingNamespace] = useState(false)
   const searchRef = useRef<OmnibarHandle>(null)
   // Recreate the native cache on cluster changes to avoid cross-cluster data.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const nativeClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), [id])
-  const namespace = useQuery<NamespaceScope>({
-    queryKey: ['namespace-scope'],
-    queryFn: ({ signal }) => cloudRequest('/cluster/namespace-scope', { base: id ? clusterBase(id) : '/api', signal }),
-    enabled: !!id && cluster?.state === 'connected',
-    staleTime: 30000,
-  }, nativeClient)
-  const apiResources = useQuery<APIResource[]>({
-    queryKey: ['api-resources'],
-    queryFn: ({ signal }) => cloudRequest('/api-resources', { base: id ? clusterBase(id) : '/api', signal }),
-    enabled: !!id && cluster?.state === 'connected',
-    staleTime: 5 * 60 * 1000,
-  }, nativeClient)
-  const namespaceFilter = namespaceFilterDisabled(view.split('/')[1], view, location.search, apiResources.data)
+  const reportNamespaceError = useCallback((error: unknown) => {
+    setNamespaceError(error == null ? undefined : { client: nativeClient, error })
+  }, [nativeClient])
   const chosenID = id ?? location.searchParams.get('cluster') ?? ''
   const fleetScope = chosenID ? clusters.filter(item => item.id === chosenID) : clusters
   const missingSelection = chosenID && !clusters.some(item => item.id === chosenID)
@@ -179,7 +197,7 @@ function CloudShell({ userId }: { userId: string }) {
     </aside>
     <div className="cloud-main"><header className="cloud-topbar">
       <button className="cloud-mobile-toggle cloud-icon-button" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Menu size={20} /></button>
-      <div className="cloud-topbar-left cloud-scope"><ClusterSwitcher currentId={chosenID} currentName={clusters.find(item => item.id === chosenID)?.name ?? 'All clusters'} items={[{ id: '', name: 'All clusters' }, ...clusters.map(item => ({ id: item.id, name: item.name, status: item.state === 'connected' ? 'healthy' as const : 'unknown' as const, secondary: item.environment, disabled: item.state === 'revoked', title: item.state === 'revoked' ? 'Agent access revoked' : undefined }))]} onSelect={item => selectCluster(item.id)} label="Cluster" footerSlot={<CloudLink href="/clusters">Manage clusters →</CloudLink>} />{id && <NamespacePicker scope={namespace.data} loading={namespace.isPending} pending={pendingNamespace} disabled={namespaceFilter.disabled} disabledTooltip={namespaceFilter.tooltip} onApply={values => { void applyNamespace(values) }} variant="segment" label="Namespace" />}</div>
+      <div className="cloud-topbar-left cloud-scope"><ClusterSwitcher currentId={chosenID} currentName={clusters.find(item => item.id === chosenID)?.name ?? 'All clusters'} items={[{ id: '', name: 'All clusters' }, ...clusters.map(item => ({ id: item.id, name: item.name, status: item.state === 'connected' ? 'healthy' as const : 'unknown' as const, secondary: item.environment, disabled: item.state === 'revoked', title: item.state === 'revoked' ? 'Agent access revoked' : undefined }))]} onSelect={item => selectCluster(item.id)} label="Cluster" footerSlot={<CloudLink href="/clusters">Manage clusters →</CloudLink>} />{id && <ClusterNamespacePicker key={id} id={id} client={nativeClient} connected={cluster?.state === 'connected'} view={view} search={location.search} pending={pendingNamespace} onApply={values => { void applyNamespace(values) }} onError={reportNamespaceError} />}</div>
       {!isHome && <div className="cloud-topbar-search">{search}</div>}
       <div className="cloud-topbar-actions">
         <CloudLink href={target({ path: '/investigations', cluster: true, label: 'AI investigations', icon: Sparkles })} className="cloud-icon-button" aria-label="AI investigations" title="AI investigations"><Sparkles size={18} /></CloudLink>
@@ -188,7 +206,7 @@ function CloudShell({ userId }: { userId: string }) {
         <Tooltip content={userId || 'Account'} position="bottom"><button className="cloud-account" aria-label="Account menu" onClick={() => setPanel(panel === 'account' ? undefined : 'account')}>{userId?.slice(0, 1).toUpperCase() || 'K'}<ChevronDown size={12} /></button></Tooltip>
       </div>
     </header>
-      {actionError !== undefined && <CloudError error={actionError} />}{id && namespace.error && <CloudError error={namespace.error} />}
+      {actionError !== undefined && <CloudError error={actionError} />}{namespaceError?.client === nativeClient && <CloudError error={namespaceError.error} />}
       <main className={nativePath ? 'cloud-content cloud-native' : 'cloud-content'}>{content}</main>
     </div>
     {panel === 'help' && <CloudDialog title="Help" onClose={() => setPanel(undefined)}><div className="cloud-form"><p>Self-hosted KubeAtlas Hub. Current state is queried through each cluster's outbound Agent connection.</p><a className="cloud-button" target="_blank" rel="noopener noreferrer" href="https://github.com/maomada/KubeAtlas/tree/main/docs">Project documentation<ExternalLink size={14} /></a><p>Keyboard shortcuts: Ctrl/Cmd+K or / opens fleet search. Escape closes menus.</p></div></CloudDialog>}
