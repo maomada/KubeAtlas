@@ -91,7 +91,7 @@ func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 		p.serveBrowserAPI(h, w, r)
 		return true
 	}
-	if p == nil || !(r.URL.Path == "/agent" || r.URL.Path == "/mcp-fleet" || r.URL.Path == "/api/hub" || strings.HasPrefix(r.URL.Path, "/api/hub/") || r.URL.Path == "/api/mcp/credentials" || strings.HasPrefix(r.URL.Path, "/api/mcp/credentials/")) {
+	if p == nil || !(r.URL.Path == "/agent" || r.URL.Path == "/mcp" || r.URL.Path == "/api/hub" || strings.HasPrefix(r.URL.Path, "/api/hub/") || r.URL.Path == "/api/mcp/credentials" || strings.HasPrefix(r.URL.Path, "/api/mcp/credentials/")) {
 		return false
 	}
 	w.Header().Set("X-Request-ID", rand.Text())
@@ -107,7 +107,7 @@ func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Query parameters are not supported")
 		return true
 	}
-	if r.URL.Path == "/mcp-fleet" || r.URL.Path == "/api/mcp/credentials/current" || r.URL.Path == "/api/mcp/credentials/refresh" {
+	if r.URL.Path == "/mcp" || r.URL.Path == "/api/mcp/credentials/current" || r.URL.Path == "/api/mcp/credentials/refresh" {
 		p.serveBearer(w, r)
 		return true
 	}
@@ -216,9 +216,9 @@ func (p *portalHub) serveBearer(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		hubJSON(w, http.StatusOK, issued)
-	case "/mcp-fleet":
+	case "/mcp":
 		if p.mcp == nil {
-			hubHTTPError(w, http.StatusServiceUnavailable, "live_mcp_unavailable", "Live MCP is not configured; no snapshot fallback is used")
+			hubHTTPError(w, http.StatusServiceUnavailable, "live_mcp_unavailable", "Live MCP is not configured")
 			return
 		}
 		principal := hub.Principal{CredentialID: credential.ID, UserID: member.UserID, Groups: member.KubernetesGroups, ClusterIDs: credential.ClusterIDs, ReadOnly: credential.ReadOnly || member.Role == "viewer"}

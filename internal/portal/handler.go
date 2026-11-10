@@ -3,8 +3,6 @@ package portal
 import (
 	"bytes"
 	"crypto/sha256"
-	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"io"
 	"io/fs"
@@ -12,14 +10,11 @@ import (
 	"path"
 	"strings"
 	"unicode"
-
-	"github.com/maomada/KubeAtlas/internal/fleetsync"
 )
 
 const maxStaticAssetBytes = 8 << 20
 
 type Credentials struct {
-	Tokens               map[string]string
 	Username             string
 	Password             string
 	AllowInsecureCookies bool
@@ -29,69 +24,35 @@ type Credentials struct {
 }
 
 type Handler struct {
-	registry      *Registry
 	static        fs.FS
-	tokens        map[string][32]byte
-	authorized    map[string]struct{}
 	username      [32]byte
 	password      [32]byte
 	sessions      *viewerSessions
 	secureCookies bool
-	fleetStore    *fleetsync.Store
-	fleetHandler  http.Handler
-	agentHub      *AgentHub
 	liveHub       *portalHub
 	oidc          *oidcAuthenticator
 }
 
-func NewHandler(registry *Registry, credentials Credentials, static fs.FS, fleetStore *fleetsync.Store) (*Handler, error) {
-	if registry == nil {
-		return nil, errors.New("portal registry is required")
+func NewHandler(credentials Credentials, static fs.FS) (*Handler, error) {
+	if credentials.Hub == nil {
+		return nil, errors.New("Hub configuration is required")
 	}
 	if !validUsername(credentials.Username) || len(credentials.Username) > 256 || len(credentials.Password) < 16 || len(credentials.Password) > 4096 {
-		return nil, errors.New("portal viewer username must be valid (1-256 bytes) and password must contain 16-4096 bytes")
-	}
-	tokens := make(map[string][32]byte, len(credentials.Tokens))
-	authorized := make(map[string]struct{}, len(credentials.Tokens))
-	seen := make(map[[32]byte]struct{}, len(credentials.Tokens))
-	for id, token := range credentials.Tokens {
-		if !clusterIDPattern.MatchString(id) || len(token) < 32 {
-			return nil, errors.New("portal registration credentials contain an invalid ID or token")
-		}
-		hash := sha256.Sum256([]byte(token))
-		if _, exists := seen[hash]; exists {
-			return nil, errors.New("portal registration tokens must be unique")
-		}
-		seen[hash] = struct{}{}
-		tokens[id] = hash
-		authorized[id] = struct{}{}
+		return nil, errors.New("Portal owner username must be valid (1-256 bytes) and password must contain 16-4096 bytes")
 	}
 	handler := &Handler{
-		registry: registry, static: static, tokens: tokens, authorized: authorized,
+		static:   static,
 		username: sha256.Sum256([]byte(credentials.Username)),
 		password: sha256.Sum256([]byte(credentials.Password)),
 		sessions: newViewerSessions(), secureCookies: !credentials.AllowInsecureCookies,
-		fleetStore: fleetStore,
 	}
-	handler.agentHub = NewAgentHub(fleetStore)
 	var err error
-	handler.fleetHandler, err = fleetsync.NewHandlerWithMCPHosts(fleetStore, handler.agentHub, credentials.MCPAllowedHosts)
+	handler.liveHub, err = newPortalHub(credentials)
 	if err != nil {
 		handler.Close()
 		return nil, err
 	}
-	if credentials.Hub != nil {
-		handler.liveHub, err = newPortalHub(credentials)
-		if err != nil {
-			handler.Close()
-			return nil, err
-		}
-	}
 	if credentials.OIDC != nil {
-		if handler.liveHub == nil {
-			handler.Close()
-			return nil, errors.New("OIDC requires Hub mode")
-		}
 		handler.oidc, err = newOIDCAuthenticator(*credentials.OIDC, handler.secureCookies)
 		if err != nil {
 			handler.Close()
@@ -111,9 +72,6 @@ func (h *Handler) Close() {
 	if h != nil && h.oidc != nil && h.oidc.transport != nil {
 		h.oidc.transport.CloseIdleConnections()
 	}
-	if h != nil && h.agentHub != nil {
-		h.agentHub.Close()
-	}
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -132,44 +90,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch {
-	case strings.HasPrefix(r.URL.Path, "/api/fleet/snapshots/"):
-		h.sourceSnapshot(w, r)
-	case strings.HasPrefix(r.URL.Path, "/api/fleet/agents/"):
-		h.sourceAgentChannel(w, r)
-	case r.URL.Path == "/mcp-fleet":
-		if !h.requireViewer(w, r) {
-			return
-		}
-		if !sameSiteRequest(r) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		if h.fleetStore == nil {
-			writeFleetHTTPError(w, http.StatusServiceUnavailable, "Fleet synchronization is unavailable")
-			return
-		}
-		h.fleetHandler.ServeHTTP(w, r)
-	case isFleetViewerRoute(r.URL.Path):
-		if !h.requireViewer(w, r) {
-			return
-		}
-		if !h.legacyHubViewerAllowed(r) {
-			hubHTTPError(w, http.StatusForbidden, "permission_denied", "OIDC members cannot use the legacy Fleet API")
-			return
-		}
-		if !sameSiteRequest(r) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		if h.fleetStore == nil {
-			writeFleetHTTPError(w, http.StatusServiceUnavailable, "Fleet synchronization is unavailable")
-			return
-		}
-		clone := r.Clone(r.Context())
-		urlCopy := *r.URL
-		urlCopy.Path = "/api" + strings.TrimPrefix(urlCopy.Path, "/api/fleet")
-		clone.URL = &urlCopy
-		h.fleetHandler.ServeHTTP(w, clone)
 	case r.URL.Path == "/api/auth/login":
 		h.login(w, r)
 	case r.URL.Path == "/api/auth/providers":
@@ -197,35 +117,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if h.requireViewer(w, r) {
 			w.WriteHeader(http.StatusNoContent)
 		}
-	case r.URL.Path == "/api/clusters":
-		if !h.requireViewer(w, r) {
-			return
-		}
-		if !h.legacyHubViewerAllowed(r) {
-			hubHTTPError(w, http.StatusForbidden, "permission_denied", "OIDC members cannot use the legacy cluster API")
-			return
-		}
-		if !sameSiteRequest(r) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		if r.Method != http.MethodGet {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(h.registry.List(h.authorized))
-	case strings.HasPrefix(r.URL.Path, "/api/registrations/"):
-		if !sameSiteRequest(r) {
-			http.Error(w, "forbidden", http.StatusForbidden)
-			return
-		}
-		if r.Method != http.MethodPut {
-			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-			return
-		}
-		h.register(w, r)
-	case r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/fleet" || r.URL.Path == "/mcp-access":
+	case r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/mcp-access":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
@@ -263,95 +155,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.NotFound(w, r)
 	}
-}
-
-func isFleetViewerRoute(path string) bool {
-	switch path {
-	case "/api/fleet/clusters", "/api/fleet/fleets", "/api/fleet/context",
-		"/api/fleet/resource-context", "/api/fleet/tools", "/api/fleet/call-tool":
-		return true
-	}
-	if !strings.HasPrefix(path, "/api/fleet/fleets/") {
-		return false
-	}
-	id := strings.TrimPrefix(path, "/api/fleet/fleets/")
-	return !strings.Contains(id, "/") && fleetsync.ValidateID(id)
-}
-
-func (h *Handler) sourceSnapshot(w http.ResponseWriter, r *http.Request) {
-	if !sameSiteRequest(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	if r.URL.RawQuery != "" || r.URL.ForceQuery {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	id := strings.TrimPrefix(r.URL.Path, "/api/fleet/snapshots/")
-	tokenHash, allowed := h.tokens[id]
-	if !allowed || !fleetsync.ValidateID(id) || !authorizedBearer(r, tokenHash) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	fleetsync.NewSnapshotHandler(h.fleetStore, id).ServeHTTP(w, r)
-}
-
-func (h *Handler) sourceAgentChannel(w http.ResponseWriter, r *http.Request) {
-	if !sameSiteRequest(r) {
-		http.Error(w, "forbidden", http.StatusForbidden)
-		return
-	}
-	if r.URL.RawQuery != "" || r.URL.ForceQuery {
-		http.Error(w, "bad request", http.StatusBadRequest)
-		return
-	}
-	id := strings.TrimPrefix(r.URL.Path, "/api/fleet/agents/")
-	if !strings.HasSuffix(id, "/channel") {
-		http.NotFound(w, r)
-		return
-	}
-	id = strings.TrimSuffix(id, "/channel")
-	tokenHash, allowed := h.tokens[id]
-	if !allowed || !fleetsync.ValidateID(id) || !authorizedBearer(r, tokenHash) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	h.agentHub.ServeAgentChannel(w, r, id)
-}
-
-func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
-	id := strings.TrimPrefix(r.URL.Path, "/api/registrations/")
-	tokenHash, allowed := h.tokens[id]
-	if !allowed || !authorizedBearer(r, tokenHash) {
-		http.Error(w, "unauthorized", http.StatusUnauthorized)
-		return
-	}
-	r.Body = http.MaxBytesReader(w, r.Body, maxRegistrationBytes)
-	decoder := json.NewDecoder(r.Body)
-	decoder.DisallowUnknownFields()
-	var registration Registration
-	if err := decoder.Decode(&registration); err != nil {
-		var tooLarge *http.MaxBytesError
-		if errors.As(err, &tooLarge) {
-			http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
-			return
-		}
-		http.Error(w, "invalid registration", http.StatusBadRequest)
-		return
-	}
-	if err := decoder.Decode(new(any)); !errors.Is(err, io.EOF) {
-		http.Error(w, "invalid registration", http.StatusBadRequest)
-		return
-	}
-	if registration.ID != id || ValidateRegistration(registration) != nil {
-		http.Error(w, "invalid registration", http.StatusBadRequest)
-		return
-	}
-	if err := h.registry.Register(registration); err != nil {
-		http.Error(w, "registration could not be saved", http.StatusInternalServerError)
-		return
-	}
-	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, name string) {
@@ -407,15 +210,6 @@ func (h *Handler) requireViewer(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
-}
-
-func authorizedBearer(r *http.Request, expected [32]byte) bool {
-	value := r.Header.Get("Authorization")
-	if !strings.HasPrefix(value, "Bearer ") {
-		return false
-	}
-	actual := sha256.Sum256([]byte(strings.TrimPrefix(value, "Bearer ")))
-	return subtle.ConstantTimeCompare(actual[:], expected[:]) == 1
 }
 
 func validUsername(value string) bool {

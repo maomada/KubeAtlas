@@ -4,8 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MCPCredentials } from './MCPCredentials'
-import { Portal } from './Portal'
-import { credentialStatus, openCodeFleetConfig } from './credentials'
+import { credentialStatus, openCodeCloudConfig } from './credentials'
 import type { MCPCredential } from './credentials'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -32,16 +31,6 @@ afterEach(() => {
   vi.restoreAllMocks()
 })
 
-it('keeps MCP navigation hidden during server rendering until Hub status is checked', () => {
-  const html = renderToStaticMarkup(<Portal />)
-  expect(html).toContain('aria-label="门户导航"')
-  expect(html).toContain('退出登录')
-  expect(html).toContain('正在检查 Hub 模式')
-  expect(html).not.toContain('href="/mcp-access"')
-  expect(html).not.toContain('生成访问凭据')
-  expect(html).not.toContain('搜索集群')
-})
-
 it('limits viewer credential controls to read-only regardless of the default write option', () => {
   const html = renderToStaticMarkup(<MCPCredentials readOnlyOnly />)
   expect(html).not.toContain('value="write"')
@@ -50,13 +39,14 @@ it('limits viewer credential controls to read-only regardless of the default wri
 })
 
 it('generates an OpenCode environment reference, rejects credential-bearing URLs, and distinguishes expiry', () => {
-  const config = JSON.parse(openCodeFleetConfig('https://portal.example/mcp-fleet'))
-  expect(config.mcp['kubeatlas-fleet']).toEqual({
-    type: 'remote', url: 'https://portal.example/mcp-fleet', oauth: false,
+  const config = JSON.parse(openCodeCloudConfig('https://portal.example/mcp'))
+  expect(config.mcp['kubeatlas-cloud']).toEqual({
+    type: 'remote', url: 'https://portal.example/mcp', oauth: false,
     headers: { Authorization: 'Bearer {env:KUBEATLAS_MCP_TOKEN}' },
   })
-  expect(() => openCodeFleetConfig('https://user:pass@portal.example/mcp-fleet')).toThrow()
-  expect(() => openCodeFleetConfig('https://portal.example/mcp-fleet?token=secret')).toThrow()
+  for (const url of ['javascript:alert(1)', '//evil.example', 'https://user:pass@example.com/mcp', 'https://example.com/mcp?token=secret', 'https://example.com/#token', 'https://example.com/\\evil', 'https://example.com/\n']) {
+    expect(() => openCodeCloudConfig(url)).toThrow()
+  }
   expect(credentialStatus(credential, Date.parse(credential.createdAt))).toBe('active')
   expect(credentialStatus(credential, Date.parse(credential.expiresAt))).toBe('expired')
   expect(credentialStatus({ ...credential, revokedAt: credential.createdAt }, 0)).toBe('revoked')
@@ -79,7 +69,7 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
     return Promise.resolve(response({ credentials: records, serverTime: credential.createdAt }))
   })
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<Portal />))
+  await act(async () => root.render(<MCPCredentials />))
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
   expect(button('生成限时 Token').disabled).toBe(true)
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
@@ -122,68 +112,12 @@ it('fails closed when the Hub directory cannot be read, without falling back to 
         ? new Response(null, { status: 503 })
         : response({ credentials: [credential], serverTime: credential.createdAt })))
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<Portal />))
+  await act(async () => root.render(<MCPCredentials />))
   expect(host.textContent).toContain('集群目录读取失败')
   expect(button('生成限时 Token').closest('fieldset')!.disabled).toBe(true)
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-  expect(fetch.mock.calls).toHaveLength(3)
+  expect(fetch.mock.calls).toHaveLength(2)
   expect(fetch.mock.calls.some(([url]) => url === '/api/clusters')).toBe(false)
   expect(fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
-})
-
-it('hides MCP navigation when Hub is disabled while keeping home directory polling', async () => {
-  window.history.replaceState({}, '', '/')
-  const fetch = vi.fn((url: string) => Promise.resolve(url === '/api/hub'
-    ? new Response(null, { status: 404 })
-    : response({ clusters: [], serverTime: credential.createdAt, staleAfterSeconds: 90 })))
-  vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<Portal />))
-  expect(host.querySelector('a[href="/mcp-access"]')).toBeNull()
-  expect(fetch.mock.calls.some(([url]) => url === '/api/hub')).toBe(true)
-  expect(fetch.mock.calls.some(([url]) => url === '/api/clusters')).toBe(true)
-})
-
-it('shows Hub-disabled guidance on direct credential visits without management requests', async () => {
-  const fetch = vi.fn((url: string) => {
-    expect(url).toBe('/api/hub')
-    return Promise.resolve(new Response(null, { status: 404 }))
-  })
-  vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<Portal />))
-  expect(host.textContent).toContain('Hub 模式未启用')
-  expect(host.textContent).toContain('--hub-state-file')
-  expect(host.querySelector('a[href="/mcp-access"]')).toBeNull()
-  expect(host.textContent).not.toContain('生成访问凭据')
-  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/hub'])
-})
-
-it.each([
-  { label: 'network failure', firstResponse: () => Promise.reject(new Error('network interruption')) },
-  { label: '403 response', firstResponse: () => Promise.resolve(new Response(null, { status: 403 })) },
-  { label: '5xx response', firstResponse: () => Promise.resolve(new Response(null, { status: 503 })) },
-  { label: 'malformed metadata', firstResponse: () => Promise.resolve(response({ enabled: 'true' })) },
-])('allows retry after $label during Hub availability lookup', async ({ firstResponse }) => {
-  let availabilityRequests = 0
-  const fetch = vi.fn((url: string) => {
-    if (url === '/api/hub') {
-      availabilityRequests++
-      return availabilityRequests === 1 ? firstResponse() : Promise.resolve(response({ enabled: true }))
-    }
-    if (url === '/api/hub/clusters') return Promise.resolve(response({ clusters: [cluster] }))
-    return Promise.resolve(response({ credentials: [], serverTime: credential.createdAt }))
-  })
-  vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<Portal />))
-  expect(host.textContent).toContain('无法确认 Hub 状态')
-  expect(host.textContent).not.toContain('Hub 模式未启用')
-  expect(host.querySelector('a[href="/mcp-access"]')).toBeNull()
-  expect(fetch.mock.calls.map(([url]) => url)).toEqual(['/api/hub'])
-
-  await act(async () => button('重试').click())
-  expect(host.querySelector('a[href="/mcp-access"]')).not.toBeNull()
-  expect(host.textContent).toContain('生成访问凭据')
-  expect(fetch.mock.calls.some(([url]) => url === '/api/hub/clusters')).toBe(true)
-  expect(fetch.mock.calls.some(([url]) => url === '/api/mcp/credentials')).toBe(true)
-  expect(fetch.mock.calls.some(([url]) => url === '/api/clusters')).toBe(false)
 })

@@ -3,13 +3,11 @@ package mcp
 import (
 	"context"
 	"encoding/json"
-	"reflect"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/maomada/KubeAtlas/internal/k8s"
 	"github.com/maomada/KubeAtlas/internal/opencost"
 	"github.com/maomada/KubeAtlas/pkg/prom"
 	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
@@ -134,30 +132,5 @@ func TestSourceCapabilitiesDependenciesAreCachedNotProof(t *testing.T) {
 		if got.State != status.State || !strings.Contains(got.Reason, status.Reason) || !strings.Contains(got.Reason, string(status.Source)) {
 			t.Fatalf("cached cost state lost: %+v", got)
 		}
-	}
-}
-
-func TestSourceCapabilitiesDoNotRefreshDiscovery(t *testing.T) {
-	fixture := &collectionDiscoveryFixture{}
-	restore, err := k8s.SetTestResourceDiscovery(fixture)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(restore)
-	before := fixture.calls.Load()
-	plan := currentCollectionPlan()
-	result, _, err := sourceCapabilitiesHandler(false, false)(context.Background(), nil, struct{}{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	var body sourceCapabilitiesResponse
-	if err := json.Unmarshal([]byte(extractText(t, result)), &body); err != nil {
-		t.Fatal(err)
-	}
-	if fixture.calls.Load() != before {
-		t.Fatal("capabilities triggered discovery")
-	}
-	if !reflect.DeepEqual(body.Collection, plan.coverage) {
-		t.Fatal("capability coverage drifted from snapshot policy")
 	}
 }

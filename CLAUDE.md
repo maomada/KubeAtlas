@@ -71,7 +71,7 @@ The upstream Radar Hub is not a KubeAtlas service or a required development depe
 
 ## Architecture
 
-A single Go binary talks directly to the Kubernetes API through kubeconfig (`~/.kube/config`) or the in-cluster ServiceAccount — there is no hosted backend service in between. The same process serves the embedded React UI (HTTP/SSE/WebSocket) and AI tools over MCP (`/mcp`). The independent Portal is a directory with separate login and registration, not a Kubernetes API proxy.
+A native KubeAtlas Agent talks directly to Kubernetes through kubeconfig (`~/.kube/config`) or its in-cluster ServiceAccount and serves the embedded React UI plus native MCP endpoints. The separate self-hosted Cloud Hub serves identity, Cloud UI, browser proxy, and live MCP over connected Agents; it requires persistent Hub state and does not directly call Kubernetes.
 
 ## Project Structure
 

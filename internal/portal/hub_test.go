@@ -23,10 +23,6 @@ import (
 func newPortalHubFixture(t *testing.T, factory bool) (*Handler, string) {
 	t.Helper()
 	dir := t.TempDir()
-	registry, err := OpenRegistry(filepath.Join(dir, "registry.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
 	statePath := filepath.Join(dir, "hub", "state.json")
 	store, err := hubstate.OpenStore(statePath)
 	if err != nil {
@@ -44,7 +40,7 @@ func newPortalHubFixture(t *testing.T, factory bool) (*Handler, string) {
 			}), nil
 		}
 	}
-	handler, err := NewHandler(registry, Credentials{Username: testUsername, Password: testPassword, Hub: cfg}, nil, nil)
+	handler, err := NewHandler(Credentials{Username: testUsername, Password: testPassword, Hub: cfg}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -132,10 +128,10 @@ func TestPortalHubCredentialBoundaryAndLifecycle(t *testing.T) {
 	issued := decodeHubResponse[hubstate.IssuedCredential](t, hubRequest(t, h, cookie, "", "POST", "/api/mcp/credentials", `{"label":"client","clusterIds":["alpha"],"readOnly":true,"ttlSeconds":900}`, 201))
 	hubRequest(t, h, nil, issued.Token, "GET", "/api/hub/clusters", "", 401)
 	hubRequest(t, h, cookie, issued.Token, "POST", "/api/mcp/credentials", `{"clusterIds":["alpha"],"readOnly":false}`, 401)
-	hubRequest(t, h, cookie, "", "POST", "/mcp-fleet", `{}`, 401)
-	hubRequest(t, h, cookie, "wrong", "POST", "/mcp-fleet", `{}`, 401)
-	hubRequest(t, h, nil, agent.Token, "POST", "/mcp-fleet", `{}`, 401)
-	principal := decodeHubResponse[hub.Principal](t, hubRequest(t, h, cookie, issued.Token, "POST", "/mcp-fleet", `{}`, 200))
+	hubRequest(t, h, cookie, "", "POST", "/mcp", `{}`, 401)
+	hubRequest(t, h, cookie, "wrong", "POST", "/mcp", `{}`, 401)
+	hubRequest(t, h, nil, agent.Token, "POST", "/mcp", `{}`, 401)
+	principal := decodeHubResponse[hub.Principal](t, hubRequest(t, h, cookie, issued.Token, "POST", "/mcp", `{}`, 200))
 	if principal.UserID != h.liveHub.userID || principal.CredentialID != issued.Credential.ID || !principal.ReadOnly || len(principal.ClusterIDs) != 1 || principal.ClusterIDs[0] != "alpha" || len(principal.Groups) != 1 || principal.Groups[0] != "radar:idp:operators" {
 		t.Fatal("MCP principal differs from owner-bound credential")
 	}
@@ -154,7 +150,7 @@ func TestPortalHubCredentialBoundaryAndLifecycle(t *testing.T) {
 	}
 	hubRequest(t, h, nil, refreshed.Token, "POST", "/api/mcp/credentials/refresh", `{"readOnly":false}`, 400)
 	hubRequest(t, h, cookie, "", "POST", "/api/mcp/credentials/"+refreshed.Credential.ID+"/revoke", `{}`, 204)
-	hubRequest(t, h, nil, refreshed.Token, "POST", "/mcp-fleet", `{}`, 401)
+	hubRequest(t, h, nil, refreshed.Token, "POST", "/mcp", `{}`, 401)
 	hubRequest(t, h, cookie, "", "POST", "/api/mcp/credentials/unknown/revoke", `{}`, 404)
 }
 
@@ -624,18 +620,18 @@ func TestPortalHubCredentialsSurviveSessionAndProcessRestart(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	restarted, err := NewHandler(h.registry, Credentials{Username: testUsername, Password: testPassword, Hub: &HubConfig{Store: store}}, nil, nil)
+	restarted, err := NewHandler(Credentials{Username: testUsername, Password: testPassword, Hub: &HubConfig{Store: store}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(restarted.Close)
 	hubRequest(t, restarted, cookie, "", "GET", "/api/mcp/credentials", "", 401)
 	hubRequest(t, restarted, nil, issued.Token, "GET", "/api/mcp/credentials/current", "", 200)
-	unavailable := decodeHubResponse[map[string]any](t, hubRequest(t, restarted, nil, issued.Token, "POST", "/mcp-fleet", `{}`, 503))
+	unavailable := decodeHubResponse[map[string]any](t, hubRequest(t, restarted, nil, issued.Token, "POST", "/mcp", `{}`, 503))
 	if unavailable["error_code"] != "live_mcp_unavailable" {
 		t.Fatal("missing live handler must not fall back to snapshots")
 	}
-	other, err := NewHandler(h.registry, Credentials{Username: "another-owner", Password: testPassword, Hub: &HubConfig{Store: store}}, nil, nil)
+	other, err := NewHandler(Credentials{Username: "another-owner", Password: testPassword, Hub: &HubConfig{Store: store}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -661,7 +657,7 @@ func TestPortalHubRejectsAmbiguousCredentialsAndBrowserRequests(t *testing.T) {
 		{"credential query", func(r *http.Request) { r.URL.RawQuery = "token=forbidden" }, 400},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			r := httptest.NewRequest("POST", "http://localhost/mcp-fleet", strings.NewReader(`{}`))
+			r := httptest.NewRequest("POST", "http://localhost/mcp", strings.NewReader(`{}`))
 			r.Header.Set("Authorization", "Bearer "+issued.Token)
 			r.AddCookie(cookie)
 			tc.mutate(r)

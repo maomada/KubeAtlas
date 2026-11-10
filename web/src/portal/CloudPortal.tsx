@@ -8,7 +8,7 @@ import { refreshAfterNamespaceSwitch, type NamespaceScope, type SearchResult } f
 import type { APIResource } from '../types'
 import type { AgentsResponse } from '../api/diagnose'
 import { namespaceFilterDisabled } from '../utils/namespaceFilter'
-import { CloudRequestError, cloudRequest, clusterBase, clusterPage, clusterView, selectedCluster, useCloudQuery, type HubCluster } from './cloudApi'
+import { cloudRequest, clusterBase, clusterPage, clusterView, selectedCluster, useCloudQuery, type HubCluster } from './cloudApi'
 import { useFleetQuery } from './cloudFleet'
 import { CloudDialog, CloudError, CloudLink, CloudLoading, CopyButton } from './CloudShared'
 import { CloudClusters, CloudInstall } from './CloudClusters'
@@ -17,12 +17,10 @@ import { CloudOrganization, CloudMembers, CloudSSO, PendingMembership, canManage
 import { CloudApplications, CloudCertificates, CloudChecks, CloudIssues, resourceHref } from './CloudFleetViews'
 import { MCPCredentials } from './MCPCredentials'
 import { credentialStatus, type MCPCredential } from './credentials'
-import { Portal } from './Portal'
 import { cloudViewHref, navigateCloud, useCloudLocation } from './cloudNavigation'
 import { usePortalTheme } from './usePortalTheme'
 
 const NativeRadar = lazy(() => import('../RadarApp').then(module => ({ default: module.RadarApp })))
-const managementClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } })
 
 interface NavItem { label: string; path: string; icon: ComponentType<{ size?: number }>; cluster?: boolean }
 const navigation: NavItem[] = [
@@ -43,17 +41,17 @@ const navigation: NavItem[] = [
 ]
 
 export function PortalEntry() {
-  return <QueryClientProvider client={managementClient}><PortalMode /></QueryClientProvider>
+  const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }))
+  return <QueryClientProvider client={client}><PortalMode queryClient={client} /></QueryClientProvider>
 }
 
-function PortalMode() {
+function PortalMode({ queryClient }: { queryClient: QueryClient }) {
   usePortalTheme()
   const mode = useCloudQuery<{ enabled: boolean; userId: string; member?: HubMember }>('/hub')
   if (mode.isPending) return <CloudLoading label="Loading Portal…" />
-  if ((mode.error instanceof CloudRequestError && mode.error.status === 404) || mode.data?.enabled === false) return <Portal />
   if (mode.error || mode.data?.enabled !== true) return <div className="cloud-page"><CloudError error={mode.error ?? new Error('Invalid Hub availability response')} retry={() => { void mode.refetch() }} /></div>
   if (mode.data.member?.status === 'pending') return <PendingMembership member={mode.data.member} retry={() => { void mode.refetch() }} />
-  return <CloudShell userId={mode.data.userId} member={mode.data.member} />
+  return <CloudShell userId={mode.data.userId} member={mode.data.member} queryClient={queryClient} />
 }
 
 function ClusterNamespacePicker({ id, client, connected, view, search, pending, onApply, onError }: {
@@ -91,7 +89,7 @@ function InvestigationGate({ id, children }: { id: string; children: ReactNode }
   return children
 }
 
-function CloudShell({ userId, member }: { userId: string; member?: HubMember }) {
+function CloudShell({ userId, member, queryClient }: { userId: string; member?: HubMember; queryClient: QueryClient }) {
   const canManage = canManageOrganization(member)
   const location = useCloudLocation()
   const directory = useCloudQuery<{ clusters: HubCluster[] }>('/hub/clusters')
@@ -175,7 +173,7 @@ function CloudShell({ userId, member }: { userId: string; member?: HubMember }) 
     } finally { setPendingNamespace(false) }
   }
   async function logout() {
-    try { await logoutPortal(); managementClient.clear(); nativeClient.clear() }
+    try { await logoutPortal(); queryClient.clear(); nativeClient.clear() }
     catch (error) { setActionError(error) }
   }
 
@@ -261,7 +259,7 @@ function CloudCapabilityGap({ title, description }: { title: string; description
 }
 
 function CloudAgents({ readOnlyOnly = false }: { readOnlyOnly?: boolean }) {
-  const endpoint = `${window.location.origin}/mcp-fleet`
+  const endpoint = `${window.location.origin}/mcp`
   return <div className="cloud-page cloud-agents"><div className="cloud-page-heading"><div><h1>Agents</h1><p>Connect an AI agent to your Kubernetes fleet through one MCP endpoint.</p></div></div><section className="cloud-card"><h2><Bot size={18} />Connect an AI agent</h2><p>Choose Streamable HTTP in your MCP client. Generate a scoped token below, then use its OpenCode configuration. MCP OAuth is not implemented; keep OAuth disabled in the MCP client. Portal SSO is a separate login flow.</p><div className="cloud-endpoint"><code>{endpoint}</code><CopyButton value={endpoint} label="Copy endpoint" /></div><p className="cloud-muted">The source cluster still checks Kubernetes RBAC for every user. A writable token does not grant cluster-admin permissions.</p></section><MCPCredentials readOnlyOnly={readOnlyOnly} /></div>
 }
 

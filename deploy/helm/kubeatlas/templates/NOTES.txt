@@ -12,9 +12,9 @@
 {{- $routed := or .Values.ingress.enabled .Values.httpRoute.enabled -}}
 {{- $proxyAuth := printf "Authentication: proxy (auth.mode=proxy). Users authenticate through the proxy,\nwhich forwards their identity to KubeAtlas via HTTP headers. The auth proxy should\nbe the only path to KubeAtlas.\nSetup: %s" $authDocs -}}
 {{- if include "radar.cloudEnrollmentMode" . | eq "true" }}
-Cloud enrollment is unavailable in KubeAtlas. Use the independent Portal registration feature.
+Cloud enrollment is unavailable in KubeAtlas. The self-hosted Cloud Hub is a separate deployment.
 {{- else if .Values.cloud.enabled }}
-Cloud connectivity is unavailable in KubeAtlas. Use the independent Portal registration feature.
+Cloud connectivity is unavailable in KubeAtlas. The self-hosted Cloud Hub is a separate deployment.
 {{- else if and (eq $mode "proxy") (not $routed) }}
 {{- /* No Service address or port-forward: the docs say the auth proxy should
        be the only path to KubeAtlas. */}}

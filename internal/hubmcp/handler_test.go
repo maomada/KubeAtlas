@@ -216,7 +216,7 @@ func TestLiveHubHTTPPrincipalAndSchemaErrors(t *testing.T) {
 		t.Fatal(err)
 	}
 	w := httptest.NewRecorder()
-	h.ServeHTTP(w, httptest.NewRequest("POST", "http://localhost/mcp-fleet", nil))
+	h.ServeHTTP(w, httptest.NewRequest("POST", "http://localhost/mcp", nil))
 	if w.Code != 401 {
 		t.Fatal("unauthenticated request admitted")
 	}

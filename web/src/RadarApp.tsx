@@ -26,7 +26,6 @@ import {
 } from "@tanstack/react-query";
 
 import App from "./App";
-import { FleetRoute } from "./components/fleet/FleetRoute";
 import { ThemeProvider } from "./context/ThemeContext";
 import {
   ToastProvider,
@@ -287,13 +286,11 @@ export function RadarApp({
                         forceRouterURLState={router === "memory"}
                         onFocusedRun={onInvestigationFocus}
                       >
-                        <FleetRoute>
-                          <App
-                            manageDocumentTitle={manageDocumentTitle}
-                            documentTitleSuffix={documentTitleSuffix}
-                            onClusterLoadStateChange={onClusterLoadStateChange}
-                          />
-                        </FleetRoute>
+                        <App
+                          manageDocumentTitle={manageDocumentTitle}
+                          documentTitleSuffix={documentTitleSuffix}
+                          onClusterLoadStateChange={onClusterLoadStateChange}
+                        />
                       </DiagnoseProvider>
                     </DiagnoseCustomizationProvider>
                   </TimelineRetentionNoteProvider>

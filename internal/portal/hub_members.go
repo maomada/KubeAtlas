@@ -93,14 +93,6 @@ func requireHubAdmin(w http.ResponseWriter, member hubstate.Member) bool {
 	return false
 }
 
-func (h *Handler) legacyHubViewerAllowed(r *http.Request) bool {
-	if h.liveHub == nil {
-		return true
-	}
-	ownerID, ok := h.sessionOwnerID(r)
-	return ok && ownerID == h.liveHub.ownerID
-}
-
 func (p *portalHub) organizationResponse() map[string]any {
 	organization := p.store.Organization()
 	return map[string]any{

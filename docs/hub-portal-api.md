@@ -1,10 +1,8 @@
 # Portal Hub identity, management and MCP credentials
 
-`portal.Credentials.Hub` explicitly enables this backend integration. A nil
-configuration preserves the legacy Portal. This document describes the backend
-contract, not a deployed Hub or a finished browser management workspace. CLI and
-live MCP facade wiring are separate. Without an MCP factory, Hub-mode
-`/mcp-fleet` returns `live_mcp_unavailable`; it never falls back to snapshot tools.
+The Cloud-only Portal requires a valid `HubConfig`; construction without Hub
+state fails. This document describes the self-hosted Hub API and live MCP
+transport.
 
 ## Identity and request boundaries
 
@@ -103,7 +101,7 @@ deleted or reused. Revoked Agent credentials can be replaced by explicit rotatio
 | Portal cookie | `POST /api/mcp/credentials/{id}/revoke` | `{}` → 204 |
 | MCP bearer | `GET /api/mcp/credentials/current` | `{credential, status: "active", serverTime}` |
 | MCP bearer | `POST /api/mcp/credentials/refresh` | `{ttlSeconds}` → replacement credential/token |
-| MCP bearer | `/mcp-fleet` | Live MCP factory; no cookie or snapshot fallback |
+| MCP bearer | `/mcp` | Live MCP transport; no cookie-as-bearer fallback |
 
 Issuance requires an explicit boolean `readOnly`, a nonempty explicit cluster
 scope, and known cluster IDs. Wildcards are rejected. An omitted/zero TTL uses the

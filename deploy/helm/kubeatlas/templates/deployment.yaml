@@ -1,3 +1,9 @@
+{{- if hasKey .Values "fleet" }}
+{{- fail "fleet configuration is retired and unsupported in KubeAtlas" }}
+{{- end }}
+{{- if hasKey .Values "portalRegistration" }}
+{{- fail "portalRegistration configuration is retired and unsupported in KubeAtlas" }}
+{{- end }}
 {{- if and .Values.persistence.enabled (eq .Values.timeline.storage "sqlite") (gt (int .Values.replicaCount) 1) }}
 {{- fail "replicaCount must be 1 when persistence.enabled=true and timeline.storage=sqlite: a single PVC cannot be safely shared across pods (RWO volumes won't attach to a second pod, RWX volumes risk SQLite corruption)" }}
 {{- end }}
@@ -13,75 +19,11 @@
 {{- if and (eq .Values.timeline.storage "postgres") (not .Values.timeline.postgres.existingSecret) }}
 {{- fail "timeline.postgres.existingSecret is required when timeline.storage=postgres" }}
 {{- end }}
-{{- $portal := .Values.portalRegistration -}}
-{{- if $portal.enabled }}
-{{- if .Values.cloud.enabled }}
-{{- fail "portalRegistration.enabled cannot be combined with cloud.enabled" }}
-{{- end }}
-{{- range $key := list "url" "clusterId" "clusterName" "radarUrl" "existingSecret" "tokenKey" }}
-{{- if empty (get $portal $key) }}
-{{- fail (printf "portalRegistration.%s is required when portalRegistration.enabled=true" $key) }}
-{{- end }}
-{{- end }}
-{{- if not (regexMatch "^[a-z0-9][a-z0-9-]{0,62}$" (toString $portal.clusterId)) }}
-{{- fail "portalRegistration.clusterId must match [a-z0-9][a-z0-9-]{0,62}" }}
-{{- end }}
-{{- range $key := list "url" "radarUrl" }}
-{{- $rawURL := toString (get $portal $key) }}
-{{- $url := urlParse $rawURL }}
-{{- if or (not (has $url.scheme (list "http" "https"))) (not $url.host) $url.userinfo $url.query $url.fragment (contains "?" $rawURL) (contains "#" $rawURL) }}
-{{- fail (printf "portalRegistration.%s must be an absolute HTTP(S) URL without credentials, query, or fragment" $key) }}
-{{- end }}
-{{- if and (eq $key "url") (not (has $url.path (list "" "/"))) }}
-{{- fail "portalRegistration.url must be root-hosted; Portal subpath hosting is unsupported" }}
-{{- end }}
-{{- if and (eq $key "url") (eq $url.scheme "http") (not $portal.allowHTTP) }}
-{{- fail "portalRegistration.url must use HTTPS unless portalRegistration.allowHTTP=true" }}
-{{- end }}
-{{- end }}
-{{- if $portal.mcpBaseUrl }}
-{{- $rawMCPBaseURL := toString $portal.mcpBaseUrl }}
-{{- $mcpBaseURL := urlParse $rawMCPBaseURL }}
-{{- if or (not (has $mcpBaseURL.scheme (list "http" "https"))) (not $mcpBaseURL.host) $mcpBaseURL.userinfo $mcpBaseURL.query $mcpBaseURL.fragment (contains "?" $rawMCPBaseURL) (contains "#" $rawMCPBaseURL) }}
-{{- fail "portalRegistration.mcpBaseUrl must be an absolute HTTP(S) URL without credentials, query, or fragment" }}
-{{- end }}
-{{- end }}
-{{- end }}
 {{- $basePath := include "radar.basePath" . -}}
 {{- $enroll := include "radar.cloudEnrollmentMode" . | eq "true" -}}
 {{- $cloudCA := and $enroll (not (empty .Values.cloud.caBundle)) -}}
 {{- if and .Values.mcp.readOnly (not .Values.mcp.enabled) }}
 {{- fail "mcp.readOnly requires mcp.enabled=true" }}
-{{- end }}
-{{- if and .Values.fleet.writesEnabled (not .Values.fleet.enabled) }}
-{{- fail "fleet.writesEnabled requires fleet.enabled=true" }}
-{{- end }}
-{{- if .Values.fleet.enabled }}
-{{- if or .Values.cloud.enabled $enroll }}
-{{- fail "fleet.enabled cannot be combined with KubeAtlas Cloud" }}
-{{- end }}
-{{- if eq .Values.auth.mode "none" }}
-{{- fail "fleet.enabled requires auth.mode=proxy or oidc on the shared listener" }}
-{{- end }}
-{{- if not .Values.mcp.enabled }}
-{{- fail "fleet.enabled requires mcp.enabled=true" }}
-{{- end }}
-{{- if and .Values.fleet.writesEnabled .Values.mcp.readOnly }}
-{{- fail "fleet.writesEnabled cannot be combined with mcp.readOnly" }}
-{{- end }}
-{{- if ne (int .Values.replicaCount) 1 }}
-{{- fail "fleet.enabled requires replicaCount=1 for the single-writer identity catalog" }}
-{{- end }}
-{{- if not .Values.fleet.state.existingClaim }}
-{{- fail "fleet.state.existingClaim is required to preserve cluster identities and operation audit across restarts" }}
-{{- end }}
-{{- $names := dict }}
-{{- range .Values.fleet.kubeconfigSecrets }}
-{{- if hasKey $names .name }}
-{{- fail "fleet.kubeconfigSecrets names must be unique" }}
-{{- end }}
-{{- $_ := set $names .name true }}
-{{- end }}
 {{- end }}
 {{- if $enroll }}
 {{- $e := .Values.cloud.enrollment }}
@@ -156,7 +98,7 @@ spec:
   {{- /* Enrollment: the Hub keeps one connection per cluster. In a rolling
          update the new pod would wait until the old one is gone and the Hub
          sees its connection drop. */}}
-  {{- if or .Values.fleet.enabled $enroll (and .Values.persistence.enabled (eq .Values.timeline.storage "sqlite")) }}
+  {{- if or $enroll (and .Values.persistence.enabled (eq .Values.timeline.storage "sqlite")) }}
   strategy:
     type: Recreate
   {{- end }}
@@ -174,9 +116,6 @@ spec:
                auth.mode and cloud.enabled also shape the ClusterRole, but they
                already change the container args. */}}
         checksum/rbac: {{ toJson .Values.rbac | sha256sum }}
-        {{- if .Values.fleet.enabled }}
-        checksum/fleet-config: {{ toJson .Values.fleet.config | sha256sum }}
-        {{- end }}
         {{- if not .Values.cloud.enabled }}
         checksum/operator-settings: {{ include "radar.operatorSettings" . | sha256sum }}
         {{- end }}
@@ -374,16 +313,6 @@ spec:
             {{- if $cloudCA }}
             - --cloud-ca-file=/etc/radar/cloud-ca/ca.crt
             {{- end }}
-            {{- if .Values.fleet.enabled }}
-            - --fleet-config=/etc/kubeatlas/fleet/config.json
-            - --fleet-state=/fleet-state/catalog.json
-            {{- if .Values.fleet.adminUsers }}
-            - {{ printf "--fleet-admin-users=%s" (join "," .Values.fleet.adminUsers) | quote }}
-            {{- end }}
-            {{- if .Values.fleet.writesEnabled }}
-            - --fleet-writes
-            {{- end }}
-            {{- end }}
             {{- /* extraArgs come last: a repeated scalar flag wins, a repeatable one is appended */}}
             {{- range .Values.extraArgs }}
             - {{ tpl . $ | quote }}
@@ -437,35 +366,6 @@ spec:
               {{- else }}
               value: {{ .Values.auth.oidc.clientSecret | quote }}
               {{- end }}
-            {{- end }}
-            {{- if $portal.enabled }}
-            - name: KUBEATLAS_PORTAL_URL
-              value: {{ $portal.url | quote }}
-            - name: KUBEATLAS_PORTAL_CLUSTER_ID
-              value: {{ $portal.clusterId | quote }}
-            - name: KUBEATLAS_PORTAL_CLUSTER_NAME
-              value: {{ $portal.clusterName | quote }}
-            - name: KUBEATLAS_PORTAL_DESCRIPTION
-              value: {{ $portal.description | quote }}
-            - name: KUBEATLAS_PORTAL_ENVIRONMENT
-              value: {{ $portal.environment | quote }}
-            - name: KUBEATLAS_PORTAL_REGION
-              value: {{ $portal.region | quote }}
-            - name: KUBEATLAS_PORTAL_RADAR_URL
-              value: {{ $portal.radarUrl | quote }}
-            {{- if $portal.mcpBaseUrl }}
-            - name: KUBEATLAS_PORTAL_MCP_BASE_URL
-              value: {{ $portal.mcpBaseUrl | quote }}
-            {{- end }}
-            {{- if $portal.allowHTTP }}
-            - name: KUBEATLAS_PORTAL_ALLOW_HTTP
-              value: "true"
-            {{- end }}
-            - name: KUBEATLAS_PORTAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ $portal.existingSecret }}
-                  key: {{ $portal.tokenKey }}
             {{- end }}
             - name: HELM_CACHE_HOME
               value: "/tmp/helm/cache"
@@ -580,18 +480,6 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            {{- if .Values.fleet.enabled }}
-            - name: fleet-config
-              mountPath: /etc/kubeatlas/fleet
-              readOnly: true
-            - name: fleet-state
-              mountPath: /fleet-state
-            {{- range .Values.fleet.kubeconfigSecrets }}
-            - name: fleet-credentials-{{ .name }}
-              mountPath: /etc/kubeatlas/fleet-credentials/{{ .name }}
-              readOnly: true
-            {{- end }}
-            {{- end }}
             {{- if not .Values.cloud.enabled }}
             - name: operator-settings
               mountPath: /etc/radar/operator
@@ -619,20 +507,6 @@ spec:
             {{- toYaml . | nindent 12 }}
             {{- end }}
       volumes:
-        {{- if .Values.fleet.enabled }}
-        - name: fleet-config
-          configMap:
-            name: {{ include "radar.fullname" . }}-fleet
-        - name: fleet-state
-          persistentVolumeClaim:
-            claimName: {{ .Values.fleet.state.existingClaim | quote }}
-        {{- range .Values.fleet.kubeconfigSecrets }}
-        - name: fleet-credentials-{{ .name }}
-          secret:
-            secretName: {{ .secretName | quote }}
-            defaultMode: 0440
-        {{- end }}
-        {{- end }}
         {{- if not .Values.cloud.enabled }}
         - name: operator-settings
           configMap:

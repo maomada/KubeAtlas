@@ -149,8 +149,9 @@ or HTTP readiness timeout. `--skip-build` reports binary provenance as
 unknown; full isolation for parallel visual servers remains follow-up work.
 
 Per-run Kind leases, parallel frontend build ordering, fully isolated browser
-servers, and real Portal/Fleet two-cluster QA remain follow-up work, not claimed
-as implemented by the P0 safety fixes. See the relevant demo README before use.
+servers, and real self-hosted Hub plus multi-Agent QA remain separate acceptance
+work, not claims established by local unit tests. See the relevant demo README
+before use.
 
 ## Merge and publication
 
@@ -162,5 +163,5 @@ that result. Do not claim final-main acceptance from a PR merge simulation.
 Publishing additionally needs exact artifact/version/action approval, complete
 active release gates, native/real-cluster/browser acceptance and offline signing
 under [the release policy](ci-cd.md). Production private keys remain on the
-user-controlled signing machine. Fleet code on main does not itself authorize
-Fleet distribution or prove multi-cluster readiness.
+user-controlled signing machine. Hub or Agent code on main does not itself
+authorize distribution or prove live multi-cluster readiness.

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Check, Copy, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge } from '@maomada/k8s-ui/components/ui/Badge'
-import { credentialClusters, credentialStatus, credentialsRequest, openCodeFleetConfig } from './credentials'
+import { credentialClusters, credentialStatus, credentialsRequest, openCodeCloudConfig } from './credentials'
 import type { CredentialCluster, IssuedCredential, MCPCredential } from './credentials'
 
 const statusLabels = { active: '有效', expired: '已过期', revoked: '已撤销', unknown: '有效期未知' }
@@ -41,7 +41,7 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
   const [ttlSeconds, setTTL] = useState(28800)
   const [issued, setIssued] = useState<IssuedCredential>()
   const [revokeID, setRevokeID] = useState('')
-  const [endpoint, setEndpoint] = useState(`${window.location.origin}/mcp-fleet`)
+  const [endpoint, setEndpoint] = useState(`${window.location.origin}/mcp`)
   const [now, setNow] = useState(NaN)
   const clock = useRef({ server: NaN, received: 0 })
   const availableIDs = new Set(clusters.map(cluster => cluster.id))
@@ -104,7 +104,7 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
 
   let config = ''
   let endpointError = ''
-  try { config = openCodeFleetConfig(endpoint) } catch (error) { endpointError = errorMessage(error) }
+  try { config = openCodeCloudConfig(endpoint) } catch (error) { endpointError = errorMessage(error) }
 
   return <div className="space-y-6">
     <div><p className="portal-mono mb-2 text-xs text-accent-text">统一 MCP · Streamable HTTP</p><h1 className="text-3xl font-semibold">MCP 访问凭据</h1><p className="mt-3 max-w-3xl text-sm leading-relaxed text-theme-text-secondary">在这里生成独立的限时 Token，不再复制网页登录 Cookie。凭据重启后仍有效，可限定集群和读写范围，并随时撤销。</p></div>

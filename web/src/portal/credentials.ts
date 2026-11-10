@@ -1,5 +1,4 @@
 import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
-import { safeExternalURL } from './model'
 
 export interface MCPCredential {
   id: string
@@ -37,12 +36,22 @@ export function credentialStatus(credential: MCPCredential, now: number): 'activ
   return expires <= now ? 'expired' : 'active'
 }
 
-export function openCodeFleetConfig(endpoint: string): string {
+function safeExternalURL(value: string): string | undefined {
+  try {
+    const url = new URL(value)
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || /[\s\\]/.test(value)) return undefined
+    return url.href
+  } catch {
+    return undefined
+  }
+}
+
+export function openCodeCloudConfig(endpoint: string): string {
   const url = safeExternalURL(endpoint)
   if (!url) throw new Error('请输入不含凭据、查询参数或片段的 HTTP / HTTPS 地址。')
   return JSON.stringify({
     mcp: {
-      'kubeatlas-fleet': {
+      'kubeatlas-cloud': {
         type: 'remote', url, oauth: false,
         headers: { Authorization: 'Bearer {env:KUBEATLAS_MCP_TOKEN}' },
       },
@@ -62,19 +71,6 @@ export async function credentialClusters(signal: AbortSignal): Promise<Credentia
   return data.clusters.filter(cluster => !cluster.revokedAt)
 }
 
-export async function hubAvailability(signal: AbortSignal): Promise<boolean> {
-  try {
-    const data = await managementRequest<unknown>('/hub', 'GET', undefined, signal)
-    if (!data || typeof data !== 'object' || !('enabled' in data) || typeof data.enabled !== 'boolean') {
-      throw new Error('门户返回了无效的 Hub 状态。')
-    }
-    return data.enabled
-  } catch (error) {
-    if (error instanceof ManagementRequestError && error.status === 404) return false
-    throw error
-  }
-}
-
 async function managementRequest<T>(path: string, method: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const response = await fetch(apiUrl(path, '/api'), {
     method, credentials: getCredentialsMode(), cache: 'no-store',
@@ -87,7 +83,6 @@ async function managementRequest<T>(path: string, method: string, body?: unknown
     throw new ManagementRequestError('门户登录已失效，请重新登录；MCP 凭据有独立的有效期。', response.status)
   }
   if (!response.ok) {
-    if (path === '/hub/clusters' && response.status === 404) throw new Error('请确认 Portal 已启用 Hub 模式。')
     let message = `请求失败（HTTP ${response.status}）`
     if (response.headers.get('Content-Type')?.includes('application/json')) {
       const error = await response.json().catch(() => undefined)

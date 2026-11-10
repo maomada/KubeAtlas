@@ -30,6 +30,48 @@ vi.mock('@maomada/k8s-ui', async importOriginal => {
 })
 
 it.each([
+  { label: 'missing Hub', firstResponse: () => Promise.resolve(new Response(null, { status: 404 })) },
+  { label: 'disabled Hub', firstResponse: () => Promise.resolve(Response.json({ enabled: false })) },
+  { label: 'network failure', firstResponse: () => Promise.reject(new Error('network interruption')) },
+  { label: 'permission denial', firstResponse: () => Promise.resolve(new Response(null, { status: 403 })) },
+  { label: 'source failure', firstResponse: () => Promise.resolve(new Response(null, { status: 503 })) },
+  { label: 'invalid metadata', firstResponse: () => Promise.resolve(Response.json({ enabled: 'true' })) },
+])('fails closed on $label and retries without opening the retired Portal', async ({ firstResponse }) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/settings')
+  let availabilityRequests = 0
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/hub') {
+      availabilityRequests++
+      return availabilityRequests === 1 ? firstResponse() : Response.json({ enabled: true, userId: 'test-user' })
+    }
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await act(async () => vi.waitFor(() => expect(host.querySelector('[role="alert"]')).not.toBeNull()))
+    expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(fetch.mock.calls.some(([url]) => String(url) === '/api/clusters' || String(url).startsWith('/api/fleet'))).toBe(false)
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Try again')!.click())
+    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).not.toBeNull()))
+    expect(host.querySelector('a[href="/fleet"]')).toBeNull()
+    expect(fetch.mock.calls.some(([url]) => String(url) === '/api/clusters' || String(url).startsWith('/api/fleet'))).toBe(false)
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it.each([
   { id: 'alpha', eligible: false },
   { id: 'beta', eligible: true },
 ])('keeps the investigation route with explicit eligibility feedback ($id)', async ({ id, eligible }) => {

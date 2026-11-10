@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -22,6 +23,8 @@ const (
 	browserRequestLimit     = 60 * time.Second
 	maxBrowserPathBytes     = 2048
 )
+
+var clusterIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 var hubPagePaths = map[string]struct{}{
 	"/clusters": {}, "/install": {}, "/agents": {}, "/issues": {}, "/investigations": {},

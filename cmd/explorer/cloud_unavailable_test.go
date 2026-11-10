@@ -35,7 +35,7 @@ func TestCloudEntryPointsRejectBeforeNetwork(t *testing.T) {
 	}{
 		{
 			args: "cloud install --hub-url=" + sentinel.URL,
-			want: "upstream Cloud commands are not available in KubeAtlas",
+			want: "upstream Radar Cloud commands are unavailable in this independently maintained build",
 		},
 		{
 			args:     "--cloud-url=" + sentinel.URL,

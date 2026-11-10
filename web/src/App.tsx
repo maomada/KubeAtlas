@@ -36,7 +36,6 @@ import { NamespaceSwitcher, type NamespaceSwitcherHandle } from './components/Na
 import { useNavCustomization } from './context/NavCustomization'
 import type { FleetTakeoverTarget } from './context/NavCustomization'
 import { PrimaryNavRail } from './components/nav/PrimaryNavRail'
-import { useFleetCapabilities } from './api/fleet'
 import { resourceExpandedPath, resourceKindListTitle } from './integrations/resourceHosts'
 import { workspaceContextSwitchSearch, workspaceForPath, workspaceForView, workspaceLabels } from './integrations/workspaceRoutes'
 import { WorkspaceScreen } from './integrations/workspaceScreens'
@@ -336,7 +335,6 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
 
   // Auth check — detect if auth is enabled but user is not authenticated
   const { data: authMe, isPending: authMePending } = useAuthMe()
-  const fleetCapabilities = useFleetCapabilities(!embedded && !!authMe, JSON.stringify([authMe?.username, authMe?.groups]))
 
   // Restore navigation path after session-expiry re-auth redirect.
   // The stored value is basename-relative, but strip defensively anyway:
@@ -1764,7 +1762,6 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
       {showNavRail && (
         <PrimaryNavRail
           activeView={navActiveView}
-          onOpenFleet={fleetCapabilities.data?.enabled ? () => navigate('/fleet') : undefined}
           onNavigate={handlePrimaryNavigate}
           pinned={navRailEffectivePinned}
           onTogglePinned={toggleNavRailPinned}

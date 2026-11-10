@@ -10,6 +10,8 @@ import (
 	"testing"
 	"testing/fstest"
 	"time"
+
+	"github.com/maomada/KubeAtlas/internal/hubstate"
 )
 
 func loginForTest(t *testing.T, h *Handler) *http.Cookie {
@@ -26,12 +28,12 @@ func loginForTest(t *testing.T, h *Handler) *http.Cookie {
 }
 
 func TestViewerSessionLifecycle(t *testing.T) {
-	h, registry := testHandler(t, filepath.Join(t.TempDir(), "registry.json"))
+	h, statePath := testHandler(t, filepath.Join(t.TempDir(), "hub", "state.json"))
 	h.static = fstest.MapFS{"portal.html": &fstest.MapFile{Data: []byte("login shell")}}
 	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	h.sessions.now = func() time.Time { return now }
 	request := func(method, path string, cookie *http.Cookie) *httptest.ResponseRecorder {
-		r := httptest.NewRequest(method, path, nil)
+		r := httptest.NewRequest(method, "http://localhost"+path, nil)
 		r.Header.Set("Content-Type", "application/json")
 		if cookie != nil {
 			r.AddCookie(cookie)
@@ -49,8 +51,8 @@ func TestViewerSessionLifecycle(t *testing.T) {
 	if w := request("GET", "/", nil); w.Code != 303 || w.Header().Get("Location") != "/login" {
 		t.Fatalf("unauthenticated root: %d %v", w.Code, w.Header())
 	}
-	if w := request("GET", "/fleet", nil); w.Code != 303 || w.Header().Get("Location") != "/login" {
-		t.Fatalf("unauthenticated Fleet deep link: %d %v", w.Code, w.Header())
+	if w := request("GET", "/fleet", nil); w.Code != 404 {
+		t.Fatalf("removed Fleet page status = %d, want 404", w.Code)
 	}
 	if w := request("GET", "/login", nil); w.Code != 200 || w.Body.String() != "login shell" {
 		t.Fatalf("public login shell: %d", w.Code)
@@ -59,7 +61,7 @@ func TestViewerSessionLifecycle(t *testing.T) {
 	if cookie.Name != "__Host-radar_portal_session" || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" || cookie.Domain != "" || cookie.MaxAge != int(sessionLifetime.Seconds()) {
 		t.Fatalf("unsafe session cookie attributes")
 	}
-	if w := request("GET", "/api/clusters", cookie); w.Code != 200 {
+	if w := request("GET", "/api/hub", cookie); w.Code != 200 {
 		t.Fatalf("authenticated list: %d", w.Code)
 	}
 	if w := request("GET", "/api/auth/session", cookie); w.Code != 204 {
@@ -68,14 +70,14 @@ func TestViewerSessionLifecycle(t *testing.T) {
 	if w := request("GET", "/", cookie); w.Code != 200 {
 		t.Fatalf("authenticated overview: %d", w.Code)
 	}
-	if w := request("GET", "/fleet", cookie); w.Code != 200 || w.Body.String() != "login shell" {
-		t.Fatalf("authenticated Fleet shell: %d %q", w.Code, w.Body.String())
+	if w := request("GET", "/fleet", cookie); w.Code != 404 {
+		t.Fatalf("removed Fleet page status = %d, want 404", w.Code)
 	}
 	if w := request("GET", "/login", cookie); w.Code != 303 || w.Header().Get("Location") != "/" {
 		t.Fatalf("authenticated login: %d", w.Code)
 	}
-	if w := request("PUT", "/api/registrations/cluster-a", cookie); w.Code != 401 {
-		t.Fatalf("viewer cookie allowed registration: %d", w.Code)
+	if w := request("PUT", "/api/registrations/cluster-a", cookie); w.Code != 404 {
+		t.Fatalf("removed registration route status = %d, want 404", w.Code)
 	}
 	if w := request("GET", "/api/auth/logout", cookie); w.Code != 405 {
 		t.Fatalf("GET logout: %d", w.Code)
@@ -83,24 +85,29 @@ func TestViewerSessionLifecycle(t *testing.T) {
 	if w := request("POST", "/api/auth/logout", cookie); w.Code != 204 || w.Result().Cookies()[0].MaxAge != -1 {
 		t.Fatalf("logout: %d", w.Code)
 	}
-	if w := request("GET", "/api/clusters", cookie); w.Code != 401 {
+	if w := request("GET", "/api/hub", cookie); w.Code != 401 {
 		t.Fatalf("revoked cookie accepted: %d", w.Code)
 	}
 
 	cookie = loginForTest(t, h)
 	now = now.Add(sessionLifetime)
-	if w := request("GET", "/api/clusters", cookie); w.Code != 401 {
+	if w := request("GET", "/api/hub", cookie); w.Code != 401 {
 		t.Fatalf("expired cookie accepted: %d", w.Code)
 	}
 	if len(h.sessions.expires) != 0 {
 		t.Fatal("expired session not removed")
 	}
 	cookie = loginForTest(t, h)
-	restarted, err := NewHandler(registry, Credentials{Username: testUsername, Password: testPassword}, nil, nil)
+	store, err := hubstate.OpenStore(statePath)
 	if err != nil {
 		t.Fatal(err)
 	}
-	r := httptest.NewRequest("GET", "/api/clusters", nil)
+	restarted, err := NewHandler(Credentials{Username: testUsername, Password: testPassword, Hub: &HubConfig{Store: store}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(restarted.Close)
+	r := httptest.NewRequest("GET", "http://localhost/api/hub", nil)
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()
 	restarted.ServeHTTP(w, r)
@@ -132,7 +139,7 @@ func TestLoginRejectsInvalidCredentialsAndCrossOriginMutations(t *testing.T) {
 		{"same-origin", "POST", "/api/auth/login", string(valid), "application/json", "https://example.com", "same-origin", 204},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			h, _ := testHandler(t, filepath.Join(t.TempDir(), "registry.json"))
+			h, _ := testHandler(t, filepath.Join(t.TempDir(), "hub-state.json"))
 			r := httptest.NewRequest(tt.method, "https://example.com"+tt.path, strings.NewReader(tt.body))
 			r.Header.Set("Content-Type", tt.contentType)
 			r.Header.Set("Origin", tt.origin)
@@ -153,8 +160,8 @@ func TestLoginRejectsInvalidCredentialsAndCrossOriginMutations(t *testing.T) {
 }
 
 func TestViewerSessionRejectsBasicAndForgedCookies(t *testing.T) {
-	h, _ := testHandler(t, filepath.Join(t.TempDir(), "registry.json"))
-	r := httptest.NewRequest("GET", "/api/clusters", nil)
+	h, _ := testHandler(t, filepath.Join(t.TempDir(), "hub-state.json"))
+	r := httptest.NewRequest("GET", "http://localhost/api/hub", nil)
 	r.SetBasicAuth(testUsername, testPassword)
 	r.AddCookie(&http.Cookie{Name: h.cookieName(), Value: strings.Repeat("x", 43)})
 	w := httptest.NewRecorder()
@@ -170,7 +177,7 @@ func TestViewerSessionRejectsBasicAndForgedCookies(t *testing.T) {
 }
 
 func TestLoginLimitsAndRotation(t *testing.T) {
-	h, _ := testHandler(t, filepath.Join(t.TempDir(), "registry.json"))
+	h, _ := testHandler(t, filepath.Join(t.TempDir(), "hub-state.json"))
 	now := time.Now()
 	h.sessions.now = func() time.Time { return now }
 	cookie := loginForTest(t, h)

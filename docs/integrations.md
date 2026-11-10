@@ -2,7 +2,9 @@
 
 KubeAtlas automatically discovers and displays **any** Custom Resource Definition (CRD) in your cluster — no configuration needed. For popular tools, KubeAtlas provides dedicated detail views, topology edges, smart table columns, and AI-optimized summaries for seamless integration.
 
-The opt-in [Fleet Manager](fleet.md) is a separate multi-cluster feature; it does not change the current-cluster scope of these integrations.
+These integrations operate on the currently selected KubeAtlas cluster. The
+separate self-hosted Cloud Hub connects live Agents; it does not change these
+native per-cluster integration scopes.
 
 ## ConfigMap and Secret reflection (Reflector)
 

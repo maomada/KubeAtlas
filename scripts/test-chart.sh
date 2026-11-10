@@ -324,76 +324,32 @@ assert_not_contains 'name: radar-kubeatlas-cluster-read$'                 "no cl
 assert_not_contains 'name: radar-kubeatlas-cloud-viewer-cluster-read$'    "no tier bindings outside cloud mode"
 echo
 
-render "Portal registration defaults off"
-assert_not_contains 'name: KUBEATLAS_PORTAL_' "no Portal reporter environment variables"
+for retired in fleet portalRegistration; do
+  if RETIRED_OUTPUT=$(helm template radar "$CHART_DIR" --set "$retired.enabled=true" 2>&1); then
+    fail "$retired configuration must not render"
+  elif grep -Fq "$retired" <<< "$RETIRED_OUTPUT"; then
+    pass "$retired configuration is rejected"
+  else
+    fail "$retired configuration failed for an unexpected reason: $RETIRED_OUTPUT"
+  fi
+done
 echo
 
-render "Portal registration uses a Secret-backed token" \
-  --set portalRegistration.enabled=true \
-  --set portalRegistration.url=https://portal.example.test \
-  --set portalRegistration.clusterId=prod-east \
-  --set portalRegistration.clusterName=Production-east \
-  --set portalRegistration.radarUrl=https://radar.example.test \
-  --set portalRegistration.existingSecret=radar-east-portal \
-  --set portalRegistration.tokenKey=token
-assert_contains 'name: KUBEATLAS_PORTAL_URL' "Portal URL is configured"
-assert_contains 'name: KUBEATLAS_PORTAL_CLUSTER_ID' "Portal instance ID is configured"
-assert_contains 'name: KUBEATLAS_PORTAL_TOKEN' "Portal token environment variable is configured"
-assert_contains 'secretKeyRef:' "Portal registration token comes from a Secret"
-assert_contains 'name: radar-east-portal$' "Portal registration Secret is referenced"
-assert_contains 'key: token$' "Portal registration token key is referenced"
-echo
-
-if helm template radar "$CHART_DIR" --set portalRegistration.enabled=true >/dev/null 2>&1; then
-  fail "Portal registration without required settings should fail"
-else
-  pass "Portal registration without required settings fails"
-fi
-echo
-
-if CLOUD_OUTPUT=$(helm template radar "$CHART_DIR" \
-  --set portalRegistration.enabled=true \
-  --set portalRegistration.url=https://portal.example.test \
-  --set portalRegistration.clusterId=prod-east \
-  --set portalRegistration.clusterName=Production-east \
-  --set portalRegistration.radarUrl=https://radar.example.test \
-  --set portalRegistration.existingSecret=radar-east-portal \
-  --set portalRegistration.tokenKey=token \
-  --set cloud.enabled=true 2>&1); then
-  fail "Portal registration with Cloud enabled should fail"
-elif grep -Fq "cloud.enabled is unavailable in KubeAtlas" <<< "$CLOUD_OUTPUT"; then
-  pass "Portal registration rejects unsupported Cloud with the expected error"
-else
-  fail "Portal registration Cloud rejection had an unexpected error: $CLOUD_OUTPUT"
-fi
-echo
-
-if helm template radar "$CHART_DIR" \
-  --set portalRegistration.enabled=true \
-  --set portalRegistration.url=https://portal.example.test/portal \
-  --set portalRegistration.clusterId=prod-east \
-  --set portalRegistration.clusterName=Production-east \
-  --set portalRegistration.radarUrl=https://radar.example.test \
-  --set portalRegistration.existingSecret=radar-east-portal \
-  --set portalRegistration.tokenKey=token >/dev/null 2>&1; then
-  fail "Portal subpath URL should fail"
-else
-  pass "Portal subpath URL is rejected"
-fi
-echo
-
-render_portal "Portal has one writer, Secret credentials, PVC, and root ingress" \
+render_portal "Self-hosted Cloud Hub has required state, owner Secret, PVC, and root ingress" \
   --set ingress.enabled=true \
   --set ingress.tls[0].secretName=portal-tls \
   --set ingress.tls[0].hosts[0]=portal.example.test
 assert_contains 'replicas: 1' "Portal has exactly one replica"
 assert_contains 'type: Recreate' "Portal uses a single-writer Recreate strategy"
 assert_contains 'automountServiceAccountToken: false' "Portal Pod has no ServiceAccount token"
-assert_contains 'kind: PersistentVolumeClaim' "Portal registry has a PVC"
+assert_contains 'kind: PersistentVolumeClaim' "Cloud Hub state has a PVC"
 assert_contains 'name: portal-auth' "Portal credentials use the existing Secret"
-assert_contains 'key: tokens' "Portal token map uses the tokens Secret key"
-assert_contains 'key: username' "Portal viewer username uses the Secret"
-assert_contains 'key: password' "Portal viewer password uses the Secret"
+assert_contains 'hub-state-file=/var/lib/kubeatlas-portal/hub/state.json' "Cloud Hub uses persistent Hub state"
+assert_contains 'key: username' "local owner username uses the Secret"
+assert_contains 'key: password' "local owner password uses the Secret"
+assert_not_contains 'KUBEATLAS_PORTAL_TOKENS' "legacy registration token map is absent"
+assert_not_contains --data-file "legacy registry flag is absent"
+assert_not_contains 'registry.json' "legacy registry path is absent"
 assert_contains 'path: /$' "Portal ingress is rooted at /"
 assert_contains 'pathType: Prefix' "Portal ingress matches root descendants"
 echo

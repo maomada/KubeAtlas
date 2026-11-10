@@ -1,6 +1,6 @@
 apiVersion: v2
 name: kubeatlas-portal
-description: Self-hosted registry and viewer for proactively registered KubeAtlas instances
+description: Self-hosted KubeAtlas Cloud Hub with identity and live Agent connections
 type: application
 version: 0.0.0-unreleased
 appVersion: "0.0.0-unreleased"

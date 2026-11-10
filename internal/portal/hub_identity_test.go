@@ -10,7 +10,7 @@ import (
 	"github.com/maomada/KubeAtlas/internal/hubstate"
 )
 
-func TestHubMemberScopeAndLegacyAPIDenial(t *testing.T) {
+func TestHubMemberScopeAndAuthorization(t *testing.T) {
 	h, _ := newPortalHubFixture(t, false)
 	localCookie := loginForTest(t, h)
 	hubRequest(t, h, localCookie, "", http.MethodPost, "/api/hub/clusters",
@@ -62,8 +62,6 @@ func TestHubMemberScopeAndLegacyAPIDenial(t *testing.T) {
 		len(groups.Groups[0].ClusterIDs) != 1 || groups.Groups[0].ClusterIDs[0] != "alpha" {
 		t.Fatalf("filtered group directory = %#v", groups.Groups)
 	}
-	hubRequest(t, h, cookie, "", http.MethodGet, "/api/clusters", "", http.StatusForbidden)
-	hubRequest(t, h, cookie, "", http.MethodGet, "/api/fleet/clusters", "", http.StatusForbidden)
 	hubRequest(t, h, cookie, "", http.MethodPut, "/api/hub/members/"+memberID,
 		`{"role":"admin","status":"active","clusterIds":[],"kubernetesGroups":[]}`, http.StatusForbidden)
 	hubRequest(t, h, localCookie, "", http.MethodPut, "/api/hub/members/local",

@@ -1,31 +1,26 @@
-# KubeAtlas Portal Helm Chart
+# KubeAtlas Self-Hosted Cloud Hub Helm Chart
 
-This chart deploys the independent, self-hosted KubeAtlas Portal server. Fork
-images and charts use the owned OCI flow documented in
-[`docs/ci-cd.md`](../../../docs/ci-cd.md); this checkout does not imply a
-published release. Upstream installers and update feeds do not deliver fork
-releases. For the complete
-registration model, credential handling, TLS, and KubeAtlas-side configuration,
-see [the Portal deployment guide](../../../docs/portal.md).
+This chart deploys the self-hosted Cloud Hub used by KubeAtlas Portal and
+Agents. The `kubeatlas-portal` name is retained for the binary and chart; this
+deployment has no centralized Fleet registry, snapshot ingestion, or token map.
+For the full identity, API, and security model, see
+[`docs/portal.md`](../../../docs/portal.md).
 
 ## Prerequisites
 
 - Kubernetes and Helm 3
-- A PersistentVolume provisioner and a PVC for the registry
-- An externally managed Secret containing `tokens`, `username`, and `password`
+- A PersistentVolume provisioner
+- An externally managed Secret containing `username` and `password`
 - A version actually published through the manual Release GHCR workflow
 
-The `tokens` Secret key contains a JSON object mapping cluster IDs to unique
-registration tokens. `username` and `password` are the separate viewer login
-credentials. Each token must be at least 32 characters; the username must be
-1–256 bytes and contain no colon or control characters, and the password must
-be 16–4096 bytes. The server rejects duplicate
-registration tokens.
+Optional Secret keys configure `hub-groups`, `oidc-issuer`, `oidc-client-id`,
+`oidc-redirect-url`, `oidc-client-secret`, and `mcp-allowed-hosts`. OIDC values
+must be configured together. Use an independent self-hosted identity provider;
+directory synchronization and backchannel logout are not provided.
 
-Create and rotate these values through your approved secret manager or
-GitOps Secret mechanism. Do not put the values into Helm values, chart files,
-commands that are retained in shell history, or the Helm release state. The
-chart only references the existing Secret by name.
+Create and rotate credentials through your approved secret manager or GitOps
+Secret mechanism. Do not put credentials in Helm values, chart files, commands
+retained in shell history, or the Helm release state.
 
 ## Build an image
 
@@ -39,8 +34,6 @@ The local test image is not a published release.
 
 ## Install
 
-Use a published version and the existing credentials Secret:
-
 ```bash
 helm upgrade --install kubeatlas-portal oci://ghcr.io/maomada/charts/kubeatlas-portal \
   --namespace kubeatlas-portal --create-namespace \
@@ -48,27 +41,27 @@ helm upgrade --install kubeatlas-portal oci://ghcr.io/maomada/charts/kubeatlas-p
   --set existingSecret=kubeatlas-portal-auth
 ```
 
-The chart creates one `Recreate` Deployment and a required PVC for the
-single-writer JSON registry. It does not create a Secret, ServiceAccount,
-RBAC resources, or any Kubernetes API access. The Pod disables automatic
-ServiceAccount token mounting, runs as non-root with a read-only root
-filesystem, and mounts the registry PVC at `/var/lib/kubeatlas-portal`.
+The chart creates a single-replica `Recreate` Deployment and a PVC for the
+required Hub state file at `/var/lib/kubeatlas-portal/hub/state.json`. The Pod
+does not mount a Kubernetes ServiceAccount token and runs with a read-only root
+filesystem. The Hub relies on connected Agents to proxy Kubernetes requests;
+it does not read cluster credentials or call the Kubernetes API directly.
 
 The Service is cluster-internal by default. If exposing it with an Ingress,
 configure TLS termination at the ingress or another trusted reverse proxy.
-The Portal UI, API, and assets are root-hosted: use a dedicated hostname with
-path `/` and `pathType: Prefix`; subpath hosting is not supported.
-The Portal's listener itself speaks HTTP; never expose viewer login
-credentials or bearer registration traffic over an untrusted plaintext
-network.
+The UI and API are root-hosted on a dedicated hostname; subpath hosting is not
+supported. Do not expose login or bearer traffic over untrusted plaintext
+networks.
 
-Visitors first see `/login`; successful login opens the protected overview.
-The Portal issues `HttpOnly`, `Secure`, `SameSite=Strict` cookies, so viewer
-access requires HTTPS via the ingress or trusted TLS proxy. Sessions expire
-after eight hours or a Portal restart. The overview includes a logout action
-that revokes the current session. Login credentials remain in the existing
-Secret; no additional session secret or chart setting is required.
+Local owner login remains available. OIDC can be enabled with the optional
+Secret keys above. Sessions use `HttpOnly`, `Secure`, `SameSite=Strict` cookies
+and expire after eight hours or a Hub restart. OIDC directory synchronization
+and backchannel logout are unavailable; disabling an IdP account alone does
+not revoke an already-issued session.
 
-The PVC is the sole durable registry copy. Back it up using the storage
-platform's supported process. The server is deliberately single-replica and
-has no multi-writer, replication, or built-in backup mechanism.
+Cloud Hub MCP is exposed at `/mcp` and requires an independently issued
+bearer credential scoped to current active membership and clusters. Native
+Agent MCP endpoints `/mcp` and `/mcp-readonly` are separate services and
+remain unchanged. Preserve the PVC when upgrading: it contains the required
+Hub identity and credential state. Back it up using the storage platform's
+supported process.

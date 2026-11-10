@@ -2,17 +2,25 @@
 
 Reference layout for the KubeAtlas repo. Use this when locating where a concern lives — most of the load-bearing detail is on the per-area sections inside `CLAUDE.md` (k8s caching, topology, MCP, error handling, renderers). This file is the directory map.
 
+The self-hosted Cloud Hub has a separate `kubeatlas-portal` entrypoint and
+packages for persistent identity state, live MCP, and the Cloud UI. It is not
+part of the native Agent's Kubernetes API process.
+
 ```
 radar/
 ├── cmd/
 │   ├── explorer/              # CLI entry point (main.go)
-│   └── desktop/               # Desktop app entry point (Wails v2)
+│   ├── desktop/               # Desktop app entry point (Wails v2)
+│   └── kubeatlas-portal/      # Self-hosted Cloud Hub entry point
 ├── internal/
 │   ├── app/                   # Application lifecycle management
 │   ├── audit/                 # Radar-specific audit runner (cache → pkg/audit bridge)
 │   ├── cnpg/                  # CNPG service: caller-scoped reads, actions, reports and log/activity interpretation
 │   ├── config/                # Configuration management
 │   ├── errorlog/              # Error logging utilities
+│   ├── hub/                   # Hub identity, Agent sessions, and live cluster directory
+│   ├── hubmcp/                # Authenticated live Cloud Hub MCP transport
+│   ├── hubstate/              # Validated Hub identity and credential persistence
 │   ├── helm/                  # Helm client integration
 │   │   ├── client.go          # Helm SDK wrapper
 │   │   ├── handlers.go        # HTTP handlers for Helm operations
@@ -52,6 +60,8 @@ radar/
 │   │   ├── tools_workloads.go # Workload-specific MCP tools
 │   │   └── resources.go       # MCP resource definitions
 │   ├── opencost/              # OpenCost integration (cost analysis)
+│   ├── portal/                # Self-hosted Cloud UI, identity API, and browser proxy
+│   ├── portalui/              # Embedded self-hosted Cloud UI assets
 │   ├── podlogs/               # Shared Pod metadata, log snapshots and stream replay tracking
 │   ├── prometheus/            # Prometheus client integration
 │   ├── server/

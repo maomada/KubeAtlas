@@ -336,8 +336,8 @@ node selectors; hosted chart defaults remain unchanged. Both OCI indexes and
 single-image manifests are validated against this exact platform set, including
 config provenance and preserved digests. The Windows ZIP and all arm64
 distributions are deferred: they are not published or accepted by this local
-profile, and no native acceptance is claimed for them. Fleet,
-macOS, and Portal Windows distributions are excluded. `LICENSE` and `NOTICE`
+profile, and no native acceptance is claimed for them. macOS and Portal Windows
+distributions are excluded. `LICENSE` and `NOTICE`
 remain in the binary packages. This does not change the hosted Actions
 `local` profile described above. A candidate branch is not releasable:
 approval preparation and verification require that source and tooling are the
