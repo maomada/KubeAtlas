@@ -60,3 +60,40 @@ func (p *hubRequestPolicy) allows(r *http.Request) bool {
 		strings.EqualFold(origin.Host, r.Host) && origin.User == nil && origin.Path == "" &&
 		origin.RawQuery == "" && !origin.ForceQuery && origin.Fragment == "" && !strings.Contains(origins[0], "#")
 }
+
+func (p *hubRequestPolicy) allowsBrowser(r *http.Request) bool {
+	if !p.allows(r) {
+		return false
+	}
+	sites := r.Header.Values("Sec-Fetch-Site")
+	if len(sites) != 1 || !(strings.EqualFold(sites[0], "same-origin") || strings.EqualFold(sites[0], "none")) {
+		return false
+	}
+	origins := r.Header.Values("Origin")
+	if len(origins) > 1 {
+		return false
+	}
+	var origin *url.URL
+	if len(origins) == 1 {
+		var err error
+		origin, err = url.Parse(origins[0])
+		if err != nil || !(origin.Scheme == "http" || origin.Scheme == "https") ||
+			!strings.EqualFold(origin.Host, r.Host) || origin.User != nil || origin.Path != "" ||
+			origin.RawQuery != "" || origin.Fragment != "" {
+			return false
+		}
+	}
+	referers := r.Header.Values("Referer")
+	if len(referers) > 1 {
+		return false
+	}
+	if len(referers) == 1 {
+		referer, err := url.Parse(referers[0])
+		if err != nil || !(referer.Scheme == "http" || referer.Scheme == "https") ||
+			!strings.EqualFold(referer.Host, r.Host) || referer.User != nil || referer.Fragment != "" ||
+			origin != nil && !strings.EqualFold(referer.Scheme, origin.Scheme) {
+			return false
+		}
+	}
+	return true
+}

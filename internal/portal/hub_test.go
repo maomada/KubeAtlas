@@ -3,6 +3,8 @@ package portal
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -11,9 +13,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maomada/KubeAtlas/internal/auth"
 	"github.com/maomada/KubeAtlas/internal/cloud"
 	"github.com/maomada/KubeAtlas/internal/hub"
 	"github.com/maomada/KubeAtlas/internal/hubstate"
+	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
 )
 
 func newPortalHubFixture(t *testing.T, factory bool) (*Handler, string) {
@@ -46,6 +50,36 @@ func newPortalHubFixture(t *testing.T, factory bool) (*Handler, string) {
 	}
 	t.Cleanup(handler.Close)
 	return handler, statePath
+}
+
+func startPortalHubAgent(t *testing.T, handler *Handler, token, clusterID string, source http.Handler) *httptest.Server {
+	t.Helper()
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	ctx, cancel := context.WithCancel(t.Context())
+	connected := make(chan struct{}, 1)
+	done := make(chan error, 1)
+	endpoint := "ws" + strings.TrimPrefix(server.URL, "http") + "/agent"
+	go func() {
+		done <- cloud.Run(ctx, cloud.Config{
+			URL: endpoint, Token: token, ClusterID: clusterID, ClusterName: clusterID,
+			Handler: source, OnConnected: func() { connected <- struct{}{} },
+		})
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("Portal Hub Agent did not stop after cancellation")
+		}
+	})
+	select {
+	case <-connected:
+	case <-time.After(5 * time.Second):
+		t.Fatal("Portal Hub Agent did not connect")
+	}
+	return server
 }
 
 func hubRequest(t *testing.T, h *Handler, cookie *http.Cookie, token, method, path, body string, status int) *httptest.ResponseRecorder {
@@ -122,6 +156,315 @@ func TestPortalHubCredentialBoundaryAndLifecycle(t *testing.T) {
 	hubRequest(t, h, cookie, "", "POST", "/api/mcp/credentials/"+refreshed.Credential.ID+"/revoke", `{}`, 204)
 	hubRequest(t, h, nil, refreshed.Token, "POST", "/mcp-fleet", `{}`, 401)
 	hubRequest(t, h, cookie, "", "POST", "/api/mcp/credentials/unknown/revoke", `{}`, 404)
+}
+
+func TestPortalBrowserAPIRequiresSessionAndExactOrigin(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	cookie := loginForTest(t, h)
+	hubRequest(t, h, cookie, "", http.MethodPost, "/api/hub/clusters", `{"id":"alpha","name":"Alpha"}`, http.StatusCreated)
+
+	request := func(path, origin, site, token string, withCookie bool) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
+		r.Header.Set("Origin", origin)
+		r.Header.Set("Sec-Fetch-Site", site)
+		if withCookie {
+			r.AddCookie(cookie)
+		}
+		if token != "" {
+			r.Header.Set("Authorization", "Bearer "+token)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	if got := request("/c/alpha/api/settings", "http://localhost", "same-origin", "", true); got.Code != http.StatusOK || strings.TrimSpace(got.Body.String()) != `{"preferenceStorage":"browser"}` {
+		t.Fatalf("browser settings response status=%d body=%q", got.Code, got.Body.String())
+	}
+	if got := request("/c/alpha/api/settings", "http://localhost", "same-origin", "token", true); got.Code != http.StatusUnauthorized {
+		t.Fatalf("cookie plus bearer status=%d, want 401", got.Code)
+	}
+	if got := request("/c/alpha/api/settings", "http://attacker.invalid", "cross-site", "", true); got.Code != http.StatusForbidden {
+		t.Fatalf("cross-origin status=%d, want 403", got.Code)
+	}
+	if got := request("/c/missing/api/settings", "http://localhost", "same-origin", "", true); got.Code != http.StatusNotFound {
+		t.Fatalf("unknown cluster status=%d, want 404", got.Code)
+	}
+	if got := request("/c/alpha/api/settings", "http://localhost", "same-origin", "bearer-only", false); got.Code != http.StatusUnauthorized {
+		t.Fatalf("bearer-only status=%d, want 401", got.Code)
+	}
+}
+
+func TestPortalClusterAPIUsesSelectedClusterAndSanitizesIdentity(t *testing.T) {
+	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")
+	h, _ := newPortalHubFixture(t, false)
+	cookie := loginForTest(t, h)
+	agent := decodeHubResponse[hubstate.IssuedAgent](t, hubRequest(t, h, cookie, "", http.MethodPost, "/api/hub/clusters", `{"id":"alpha","name":"Alpha"}`, http.StatusCreated))
+	type capture struct {
+		Method, Path, Query, User, Host, Auth, Cookie, Origin, Referer, FetchSite, Forwarded string
+		Groups, Body                                                                         []string
+		Tunnel                                                                               bool
+	}
+	requests := make(chan capture, 3)
+	source := auth.Authenticate(auth.Config{Mode: "proxy", Secret: "portal-browser-test-secret"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		user := pkgauth.UserFromContext(r.Context())
+		entry := capture{
+			Method: r.Method, Path: r.URL.Path, Query: r.URL.RawQuery, Host: r.Host,
+			Auth: r.Header.Get("Authorization"), Cookie: r.Header.Get("Cookie"),
+			Origin: r.Header.Get("Origin"), Referer: r.Header.Get("Referer"),
+			FetchSite: r.Header.Get("Sec-Fetch-Site"), Forwarded: r.Header.Get("X-Forwarded-User"),
+			Tunnel: cloud.IsAuthenticatedTunnelRequest(r.Context()),
+		}
+		if user != nil {
+			entry.User = user.Username
+			entry.Groups = append([]string(nil), user.Groups...)
+		}
+		if len(body) > 0 {
+			entry.Body = []string{string(body)}
+		}
+		requests <- entry
+		if r.URL.Path == "/api/resources/uncertain" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		if r.Method == http.MethodPost {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"source":"live"}`)
+	}))
+	startPortalHubAgent(t, h, agent.Token, "alpha", source)
+
+	doRequest := func(method, path, body string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
+		if body != "" {
+			r.Header.Set("Content-Type", "application/json")
+		}
+		r.AddCookie(cookie)
+		r.Header.Set("Origin", "http://localhost")
+		r.Header.Set("Referer", "http://localhost/clusters")
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		r.Header.Set("X-Forwarded-User", "forged-user")
+		r.Header.Set("X-Forwarded-Groups", "radar:admin")
+		r.Header.Set("X-Radar-Role", "admin")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	read := doRequest(http.MethodGet, "/c/alpha/api/resources/pods?namespace=demo-shop", "")
+	if read.Code != http.StatusOK || !strings.Contains(read.Body.String(), `"source":"live"`) {
+		t.Fatalf("REST read status=%d body=%q", read.Code, read.Body.String())
+	}
+	write := doRequest(http.MethodPost, "/c/alpha/api/resources/apply?namespace=demo-shop", `{"kind":"ConfigMap"}`)
+	if write.Code != http.StatusNoContent {
+		t.Fatalf("REST write status=%d body=%q", write.Code, write.Body.String())
+	}
+	uncertain := doRequest(http.MethodPost, "/c/alpha/api/resources/uncertain", `{"kind":"Deployment"}`)
+	if uncertain.Code != http.StatusInternalServerError ||
+		!strings.Contains(uncertain.Body.String(), `"outcome":"unknown"`) ||
+		uncertain.Header().Get("X-Request-ID") == "" {
+		t.Fatalf("source failure did not return a typed unknown outcome: status=%d body=%q", uncertain.Code, uncertain.Body.String())
+	}
+	for _, want := range []struct {
+		method, path string
+	}{
+		{http.MethodGet, "/api/resources/pods"},
+		{http.MethodPost, "/api/resources/apply"},
+	} {
+		got := <-requests
+		if got.Method != want.method || got.Path != want.path || got.Query != "namespace=demo-shop" ||
+			got.User != h.liveHub.userID || len(got.Groups) != 1 || got.Groups[0] != "radar:idp:operators" ||
+			!got.Tunnel || got.Host != "localhost" || got.Auth != "" || got.Cookie != "" ||
+			got.Origin != "" || got.Referer != "" || got.FetchSite != "" || got.Forwarded != h.liveHub.userID {
+			t.Fatalf("source request identity/path was not sanitized: %+v", got)
+		}
+		if want.method == http.MethodPost && (len(got.Body) != 1 || got.Body[0] != `{"kind":"ConfigMap"}`) {
+			t.Fatalf("REST write body was not preserved: %+v", got)
+		}
+	}
+	if got := <-requests; got.Method != http.MethodPost || got.Path != "/api/resources/uncertain" {
+		t.Fatalf("dispatched write was retried or path changed: %+v", got)
+	}
+}
+
+func TestPortalStreamLogoutReleasesHubSlots(t *testing.T) {
+	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")
+	h, _ := newPortalHubFixture(t, false)
+	cookie := loginForTest(t, h)
+	agent := decodeHubResponse[hubstate.IssuedAgent](t, hubRequest(t, h, cookie, "", http.MethodPost, "/api/hub/clusters", `{"id":"alpha","name":"Alpha"}`, http.StatusCreated))
+	const concurrentStreams = 32
+	started := make(chan struct{}, concurrentStreams)
+	exited := make(chan struct{}, concurrentStreams)
+	source := auth.Authenticate(auth.Config{Mode: "proxy", Secret: "portal-stream-test-secret"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/events/stream" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"source":"live"}`)
+			return
+		}
+		started <- struct{}{}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.WriteHeader(http.StatusOK)
+		w.(http.Flusher).Flush()
+		_, _ = io.WriteString(w, "data: ready\n\n")
+		w.(http.Flusher).Flush()
+		<-r.Context().Done()
+		exited <- struct{}{}
+	}))
+	server := startPortalHubAgent(t, h, agent.Token, "alpha", source)
+	type streamResult struct {
+		response *http.Response
+		err      error
+	}
+	results := make(chan streamResult, concurrentStreams)
+	for i := 0; i < concurrentStreams; i++ {
+		request, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, server.URL+"/c/alpha/api/events/stream", nil)
+		request.AddCookie(cookie)
+		request.Header.Set("Origin", server.URL)
+		request.Header.Set("Referer", server.URL+"/clusters")
+		request.Header.Set("Sec-Fetch-Site", "same-origin")
+		go func() {
+			response, err := server.Client().Do(request)
+			if err == nil {
+				event := make([]byte, len("data: ready\n\n"))
+				_, err = io.ReadFull(response.Body, event)
+				if err == nil && string(event) != "data: ready\n\n" {
+					err = errors.New("unexpected SSE event")
+				}
+			}
+			results <- streamResult{response: response, err: err}
+		}()
+	}
+	streamResponses := make([]*http.Response, 0, concurrentStreams)
+	for i := 0; i < concurrentStreams; i++ {
+		select {
+		case result := <-results:
+			if result.err != nil {
+				t.Fatalf("Portal SSE request failed: %v", result.err)
+			}
+			streamResponses = append(streamResponses, result.response)
+		case <-time.After(5 * time.Second):
+			t.Fatalf("only %d concurrent Portal streams became ready", len(streamResponses))
+		}
+	}
+	for i := 0; i < concurrentStreams; i++ {
+		select {
+		case <-started:
+		case <-time.After(3 * time.Second):
+			t.Fatal("source did not receive every Portal SSE stream")
+		}
+	}
+
+	logout, _ := http.NewRequest(http.MethodPost, server.URL+"/api/auth/logout", strings.NewReader(`{}`))
+	logout.AddCookie(cookie)
+	logout.Header.Set("Content-Type", "application/json")
+	logout.Header.Set("Origin", server.URL)
+	logout.Header.Set("Sec-Fetch-Site", "same-origin")
+	logoutResponse, err := server.Client().Do(logout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = logoutResponse.Body.Close()
+	if logoutResponse.StatusCode != http.StatusNoContent {
+		t.Fatalf("Portal logout status=%d, want 204", logoutResponse.StatusCode)
+	}
+	for i := 0; i < concurrentStreams; i++ {
+		select {
+		case <-exited:
+		case <-time.After(5 * time.Second):
+			t.Fatal("Portal logout did not cancel every upstream stream")
+		}
+	}
+
+	newCookie := loginForTest(t, h)
+	health, cancel := context.WithTimeout(t.Context(), 3*time.Second)
+	defer cancel()
+	request, _ := http.NewRequestWithContext(health, http.MethodGet, server.URL+"/c/alpha/api/health", nil)
+	request.AddCookie(newCookie)
+	request.Header.Set("Origin", server.URL)
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatalf("Hub stream slots were not released after logout: %v", err)
+	}
+	_ = response.Body.Close()
+	for _, streamResponse := range streamResponses {
+		_ = streamResponse.Body.Close()
+	}
+}
+
+func TestPortalLogoutCancelsSessionBoundRequestContext(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	cookie := loginForTest(t, h)
+	streamRequest := httptest.NewRequest(http.MethodGet, "http://localhost/c/alpha/api/events/stream", nil)
+	streamRequest.AddCookie(cookie)
+	ctx, cancel, ok := h.viewerSessionContext(streamRequest)
+	if !ok {
+		t.Fatal("valid Portal session did not produce a request context")
+	}
+	defer cancel()
+	logout := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/logout", strings.NewReader(`{}`))
+	logout.AddCookie(cookie)
+	logout.Header.Set("Content-Type", "application/json")
+	logout.Header.Set("Origin", "http://localhost")
+	logout.Header.Set("Sec-Fetch-Site", "same-origin")
+	response := httptest.NewRecorder()
+	h.ServeHTTP(response, logout)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("logout status=%d, want 204", response.Code)
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("logout did not cancel the active request context")
+	}
+}
+
+func TestPortalSessionExpiryCancelsRequestContext(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	cookie := loginForTest(t, h)
+	r := httptest.NewRequest(http.MethodGet, "http://localhost/c/alpha/api/events/stream", nil)
+	r.AddCookie(cookie)
+	ctx, cancel, ok := h.viewerSessionContext(r)
+	if !ok {
+		t.Fatal("valid Portal session did not produce a request context")
+	}
+	defer cancel()
+	h.sessions.mu.Lock()
+	h.sessions.now = func() time.Time { return time.Now().Add(sessionLifetime) }
+	h.sessions.mu.Unlock()
+	if h.hasViewerSession(r) {
+		t.Fatal("expired Portal session was accepted")
+	}
+	select {
+	case <-ctx.Done():
+	case <-time.After(time.Second):
+		t.Fatal("natural session expiry did not cancel the active request context")
+	}
+}
+
+func TestHubPageRoutesAreExplicit(t *testing.T) {
+	for _, path := range []string{
+		"/investigations", "/install", "/settings/sessions", "/settings/security",
+		"/settings/organization", "/settings/organization/members",
+		"/settings/organization/agent-access", "/settings/organization/enrollment-keys",
+		"/settings/organization/activity", "/settings/organization/issues",
+		"/settings/organization/checks", "/settings/organization/sso",
+		"/settings/organization/notifications", "/settings/organization/integrations",
+		"/c/alpha", "/c/alpha/resources/pods",
+	} {
+		if !isHubPageRoute(httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)) {
+			t.Errorf("known Hub page route %q was rejected", path)
+		}
+	}
+	for _, path := range []string{
+		"/arbitrary", "/settings/unknown", "/settings/organization/unknown",
+		"/c/alpha/api/resources", "/c/alpha/assets/missing.js", "/c/../clusters",
+	} {
+		if isHubPageRoute(httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)) {
+			t.Errorf("unknown or non-page route %q was accepted", path)
+		}
+	}
 }
 
 func TestPortalHubCredentialsSurviveSessionAndProcessRestart(t *testing.T) {

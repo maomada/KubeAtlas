@@ -79,6 +79,15 @@ func newPortalHub(credentials Credentials) (*portalHub, error) {
 
 func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 	p := h.liveHub
+	if isClusterAPICandidate(r.URL.Path) {
+		w.Header().Set("X-Request-ID", rand.Text())
+		if p == nil {
+			http.NotFound(w, r)
+			return true
+		}
+		p.serveBrowserAPI(h, w, r)
+		return true
+	}
 	if p == nil || !(r.URL.Path == "/agent" || r.URL.Path == "/mcp-fleet" || r.URL.Path == "/api/hub" || strings.HasPrefix(r.URL.Path, "/api/hub/") || r.URL.Path == "/api/mcp/credentials" || strings.HasPrefix(r.URL.Path, "/api/mcp/credentials/")) {
 		return false
 	}

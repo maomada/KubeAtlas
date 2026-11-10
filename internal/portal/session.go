@@ -1,6 +1,7 @@
 package portal
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
@@ -20,12 +21,21 @@ const maxViewerSessions = 1024
 type viewerSessions struct {
 	mu            sync.Mutex
 	expires       map[[32]byte]time.Time
+	active        map[[32]byte]*viewerSession
 	now           func() time.Time
 	loginAttempts []time.Time
 }
 
+type viewerSession struct {
+	ctx    context.Context
+	cancel context.CancelFunc
+	timer  *time.Timer
+}
+
 func newViewerSessions() *viewerSessions {
-	return &viewerSessions{expires: make(map[[32]byte]time.Time), now: time.Now}
+	return &viewerSessions{
+		expires: make(map[[32]byte]time.Time), active: make(map[[32]byte]*viewerSession), now: time.Now,
+	}
 }
 
 func (s *viewerSessions) allowLogin() bool {
@@ -63,13 +73,67 @@ func (h *Handler) hasViewerSession(r *http.Request) bool {
 		return false
 	}
 	h.sessions.mu.Lock()
-	defer h.sessions.mu.Unlock()
 	expires, exists := h.sessions.expires[key]
 	if !exists || !h.sessions.now().Before(expires) {
-		delete(h.sessions.expires, key)
+		h.sessions.removeLocked(key)
+		h.sessions.mu.Unlock()
 		return false
 	}
+	h.sessions.mu.Unlock()
 	return true
+}
+
+func (h *Handler) viewerSessionContext(r *http.Request) (context.Context, func(), bool) {
+	key, ok := h.sessionHash(r)
+	if !ok {
+		return nil, nil, false
+	}
+	h.sessions.mu.Lock()
+	expires, exists := h.sessions.expires[key]
+	session := h.sessions.active[key]
+	if !exists || session == nil || !h.sessions.now().Before(expires) {
+		h.sessions.removeLocked(key)
+		h.sessions.mu.Unlock()
+		return nil, nil, false
+	}
+	base := session.ctx
+	h.sessions.mu.Unlock()
+	ctx, cancel := context.WithCancel(r.Context())
+	stop := context.AfterFunc(base, cancel)
+	if base.Err() != nil {
+		stop()
+		cancel()
+		return nil, nil, false
+	}
+	return ctx, func() {
+		stop()
+		cancel()
+	}, true
+}
+
+func (s *viewerSessions) removeLocked(key [32]byte) {
+	delete(s.expires, key)
+	if session := s.active[key]; session != nil {
+		delete(s.active, key)
+		session.timer.Stop()
+		session.cancel()
+	}
+}
+
+func (s *viewerSessions) expire(key [32]byte, expected *viewerSession) {
+	s.mu.Lock()
+	if s.active[key] == expected {
+		s.removeLocked(key)
+	}
+	s.mu.Unlock()
+}
+
+func (s *viewerSessions) close() {
+	s.mu.Lock()
+	for key := range s.expires {
+		s.removeLocked(key)
+	}
+	s.mu.Unlock()
 }
 
 func (h *Handler) setSessionCookie(w http.ResponseWriter, value string, maxAge int) {
@@ -133,21 +197,27 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	_, _ = rand.Read(random[:])
 	token := base64.RawURLEncoding.EncodeToString(random[:])
 	h.sessions.mu.Lock()
-	defer h.sessions.mu.Unlock()
 	now := h.sessions.now()
 	for key, expires := range h.sessions.expires {
 		if !now.Before(expires) {
-			delete(h.sessions.expires, key)
+			h.sessions.removeLocked(key)
 		}
 	}
 	if key, ok := h.sessionHash(r); ok {
-		delete(h.sessions.expires, key)
+		h.sessions.removeLocked(key)
 	}
 	if len(h.sessions.expires) >= maxViewerSessions {
+		h.sessions.mu.Unlock()
 		http.Error(w, "session capacity reached", http.StatusServiceUnavailable)
 		return
 	}
-	h.sessions.expires[sha256.Sum256([]byte(token))] = now.Add(sessionLifetime)
+	key := sha256.Sum256([]byte(token))
+	ctx, cancel := context.WithCancel(context.Background())
+	session := &viewerSession{ctx: ctx, cancel: cancel}
+	h.sessions.expires[key] = now.Add(sessionLifetime)
+	h.sessions.active[key] = session
+	session.timer = time.AfterFunc(sessionLifetime, func() { h.sessions.expire(key, session) })
+	h.sessions.mu.Unlock()
 	h.setSessionCookie(w, token, int(sessionLifetime.Seconds()))
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -158,7 +228,7 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	if key, ok := h.sessionHash(r); ok {
 		h.sessions.mu.Lock()
-		delete(h.sessions.expires, key)
+		h.sessions.removeLocked(key)
 		h.sessions.mu.Unlock()
 	}
 	h.setSessionCookie(w, "", -1)

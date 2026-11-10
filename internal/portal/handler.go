@@ -89,6 +89,9 @@ func NewHandler(registry *Registry, credentials Credentials, static fs.FS, fleet
 }
 
 func (h *Handler) Close() {
+	if h != nil && h.sessions != nil {
+		h.sessions.close()
+	}
 	if h != nil && h.liveHub != nil {
 		_ = h.liveHub.transport.Close()
 	}
@@ -195,6 +198,15 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		if r.URL.Path == "/login" && loggedIn {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		h.serveFile(w, r, "portal.html")
+	case isHubPageRoute(r):
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if r.URL.Path != "/login" && !h.requireViewer(w, r) {
 			return
 		}
 		h.serveFile(w, r, "portal.html")
