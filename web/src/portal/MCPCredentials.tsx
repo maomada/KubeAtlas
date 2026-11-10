@@ -115,14 +115,14 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
       <label className="mt-4 block text-sm">MCP Token<input aria-label="新生成的 MCP Token" type="password" readOnly autoComplete="off" spellCheck={false} className="portal-control portal-mono mt-2 w-full" value={issued.token} onFocus={event => event.target.select()} /></label>
       <div className="mt-4 flex flex-wrap items-start gap-3"><CopyValue value={issued.token} label="复制 Token" /><button type="button" className="portal-control" onClick={() => setIssued(undefined)}>已保存，关闭原文</button></div>
     </section>}
-    <div className="grid items-start gap-6 xl:grid-cols-2">
-      <section className="portal-card p-5 lg:p-6" aria-labelledby="create-credential-title">
+    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+      <section className="portal-card min-w-0 p-5 lg:p-6" aria-labelledby="create-credential-title">
         <h2 id="create-credential-title" className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck size={20} className="text-accent-text" />生成访问凭据</h2>
         <form onSubmit={create} className="mt-5 space-y-4">
-          <fieldset disabled={Boolean(busy || issued || loading || directoryLoading || loadError || directoryError)} className="space-y-4">
+          <fieldset disabled={Boolean(busy || issued || loading || directoryLoading || loadError || directoryError)} className="min-w-0 space-y-4">
             <label className="block text-sm">名称<input required maxLength={100} value={label} onChange={event => setLabel(event.target.value)} className="portal-control mt-2 w-full" placeholder="例如：我的 OpenCode" /></label>
             <label className="block text-sm">有效期<select value={ttlSeconds} onChange={event => setTTL(Number(event.target.value))} className="portal-control mt-2 w-full"><option value={900}>15 分钟</option><option value={3600}>1 小时</option><option value={28800}>8 小时</option><option value={86400}>24 小时</option><option value={604800}>7 天</option></select></label>
-            <fieldset><legend className="mb-2 text-sm">允许访问的集群 · 至少选择一个</legend>
+            <fieldset className="min-w-0"><legend className="mb-2 text-sm">允许访问的集群 · 至少选择一个</legend>
               {directoryError && <p role="alert" className="mb-2 text-xs text-warning-text">集群目录读取失败：{directoryError}。请恢复连接后刷新。</p>}
               <div className="max-h-60 space-y-2 overflow-auto rounded-lg border border-theme-border bg-theme-base p-3">
                 {clusters.map(cluster => <label key={cluster.id} className="flex items-start gap-2 text-sm"><input type="checkbox" className="mt-1" checked={selectedIDs.includes(cluster.id)} onChange={event => setClusterIds(event.target.checked ? [...selectedIDs, cluster.id] : selectedIDs.filter(id => id !== cluster.id))} /><span className="min-w-0 break-words">{cluster.name}<span className="portal-mono ml-2 text-xs text-theme-text-tertiary">{cluster.id}</span></span></label>)}
@@ -136,7 +136,7 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
           {issued && <p className="text-xs text-theme-text-secondary">请先保存并关闭上方原文，再生成其他凭据。</p>}
         </form>
       </section>
-      <section className="portal-card p-5 lg:p-6" aria-labelledby="client-config-title">
+      <section className="portal-card min-w-0 p-5 lg:p-6" aria-labelledby="client-config-title">
         <h2 id="client-config-title" className="text-lg font-semibold">接入 OpenCode</h2>
         <p className="mt-3 text-sm leading-relaxed text-theme-text-secondary">在运行 OpenCode 的机器上安全设置环境变量 <code className="portal-mono">KUBEATLAS_MCP_TOKEN</code>，值为刚生成的 Token；重启客户端以加载新值。以下配置不包含凭据原文。</p>
         <label className="mt-4 block text-sm">聚合 MCP 地址<input type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} className="portal-control portal-mono mt-2 w-full" spellCheck={false} /></label>
@@ -154,7 +154,7 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
       {loadError && <p role="alert" className="mt-4 text-sm text-warning-text">{loadError}{credentials ? ' 以下是上次读取的记录，当前状态未确认。' : ''}</p>}
       {!credentials && loading && <p role="status" className="py-8 text-sm text-theme-text-secondary">正在读取凭据…</p>}
       {credentials?.length === 0 && <p className="py-8 text-sm text-theme-text-secondary">尚未签发凭据。选择集群与有效期后生成第一个 Token。</p>}
-      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
         {credentials?.map(credential => {
           const status = credentialStatus(credential, now)
           return <article key={credential.id} className="rounded-lg border border-theme-border p-4" aria-label={`凭据 ${credential.label}`}>
