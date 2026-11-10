@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
+import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { Activity, AlertTriangle, Bell, Bot, Boxes, ChevronDown, ChevronsLeft, ClipboardCheck, Clock, Coins, ExternalLink, Gauge, GitBranch, HelpCircle, Home, Layers, LogOut, Menu, Moon, Network, Package, Plus, Server, Settings, ShieldCheck, Sparkles, Sun } from 'lucide-react'
 import { ClusterSwitcher, FilterLocationProvider, NamespacePicker, Tooltip, type FilterLocation } from '@maomada/k8s-ui'
@@ -6,6 +6,7 @@ import { Omnibar, type OmnibarHandle } from '../components/ui/Omnibar'
 import type { CommandItem } from '../components/ui/command-items'
 import { refreshAfterNamespaceSwitch, type NamespaceScope, type SearchResult } from '../api/client'
 import type { APIResource } from '../types'
+import type { AgentsResponse } from '../api/diagnose'
 import { namespaceFilterDisabled } from '../utils/namespaceFilter'
 import { CloudRequestError, cloudRequest, clusterBase, clusterPage, clusterView, selectedCluster, useCloudQuery, type HubCluster } from './cloudApi'
 import { useFleetQuery } from './cloudFleet'
@@ -76,6 +77,14 @@ function ClusterNamespacePicker({ id, client, connected, view, search, pending, 
   const filter = namespaceFilterDisabled(view.split('/')[1], view, search, apiResources.data)
   useEffect(() => { onError(namespace.error) }, [namespace.error, onError])
   return <NamespacePicker scope={namespace.data} loading={namespace.isPending} pending={pending} disabled={filter.disabled} disabledTooltip={filter.tooltip} onApply={onApply} variant="segment" label="Namespace" />
+}
+
+function InvestigationGate({ id, children }: { id: string; children: ReactNode }) {
+  const agents = useCloudQuery<AgentsResponse>('/agents', clusterBase(id))
+  if (agents.isPending) return <CloudLoading label="Checking investigation availability…" />
+  if (agents.error) return <CloudError error={agents.error} retry={() => { void agents.refetch() }} />
+  if (agents.data?.eligible !== true) return <div className="cloud-page cloud-empty"><Sparkles size={30} /><h1>AI investigations unavailable</h1><p>This cluster does not advertise support for built-in investigations in its current deployment mode. Installing a local agent CLI alone does not enable investigations through an authenticated Hub.</p><CloudLink href="/agents" className="cloud-button">Connect an external AI client with scoped MCP access</CloudLink></div>
+  return children
 }
 
 function CloudShell({ userId }: { userId: string }) {
@@ -159,7 +168,8 @@ function CloudShell({ userId }: { userId: string }) {
     catch (error) { setActionError(error) }
   }
 
-  const title = navigation.find(item => item.path === view || item.path !== '/' && view.startsWith(item.path + '/'))?.label ?? (view.startsWith('/settings') ? 'Settings' : view === '/agents' ? 'Agents' : view === '/install' ? 'Connect cluster' : 'Clusters')
+  const investigationView = view === '/investigations' || view.startsWith('/investigations/')
+  const title = investigationView ? 'AI investigations' : navigation.find(item => item.path === view || item.path !== '/' && view.startsWith(item.path + '/'))?.label ?? (view.startsWith('/settings') ? 'Settings' : view === '/agents' ? 'Agents' : view === '/install' ? 'Connect cluster' : 'Clusters')
   useEffect(() => { document.title = `${cluster ? cluster.name + ' · ' : ''}${title} — KubeAtlas` }, [title, cluster])
   const isHome = location.pathname === '/'
   const search = <FleetSearch refHandle={searchRef} clusters={clusters} commands={commands} hero={isHome} />
@@ -181,6 +191,8 @@ function CloudShell({ userId }: { userId: string }) {
   else if (view.startsWith('/settings')) content = <CloudSettings path={view} dark={dark} onTheme={() => setDark(!dark)} onLogout={() => { void logout() }} />
   else if (navigation.some(item => item.path === view && item.cluster) || view === '/investigations') content = <SelectLiveCluster clusters={fleetScope} view={view} />
   else content = <CloudCapabilityGap title={view === '/alerts' ? 'Alerts' : 'Page unavailable'} description={view === '/alerts' ? 'Organization alert rules, delivery integrations and notification history are not implemented in this self-hosted Hub yet. The live Issues queue is available; it is not a substitute for alert delivery.' : 'This route is not implemented in the self-hosted Portal.'} />
+
+  if (nativePath && investigationView) content = <InvestigationGate key={id} id={id}>{content}</InvestigationGate>
 
   return <FilterLocationProvider value={filterLocation}><div className={`cloud-shell ${collapsed ? 'cloud-collapsed' : ''} ${menuOpen ? 'cloud-menu-open' : ''}`}>
     {menuOpen && <button className="cloud-nav-backdrop" aria-label="Close navigation" onClick={() => setMenuOpen(false)} />}
@@ -211,7 +223,7 @@ function CloudShell({ userId }: { userId: string }) {
     </div>
     {panel === 'help' && <CloudDialog title="Help" onClose={() => setPanel(undefined)}><div className="cloud-form"><p>Self-hosted KubeAtlas Hub. Current state is queried through each cluster's outbound Agent connection.</p><a className="cloud-button" target="_blank" rel="noopener noreferrer" href="https://github.com/maomada/KubeAtlas/tree/main/docs">Project documentation<ExternalLink size={14} /></a><p>Keyboard shortcuts: Ctrl/Cmd+K or / opens fleet search. Escape closes menus.</p></div></CloudDialog>}
     {panel === 'notifications' && <CloudDialog title="Notifications" onClose={() => setPanel(undefined)}><div className="cloud-form"><p>Notification delivery and history are not configured in this self-hosted Hub. This is not an empty inbox confirmation.</p><CloudLink href="/issues" className="cloud-button" onClick={() => setPanel(undefined)}>View live issues</CloudLink></div></CloudDialog>}
-    {panel === 'account' && <CloudDialog title="Account" onClose={() => setPanel(undefined)}><div className="cloud-form"><strong>{userId}</strong><p>Authenticated Portal session. MCP tokens have their own expiry and do not share this session.</p><CloudLink href="/settings" className="cloud-button">Preferences</CloudLink><button className="cloud-button" onClick={() => { void logout() }}><LogOut size={16} />Sign out</button></div></CloudDialog>}
+    {panel === 'account' && <CloudDialog title="Account" onClose={() => setPanel(undefined)}><div className="cloud-form"><strong className="cloud-account-identity">{userId}</strong><p>Authenticated Portal session. MCP tokens have their own expiry and do not share this session.</p><CloudLink href="/settings" className="cloud-button">Preferences</CloudLink><button className="cloud-button" onClick={() => { void logout() }}><LogOut size={16} />Sign out</button></div></CloudDialog>}
     {panel === 'setup' && <CloudDialog title="Set up your self-hosted Hub" onClose={() => setPanel(undefined)}><div className="cloud-form"><CloudLink href="/install" className="cloud-button"><Server size={16} />1. Connect a cluster</CloudLink><CloudLink href="/agents" className="cloud-button"><Bot size={16} />2. Create scoped MCP access</CloudLink><p>Cluster connection is verified live. Token client use must be checked in your chosen MCP client; creating a token alone is not a verified agent connection.</p></div></CloudDialog>}
   </div></FilterLocationProvider>
 }

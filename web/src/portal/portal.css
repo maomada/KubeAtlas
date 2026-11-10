@@ -53,12 +53,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cloud-sidebar-footer button:hover { background: var(--bg-hover); color: var(--text-primary); }
 .cloud-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .cloud-topbar { min-height: 54px; display: flex; align-items: center; padding: 0 24px; gap: 8px; border-bottom: 1px solid var(--border-default); background: var(--bg-surface); }
-.cloud-topbar-left { min-width: 0; flex: 1; }
-.cloud-topbar-search { min-width: 160px; flex: 1; max-width: 512px; }
-.cloud-topbar-actions { flex: 1; min-width: 0; margin-left: auto; display: flex; justify-content: flex-end; align-items: center; gap: 8px; color: var(--text-tertiary); }
+.cloud-topbar-left { min-width: 0; flex: 0 0 auto; }
+.cloud-topbar-search { min-width: 160px; flex: 1; max-width: 512px; margin: 0 auto; }
+.cloud-topbar-actions { flex: 0 0 auto; margin-left: auto; display: flex; justify-content: flex-end; align-items: center; gap: 8px; color: var(--text-tertiary); }
 .cloud-icon-button { width: 29px; height: 29px; display: inline-flex; justify-content: center; align-items: center; border-radius: 5px; }
 .cloud-icon-button:hover { background: var(--bg-hover); color: var(--text-primary); }
 .cloud-account { display: flex; align-items: center; justify-content: center; gap: 3px; border-radius: 50%; color: var(--text-primary); background: var(--bg-elevated); width: 30px; height: 30px; font-weight: 600; font-size: 11px; }
+.cloud-account-identity { min-width: 0; overflow-wrap: anywhere; }
 .cloud-scope { display: flex; align-items: center; min-width: 0; gap: 9px; }
 .cloud-content { min-height: 0; flex: 1; overflow: auto; }
 .cloud-native { overflow: auto; }
@@ -186,6 +187,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .cloud-home { padding-top: 44px; }
 }
 @media (max-width: 1100px) {
+  .cloud-topbar { flex-wrap: wrap; padding: 8px 20px; }
+  .cloud-topbar-search { order: 3; flex: 0 0 100%; max-width: none; }
   .cloud-home-grid { grid-template-columns: 1fr; }
   .cloud-active-issues { min-height: 190px; }
   .cloud-row-actions { gap: 10px; }
@@ -197,6 +200,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .cloud-menu-open .cloud-nav-backdrop { display: block; position: fixed; inset: 0; background: rgb(0 0 0 / .45); z-index: 29; }
   .cloud-mobile-toggle { display: inline-flex; flex-shrink: 0; }
   .cloud-topbar { padding: 6px 12px; gap: 8px; flex-wrap: wrap; }
+  .cloud-topbar-left { flex: 1; }
   .cloud-topbar-search { order: 3; flex: 0 0 100%; max-width: none; padding-bottom: 3px; }
   .cloud-topbar-actions { flex: 0 0 auto; gap: 3px; }
   .cloud-topbar-actions > a:first-of-type, .cloud-topbar-actions > button[aria-label="Help"] { display: none; }

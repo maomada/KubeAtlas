@@ -29,6 +29,38 @@ vi.mock('@maomada/k8s-ui', async importOriginal => {
   }
 })
 
+it.each([
+  { id: 'alpha', eligible: false },
+  { id: 'beta', eligible: true },
+])('keeps the investigation route with explicit eligibility feedback ($id)', async ({ id, eligible }) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', `/c/${id}/investigations`)
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/hub') return Response.json({ enabled: true, userId: 'test-user' })
+    if (path === '/api/hub/clusters') return Response.json({ clusters: ['alpha', 'beta'].map(id => ({ id, name: id === 'alpha' ? 'Alpha' : 'Beta', state: 'connected' })) })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === `/c/${id}/api/agents`) return Response.json({ eligible, enabled: false, agents: [] })
+    if (path === `/c/${id}/api/cluster/namespace-scope`) return Response.json(scope)
+    if (path === `/c/${id}/api/api-resources`) return Response.json([])
+    throw new Error(`Unexpected request: ${path}`)
+  }))
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await act(async () => vi.waitFor(() => expect(host.textContent).toContain(eligible ? 'Opening live cluster…' : 'AI investigations unavailable')))
+    expect(window.location.pathname).toBe(`/c/${id}/investigations`)
+    if (!eligible) expect(host.textContent).not.toContain('Change native namespace')
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
 it('shares the native namespace cache when entering and switching clusters', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState({}, '', '/settings?cluster=alpha')
