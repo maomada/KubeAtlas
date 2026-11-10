@@ -25,6 +25,7 @@ type Credentials struct {
 	AllowInsecureCookies bool
 	MCPAllowedHosts      []string
 	Hub                  *HubConfig
+	OIDC                 *OIDCConfig
 }
 
 type Handler struct {
@@ -40,6 +41,7 @@ type Handler struct {
 	fleetHandler  http.Handler
 	agentHub      *AgentHub
 	liveHub       *portalHub
+	oidc          *oidcAuthenticator
 }
 
 func NewHandler(registry *Registry, credentials Credentials, static fs.FS, fleetStore *fleetsync.Store) (*Handler, error) {
@@ -85,6 +87,17 @@ func NewHandler(registry *Registry, credentials Credentials, static fs.FS, fleet
 			return nil, err
 		}
 	}
+	if credentials.OIDC != nil {
+		if handler.liveHub == nil {
+			handler.Close()
+			return nil, errors.New("OIDC requires Hub mode")
+		}
+		handler.oidc, err = newOIDCAuthenticator(*credentials.OIDC, handler.secureCookies)
+		if err != nil {
+			handler.Close()
+			return nil, err
+		}
+	}
 	return handler, nil
 }
 
@@ -94,6 +107,9 @@ func (h *Handler) Close() {
 	}
 	if h != nil && h.liveHub != nil {
 		_ = h.liveHub.transport.Close()
+	}
+	if h != nil && h.oidc != nil && h.oidc.transport != nil {
+		h.oidc.transport.CloseIdleConnections()
 	}
 	if h != nil && h.agentHub != nil {
 		h.agentHub.Close()
@@ -137,6 +153,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if !h.requireViewer(w, r) {
 			return
 		}
+		if !h.legacyHubViewerAllowed(r) {
+			hubHTTPError(w, http.StatusForbidden, "permission_denied", "OIDC members cannot use the legacy Fleet API")
+			return
+		}
 		if !sameSiteRequest(r) {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
@@ -152,6 +172,21 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.fleetHandler.ServeHTTP(w, clone)
 	case r.URL.Path == "/api/auth/login":
 		h.login(w, r)
+	case r.URL.Path == "/api/auth/providers":
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		providers := map[string]any{"local": true, "oidc": map[string]any{"enabled": h.oidc != nil}}
+		if h.oidc != nil {
+			providers["oidc"] = map[string]any{"enabled": true, "loginUrl": "/api/auth/oidc/login"}
+		}
+		hubJSON(w, http.StatusOK, providers)
+	case r.URL.Path == "/api/auth/oidc/login":
+		h.oidcLogin(w, r)
+	case r.URL.Path == "/api/auth/oidc/callback":
+		h.oidcCallback(w, r)
 	case r.URL.Path == "/api/auth/logout":
 		h.logout(w, r)
 	case r.URL.Path == "/api/auth/session":
@@ -164,6 +199,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case r.URL.Path == "/api/clusters":
 		if !h.requireViewer(w, r) {
+			return
+		}
+		if !h.legacyHubViewerAllowed(r) {
+			hubHTTPError(w, http.StatusForbidden, "permission_denied", "OIDC members cannot use the legacy cluster API")
 			return
 		}
 		if !sameSiteRequest(r) {

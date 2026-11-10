@@ -53,6 +53,27 @@ func TestLoadCredentialsHubMode(t *testing.T) {
 	}
 }
 
+func TestConfigureOIDCRequiresHubAndCompleteEnvironment(t *testing.T) {
+	credentials := portal.Credentials{}
+	if err := configureOIDC(&credentials, "", "", "", "", ""); err != nil || credentials.OIDC != nil {
+		t.Fatalf("disabled OIDC configuration = %#v, err=%v", credentials.OIDC, err)
+	}
+	if err := configureOIDC(&credentials, "https://idp.example/realms/kubeatlas", "portal", "https://portal.example/api/auth/oidc/callback", "", "not-for-logs"); err == nil {
+		t.Fatal("OIDC without Hub mode was accepted")
+	}
+	credentials.Hub = &portal.HubConfig{}
+	if err := configureOIDC(&credentials, "https://idp.example/realms/kubeatlas", "portal", "https://portal.example/api/auth/oidc/callback", "", ""); err == nil {
+		t.Fatal("OIDC with a missing client secret was accepted")
+	}
+	if err := configureOIDC(&credentials, "https://idp.example/realms/kubeatlas", "portal", "https://portal.example/api/auth/oidc/callback", "/etc/kubeatlas/idp-ca.pem", "not-for-logs"); err != nil {
+		t.Fatal(err)
+	}
+	if credentials.OIDC == nil || credentials.OIDC.Issuer != "https://idp.example/realms/kubeatlas" ||
+		credentials.OIDC.ClientID != "portal" || credentials.OIDC.CACertFile != "/etc/kubeatlas/idp-ca.pem" {
+		t.Fatal("OIDC configuration fields were not retained")
+	}
+}
+
 func TestStatePaths(t *testing.T) {
 	root := t.TempDir()
 	registryPath := filepath.Join(root, "registry.json")

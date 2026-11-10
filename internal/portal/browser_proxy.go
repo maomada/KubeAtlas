@@ -175,6 +175,14 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 		return
 	}
 	defer cancel()
+	_, member, ok := handler.sessionMember(r)
+	if !ok {
+		hubHTTPError(w, http.StatusUnauthorized, "authentication_required", "A current Portal member session is required")
+		return
+	}
+	if !requireActiveMember(w, member) {
+		return
+	}
 
 	clusterID, sourcePath, ok := browserClusterPath(r)
 	if !ok {
@@ -184,6 +192,10 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 	cluster, exists := p.store.Cluster(clusterID)
 	if !exists || cluster.RevokedAt != nil {
 		hubHTTPError(w, http.StatusNotFound, "cluster_not_found", "Cluster is unavailable")
+		return
+	}
+	if !containsScope(p.memberClusterIDs(member), clusterID) {
+		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Member has no access to this cluster")
 		return
 	}
 	if sourcePath == "/api/settings" {
@@ -200,7 +212,10 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 		return
 	}
 
-	principal := hub.Principal{UserID: p.userID, Groups: p.groups, ClusterIDs: []string{clusterID}}
+	principal := hub.Principal{
+		UserID: member.UserID, Groups: append([]string{}, member.KubernetesGroups...),
+		ClusterIDs: []string{clusterID}, ReadOnly: member.Role == "viewer",
+	}
 	client, err := p.transport.BrowserHTTPClient(clusterID, principal)
 	if err != nil {
 		writeBrowserTransportError(w, err)

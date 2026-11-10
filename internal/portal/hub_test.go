@@ -293,6 +293,31 @@ func TestPortalClusterAPIUsesSelectedClusterAndSanitizesIdentity(t *testing.T) {
 	if got := <-requests; got.Path != "/api/resource-counts" || got.Query != "" || got.User != h.liveHub.userID {
 		t.Fatalf("empty query changed the scoped request: %+v", got)
 	}
+	memberID := "oidc:" + strings.Repeat("c", 64)
+	if _, _, err := h.liveHub.store.UpsertOIDCMember(memberID, "Viewer"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.liveHub.store.UpdateMember(memberID, hubstate.MemberInput{
+		Role: "viewer", Status: "active", ClusterIDs: []string{"alpha"},
+		KubernetesGroups: []string{"radar:readonly"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	viewerSession := httptest.NewRecorder()
+	if !h.createSession(viewerSession, httptest.NewRequest(http.MethodGet, "http://localhost/", nil), memberID, time.Now().Add(time.Hour)) {
+		t.Fatal("could not create the scoped viewer session")
+	}
+	viewerRequest := httptest.NewRequest(http.MethodPost, "http://localhost/c/alpha/api/resources/apply", strings.NewReader(`{"kind":"ConfigMap"}`))
+	viewerRequest.AddCookie(viewerSession.Result().Cookies()[0])
+	viewerRequest.Header.Set("Content-Type", "application/json")
+	viewerRequest.Header.Set("Origin", "http://localhost")
+	viewerRequest.Header.Set("Referer", "http://localhost/clusters")
+	viewerRequest.Header.Set("Sec-Fetch-Site", "same-origin")
+	viewerResponse := httptest.NewRecorder()
+	h.ServeHTTP(viewerResponse, viewerRequest)
+	if viewerResponse.Code != http.StatusForbidden || len(requests) != 0 {
+		t.Fatalf("viewer browser write status=%d dispatched=%d", viewerResponse.Code, len(requests))
+	}
 }
 
 func TestPortalClusterAPIRedirectCannotReachHubManagement(t *testing.T) {

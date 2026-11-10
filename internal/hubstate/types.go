@@ -4,6 +4,8 @@ package hubstate
 
 import "time"
 
+const LocalMemberID = "local"
+
 type Error struct {
 	Code string
 }
@@ -44,6 +46,30 @@ type Group struct {
 	ClusterIDs []string  `json:"clusterIds"`
 	CreatedAt  time.Time `json:"createdAt"`
 	UpdatedAt  time.Time `json:"updatedAt"`
+}
+
+type Organization struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type Member struct {
+	ID               string    `json:"id"`
+	UserID           string    `json:"userId"`
+	DisplayName      string    `json:"displayName"`
+	Role             string    `json:"role"`
+	Status           string    `json:"status"`
+	ClusterIDs       []string  `json:"clusterIds"`
+	KubernetesGroups []string  `json:"kubernetesGroups"`
+	CreatedAt        time.Time `json:"createdAt"`
+	UpdatedAt        time.Time `json:"updatedAt"`
+}
+
+type MemberInput struct {
+	Role             string
+	Status           string
+	ClusterIDs       []string
+	KubernetesGroups []string
 }
 
 type Credential struct {
@@ -92,4 +118,10 @@ func cloneCredential(c Credential) Credential {
 func cloneGroup(g Group) Group {
 	g.ClusterIDs = append([]string{}, g.ClusterIDs...)
 	return g
+}
+
+func cloneMember(m Member) Member {
+	m.ClusterIDs = append([]string{}, m.ClusterIDs...)
+	m.KubernetesGroups = append([]string{}, m.KubernetesGroups...)
+	return m
 }

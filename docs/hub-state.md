@@ -1,12 +1,12 @@
 # Hub directory and opaque credentials
 
-`internal/hubstate` is a standard-library-only persistence package. It stores
-configured clusters, explicit groups, per-cluster agent credentials, and
-independent MCP personal access tokens (PATs). It does not store Kubernetes
+`internal/hubstate` stores configured clusters, explicit groups, per-cluster
+agent credentials, MCP personal access tokens (PATs), the self-hosted Hub
+organization, and OIDC member records. It does not store Kubernetes
 resources or snapshots, contact Kubernetes, implement HTTP/UI authentication,
-resolve groups for authorization, or manage live Hub sessions. Directory entries
-remain available when their sources are offline. Revoking an agent token does
-not delete or permit reuse of its cluster ID.
+or manage live Hub sessions. Directory entries remain available when their
+sources are offline. Revoking an agent token does not delete or permit reuse of
+its cluster ID.
 
 ## Persistence and deployment boundary
 
@@ -20,11 +20,14 @@ files must be regular files with mode `0600`; the containing directory must be
 existing broad directory permissions are rejected, not silently changed.
 
 The version-1 JSON object contains `version`, `clusters`, `groups`, and
-`credentials`. The last three are ID-keyed maps. Internal records contain
+`credentials`. Optional `organization` and `members` fields extend existing
+version-1 files; a legacy file without them loads with the default
+`self-hosted` / `KubeAtlas` organization and an empty member map. The last three
+legacy collections and `members` are ID-keyed maps. Internal records contain
 SHA-256 digests, and PAT records also retain original TTL and family ancestry.
-Public `Cluster`, `Group`, and `Credential` metadata never contains digests or
-plaintext tokens. Lists are deterministic by ID; input/output slices and
-optional timestamps do not alias store state.
+Public `Cluster`, `Group`, `Member`, and `Credential` metadata never contains
+digests or plaintext tokens. Lists are deterministic by ID; input/output slices
+and optional timestamps do not alias store state.
 
 Startup reads through a 16 MiB byte limit (plus one byte to detect overflow),
 rejecting malformed/trailing JSON, duplicate or unknown fields, missing required
@@ -47,6 +50,17 @@ writers can alter grants; protect it and its backups as authentication state.
 
 - At most 100 clusters and 100 groups; IDs match
   `^[a-z0-9][a-z0-9-]{0,62}$`.
+- At most 1,024 members including the synthetic, immutable local owner. Stored
+  OIDC member IDs are `oidc:` plus a lowercase SHA-256 hex digest of the exact
+  issuer, a NUL separator, and the OIDC subject. Subjects and email addresses
+  are not persisted.
+- Stored roles are `admin`, `member`, and `viewer`; the synthetic local owner
+  has role `owner`. Statuses are `active`, `pending`, or `disabled`. New
+  identities start pending with empty cluster and Kubernetes-group scopes.
+- Admin members have all-cluster management scope and an empty `clusterIds`
+  list. Members and viewers have explicit cluster IDs; an empty list grants no
+  cluster access. Kubernetes groups are administrator-managed, must satisfy the
+  existing Hub group validation rules, and are never imported from the IdP.
 - Cluster and group names are nonempty, at most 256 bytes, and have no leading
   or trailing whitespace (including Unicode whitespace). Cluster descriptions are at most
   1000 bytes; environment and region are at most 128 bytes each.
@@ -83,6 +97,14 @@ duplicates, and unknown IDs are rejected. Labels are at most 128 bytes. The
 `ReadOnly` flag is immutable during renewal. The package returns grants; callers
 must enforce them for every operation, including live session use.
 
+OIDC PAT issue, rotation, and refresh are bound to the stored member owner and
+revalidated against current active status and current cluster grants in the
+store lock. Viewer members always receive read-only credentials. Any member
+role, status, cluster-scope, or Kubernetes-group change revokes that owner's
+existing PATs in the same atomic store mutation; later reactivation does not
+restore them. `CredentialOwner` performs digest lookup for bearer routing, but
+callers must still use `Authenticate(token, expectedOwner)` to authenticate.
+
 ## Lifetime, replacement, and retention
 
 - Issue TTL `0` means 8 hours; explicit TTL is 15 minutes through 7 days,
@@ -110,6 +132,7 @@ must enforce them for every operation, including live session use.
 Errors are `*hubstate.Error` with a generic `Code`: `invalid_parameters`,
 `invalid_scope`, `conflict`, `cluster_not_found`, `credential_invalid`,
 `credential_expired`, `credential_revoked`, `credential_refresh_expired`,
+`member_pending`, `member_disabled`, `member_not_found`, `permission_denied`,
 `capacity_exceeded`, or `store_unavailable`. Error strings include neither
 tokens nor file contents.
 
