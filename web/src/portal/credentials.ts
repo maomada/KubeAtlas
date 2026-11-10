@@ -76,7 +76,7 @@ export async function hubAvailability(signal: AbortSignal): Promise<boolean> {
 }
 
 async function managementRequest<T>(path: string, method: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-  const response = await fetch(apiUrl(path), {
+  const response = await fetch(apiUrl(path, '/api'), {
     method, credentials: getCredentialsMode(), cache: 'no-store',
     headers: { ...getAuthHeaders(), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),

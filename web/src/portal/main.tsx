@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { Portal } from './Portal'
+import { PortalEntry } from './CloudPortal'
 import { Login } from './Login'
 import './portal.css'
 
@@ -9,5 +9,5 @@ window.addEventListener('pageshow', event => {
 })
 
 ReactDOM.createRoot(document.getElementById('portal')!).render(
-  <React.StrictMode>{window.location.pathname === '/login' ? <Login /> : <Portal />}</React.StrictMode>,
+  <React.StrictMode>{window.location.pathname === '/login' ? <Login /> : <PortalEntry />}</React.StrictMode>,
 )
