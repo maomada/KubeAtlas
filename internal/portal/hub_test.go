@@ -75,7 +75,22 @@ func startPortalHubAgent(t *testing.T, handler *Handler, token, clusterID string
 	case <-time.After(5 * time.Second):
 		t.Fatal("Portal Hub Agent did not connect")
 	}
-	return server
+	readyCtx, stop := context.WithTimeout(t.Context(), 5*time.Second)
+	defer stop()
+	tick := time.NewTicker(time.Millisecond)
+	defer tick.Stop()
+	for {
+		for _, agent := range handler.liveHub.transport.Agents() {
+			if agent.ClusterID == clusterID {
+				return server
+			}
+		}
+		select {
+		case <-tick.C:
+		case <-readyCtx.Done():
+			t.Fatal("Portal Hub did not activate the connected Agent")
+		}
+	}
 }
 
 func hubRequest(t *testing.T, h *Handler, cookie *http.Cookie, token, method, path, body string, status int) *httptest.ResponseRecorder {
