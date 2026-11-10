@@ -286,6 +286,13 @@ func TestPortalClusterAPIUsesSelectedClusterAndSanitizesIdentity(t *testing.T) {
 	if got := <-requests; got.Method != http.MethodPost || got.Path != "/api/resources/uncertain" {
 		t.Fatalf("dispatched write was retried or path changed: %+v", got)
 	}
+	counts := doRequest(http.MethodGet, "/c/alpha/api/resource-counts?", "")
+	if counts.Code != http.StatusOK {
+		t.Fatalf("empty query status=%d body=%q", counts.Code, counts.Body.String())
+	}
+	if got := <-requests; got.Path != "/api/resource-counts" || got.Query != "" || got.User != h.liveHub.userID {
+		t.Fatalf("empty query changed the scoped request: %+v", got)
+	}
 }
 
 func TestPortalClusterAPIRedirectCannotReachHubManagement(t *testing.T) {

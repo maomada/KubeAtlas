@@ -1,10 +1,12 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query'
 import { Activity, AlertTriangle, Bell, Bot, Boxes, ChevronDown, ChevronsLeft, ClipboardCheck, Clock, Coins, ExternalLink, Gauge, GitBranch, HelpCircle, Home, Layers, LogOut, Menu, Moon, Network, Package, Plus, Server, Settings, ShieldCheck, Sparkles, Sun } from 'lucide-react'
-import { ClusterSwitcher, FilterLocationProvider, NamespacePicker, Tooltip, type FilterLocation, type NamespaceScopeView } from '@maomada/k8s-ui'
+import { ClusterSwitcher, FilterLocationProvider, NamespacePicker, Tooltip, type FilterLocation } from '@maomada/k8s-ui'
 import { Omnibar, type OmnibarHandle } from '../components/ui/Omnibar'
 import type { CommandItem } from '../components/ui/command-items'
-import type { SearchResult } from '../api/client'
+import { refreshAfterNamespaceSwitch, type NamespaceScope, type SearchResult } from '../api/client'
+import type { APIResource } from '../types'
+import { namespaceFilterDisabled } from '../utils/namespaceFilter'
 import { CloudRequestError, cloudRequest, clusterBase, clusterPage, clusterView, selectedCluster, useCloudQuery, type HubCluster } from './cloudApi'
 import { useFleetQuery } from './cloudFleet'
 import { CloudDialog, CloudError, CloudLink, CloudLoading, CopyButton } from './CloudShared'
@@ -14,7 +16,7 @@ import { CloudApplications, CloudCertificates, CloudChecks, CloudIssues, resourc
 import { MCPCredentials } from './MCPCredentials'
 import { credentialStatus, type MCPCredential } from './credentials'
 import { Portal } from './Portal'
-import { navigateCloud, useCloudLocation } from './cloudNavigation'
+import { cloudViewHref, navigateCloud, useCloudLocation } from './cloudNavigation'
 
 const NativeRadar = lazy(() => import('../RadarApp').then(module => ({ default: module.RadarApp })))
 const managementClient = new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } })
@@ -67,7 +69,19 @@ function CloudShell({ userId }: { userId: string }) {
   // Recreate the native cache on cluster changes to avoid cross-cluster data.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const nativeClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), [id])
-  const namespace = useCloudQuery<NamespaceScopeView>('/cluster/namespace-scope', id ? clusterBase(id) : '/api', !!id && cluster?.state === 'connected')
+  const namespace = useQuery<NamespaceScope>({
+    queryKey: ['namespace-scope'],
+    queryFn: ({ signal }) => cloudRequest('/cluster/namespace-scope', { base: id ? clusterBase(id) : '/api', signal }),
+    enabled: !!id && cluster?.state === 'connected',
+    staleTime: 30000,
+  }, nativeClient)
+  const apiResources = useQuery<APIResource[]>({
+    queryKey: ['api-resources'],
+    queryFn: ({ signal }) => cloudRequest('/api-resources', { base: id ? clusterBase(id) : '/api', signal }),
+    enabled: !!id && cluster?.state === 'connected',
+    staleTime: 5 * 60 * 1000,
+  }, nativeClient)
+  const namespaceFilter = namespaceFilterDisabled(view.split('/')[1], view, location.search, apiResources.data)
   const chosenID = id ?? location.searchParams.get('cluster') ?? ''
   const fleetScope = chosenID ? clusters.filter(item => item.id === chosenID) : clusters
   const missingSelection = chosenID && !clusters.some(item => item.id === chosenID)
@@ -92,7 +106,7 @@ function CloudShell({ userId }: { userId: string }) {
   useEffect(() => { setMenuOpen(false); setPanel(undefined); setActionError(undefined) }, [location.pathname])
   useEffect(() => () => { void nativeClient.cancelQueries(); nativeClient.clear() }, [nativeClient])
 
-  const target = (item: NavItem) => item.cluster && id ? clusterPage(id, item.path) : item.path
+  const target = (item: NavItem) => cloudViewHref(item.path, !!item.cluster, clusters.find(item => item.id === chosenID)?.id, location.search)
   const commands: CommandItem[] = navigation.map(item => ({ id: item.path, label: item.label, category: 'Views', action: () => navigateCloud(target(item)) }))
   const filterLocation: FilterLocation = {
     searchParams: location.searchParams,
@@ -114,10 +128,13 @@ function CloudShell({ userId }: { userId: string }) {
     if (!id || pendingNamespace) return
     setPendingNamespace(true); setActionError(undefined)
     try {
-      const scope = await cloudRequest<NamespaceScopeView>('/cluster/namespace', { base: clusterBase(id), method: 'POST', body: { namespaces } })
+      const scope = await cloudRequest<NamespaceScope>('/cluster/namespace', { base: clusterBase(id), method: 'POST', body: { namespaces } })
       nativeClient.setQueryData(['namespace-scope'], scope)
-      await Promise.all([nativeClient.invalidateQueries(), namespace.refetch()])
-    } catch (error) { setActionError(error) } finally { setPendingNamespace(false) }
+      await refreshAfterNamespaceSwitch(nativeClient, scope)
+    } catch (error) {
+      void nativeClient.invalidateQueries({ queryKey: ['namespace-scope'] })
+      setActionError(error)
+    } finally { setPendingNamespace(false) }
   }
   async function logout() {
     try { await cloudRequest('/auth/logout', { method: 'POST', body: {} }); managementClient.clear(); nativeClient.clear(); window.location.replace('/login') }
@@ -162,10 +179,10 @@ function CloudShell({ userId }: { userId: string }) {
     </aside>
     <div className="cloud-main"><header className="cloud-topbar">
       <button className="cloud-mobile-toggle cloud-icon-button" aria-label="Open navigation" onClick={() => setMenuOpen(true)}><Menu size={20} /></button>
-      <div className="cloud-topbar-left cloud-scope"><ClusterSwitcher currentId={chosenID} currentName={clusters.find(item => item.id === chosenID)?.name ?? 'All clusters'} items={[{ id: '', name: 'All clusters' }, ...clusters.map(item => ({ id: item.id, name: item.name, status: item.state === 'connected' ? 'healthy' as const : 'unknown' as const, secondary: item.environment, disabled: item.state === 'revoked', title: item.state === 'revoked' ? 'Agent access revoked' : undefined }))]} onSelect={item => selectCluster(item.id)} label="Cluster" footerSlot={<CloudLink href="/clusters">Manage clusters →</CloudLink>} />{id && <NamespacePicker scope={namespace.data} loading={namespace.isPending} pending={pendingNamespace} onApply={values => { void applyNamespace(values) }} variant="segment" label="Namespace" />}</div>
+      <div className="cloud-topbar-left cloud-scope"><ClusterSwitcher currentId={chosenID} currentName={clusters.find(item => item.id === chosenID)?.name ?? 'All clusters'} items={[{ id: '', name: 'All clusters' }, ...clusters.map(item => ({ id: item.id, name: item.name, status: item.state === 'connected' ? 'healthy' as const : 'unknown' as const, secondary: item.environment, disabled: item.state === 'revoked', title: item.state === 'revoked' ? 'Agent access revoked' : undefined }))]} onSelect={item => selectCluster(item.id)} label="Cluster" footerSlot={<CloudLink href="/clusters">Manage clusters →</CloudLink>} />{id && <NamespacePicker scope={namespace.data} loading={namespace.isPending} pending={pendingNamespace} disabled={namespaceFilter.disabled} disabledTooltip={namespaceFilter.tooltip} onApply={values => { void applyNamespace(values) }} variant="segment" label="Namespace" />}</div>
       {!isHome && <div className="cloud-topbar-search">{search}</div>}
       <div className="cloud-topbar-actions">
-        <CloudLink href={id ? clusterPage(id, '/investigations') : '/investigations'} className="cloud-icon-button" aria-label="AI investigations" title="AI investigations"><Sparkles size={18} /></CloudLink>
+        <CloudLink href={target({ path: '/investigations', cluster: true, label: 'AI investigations', icon: Sparkles })} className="cloud-icon-button" aria-label="AI investigations" title="AI investigations"><Sparkles size={18} /></CloudLink>
         <button className="cloud-icon-button" aria-label="Notifications" onClick={() => setPanel('notifications')}><Bell size={18} /></button>
         <button className="cloud-icon-button" aria-label="Help" onClick={() => setPanel('help')}><HelpCircle size={18} /></button>
         <Tooltip content={userId || 'Account'} position="bottom"><button className="cloud-account" aria-label="Account menu" onClick={() => setPanel(panel === 'account' ? undefined : 'account')}>{userId?.slice(0, 1).toUpperCase() || 'K'}<ChevronDown size={12} /></button></Tooltip>

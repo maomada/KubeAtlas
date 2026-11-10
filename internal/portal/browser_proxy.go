@@ -258,7 +258,7 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 }
 
 func browserClusterPath(r *http.Request) (string, string, bool) {
-	if r.URL.RawPath != "" || r.URL.Fragment != "" || r.URL.ForceQuery && r.URL.RawQuery == "" ||
+	if r.URL.RawPath != "" || r.URL.Fragment != "" ||
 		len(r.URL.RawQuery) > 8192 || !canonicalPortalPath(r.URL.Path) {
 		return "", "", false
 	}

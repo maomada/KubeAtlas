@@ -1,4 +1,12 @@
 import { useEffect, useSyncExternalStore } from 'react'
+import { withCrossViewParams } from '../utils/navigation'
+import { clusterPage } from './cloudApi'
+
+export function cloudViewHref(path: string, native: boolean, clusterId: string | undefined, currentSearch: string) {
+  if (!clusterId) return path
+  if (native) return withCrossViewParams(clusterPage(clusterId, path), currentSearch)
+  return `${path}?${new URLSearchParams({ cluster: clusterId })}`
+}
 
 const locationEvent = 'kubeatlas:portal-location'
 const currentLocation = () => window.location.pathname + window.location.search + window.location.hash
