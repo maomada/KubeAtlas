@@ -44,11 +44,14 @@ member groups are administrator-managed and validated against the existing
 Kubernetes RBAC binding is created automatically. PAT scope and read-only mode
 further constrain the source identity's existing access.
 
-All new routes require loopback or an exact configured `MCPAllowedHosts` authority.
+Hub management and MCP routes require loopback or an exact configured `MCPAllowedHosts` authority.
 Forwarded Host headers do not authorize another authority. Foreign, malformed or
 duplicate Origins and cross-site browser requests are rejected. TLS termination
 at a trusted proxy is supported; use HTTPS for credentials outside an isolated
 trusted network. `/agent` also applies the tunnel's stricter no-Origin policy.
+
+OIDC callbacks accept the provider's cross-site navigation only through the
+browser-bound, one-use state transaction and the fixed configured callback.
 
 ## Directory API (Portal cookie)
 

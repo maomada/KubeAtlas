@@ -25,7 +25,7 @@ function CopyValue({ value, label }: { value: string; label: string }) {
   </div>
 }
 
-export function MCPCredentials() {
+export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolean }) {
   const [clusters, setClusters] = useState<CredentialCluster[]>([])
   const [directoryError, setDirectoryError] = useState('')
   const [directoryLoading, setDirectoryLoading] = useState(true)
@@ -81,7 +81,7 @@ export function MCPCredentials() {
     setBusy('create')
     setActionError('')
     try {
-      const result = await credentialsRequest<IssuedCredential>('', 'POST', { label: label.trim(), clusterIds: selectedIDs, readOnly, ttlSeconds })
+      const result = await credentialsRequest<IssuedCredential>('', 'POST', { label: label.trim(), clusterIds: selectedIDs, readOnly: readOnlyOnly || readOnly, ttlSeconds })
       if (!result.token || !result.credential?.id) throw new Error('未收到完整凭据，请刷新列表核对。')
       setIssued(result)
       setRevision(value => value + 1)
@@ -129,7 +129,7 @@ export function MCPCredentials() {
                 {directoryLoading ? <p role="status" className="text-sm text-theme-text-secondary">正在读取 Hub 集群目录…</p> : !clusters.length && !directoryError && <p className="text-sm text-theme-text-secondary">尚无可选集群，请先在 Hub 中配置集群。</p>}
               </div>
             </fieldset>
-            <label className="block text-sm">操作范围<select value={readOnly ? 'read' : 'write'} onChange={event => setReadOnly(event.target.value === 'read')} className="portal-control mt-2 w-full"><option value="read">只读 · 查询与诊断</option><option value="write">读写 · 允许来源提供的写操作</option></select></label>
+            <label className="block text-sm">操作范围<select value={readOnlyOnly || readOnly ? 'read' : 'write'} disabled={readOnlyOnly} onChange={event => setReadOnly(event.target.value === 'read')} className="portal-control mt-2 w-full"><option value="read">只读 · 查询与诊断</option>{!readOnlyOnly && <option value="write">读写 · 允许来源提供的写操作</option>}</select></label>
             <p className="text-xs leading-relaxed text-theme-text-secondary">{readOnly ? '拒绝写工具和会创建资源的诊断选项。' : '这是可写凭据，Agent 可以修改所选真实集群中的资源。'} 实际操作仍受来源 MCP 模式及 Kubernetes 权限限制。</p>
             <button type="submit" className="btn-brand inline-flex items-center gap-2 px-4 py-2.5 text-sm" disabled={!selectedIDs.length || !label.trim() || Boolean(directoryError)}><KeyRound size={16} />{busy === 'create' ? '正在生成…' : '生成限时 Token'}</button>
           </fieldset>

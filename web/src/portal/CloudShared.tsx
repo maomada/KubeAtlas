@@ -36,7 +36,7 @@ export function ClusterStatus({ cluster }: { cluster: HubCluster }) {
 export function CloudDialog({ title, children, onClose, busy = false }: {
   title: string; children: ReactNode; onClose: () => void; busy?: boolean
 }) {
-  return <DialogPortal open onClose={onClose} closable={!busy} ariaLabel={title} className="w-full max-w-lg">
+  return <DialogPortal open onClose={onClose} closable={!busy} ariaLabel={title} className="w-full max-w-lg max-h-[90dvh] overflow-y-auto">
     <div className="cloud-dialog"><header><h2>{title}</h2><button type="button" aria-label="Close dialog" disabled={busy} onClick={onClose}><X size={18} /></button></header>{children}</div>
   </DialogPortal>
 }

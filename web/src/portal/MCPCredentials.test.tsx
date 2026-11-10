@@ -42,6 +42,13 @@ it('keeps MCP navigation hidden during server rendering until Hub status is chec
   expect(html).not.toContain('搜索集群')
 })
 
+it('limits viewer credential controls to read-only regardless of the default write option', () => {
+  const html = renderToStaticMarkup(<MCPCredentials readOnlyOnly />)
+  expect(html).not.toContain('value="write"')
+  expect(html).toContain('value="read"')
+  expect(html).toContain('只读 · 查询与诊断')
+})
+
 it('generates an OpenCode environment reference, rejects credential-bearing URLs, and distinguishes expiry', () => {
   const config = JSON.parse(openCodeFleetConfig('https://portal.example/mcp-fleet'))
   expect(config.mcp['kubeatlas-fleet']).toEqual({

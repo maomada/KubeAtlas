@@ -13,6 +13,7 @@ import { useFleetQuery } from './cloudFleet'
 import { CloudDialog, CloudError, CloudLink, CloudLoading, CopyButton } from './CloudShared'
 import { CloudClusters, CloudInstall } from './CloudClusters'
 import { CloudHome } from './CloudHome'
+import { CloudOrganization, CloudMembers, CloudSSO, PendingMembership, canManageOrganization, logoutPortal, type HubMember } from './CloudOrganization'
 import { CloudApplications, CloudCertificates, CloudChecks, CloudIssues, resourceHref } from './CloudFleetViews'
 import { MCPCredentials } from './MCPCredentials'
 import { credentialStatus, type MCPCredential } from './credentials'
@@ -45,11 +46,12 @@ export function PortalEntry() {
 }
 
 function PortalMode() {
-  const mode = useCloudQuery<{ enabled: boolean; userId: string }>('/hub')
+  const mode = useCloudQuery<{ enabled: boolean; userId: string; member?: HubMember }>('/hub')
   if (mode.isPending) return <CloudLoading label="Loading Portal…" />
   if ((mode.error instanceof CloudRequestError && mode.error.status === 404) || mode.data?.enabled === false) return <Portal />
   if (mode.error || mode.data?.enabled !== true) return <div className="cloud-page"><CloudError error={mode.error ?? new Error('Invalid Hub availability response')} retry={() => { void mode.refetch() }} /></div>
-  return <CloudShell userId={mode.data.userId} />
+  if (mode.data.member?.status === 'pending') return <PendingMembership member={mode.data.member} retry={() => { void mode.refetch() }} />
+  return <CloudShell userId={mode.data.userId} member={mode.data.member} />
 }
 
 function ClusterNamespacePicker({ id, client, connected, view, search, pending, onApply, onError }: {
@@ -87,7 +89,8 @@ function InvestigationGate({ id, children }: { id: string; children: ReactNode }
   return children
 }
 
-function CloudShell({ userId }: { userId: string }) {
+function CloudShell({ userId, member }: { userId: string; member?: HubMember }) {
+  const canManage = canManageOrganization(member)
   const location = useCloudLocation()
   const directory = useCloudQuery<{ clusters: HubCluster[] }>('/hub/clusters')
   const credentials = useCloudQuery<{ credentials: MCPCredential[]; serverTime: string }>('/mcp/credentials')
@@ -176,7 +179,7 @@ function CloudShell({ userId }: { userId: string }) {
     } finally { setPendingNamespace(false) }
   }
   async function logout() {
-    try { await cloudRequest('/auth/logout', { method: 'POST', body: {} }); managementClient.clear(); nativeClient.clear(); window.location.replace('/login') }
+    try { await logoutPortal(); managementClient.clear(); nativeClient.clear() }
     catch (error) { setActionError(error) }
   }
 
@@ -192,15 +195,16 @@ function CloudShell({ userId }: { userId: string }) {
   else if (location.pathname.startsWith('/c/') && !id || missingSelection) content = <CloudError error={new Error('Invalid or unknown cluster selection')} />
   else if (id && !nativePath) content = <div className="cloud-page"><CloudError error={new Error(cluster?.revokedAt ? 'Agent access is revoked. Rotate its token to reconnect.' : 'Cluster is offline. Live data is unavailable; no snapshot is substituted.')} /><CloudLink href="/clusters" className="cloud-button">Manage cluster</CloudLink></div>
   else if (nativePath) content = <Suspense fallback={<CloudLoading label="Opening live cluster…" />}><NativeRadar key={id} apiBase={clusterBase(id)} basename={`/c/${id}`} queryClient={nativeClient} navSlots={{ embedded: true, fleetTakeoverHref: target => target === 'gitops' ? undefined : `/${target}?cluster=${encodeURIComponent(id)}`, onHostNavigate: navigateCloud }} /></Suspense>
+  else if (view === '/' && !canManage && !clusters.length) content = <div className="cloud-page cloud-empty"><ShieldCheck size={32} /><h1>No clusters assigned</h1><p>Ask an organization administrator to grant cluster access. No cluster health assessment is available.</p><CloudLink className="cloud-button" href="/settings/organization">Organization details</CloudLink></div>
   else if (view === '/') content = <CloudHome clusters={fleetScope} search={search} />
-  else if (view === '/clusters') content = <CloudClusters clusters={clusters} />
-  else if (view === '/install') content = <CloudInstall />
+  else if (view === '/clusters') content = <CloudClusters clusters={clusters} canManage={canManage} />
+  else if (view === '/install') content = canManage ? <CloudInstall /> : <CloudError error={new Error('Only organization owners and administrators can connect clusters.')} />
   else if (view === '/applications') content = <CloudApplications clusters={fleetScope} />
   else if (view === '/issues') content = <CloudIssues clusters={fleetScope} />
   else if (view === '/checks') content = <CloudChecks clusters={fleetScope} />
   else if (view === '/certs') content = <CloudCertificates clusters={fleetScope} />
-  else if (view === '/agents' || view === '/mcp-access') content = <CloudAgents />
-  else if (view.startsWith('/settings')) content = <CloudSettings path={view} dark={dark} onTheme={() => setDark(!dark)} onLogout={() => { void logout() }} />
+  else if (view === '/agents' || view === '/mcp-access') content = <CloudAgents readOnlyOnly={member?.role === 'viewer'} />
+  else if (view.startsWith('/settings')) content = <CloudSettings member={member} path={view} dark={dark} onTheme={() => setDark(!dark)} onLogout={() => { void logout() }} />
   else if (navigation.some(item => item.path === view && item.cluster) || view === '/investigations') content = <SelectLiveCluster clusters={fleetScope} view={view} />
   else content = <CloudCapabilityGap title={view === '/alerts' ? 'Alerts' : 'Page unavailable'} description={view === '/alerts' ? 'Organization alert rules, delivery integrations and notification history are not implemented in this self-hosted Hub yet. The live Issues queue is available; it is not a substitute for alert delivery.' : 'This route is not implemented in the self-hosted Portal.'} />
 
@@ -215,7 +219,7 @@ function CloudShell({ userId }: { userId: string }) {
         <CloudLink href="/clusters" className="cloud-nav-item" aria-label="Clusters" aria-current={view === '/clusters' ? 'page' : undefined}><Server size={17} /><span>Clusters</span><small>{clusters.length}</small></CloudLink>
         <CloudLink href="/agents" className="cloud-nav-item" aria-label="Agents" aria-current={view === '/agents' || view === '/mcp-access' ? 'page' : undefined}><Bot size={17} /><span>Agents</span></CloudLink>
         <CloudLink href="/settings" className="cloud-nav-item" aria-label="Settings" aria-current={view.startsWith('/settings') ? 'page' : undefined}><Settings size={17} /><span>Settings</span></CloudLink>
-        <button className="cloud-setup" onClick={() => setPanel('setup')}><span>Setup</span><small>{credentials.isSuccess ? `${setupDone} of 2 done` : 'Checking access…'}</small><span className="cloud-setup-bar"><i style={{ width: `${setupDone * 50}%` }} /></span></button>
+        {canManage && <button className="cloud-setup" onClick={() => setPanel('setup')}><span>Setup</span><small>{credentials.isSuccess ? `${setupDone} of 2 done` : 'Checking access…'}</small><span className="cloud-setup-bar"><i style={{ width: `${setupDone * 50}%` }} /></span></button>}
         <div className="cloud-sidebar-footer"><button aria-label={dark ? 'Use light theme' : 'Use dark theme'} onClick={() => setDark(!dark)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button><button aria-label={collapsed ? 'Expand navigation' : 'Collapse navigation'} onClick={() => setCollapsed(!collapsed)}><ChevronsLeft size={17} /></button></div>
       </div>
     </aside>
@@ -235,7 +239,7 @@ function CloudShell({ userId }: { userId: string }) {
     </div>
     {panel === 'help' && <CloudDialog title="Help" onClose={() => setPanel(undefined)}><div className="cloud-form"><p>Self-hosted KubeAtlas Hub. Current state is queried through each cluster's outbound Agent connection.</p><a className="cloud-button" target="_blank" rel="noopener noreferrer" href="https://github.com/maomada/KubeAtlas/tree/main/docs">Project documentation<ExternalLink size={14} /></a><p>Keyboard shortcuts: Ctrl/Cmd+K or / opens fleet search. Escape closes menus.</p></div></CloudDialog>}
     {panel === 'notifications' && <CloudDialog title="Notifications" onClose={() => setPanel(undefined)}><div className="cloud-form"><p>Notification delivery and history are not configured in this self-hosted Hub. This is not an empty inbox confirmation.</p><CloudLink href="/issues" className="cloud-button" onClick={() => setPanel(undefined)}>View live issues</CloudLink></div></CloudDialog>}
-    {panel === 'account' && <CloudDialog title="Account" onClose={() => setPanel(undefined)}><div className="cloud-form"><strong className="cloud-account-identity">{userId}</strong><p>Authenticated Portal session. MCP tokens have their own expiry and do not share this session.</p><CloudLink href="/settings" className="cloud-button">Preferences</CloudLink><button className="cloud-button" onClick={() => { void logout() }}><LogOut size={16} />Sign out</button></div></CloudDialog>}
+    {panel === 'account' && <CloudDialog title="Account" onClose={() => setPanel(undefined)}><div className="cloud-form">{member && <strong>{member.displayName} · {member.role}</strong>}<code className="cloud-account-identity">{userId}</code><p>Authenticated Portal session. MCP tokens have their own expiry and do not share this session.</p><CloudLink href="/settings" className="cloud-button">Preferences</CloudLink><button className="cloud-button" onClick={() => { void logout() }}><LogOut size={16} />Sign out</button></div></CloudDialog>}
     {panel === 'setup' && <CloudDialog title="Set up your self-hosted Hub" onClose={() => setPanel(undefined)}><div className="cloud-form"><CloudLink href="/install" className="cloud-button"><Server size={16} />1. Connect a cluster</CloudLink><CloudLink href="/agents" className="cloud-button"><Bot size={16} />2. Create scoped MCP access</CloudLink><p>Cluster connection is verified live. Token client use must be checked in your chosen MCP client; creating a token alone is not a verified agent connection.</p></div></CloudDialog>}
   </div></FilterLocationProvider>
 }
@@ -260,9 +264,9 @@ function CloudCapabilityGap({ title, description }: { title: string; description
   return <div className="cloud-page"><div className="cloud-page-heading"><div><h1>{title}</h1><p>Not implemented in this Hub</p></div></div><section className="cloud-card"><h2>Capability unavailable</h2><p>{description}</p><CloudLink href="/clusters" className="cloud-text-button">View real cluster connections →</CloudLink></section></div>
 }
 
-function CloudAgents() {
+function CloudAgents({ readOnlyOnly = false }: { readOnlyOnly?: boolean }) {
   const endpoint = `${window.location.origin}/mcp-fleet`
-  return <div className="cloud-page cloud-agents"><div className="cloud-page-heading"><div><h1>Agents</h1><p>Connect an AI agent to your Kubernetes fleet through one MCP endpoint.</p></div></div><section className="cloud-card"><h2><Bot size={18} />Connect an AI agent</h2><p>Choose Streamable HTTP in your MCP client. Generate a scoped token below, then use its OpenCode configuration. OAuth is not implemented; keep OAuth disabled.</p><div className="cloud-endpoint"><code>{endpoint}</code><CopyButton value={endpoint} label="Copy endpoint" /></div><p className="cloud-muted">The source cluster still checks Kubernetes RBAC for every user. A writable token does not grant cluster-admin permissions.</p></section><MCPCredentials /></div>
+  return <div className="cloud-page cloud-agents"><div className="cloud-page-heading"><div><h1>Agents</h1><p>Connect an AI agent to your Kubernetes fleet through one MCP endpoint.</p></div></div><section className="cloud-card"><h2><Bot size={18} />Connect an AI agent</h2><p>Choose Streamable HTTP in your MCP client. Generate a scoped token below, then use its OpenCode configuration. MCP OAuth is not implemented; keep OAuth disabled in the MCP client. Portal SSO is a separate login flow.</p><div className="cloud-endpoint"><code>{endpoint}</code><CopyButton value={endpoint} label="Copy endpoint" /></div><p className="cloud-muted">The source cluster still checks Kubernetes RBAC for every user. A writable token does not grant cluster-admin permissions.</p></section><MCPCredentials readOnlyOnly={readOnlyOnly} /></div>
 }
 
 const settingGroups = [
@@ -271,7 +275,15 @@ const settingGroups = [
   { label: 'Advanced', items: [['/organization/notifications', 'Notifications'], ['/organization/integrations', 'Integrations']] },
 ]
 
-function CloudSettings({ path, dark, onTheme, onLogout }: { path: string; dark: boolean; onTheme: () => void; onLogout: () => void }) {
+function CloudSettings({ path, dark, onTheme, onLogout, member }: { path: string; dark: boolean; onTheme: () => void; onLogout: () => void; member?: HubMember }) {
   const selected = settingGroups.flatMap(group => group.items).find(([suffix]) => path === `/settings${suffix}`)
-  return <div className="cloud-settings"><aside><h1>Settings</h1>{settingGroups.map(group => <section key={group.label}><h2>{group.label}</h2>{group.items.map(([suffix, label]) => <CloudLink key={suffix} href={`/settings${suffix}`} aria-current={path === `/settings${suffix}` ? 'page' : undefined}>{label}</CloudLink>)}</section>)}</aside><div className="cloud-settings-main">{path === '/settings' ? <div className="cloud-page"><div className="cloud-page-heading"><div><h1>Preferences</h1><p>Personalize this browser's workspace.</p></div></div><section className="cloud-card"><h2>Appearance</h2><div className="cloud-preference"><div><strong>Theme</strong><p>Shared by Portal and embedded cluster views.</p></div><button className="cloud-button" onClick={onTheme}>{dark ? <Sun size={16} /> : <Moon size={16} />}{dark ? 'Switch to light' : 'Switch to dark'}</button></div></section></div> : path === '/settings/sessions' ? <div className="cloud-page"><h1>Sessions</h1><section className="cloud-card"><h2>Current browser session</h2><p>Sign out revokes this session and closes its live streams. This does not revoke independent MCP credentials.</p><button onClick={onLogout} className="cloud-button">Sign out</button></section></div> : path === '/settings/organization/agent-access' ? <CloudAgents /> : <CloudCapabilityGap title={selected?.[1] ?? 'Settings'} description="This organization-level control plane is not implemented yet. No settings, memberships or audit history are fabricated here. Cluster-local controls remain subject to the source's Kubernetes RBAC." />}</div></div>
+  let content: ReactNode
+  if (path === '/settings') content = <div className="cloud-page"><div className="cloud-page-heading"><div><h1>Preferences</h1><p>Personalize this browser's workspace.</p></div></div><section className="cloud-card"><h2>Appearance</h2><div className="cloud-preference"><div><strong>Theme</strong><p>Shared by Portal and embedded cluster views.</p></div><button className="cloud-button" onClick={onTheme}>{dark ? <Sun size={16} /> : <Moon size={16} />}{dark ? 'Switch to light' : 'Switch to dark'}</button></div></section></div>
+  else if (path === '/settings/sessions') content = <div className="cloud-page"><h1>Sessions</h1><section className="cloud-card"><h2>Current browser session</h2><p>Sign out revokes this session and closes its live streams. This does not revoke independent MCP credentials.</p><button onClick={onLogout} className="cloud-button">Sign out</button></section></div>
+  else if (path === '/settings/organization') content = <CloudOrganization member={member} />
+  else if (path === '/settings/organization/members') content = <CloudMembers member={member} />
+  else if (path === '/settings/organization/sso') content = <CloudSSO />
+  else if (path === '/settings/organization/agent-access') content = <CloudAgents readOnlyOnly={member?.role === 'viewer'} />
+  else content = <CloudCapabilityGap title={selected?.[1] ?? 'Settings'} description="This organization-level control plane is not implemented yet. No settings, memberships or audit history are fabricated here. Cluster-local controls remain subject to the source's Kubernetes RBAC." />
+  return <div className="cloud-settings"><aside><h1>Settings</h1>{settingGroups.map(group => <section key={group.label}><h2>{group.label}</h2>{group.items.map(([suffix, label]) => <CloudLink key={suffix} href={`/settings${suffix}`} aria-current={path === `/settings${suffix}` ? 'page' : undefined}>{label}</CloudLink>)}</section>)}</aside><div className="cloud-settings-main">{content}</div></div>
 }
