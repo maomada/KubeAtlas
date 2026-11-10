@@ -3,14 +3,54 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/maomada/KubeAtlas/internal/k8s"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	dynamicfake "k8s.io/client-go/dynamic/fake"
+	clienttesting "k8s.io/client-go/testing"
 )
+
+func TestPatchResourceForbiddenAtToolBoundary(t *testing.T) {
+	gvr := schema.GroupVersionResource{Version: "v1", Resource: "configmaps"}
+	cfg := &unstructured.Unstructured{Object: map[string]any{
+		"apiVersion": "v1", "kind": "ConfigMap",
+		"metadata": map[string]any{"name": "cfg", "namespace": "prod"},
+		"data":     map[string]any{"key": "old"},
+	}}
+	dyn := setupMCPDynamicResource(t, gvr, "ConfigMapList", k8s.APIResource{
+		Version: "v1", Kind: "ConfigMap", Name: "configmaps", Namespaced: true, Verbs: []string{"get", "list", "patch"},
+	}, cfg)
+	patches := 0
+	dyn.(*dynamicfake.FakeDynamicClient).PrependReactor("patch", "configmaps", func(clienttesting.Action) (bool, runtime.Object, error) {
+		patches++
+		return true, nil, apierrors.NewForbidden(gvr.GroupResource(), "cfg", errors.New("patch not allowed"))
+	})
+	call := logToolCall("patch_resource", handlePatchResource)
+	result, _, err := call(t.Context(), nil, patchResourceInput{
+		Kind: "ConfigMap", Namespace: "prod", Name: "cfg", PatchType: "merge", Patch: `{"data":{"key":"new"}}`,
+	})
+	if err != nil || result == nil || !result.IsError || patches != 1 {
+		t.Fatalf("result=%+v err=%v patch attempts=%d", result, err, patches)
+	}
+	body := decodeToolResult(t, result)
+	if body["error_code"] != "permission_denied" || result.StructuredContent == nil {
+		t.Fatalf("missing permission code: %+v", result)
+	}
+	live, err := dyn.Resource(gvr).Namespace("prod").Get(t.Context(), "cfg", metav1.GetOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value, _, _ := unstructured.NestedString(live.Object, "data", "key"); value != "old" {
+		t.Fatalf("denied patch changed object: %s", value)
+	}
+}
 
 func TestHandlePatchResourceValidation(t *testing.T) {
 	tests := []struct {

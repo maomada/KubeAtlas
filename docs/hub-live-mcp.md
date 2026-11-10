@@ -86,8 +86,15 @@ it is null when absent or invalid. Hub receipt time is separate, never a
 replacement observation timestamp. Directory results use `source: directory`.
 
 Failures expose `error_code`, `message`, `retryable`, `next`, and the same
-correlation fields. Known source read-reason codes are preserved; unclassified
-source errors use `source_tool_error`, retaining the original result. MCP wire
+correlation fields. Known source read-reason codes and `permission_denied` are
+preserved; unclassified source errors use `source_tool_error`, retaining the
+original result. Native tools normalize typed Kubernetes Forbidden errors at
+their common error boundary, including wrapped mutation failures, into
+`permission_denied` with `retryable: false`. This status can reflect RBAC or
+admission policy and does not by itself identify which identity or policy was
+responsible; inspect the retained source message. Existing specific read codes
+take precedence. The Hub never classifies permissions by matching error text.
+MCP wire
 syntax/transport errors retain the protocol's own error semantics. Arguments,
 payloads and bearer values are not copied into Hub audit log lines; only the
 credential ID, target, result code, timing and correlation ID are logged. These

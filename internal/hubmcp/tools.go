@@ -332,7 +332,7 @@ func sourceErrorCode(result *mcp.CallToolResult) string {
 			_ = json.Unmarshal([]byte(text.Text), &payload)
 		}
 	}
-	if readreason.Known(readreason.Code(payload.Code)) {
+	if payload.Code == "permission_denied" || readreason.Known(readreason.Code(payload.Code)) {
 		return payload.Code
 	}
 	return "source_tool_error"

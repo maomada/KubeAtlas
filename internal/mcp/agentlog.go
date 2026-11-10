@@ -119,9 +119,8 @@ func extractKindNamespace(input any) (kind string, ns string) {
 // had; the structured line is the machine-readable companion that downstream
 // tooling parses for response-size and latency data.
 //
-// An error carrying a read reason is returned as a tool result with
-// structuredContent (see readErrorResult) after it is logged; every other
-// error keeps the SDK's text-only tool error.
+// Errors carrying a read reason or typed Kubernetes Forbidden are returned as
+// structured tool results after logging; other errors keep the SDK's text form.
 func logToolCall[In any](
 	name string,
 	handler func(context.Context, *mcp.CallToolRequest, In) (*mcp.CallToolResult, any, error),
@@ -162,7 +161,7 @@ func logToolCall[In any](
 		} else {
 			log.Printf("\033[1;35m[MCP]\033[0m \033[1m%s\033[0m \033[32mOK\033[0m (%s)", name, dur.Round(time.Millisecond))
 		}
-		if structured, ok := readErrorResult(err); ok {
+		if structured, ok := toolErrorResult(err); ok {
 			result, extra, err = structured, nil, nil
 		}
 		if result != nil {

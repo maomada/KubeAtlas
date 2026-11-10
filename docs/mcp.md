@@ -842,6 +842,15 @@ a miss needs a complete read.
 | `connection_changed` | KubeAtlas's cluster connection changed during the read. | Confirm which cluster KubeAtlas is on, then retry |
 | `read_error` | An unexpected failure; the explanation says what. | Retry, or investigate |
 
+Outside these specific read errors, a typed Kubernetes Forbidden response
+(including a wrapped write failure) returns `error_code: permission_denied`
+and `retryable: false` in both text JSON and structured content. The original
+error and corrective guidance are retained. Check the operation's Kubernetes
+identity and applicable RBAC or admission policy before retrying; this code
+does not assert that user RBAC was the only possible cause. Plain error text
+containing "forbidden" is not reclassified. Existing specific read codes keep
+their meaning and coverage.
+
 The same table, as the action each code calls for, is
 `pkg/readreason/testdata/actions.json`.
 

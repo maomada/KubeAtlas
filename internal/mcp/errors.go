@@ -3,7 +3,32 @@ package mcp
 import (
 	"github.com/maomada/KubeAtlas/internal/k8s"
 	"github.com/maomada/KubeAtlas/pkg/readreason"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 )
+
+func toolErrorResult(err error) (*mcp.CallToolResult, bool) {
+	if result, ok := readErrorResult(err); ok {
+		return result, true
+	}
+	if !apierrors.IsForbidden(err) {
+		return nil, false
+	}
+	// A typed Forbidden can also come from admission policy, not just user RBAC.
+	body := map[string]any{
+		"error":      err.Error(),
+		"error_code": "permission_denied",
+		"retryable":  false,
+		"next":       "Check the Kubernetes identity and applicable RBAC or admission policy before retrying.",
+	}
+	result, _, marshalErr := toJSONResult(body)
+	if marshalErr != nil {
+		return nil, false
+	}
+	result.StructuredContent = body
+	result.SetError(err)
+	return result, true
+}
 
 // errNotConnected explains WHY the cluster is unavailable. MCP callers are
 // usually AI agents: a bare "not connected" reads as a dead end, when a

@@ -40,11 +40,22 @@ func setupHubMCP(t *testing.T) (*facade, hub.Principal, *atomic.Int32) {
 		s := mcp.NewServer(&mcp.Implementation{Name: "fixture", Version: "test"}, nil)
 		mcp.AddTool(s, &mcp.Tool{Name: "echo", Description: "Same catalog on both sources", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, func(_ context.Context, _ *mcp.CallToolRequest, input struct {
 			Value string `json:"value,omitempty"`
-		}) (*mcp.CallToolResult, any, error) { return &mcp.CallToolResult{Meta: mcp.Meta{"kubeatlas/observedAt": "2026-01-01T00:00:00Z"}, Content: []mcp.Content{&mcp.TextContent{Text: input.Value}}}, nil, nil })
+		}) (*mcp.CallToolResult, any, error) {
+			return &mcp.CallToolResult{Meta: mcp.Meta{"kubeatlas/observedAt": "2026-01-01T00:00:00Z"}, Content: []mcp.Content{&mcp.TextContent{Text: input.Value}}}, nil, nil
+		})
 		mcp.AddTool(s, &mcp.Tool{Name: "list_resources", Annotations: &mcp.ToolAnnotations{ReadOnlyHint: true}}, func(_ context.Context, _ *mcp.CallToolRequest, input struct {
 			Limit int `json:"limit,omitempty"`
-		}) (*mcp.CallToolResult, any, error) { body, _ := json.Marshal(input); return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil })
+		}) (*mcp.CallToolResult, any, error) {
+			body, _ := json.Marshal(input)
+			return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: string(body)}}}, nil, nil
+		})
 		if !readonly {
+			mcp.AddTool(s, &mcp.Tool{Name: "deny"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+				writes.Add(1)
+				body := map[string]any{"error_code": "permission_denied", "error": "Kubernetes rejected this operation", "retryable": false}
+				text, _ := json.Marshal(body)
+				return &mcp.CallToolResult{IsError: true, StructuredContent: body, Content: []mcp.Content{&mcp.TextContent{Text: string(text)}}}, nil, nil
+			})
 			mcp.AddTool(s, &mcp.Tool{Name: "mutate"}, func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
 				writes.Add(1)
 				return &mcp.CallToolResult{Content: []mcp.Content{&mcp.TextContent{Text: strings.Repeat("x", maxSourceBytes+1024)}}}, nil, nil
@@ -94,6 +105,35 @@ func setupHubMCP(t *testing.T) (*facade, hub.Principal, *atomic.Int32) {
 }
 
 func newEnvelope() *envelope { return &envelope{RequestID: "fixture", Source: "hub"} }
+
+func TestLiveHubSourcePermissionError(t *testing.T) {
+	f, p, writes := setupHubMCP(t)
+	p.ReadOnly = false
+	e := newEnvelope()
+	err := f.callTool(t.Context(), p, e, callInput{ClusterID: "alpha", Tool: "deny"})
+	result := finish(e, time.Now(), err)
+	if !result.IsError || e.ErrorCode != "permission_denied" || e.Retryable || writes.Load() != 1 {
+		t.Fatalf("permission code lost or write retried: %+v attempts=%d", e, writes.Load())
+	}
+	source, ok := e.Data.(*mcp.CallToolResult)
+	if !ok || !source.IsError || source.StructuredContent == nil || sourceErrorCode(source) != "permission_denied" || e.ClusterID != "alpha" || e.ConnectionID == "" {
+		t.Fatalf("source error/provenance lost: %+v", e)
+	}
+}
+
+func TestSourceErrorCodePermissionAllowlist(t *testing.T) {
+	for _, tc := range []struct{ text, code string }{
+		{`{"error_code":"permission_denied"}`, "permission_denied"},
+		{`{"error_code":"user_forbidden"}`, "user_forbidden"},
+		{`{"error_code":"unrecognized"}`, "source_tool_error"},
+		{`configmaps cfg is forbidden`, "source_tool_error"},
+	} {
+		result := &mcp.CallToolResult{IsError: true, Content: []mcp.Content{&mcp.TextContent{Text: tc.text}}}
+		if code := sourceErrorCode(result); code != tc.code {
+			t.Fatalf("code=%s want=%s for %q", code, tc.code, tc.text)
+		}
+	}
+}
 
 func TestLiveHubCatalogDeduplicationAndCursor(t *testing.T) {
 	f, p, _ := setupHubMCP(t)
