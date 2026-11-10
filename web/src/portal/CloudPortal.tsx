@@ -122,13 +122,25 @@ function CloudShell({ userId }: { userId: string }) {
     window.dispatchEvent(new StorageEvent('storage', { key: 'radar-theme', newValue: dark ? 'dark' : 'light' }))
   }, [dark])
   useEffect(() => {
-    const keydown = (event: KeyboardEvent) => {
-      const typing = (event.target as HTMLElement | null)?.closest('input, textarea, [contenteditable="true"]')
-      if ((event.key === 'k' && (event.ctrlKey || event.metaKey)) || (event.key === '/' && !typing)) { event.preventDefault(); searchRef.current?.focus() }
+    const openSearch = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      if (target?.closest('.monaco-editor, .xterm')) return
+      const typing = target?.closest('input, textarea, select, [contenteditable="true"]')
+      const slash = event.key === '/' && !typing && !event.ctrlKey && !event.metaKey && !event.altKey
+      if ((event.key === 'k' && (event.ctrlKey || event.metaKey)) || slash) {
+        event.preventDefault(); event.stopPropagation(); searchRef.current?.focus()
+      }
+    }
+    const closePanels = (event: KeyboardEvent) => {
       if (event.key === 'Escape') { setPanel(undefined); setMenuOpen(false) }
     }
-    window.addEventListener('keydown', keydown)
-    return () => window.removeEventListener('keydown', keydown)
+    // Embedded views also bind / and can asynchronously steal focus.
+    window.addEventListener('keydown', openSearch, true)
+    window.addEventListener('keydown', closePanels)
+    return () => {
+      window.removeEventListener('keydown', openSearch, true)
+      window.removeEventListener('keydown', closePanels)
+    }
   }, [])
   useEffect(() => { setMenuOpen(false); setPanel(undefined); setActionError(undefined) }, [location.pathname])
   useEffect(() => () => { void nativeClient.cancelQueries(); nativeClient.clear() }, [nativeClient])

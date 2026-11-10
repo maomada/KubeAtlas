@@ -61,6 +61,71 @@ it.each([
   }
 })
 
+it('reserves host search shortcuts before native listeners without stealing editor keys', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/settings?cluster=alpha')
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input)
+    if (path === '/api/hub') return Response.json({ enabled: true, userId: 'test-user' })
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', name: 'Alpha', state: 'connected' }] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
+    throw new Error(`Unexpected request: ${path}`)
+  }))
+  const scrollIntoView = Element.prototype.scrollIntoView
+  Element.prototype.scrollIntoView = vi.fn()
+  const host = document.createElement('div')
+  const nativeInput = document.createElement('input')
+  document.body.append(host, nativeInput)
+  const nativeShortcut = vi.fn((event: KeyboardEvent) => {
+    if (event.key === '/' || event.key === 'k') setTimeout(() => nativeInput.focus(), 0)
+  })
+  document.addEventListener('keydown', nativeShortcut)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('Alpha')))
+    const search = host.querySelector('header input')!
+    for (const keys of [{ key: '/' }, { key: 'k', ctrlKey: true }, { key: 'k', metaKey: true }]) {
+      const event = new KeyboardEvent('keydown', { ...keys, bubbles: true, cancelable: true })
+      await act(async () => {
+        document.body.dispatchEvent(event)
+        await new Promise(resolve => setTimeout(resolve, 0))
+      })
+      expect(event.defaultPrevented).toBe(true)
+      expect(nativeShortcut).not.toHaveBeenCalled()
+      expect(document.activeElement).toBe(search)
+      act(() => (search as HTMLElement).blur())
+    }
+    act(() => nativeInput.focus())
+    const typedSlash = new KeyboardEvent('keydown', { key: '/', bubbles: true, cancelable: true })
+    await act(async () => {
+      nativeInput.dispatchEvent(typedSlash)
+      await new Promise(resolve => setTimeout(resolve, 0))
+    })
+    expect(typedSlash.defaultPrevented).toBe(false)
+    expect(document.activeElement).toBe(nativeInput)
+    for (const editor of ['monaco-editor', 'xterm']) {
+      nativeInput.className = editor
+      const event = new KeyboardEvent('keydown', { key: 'k', ctrlKey: true, bubbles: true, cancelable: true })
+      await act(async () => {
+        nativeInput.dispatchEvent(event)
+        await new Promise(resolve => setTimeout(resolve, 0))
+      })
+      expect(event.defaultPrevented).toBe(false)
+      expect(document.activeElement).toBe(nativeInput)
+    }
+  } finally {
+    document.removeEventListener('keydown', nativeShortcut)
+    act(() => root.unmount())
+    host.remove(); nativeInput.remove()
+    Element.prototype.scrollIntoView = scrollIntoView
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
 it('shares the native namespace cache when entering and switching clusters', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState({}, '', '/settings?cluster=alpha')
