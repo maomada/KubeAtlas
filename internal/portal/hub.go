@@ -26,13 +26,16 @@ type HubConfig struct {
 }
 
 type portalHub struct {
-	store     *hubstate.Store
-	transport *hub.Hub
-	policy    *hubRequestPolicy
-	ownerID   string
-	userID    string
-	groups    []string
-	mcp       http.Handler
+	store       *hubstate.Store
+	transport   *hub.Hub
+	policy      *hubRequestPolicy
+	ownerID     string
+	userID      string
+	groups      []string
+	displayName string
+	startedAt   time.Time
+	oidcConfig  *OIDCConfig
+	mcp         http.Handler
 }
 
 func newPortalHub(credentials Credentials) (*portalHub, error) {
@@ -42,7 +45,7 @@ func newPortalHub(credentials Credentials) (*portalHub, error) {
 	}
 	digest := sha256.Sum256([]byte(credentials.Username))
 	id := hex.EncodeToString(digest[:])
-	p := &portalHub{store: cfg.Store, ownerID: "portal:" + id, userID: "kubeatlas:portal:" + id, groups: slices.Clone(cfg.Groups)}
+	p := &portalHub{store: cfg.Store, ownerID: "portal:" + id, userID: "kubeatlas:portal:" + id, groups: slices.Clone(cfg.Groups), displayName: credentials.Username, startedAt: time.Now().UTC(), oidcConfig: credentials.OIDC}
 	if len(p.groups) > 128 || !pkgauth.ForwardedIdentityAllowed(p.userID, p.groups, true) {
 		return nil, errors.New("Hub identity groups are invalid")
 	}
@@ -112,17 +115,39 @@ func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 		hubHTTPError(w, http.StatusUnauthorized, "authentication_required", "A Portal login session is required; bearer credentials cannot manage the Hub")
 		return true
 	}
+	ownerID, member, ok := h.sessionMember(r)
+	if !ok {
+		hubHTTPError(w, http.StatusUnauthorized, "authentication_required", "A current Portal member session is required")
+		return true
+	}
 	switch {
 	case r.URL.Path == "/api/hub":
 		if hubMethod(w, r, http.MethodGet) {
-			hubJSON(w, http.StatusOK, map[string]any{"enabled": true, "source": "live", "mcpReady": p.mcp != nil, "userId": p.userID, "groups": append([]string{}, p.groups...)})
+			hubJSON(w, http.StatusOK, map[string]any{"enabled": true, "source": "live", "mcpReady": p.mcp != nil, "userId": member.UserID, "groups": append([]string{}, member.KubernetesGroups...), "member": member})
 		}
 	case strings.HasPrefix(r.URL.Path, "/api/mcp/credentials"):
-		p.manageCredentials(w, r)
+		if !requireActiveMember(w, member) {
+			return true
+		}
+		p.manageCredentials(w, r, ownerID, member)
+	case r.URL.Path == "/api/hub/organization":
+		p.manageOrganization(w, r, member)
+	case r.URL.Path == "/api/hub/members":
+		p.manageMembers(w, r, member)
+	case strings.HasPrefix(r.URL.Path, "/api/hub/members/"):
+		p.updateMember(h, w, r, member)
+	case r.URL.Path == "/api/hub/sso":
+		p.serveSSO(w, r, member)
 	case r.URL.Path == "/api/hub/clusters" || strings.HasPrefix(r.URL.Path, "/api/hub/clusters/"):
-		p.manageClusters(w, r)
+		if !requireActiveMember(w, member) {
+			return true
+		}
+		p.manageClusters(w, r, member)
 	case r.URL.Path == "/api/hub/groups" || strings.HasPrefix(r.URL.Path, "/api/hub/groups/"):
-		p.manageGroups(w, r)
+		if !requireActiveMember(w, member) {
+			return true
+		}
+		p.manageGroups(w, r, member)
 	default:
 		hubHTTPError(w, http.StatusNotFound, "not_found", "Hub route not found")
 	}
@@ -143,10 +168,29 @@ func (p *portalHub) serveBearer(w http.ResponseWriter, r *http.Request) {
 		hubHTTPError(w, http.StatusUnauthorized, "credential_invalid", "A single MCP Bearer credential is required")
 		return
 	}
-	credential, err := p.store.Authenticate(token, p.ownerID)
+	ownerID, err := p.store.CredentialOwner(token)
+	if err != nil {
+		hubStoreError(w, err)
+		return
+	}
+	member, ok := p.memberForOwner(ownerID)
+	if !ok {
+		hubHTTPError(w, http.StatusUnauthorized, "credential_invalid", "Credential owner is not available")
+		return
+	}
+	if !requireActiveMember(w, member) {
+		return
+	}
+	credential, err := p.store.Authenticate(token, ownerID)
 	if err != nil {
 		w.Header().Set("WWW-Authenticate", `Bearer realm="kubeatlas-hub", error="invalid_token"`)
 		hubStoreError(w, err)
+		return
+	}
+	allowed := p.memberClusterIDs(member)
+	credential.ClusterIDs = intersectMemberScope(credential.ClusterIDs, allowed)
+	if len(credential.ClusterIDs) == 0 {
+		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Credential has no current cluster access")
 		return
 	}
 	switch r.URL.Path {
@@ -161,7 +205,12 @@ func (p *portalHub) serveBearer(w http.ResponseWriter, r *http.Request) {
 		if !hubMethod(w, r, http.MethodPost) || !hubDecode(w, r, &input, "ttlSeconds") {
 			return
 		}
-		issued, err := p.store.Refresh(token, p.ownerID, input.TTLSeconds)
+		var issued hubstate.IssuedCredential
+		if ownerID == p.ownerID {
+			issued, err = p.store.Refresh(token, ownerID, input.TTLSeconds)
+		} else {
+			issued, err = p.store.RefreshForMember(token, ownerID, input.TTLSeconds)
+		}
 		if err != nil {
 			hubStoreError(w, err)
 			return
@@ -172,7 +221,7 @@ func (p *portalHub) serveBearer(w http.ResponseWriter, r *http.Request) {
 			hubHTTPError(w, http.StatusServiceUnavailable, "live_mcp_unavailable", "Live MCP is not configured; no snapshot fallback is used")
 			return
 		}
-		principal := hub.Principal{CredentialID: credential.ID, UserID: p.userID, Groups: p.groups, ClusterIDs: credential.ClusterIDs, ReadOnly: credential.ReadOnly}
+		principal := hub.Principal{CredentialID: credential.ID, UserID: member.UserID, Groups: member.KubernetesGroups, ClusterIDs: credential.ClusterIDs, ReadOnly: credential.ReadOnly || member.Role == "viewer"}
 		request := r.Clone(hub.ContextWithPrincipal(r.Context(), principal))
 		request.Header.Del("Authorization")
 		request.Header.Del("Cookie")
@@ -197,6 +246,9 @@ func hubJSON(w http.ResponseWriter, status int, value any) {
 }
 
 func hubHTTPError(w http.ResponseWriter, status int, code, message string) {
+	if w.Header().Get("X-Request-ID") == "" {
+		w.Header().Set("X-Request-ID", rand.Text())
+	}
 	hubJSON(w, status, map[string]any{"error_code": code, "message": message, "requestId": w.Header().Get("X-Request-ID"), "retryable": status == http.StatusServiceUnavailable})
 }
 
@@ -208,9 +260,11 @@ func hubStoreError(w http.ResponseWriter, err error) {
 		switch code {
 		case "invalid_parameters", "invalid_scope":
 			status = http.StatusBadRequest
+		case "permission_denied", "member_pending", "member_disabled":
+			status = http.StatusForbidden
 		case "conflict":
 			status = http.StatusConflict
-		case "cluster_not_found":
+		case "cluster_not_found", "member_not_found":
 			status = http.StatusNotFound
 		case "credential_invalid", "credential_expired", "credential_revoked", "credential_refresh_expired":
 			status = http.StatusUnauthorized

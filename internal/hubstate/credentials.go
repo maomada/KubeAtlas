@@ -2,6 +2,7 @@ package hubstate
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"slices"
 	"strings"
@@ -30,6 +31,37 @@ func (s *Store) Issue(ownerID string, input IssueInput) (IssuedCredential, error
 	if err != nil {
 		return IssuedCredential{}, err
 	}
+	return s.issueLocked(ownerID, input, ids, ttl)
+}
+
+func (s *Store) IssueForMember(ownerID string, input IssueInput) (IssuedCredential, error) {
+	if !validOwner(ownerID) || !validText(input.Label, 128, false) {
+		return IssuedCredential{}, failure("invalid_parameters")
+	}
+	ttl, err := ttlSeconds(input.TTLSeconds, defaultTTL)
+	if err != nil {
+		return IssuedCredential{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	member, allowed, err := s.activeMemberScopeLocked(ownerID)
+	if err != nil {
+		return IssuedCredential{}, err
+	}
+	ids, err := scope(input.ClusterIDs, s.data.Clusters, false)
+	if err != nil {
+		return IssuedCredential{}, err
+	}
+	if !subsetScope(ids, allowed) {
+		return IssuedCredential{}, failure("permission_denied")
+	}
+	if member.Role == "viewer" {
+		input.ReadOnly = true
+	}
+	return s.issueLocked(ownerID, input, ids, ttl)
+}
+
+func (s *Store) issueLocked(ownerID string, input IssueInput, ids []string, ttl int) (IssuedCredential, error) {
 	now := s.now().UTC()
 	next := s.next(now)
 	if len(next.Credentials) >= maxCredentials {
@@ -72,6 +104,28 @@ func (s *Store) matchCredential(token, ownerID string) (storedCredential, error)
 	return matched, nil
 }
 
+func (s *Store) CredentialOwner(token string) (string, error) {
+	if !tokenShape(token, mcpPrefix) {
+		return "", failure("credential_invalid")
+	}
+	candidate := digest(token)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var ownerID string
+	var found int
+	for _, credential := range s.data.Credentials {
+		match := subtle.ConstantTimeCompare([]byte(credential.Digest), []byte(candidate))
+		if match == 1 {
+			ownerID = credential.OwnerID
+			found = 1
+		}
+	}
+	if found != 1 {
+		return "", failure("credential_invalid")
+	}
+	return ownerID, nil
+}
+
 func credentialStatus(c storedCredential, now time.Time) error {
 	if now.Before(c.CreatedAt) {
 		return failure("credential_invalid")
@@ -108,6 +162,27 @@ func (s *Store) Refresh(token, ownerID string, ttlSeconds int) (IssuedCredential
 	return s.renew(c, ttlSeconds)
 }
 
+func (s *Store) RefreshForMember(token, ownerID string, ttlSeconds int) (IssuedCredential, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old, err := s.matchCredential(token, ownerID)
+	if err != nil {
+		return IssuedCredential{}, err
+	}
+	member, allowed, err := s.activeMemberScopeLocked(ownerID)
+	if err != nil {
+		return IssuedCredential{}, err
+	}
+	scope := intersectScope(old.ClusterIDs, allowed)
+	if len(scope) == 0 {
+		return IssuedCredential{}, failure("permission_denied")
+	}
+	if member.Role == "viewer" {
+		old.ReadOnly = true
+	}
+	return s.renewWithScope(old, ttlSeconds, scope)
+}
+
 func (s *Store) Rotate(ownerID, id string, ttlSeconds int) (IssuedCredential, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -118,7 +193,32 @@ func (s *Store) Rotate(ownerID, id string, ttlSeconds int) (IssuedCredential, er
 	return s.renew(c, ttlSeconds)
 }
 
+func (s *Store) RotateForMember(ownerID, id string, ttlSeconds int) (IssuedCredential, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	old, ok := s.data.Credentials[id]
+	if !ok || old.OwnerID != ownerID {
+		return IssuedCredential{}, failure("credential_invalid")
+	}
+	member, allowed, err := s.activeMemberScopeLocked(ownerID)
+	if err != nil {
+		return IssuedCredential{}, err
+	}
+	scope := intersectScope(old.ClusterIDs, allowed)
+	if len(scope) == 0 {
+		return IssuedCredential{}, failure("permission_denied")
+	}
+	if member.Role == "viewer" {
+		old.ReadOnly = true
+	}
+	return s.renewWithScope(old, ttlSeconds, scope)
+}
+
 func (s *Store) renew(old storedCredential, requestedTTL int) (IssuedCredential, error) {
+	return s.renewWithScope(old, requestedTTL, old.ClusterIDs)
+}
+
+func (s *Store) renewWithScope(old storedCredential, requestedTTL int, clusterIDs []string) (IssuedCredential, error) {
 	now := s.now().UTC()
 	if err := credentialStatus(old, now); err != nil {
 		return IssuedCredential{}, err
@@ -148,6 +248,10 @@ func (s *Store) renew(old storedCredential, requestedTTL int) (IssuedCredential,
 	c := old
 	c.Credential = cloneCredential(old.Credential)
 	c.ID, c.Digest, c.CreatedAt, c.TTLSeconds = id, hash, now, ttl
+	c.ClusterIDs = append([]string{}, clusterIDs...)
+	if old.ReadOnly {
+		c.ReadOnly = true
+	}
 	c.ExpiresAt = now.Add(time.Duration(ttl) * time.Second)
 	if c.ExpiresAt.After(c.RefreshUntil) {
 		c.ExpiresAt = c.RefreshUntil

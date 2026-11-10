@@ -27,9 +27,10 @@ type viewerSessions struct {
 }
 
 type viewerSession struct {
-	ctx    context.Context
-	cancel context.CancelFunc
-	timer  *time.Timer
+	ownerID string
+	ctx     context.Context
+	cancel  context.CancelFunc
+	timer   *time.Timer
 }
 
 func newViewerSessions() *viewerSessions {
@@ -79,8 +80,38 @@ func (h *Handler) hasViewerSession(r *http.Request) bool {
 		h.sessions.mu.Unlock()
 		return false
 	}
+	session := h.sessions.active[key]
+	ownerID := ""
+	if session != nil {
+		ownerID = session.ownerID
+	}
 	h.sessions.mu.Unlock()
+	if h.liveHub != nil && ownerID != "" && ownerID != h.liveHub.ownerID {
+		member, exists := h.liveHub.store.Member(ownerID)
+		if !exists || member.Status == "disabled" {
+			h.sessions.mu.Lock()
+			h.sessions.removeLocked(key)
+			h.sessions.mu.Unlock()
+			return false
+		}
+	}
 	return true
+}
+
+func (h *Handler) sessionOwnerID(r *http.Request) (string, bool) {
+	key, ok := h.sessionHash(r)
+	if !ok {
+		return "", false
+	}
+	h.sessions.mu.Lock()
+	defer h.sessions.mu.Unlock()
+	expires, exists := h.sessions.expires[key]
+	session := h.sessions.active[key]
+	if !exists || session == nil || !h.sessions.now().Before(expires) {
+		h.sessions.removeLocked(key)
+		return "", false
+	}
+	return session.ownerID, true
 }
 
 func (h *Handler) viewerSessionContext(r *http.Request) (context.Context, func(), bool) {
@@ -128,6 +159,16 @@ func (s *viewerSessions) expire(key [32]byte, expected *viewerSession) {
 	s.mu.Unlock()
 }
 
+func (s *viewerSessions) cancelOwner(ownerID string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, session := range s.active {
+		if session.ownerID == ownerID {
+			s.removeLocked(key)
+		}
+	}
+}
+
 func (s *viewerSessions) close() {
 	s.mu.Lock()
 	for key := range s.expires {
@@ -141,6 +182,38 @@ func (h *Handler) setSessionCookie(w http.ResponseWriter, value string, maxAge i
 		Name: h.cookieName(), Value: value, Path: "/", MaxAge: maxAge,
 		HttpOnly: true, Secure: h.secureCookies, SameSite: http.SameSiteStrictMode,
 	})
+}
+
+func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, ownerID string, expires time.Time) bool {
+	var random [32]byte
+	if _, err := rand.Read(random[:]); err != nil {
+		return false
+	}
+	token := base64.RawURLEncoding.EncodeToString(random[:])
+	key := sha256.Sum256([]byte(token))
+	h.sessions.mu.Lock()
+	now := h.sessions.now()
+	for existing, expiry := range h.sessions.expires {
+		if !now.Before(expiry) {
+			h.sessions.removeLocked(existing)
+		}
+	}
+	if old, ok := h.sessionHash(r); ok {
+		h.sessions.removeLocked(old)
+	}
+	if !expires.After(now) || !expires.Before(now.Add(sessionLifetime+time.Second)) ||
+		len(h.sessions.expires) >= maxViewerSessions {
+		h.sessions.mu.Unlock()
+		return false
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	session := &viewerSession{ownerID: ownerID, ctx: ctx, cancel: cancel}
+	h.sessions.expires[key] = expires
+	h.sessions.active[key] = session
+	session.timer = time.AfterFunc(expires.Sub(now), func() { h.sessions.expire(key, session) })
+	h.sessions.mu.Unlock()
+	h.setSessionCookie(w, token, int(expires.Sub(now).Seconds()))
+	return true
 }
 
 func authMutation(w http.ResponseWriter, r *http.Request) bool {
@@ -193,32 +266,14 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "invalid credentials", http.StatusUnauthorized)
 		return
 	}
-	var random [32]byte
-	_, _ = rand.Read(random[:])
-	token := base64.RawURLEncoding.EncodeToString(random[:])
-	h.sessions.mu.Lock()
-	now := h.sessions.now()
-	for key, expires := range h.sessions.expires {
-		if !now.Before(expires) {
-			h.sessions.removeLocked(key)
-		}
+	ownerID := ""
+	if h.liveHub != nil {
+		ownerID = h.liveHub.ownerID
 	}
-	if key, ok := h.sessionHash(r); ok {
-		h.sessions.removeLocked(key)
-	}
-	if len(h.sessions.expires) >= maxViewerSessions {
-		h.sessions.mu.Unlock()
+	if !h.createSession(w, r, ownerID, h.sessions.now().Add(sessionLifetime)) {
 		http.Error(w, "session capacity reached", http.StatusServiceUnavailable)
 		return
 	}
-	key := sha256.Sum256([]byte(token))
-	ctx, cancel := context.WithCancel(context.Background())
-	session := &viewerSession{ctx: ctx, cancel: cancel}
-	h.sessions.expires[key] = now.Add(sessionLifetime)
-	h.sessions.active[key] = session
-	session.timer = time.AfterFunc(sessionLifetime, func() { h.sessions.expire(key, session) })
-	h.sessions.mu.Unlock()
-	h.setSessionCookie(w, token, int(sessionLifetime.Seconds()))
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -226,11 +281,16 @@ func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {
 	if !authMutation(w, r) {
 		return
 	}
+	ownerID, _ := h.sessionOwnerID(r)
 	if key, ok := h.sessionHash(r); ok {
 		h.sessions.mu.Lock()
 		h.sessions.removeLocked(key)
 		h.sessions.mu.Unlock()
 	}
 	h.setSessionCookie(w, "", -1)
+	if h.oidc != nil && ownerID != "" && ownerID != h.liveHub.ownerID {
+		hubJSON(w, http.StatusOK, map[string]string{"logoutUrl": h.oidcLogoutURL()})
+		return
+	}
 	w.WriteHeader(http.StatusNoContent)
 }

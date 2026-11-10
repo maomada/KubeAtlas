@@ -34,11 +34,28 @@ func (p *portalHub) directory() []hubDirectoryEntry {
 	return entries
 }
 
-func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request) {
+func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, member hubstate.Member) {
 	const base = "/api/hub/clusters"
 	if r.URL.Path == base {
 		if r.Method == http.MethodGet {
-			hubJSON(w, http.StatusOK, map[string]any{"clusters": p.directory(), "serverTime": time.Now().UTC()})
+			entries := p.directory()
+			if member.Role != "owner" && member.Role != "admin" {
+				allowed := make(map[string]struct{}, len(member.ClusterIDs))
+				for _, id := range member.ClusterIDs {
+					allowed[id] = struct{}{}
+				}
+				filtered := make([]hubDirectoryEntry, 0, len(entries))
+				for _, entry := range entries {
+					if _, ok := allowed[entry.ID]; ok {
+						filtered = append(filtered, entry)
+					}
+				}
+				entries = filtered
+			}
+			hubJSON(w, http.StatusOK, map[string]any{"clusters": entries, "serverTime": time.Now().UTC()})
+			return
+		}
+		if !requireHubAdmin(w, member) {
 			return
 		}
 		var input hubstate.ClusterInput
@@ -51,6 +68,9 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		hubJSON(w, http.StatusCreated, issued)
+		return
+	}
+	if !requireHubAdmin(w, member) {
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, base+"/"), "/")
@@ -92,10 +112,35 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (p *portalHub) manageGroups(w http.ResponseWriter, r *http.Request) {
+func (p *portalHub) manageGroups(w http.ResponseWriter, r *http.Request, member hubstate.Member) {
 	const base = "/api/hub/groups"
 	if r.URL.Path == base && r.Method == http.MethodGet {
-		hubJSON(w, http.StatusOK, map[string]any{"groups": p.store.Groups()})
+		groups := p.store.Groups()
+		if member.Role != "owner" && member.Role != "admin" {
+			allowed := make(map[string]struct{}, len(member.ClusterIDs))
+			for _, id := range member.ClusterIDs {
+				allowed[id] = struct{}{}
+			}
+			filtered := make([]hubstate.Group, 0, len(groups))
+			for _, group := range groups {
+				original := len(group.ClusterIDs)
+				ids := make([]string, 0, original)
+				for _, id := range group.ClusterIDs {
+					if _, ok := allowed[id]; ok {
+						ids = append(ids, id)
+					}
+				}
+				if len(ids) != 0 || original == 0 {
+					group.ClusterIDs = ids
+					filtered = append(filtered, group)
+				}
+			}
+			groups = filtered
+		}
+		hubJSON(w, http.StatusOK, map[string]any{"groups": groups})
+		return
+	}
+	if !requireHubAdmin(w, member) {
 		return
 	}
 	method, id := http.MethodPost, ""

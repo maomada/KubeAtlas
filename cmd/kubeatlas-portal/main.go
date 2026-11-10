@@ -36,6 +36,10 @@ func main() {
 	fleetDataFile := flag.String("fleet-data-file", "", "Persistent Fleet state JSON file (default: <data-file directory>/fleet/state.json)")
 	hubStateFile := flag.String("hub-state-file", os.Getenv("KUBEATLAS_PORTAL_HUB_STATE_FILE"), "Enable live Hub mode with this persistent state JSON file; no snapshot fallback")
 	hubGroups := flag.String("hub-groups", os.Getenv("KUBEATLAS_PORTAL_HUB_GROUPS"), "Comma-separated Kubernetes identity groups for the Portal user in Hub mode; grants still require cluster RBAC")
+	oidcIssuer := flag.String("oidc-issuer", os.Getenv("KUBEATLAS_PORTAL_OIDC_ISSUER"), "OIDC issuer URL for Hub SSO")
+	oidcClientID := flag.String("oidc-client-id", os.Getenv("KUBEATLAS_PORTAL_OIDC_CLIENT_ID"), "OIDC client ID for Hub SSO")
+	oidcRedirectURL := flag.String("oidc-redirect-url", os.Getenv("KUBEATLAS_PORTAL_OIDC_REDIRECT_URL"), "Fixed OIDC callback URL for Hub SSO")
+	oidcCACert := flag.String("oidc-ca-cert", os.Getenv("KUBEATLAS_PORTAL_OIDC_CA_CERT"), "Optional CA certificate file for the OIDC issuer")
 	insecureCookie := flag.Bool("insecure-cookie", false, "Allow non-Secure viewer cookies for loopback HTTP development only")
 	mcpAllowedHosts := flag.String("mcp-allowed-hosts", os.Getenv("KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS"), "Comma-separated exact external host[:port] authorities allowed for /mcp-fleet behind a trusted proxy; no wildcards")
 	flag.Parse()
@@ -58,6 +62,9 @@ func main() {
 	}
 	if err := configureHub(&credentials, *hubStateFile, *hubGroups); err != nil {
 		log.Fatalf("portal Hub configuration is invalid: %v", err)
+	}
+	if err := configureOIDC(&credentials, *oidcIssuer, *oidcClientID, *oidcRedirectURL, *oidcCACert, os.Getenv("KUBEATLAS_PORTAL_OIDC_CLIENT_SECRET")); err != nil {
+		log.Fatalf("portal OIDC configuration is invalid: %v", err)
 	}
 	credentials.AllowInsecureCookies = *insecureCookie
 	if strings.TrimSpace(*mcpAllowedHosts) != "" {
@@ -167,6 +174,25 @@ func configureHub(credentials *portal.Credentials, stateFile, groups string) err
 		}
 	}
 	credentials.Hub = config
+	return nil
+}
+
+func configureOIDC(credentials *portal.Credentials, issuer, clientID, redirectURL, caCertFile, clientSecret string) error {
+	configured := issuer != "" || clientID != "" || redirectURL != "" || caCertFile != "" || clientSecret != ""
+	if !configured {
+		return nil
+	}
+	if credentials.Hub == nil {
+		return errors.New("OIDC requires --hub-state-file")
+	}
+	if strings.TrimSpace(issuer) == "" || strings.TrimSpace(clientID) == "" ||
+		strings.TrimSpace(redirectURL) == "" || strings.TrimSpace(clientSecret) == "" {
+		return errors.New("OIDC issuer, client ID, redirect URL, and client secret must be configured together")
+	}
+	credentials.OIDC = &portal.OIDCConfig{
+		Issuer: issuer, ClientID: clientID, RedirectURL: redirectURL,
+		CACertFile: caCertFile, ClientSecret: clientSecret,
+	}
 	return nil
 }
 
