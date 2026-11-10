@@ -5,7 +5,7 @@ import { kindToPluralWithGroup } from '../utils/navigation'
 import type { HubCluster } from './cloudApi'
 import { clusterPage } from './cloudApi'
 import { buildFleetApplications, type ApplicationTarget } from './cloudApplications'
-import { useFleetQuery } from './cloudFleet'
+import { issueCoverageComplete, useFleetQuery } from './cloudFleet'
 import { FleetCoverage } from './CloudHome'
 import { CloudDialog, CloudError, CloudLink, CloudLoading } from './CloudShared'
 import { navigateCloud } from './cloudNavigation'
@@ -36,9 +36,9 @@ export function CloudIssues({ clusters }: { clusters: HubCluster[] }) {
   const [namespace, setNamespace] = useState('')
   const allIssues = useMemo(() => query.data?.flatMap(result => (result.data?.issues ?? []).map(issue => ({ ...issue, cluster_id: result.cluster.id }))) ?? [], [query.data])
   const issues = allIssues.filter(issue => (!severity || issue.severity === severity) && (!namespace || issue.namespace === namespace) && [issue.name, issue.namespace, issue.kind, issue.message].join(' ').toLowerCase().includes(search.toLowerCase()))
-  const incomplete = query.data?.filter(result => result.data && (result.data.visibility?.state === 'degraded' || result.data.unchecked_sources?.length || (result.data.total_matched ?? 0) > (result.data.total ?? result.data.issues.length))) ?? []
+  const incomplete = query.data?.filter(result => result.data && !issueCoverageComplete(result.data)) ?? []
   const anyData = !!query.data?.some(result => result.data)
-  const complete = !!query.data?.length && query.data.every(result => result.data && !result.error) && !incomplete.length
+  const complete = clusters.length > 0 && !query.isFetching && !query.error && query.data?.length === clusters.length && query.data.every(result => result.data && !result.error) && !incomplete.length
   return <div className="cloud-page"><div className="cloud-page-heading"><div><h1>Issues</h1><p>What's broken right now in the selected clusters — a shared triage queue.</p></div><CloudLink className="cloud-button" href="/settings/organization/issues">Manage what's tracked</CloudLink></div><FleetCoverage results={query.data} />{query.error && <CloudError error={query.error} />}{incomplete.length > 0 && <p role="status" className="cloud-coverage">Issue sources are incomplete or truncated in {incomplete.map(result => result.cluster.name).join(', ')}. An empty queue is not an all-clear.</p>}
     <div className="cloud-filters"><input type="search" aria-label="Search issues" placeholder="Search issues…" value={search} onChange={event => setSearch(event.target.value)} /><select aria-label="Severity" value={severity} onChange={event => setSeverity(event.target.value)}><option value="">Severity: Any</option><option value="critical">Critical</option><option value="warning">Warning</option></select><select aria-label="Namespace" value={namespace} onChange={event => setNamespace(event.target.value)}><option value="">Namespace: Any</option>{Array.from(new Set(allIssues.map(issue => issue.namespace))).sort().filter(Boolean).map(value => <option key={value}>{value}</option>)}</select></div>
     {query.isPending ? <CloudLoading /> : issues.length ? <IssuesView issues={issues} anyData={anyData} onResourceClick={ref => navigateCloud(resourceHref(ref))} resourceHref={resourceHref} clusterLabel={issue => clusters.find(cluster => cluster.id === issue.cluster_id)?.name} /> : search || severity || namespace ? <div className="cloud-empty"><h2>No issues match these filters</h2><button className="cloud-button" onClick={() => { setSearch(''); setSeverity(''); setNamespace('') }}>Clear filters</button></div> : complete ? <IssuesView issues={[]} anyData /> : <div className="cloud-empty"><h2>Issue visibility is incomplete</h2><p>No issues were returned by the available sources. Resolve the coverage warnings before treating this as healthy.</p></div>}

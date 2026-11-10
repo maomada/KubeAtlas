@@ -38,6 +38,28 @@ func resourceIssuesRequest(t *testing.T, s *Server, path string) *httptest.Respo
 	return w
 }
 
+func TestIssuesNoNamespaceAccessReportsDegradedVisibility(t *testing.T) {
+	s := newAuthServer(auth.Config{Mode: "proxy"})
+	s.permCache.Set("pg-user", nil, &auth.UserPermissions{AllowedNamespaces: []string{}})
+	w := resourceIssuesRequest(t, s, "/api/issues")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", w.Code, w.Body.String())
+	}
+	var response struct {
+		Issues     []issuesapi.Issue      `json:"issues"`
+		Visibility *k8s.VisibilitySummary `json:"visibility"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &response); err != nil {
+		t.Fatal(err)
+	}
+	if response.Issues == nil || len(response.Issues) != 0 || response.Visibility == nil || response.Visibility.State != "degraded" || response.Visibility.Impact == "" {
+		t.Fatalf("empty restricted result must explain missing visibility: %s", w.Body.String())
+	}
+	if w := resourceIssuesRequest(t, s, "/api/issues?namespaces=broken"); w.Code != http.StatusForbidden {
+		t.Fatalf("explicit denied namespace status=%d, want 403", w.Code)
+	}
+}
+
 func TestIssuesAPICompletedPodsRemainQuiet(t *testing.T) {
 	completed := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{Name: "completed", Namespace: "batch"},

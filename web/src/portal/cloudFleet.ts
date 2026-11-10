@@ -1,7 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
+import type { IssuesResponse } from '../api/client'
 import { cloudRequest, clusterBase, CloudRequestError, type HubCluster } from './cloudApi'
 
 export interface ClusterResult<T> { cluster: HubCluster; data?: T; error?: Error }
+
+export function issueCoverageComplete(data: IssuesResponse): boolean {
+  return (!data.visibility || data.visibility.state === 'ok') &&
+    !data.unchecked_sources?.length &&
+    (data.total_matched ?? 0) <= (data.total ?? data.issues.length)
+}
 
 export async function fetchFleet<T>(clusters: HubCluster[], path: string, signal: AbortSignal): Promise<ClusterResult<T>[]> {
   const results: ClusterResult<T>[] = new Array(clusters.length)
