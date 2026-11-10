@@ -48,7 +48,7 @@ Local owner login remains available.
 ## Live endpoints
 
 - The self-hosted Cloud UI and identity API are served by the Hub.
-- `POST /agent` is the Agent's outbound WebSocket connection to the Hub.
+- `GET /agent` upgrades to the Agent's outbound WebSocket connection to the Hub.
 - `/mcp` is the canonical Cloud Hub MCP endpoint. It requires an independent
   bearer credential and current active membership, explicit cluster scope,
   and read-only enforcement for viewer credentials.

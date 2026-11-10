@@ -80,30 +80,62 @@ func TestRemovedPortalRoutesReturnNotFoundForLocalOwner(t *testing.T) {
 	}
 }
 
-func TestOwnerAuthHealthAndEmbeddedAssetServing(t *testing.T) {
-	handler, _ := testHandler(t, filepath.Join(t.TempDir(), "hub", "state.json"))
-	handler.static = fstest.MapFS{
+func TestOwnerUsernameValidationAndEmbeddedAssetServing(t *testing.T) {
+	store, err := hubstate.OpenStore(filepath.Join(t.TempDir(), "hub", "state.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credentials := Credentials{Username: "p", Password: testPassword, Hub: &HubConfig{Store: store}}
+	static := fstest.MapFS{
 		"portal.html":   &fstest.MapFile{Data: []byte("<html>portal</html>")},
 		"assets/app.js": &fstest.MapFile{Data: []byte("console.log('portal')")},
 	}
+	handler, err := NewHandler(credentials, static)
+	if err != nil {
+		t.Fatalf("short valid username rejected: %v", err)
+	}
+	t.Cleanup(handler.Close)
 	for _, path := range []string{"/login", "/assets/app.js"} {
-		request := httptest.NewRequest(http.MethodGet, path, nil)
+		request := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusOK {
 			t.Fatalf("%s status = %d, want 200: %s", path, response.Code, response.Body.String())
 		}
 	}
-	request := httptest.NewRequest(http.MethodGet, "/", nil)
+	for _, path := range []string{"/", "/mcp-access"} {
+		request := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login" {
+			t.Fatalf("unauthenticated %s did not redirect to login", path)
+		}
+	}
+	login := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login",
+		strings.NewReader(`{"username":"p","password":"`+testPassword+`"}`))
+	login.Header.Set("Content-Type", "application/json")
+	loggedIn := httptest.NewRecorder()
+	handler.ServeHTTP(loggedIn, login)
+	if loggedIn.Code != http.StatusNoContent || len(loggedIn.Result().Cookies()) != 1 {
+		t.Fatal("fixture login failed")
+	}
+	request := httptest.NewRequest(http.MethodGet, "http://localhost/mcp-access", nil)
+	request.AddCookie(loggedIn.Result().Cookies()[0])
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
-	if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login" {
-		t.Fatal("unauthenticated root did not redirect to login")
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "<html>portal</html>") {
+		t.Fatal("credential route did not serve the authenticated Cloud Hub app")
 	}
-	request = httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	request = httptest.NewRequest(http.MethodGet, "http://localhost/healthz", nil)
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, request)
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("/healthz status = %d, want 204", response.Code)
+	}
+	for _, username := range []string{"", "user:name", "user\nname"} {
+		credentials.Username = username
+		if _, err := NewHandler(credentials, nil); err == nil {
+			t.Errorf("invalid username %q accepted", username)
+		}
 	}
 }

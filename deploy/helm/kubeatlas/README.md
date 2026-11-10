@@ -314,7 +314,6 @@ See `values.yaml` for all configuration options.
 
 The self-hosted Cloud Hub, required Hub state file, OIDC settings, and its
 separate chart are described in the [Cloud Hub guide](../../../docs/portal.md).
-cluster name.
 
 ### Installation-owned settings (OSS)
 
