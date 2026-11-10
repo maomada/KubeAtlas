@@ -117,9 +117,31 @@ func TestBrowserRequestPolicyRejectsLocalRoutesAndUnsafeUpgrades(t *testing.T) {
 	if err := validateBrowserRequest(authMe, false); err != nil {
 		t.Fatalf("native auth/me namespace check denied: %v", err)
 	}
-	probe := httptest.NewRequest(http.MethodGet, "http://localhost/api/trace?probe=true", nil)
-	if err := validateBrowserRequest(probe, true); err == nil {
-		t.Fatal("read-only trace probe was allowed")
+	for _, value := range []string{"true", "TRUE", "1", "t", "yes", "YeS"} {
+		probe := httptest.NewRequest(http.MethodGet, "http://localhost/api/trace?probe="+value, nil)
+		if err := validateBrowserRequest(probe, true); err == nil {
+			t.Errorf("read-only trace probe value %q was allowed", value)
+		}
+	}
+	for _, value := range []string{"false", "0", "no"} {
+		probe := httptest.NewRequest(http.MethodGet, "http://localhost/api/trace?probe="+value, nil)
+		if err := validateBrowserRequest(probe, true); err != nil {
+			t.Errorf("non-probe trace value %q was denied: %v", value, err)
+		}
+	}
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		agents := httptest.NewRequest(method, "http://localhost/api/agents", nil)
+		if err := validateBrowserRequest(agents, false); err != nil {
+			t.Errorf("exact agents read route denied for %s: %v", method, err)
+		}
+	}
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "http://localhost/api/agents", nil),
+		httptest.NewRequest(http.MethodGet, "http://localhost/api/agents/install", nil),
+	} {
+		if err := validateBrowserRequest(request, false); err == nil {
+			t.Errorf("agents mutation/child route was allowed: %s %s", request.Method, request.URL.Path)
+		}
 	}
 	upgrade := httptest.NewRequest(http.MethodGet, "http://localhost/api/events/stream", nil)
 	upgrade.Header.Set("Connection", "Upgrade")

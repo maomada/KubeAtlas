@@ -288,6 +288,121 @@ func TestPortalClusterAPIUsesSelectedClusterAndSanitizesIdentity(t *testing.T) {
 	}
 }
 
+func TestPortalClusterAPIRedirectCannotReachHubManagement(t *testing.T) {
+	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")
+	h, _ := newPortalHubFixture(t, false)
+	cookie := loginForTest(t, h)
+	agent := decodeHubResponse[hubstate.IssuedAgent](t, hubRequest(t, h, cookie, "", http.MethodPost, "/api/hub/clusters", `{"id":"alpha","name":"Alpha"}`, http.StatusCreated))
+	type sourceRequest struct {
+		method string
+		path   string
+		body   string
+	}
+	requests := make(chan sourceRequest, 2)
+	source := auth.Authenticate(auth.Config{Mode: "proxy", Secret: "portal-redirect-test-secret"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		requests <- sourceRequest{method: r.Method, path: r.URL.Path, body: string(body)}
+		w.Header().Set("Location", "/api/hub/clusters")
+		w.WriteHeader(http.StatusTemporaryRedirect)
+	}))
+	server := startPortalHubAgent(t, h, agent.Token, "alpha", source)
+	request, _ := http.NewRequest(
+		http.MethodPost, server.URL+"/c/alpha/api/resources/apply",
+		strings.NewReader(`{"id":"escaped","name":"Escaped"}`),
+	)
+	request.AddCookie(cookie)
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", server.URL)
+	request.Header.Set("Referer", server.URL+"/clusters")
+	request.Header.Set("Sec-Fetch-Site", "same-origin")
+	response, err := server.Client().Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusBadGateway || response.Header.Get("Location") != "" {
+		t.Fatalf("source redirect escaped Portal boundary: status=%d location=%q", response.StatusCode, response.Header.Get("Location"))
+	}
+	var payload struct {
+		ErrorCode string `json:"error_code"`
+		Message   string `json:"message"`
+		RequestID string `json:"requestId"`
+		Outcome   string `json:"outcome"`
+		Retryable bool   `json:"retryable"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ErrorCode != "source_redirect" || payload.Message == "" ||
+		payload.RequestID == "" || payload.RequestID != response.Header.Get("X-Request-ID") ||
+		payload.Outcome != "unknown" || payload.Retryable {
+		t.Fatalf("source redirect error was not typed/conservative: %+v", payload)
+	}
+	select {
+	case got := <-requests:
+		if got.method != http.MethodPost || got.path != "/api/resources/apply" ||
+			got.body != `{"id":"escaped","name":"Escaped"}` {
+			t.Fatalf("unexpected source request: %+v", got)
+		}
+	default:
+		t.Fatal("source mutation was not dispatched")
+	}
+	select {
+	case got := <-requests:
+		t.Fatalf("source request was repeated: %+v", got)
+	default:
+	}
+	if _, exists := h.liveHub.store.Cluster("escaped"); exists {
+		t.Fatal("source redirect reached Portal Hub cluster management")
+	}
+}
+
+func TestBrowserResponseBodyLimitRejectsUnknownLength(t *testing.T) {
+	if maxBrowserResponseBytes != 32<<20 {
+		t.Fatalf("browser response limit=%d, want 32 MiB", maxBrowserResponseBytes)
+	}
+	response := &http.Response{
+		StatusCode: http.StatusOK, Header: make(http.Header),
+		Body: io.NopCloser(strings.NewReader("12345")), ContentLength: -1,
+	}
+	failure := prepareBrowserResponse(response, http.MethodPost, false, 4)
+	if failure == nil || failure.code != "source_response_too_large" || !failure.outcomeUnknown {
+		t.Fatalf("unknown-length oversized mutation was not rejected: %+v", failure)
+	}
+	writer := httptest.NewRecorder()
+	writer.Header().Set("X-Request-ID", "request-123")
+	writeBrowserProxyFailure(writer, "request-123", failure)
+	if writer.Code != http.StatusBadGateway || writer.Header().Get("Location") != "" ||
+		writer.Header().Get("X-Request-ID") != "request-123" {
+		t.Fatalf("oversized response error status/headers: status=%d headers=%v", writer.Code, writer.Header())
+	}
+	var payload struct {
+		ErrorCode string `json:"error_code"`
+		RequestID string `json:"requestId"`
+		Outcome   string `json:"outcome"`
+		Retryable bool   `json:"retryable"`
+	}
+	if err := json.Unmarshal(writer.Body.Bytes(), &payload); err != nil {
+		t.Fatal(err)
+	}
+	if payload.ErrorCode != "source_response_too_large" || payload.RequestID != "request-123" ||
+		payload.Outcome != "unknown" || payload.Retryable || strings.Contains(writer.Body.String(), "12345") {
+		t.Fatalf("oversized response was not replaced with a typed error: %+v body=%q", payload, writer.Body.String())
+	}
+
+	stream := &http.Response{
+		StatusCode: http.StatusOK, Header: make(http.Header),
+		Body: io.NopCloser(strings.NewReader("data: ready\n\n")), ContentLength: -1,
+	}
+	if failure := prepareBrowserResponse(stream, http.MethodGet, true, 4); failure != nil {
+		t.Fatalf("streaming response was buffered/rejected: %v", failure)
+	}
+	body, err := io.ReadAll(stream.Body)
+	if err != nil || string(body) != "data: ready\n\n" {
+		t.Fatalf("streaming response was consumed: body=%q err=%v", body, err)
+	}
+}
+
 func TestPortalStreamLogoutReleasesHubSlots(t *testing.T) {
 	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")
 	h, _ := newPortalHubFixture(t, false)

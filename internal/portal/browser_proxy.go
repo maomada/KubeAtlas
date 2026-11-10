@@ -17,9 +17,10 @@ import (
 )
 
 const (
-	maxBrowserBodyBytes = 8 << 20
-	browserRequestLimit = 60 * time.Second
-	maxBrowserPathBytes = 2048
+	maxBrowserBodyBytes     = 8 << 20
+	maxBrowserResponseBytes = 32 << 20
+	browserRequestLimit     = 60 * time.Second
+	maxBrowserPathBytes     = 2048
 )
 
 var hubPagePaths = map[string]struct{}{
@@ -72,6 +73,91 @@ func canonicalPortalPath(path string) bool {
 func isClusterAPICandidate(path string) bool {
 	parts := strings.Split(path, "/")
 	return len(parts) >= 4 && parts[1] == "c" && parts[3] == "api"
+}
+
+type browserProxyFailure struct {
+	code           string
+	message        string
+	outcomeUnknown bool
+}
+
+func (e *browserProxyFailure) Error() string {
+	return e.code
+}
+
+func prepareBrowserResponse(response *http.Response, method string, streaming bool, limit int64) *browserProxyFailure {
+	outcomeUnknown := method != http.MethodGet && method != http.MethodHead
+	if isSourceRedirect(response.StatusCode) {
+		response.Header.Del("Location")
+		return &browserProxyFailure{
+			code: "source_redirect", message: "Source redirects are not followed.",
+			outcomeUnknown: outcomeUnknown,
+		}
+	}
+	if response.StatusCode >= 500 {
+		if response.Body != nil {
+			_ = response.Body.Close()
+		}
+		body, _ := json.Marshal(map[string]any{
+			"error_code": "source_error", "message": "Source returned an error",
+			"requestId": response.Header.Get("X-Request-ID"), "retryable": false, "outcome": "unknown",
+		})
+		response.Body = io.NopCloser(bytes.NewReader(body))
+		response.ContentLength = int64(len(body))
+		response.Header.Del("Transfer-Encoding")
+		response.Header.Set("Content-Length", strconv.Itoa(len(body)))
+		response.Header.Set("Content-Type", "application/json")
+		return nil
+	}
+	if streaming || method == http.MethodHead || response.Body == nil || response.Body == http.NoBody ||
+		response.StatusCode < http.StatusOK || response.StatusCode == http.StatusNoContent ||
+		response.StatusCode == http.StatusNotModified {
+		return nil
+	}
+
+	body, err := io.ReadAll(io.LimitReader(response.Body, limit+1))
+	if err != nil {
+		return &browserProxyFailure{
+			code: "source_response_failed", message: "Source response could not be read.",
+			outcomeUnknown: outcomeUnknown,
+		}
+	}
+	if int64(len(body)) > limit {
+		return &browserProxyFailure{
+			code: "source_response_too_large", message: "Source response exceeded the browser API limit.",
+			outcomeUnknown: outcomeUnknown,
+		}
+	}
+	_ = response.Body.Close()
+	response.Body = io.NopCloser(bytes.NewReader(body))
+	response.ContentLength = int64(len(body))
+	response.TransferEncoding = nil
+	response.Header.Del("Transfer-Encoding")
+	response.Header.Del("Trailer")
+	response.Header.Set("Content-Length", strconv.Itoa(len(body)))
+	return nil
+}
+
+func isSourceRedirect(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently, http.StatusFound, http.StatusSeeOther,
+		http.StatusTemporaryRedirect, http.StatusPermanentRedirect:
+		return true
+	default:
+		return false
+	}
+}
+
+func writeBrowserProxyFailure(w http.ResponseWriter, requestID string, failure *browserProxyFailure) {
+	w.Header().Del("Location")
+	outcome := "known"
+	if failure.outcomeUnknown {
+		outcome = "unknown"
+	}
+	hubJSON(w, http.StatusBadGateway, map[string]any{
+		"error_code": failure.code, "message": failure.message,
+		"requestId": requestID, "retryable": false, "outcome": outcome,
+	})
 }
 
 func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *http.Request) {
@@ -138,6 +224,7 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 	stripPortalProxyHeaders(request.Header)
 	request.Header.Set("X-Request-ID", w.Header().Get("X-Request-ID"))
 	target := &url.URL{Scheme: "http", Host: "localhost"}
+	var responseFailure *browserProxyFailure
 	proxy := &httputil.ReverseProxy{
 		Director: func(out *http.Request) {
 			out.URL.Scheme = target.Scheme
@@ -153,21 +240,17 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 			response.Header.Del("Set-Cookie")
 			response.Header.Del("Set-Cookie2")
 			response.Header.Set("X-Request-ID", w.Header().Get("X-Request-ID"))
-			if response.StatusCode >= 500 {
-				_ = response.Body.Close()
-				body, _ := json.Marshal(map[string]any{
-					"error_code": "source_error", "message": "Source returned an error",
-					"requestId": w.Header().Get("X-Request-ID"), "retryable": false, "outcome": "unknown",
-				})
-				response.Body = io.NopCloser(bytes.NewReader(body))
-				response.ContentLength = int64(len(body))
-				response.Header.Del("Transfer-Encoding")
-				response.Header.Set("Content-Length", strconv.Itoa(len(body)))
-				response.Header.Set("Content-Type", "application/json")
+			if failure := prepareBrowserResponse(response, r.Method, streaming, maxBrowserResponseBytes); failure != nil {
+				responseFailure = failure
+				return failure
 			}
 			return nil
 		},
 		ErrorHandler: func(writer http.ResponseWriter, request *http.Request, err error) {
+			if responseFailure != nil {
+				writeBrowserProxyFailure(writer, w.Header().Get("X-Request-ID"), responseFailure)
+				return
+			}
 			writeBrowserTransportError(writer, err)
 		},
 	}

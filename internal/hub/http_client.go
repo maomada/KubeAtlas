@@ -293,7 +293,7 @@ func validateBrowserRequest(request *http.Request, readOnly bool) error {
 		"/api/namespaces", "/api/api-resources", "/api/resource-counts", "/api/certificates",
 		"/api/upgrade-readiness", "/api/packages", "/api/search", "/api/events",
 		"/api/changes", "/api/topology", "/api/vitals", "/api/connection",
-		"/api/auth/me", "/api/settings/audit", "/api/cluster/namespace-scope":
+		"/api/auth/me", "/api/agents", "/api/settings/audit", "/api/cluster/namespace-scope":
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			return tunnelError(CodePermissionDenied, false, nil)
 		}
@@ -313,12 +313,9 @@ func validateBrowserRequest(request *http.Request, readOnly bool) error {
 	if readOnly && u.Path == "/api/gitops/write-evidence" {
 		return tunnelError(CodePermissionDenied, false, nil)
 	}
-	if readOnly && u.Path == "/api/trace" || readOnly && strings.HasPrefix(u.Path, "/api/trace/") {
-		for _, value := range query["probe"] {
-			if strings.EqualFold(value, "true") {
-				return tunnelError(CodePermissionDenied, false, nil)
-			}
-		}
+	if readOnly && (u.Path == "/api/trace" || strings.HasPrefix(u.Path, "/api/trace/")) &&
+		browserQueryTrue(query.Get("probe")) {
+		return tunnelError(CodePermissionDenied, false, nil)
 	}
 	if (u.Path == "/api/connection" || strings.HasPrefix(u.Path, "/api/connection/")) &&
 		u.Path != "/api/connection" {
@@ -328,6 +325,15 @@ func validateBrowserRequest(request *http.Request, readOnly bool) error {
 		return tunnelError(CodePermissionDenied, false, nil)
 	}
 	return nil
+}
+
+func browserQueryTrue(value string) bool {
+	switch strings.ToLower(value) {
+	case "true", "1", "t", "yes":
+		return true
+	default:
+		return false
+	}
 }
 
 func hasASCIIControls(value string) bool {
@@ -367,7 +373,7 @@ func browserAPIPathAllowed(path string) bool {
 		}
 	}
 	return path == "/api/version-check" || path == "/api/connection" ||
-		path == "/api/auth/me" || path == "/api/settings/audit" ||
+		path == "/api/auth/me" || path == "/api/agents" || path == "/api/settings/audit" ||
 		path == "/api/topology" || path == "/api/vitals" ||
 		path == "/api/cluster/namespace-scope" || path == "/api/cluster/namespace"
 }
