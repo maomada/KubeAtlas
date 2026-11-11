@@ -6,7 +6,7 @@ import { Input } from './Input'
 interface CodeViewerProps {
   code: string
   language?: 'yaml' | 'json' | 'bash' | 'text'
-  /** Theme for syntax highlighting. Defaults to 'dark'. */
+  /** Theme for syntax highlighting. Defaults to the active document theme. */
   theme?: 'dark' | 'light'
   showLineNumbers?: boolean
   maxHeight?: string
@@ -15,16 +15,38 @@ interface CodeViewerProps {
   copied?: boolean
 }
 
+function useDocumentCodeTheme(): 'dark' | 'light' {
+  const readTheme = (): 'dark' | 'light' =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+      ? 'dark'
+      : 'light'
+  const [theme, setTheme] = useState(readTheme)
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const observer = new MutationObserver(() => setTheme(readTheme()))
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    })
+    return () => observer.disconnect()
+  }, [])
+
+  return theme
+}
+
 export function CodeViewer({
   code,
   language = 'yaml',
-  theme = 'dark',
+  theme: themeOverride,
   showLineNumbers = true,
   maxHeight = 'calc(100vh - 300px)',
   showCopyButton = false,
   onCopy,
   copied = false,
 }: CodeViewerProps) {
+  const documentTheme = useDocumentCodeTheme()
+  const theme = themeOverride ?? documentTheme
   const [html, setHtml] = useState<string>('')
   const [highlighting, setHighlighting] = useState(true)
 
@@ -327,7 +349,7 @@ export function CodeViewer({
   return (
     <div
       ref={wrapperRef}
-      className={`relative rounded-lg overflow-hidden ${theme === 'light' ? 'bg-[#ffffff]' : 'bg-[#0d1117]'}`}
+      className="relative rounded-lg overflow-hidden bg-theme-elevated text-theme-text-primary"
       tabIndex={0}
       onKeyDown={handleWrapperKeyDown}
       onMouseEnter={() => { isMouseInsideRef.current = true }}
