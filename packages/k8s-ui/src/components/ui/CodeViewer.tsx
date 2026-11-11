@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Copy, Check, ChevronUp, ChevronDown, X, Search } from 'lucide-react'
-import { codeToHtml } from 'shiki'
+import type { Highlighter } from 'shiki'
 import { Input } from './Input'
 
 interface CodeViewerProps {
@@ -13,6 +13,38 @@ interface CodeViewerProps {
   showCopyButton?: boolean
   onCopy?: (text: string) => void
   copied?: boolean
+}
+
+let highlighterPromise: Promise<Highlighter> | undefined
+
+function getCodeHighlighter(): Promise<Highlighter> {
+  if (!highlighterPromise) {
+    highlighterPromise = Promise.all([
+      import('shiki'),
+      import('shiki/engine/javascript'),
+    ]).then(([{ createHighlighter }, { createJavaScriptRegexEngine }]) =>
+      createHighlighter({
+        langs: [],
+        themes: [],
+        engine: createJavaScriptRegexEngine(),
+      })
+    )
+  }
+
+  return highlighterPromise
+}
+
+async function highlightCode(
+  code: string,
+  language: 'yaml' | 'json' | 'bash' | 'text',
+  theme: 'github-light' | 'github-dark',
+): Promise<string> {
+  const highlighter = await getCodeHighlighter()
+  await Promise.all([
+    highlighter.loadLanguage(language),
+    highlighter.loadTheme(theme),
+  ])
+  return highlighter.codeToHtml(code, { lang: language, theme })
 }
 
 function useDocumentCodeTheme(): 'dark' | 'light' {
@@ -76,10 +108,7 @@ export function CodeViewer({
 
     const shikiLang = language === 'text' ? 'text' : language
 
-    codeToHtml(code, {
-      lang: shikiLang,
-      theme: theme === 'light' ? 'github-light' : 'github-dark',
-    })
+    highlightCode(code, shikiLang, theme === 'light' ? 'github-light' : 'github-dark')
       .then((highlighted) => {
         setHtml(highlighted)
         htmlRef.current = highlighted
@@ -354,7 +383,7 @@ export function CodeViewer({
       onKeyDown={handleWrapperKeyDown}
       onMouseEnter={() => { isMouseInsideRef.current = true }}
       onMouseLeave={() => { isMouseInsideRef.current = false }}
-      style={{ outline: 'none' }}
+      style={{ outline: 'none', colorScheme: theme }}
     >
       {showCopyButton && !searchOpen && (
         <button
