@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/maomada/KubeAtlas/internal/hubartifacts"
 	"github.com/maomada/KubeAtlas/internal/hubmcp"
 	"github.com/maomada/KubeAtlas/internal/hubstate"
 	"github.com/maomada/KubeAtlas/internal/portal"
@@ -27,6 +28,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
 	hubStateFile := flag.String("hub-state-file", os.Getenv("KUBEATLAS_PORTAL_HUB_STATE_FILE"), "Required persistent state file for the self-hosted Cloud Hub")
+	hubArtifactsDir := flag.String("hub-artifacts-dir", os.Getenv("KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR"), "Optional read-only directory containing the version-matched Hub Agent artifact bundle")
 	hubGroups := flag.String("hub-groups", os.Getenv("KUBEATLAS_PORTAL_HUB_GROUPS"), "Comma-separated Kubernetes identity groups for the local Cloud Hub owner; grants still require cluster RBAC")
 	oidcIssuer := flag.String("oidc-issuer", os.Getenv("KUBEATLAS_PORTAL_OIDC_ISSUER"), "OIDC issuer URL for Hub SSO")
 	oidcClientID := flag.String("oidc-client-id", os.Getenv("KUBEATLAS_PORTAL_OIDC_CLIENT_ID"), "OIDC client ID for Hub SSO")
@@ -50,6 +52,9 @@ func main() {
 	credentials := loadCredentials()
 	if err := configureHub(&credentials, *hubStateFile, *hubGroups); err != nil {
 		log.Fatalf("portal Hub configuration is invalid: %v", err)
+	}
+	if err := configureArtifacts(&credentials, *hubArtifactsDir, version); err != nil {
+		log.Fatalf("portal Hub artifact catalog is invalid: %v", err)
 	}
 	if err := configureOIDC(&credentials, *oidcIssuer, *oidcClientID, *oidcRedirectURL, *oidcCACert, os.Getenv("KUBEATLAS_PORTAL_OIDC_CLIENT_SECRET")); err != nil {
 		log.Fatalf("portal OIDC configuration is invalid: %v", err)
@@ -107,6 +112,18 @@ func main() {
 			log.Fatalf("portal server failed: %v", err)
 		}
 	}
+}
+
+func configureArtifacts(credentials *portal.Credentials, directory, buildVersion string) error {
+	if credentials.Hub == nil {
+		return errors.New("Hub artifact catalog requires Hub configuration")
+	}
+	catalog, err := hubartifacts.Open(directory, buildVersion)
+	if err != nil {
+		return err
+	}
+	credentials.Hub.Artifacts = catalog
+	return nil
 }
 
 func loadCredentials() portal.Credentials {

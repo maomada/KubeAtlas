@@ -65,3 +65,15 @@ Agent MCP endpoints `/mcp` and `/mcp-readonly` are separate services and
 remain unchanged. Preserve the PVC when upgrading: it contains the required
 Hub identity and credential state. Back it up using the storage platform's
 supported process.
+
+## Hub-hosted Agent artifacts
+
+See [Hub-hosted Agent onboarding](../../../docs/hub-agent-onboarding.md) for bundle preparation and trust requirements. The optional bundle is mounted from an operator-managed PVC and mounted read-only by the Portal:
+
+```yaml
+hubArtifacts:
+  enabled: true
+  existingClaim: kubeatlas-agent-artifacts
+```
+
+The PVC must contain the catalog produced by `cmd/prepare-hub-artifacts` and match the Portal build version. An absent bundle disables install artifacts without disabling Hub/MCP; a configured but invalid catalog prevents the Portal from starting. Artifact bytes are not fetched or published at runtime.

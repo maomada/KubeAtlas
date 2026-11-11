@@ -164,7 +164,7 @@ func writeBrowserProxyFailure(w http.ResponseWriter, requestID string, failure *
 }
 
 func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *http.Request) {
-	if !p.policy.allowsBrowser(r) {
+	if !p.policySnapshot().allowsBrowser(r) {
 		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Host or browser origin is not allowed")
 		return
 	}

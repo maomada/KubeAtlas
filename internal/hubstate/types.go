@@ -53,6 +53,11 @@ type Organization struct {
 	Name string `json:"name"`
 }
 
+type ConnectionSettings struct {
+	LANURL    string `json:"lanURL"`
+	PublicURL string `json:"publicURL"`
+}
+
 type Member struct {
 	ID               string    `json:"id"`
 	UserID           string    `json:"userId"`
@@ -124,4 +129,12 @@ func cloneMember(m Member) Member {
 	m.ClusterIDs = append([]string{}, m.ClusterIDs...)
 	m.KubernetesGroups = append([]string{}, m.KubernetesGroups...)
 	return m
+}
+
+func cloneConnectionSettings(settings *ConnectionSettings) *ConnectionSettings {
+	if settings == nil {
+		return &ConnectionSettings{}
+	}
+	copy := *settings
+	return &copy
 }

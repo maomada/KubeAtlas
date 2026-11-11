@@ -86,3 +86,9 @@ not accepted. The Hub also validates browser origin and same-origin requests.
 The Hub container does not need a Kubernetes ServiceAccount token. Agents
 connect outbound and retain the native KubeAtlas Agent's live read, write,
 audit, and MCP behavior under the current user's Kubernetes RBAC.
+
+Hub-hosted onboarding artifacts are optional and operator-staged. Configure
+`--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR` with a validated
+private bundle; see [Hub-hosted Agent onboarding](hub-agent-onboarding.md).
+The Portal serves version-pinned downloads and read-only OCI GET/HEAD content
+from that local directory only.

@@ -73,6 +73,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .cloud-primary { background: var(--color-brand); border-color: var(--color-brand); color: #fff; }
 .cloud-primary:hover { background: color-mix(in srgb, var(--color-brand) 87%, black); }
 .cloud-button[aria-pressed="true"] { border-color: var(--color-brand); color: var(--color-brand); background: color-mix(in srgb, var(--color-brand) 10%, var(--bg-surface)); }
+.cloud-connection-selector { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; border: 0; margin: 12px 0; padding: 0; }
+.cloud-connection-selector legend { margin-bottom: 5px; color: var(--text-secondary); font-size: 12px; }
 .cloud-text-button { color: var(--color-brand); font-size: 12px; }
 .cloud-text-button:hover { text-decoration: underline; }
 .cloud-card { background: var(--bg-surface); border: 1px solid var(--border-default); border-radius: 12px; padding: 19px; }

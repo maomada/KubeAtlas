@@ -19,6 +19,7 @@ import { MCPCredentials } from './MCPCredentials'
 import { credentialStatus, type MCPCredential } from './credentials'
 import { cloudViewHref, navigateCloud, useCloudLocation } from './cloudNavigation'
 import { usePortalTheme } from './usePortalTheme'
+import { ConnectionProfilesProvider, useConnectionProfiles } from './ConnectionProfiles'
 
 const NativeRadar = lazy(() => import('../RadarApp').then(module => ({ default: module.RadarApp })))
 
@@ -42,7 +43,7 @@ const navigation: NavItem[] = [
 
 export function PortalEntry() {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }))
-  return <QueryClientProvider client={client}><PortalMode queryClient={client} /></QueryClientProvider>
+  return <QueryClientProvider client={client}><ConnectionProfilesProvider><PortalMode queryClient={client} /></ConnectionProfilesProvider></QueryClientProvider>
 }
 
 function PortalMode({ queryClient }: { queryClient: QueryClient }) {
@@ -259,8 +260,8 @@ function CloudCapabilityGap({ title, description }: { title: string; description
 }
 
 function CloudAgents({ readOnlyOnly = false }: { readOnlyOnly?: boolean }) {
-  const endpoint = `${window.location.origin}/mcp`
-  return <div className="cloud-page cloud-agents"><div className="cloud-page-heading"><div><h1>Agents</h1><p>Connect an AI agent to your Kubernetes fleet through one MCP endpoint.</p></div></div><section className="cloud-card"><h2><Bot size={18} />Connect an AI agent</h2><p>Choose Streamable HTTP in your MCP client. Generate a scoped token below, then use its OpenCode configuration. MCP OAuth is not implemented; keep OAuth disabled in the MCP client. Portal SSO is a separate login flow.</p><div className="cloud-endpoint"><code>{endpoint}</code><CopyButton value={endpoint} label="Copy endpoint" /></div><p className="cloud-muted">The source cluster still checks Kubernetes RBAC for every user. A writable token does not grant cluster-admin permissions.</p></section><MCPCredentials readOnlyOnly={readOnlyOnly} /></div>
+  const { mcpURL } = useConnectionProfiles()
+  return <div className="cloud-page cloud-agents"><div className="cloud-page-heading"><div><h1>Agents</h1><p>Connect an AI agent to your Kubernetes fleet through one MCP endpoint.</p></div></div><section className="cloud-card"><h2><Bot size={18} />Connect an AI agent</h2><p>Choose Streamable HTTP in your MCP client. Generate a scoped token below, then use its OpenCode configuration. MCP OAuth is not implemented; keep OAuth disabled in the MCP client. Portal SSO is a separate login flow.</p><div className="cloud-endpoint"><code>{mcpURL || '未配置'}</code>{mcpURL && <CopyButton value={mcpURL} label="Copy endpoint" />}</div>{!mcpURL && <p role="alert">请在 OpenCode 配置中选择并配置局域网或公网地址；不会回退到浏览器地址。</p>}<p className="cloud-muted">The source cluster still checks Kubernetes RBAC for every user. A writable token does not grant cluster-admin permissions.</p></section><MCPCredentials readOnlyOnly={readOnlyOnly} /></div>
 }
 
 const settingGroups = [

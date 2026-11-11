@@ -5,6 +5,7 @@ import { Building2, KeyRound, Pencil, Search, ShieldCheck, Users } from 'lucide-
 import { cloudRequest, useCloudQuery, type HubCluster } from './cloudApi'
 import { CloudDialog, CloudError, CloudLink, CloudLoading, CopyButton } from './CloudShared'
 import { ThemeToggle } from './ThemeToggle'
+import { ConnectionSettingsEditor } from './ConnectionProfiles'
 
 export interface HubMember {
   id: string
@@ -63,6 +64,7 @@ export function CloudOrganization({ member }: { member?: HubMember }) {
       <p>Organization roles control Hub management and cluster scope. Kubernetes RBAC still controls access to each cluster's resources.</p>
       {canManageOrganization(member) && <CloudLink href="/settings/organization/members" className="cloud-button">Manage members</CloudLink>}
     </section>
+    <ConnectionSettingsEditor canManage={canManageOrganization(member)} />
     <section className="cloud-card"><h2>Deployment scope</h2><p>This Hub serves one organization. Separate organizations require separate Hub deployments; multi-organization tenancy is not implemented.</p></section>
   </div>
 }

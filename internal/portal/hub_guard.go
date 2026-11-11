@@ -40,6 +40,23 @@ func newHubRequestPolicy(hosts []string) (*hubRequestPolicy, error) {
 	return policy, nil
 }
 
+func (p *hubRequestPolicy) withOrigins(origins ...string) *hubRequestPolicy {
+	hosts := make(map[string]bool, len(p.hosts)+len(origins))
+	for host, allowed := range p.hosts {
+		hosts[host] = allowed
+	}
+	for _, origin := range origins {
+		if origin == "" {
+			continue
+		}
+		u, err := url.Parse(origin)
+		if err == nil && u.Host != "" {
+			hosts[strings.ToLower(u.Host)] = true
+		}
+	}
+	return &hubRequestPolicy{hosts: hosts}
+}
+
 func (p *hubRequestPolicy) allows(r *http.Request) bool {
 	u, ok := hubAuthority(r.Host)
 	if !ok || (!p.hosts[strings.ToLower(r.Host)] && !strings.EqualFold(u.Hostname(), "localhost") && !net.ParseIP(u.Hostname()).IsLoopback()) {

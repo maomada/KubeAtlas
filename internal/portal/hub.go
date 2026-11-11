@@ -15,12 +15,14 @@ import (
 	"unicode/utf8"
 
 	"github.com/maomada/KubeAtlas/internal/hub"
+	"github.com/maomada/KubeAtlas/internal/hubartifacts"
 	"github.com/maomada/KubeAtlas/internal/hubstate"
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
 )
 
 type HubConfig struct {
 	Store      *hubstate.Store
+	Artifacts  *hubartifacts.Catalog
 	Groups     []string
 	MCPFactory func(*hub.Hub, *hubstate.Store) (http.Handler, error)
 }
@@ -36,6 +38,12 @@ type portalHub struct {
 	startedAt   time.Time
 	oidcConfig  *OIDCConfig
 	mcp         http.Handler
+	catalog     *hubartifacts.Catalog
+}
+
+func (p *portalHub) policySnapshot() *hubRequestPolicy {
+	connections := p.store.Connections()
+	return p.policy.withOrigins(connections.LANURL, connections.PublicURL)
 }
 
 func newPortalHub(credentials Credentials) (*portalHub, error) {
@@ -45,7 +53,7 @@ func newPortalHub(credentials Credentials) (*portalHub, error) {
 	}
 	digest := sha256.Sum256([]byte(credentials.Username))
 	id := hex.EncodeToString(digest[:])
-	p := &portalHub{store: cfg.Store, ownerID: "portal:" + id, userID: "kubeatlas:portal:" + id, groups: slices.Clone(cfg.Groups), displayName: credentials.Username, startedAt: time.Now().UTC(), oidcConfig: credentials.OIDC}
+	p := &portalHub{store: cfg.Store, catalog: cfg.Artifacts, ownerID: "portal:" + id, userID: "kubeatlas:portal:" + id, groups: slices.Clone(cfg.Groups), displayName: credentials.Username, startedAt: time.Now().UTC(), oidcConfig: credentials.OIDC}
 	if len(p.groups) > 128 || !pkgauth.ForwardedIdentityAllowed(p.userID, p.groups, true) {
 		return nil, errors.New("Hub identity groups are invalid")
 	}
@@ -91,12 +99,20 @@ func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 		p.serveBrowserAPI(h, w, r)
 		return true
 	}
-	if p == nil || !(r.URL.Path == "/agent" || r.URL.Path == "/mcp" || r.URL.Path == "/api/hub" || strings.HasPrefix(r.URL.Path, "/api/hub/") || r.URL.Path == "/api/mcp/credentials" || strings.HasPrefix(r.URL.Path, "/api/mcp/credentials/")) {
+	artifactRoute := r.URL.Path == "/v2/" || strings.HasPrefix(r.URL.Path, "/v2/") || strings.HasPrefix(r.URL.Path, "/downloads/agent/")
+	if p == nil || !(artifactRoute || r.URL.Path == "/agent" || r.URL.Path == "/mcp" || r.URL.Path == "/api/hub" || strings.HasPrefix(r.URL.Path, "/api/hub/") || r.URL.Path == "/api/mcp/credentials" || strings.HasPrefix(r.URL.Path, "/api/mcp/credentials/")) {
 		return false
 	}
 	w.Header().Set("X-Request-ID", rand.Text())
-	if !p.policy.allows(r) {
+	policy := p.policySnapshot()
+	if !policy.allows(r) || artifactRoute && len(r.Header.Values("Sec-Fetch-Site")) > 0 && !policy.allowsBrowser(r) {
 		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Host or browser origin is not allowed")
+		return true
+	}
+	if artifactRoute {
+		if p.catalog == nil || !p.catalog.ServeHTTP(w, r) {
+			http.NotFound(w, r)
+		}
 		return true
 	}
 	if r.URL.Path == "/agent" {
@@ -132,6 +148,11 @@ func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 		p.manageCredentials(w, r, ownerID, member)
 	case r.URL.Path == "/api/hub/organization":
 		p.manageOrganization(w, r, member)
+	case r.URL.Path == "/api/hub/connections":
+		if !requireActiveMember(w, member) {
+			return true
+		}
+		p.manageConnections(w, r, member)
 	case r.URL.Path == "/api/hub/members":
 		p.manageMembers(w, r, member)
 	case strings.HasPrefix(r.URL.Path, "/api/hub/members/"):

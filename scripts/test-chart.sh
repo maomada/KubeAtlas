@@ -335,6 +335,32 @@ for retired in fleet portalRegistration; do
 done
 echo
 
+if HUB_OUTPUT=$(helm template kubeatlas "$CHART_DIR" \
+  --set hub.enabled=true \
+  --set-string hub.url=https://hub.example.test \
+  --set hub.clusterID=production \
+  --set hub.tokenSecret=kubeatlas-hub-token \
+  --set-string hub.ownerUserID=kubeatlas:portal:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  --set-string image.repository=hub.example.test/kubeatlas/agent \
+  --set-string image.digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  --set auth.mode=proxy --set mcp.enabled=true 2>&1); then
+  OUT="$HUB_OUTPUT"
+  pass "self-hosted Hub Agent values render"
+  assert_contains 'image: "?hub.example.test/kubeatlas/agent@sha256:0123456789abcdef' "Hub Agent image is digest-pinned to the selected origin"
+  assert_contains 'KUBEATLAS_AGENT_HUB_TOKEN_FILE' "Hub Agent token is configured through a file"
+  assert_contains 'secretName: kubeatlas-hub-token' "Hub Agent token Secret is mounted"
+  assert_contains 'name: "?kubeatlas:portal:0123456789abcdef' "owner binding names the exact local-owner User"
+  assert_contains 'name: cluster-admin' "only the exact owner User binding grants cluster-admin"
+else
+  fail "self-hosted Hub Agent values should render: $HUB_OUTPUT"
+fi
+if helm template kubeatlas "$CHART_DIR" --set hub.enabled=true --set-string hub.url=https://hub.example.test/path >/dev/null 2>&1; then
+  fail "Hub Agent origin path prefixes must be rejected"
+else
+  pass "Hub Agent origin path prefixes are rejected"
+fi
+echo
+
 render_portal "Self-hosted Cloud Hub has required state, owner Secret, PVC, and root ingress" \
   --set ingress.enabled=true \
   --set ingress.tls[0].secretName=portal-tls \
@@ -370,6 +396,9 @@ render_portal "Portal image tag defaults to chart appVersion"
 assert_contains 'image: "?example.test/kubeatlas-portal:0.0.0-unreleased"?$' "empty image.tag uses Chart.AppVersion"
 render_portal "Portal image tag override is honored" --set image.tag=0.2.0
 assert_contains 'image: "?example.test/kubeatlas-portal:0.2.0"?$' "explicit image.tag overrides Chart.AppVersion"
+render_portal "Portal can mount a pre-staged read-only Hub artifact bundle" --set hubArtifacts.enabled=true --set hubArtifacts.existingClaim=hub-artifacts
+assert_contains 'name: hub-artifacts' "Portal mounts the configured artifact PVC"
+assert_contains 'readOnly: true' "Portal artifact mount is read-only"
 echo
 
 if [[ $FAIL -eq 0 ]]; then

@@ -656,3 +656,9 @@ kubectl auth can-i impersonate users \
 ```
 
 If using `rbac.create: false` in Helm, make sure your custom ClusterRole includes the impersonation rules.
+
+In self-hosted Hub Agent mode, the chart binds `cluster-admin` to the exact
+local Hub owner Kubernetes `User` identity. It does not elevate member groups
+or all Hub users. The Agent ServiceAccount's impersonation grant remains highly
+privileged: a holder of its token can impersonate arbitrary users/groups, so
+protect that token and review the generated RBAC and bound owner identity.

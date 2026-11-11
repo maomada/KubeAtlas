@@ -7,6 +7,12 @@
 {{- if empty .Values.existingSecret }}
 {{- fail "existingSecret is required and must contain keys username and password" }}
 {{- end }}
+{{- if and .Values.hubArtifacts.enabled (empty .Values.hubArtifacts.existingClaim) }}
+{{- fail "hubArtifacts.existingClaim is required when hubArtifacts.enabled=true" }}
+{{- end }}
+{{- if and .Values.hubArtifacts.enabled (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" .Values.hubArtifacts.existingClaim)) }}
+{{- fail "hubArtifacts.existingClaim must be a Kubernetes PVC name" }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -52,6 +58,9 @@ spec:
           args:
             - --listen=0.0.0.0:9290
             - --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json
+            {{- if .Values.hubArtifacts.enabled }}
+            - --hub-artifacts-dir=/var/lib/kubeatlas-portal/artifacts
+            {{- end }}
           ports:
             - name: http
               containerPort: 9290
@@ -126,7 +135,17 @@ spec:
           volumeMounts:
             - name: hub-state
               mountPath: /var/lib/kubeatlas-portal
+            {{- if .Values.hubArtifacts.enabled }}
+            - name: hub-artifacts
+              mountPath: /var/lib/kubeatlas-portal/artifacts
+              readOnly: true
+            {{- end }}
       volumes:
         - name: hub-state
           persistentVolumeClaim:
             claimName: {{ include "kubeatlas-portal.fullname" . }}
+        {{- if .Values.hubArtifacts.enabled }}
+        - name: hub-artifacts
+          persistentVolumeClaim:
+            claimName: {{ .Values.hubArtifacts.existingClaim }}
+        {{- end }}

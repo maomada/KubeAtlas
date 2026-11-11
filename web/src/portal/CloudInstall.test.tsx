@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { CloudInstall } from './CloudClusters'
+import { ConnectionProfilesProvider } from './ConnectionProfiles'
 import { setApiBase } from '../api/config'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -27,7 +28,7 @@ afterEach(() => {
 })
 
 async function register() {
-  await act(async () => root.render(<QueryClientProvider client={client}><CloudInstall /></QueryClientProvider>))
+  await act(async () => root.render(<QueryClientProvider client={client}><ConnectionProfilesProvider><CloudInstall /></ConnectionProfilesProvider></QueryClientProvider>))
   const inputs = host.querySelectorAll('input')
   await act(async () => {
     for (const [index, value] of ['Demo east', 'demo-east', 'demo'].entries()) {
@@ -39,25 +40,29 @@ async function register() {
 }
 
 it('registers through the Hub and discards the one-time Agent token after dismissal', async () => {
-  const fetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(new Response(JSON.stringify({ cluster: { id: 'demo-east', name: 'Demo east' }, token: 'unit-test-agent-token' }), { status: 201, headers: { 'Content-Type': 'application/json' } })))
+  const fetch = vi.fn<typeof globalThis.fetch>((url) => Promise.resolve(url === '/api/hub/connections'
+    ? new Response(JSON.stringify({ lanURL: 'https://lan.example.test', publicURL: 'https://public.example.test', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: true, catalog: { available: true, version: '1.2.3', installerSHA256: 'b'.repeat(64), chartSHA256: 'c'.repeat(64), imageDigest: `sha256:${'d'.repeat(64)}` } }), { headers: { 'Content-Type': 'application/json' } })
+    : new Response(JSON.stringify({ cluster: { id: 'demo-east', name: 'Demo east' }, token: 'unit-test-agent-token' }), { status: 201, headers: { 'Content-Type': 'application/json' } })))
   vi.stubGlobal('fetch', fetch)
   await register()
-  expect(fetch).toHaveBeenCalledTimes(1)
-  expect(fetch.mock.calls[0][0]).toBe('/api/hub/clusters')
-  const options = fetch.mock.calls[0][1] as RequestInit
+  expect(fetch).toHaveBeenCalledTimes(2)
+  const create = fetch.mock.calls.find(([url]) => url === '/api/hub/clusters')!
+  const options = create[1] as RequestInit
   expect(JSON.parse(options.body as string)).toMatchObject({ id: 'demo-east', name: 'Demo east', environment: 'demo' })
   expect(document.querySelector<HTMLTextAreaElement>('textarea[readonly]')?.value).toBe('unit-test-agent-token')
-  expect(document.querySelector('pre')?.textContent).toContain("KUBEATLAS_AGENT_HUB_CLUSTER_ID='demo-east'")
+  expect(document.querySelector('pre')?.textContent).toContain('--cluster-id "demo-east"')
   expect(document.querySelector('pre')?.textContent).not.toContain('unit-test-agent-token')
-  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === 'I saved the token')!.click())
+  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === '我已安全保存 Token')!.click())
   expect(document.querySelector('textarea[readonly]')).toBeNull()
 })
 
 it('shows uncertain registration failure and never retries the mutation automatically', async () => {
-  const fetch = vi.fn<typeof globalThis.fetch>(() => Promise.reject(new TypeError('Network connection lost')))
+  const fetch = vi.fn<typeof globalThis.fetch>((url) => url === '/api/hub/connections'
+    ? Promise.resolve(new Response(JSON.stringify({ lanURL: 'https://lan.example.test', publicURL: '', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: true, catalog: { available: true, version: '1.2.3', installerSHA256: 'b'.repeat(64), chartSHA256: 'c'.repeat(64), imageDigest: `sha256:${'d'.repeat(64)}` } }), { headers: { 'Content-Type': 'application/json' } }))
+    : Promise.reject(new TypeError('Network connection lost')))
   vi.stubGlobal('fetch', fetch)
   await register()
-  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(fetch.mock.calls.filter(([url]) => url === '/api/hub/clusters')).toHaveLength(1)
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('Network connection lost')
   expect(document.querySelector('textarea[readonly]')).toBeNull()
 })

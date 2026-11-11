@@ -10,6 +10,7 @@ const scope = {
   actives: ['demo-shop'], accessibleNamespaces: ['demo-shop', 'demo-staging'],
   mode: 'namespace', cacheScoped: false, authoritative: true, canClearNamespace: true,
 }
+const connections = { lanURL: 'https://lan.example.test', publicURL: 'https://public.example.test', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: false, catalog: { available: false } }
 
 vi.mock('../RadarApp', () => ({
   RadarApp: ({ queryClient }: { queryClient: QueryClient }) => <button onClick={() => {
@@ -46,6 +47,7 @@ it.each([
       availabilityRequests++
       return availabilityRequests === 1 ? firstResponse() : Response.json({ enabled: true, userId: 'test-user' })
     }
+    if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
     if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     throw new Error(`Unexpected request: ${path}`)
@@ -80,6 +82,7 @@ it.each([
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input)
     if (path === '/api/hub') return Response.json({ enabled: true, userId: 'test-user' })
+    if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: ['alpha', 'beta'].map(id => ({ id, name: id === 'alpha' ? 'Alpha' : 'Beta', state: 'connected' })) })
     if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === `/c/${id}/api/agents`) return Response.json({ eligible, enabled: false, agents: [] })
@@ -109,6 +112,7 @@ it('reserves host search shortcuts before native listeners without stealing edit
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input)
     if (path === '/api/hub') return Response.json({ enabled: true, userId: 'test-user' })
+    if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', name: 'Alpha', state: 'connected' }] })
     if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
@@ -174,6 +178,7 @@ it('shares the native namespace cache when entering and switching clusters', asy
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     const responses: Record<string, unknown> = {
       '/api/hub': { enabled: true, userId: 'test-user' },
+      '/api/hub/connections': connections,
       '/api/hub/clusters': { clusters: [{ id: 'alpha', name: 'Alpha', state: 'connected' }, { id: 'beta', name: 'Beta', state: 'connected' }] },
       '/api/mcp/credentials': { credentials: [], serverTime: '2026-01-01T00:00:00Z' },
       '/c/alpha/api/cluster/namespace-scope': scope,
@@ -221,6 +226,7 @@ it('reconciles the namespace cache after an uncertain host write', async () => {
   const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
     const path = String(input)
     if (path === '/api/hub') return Response.json({ enabled: true, userId: 'test-user' })
+    if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', name: 'Alpha', state: 'connected' }] })
     if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/cluster/namespace-scope') {

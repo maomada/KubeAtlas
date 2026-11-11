@@ -69,3 +69,5 @@ Hub agent.
 This slice does not enroll clusters, issue licenses, call legacy update APIs,
 or enable self-upgrade. The source advertises self-upgrade as unavailable.
 Standalone startup without Hub options remains unchanged.
+
+For the Hub-hosted installer, chart, OCI image, LAN/public profiles, and new-install bootstrap, see [Hub-hosted Agent onboarding](hub-agent-onboarding.md). The optional private bundle is operator-staged and immutable; no external registry fetch or publish occurs when the Portal serves it.

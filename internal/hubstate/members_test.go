@@ -154,6 +154,7 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	}
 	delete(legacy, "organization")
 	delete(legacy, "members")
+	delete(legacy, "connectionSettings")
 	data, err = json.Marshal(legacy)
 	if err != nil {
 		t.Fatal(err)

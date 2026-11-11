@@ -3,6 +3,7 @@ import { Check, Copy, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge } from '@maomada/k8s-ui/components/ui/Badge'
 import { credentialClusters, credentialStatus, credentialsRequest, openCodeCloudConfig } from './credentials'
 import type { CredentialCluster, IssuedCredential, MCPCredential } from './credentials'
+import { ConnectionProfileSelector, useConnectionProfiles } from './ConnectionProfiles'
 
 const statusLabels = { active: '有效', expired: '已过期', revoked: '已撤销', unknown: '有效期未知' }
 const statusTones = { active: 'success', expired: 'warning', revoked: 'neutral', unknown: 'warning' } as const
@@ -26,6 +27,7 @@ function CopyValue({ value, label }: { value: string; label: string }) {
 }
 
 export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolean }) {
+  const profile = useConnectionProfiles()
   const [clusters, setClusters] = useState<CredentialCluster[]>([])
   const [directoryError, setDirectoryError] = useState('')
   const [directoryLoading, setDirectoryLoading] = useState(true)
@@ -41,7 +43,6 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
   const [ttlSeconds, setTTL] = useState(28800)
   const [issued, setIssued] = useState<IssuedCredential>()
   const [revokeID, setRevokeID] = useState('')
-  const [endpoint, setEndpoint] = useState(`${window.location.origin}/mcp`)
   const [now, setNow] = useState(NaN)
   const clock = useRef({ server: NaN, received: 0 })
   const availableIDs = new Set(clusters.map(cluster => cluster.id))
@@ -104,7 +105,8 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
 
   let config = ''
   let endpointError = ''
-  try { config = openCodeCloudConfig(endpoint) } catch (error) { endpointError = errorMessage(error) }
+  if (!profile.mcpURL) endpointError = '所选局域网/公网配置未填写 MCP 地址。'
+  else { try { config = openCodeCloudConfig(profile.mcpURL) } catch (error) { endpointError = errorMessage(error) } }
 
   return <div className="space-y-6">
     <div><p className="portal-mono mb-2 text-xs text-accent-text">统一 MCP · Streamable HTTP</p><h1 className="text-3xl font-semibold">MCP 访问凭据</h1><p className="mt-3 max-w-3xl text-sm leading-relaxed text-theme-text-secondary">在这里生成独立的限时 Token，不再复制网页登录 Cookie。凭据重启后仍有效，可限定集群和读写范围，并随时撤销。</p></div>
@@ -139,9 +141,9 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
       <section className="portal-card min-w-0 p-5 lg:p-6" aria-labelledby="client-config-title">
         <h2 id="client-config-title" className="text-lg font-semibold">接入 OpenCode</h2>
         <p className="mt-3 text-sm leading-relaxed text-theme-text-secondary">在运行 OpenCode 的机器上安全设置环境变量 <code className="portal-mono">KUBEATLAS_MCP_TOKEN</code>，值为刚生成的 Token；重启客户端以加载新值。以下配置不包含凭据原文。</p>
-        <label className="mt-4 block text-sm">聚合 MCP 地址<input type="url" value={endpoint} onChange={event => setEndpoint(event.target.value)} className="portal-control portal-mono mt-2 w-full" spellCheck={false} /></label>
+        <ConnectionProfileSelector />
+        <p className="mt-4 break-all font-mono text-sm">聚合 MCP 地址：{profile.mcpURL || '未配置'}</p>
         {endpointError ? <p role="alert" className="mt-2 text-sm text-warning-text">{endpointError}</p> : <>
-          {endpoint.startsWith('http:') && <p role="status" className="mt-3 text-xs text-warning-text">HTTP 会明文传输 Token，仅用于可信内网。请使用部署时配置的 HTTP 入口，不能只将 HTTPS 地址替换协议。</p>}
           <pre className="portal-mono my-4 overflow-auto rounded-lg bg-theme-base p-4 text-xs leading-relaxed" aria-label="OpenCode 配置">{config}</pre>
           <CopyValue value={config} label="复制 OpenCode 配置" />
         </>}

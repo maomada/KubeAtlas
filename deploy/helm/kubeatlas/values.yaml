@@ -27,8 +27,22 @@ image:
   pullPolicy: IfNotPresent
   # Overrides the image tag whose default is the chart appVersion.
   tag: ""
+  # Immutable OCI manifest or index digest. Mutually exclusive with tag.
+  digest: ""
 
 imagePullSecrets: []
+
+# Self-hosted Hub Agent mode uses a per-cluster token Secret mounted as a file.
+# The Hub must be reachable by both this Pod and the nodes pulling the image.
+hub:
+  enabled: false
+  url: ""
+  clusterID: ""
+  tokenSecret: ""
+  tokenSecretKey: token
+  caSecret: ""
+  caSecretKey: ca.crt
+  ownerUserID: ""
 nameOverride: ""
 fullnameOverride: ""
 

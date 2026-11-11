@@ -135,3 +135,14 @@ Tokens appear only in successful issuance/rotation/refresh responses, never in
 list responses. The store persists only their digests. Save token values through
 a secret manager or protected file, not source code, logs, or chat. MCP refresh
 is not OAuth and does not imply an automatic OpenCode refresh integration.
+
+## Connection profiles
+
+`GET /api/hub/connections` is available to active Hub members and returns the
+`lanURL` and `publicURL` origins, their derived `/mcp` endpoints, the exact
+local-owner `ownerUserID`, and whether the version-matched local artifact
+catalog is available. `PUT /api/hub/connections` accepts exactly
+`{"lanURL":"...","publicURL":"..."}` and is restricted to active owners
+and administrators. Either origin may be empty. Nonempty origins use the same
+root-origin HTTPS/loopback rules as Agent startup; the Hub does not resolve DNS
+or probe addresses. MCP and onboarding share the profile selector.

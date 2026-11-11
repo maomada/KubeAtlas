@@ -4,6 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { MCPCredentials } from './MCPCredentials'
+import { ConnectionProfilesProvider } from './ConnectionProfiles'
 import { credentialStatus, openCodeCloudConfig } from './credentials'
 import type { MCPCredential } from './credentials'
 
@@ -19,6 +20,7 @@ const response = (data: unknown) => new Response(JSON.stringify(data), { headers
 const button = (label: string) => [...host.querySelectorAll('button')].find(button => button.textContent === label)!
 
 beforeEach(() => {
+  window.localStorage.removeItem('kubeatlas.hub.connection-profile')
   window.history.replaceState({}, '', '/mcp-access')
   host = document.createElement('div')
   document.body.appendChild(host)
@@ -32,7 +34,7 @@ afterEach(() => {
 })
 
 it('limits viewer credential controls to read-only regardless of the default write option', () => {
-  const html = renderToStaticMarkup(<MCPCredentials readOnlyOnly />)
+  const html = renderToStaticMarkup(<ConnectionProfilesProvider><MCPCredentials readOnlyOnly /></ConnectionProfilesProvider>)
   expect(html).not.toContain('value="write"')
   expect(html).toContain('value="read"')
   expect(html).toContain('只读 · 查询与诊断')
@@ -56,6 +58,7 @@ it('generates an OpenCode environment reference, rejects credential-bearing URLs
 it('issues scoped credentials once, hides the secret after dismissal, and confirms revocation', async () => {
   let records: MCPCredential[] = []
   const fetch = vi.fn((url: string, options?: RequestInit) => {
+    if (url === '/api/hub/connections') return Promise.resolve(response({ lanURL: 'https://hub.example.test', publicURL: '', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: false, catalog: { available: false } }))
     if (url === '/api/hub') return Promise.resolve(response({ enabled: true }))
     if (url === '/api/hub/clusters') return Promise.resolve(response({ clusters: [cluster, { id: 'revoked', name: 'Revoked', revokedAt: credential.createdAt }] }))
     if (url.endsWith('/revoke')) {
@@ -69,7 +72,7 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
     return Promise.resolve(response({ credentials: records, serverTime: credential.createdAt }))
   })
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<MCPCredentials />))
+  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials /></ConnectionProfilesProvider>))
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
   expect(button('生成限时 Token').disabled).toBe(true)
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
@@ -86,16 +89,17 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
   expect(fetch.mock.calls.some(([url]) => url.endsWith('/revoke'))).toBe(false)
   await act(async () => button('确认撤销').click())
   expect(host.textContent).toContain('已撤销')
-  expect(fetch.mock.calls.every(([url]) => url.startsWith('/api/mcp/credentials') || url === '/api/hub' || url === '/api/hub/clusters')).toBe(true)
+  expect(fetch.mock.calls.every(([url]) => url.startsWith('/api/mcp/credentials') || url === '/api/hub' || url === '/api/hub/clusters' || url === '/api/hub/connections')).toBe(true)
 })
 
 it('surfaces uncertain creation failures without retrying the mutation', async () => {
-  const fetch = vi.fn((url: string, options?: RequestInit) => url === '/api/hub/clusters'
+  const fetch = vi.fn((url: string, options?: RequestInit) => url === '/api/hub/connections'
+    ? Promise.resolve(response({ lanURL: 'https://hub.example.test', publicURL: '', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: false, catalog: { available: false } })) : url === '/api/hub/clusters'
     ? Promise.resolve(response({ clusters: [cluster] })) : options?.method === 'POST'
     ? Promise.reject(new Error('network interruption'))
     : Promise.resolve(response({ credentials: [], serverTime: credential.createdAt })))
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<MCPCredentials />))
+  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials /></ConnectionProfilesProvider>))
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   expect(host.textContent).toContain('生成结果可能未确认')
@@ -104,7 +108,9 @@ it('surfaces uncertain creation failures without retrying the mutation', async (
 })
 
 it('fails closed when the Hub directory cannot be read, without falling back to registrations', async () => {
-  const fetch = vi.fn((url: string, options?: RequestInit) => Promise.resolve(options?.method === 'POST'
+  const fetch = vi.fn((url: string, options?: RequestInit) => Promise.resolve(url === '/api/hub/connections'
+    ? response({ lanURL: '', publicURL: '', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: false, catalog: { available: false } })
+    : options?.method === 'POST'
     ? response({})
     : url === '/api/hub'
       ? response({ enabled: true })
@@ -112,12 +118,12 @@ it('fails closed when the Hub directory cannot be read, without falling back to 
         ? new Response(null, { status: 503 })
         : response({ credentials: [credential], serverTime: credential.createdAt })))
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<MCPCredentials />))
+  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials /></ConnectionProfilesProvider>))
   expect(host.textContent).toContain('集群目录读取失败')
   expect(button('生成限时 Token').closest('fieldset')!.disabled).toBe(true)
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-  expect(fetch.mock.calls).toHaveLength(2)
+  expect(fetch.mock.calls).toHaveLength(3)
   expect(fetch.mock.calls.some(([url]) => url === '/api/clusters')).toBe(false)
   expect(fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
 })

@@ -10,6 +10,114 @@
 {{- if .Values.cloud.enabled }}
 {{- fail "cloud.enabled is unavailable in KubeAtlas" }}
 {{- end }}
+{{- if and .Values.image.digest .Values.image.tag }}
+{{- fail "image.digest and image.tag are mutually exclusive" }}
+{{- end }}
+{{- if and .Values.image.digest (not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest)) }}
+{{- fail "image.digest must be a lowercase sha256 digest" }}
+{{- end }}
+{{- if .Values.hub.enabled }}
+{{- $hubURL := toString .Values.hub.url }}
+{{- $hub := urlParse $hubURL }}
+{{- $hubAuthority := lower $hub.host }}
+{{- $hubHost := regexReplaceAll ":[0-9]+$" $hubAuthority "" | trimPrefix "[" | trimSuffix "]" }}
+{{- if or (not (has $hub.scheme (list "http" "https"))) (not $hubAuthority) }}
+{{- fail "hub.url must be an HTTPS IP or DNS origin without userinfo or unsafe host characters" }}
+{{- end }}
+{{- if hasPrefix "[" $hubAuthority }}
+{{- if not (regexMatch "^\\[[0-9A-Fa-f:]+\\](:[0-9]+)?$" $hubAuthority) }}
+{{- fail "hub.url IPv6 authority or port is invalid" }}
+{{- end }}
+{{- else if not (regexMatch "^[A-Za-z0-9.-]+(:[0-9]+)?$" $hubAuthority) }}
+{{- fail "hub.url authority or port is invalid" }}
+{{- end }}
+{{- $port := regexFind ":[0-9]+$" $hubAuthority }}
+{{- if and $port (or (lt (int (trimPrefix ":" $port)) 1) (gt (int (trimPrefix ":" $port)) 65535)) }}
+{{- fail "hub.url port must be between 1 and 65535" }}
+{{- end }}
+{{- if $hub.userinfo }}
+{{- fail "hub.url must not include credentials" }}
+{{- end }}
+{{- if not (has $hub.path (list "" "/")) }}
+{{- fail "hub.url must not include a path prefix" }}
+{{- end }}
+{{- if or $hub.query $hub.fragment (contains "?" $hubURL) (contains "#" $hubURL) (contains "\\" $hubURL) }}
+{{- fail "hub.url must not include a query, fragment, or backslash" }}
+{{- end }}
+{{- if and (ne $hubHost "localhost") (ne $hubHost "::1") (not (regexMatch "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))*$" $hubHost)) }}
+{{- fail "hub.url must contain a valid DNS hostname or IP address" }}
+{{- end }}
+{{- if and (regexMatch "^[0-9.]+$" $hubHost) (not (regexMatch "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$" $hubHost)) }}
+{{- fail "hub.url IPv4 address must contain four octets" }}
+{{- end }}
+{{- if regexMatch "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$" $hubHost }}
+{{- range $octet := splitList "." $hubHost }}
+{{- if gt (int $octet) 255 }}
+{{- fail "hub.url IPv4 octets must be between 0 and 255" }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if and (eq $hub.scheme "http") (not (or (eq $hubHost "localhost") (hasPrefix "127." $hubHost) (eq $hubHost "::1"))) }}
+{{- fail "hub.url must use HTTPS unless the host is localhost or loopback" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9-]{0,62}$" .Values.hub.clusterID) }}
+{{- fail "hub.clusterID must be a lowercase DNS label" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" .Values.hub.tokenSecret) }}
+{{- fail "hub.tokenSecret must name an existing Kubernetes Secret" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9][a-z0-9-]{0,62}$" .Values.hub.tokenSecretKey) }}
+{{- fail "hub.tokenSecretKey must be a valid Secret key name" }}
+{{- end }}
+{{- if and .Values.hub.caSecret (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" .Values.hub.caSecret)) }}
+{{- fail "hub.caSecret must name an existing Kubernetes Secret" }}
+{{- end }}
+{{- if and .Values.hub.caSecret (not (regexMatch "^[a-zA-Z0-9._-]+$" .Values.hub.caSecretKey)) }}
+{{- fail "hub.caSecretKey must be a valid Secret key name" }}
+{{- end }}
+{{- if not (regexMatch "^kubeatlas:portal:[0-9a-f]{64}$" .Values.hub.ownerUserID) }}
+{{- fail "hub.ownerUserID must be the exact local Hub owner User identity" }}
+{{- end }}
+{{- if not .Values.image.digest }}
+{{- fail "hub.enabled requires image.digest pinned to the Hub-hosted OCI image" }}
+{{- end }}
+{{- if ne (lower .Values.image.repository) (printf "%s/kubeatlas/agent" $hubAuthority) }}
+{{- fail "hub.enabled requires image.repository to use the selected Hub origin authority" }}
+{{- end }}
+{{- if ne (int .Values.replicaCount) 1 }}
+{{- fail "hub.enabled requires replicaCount=1" }}
+{{- end }}
+{{- if ne .Values.auth.mode "proxy" }}
+{{- fail "hub.enabled requires auth.mode=proxy" }}
+{{- end }}
+{{- if not .Values.mcp.enabled }}
+{{- fail "hub.enabled requires mcp.enabled=true" }}
+{{- end }}
+{{- if .Values.basePath }}
+{{- fail "hub.enabled does not support basePath" }}
+{{- end }}
+{{- if .Values.auth.oidc.enabled }}
+{{- fail "hub.enabled does not support OIDC" }}
+{{- end }}
+{{- if eq .Values.auth.kubernetesCredentials "user-token" }}
+{{- fail "hub.enabled does not support user-token credentials" }}
+{{- end }}
+{{- if not .Values.rbac.create }}
+{{- fail "hub.enabled requires rbac.create=true for Agent impersonation" }}
+{{- end }}
+{{- if not .Values.serviceAccount.create }}
+{{- fail "hub.enabled requires the chart-managed Agent ServiceAccount" }}
+{{- end }}
+{{- if .Values.imagePullSecrets }}
+{{- fail "hub.enabled uses anonymous read-only Hub OCI pulls and does not accept imagePullSecrets" }}
+{{- end }}
+{{- if .Values.initContainers }}
+{{- fail "hub.enabled does not allow external init containers" }}
+{{- end }}
+{{- if .Values.extraArgs }}
+{{- fail "hub.enabled does not allow extraArgs that could override Hub startup" }}
+{{- end }}
+{{- end }}
 {{- if eq .Values.auth.kubernetesCredentials "user-token" }}
 {{- fail "auth.kubernetesCredentials=user-token is unavailable in KubeAtlas" }}
 {{- end }}
@@ -98,7 +206,7 @@ spec:
   {{- /* Enrollment: the Hub keeps one connection per cluster. In a rolling
          update the new pod would wait until the old one is gone and the Hub
          sees its connection drop. */}}
-  {{- if or $enroll (and .Values.persistence.enabled (eq .Values.timeline.storage "sqlite")) }}
+{{- if or .Values.hub.enabled $enroll (and .Values.persistence.enabled (eq .Values.timeline.storage "sqlite")) }}
   strategy:
     type: Recreate
   {{- end }}
@@ -116,6 +224,9 @@ spec:
                auth.mode and cloud.enabled also shape the ClusterRole, but they
                already change the container args. */}}
         checksum/rbac: {{ toJson .Values.rbac | sha256sum }}
+        {{- if .Values.hub.enabled }}
+        checksum/hub: {{ toJson .Values.hub | sha256sum }}
+        {{- end }}
         {{- if not .Values.cloud.enabled }}
         checksum/operator-settings: {{ include "radar.operatorSettings" . | sha256sum }}
         {{- end }}
@@ -144,7 +255,7 @@ spec:
         - name: {{ .Chart.Name }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          image: {{ if .Values.image.digest }}{{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}{{ else }}{{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) | quote }}{{ end }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --port={{ .Values.service.port }}
@@ -330,6 +441,18 @@ spec:
             - name: KUBEATLAS_COST_SOURCE
               value: {{ .Values.cost.source | quote }}
             {{- end }}
+            {{- if .Values.hub.enabled }}
+            - name: KUBEATLAS_AGENT_HUB_URL
+              value: {{ .Values.hub.url | quote }}
+            - name: KUBEATLAS_AGENT_HUB_CLUSTER_ID
+              value: {{ .Values.hub.clusterID | quote }}
+            - name: KUBEATLAS_AGENT_HUB_TOKEN_FILE
+              value: /etc/kubeatlas/hub/token
+            {{- if .Values.hub.caSecret }}
+            - name: KUBEATLAS_AGENT_HUB_CA_FILE
+              value: /etc/kubeatlas/hub-ca/ca.crt
+            {{- end }}
+            {{- end }}
             {{- if .Values.cost.kubecost.url }}
             - name: KUBEATLAS_KUBECOST_URL
               value: {{ .Values.cost.kubecost.url | quote }}
@@ -498,6 +621,16 @@ spec:
               mountPath: /etc/radar/cloud-enrollment
               readOnly: true
             {{- end }}
+            {{- if .Values.hub.enabled }}
+            - name: hub-token
+              mountPath: /etc/kubeatlas/hub
+              readOnly: true
+            {{- if .Values.hub.caSecret }}
+            - name: hub-ca
+              mountPath: /etc/kubeatlas/hub-ca
+              readOnly: true
+            {{- end }}
+            {{- end }}
             {{- if $cloudCA }}
             - name: cloud-ca
               mountPath: /etc/radar/cloud-ca
@@ -528,6 +661,24 @@ spec:
             items:
               - key: {{ ternary (.Values.cloud.enrollment.existingSecretKey | default "key") "key" (not (empty .Values.cloud.enrollment.existingSecret)) }}
                 path: key
+        {{- end }}
+        {{- if .Values.hub.enabled }}
+        - name: hub-token
+          secret:
+            secretName: {{ .Values.hub.tokenSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.hub.tokenSecretKey }}
+                path: token
+        {{- if .Values.hub.caSecret }}
+        - name: hub-ca
+          secret:
+            secretName: {{ .Values.hub.caSecret }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.hub.caSecretKey }}
+                path: ca.crt
+        {{- end }}
         {{- end }}
         {{- if $cloudCA }}
         - name: cloud-ca

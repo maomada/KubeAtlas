@@ -32,7 +32,8 @@
       "properties": {
         "repository": { "type": "string" },
         "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] },
-        "tag": { "type": "string", "description": "Overrides Chart.appVersion when set." }
+        "tag": { "type": "string", "description": "Overrides Chart.appVersion when set." },
+        "digest": { "type": "string", "pattern": "^(|sha256:[0-9a-f]{64})$" }
       }
     },
     "imagePullSecrets": {

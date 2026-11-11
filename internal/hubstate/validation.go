@@ -11,6 +11,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/maomada/KubeAtlas/internal/cloud"
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
 )
 
@@ -19,14 +20,18 @@ func requiredFields(data []byte) bool {
 	if json.Unmarshal(data, &file) != nil {
 		return false
 	}
-	extension := file["organization"] != nil || file["members"] != nil
-	if (len(file) != 4 && len(file) != 6) ||
+	connections := file["connectionSettings"] != nil
+	extension := file["organization"] != nil || file["members"] != nil || connections
+	if (len(file) != 4 && len(file) != 6 && len(file) != 7) ||
 		file["version"] == nil || file["clusters"] == nil || file["groups"] == nil ||
 		file["credentials"] == nil || extension && (file["organization"] == nil || file["members"] == nil) {
 		return false
 	}
 	if extension && (bytes.Equal(bytes.TrimSpace(file["organization"]), []byte("null")) ||
 		bytes.Equal(bytes.TrimSpace(file["members"]), []byte("null"))) {
+		return false
+	}
+	if connections && bytes.Equal(bytes.TrimSpace(file["connectionSettings"]), []byte("null")) {
 		return false
 	}
 	for section, fields := range map[string][]string{
@@ -70,6 +75,20 @@ func requiredFields(data []byte) bool {
 		}
 		for field := range organization {
 			if field != "id" && field != "name" {
+				return false
+			}
+		}
+	}
+	if connections {
+		var settings map[string]json.RawMessage
+		if json.Unmarshal(file["connectionSettings"], &settings) != nil || len(settings) != 2 ||
+			settings["lanURL"] == nil || settings["publicURL"] == nil ||
+			bytes.Equal(bytes.TrimSpace(settings["lanURL"]), []byte("null")) ||
+			bytes.Equal(bytes.TrimSpace(settings["publicURL"]), []byte("null")) {
+			return false
+		}
+		for field := range settings {
+			if field != "lanURL" && field != "publicURL" {
 				return false
 			}
 		}
@@ -199,6 +218,17 @@ func validFile(file storeFile) bool {
 		}
 		for id, member := range file.Members {
 			if id != member.ID || !validMember(member, file.Clusters) {
+				return false
+			}
+		}
+	}
+	if file.Connections != nil {
+		for _, origin := range []string{file.Connections.LANURL, file.Connections.PublicURL} {
+			if origin == "" {
+				continue
+			}
+			normalized, err := cloud.NormalizeHubOrigin(origin)
+			if err != nil || normalized != origin {
 				return false
 			}
 		}

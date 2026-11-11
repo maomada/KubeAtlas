@@ -46,6 +46,7 @@ type storeFile struct {
 	Credentials  map[string]storedCredential `json:"credentials"`
 	Organization *Organization               `json:"organization,omitempty"`
 	Members      map[string]Member           `json:"members"`
+	Connections  *ConnectionSettings         `json:"connectionSettings,omitempty"`
 }
 
 type Store struct {
@@ -61,7 +62,7 @@ func OpenStore(path string) (*Store, error) {
 	}
 	s := &Store{path: path, now: time.Now, data: storeFile{Version: 1,
 		Clusters: map[string]storedCluster{}, Groups: map[string]Group{}, Credentials: map[string]storedCredential{},
-		Organization: &Organization{ID: "self-hosted", Name: "KubeAtlas"}, Members: map[string]Member{}}}
+		Organization: &Organization{ID: "self-hosted", Name: "KubeAtlas"}, Members: map[string]Member{}, Connections: &ConnectionSettings{}}}
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -98,6 +99,9 @@ func OpenStore(path string) (*Store, error) {
 		file.Organization = &Organization{ID: "self-hosted", Name: "KubeAtlas"}
 		file.Members = map[string]Member{}
 	}
+	if file.Connections == nil {
+		file.Connections = &ConnectionSettings{}
+	}
 	s.data = file
 	return s, nil
 }
@@ -109,6 +113,7 @@ func (s *Store) next(now time.Time) storeFile {
 		Credentials:  make(map[string]storedCredential, len(s.data.Credentials)),
 		Organization: &Organization{ID: s.data.Organization.ID, Name: s.data.Organization.Name},
 		Members:      make(map[string]Member, len(s.data.Members)),
+		Connections:  cloneConnectionSettings(s.data.Connections),
 	}
 	for id, c := range s.data.Clusters {
 		c.Cluster = cloneCluster(c.Cluster)

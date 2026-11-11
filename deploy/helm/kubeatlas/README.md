@@ -547,3 +547,9 @@ KubeAtlas uses its ServiceAccount permissions to access the Kubernetes API. The 
 helm uninstall radar -n radar
 kubectl delete namespace radar
 ```
+
+## Self-hosted Hub Agent
+
+See [Hub-hosted Agent onboarding](../../../docs/hub-agent-onboarding.md) for the private local bundle, bootstrap, and trust model. Agent mode is a separate `hub` values block; it does not re-enable the legacy `cloud.enabled` contract. It requires a pinned `image.digest`, the Hub origin's `kubeatlas/agent` repository, a per-cluster token Secret mounted as a file, proxy authentication, and MCP. The chart binds cluster-admin only to the exact `hub.ownerUserID` `User`; Hub member groups are not elevated.
+
+Target nodes must reach the Hub OCI endpoint and trust its TLS certificate independently of the optional Agent CA file. The default installer refuses adoption and requires a new namespace/release.
