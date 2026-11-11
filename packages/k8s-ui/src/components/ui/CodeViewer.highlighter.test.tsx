@@ -33,6 +33,11 @@ it("highlights all supported languages with the JavaScript engine and no WebAsse
       expect(shiki).not.toBeNull();
       expect(shiki.classList.contains("github-light")).toBe(true);
       expect(shiki.querySelectorAll(".line")).toHaveLength(testCase.lines);
+      if (testCase.language === "yaml") {
+        expect(shiki.getAttribute("style")).toMatch(/background-color:\s*#fff/i);
+        const yamlKey = [...shiki.querySelectorAll("span[style]")].find((span) => span.textContent === "kind");
+        expect(yamlKey?.getAttribute("style")).toMatch(/color:\s*#22863a/i);
+      }
       if (testCase.language !== "text") {
         expect(shiki.querySelectorAll('span[style*="color:"]').length).toBeGreaterThan(0);
       }

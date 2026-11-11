@@ -378,7 +378,7 @@ export function CodeViewer({
   return (
     <div
       ref={wrapperRef}
-      className="relative rounded-lg overflow-hidden bg-theme-elevated text-theme-text-primary"
+      className="relative rounded-lg overflow-hidden bg-theme-surface text-theme-text-primary"
       tabIndex={0}
       onKeyDown={handleWrapperKeyDown}
       onMouseEnter={() => { isMouseInsideRef.current = true }}
@@ -446,7 +446,7 @@ export function CodeViewer({
         style={{ maxHeight }}
       >
         {highlighting ? (
-          <div className="p-4 text-theme-text-tertiary text-sm font-mono">Loading…</div>
+          <div className="p-4 text-theme-text-secondary text-sm font-mono">Loading…</div>
         ) : (
           <div
             ref={contentRef}
@@ -456,11 +456,9 @@ export function CodeViewer({
       </div>
 
       <style>{`
-        :root { --code-line-number: light-dark(#8b949e, #484f58); }
         .shiki-viewer pre {
           margin: 0;
           padding: 12px;
-          background: transparent !important;
           font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
           font-size: 12px;
           line-height: 1.5;
@@ -482,7 +480,7 @@ export function CodeViewer({
           width: 3ch;
           margin-right: 1.5ch;
           text-align: right;
-          color: var(--code-line-number, #484f58);
+          color: var(--text-tertiary);
           user-select: none;
         }
         .shiki-viewer .line:hover {
