@@ -10,4 +10,10 @@ official Skyhook distribution. Source attribution is retained here; this
 repository has independent Git history.
 
 Distributed under the Apache License, Version 2.0; see LICENSE.
+
+This distribution embeds the unmodified Caretta Helm chart 0.0.16 from
+groundcover-com/helm-charts, including the Grafana chart 6.48.0 and
+VictoriaMetrics Single chart 0.8.48. These chart sources are Apache-2.0 licensed.
+Original attribution and license copies are in internal/bundledcharts.
+Container images are not included or relicensed by this notice.
 Third-party code retains its respective license and attribution notices.

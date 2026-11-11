@@ -14,6 +14,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
 
+	"github.com/maomada/KubeAtlas/internal/bundledcharts"
 	"github.com/maomada/KubeAtlas/internal/errorlog"
 	"github.com/maomada/KubeAtlas/internal/portforward"
 	"github.com/maomada/KubeAtlas/pkg/k8score"
@@ -774,8 +775,8 @@ func (m *Manager) SetContextName(name string) {
 // carettaHelmChart returns the Helm chart info for Caretta
 func carettaHelmChart() *HelmChartInfo {
 	return &HelmChartInfo{
-		Repo:      "groundcover",
-		RepoURL:   "https://helm.groundcover.com/",
+		Repo:      bundledcharts.Repository,
+		Version:   bundledcharts.CarettaVersion,
 		ChartName: "caretta",
 		DefaultValues: map[string]any{
 			"resources": map[string]any{

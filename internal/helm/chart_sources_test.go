@@ -6,10 +6,13 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/maomada/KubeAtlas/internal/bundledcharts"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/chartutil"
@@ -104,6 +107,24 @@ func newChartSourceTestClient(t *testing.T) *Client {
 	withTestHelmHTTPClient(t)
 	dir := t.TempDir()
 	return &Client{settings: &cli.EnvSettings{RepositoryConfig: filepath.Join(dir, "repositories.yaml"), RepositoryCache: dir}, repositoryNetwork: testHelmRepositoryNetwork()}
+}
+
+func TestEnsureClassicRepositoryRejectsBundledAliasBeforeNetwork(t *testing.T) {
+	c := newChartSourceTestClient(t)
+	var requests atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests.Add(1)
+		_, _ = w.Write([]byte("apiVersion: v1\nentries: {}\n"))
+	}))
+	defer server.Close()
+
+	_, err := c.ensureClassicRepository(server.URL, strings.ToUpper(bundledcharts.Repository))
+	if !errors.Is(err, errRepositoryConflict) {
+		t.Fatalf("ensureClassicRepository error = %v, want reserved-name conflict", err)
+	}
+	if requests.Load() != 0 {
+		t.Fatalf("reserved repository name made %d network requests", requests.Load())
+	}
 }
 
 func TestEnsureClassicRepositoryDoesNotHoldMutexAcrossNetwork(t *testing.T) {

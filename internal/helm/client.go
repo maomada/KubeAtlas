@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
+	"github.com/maomada/KubeAtlas/internal/bundledcharts"
 	"github.com/maomada/KubeAtlas/internal/k8s"
 	aicontext "github.com/maomada/KubeAtlas/pkg/ai/context"
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
@@ -3300,6 +3301,9 @@ func (c *Client) SearchCharts(query string, allVersions bool) (*ChartSearchResul
 
 // GetChartDetail returns detailed information about a specific chart version
 func (c *Client) GetChartDetail(repoName, chartName, version string) (*ChartDetail, error) {
+	if repoName == bundledcharts.Repository {
+		return bundledChartDetail(chartName, version)
+	}
 	if registry.IsOCI(repoName) {
 		chartURL, err := resolveOCIChartURL(repoName, chartName)
 		if err != nil {
@@ -3467,6 +3471,9 @@ func (c *Client) InstallAsUser(req *InstallRequest, user *pkgauth.User) (*HelmRe
 }
 
 func (c *Client) installWith(actionConfig *action.Configuration, req *InstallRequest) (*HelmRelease, error) {
+	if req.Repository == bundledcharts.Repository {
+		return installBundledChart(actionConfig, req, nil)
+	}
 
 	var chartURL string
 	var indexDigest string
@@ -3675,6 +3682,9 @@ func (c *Client) InstallWithProgressAsUser(req *InstallRequest, progressCh chan<
 }
 
 func (c *Client) installWithProgressUsing(actionConfig *action.Configuration, req *InstallRequest, progressCh chan<- InstallProgress) (*HelmRelease, error) {
+	if req.Repository == bundledcharts.Repository {
+		return installBundledChart(actionConfig, req, progressCh)
+	}
 	sendProgress := func(phase, message, detail string) {
 		select {
 		case progressCh <- InstallProgress{Phase: phase, Message: message, Detail: detail}:
