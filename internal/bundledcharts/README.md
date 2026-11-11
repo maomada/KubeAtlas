@@ -7,7 +7,7 @@ The dedicated `kubeatlas-bundled` source is separate from external repositories.
 | --- | --- | --- |
 | Caretta chart | 0.0.16 | https://github.com/groundcover-com/helm-charts/releases/download/caretta-0.0.16/caretta-0.0.16.tgz |
 | Grafana subchart | 6.48.0 | https://github.com/grafana/helm-charts/tree/grafana-6.48.0/charts/grafana |
-| VictoriaMetrics Single subchart | 0.8.48 | https://github.com/VictoriaMetrics/helm-charts/tree/victoria-metrics-single-0.8.48 |
+| VictoriaMetrics Single subchart | 0.8.48 | https://github.com/VictoriaMetrics/helm-charts |
 
 Archive SHA-256: `24593ec0e9e7971520b2ab3f049d7fceebe0519a04f857f711ca5c7505e0af72`.
 Verified against the upstream `https://helm.groundcover.com/index.yaml` entry.

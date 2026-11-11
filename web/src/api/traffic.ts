@@ -281,7 +281,7 @@ export function useTrafficConnect() {
 
   return useMutation<TrafficConnectionInfo, Error>({
     mutationFn: async () => {
-      const response = await fetch(apiUrl('/traffic/connect'), {
+      const response = await fetch(apiUrl('/traffic/connect-managed'), {
         method: 'POST',
         credentials: getCredentialsMode(),
         headers: { 'Content-Type': 'application/json', ...getAuthHeaders() },

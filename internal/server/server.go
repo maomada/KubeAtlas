@@ -921,6 +921,7 @@ func (s *Server) setupAppRoutes(r chi.Router) {
 			r.Get("/traffic/source", s.handleGetActiveTrafficSource)
 			r.Post("/traffic/source", s.handleSetTrafficSource)
 			r.Post("/traffic/connect", s.handleTrafficConnect)
+			r.Post("/traffic/connect-managed", s.handleTrafficConnect)
 			r.Get("/traffic/connection", s.handleTrafficConnectionStatus)
 
 			// Context routes

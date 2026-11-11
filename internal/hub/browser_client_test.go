@@ -84,7 +84,7 @@ func TestBrowserRequestPolicyRejectsLocalRoutesAndUnsafeUpgrades(t *testing.T) {
 	for _, path := range []string{
 		"/api/contexts", "/api/config", "/api/desktop", "/api/local-terminal", "/api/fleet",
 		"/api/cloud", "/api/connect", "/api/github", "/api/agent/self-upgrade",
-		"/api/integrations/connections", "/api/traffic/connect", "/api/pods/ns/pod/files/save", "/api/resources%2fpods",
+		"/api/integrations/connections", "/api/traffic/connect", "/api/traffic/connect-managed", "/api/portforwards", "/api/pods/ns/pod/files/save", "/api/resources%2fpods",
 		"/api/resources/../contexts",
 	} {
 		request := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
@@ -104,6 +104,23 @@ func TestBrowserRequestPolicyRejectsLocalRoutesAndUnsafeUpgrades(t *testing.T) {
 		request := httptest.NewRequest(http.MethodPost, "http://localhost"+path, nil)
 		if err := validateBrowserRequest(request, false); err == nil {
 			t.Errorf("local traffic configuration write %q was allowed", path)
+		}
+	}
+	managedTrafficConnect := httptest.NewRequest(http.MethodPost, "http://localhost/api/traffic/connect-managed", nil)
+	if err := validateBrowserRequest(managedTrafficConnect, false); err != nil {
+		t.Fatalf("writable traffic connection denied before source authorization: %v", err)
+	}
+	if err := validateBrowserRequest(managedTrafficConnect, true); err == nil {
+		t.Fatal("read-only principal was allowed to connect the shared traffic source")
+	}
+	for _, request := range []*http.Request{
+		httptest.NewRequest(http.MethodPost, "http://localhost/api/traffic/connect", nil),
+		httptest.NewRequest(http.MethodPost, "http://localhost/api/traffic/connect-managed/extra", nil),
+		httptest.NewRequest(http.MethodPost, "http://localhost/api/traffic/flows", nil),
+		httptest.NewRequest(http.MethodPut, "http://localhost/api/traffic/connect-managed", nil),
+	} {
+		if err := validateBrowserRequest(request, false); err == nil {
+			t.Errorf("allowed non-connect traffic write %s %s", request.Method, request.URL.Path)
 		}
 	}
 	evidence := httptest.NewRequest(http.MethodPost, "http://localhost/api/gitops/write-evidence", nil)

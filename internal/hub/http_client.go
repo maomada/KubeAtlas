@@ -288,6 +288,11 @@ func validateBrowserRequest(request *http.Request, readOnly bool) error {
 		!(request.Method == http.MethodPost && u.Path == "/api/cluster/namespace") {
 		return tunnelError(CodePermissionDenied, false, nil)
 	}
+	trafficPath := u.Path == "/api/traffic" || strings.HasPrefix(u.Path, "/api/traffic/")
+	if trafficPath && request.Method != http.MethodGet && request.Method != http.MethodHead &&
+		!(request.Method == http.MethodPost && u.Path == "/api/traffic/connect-managed") {
+		return tunnelError(CodePermissionDenied, false, nil)
+	}
 	switch u.Path {
 	case "/api/health", "/api/capabilities", "/api/cluster-info", "/api/version-check",
 		"/api/namespaces", "/api/api-resources", "/api/resource-counts", "/api/certificates",
@@ -302,6 +307,10 @@ func validateBrowserRequest(request *http.Request, readOnly bool) error {
 			return tunnelError(CodePermissionDenied, false, nil)
 		}
 	case "/api/cluster/namespace":
+		if request.Method != http.MethodPost {
+			return tunnelError(CodePermissionDenied, false, nil)
+		}
+	case "/api/traffic/connect-managed":
 		if request.Method != http.MethodPost {
 			return tunnelError(CodePermissionDenied, false, nil)
 		}

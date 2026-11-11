@@ -36,6 +36,21 @@ read-only in browser and MCP routes. Member and viewer cluster scope is explicit
 an empty scope means no clusters. Administrator scope covers all configured
 clusters. Hub roles and scopes do not grant Kubernetes RBAC.
 
+The browser POSTs `/api/traffic/connect-managed` through its selected Agent when
+the Hub session is writable. The Agent independently requires a fresh
+Kubernetes SubjectAccessReview permitting all resource actions cluster-wide.
+This is a shared integration connection using Agent credentials, so
+namespace-only operators cannot initiate it; missing identity, refusal and
+failed checks all stop before connection work. Callers cannot supply an endpoint
+or credentials in this request. Existing namespace filtering still governs flow
+reads. This does not enable general remote host port-forward management or
+traffic-source configuration writes.
+
+Use a matching Hub and Agent/UI version for this capability. The Agent retains
+`POST /api/traffic/connect` as a local compatibility alias, but the Hub does not
+proxy that legacy route. A newer UI calling the managed route against an older
+Agent receives 404; there is no fallback to the legacy route.
+
 The local owner's groups come only from trusted server configuration. OIDC
 member groups are administrator-managed and validated against the existing
 `radar:*`/`cloud:*` vocabulary; IdP roles and groups never grant access. No
