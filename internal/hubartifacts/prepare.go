@@ -19,6 +19,7 @@ type PrepareOptions struct {
 	InstallerPath string
 	OutputDir     string
 	Version       string
+	ChartVersion  string
 	Revision      string
 	ImageDigest   string
 	HelmBinary    string
@@ -27,6 +28,13 @@ type PrepareOptions struct {
 func Prepare(options PrepareOptions) error {
 	if !versionPattern.MatchString(options.Version) || !revisionPattern.MatchString(options.Revision) || !digestPattern.MatchString(options.ImageDigest) {
 		return errors.New("version, source revision, or image digest is invalid")
+	}
+	chartVersion := options.ChartVersion
+	if chartVersion == "" {
+		chartVersion = "0.0.0-dev." + options.Revision[:12]
+	}
+	if !chartVersionPattern.MatchString(chartVersion) {
+		return errors.New("chart version must be valid SemVer")
 	}
 	if options.HelmBinary == "" {
 		options.HelmBinary = "helm"
@@ -67,12 +75,12 @@ func Prepare(options PrepareOptions) error {
 	if err := os.Mkdir(packageDir, 0o700); err != nil {
 		return err
 	}
-	cmd := exec.Command(options.HelmBinary, "package", options.ChartDir, "--destination", packageDir)
+	cmd := exec.Command(options.HelmBinary, "package", options.ChartDir, "--version", chartVersion, "--app-version", options.Version, "--destination", packageDir)
 	cmd.Env = os.Environ()
 	if output, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("helm package failed: %w: %s", err, strings.TrimSpace(string(output)))
 	}
-	chartFile := "kubeatlas-" + options.Version + ".tgz"
+	chartFile := "kubeatlas-" + chartVersion + ".tgz"
 	chartPath := filepath.Join(packageDir, chartFile)
 	if info, err := os.Lstat(chartPath); err != nil || !info.Mode().IsRegular() {
 		return errors.New("Helm packaged a chart with a different version or filename")
@@ -101,7 +109,7 @@ func Prepare(options PrepareOptions) error {
 		Digest string `json:"digest"`
 	}{Digest: options.ImageDigest}}
 	manifest.Chart.File = chartFile
-	manifest.Chart.Version = options.Version
+	manifest.Chart.Version = chartVersion
 	manifest.Chart.SHA256 = chartHash
 	manifest.Installer.File = "install-hub-agent.sh"
 	manifest.Installer.SHA256 = installerHash
@@ -113,9 +121,11 @@ func Prepare(options PrepareOptions) error {
 	if err := os.WriteFile(filepath.Join(stage, "manifest.json"), data, 0o444); err != nil {
 		return err
 	}
-	if _, err := Open(stage, options.Version); err != nil {
+	catalog, err := Open(stage, options.Version)
+	if err != nil {
 		return err
 	}
+	_ = catalog.Close()
 	if err := makeReadOnly(stage); err != nil {
 		return err
 	}

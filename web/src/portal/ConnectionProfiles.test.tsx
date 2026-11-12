@@ -15,7 +15,7 @@ let root: ReturnType<typeof createRoot>
 
 function Probe() {
   const profile = useConnectionProfiles()
-  return <output aria-label="selected profile">{JSON.stringify({ profile: profile.profile, origin: profile.origin, mcpURL: profile.mcpURL, installAvailable: profile.installAvailable })}</output>
+  return <><output aria-label="selected profile">{JSON.stringify({ profile: profile.profile, origin: profile.origin, mcpURL: profile.mcpURL, installAvailable: profile.installAvailable, loading: profile.loading, error: profile.error })}</output><button onClick={() => { void profile.refresh() }}>Refresh profile</button></>
 }
 
 beforeEach(() => {
@@ -48,6 +48,19 @@ it('keeps empty profiles unavailable rather than falling back to the browser ori
   await act(async () => root.render(<ConnectionProfilesProvider><ConnectionProfileSelector /><Probe /></ConnectionProfilesProvider>))
   expect(JSON.parse(host.querySelector('output')!.textContent!)).toMatchObject({ origin: '', mcpURL: '', installAvailable: false })
   expect(host.textContent).not.toContain(window.location.origin)
+})
+
+it('clears stale installation data when a later profile refresh fails', async () => {
+  let refreshFails = false
+  const fetch = vi.fn(() => Promise.resolve(refreshFails ? Promise.reject(new TypeError('connection settings unavailable')) : response(data('https://lan.example.test', 'https://public.example.test'))))
+  vi.stubGlobal('fetch', fetch)
+  await act(async () => root.render(<ConnectionProfilesProvider><ConnectionProfileSelector /><ConnectionSettingsEditor canManage /><Probe /></ConnectionProfilesProvider>))
+  expect(JSON.parse(host.querySelector('output')!.textContent!).installAvailable).toBe(true)
+  refreshFails = true
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Refresh profile')!.click())
+  expect(JSON.parse(host.querySelector('output')!.textContent!)).toMatchObject({ origin: '', installAvailable: false, loading: false, error: 'connection settings unavailable' })
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('connection settings unavailable')
+  expect(host.querySelector<HTMLInputElement>('input[placeholder="https://192.0.2.10"]')?.disabled).toBe(true)
 })
 
 it('surfaces read and update errors and permits an explicitly empty address', async () => {

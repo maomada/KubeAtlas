@@ -92,3 +92,9 @@ Hub-hosted onboarding artifacts are optional and operator-staged. Configure
 private bundle; see [Hub-hosted Agent onboarding](hub-agent-onboarding.md).
 The Portal serves version-pinned downloads and read-only OCI GET/HEAD content
 from that local directory only.
+
+The TLS reverse proxy must preserve the selected Host authority and route
+`/api/`, `/agent`, `/mcp`, `/downloads/agent/`, and `/v2/` to the Portal without
+path rewriting or redirects. Nodes pulling the Agent image must reach this same
+origin and trust its certificate; the Agent's optional CA file does not
+configure node container-runtime trust.

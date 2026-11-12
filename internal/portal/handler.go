@@ -68,6 +68,9 @@ func (h *Handler) Close() {
 	}
 	if h != nil && h.liveHub != nil {
 		_ = h.liveHub.transport.Close()
+		if h.liveHub.catalog != nil {
+			_ = h.liveHub.catalog.Close()
+		}
 	}
 	if h != nil && h.oidc != nil && h.oidc.transport != nil {
 		h.oidc.transport.CloseIdleConnections()

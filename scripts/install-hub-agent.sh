@@ -49,27 +49,38 @@ hub_origin="${hub_origin%/}"
 [[ "$release" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ && ${#release} -le 53 ]] || fail 'release name is invalid'
 if [[ "$release" != *kubeatlas* && ${#release} -gt 43 ]]; then fail 'release name is too long for the exact owner binding'; fi
 
-for tool in curl helm kubectl sha256sum grep awk mktemp stat; do
+for tool in curl helm kubectl sha256sum grep awk mktemp stat wc od tr cat; do
   command -v "$tool" >/dev/null 2>&1 || fail "required tool is missing: $tool"
 done
 [[ -f "$token_file" && ! -L "$token_file" && -r "$token_file" ]] || fail 'token file must be a readable regular file, not a symlink'
 token_mode="$(stat -c '%a' -- "$token_file" 2>/dev/null)" || fail 'cannot inspect token file permissions'
-(( (8#$token_mode & 077) == 0 )) || fail 'token file must not be accessible by group or other users'
-[[ -s "$token_file" ]] || fail 'token file is empty'
+(( (8#$token_mode & 0400) != 0 && (8#$token_mode & 077) == 0 )) || fail 'token file must be owner-readable and inaccessible to group or other users'
+token_size="$(wc -c <"$token_file")" || fail 'cannot inspect token file size'
+(( token_size > 0 && token_size <= 4096 )) || fail 'token file must contain at most 4096 bytes'
+if LC_ALL=C od -An -v -t x1 -- "$token_file" | tr -s '[:space:]' '\n' | grep -Fxq '00'; then
+  fail 'token file contains unsupported control characters'
+fi
+token_value="$(LC_ALL=C cat -- "$token_file")" || fail 'cannot read token file'
+token_value="${token_value#"${token_value%%[!$' \t\r\n']*}"}"
+token_value="${token_value%"${token_value##*[!$' \t\r\n']}"}"
+token_length="$(LC_ALL=C printf '%s' "$token_value" | wc -c)" || fail 'cannot validate trimmed token length'
+(( token_length >= 32 )) || fail 'trimmed token must contain at least 32 bytes'
+[[ ! "$token_value" =~ [[:space:][:cntrl:]] ]] || fail 'trimmed token must not contain whitespace or control characters'
 if [[ -n "$ca_file" ]]; then
   [[ -f "$ca_file" && ! -L "$ca_file" && -r "$ca_file" ]] || fail 'CA file must be a readable regular file, not a symlink'
 fi
 
-kubectl config get-contexts "$context" >/dev/null 2>&1 || fail 'explicit Kubernetes context is unavailable'
+contexts="$(kubectl config get-contexts -o name 2>/dev/null)" || fail 'cannot list Kubernetes contexts'
+printf '%s\n' "$contexts" | grep -Fxq -- "$context" || fail 'explicit Kubernetes context is unavailable'
 kubectl --context "$context" cluster-info >/dev/null 2>&1 || fail 'Kubernetes context preflight failed'
 for permission in 'create namespaces' 'create secrets' 'create clusterrolebindings' 'create clusterroles' 'create serviceaccounts'; do
   read -r verb resource <<< "$permission"
   [[ "$(kubectl --context "$context" auth can-i "$verb" "$resource" --namespace "$namespace" 2>/dev/null)" == yes ]] || fail "Kubernetes permission preflight failed: $permission"
 done
 
-if output="$(kubectl --context "$context" get namespace "$namespace" -o name 2>&1)"; then
-  fail "namespace already exists; this installer refuses adoption: $namespace"
-elif [[ "$output" != *NotFound* && "$output" != *'not found'* ]]; then
+if output="$(kubectl --context "$context" get namespace "$namespace" --ignore-not-found -o name 2>&1)"; then
+  [[ -z "$output" ]] || fail "namespace already exists; this installer refuses adoption: $namespace"
+else
   fail 'unable to verify that the target namespace is new'
 fi
 if output="$(helm list --kube-context "$context" --namespace "$namespace" --filter "^${release}$" --output json 2>&1)"; then
@@ -83,9 +94,9 @@ if [[ "$release" != *kubeatlas* ]]; then fullname="${release}-kubeatlas"; fi
 fullname="${fullname:0:63}"
 for kind_name in "clusterrole/$fullname" "clusterrolebinding/$fullname" "clusterrolebinding/${fullname}-hub-owner"; do
   kind="${kind_name%%/*}" resource="${kind_name#*/}"
-  if output="$(kubectl --context "$context" get "$kind" "$resource" -o name 2>&1)"; then
-    fail "existing cluster-scoped resource would be adopted: $kind/$resource"
-  elif [[ "$output" != *NotFound* && "$output" != *'not found'* ]]; then
+  if output="$(kubectl --context "$context" get "$kind" "$resource" --ignore-not-found -o name 2>&1)"; then
+    [[ -z "$output" ]] || fail "existing cluster-scoped resource would be adopted: $kind/$resource"
+  else
     fail "unable to verify cluster-scoped resource state: $kind/$resource"
   fi
 done
@@ -126,6 +137,7 @@ if [[ "$dry_run" == true ]]; then
   printf 'Preflight complete; dry run made no Kubernetes changes.\n'
   exit 0
 fi
+printf '%s\n' 'Prerequisites: this chart binds only the exact local Hub owner User to cluster-admin. Every target node must independently trust the Hub Registry TLS certificate; the Agent CA file does not configure the container runtime.' >&2
 if [[ "$assume_yes" != true ]]; then
   printf 'Install a new Hub Agent release into context %q, namespace %q? [y/N] ' "$context" "$namespace" >&2
   read -r answer

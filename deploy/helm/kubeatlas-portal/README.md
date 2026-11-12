@@ -52,6 +52,10 @@ configure TLS termination at the ingress or another trusted reverse proxy.
 The UI and API are root-hosted on a dedicated hostname; subpath hosting is not
 supported. Do not expose login or bearer traffic over untrusted plaintext
 networks.
+The proxy must preserve the selected Host authority and route `/api/`,
+`/agent`, `/mcp`, `/downloads/agent/`, and `/v2/` to the Portal without path
+rewriting or redirects. Nodes pulling Hub-hosted Agent images must be able to
+reach the same origin and independently trust its certificate.
 
 Local owner login remains available. OIDC can be enabled with the optional
 Secret keys above. Sessions use `HttpOnly`, `Secure`, `SameSite=Strict` cookies
@@ -76,4 +80,4 @@ hubArtifacts:
   existingClaim: kubeatlas-agent-artifacts
 ```
 
-The PVC must contain the catalog produced by `cmd/prepare-hub-artifacts` and match the Portal build version. An absent bundle disables install artifacts without disabling Hub/MCP; a configured but invalid catalog prevents the Portal from starting. Artifact bytes are not fetched or published at runtime.
+The PVC must contain the immutable catalog produced by `cmd/prepare-hub-artifacts` and match the Portal build version. Keep the source bundle operator-owned and unchanged while the Portal is serving it. An absent bundle disables install artifacts without disabling Hub/MCP; a configured but invalid catalog prevents the Portal from starting. Artifact bytes are not fetched or published at runtime.

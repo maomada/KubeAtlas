@@ -1,13 +1,15 @@
 # Self-hosted Hub source agent
 
 The source agent is an explicit opt-in that connects a KubeAtlas process to the
-forthcoming self-hosted Portal Hub mode. It reuses the authenticated outbound
+self-hosted Portal Hub mode. It reuses the authenticated outbound
 WebSocket/yamux tunnel and serves the source's native HTTP handler. Current
 cluster state stays at the source; snapshots are not required by this tunnel.
 
-This is a source-side implementation slice, not a complete deployable Hub.
-There is no released image or Helm chart for this mode, and this document does
-not claim deployment or live-cluster acceptance.
+This document describes the source Agent contract and does not claim a
+published/released Agent image or chart, or live-cluster acceptance. The
+repository chart is source-deployable, and an operator can package that
+unchanged chart together with an approved local OCI image layout for a private
+Hub bundle; see [Hub-hosted Agent onboarding](hub-agent-onboarding.md).
 
 ## Configure the source
 

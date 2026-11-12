@@ -49,22 +49,24 @@ func (c *Catalog) serveDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := strings.TrimPrefix(r.URL.Path, prefix)
-	var path, contentType, digest string
+	var entry fileEntry
+	var contentType, digest string
 	switch name {
 	case "installer.sh":
-		path, contentType = c.installPath, "text/x-shellscript; charset=utf-8"
+		entry, contentType = c.files[c.installPath], "text/x-shellscript; charset=utf-8"
 	case "chart.tgz":
-		path, contentType = c.chartPath, "application/gzip"
+		entry, contentType = c.files[c.chartPath], "application/gzip"
 	case "manifest.json":
-		path, contentType = c.manifestPath, "application/json"
+		entry, contentType = c.files[c.manifestPath], "application/json"
 	case "image-manifest.json":
 		digest = c.manifest.Image.Digest
-		entry, ok := c.manifests[digest]
+		var ok bool
+		entry, ok = c.manifests[digest]
 		if !ok {
 			c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
 			return
 		}
-		path, contentType = entry.path, entry.mediaType
+		contentType = entry.mediaType
 	case "checksums.txt":
 		body := fmt.Sprintf("%s  installer.sh\n%s  chart.tgz\n%s  image-manifest.json\n", c.manifest.Installer.SHA256, c.manifest.Chart.SHA256, strings.TrimPrefix(c.manifest.Image.Digest, "sha256:"))
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -75,9 +77,7 @@ func (c *Catalog) serveDownload(w http.ResponseWriter, r *http.Request) {
 		c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
 		return
 	}
-	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
-	c.serveFile(w, r, path, digest)
+	c.serveFile(w, r, entry, digest, contentType, name)
 }
 
 func (c *Catalog) serveOCI(w http.ResponseWriter, r *http.Request) {
@@ -107,41 +107,61 @@ func (c *Catalog) serveOCI(w http.ResponseWriter, r *http.Request) {
 		c.writeOCIError(w, http.StatusNotFound, code, "Content not found")
 		return
 	}
+	contentType := "application/octet-stream"
 	if manifest {
-		w.Header().Set("Content-Type", entry.mediaType)
-	} else {
-		w.Header().Set("Content-Type", "application/octet-stream")
+		contentType = entry.mediaType
 	}
-	c.serveFile(w, r, entry.path, digest)
+	c.serveFile(w, r, entry, digest, contentType, "")
 }
 
-func (c *Catalog) serveFile(w http.ResponseWriter, r *http.Request, path, digest string) {
-	relative, err := filepath.Rel(c.root, path)
-	if err != nil || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || relative == ".." {
-		c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
+func (c *Catalog) serveFile(w http.ResponseWriter, r *http.Request, entry fileEntry, digest, contentType, downloadName string) {
+	if !c.rootCurrent() {
+		c.artifactUnavailable(w)
 		return
 	}
-	path, err = regularPath(c.root, filepath.ToSlash(relative))
+	file, info, err := openRootRegular(c.rootFS, entry.path)
 	if err != nil {
-		c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
-		return
-	}
-	file, err := os.Open(path)
-	if err != nil {
-		c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
+		c.artifactUnavailable(w)
 		return
 	}
 	defer file.Close()
-	info, err := file.Stat()
-	if err != nil || !info.Mode().IsRegular() {
-		c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
+	if !sameSnapshot(entry.identity, info) || info.Size() != entry.size || !c.rootCurrent() {
+		c.artifactUnavailable(w)
 		return
+	}
+	w.Header().Set("Content-Type", contentType)
+	if downloadName != "" {
+		w.Header().Set("Content-Disposition", `attachment; filename="`+downloadName+`"`)
 	}
 	if digest != "" {
 		w.Header().Set("Docker-Content-Digest", digest)
 	}
 	w.Header().Set("Accept-Ranges", "bytes")
-	http.ServeContent(w, r, filepath.Base(path), info.ModTime(), file)
+	http.ServeContent(w, r, filepath.Base(entry.path), info.ModTime(), file)
+}
+
+func (c *Catalog) rootCurrent() bool {
+	for _, snapshot := range c.rootAncestors {
+		pathInfo, err := os.Lstat(snapshot.path)
+		if err != nil || !pathInfo.IsDir() || pathInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(snapshot.info, pathInfo) {
+			return false
+		}
+	}
+	pathInfo, err := os.Lstat(c.root)
+	if err != nil || !pathInfo.IsDir() || pathInfo.Mode()&os.ModeSymlink != 0 || !os.SameFile(c.rootInfo, pathInfo) {
+		return false
+	}
+	rootInfo, err := c.rootFS.Stat(".")
+	return err == nil && os.SameFile(c.rootInfo, rootInfo)
+}
+
+func (c *Catalog) artifactUnavailable(w http.ResponseWriter) {
+	w.Header().Del("Docker-Content-Digest")
+	w.Header().Del("Content-Disposition")
+	w.Header().Del("Content-Type")
+	w.Header().Del("Accept-Ranges")
+	w.Header().Set("Cache-Control", "no-store")
+	c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
 }
 
 func (c *Catalog) writeError(w http.ResponseWriter, status int, code, message string) {

@@ -24,6 +24,7 @@ afterEach(() => {
   client.clear()
   host.remove()
   setApiBase('/api')
+  vi.useRealTimers()
   vi.unstubAllGlobals()
 })
 
@@ -50,10 +51,104 @@ it('registers through the Hub and discards the one-time Agent token after dismis
   const options = create[1] as RequestInit
   expect(JSON.parse(options.body as string)).toMatchObject({ id: 'demo-east', name: 'Demo east', environment: 'demo' })
   expect(document.querySelector<HTMLTextAreaElement>('textarea[readonly]')?.value).toBe('unit-test-agent-token')
-  expect(document.querySelector('pre')?.textContent).toContain('--cluster-id "demo-east"')
-  expect(document.querySelector('pre')?.textContent).not.toContain('unit-test-agent-token')
+  const command = document.querySelector('pre')?.textContent ?? ''
+  expect(command.startsWith('(')).toBe(true)
+  expect(command).toContain("--cluster-id 'demo-east'")
+  expect(command).toContain("--write-out '%{http_code}'")
+  expect(command).toContain('[ "$HTTP_STATUS" = 200 ]')
+  expect(command).toContain('read -r -s -p')
+  expect(command).not.toContain('unit-test-agent-token')
+  const ca = [...document.querySelectorAll('input')].find(input => input.getAttribute('placeholder') === '/path/to/hub-ca.crt')!
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(ca, "/tmp/private CA's.pem")
+    ca.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const caCommand = document.querySelector('pre')?.textContent ?? ''
+  expect(caCommand).toContain("CA_FILE='/tmp/private CA'\\''s.pem'")
+  expect(caCommand).toContain('CURL_CA=(--cacert "$CA_FILE")')
+  expect(caCommand).toContain('INSTALLER_CA=(--ca-file "$CA_FILE")')
   await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === '我已安全保存 Token')!.click())
   expect(document.querySelector('textarea[readonly]')).toBeNull()
+  expect(host.textContent).toContain('Cluster demo-east: Agent registered')
+  expect([...host.querySelectorAll('button')].some(button => button.textContent === 'Check connection status')).toBe(true)
+})
+
+it('checks a registered cluster after dismissing its one-time token', async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>((url, init) => {
+    if (url === '/api/hub/connections') return Promise.resolve(new Response(JSON.stringify({
+      lanURL: 'https://lan.example.test', publicURL: '', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: true,
+      catalog: { available: true, version: '1.2.3', installerSHA256: 'b'.repeat(64), chartSHA256: 'c'.repeat(64), imageDigest: `sha256:${'d'.repeat(64)}` },
+    }), { headers: { 'Content-Type': 'application/json' } }))
+    if (url === '/api/hub/clusters' && init?.method === 'POST') return Promise.resolve(new Response(JSON.stringify({ cluster: { id: 'demo-east', name: 'Demo east' }, token: 'unit-test-agent-token' }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    if (url === '/api/hub/clusters') return Promise.resolve(new Response(JSON.stringify({ clusters: [{ id: 'demo-east', state: 'connected' }] }), { headers: { 'Content-Type': 'application/json' } }))
+    throw new Error(`unexpected request ${url}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  await register()
+  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === '我已安全保存 Token')!.click())
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Check connection status')!.click())
+  expect(host.textContent).toContain('Cluster demo-east: Connected')
+  expect(fetch.mock.calls.some(([url, init]) => url === '/api/hub/clusters' && init?.method !== 'POST')).toBe(true)
+  expect(document.querySelector('textarea[readonly]')).toBeNull()
+})
+
+it('reports polling failures as unknown and allows a successful retry after timeout', async () => {
+  let failChecks = true
+  const fetch = vi.fn<typeof globalThis.fetch>((url, init) => {
+    if (url === '/api/hub/connections') return Promise.resolve(new Response(JSON.stringify({
+      lanURL: 'https://lan.example.test', publicURL: '', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: true,
+      catalog: { available: true, version: '1.2.3', installerSHA256: 'b'.repeat(64), chartSHA256: 'c'.repeat(64), imageDigest: `sha256:${'d'.repeat(64)}` },
+    }), { headers: { 'Content-Type': 'application/json' } }))
+    if (url === '/api/hub/clusters' && init?.method === 'POST') return Promise.resolve(new Response(JSON.stringify({ cluster: { id: 'demo-east', name: 'Demo east' }, token: 'unit-test-agent-token' }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    if (url === '/api/hub/clusters' && failChecks) return new Promise<Response>(() => {})
+    if (url === '/api/hub/clusters') return Promise.resolve(new Response(JSON.stringify({ clusters: [{ id: 'demo-east', state: 'connected' }] }), { headers: { 'Content-Type': 'application/json' } }))
+    throw new Error(`unexpected request ${url}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  await register()
+  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === '我已安全保存 Token')!.click())
+  vi.useFakeTimers({ now: 0 })
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Check connection status')!.click())
+  await act(async () => { await vi.advanceTimersByTimeAsync(120000) })
+  expect(host.textContent).toContain('status could not be checked')
+  expect(host.textContent).toContain('unknown')
+  expect(host.textContent).not.toContain('offline')
+  failChecks = false
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Retry status check')!.click())
+  expect(host.textContent).toContain('Cluster demo-east: Connected')
+})
+
+it('ignores a delayed status response for a previously registered cluster', async () => {
+  let resolveOld!: (response: Response) => void
+  const oldStatus = new Promise<Response>(resolve => { resolveOld = resolve })
+  let statusRequests = 0
+  const fetch = vi.fn<typeof globalThis.fetch>((url, init) => {
+    if (url === '/api/hub/connections') return Promise.resolve(new Response(JSON.stringify({
+      lanURL: 'https://lan.example.test', publicURL: '', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: true,
+      catalog: { available: true, version: '1.2.3', installerSHA256: 'b'.repeat(64), chartSHA256: 'c'.repeat(64), imageDigest: `sha256:${'d'.repeat(64)}` },
+    }), { headers: { 'Content-Type': 'application/json' } }))
+    if (url === '/api/hub/clusters' && init?.method === 'POST') {
+      const id = JSON.parse(init.body as string).id as string
+      return Promise.resolve(new Response(JSON.stringify({ cluster: { id, name: id }, token: `${id}-token` }), { status: 201, headers: { 'Content-Type': 'application/json' } }))
+    }
+    if (url === '/api/hub/clusters' && statusRequests++ === 0) return oldStatus
+    throw new Error(`unexpected request ${url}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  await register()
+  await act(async () => [...document.querySelectorAll('button')].find(button => button.textContent === '我已安全保存 Token')!.click())
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Check connection status')!.click())
+  const inputs = host.querySelectorAll('input')
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(inputs[0], 'Demo west')
+    inputs[0].dispatchEvent(new Event('input', { bubbles: true }))
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(inputs[1], 'demo-west')
+    inputs[1].dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  await act(async () => resolveOld(new Response(JSON.stringify({ clusters: [{ id: 'demo-east', state: 'connected' }] }), { headers: { 'Content-Type': 'application/json' } })))
+  expect(host.textContent).toContain('Cluster demo-west: Agent registered')
+  expect(host.textContent).not.toContain('Cluster demo-west: Connected')
 })
 
 it('shows uncertain registration failure and never retries the mutation automatically', async () => {

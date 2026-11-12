@@ -67,26 +67,47 @@ function ClusterAction({ action, onClose, onIssued }: { action: Action; onClose:
 
 function AgentToken({ issued, onClose, newInstall = false }: { issued: IssuedAgent; onClose: () => void; newInstall?: boolean }) {
   const profile = useConnectionProfiles()
+  const [caFile, setCAFile] = useState('')
   const catalog = profile.connections?.catalog
-  const tokenFile = `$HOME/.config/kubeatlas/${issued.cluster.id}.token`
   const command = profile.installAvailable && catalog?.version && catalog.installerSHA256 && catalog.chartSHA256 && catalog.imageDigest && profile.connections?.ownerUserID
     ? [
-      'set -eu; umask 077; mkdir -p "$HOME/.config/kubeatlas"; chmod 700 "$HOME/.config/kubeatlas"',
-      'TMP="$(mktemp -d)"; trap \'rm -rf -- "$TMP"\' EXIT',
-      `curl --proto '=http,https' --tlsv1.2 --fail --silent --show-error --output "$TMP/installer.sh" ${JSON.stringify(`${profile.origin}/downloads/agent/${catalog.version}/installer.sh`)}`,
-      `printf '%s  %s\\n' ${JSON.stringify(catalog.installerSHA256)} "$TMP/installer.sh" | sha256sum -c -`,
+      '(',
+      'set -eu',
+      'umask 077',
+      'mkdir -p "$HOME/.config/kubeatlas"',
+      'chmod 700 "$HOME/.config/kubeatlas"',
+      `TOKEN_FILE="$HOME/.config/kubeatlas/"${shellQuote(`${issued.cluster.id}.token`)}`,
+      `CA_FILE=${shellQuote(caFile)}`,
+      'read -r -s -p "Paste the one-time Hub Agent token: " KUBEATLAS_AGENT_TOKEN',
+      'printf \'\\n\'',
+      '[ -n "$KUBEATLAS_AGENT_TOKEN" ] || { printf \'Token is required\\n\' >&2; exit 1; }',
+      'printf \'%s\\n\' "$KUBEATLAS_AGENT_TOKEN" > "$TOKEN_FILE"',
+      'unset KUBEATLAS_AGENT_TOKEN',
+      'chmod 600 "$TOKEN_FILE"',
+      'CURL_CA=()',
+      'INSTALLER_CA=()',
+      'if [ -n "$CA_FILE" ]; then CURL_CA=(--cacert "$CA_FILE"); INSTALLER_CA=(--ca-file "$CA_FILE"); fi',
+      'TMP="$(mktemp -d)"',
+      'trap \'rm -rf -- "$TMP"\' EXIT',
+      `HTTP_STATUS="$(curl "\${CURL_CA[@]}" --proto '=http,https' --tlsv1.2 --fail --silent --show-error --write-out '%{http_code}' --output "$TMP/installer.sh" ${shellQuote(`${profile.origin}/downloads/agent/${catalog.version}/installer.sh`)})"`,
+      '[ "$HTTP_STATUS" = 200 ] || { printf \'Installer download returned HTTP %s\\n\' "$HTTP_STATUS" >&2; exit 1; }',
+      `printf '%s  %s\\n' ${shellQuote(catalog.installerSHA256)} "$TMP/installer.sh" | sha256sum -c -`,
       'chmod 700 "$TMP/installer.sh"',
-      `TOKEN_FILE="${tokenFile}"`,
-      `"$TMP/installer.sh" --hub-origin ${JSON.stringify(profile.origin)} --context "$KUBE_CONTEXT" --cluster-id ${JSON.stringify(issued.cluster.id)} --version ${JSON.stringify(catalog.version)} --image-digest ${JSON.stringify(catalog.imageDigest)} --chart-sha256 ${JSON.stringify(catalog.chartSHA256)} --owner-user-id ${JSON.stringify(profile.connections.ownerUserID)} --token-file "$TOKEN_FILE"`,
+      `"$TMP/installer.sh" --hub-origin ${shellQuote(profile.origin)} --context "\${KUBE_CONTEXT:?Set KUBE_CONTEXT to the intended cluster}" --cluster-id ${shellQuote(issued.cluster.id)} --version ${shellQuote(catalog.version)} --image-digest ${shellQuote(catalog.imageDigest)} --chart-sha256 ${shellQuote(catalog.chartSHA256)} --owner-user-id ${shellQuote(profile.connections.ownerUserID)} --token-file "$TOKEN_FILE" "\${INSTALLER_CA[@]}"`,
+      ')',
     ].join('\n')
     : ''
   const reconnectCommand = [
     'kubectl --context "$KUBE_CONTEXT" --namespace kubeatlas create secret generic kubeatlas-hub-token --from-file=token="$TOKEN_FILE" --dry-run=client -o yaml | kubectl --context "$KUBE_CONTEXT" apply -f -',
     'kubectl --context "$KUBE_CONTEXT" --namespace kubeatlas rollout restart deployment/kubeatlas',
   ].join('\n')
-  return <CloudDialog title="Agent token — shown only once" onClose={onClose}><div className="cloud-form"><p>将 Token 手动保存到仅当前用户可读的文件，并将文件路径交给安装器。Hub 只保存摘要；关闭此窗口后无法再次读取原文。</p><label>Agent token<textarea readOnly spellCheck={false} autoComplete="off" value={issued.token} /></label><CopyButton value={issued.token} label="复制 Token" />
-    {newInstall ? <><ConnectionProfileSelector />{profile.installAvailable && command ? <><p>先在本机安全地保存 Token 到 <code>$HOME/.config/kubeatlas/{issued.cluster.id}.token</code>（权限 0600），再设置 <code>KUBE_CONTEXT</code> 并运行以下命令。命令下载并校验 Hub 提供的安装器；不会把 Token 放入参数、URL 或 Helm values。</p><pre className="cloud-code">{command}</pre><CopyButton value={command} label="复制安装命令" /></> : <p role="alert">所选连接配置或匹配版本的 Hub 安装包不可用；不会生成安装命令。</p>}</> : <><p>轮换后，旧 Token 立即失效。安全地替换现有 Secret 文件后重启 Agent；以下示例要求显式设置 KUBE_CONTEXT 和 TOKEN_FILE。</p><pre className="cloud-code">{reconnectCommand}</pre><CopyButton value={reconnectCommand} label="复制重连命令" /></>}
+  return <CloudDialog title="Agent token — shown only once" onClose={onClose}><div className="cloud-form"><p>Hub 只保存 Token 摘要；关闭此窗口后无法再次读取原文。安装命令会在终端隐藏输入 Token，并以 0600 权限创建文件。</p><label>Agent token<textarea readOnly spellCheck={false} autoComplete="off" value={issued.token} /></label><CopyButton value={issued.token} label="复制 Token" />
+    {newInstall ? <><ConnectionProfileSelector />{profile.installAvailable && command ? <><label>Optional private CA file<input autoComplete="off" value={caFile} onChange={event => setCAFile(event.target.value)} placeholder="/path/to/hub-ca.crt" /></label><p>先设置 <code>KUBE_CONTEXT</code>，运行以下命令并在提示时粘贴 Token。可选 CA 文件会同时用于安装器下载和 Agent 配置；不会使用不安全的 TLS 绕过。</p><pre className="cloud-code">{command}</pre><CopyButton value={command} label="复制安装命令" /></> : <p role="alert">{profile.error ? `连接配置读取失败：${profile.error}；不会生成安装命令。` : profile.loading ? '正在读取连接配置；暂不生成安装命令。' : '所选连接配置或匹配版本的 Hub 安装包不可用；不会生成安装命令。'}</p>}</> : <><p>轮换后，旧 Token 立即失效。安全地替换现有 Secret 文件后重启 Agent；以下示例要求显式设置 KUBE_CONTEXT 和 TOKEN_FILE。</p><pre className="cloud-code">{reconnectCommand}</pre><CopyButton value={reconnectCommand} label="复制重连命令" /></>}
     <p className="cloud-muted">HTTPS 需要与 IP SAN/DNS SAN 匹配的证书。Agent CA 只配置 Agent 到 Hub 的信任；节点镜像运行时必须单独信任 Hub Registry 的证书。Hub 所有者通过精确 User 身份获得集群管理员权限；Agent ServiceAccount 的 impersonate 权限同样高度敏感。</p><footer><button className="cloud-button cloud-primary" onClick={onClose}>我已安全保存 Token</button></footer></div></CloudDialog>
+}
+
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, `'\\''`)}'`
 }
 
 export function CloudInstall() {
@@ -96,39 +117,89 @@ export function CloudInstall() {
   const [name, setName] = useState('')
   const [environment, setEnvironment] = useState('')
   const [issued, setIssued] = useState<IssuedAgent>()
+  const [registeredClusterID, setRegisteredClusterID] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>()
-  const [installStarted, setInstallStarted] = useState(false)
-  const [connectionState, setConnectionState] = useState<'registered' | 'installing' | 'offline' | 'connected'>('registered')
+  const [polling, setPolling] = useState(false)
+  const [connectionState, setConnectionState] = useState<'registered' | 'checking' | 'connected' | 'timeout' | 'error'>('registered')
   useEffect(() => {
-    if (!issued || !installStarted) return
+    if (!registeredClusterID || !polling) return
     const deadline = Date.now() + 120000
-    const timer = window.setInterval(() => {
-      void cloudRequest<{ clusters: HubCluster[] }>('/hub/clusters').then(result => {
-        if (result.clusters.some(cluster => cluster.id === issued.cluster.id && cluster.state === 'connected')) {
+    const controller = new AbortController()
+    let active = true
+    let hadError = false
+    let timer: number | undefined
+    const deadlineTimer = window.setTimeout(() => {
+      if (!active) return
+      setConnectionState('error')
+      setPolling(false)
+      controller.abort()
+    }, 120000)
+    const check = async () => {
+      if (!active) return
+      if (Date.now() >= deadline) {
+        setConnectionState(hadError ? 'error' : 'timeout')
+        setPolling(false)
+        return
+      }
+      try {
+        const result = await cloudRequest<{ clusters: HubCluster[] }>('/hub/clusters', { signal: controller.signal })
+        if (!active) return
+        if (result.clusters.some(cluster => cluster.id === registeredClusterID && cluster.state === 'connected')) {
           setConnectionState('connected')
-          window.clearInterval(timer)
-        } else if (Date.now() >= deadline) {
-          setConnectionState('offline')
-          window.clearInterval(timer)
+          setPolling(false)
+          return
         }
-      }).catch(() => {
-        if (Date.now() >= deadline) {
-          setConnectionState('offline')
-          window.clearInterval(timer)
+      } catch {
+        if (!active) return
+        hadError = true
+        if (Date.now() >= deadline || controller.signal.aborted) {
+          setConnectionState('error')
+          setPolling(false)
+          return
         }
-      })
-    }, 5000)
-    return () => window.clearInterval(timer)
-  }, [issued, installStarted])
+      }
+      if (Date.now() >= deadline) {
+        setConnectionState(hadError ? 'error' : 'timeout')
+        setPolling(false)
+        return
+      }
+      timer = window.setTimeout(() => { void check() }, 5000)
+    }
+    void check()
+    return () => {
+      active = false
+      controller.abort()
+      window.clearTimeout(deadlineTimer)
+      if (timer !== undefined) window.clearTimeout(timer)
+    }
+  }, [registeredClusterID, polling])
   async function create(event: FormEvent) {
     event.preventDefault()
     if (busy || !profile.installAvailable) return
     setBusy(true); setError(undefined)
     try {
-      setIssued(await cloudRequest<IssuedAgent>('/hub/clusters', { method: 'POST', body: { id, name, environment, region: '', description: '' } }))
+      const result = await cloudRequest<IssuedAgent>('/hub/clusters', { method: 'POST', body: { id, name, environment, region: '', description: '' } })
+      setIssued(result)
+      setRegisteredClusterID(result.cluster.id)
+      setConnectionState('registered')
+      setPolling(false)
       await queryClient.invalidateQueries({ queryKey: ['portal', '/api', '/hub/clusters'] })
     } catch (failure) { setError(failure) } finally { setBusy(false) }
   }
-  return <div className="cloud-page cloud-narrow"><div className="cloud-page-heading"><div><h1>Connect a cluster</h1><p>Install an outbound Agent. The Hub serves the installer, chart and pinned image.</p></div></div><ConnectionProfileSelector />{!profile.installAvailable && <p role="status" className="cloud-card">所选地址尚未配置，或版本匹配的本地安装包不可用。请先在 Organization 设置中配置；不会回退到浏览器地址。</p>}<section className="cloud-card"><h2>1. Register your cluster</h2><form className="cloud-form" onSubmit={create}>{error !== undefined && <CloudError error={error} />}<label>Name<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} placeholder="Production EU" /></label><label>Cluster ID<input required pattern="[a-z0-9][a-z0-9-]{0,62}" maxLength={63} value={id} onChange={event => setID(event.target.value)} placeholder="production-eu" /><small>Stable routing ID: lowercase letters, numbers and hyphens.</small></label><label>Tag<input value={environment} maxLength={128} onChange={event => setEnvironment(event.target.value)} placeholder="prod" /></label><footer><CloudLink href="/clusters" className="cloud-button">Cancel</CloudLink><button className="cloud-button cloud-primary" disabled={busy || !!issued || !profile.installAvailable}>{busy ? 'Registering…' : 'Create Agent token'}</button></footer></form></section><section className="cloud-card"><h2>2. Install and verify the Agent</h2><p>Use an explicit kube context and the private token file shown after registration. A Helm rollout is not proof of connection; the directory reports Connected only after the authenticated Agent tunnel is established.</p>{issued && <><p role="status">Connection state: {connectionState}</p><button className="cloud-button" disabled={connectionState === 'connected' || installStarted} onClick={() => { setInstallStarted(true); setConnectionState('installing') }}>I started the installer — check status</button></>}<CloudLink href="/clusters" className="cloud-text-button">View connection status →</CloudLink></section>{issued && <AgentToken issued={issued} newInstall onClose={() => { setIssued(undefined); setInstallStarted(false); setConnectionState('registered'); setID(''); setName(''); setEnvironment('') }} />}</div>
+  const connectionMessage = connectionState === 'registered' ? 'Agent registered; start the installer and check again.'
+    : connectionState === 'checking' ? 'Checking the Agent connection…'
+      : connectionState === 'connected' ? 'Connected'
+        : connectionState === 'timeout' ? 'No connection was confirmed before the status check timed out. The current state may be unknown; retry the check.'
+          : 'The connection status could not be checked. It is unknown; retry the check.'
+  return <div className="cloud-page cloud-narrow">
+    <div className="cloud-page-heading"><div><h1>Connect a cluster</h1><p>Install an outbound Agent. The Hub serves the installer, chart and pinned image.</p></div></div>
+    <ConnectionProfileSelector />
+    {profile.loading && <p role="status" className="cloud-card">正在读取 Hub 连接配置…</p>}
+    {profile.error && <p role="alert" className="cloud-card">连接配置读取失败：{profile.error}。请在 Organization 设置中重试；不会回退到浏览器地址。</p>}
+    {!profile.loading && !profile.error && !profile.installAvailable && <p role="status" className="cloud-card">所选地址尚未配置，或版本匹配的本地安装包不可用。请先在 Organization 设置中配置；不会回退到浏览器地址。</p>}
+    <section className="cloud-card"><h2>1. Register your cluster</h2><form className="cloud-form" onSubmit={create}>{error !== undefined && <CloudError error={error} />}<label>Name<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} placeholder="Production EU" /></label><label>Cluster ID<input required pattern="[a-z0-9][a-z0-9-]{0,62}" maxLength={63} value={id} onChange={event => setID(event.target.value)} placeholder="production-eu" /><small>Stable routing ID: lowercase letters, numbers and hyphens.</small></label><label>Tag<input value={environment} maxLength={128} onChange={event => setEnvironment(event.target.value)} placeholder="prod" /></label><footer><CloudLink href="/clusters" className="cloud-button">Cancel</CloudLink><button className="cloud-button cloud-primary" disabled={busy || !!issued || !profile.installAvailable}>{busy ? 'Registering…' : 'Create Agent token'}</button></footer></form></section>
+    <section className="cloud-card"><h2>2. Install and verify the Agent</h2><p>Use an explicit kube context and the private token file shown after registration. A Helm rollout is not proof of connection; the directory reports Connected only after the authenticated Agent tunnel is established.</p>{registeredClusterID && <><p role="status">Cluster {registeredClusterID}: {connectionMessage}</p><button className="cloud-button" disabled={polling || connectionState === 'connected'} onClick={() => { setConnectionState('checking'); setPolling(true) }}>{polling ? 'Checking…' : connectionState === 'timeout' || connectionState === 'error' ? 'Retry status check' : 'Check connection status'}</button></>}<CloudLink href="/clusters" className="cloud-text-button">View connection status →</CloudLink></section>
+    {issued && <AgentToken issued={issued} newInstall onClose={() => setIssued(undefined)} />}
+  </div>
 }

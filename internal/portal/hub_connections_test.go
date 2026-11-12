@@ -3,9 +3,11 @@ package portal
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/maomada/KubeAtlas/internal/hubstate"
 )
@@ -63,6 +65,69 @@ func TestHubConnectionSettingsAuthorizationAndPolicySnapshot(t *testing.T) {
 	if !old.allows(requestFor("lan.example.test")) {
 		t.Fatal("updating persisted settings mutated an existing request policy snapshot")
 	}
+}
+
+func TestHubConnectionsPersistenceFailureIsUnavailableWithoutChangingState(t *testing.T) {
+	h, statePath := newPortalHubFixture(t, false)
+	stateDir := filepath.Dir(statePath)
+	if err := os.Mkdir(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(stateDir); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(stateDir, []byte("not a directory"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	cookie := loginForTest(t, h)
+	response := hubRequest(t, h, cookie, "", http.MethodPut, "/api/hub/connections", `{"lanURL":"https://lan.example.test","publicURL":""}`, http.StatusServiceUnavailable)
+	if !strings.Contains(response.Body.String(), `"error_code":"store_unavailable"`) {
+		t.Fatalf("persistence error was misclassified: %s", response.Body.String())
+	}
+	if got := h.liveHub.store.Connections(); got != (hubstate.ConnectionSettings{}) {
+		t.Fatalf("failed persistence changed in-memory settings: %+v", got)
+	}
+}
+
+func TestHubConnectionsAuthorizationThroughHandler(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	owner := loginForTest(t, h)
+	put := func(cookie *http.Cookie, want int) {
+		t.Helper()
+		hubRequest(t, h, cookie, "", http.MethodPut, "/api/hub/connections", `{"lanURL":"https://lan.example.test","publicURL":""}`, want)
+	}
+	get := func(cookie *http.Cookie, want int) {
+		t.Helper()
+		hubRequest(t, h, cookie, "", http.MethodGet, "/api/hub/connections", "", want)
+	}
+	get(owner, http.StatusOK)
+	put(owner, http.StatusOK)
+
+	newSession := func(id, role, status string) *http.Cookie {
+		t.Helper()
+		if _, _, err := h.liveHub.store.UpsertOIDCMember(id, "Test member"); err != nil {
+			t.Fatal(err)
+		}
+		if role != "" {
+			if _, _, err := h.liveHub.store.UpdateMember(id, hubstate.MemberInput{Role: role, Status: status}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		recorder := httptest.NewRecorder()
+		if !h.createSession(recorder, httptest.NewRequest(http.MethodGet, "http://localhost/", nil), id, time.Now().Add(time.Hour)) {
+			t.Fatal("could not create member session")
+		}
+		return recorder.Result().Cookies()[0]
+	}
+	admin := newSession("oidc:"+strings.Repeat("a", 64), "admin", "active")
+	member := newSession("oidc:"+strings.Repeat("b", 64), "member", "active")
+	pending := newSession("oidc:"+strings.Repeat("c", 64), "", "")
+	get(admin, http.StatusOK)
+	put(admin, http.StatusOK)
+	get(member, http.StatusOK)
+	put(member, http.StatusForbidden)
+	get(pending, http.StatusForbidden)
+	put(pending, http.StatusForbidden)
 }
 
 func TestHubConnectionsRejectsExtraJSONFields(t *testing.T) {

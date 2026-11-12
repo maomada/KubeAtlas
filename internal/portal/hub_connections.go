@@ -22,7 +22,7 @@ func (p *portalHub) manageConnections(w http.ResponseWriter, r *http.Request, me
 		}
 		settings, err := p.store.UpdateConnections(input)
 		if err != nil {
-			hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Connection origins must be valid HTTPS roots, except loopback development origins")
+			hubStoreError(w, err)
 			return
 		}
 		p.writeConnections(w, http.StatusOK, settings)

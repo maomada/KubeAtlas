@@ -347,12 +347,52 @@ if HUB_OUTPUT=$(helm template kubeatlas "$CHART_DIR" \
   OUT="$HUB_OUTPUT"
   pass "self-hosted Hub Agent values render"
   assert_contains 'image: "?hub.example.test/kubeatlas/agent@sha256:0123456789abcdef' "Hub Agent image is digest-pinned to the selected origin"
+  assert_contains 'value: "hub.example.test/kubeatlas/agent@sha256:0123456789abcdef' "reachability fallback uses the exact Hub image digest"
   assert_contains 'KUBEATLAS_AGENT_HUB_TOKEN_FILE' "Hub Agent token is configured through a file"
   assert_contains 'secretName: kubeatlas-hub-token' "Hub Agent token Secret is mounted"
+  assert_contains 'defaultMode: 0440' "Hub token volume is group-readable"
+  assert_contains 'fsGroup: 65532' "non-root Agent group can read the mounted token"
   assert_contains 'name: "?kubeatlas:portal:0123456789abcdef' "owner binding names the exact local-owner User"
   assert_contains 'name: cluster-admin' "only the exact owner User binding grants cluster-admin"
 else
   fail "self-hosted Hub Agent values should render: $HUB_OUTPUT"
+fi
+hub_render() {
+  helm template kubeatlas "$CHART_DIR" --set hub.enabled=true --set-string "hub.url=$1" \
+    --set hub.clusterID=production --set hub.tokenSecret=kubeatlas-hub-token \
+    --set-string hub.ownerUserID=kubeatlas:portal:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    --set-string "image.repository=$2" \
+    --set-string image.digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    --set auth.mode=proxy --set mcp.enabled=true
+}
+for address in \
+  'https://192.0.2.10|192.0.2.10/kubeatlas/agent' \
+  'https://192.0.2.10:8443|192.0.2.10:8443/kubeatlas/agent' \
+  'https://[2001:db8::10]|[2001:db8::10]/kubeatlas/agent' \
+  'https://[2001:db8::10]:8443|[2001:db8::10]:8443/kubeatlas/agent' \
+  'https://hub.example.test|hub.example.test/kubeatlas/agent'; do
+  IFS='|' read -r origin repository <<< "$address"
+  if hub_render "$origin" "$repository" >/dev/null 2>&1; then
+    pass "Hub origin renders: $origin"
+  else
+    fail "valid Hub origin was rejected: $origin"
+  fi
+done
+for origin in \
+  'https://[2001:db8:::10]' 'https://[1::2::3]' 'https://[1:2:3]' 'https://hub.example.test/path' \
+  'https://user@hub.example.test' 'https://hub.example.test?' \
+  'https://hub.example.test#fragment' 'https://hub.example.test:65536' \
+  'https://bad_host.example.test' 'https://256.0.0.1' 'http://192.0.2.10'; do
+  if hub_render "$origin" "${origin#*://}/kubeatlas/agent" >/dev/null 2>&1; then
+    fail "invalid Hub origin rendered: $origin"
+  else
+    pass "invalid Hub origin rejected: $origin"
+  fi
+done
+if hub_render https://hub.example.test other.example.test/kubeatlas/agent >/dev/null 2>&1; then
+  fail "Hub image repository authority mismatch rendered"
+else
+  pass "Hub image repository must match the selected origin authority"
 fi
 if helm template kubeatlas "$CHART_DIR" --set hub.enabled=true --set-string hub.url=https://hub.example.test/path >/dev/null 2>&1; then
   fail "Hub Agent origin path prefixes must be rejected"

@@ -20,18 +20,38 @@
 {{- $hubURL := toString .Values.hub.url }}
 {{- $hub := urlParse $hubURL }}
 {{- $hubAuthority := lower $hub.host }}
-{{- $hubHost := regexReplaceAll ":[0-9]+$" $hubAuthority "" | trimPrefix "[" | trimSuffix "]" }}
+{{- $hubHost := $hubAuthority }}
 {{- if or (not (has $hub.scheme (list "http" "https"))) (not $hubAuthority) }}
 {{- fail "hub.url must be an HTTPS IP or DNS origin without userinfo or unsafe host characters" }}
 {{- end }}
+{{- $port := "" }}
 {{- if hasPrefix "[" $hubAuthority }}
-{{- if not (regexMatch "^\\[[0-9A-Fa-f:]+\\](:[0-9]+)?$" $hubAuthority) }}
+{{- if or (not (regexMatch "^\\[[0-9A-Fa-f:]+\\](:[0-9]+)?$" $hubAuthority)) (contains ":::" $hubAuthority) }}
 {{- fail "hub.url IPv6 authority or port is invalid" }}
+{{- end }}
+{{- $hubHost = regexReplaceAll "^\\[([^]]+)\\](:[0-9]+)?$" $hubAuthority "$1" }}
+{{- $port = regexReplaceAll "^\\[[^]]+\\]" $hubAuthority "" }}
+{{- $ipv6Groups := compact (splitList ":" $hubHost) }}
+{{- if gt (len (regexFindAll "::" $hubHost -1)) 1 }}
+{{- fail "hub.url IPv6 address has repeated compression" }}
+{{- end }}
+{{- if and (contains "::" $hubHost) (ge (len $ipv6Groups) 8) }}
+{{- fail "hub.url compressed IPv6 address must omit at least one group" }}
+{{- end }}
+{{- if and (not (contains "::" $hubHost)) (ne (len $ipv6Groups) 8) }}
+{{- fail "hub.url IPv6 address must contain eight groups without compression" }}
+{{- end }}
+{{- range $group := $ipv6Groups }}
+{{- if not (regexMatch "^[0-9a-f]{1,4}$" $group) }}
+{{- fail "hub.url IPv6 address contains an invalid group" }}
+{{- end }}
 {{- end }}
 {{- else if not (regexMatch "^[A-Za-z0-9.-]+(:[0-9]+)?$" $hubAuthority) }}
 {{- fail "hub.url authority or port is invalid" }}
+{{- else }}
+{{- $hubHost = regexReplaceAll ":[0-9]+$" $hubAuthority "" }}
+{{- $port = regexFind ":[0-9]+$" $hubAuthority }}
 {{- end }}
-{{- $port := regexFind ":[0-9]+$" $hubAuthority }}
 {{- if and $port (or (lt (int (trimPrefix ":" $port)) 1) (gt (int (trimPrefix ":" $port)) 65535)) }}
 {{- fail "hub.url port must be between 1 and 65535" }}
 {{- end }}
@@ -44,7 +64,7 @@
 {{- if or $hub.query $hub.fragment (contains "?" $hubURL) (contains "#" $hubURL) (contains "\\" $hubURL) }}
 {{- fail "hub.url must not include a query, fragment, or backslash" }}
 {{- end }}
-{{- if and (ne $hubHost "localhost") (ne $hubHost "::1") (not (regexMatch "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))*$" $hubHost)) }}
+{{- if and (not (hasPrefix "[" $hubAuthority)) (ne $hubHost "localhost") (not (regexMatch "^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\\.([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?))*$" $hubHost)) }}
 {{- fail "hub.url must contain a valid DNS hostname or IP address" }}
 {{- end }}
 {{- if and (regexMatch "^[0-9.]+$" $hubHost) (not (regexMatch "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$" $hubHost)) }}
@@ -569,7 +589,7 @@ spec:
             # pod can't run; an explicit --reachability-image / config still wins,
             # and the self-read (radar's live pod image) is preferred when available.
             - name: KUBEATLAS_IMAGE
-              value: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+              value: {{ if .Values.image.digest }}{{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}{{ else }}{{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) | quote }}{{ end }}
             - name: MY_DEPLOYMENT_NAME
               value: {{ include "radar.fullname" . }}
             # The Helm release name, reported to Radar Cloud on connect so the
