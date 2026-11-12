@@ -40,6 +40,43 @@ async function register() {
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
 }
 
+it('compiles the cluster ID pattern in Unicode sets mode and rejects invalid IDs before POST', async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>((url) => {
+    if (url !== '/api/hub/connections') throw new Error('unexpected request ' + url)
+    return Promise.resolve(new Response(JSON.stringify({
+      lanURL: 'https://lan.example.test', publicURL: '', ownerUserID: 'kubeatlas:portal:' + 'a'.repeat(64), catalogAvailable: true,
+      catalog: { available: true, version: '1.2.3', installerSHA256: 'b'.repeat(64), chartSHA256: 'c'.repeat(64), imageDigest: 'sha256:' + 'd'.repeat(64) },
+    }), { headers: { 'Content-Type': 'application/json' } }))
+  })
+  vi.stubGlobal('fetch', fetch)
+  await act(async () => root.render(<QueryClientProvider client={client}><ConnectionProfilesProvider><CloudInstall /></ConnectionProfilesProvider></QueryClientProvider>))
+  const idInput = host.querySelector<HTMLInputElement>('input[pattern]')!
+  const pattern = idInput.getAttribute('pattern')!
+  const matcher = new RegExp('^(?:' + pattern + ')$', 'v')
+  const setValue = (input: HTMLInputElement, value: string) => {
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(input, value)
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  }
+
+  for (const id of ['a', 'alpha-1', 'a--b', 'a'.repeat(63)]) {
+    expect(matcher.test(id)).toBe(true)
+    await act(async () => setValue(idInput, id))
+    expect(idInput.checkValidity()).toBe(true)
+  }
+  for (const id of ['A', '_a', '-a', 'a_b', 'a'.repeat(64)]) {
+    expect(matcher.test(id)).toBe(false)
+  }
+
+  const nameInput = host.querySelector<HTMLInputElement>('input[placeholder="Production EU"]')!
+  await act(async () => {
+    setValue(nameInput, 'Demo east')
+    setValue(idInput, 'A')
+  })
+  expect(idInput.checkValidity()).toBe(false)
+  await act(async () => host.querySelector('form')!.requestSubmit())
+  expect(fetch.mock.calls.some(([url, init]) => url === '/api/hub/clusters' && init?.method === 'POST')).toBe(false)
+})
+
 it('registers through the Hub and discards the one-time Agent token after dismissal', async () => {
   const fetch = vi.fn<typeof globalThis.fetch>((url) => Promise.resolve(url === '/api/hub/connections'
     ? new Response(JSON.stringify({ lanURL: 'https://lan.example.test', publicURL: 'https://public.example.test', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: true, catalog: { available: true, version: '1.2.3', installerSHA256: 'b'.repeat(64), chartSHA256: 'c'.repeat(64), imageDigest: `sha256:${'d'.repeat(64)}` } }), { headers: { 'Content-Type': 'application/json' } })
