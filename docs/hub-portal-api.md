@@ -89,7 +89,7 @@ browser-bound, one-use state transaction and the fixed configured callback.
 | --- | --- |
 | `GET /register` | Public account-registration page; registration creates a pending account without membership or session |
 | `GET /settings/platform` | Platform-owner-only settings page |
-| `GET /api/auth/providers` | `{local:true, oidc:{enabled, loginUrl?}}` |
+| `GET /api/auth/providers` | `{local:true, registrationEnabled:true, oidc:{enabled, loginUrl?}}` |
 | `GET /api/auth/oidc/login` | Fixed-provider authorization redirect with `prompt=login`, state, nonce and S256 PKCE |
 | `GET /api/auth/oidc/callback` | One-use browser-bound state callback; redirects to `/` or a generic safe login error |
 | `GET /api/hub` | Readiness and identity; nullable `activeOrganizationId`, public organizations and current member when resolved |

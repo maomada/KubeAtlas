@@ -56,11 +56,17 @@ authorization-code login with PKCE, state, and nonce validation. Configure
 provided with `--oidc-ca-cert`. The redirect URL must be fixed to the Portal's
 callback URL.
 
-OIDC accounts are provisioned through the login flow and require owner
-approval before they can use the Cloud UI. The owner assigns a role, cluster
-scope, and Kubernetes groups. Pending or disabled members cannot use live
-cluster access. Every proxied Kubernetes request is still evaluated by the
-target cluster's Kubernetes RBAC using that member's identity.
+OIDC accounts are provisioned through the login flow as pending accounts with
+no organization memberships. A platform owner approves account status and
+grants initial organization memberships. Organization owners can change roles
+or remove existing memberships in their organization; they cannot approve
+accounts or set per-user cluster scopes or Kubernetes groups. New memberships
+cover all clusters in their organization; migrated legacy-restricted
+memberships retain their existing scope. The Hub derives the fixed
+`kubeatlas:hub:owner`, `kubeatlas:hub:member`, and `kubeatlas:hub:viewer` groups
+from the current organization role. Pending or disabled accounts cannot use
+live cluster access. Every proxied Kubernetes request is still evaluated by
+the target cluster's Kubernetes RBAC using that member's identity.
 
 Directory synchronization and OIDC backchannel logout are not implemented.
 Disabling an identity-provider account alone does not immediately revoke an
