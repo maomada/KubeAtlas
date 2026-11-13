@@ -19,6 +19,13 @@ files must be regular files with mode `0600`; the containing directory must be
 `0700`. Missing directories are created with `0700` at the first mutation;
 existing broad directory permissions are rejected, not silently changed.
 
+Before the first start of a version-2 build against a version-1 state file,
+make a verified backup of the state file. `OpenStore` migrates version 1 to
+version 2 in place using the normal atomic commit. Do not open a migrated
+version-2 file with an older binary; restore the pre-upgrade backup before a
+downgrade. Unknown versions and malformed or corrupt state fail closed; the
+Hub does not reset or replace them with an empty store.
+
 The version-1 JSON object contains `version`, `clusters`, `groups`, and
 `credentials`. Optional `organization` and `members` fields extend existing
 version-1 files; a legacy file without them loads with the default
@@ -28,6 +35,28 @@ SHA-256 digests, and PAT records also retain original TTL and family ancestry.
 Public `Cluster`, `Group`, `Member`, and `Credential` metadata never contains
 digests or plaintext tokens. Lists are deterministic by ID; input/output slices
 and optional timestamps do not alias store state.
+
+The version-2 root fields are `version`, `clusters`, `groups`, `credentials`,
+`organizations`, `accounts`, `memberships`, and `connectionSettings`.
+`organizations` and `accounts` are ID-keyed maps; `memberships` is keyed first
+by organization ID and then by account ID. Cluster records contain
+organization-scoped cluster metadata and an Agent-token digest. Group records
+contain organization-scoped cluster-group metadata. Credential records contain
+organization-scoped PAT metadata, token digests, family ancestry, and TTL
+metadata. Accounts contain identity, email/display name, account status, a
+stored bcrypt hash where applicable, and local/platform-owner markers.
+Membership records contain the organization role, legacy cluster and
+Kubernetes-group scope, and timestamps. `connectionSettings` contains the
+stored LAN and public origins. Plaintext passwords and tokens are not persisted.
+Version-1-only `organization` and `members` aliases are migration input, not
+version-2 root fields.
+
+Migration preserves cluster and group records, credential digests, connection
+settings, existing Kubernetes groups, and member cluster scopes. Every migrated
+membership remains legacy-restricted: an empty old member/viewer scope grants
+no clusters, while only an old admin with an empty cluster list retains the
+legacy all-cluster restriction. Migration does not synthesize new
+`kubeatlas:hub:*` role groups or Kubernetes RBAC grants.
 
 Startup reads through a 16 MiB byte limit (plus one byte to detect overflow),
 rejecting malformed/trailing JSON, duplicate or unknown fields, missing required
@@ -50,24 +79,37 @@ writers can alter grants; protect it and its backups as authentication state.
 
 - At most 100 clusters and 100 groups; IDs match
   `^[a-z0-9][a-z0-9-]{0,62}$`.
-- At most 1,024 members including the synthetic, immutable local owner. Stored
-  OIDC member IDs are `oidc:` plus a lowercase SHA-256 hex digest of the exact
-  issuer, a NUL separator, and the OIDC subject. Subjects and email addresses
-  are not persisted.
-- Stored roles are `admin`, `member`, and `viewer`; the synthetic local owner
-  has role `owner`. Statuses are `active`, `pending`, or `disabled`. New
-  identities start pending with empty cluster and Kubernetes-group scopes.
-- Admin members have all-cluster management scope and an empty `clusterIds`
-  list. Members and viewers have explicit cluster IDs; an empty list grants no
-  cluster access. Kubernetes groups are administrator-managed, must satisfy the
-  existing Hub group validation rules, and are never imported from the IdP.
+- Version-1 compatibility input is limited to 1,024 legacy members including
+  its former synthetic local owner. Version 2 stores accounts separately from
+  organization memberships and supports up to 4,096 accounts.
+- OIDC account IDs are `oidc:` plus a lowercase SHA-256 hex digest of the exact
+  issuer, a NUL separator, and the OIDC subject. Raw issuer and subject values
+  are not persisted; the version-2 account record may retain the validated
+  email address and display name.
+- Version-1 roles are `admin`, `member`, and `viewer`. Migration maps legacy
+  `admin` to the version-2 organization role `owner`; current roles are
+  `owner`, `member`, and `viewer`. Account statuses are `active`, `pending`,
+  and `disabled`. New identities start pending without organization
+  memberships.
+- New memberships cover the clusters in their organization. Only migrated
+  `LegacyRestricted` memberships retain legacy explicit cluster and
+  Kubernetes-group restrictions; an empty migrated member/viewer scope grants
+  no clusters, while an old admin with an empty scope retains its legacy
+  all-cluster restriction. Viewer memberships are read-only.
+- The server derives `kubeatlas:hub:owner`, `kubeatlas:hub:member`, and
+  `kubeatlas:hub:viewer` from the organization role. Existing Kubernetes
+  groups on migrated memberships are preserved; new memberships have no
+  arbitrary Kubernetes-group assignment UI. These roles do not create RBAC
+  bindings by themselves.
 - Cluster and group names are nonempty, at most 256 bytes, and have no leading
   or trailing whitespace (including Unicode whitespace). Cluster descriptions are at most
   1000 bytes; environment and region are at most 128 bytes each.
 - User-controlled text is valid UTF-8 without control characters. Required
   text cannot be whitespace-only.
 - `UpdateCluster` requires the input ID to equal the addressed ID. Agent token
-  rotation preserves identity and restores a previously revoked credential.
+  rotation preserves identity only for a cluster with an active token; it
+  cannot restore a revoked or transferred cluster. Those clusters require a
+  fresh approved enrollment and one-time claim.
 - Group members must be unique, known cluster IDs and are sorted when saved.
   An empty group is valid and means **no clusters**, never all clusters.
 - Group changes do not expand existing PAT grants. PATs store explicit cluster
@@ -79,10 +121,11 @@ Agent tokens start with `ka_agent_`; MCP PATs start with `ka_mcp_`. Each contain
 a newly generated 32-byte `crypto/rand` secret encoded as unpadded base64url.
 Only SHA-256 of the full token is persisted, and candidate digests are compared
 in constant time. Credential IDs are independent random 32-byte hex values.
-Plaintext appears only in the immediate result of cluster creation/agent
-rotation or PAT issue/refresh/rotation. It cannot be retrieved later and must
-not be logged by callers. These tokens do not interoperate with Portal cookies,
-shared enrollment keys, or each other.
+Plaintext appears only in the immediate result of cluster creation, active
+Agent-token rotation, fresh enrollment claim, or PAT issue/refresh/rotation. It
+cannot be retrieved later and must not be logged by callers. A lost enrollment
+claim response cannot be recovered; a new approved pairing is required. These
+tokens do not interoperate with Portal cookies, device secrets, or each other.
 
 The caller must supply a stable nonempty trusted `ownerID`, never an owner
 asserted by bearer claims. Authentication checks the stored owner before

@@ -35,6 +35,7 @@ func main() {
 	oidcRedirectURL := flag.String("oidc-redirect-url", os.Getenv("KUBEATLAS_PORTAL_OIDC_REDIRECT_URL"), "Fixed OIDC callback URL for Hub SSO")
 	oidcCACert := flag.String("oidc-ca-cert", os.Getenv("KUBEATLAS_PORTAL_OIDC_CA_CERT"), "Optional CA certificate file for the OIDC issuer")
 	insecureCookie := flag.Bool("insecure-cookie", false, "Allow non-Secure viewer cookies for loopback HTTP development only")
+	httpIPOrigin := registerHTTPIPOriginFlag(flag.CommandLine, os.Getenv)
 	mcpAllowedHosts := flag.String("mcp-allowed-hosts", os.Getenv("KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS"), "Comma-separated exact external host[:port] authorities allowed for /mcp behind a trusted proxy; no wildcards")
 	flag.Parse()
 	if *showVersion {
@@ -60,6 +61,7 @@ func main() {
 		log.Fatalf("portal OIDC configuration is invalid: %v", err)
 	}
 	credentials.AllowInsecureCookies = *insecureCookie
+	credentials.HTTPIPOrigin = *httpIPOrigin
 	if strings.TrimSpace(*mcpAllowedHosts) != "" {
 		for _, host := range strings.Split(*mcpAllowedHosts, ",") {
 			credentials.MCPAllowedHosts = append(credentials.MCPAllowedHosts, strings.TrimSpace(host))
@@ -112,6 +114,10 @@ func main() {
 			log.Fatalf("portal server failed: %v", err)
 		}
 	}
+}
+
+func registerHTTPIPOriginFlag(flags *flag.FlagSet, getenv func(string) string) *string {
+	return flags.String("http-ip-origin", getenv("KUBEATLAS_PORTAL_HTTP_IP_ORIGIN"), "Explicit trusted-network HTTP root origin for a literal IP authority; enables non-Secure cookies only for that exact authority")
 }
 
 func configureArtifacts(credentials *portal.Credentials, directory, buildVersion string) error {

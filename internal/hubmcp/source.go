@@ -91,7 +91,7 @@ func (f *facade) open(ctx context.Context, p hub.Principal, clusterID, requestID
 	if !slices.Contains(p.ClusterIDs, clusterID) {
 		return nil, &fault{code: "permission_denied", message: "Cluster is outside this credential's scope."}
 	}
-	cluster, exists := f.store.Cluster(clusterID)
+	cluster, exists := f.store.ClusterForOrganization(p.OrganizationID, clusterID)
 	if !exists || cluster.RevokedAt != nil {
 		return nil, &fault{code: "cluster_unavailable", message: "Cluster is not available for live requests."}
 	}

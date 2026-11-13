@@ -19,6 +19,13 @@ const (
 
 func testHandler(t *testing.T, statePath string) (*Handler, string) {
 	t.Helper()
+	stateDir := filepath.Dir(statePath)
+	if err := os.MkdirAll(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
 	store, err := hubstate.OpenStore(statePath)
 	if err != nil {
 		t.Fatal(err)
@@ -103,13 +110,18 @@ func TestOwnerUsernameValidationAndEmbeddedAssetServing(t *testing.T) {
 			t.Fatalf("%s status = %d, want 200: %s", path, response.Code, response.Body.String())
 		}
 	}
-	for _, path := range []string{"/", "/mcp-access"} {
+	for _, path := range []string{"/mcp-access"} {
 		request := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
 		response := httptest.NewRecorder()
 		handler.ServeHTTP(response, request)
 		if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login" {
 			t.Fatalf("unauthenticated %s did not redirect to login", path)
 		}
+	}
+	root := httptest.NewRecorder()
+	handler.ServeHTTP(root, httptest.NewRequest(http.MethodGet, "http://localhost/", nil))
+	if root.Code != http.StatusOK || !strings.Contains(root.Body.String(), "<html>portal</html>") {
+		t.Fatalf("public root did not serve the Portal app: status=%d body=%s", root.Code, root.Body.String())
 	}
 	login := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login",
 		strings.NewReader(`{"username":"p","password":"`+testPassword+`"}`))

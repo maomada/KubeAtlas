@@ -44,6 +44,12 @@ The in-cluster chart deploys the native KubeAtlas Agent. It does not configure
 or replace the separate self-hosted Cloud Hub; connect an Agent through the
 Hub's enrollment workflow when using Cloud UI or live Hub MCP.
 
+Hub Agent bootstrap requires HTTPS for DNS origins. HTTP literal-IP origins
+carry interception risk for credentials and downloads. Nodes must independently
+reach the Hub OCI endpoint and trust its certificate; an HTTP registry may
+require operator-managed insecure-registry configuration in each node's
+runtime. KubeAtlas installers do not alter node runtime settings.
+
 Shared OSS KubeAtlas is configured by the installation operator, not by visitors to
 its web UI. Settings shows effective configuration and connection status; it does
 not save installation changes. Use Helm values (or flags/environment for a

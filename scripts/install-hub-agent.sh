@@ -32,13 +32,37 @@ done
 for required in "$hub_origin" "$context" "$cluster_id" "$version" "$image_digest" "$chart_sha256" "$owner_user_id" "$token_file"; do
   [[ -n "$required" ]] || { usage >&2; fail 'all required options must be provided explicitly'; }
 done
-if [[ "$hub_origin" =~ ^https://([A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(:[0-9]{1,5})?/?$ ]]; then
-  :
-elif [[ "$hub_origin" =~ ^http://(localhost|127\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}|\[::1\])(:[0-9]{1,5})?/?$ ]]; then
-  :
-else
-  fail 'Hub origin must be HTTPS except for loopback development origins'
-fi
+validate_origin() {
+  python3 - "$1" <<'PY'
+import ipaddress
+import re
+import sys
+from urllib.parse import urlsplit
+
+try:
+    value = urlsplit(sys.argv[1])
+    host = value.hostname
+    port = value.port
+    if value.scheme not in ("http", "https") or not value.netloc or host is None:
+        raise ValueError()
+    if value.username is not None or value.password is not None or value.path not in ("", "/") or value.query or value.fragment:
+        raise ValueError()
+    if port is not None and not 1 <= port <= 65535:
+        raise ValueError()
+    try:
+        ipaddress.ip_address(host)
+        literal_ip = True
+    except ValueError:
+        literal_ip = False
+        if len(host) > 253 or not all(re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label) for label in host.split(".")):
+            raise ValueError()
+    if value.scheme == "http" and not (literal_ip or host.lower() == "localhost"):
+        raise ValueError()
+except ValueError:
+    sys.exit(1)
+PY
+}
+validate_origin "$hub_origin" || fail 'Hub origin must be HTTPS DNS/IP or HTTP literal IP/loopback'
 hub_origin="${hub_origin%/}"
 [[ "$cluster_id" =~ ^[a-z0-9][a-z0-9-]{0,62}$ ]] || fail 'cluster ID is invalid'
 [[ "$version" =~ ^[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}$ ]] || fail 'catalog version is invalid'
@@ -49,9 +73,12 @@ hub_origin="${hub_origin%/}"
 [[ "$release" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ && ${#release} -le 53 ]] || fail 'release name is invalid'
 if [[ "$release" != *kubeatlas* && ${#release} -gt 43 ]]; then fail 'release name is too long for the exact owner binding'; fi
 
-for tool in curl helm kubectl sha256sum grep awk mktemp stat wc od tr cat; do
+for tool in curl helm kubectl sha256sum grep awk mktemp stat wc od tr cat python3; do
   command -v "$tool" >/dev/null 2>&1 || fail "required tool is missing: $tool"
 done
+work="$(mktemp -d)" || fail 'cannot create private temporary directory'
+chmod 700 "$work"
+trap 'rm -rf -- "$work"' EXIT
 [[ -f "$token_file" && ! -L "$token_file" && -r "$token_file" ]] || fail 'token file must be a readable regular file, not a symlink'
 token_mode="$(stat -c '%a' -- "$token_file" 2>/dev/null)" || fail 'cannot inspect token file permissions'
 (( (8#$token_mode & 0400) != 0 && (8#$token_mode & 077) == 0 )) || fail 'token file must be owner-readable and inaccessible to group or other users'
@@ -72,8 +99,17 @@ fi
 
 contexts="$(kubectl config get-contexts -o name 2>/dev/null)" || fail 'cannot list Kubernetes contexts'
 printf '%s\n' "$contexts" | grep -Fxq -- "$context" || fail 'explicit Kubernetes context is unavailable'
+kubectl --context "$context" config view --raw --flatten --minify >"$work/kubeconfig" || fail 'cannot freeze explicit Kubernetes context'
+chmod 600 "$work/kubeconfig"
+[[ -s "$work/kubeconfig" ]] || fail 'frozen kubeconfig is empty'
+export KUBECONFIG="$work/kubeconfig"
+[[ "$(kubectl config current-context 2>/dev/null)" == "$context" ]] || fail 'frozen kubeconfig changed the selected context'
+api_server="$(kubectl --context "$context" config view --minify -o jsonpath='{.clusters[0].cluster.server}' 2>/dev/null)" || fail 'cannot read Kubernetes API server'
+system_uid="$(kubectl --context "$context" get namespace kube-system -o jsonpath='{.metadata.uid}' 2>/dev/null)" || fail 'cannot read kube-system identity'
+[[ -n "$api_server" && -n "$system_uid" ]] || fail 'Kubernetes context identity is incomplete'
+printf 'Selected Kubernetes context: %s\nAPI server: %s\nkube-system UID: %s\n' "$context" "$api_server" "$system_uid" >&2
 kubectl --context "$context" cluster-info >/dev/null 2>&1 || fail 'Kubernetes context preflight failed'
-for permission in 'create namespaces' 'create secrets' 'create clusterrolebindings' 'create clusterroles' 'create serviceaccounts'; do
+for permission in 'create namespaces' 'create secrets' 'create clusterrolebindings' 'create clusterroles' 'bind clusterroles' 'escalate clusterroles' 'create serviceaccounts' 'create configmaps' 'create deployments' 'create services' 'create roles' 'create rolebindings'; do
   read -r verb resource <<< "$permission"
   [[ "$(kubectl --context "$context" auth can-i "$verb" "$resource" --namespace "$namespace" 2>/dev/null)" == yes ]] || fail "Kubernetes permission preflight failed: $permission"
 done
@@ -92,7 +128,15 @@ fi
 fullname="$release"
 if [[ "$release" != *kubeatlas* ]]; then fullname="${release}-kubeatlas"; fi
 fullname="${fullname:0:63}"
-for kind_name in "clusterrole/$fullname" "clusterrolebinding/$fullname" "clusterrolebinding/${fullname}-hub-owner"; do
+for kind_name in \
+  "clusterrole/$fullname" \
+  "clusterrolebinding/$fullname" \
+  "clusterrolebinding/${fullname}-hub-owner" \
+  "clusterrolebinding/${fullname}-hub-role-owner" \
+  "clusterrolebinding/${fullname}-hub-role-member" \
+  "clusterrolebinding/${fullname}-hub-role-viewer" \
+  "clusterrole/${fullname}-hub-infra-readonly" \
+  "clusterrolebinding/${fullname}-hub-infra-readonly"; do
   kind="${kind_name%%/*}" resource="${kind_name#*/}"
   if output="$(kubectl --context "$context" get "$kind" "$resource" --ignore-not-found -o name 2>&1)"; then
     [[ -z "$output" ]] || fail "existing cluster-scoped resource would be adopted: $kind/$resource"
@@ -101,9 +145,6 @@ for kind_name in "clusterrole/$fullname" "clusterrolebinding/$fullname" "cluster
   fi
 done
 
-work="$(mktemp -d)" || fail 'cannot create private temporary directory'
-chmod 700 "$work"
-trap 'rm -rf -- "$work"' EXIT
 curl_args=(--silent --show-error --proto '=http,https' --tlsv1.2 --write-out '%{http_code}')
 if [[ -n "$ca_file" ]]; then curl_args+=(--cacert "$ca_file"); fi
 download() {
@@ -137,7 +178,12 @@ if [[ "$dry_run" == true ]]; then
   printf 'Preflight complete; dry run made no Kubernetes changes.\n'
   exit 0
 fi
-printf '%s\n' 'Prerequisites: this chart binds only the exact local Hub owner User to cluster-admin. Every target node must independently trust the Hub Registry TLS certificate; the Agent CA file does not configure the container runtime.' >&2
+printf '%s\n' 'Prerequisites: only the exact local Hub owner User is bound to cluster-admin; organization role groups never receive cluster-admin.' >&2
+if [[ "$hub_origin" == http://* ]]; then
+  printf '%s\n' 'HTTP exposes credentials and artifact downloads to network interception. Every eligible node must be manually configured by its administrator to pull from the HTTP registry; this installer does not change node runtimes.' >&2
+else
+  printf '%s\n' 'Every target node must independently trust the Hub Registry TLS certificate; the Agent CA file does not configure the container runtime.' >&2
+fi
 if [[ "$assume_yes" != true ]]; then
   printf 'Install a new Hub Agent release into context %q, namespace %q? [y/N] ' "$context" "$namespace" >&2
   read -r answer

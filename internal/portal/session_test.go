@@ -17,8 +17,10 @@ import (
 func loginForTest(t *testing.T, h *Handler) *http.Cookie {
 	t.Helper()
 	body, _ := json.Marshal(map[string]string{"username": testUsername, "password": testPassword})
-	r := httptest.NewRequest(http.MethodPost, "/api/auth/login", strings.NewReader(string(body)))
+	r := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(string(body)))
 	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Origin", "http://localhost")
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	if w.Code != http.StatusNoContent || len(w.Result().Cookies()) != 1 {
@@ -48,8 +50,8 @@ func TestViewerSessionLifecycle(t *testing.T) {
 		}
 		return w
 	}
-	if w := request("GET", "/", nil); w.Code != 303 || w.Header().Get("Location") != "/login" {
-		t.Fatalf("unauthenticated root: %d %v", w.Code, w.Header())
+	if w := request("GET", "/", nil); w.Code != 200 || w.Body.String() != "login shell" {
+		t.Fatalf("public root: %d %q", w.Code, w.Body.String())
 	}
 	if w := request("GET", "/fleet", nil); w.Code != 404 {
 		t.Fatalf("removed Fleet page status = %d, want 404", w.Code)
@@ -116,6 +118,65 @@ func TestViewerSessionLifecycle(t *testing.T) {
 	}
 }
 
+func TestRegistrationCreatesPendingPasswordAccountWithoutMembership(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	register := func(email, password string) *httptest.ResponseRecorder {
+		t.Helper()
+		body, _ := json.Marshal(map[string]string{"email": email, "password": password})
+		r := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/register", strings.NewReader(string(body)))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	password := "pending-account-password"
+	response := register("  Pending.User@Example.test ", password)
+	if response.Code != http.StatusCreated || strings.Contains(response.Body.String(), password) || len(response.Result().Cookies()) != 0 || !strings.Contains(response.Body.String(), "pending") {
+		t.Fatalf("registration status=%d body=%q cookies=%d", response.Code, response.Body.String(), len(response.Result().Cookies()))
+	}
+	account, ok := h.liveHub.store.AccountByEmail("pending.user@example.test")
+	if !ok || account.Status != "pending" || !strings.HasPrefix(account.PasswordHash, "$2") || account.PasswordHash == password ||
+		len(h.liveHub.store.OrganizationsForAccount(account.ID)) != 0 {
+		t.Fatalf("registered account = %#v, ok=%v", account, ok)
+	}
+	if response := register("PENDING.USER@example.test", password); response.Code != http.StatusConflict || strings.Contains(response.Body.String(), password) {
+		t.Fatalf("duplicate registration status=%d body=%q", response.Code, response.Body.String())
+	}
+	login := func() *httptest.ResponseRecorder {
+		body, _ := json.Marshal(map[string]string{"username": "PENDING.USER@example.test", "password": password})
+		r := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/login", strings.NewReader(string(body)))
+		r.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	loginResponse := login()
+	if loginResponse.Code != http.StatusNoContent || len(loginResponse.Result().Cookies()) != 1 {
+		t.Fatalf("pending login status=%d body=%q", loginResponse.Code, loginResponse.Body.String())
+	}
+	cookie := loginResponse.Result().Cookies()[0]
+	status := httptest.NewRequest(http.MethodGet, "http://localhost/api/hub", nil)
+	status.AddCookie(cookie)
+	statusResponse := httptest.NewRecorder()
+	h.ServeHTTP(statusResponse, status)
+	if statusResponse.Code != http.StatusOK || !strings.Contains(statusResponse.Body.String(), "pending") || !strings.Contains(statusResponse.Body.String(), "activeOrganizationId") {
+		t.Fatalf("pending Hub status=%d body=%s", statusResponse.Code, statusResponse.Body.String())
+	}
+	clusters := httptest.NewRequest(http.MethodGet, "http://localhost/api/hub/clusters", nil)
+	clusters.AddCookie(cookie)
+	clustersResponse := httptest.NewRecorder()
+	h.ServeHTTP(clustersResponse, clusters)
+	if clustersResponse.Code != http.StatusForbidden {
+		t.Fatalf("pending directory status=%d body=%s", clustersResponse.Code, clustersResponse.Body.String())
+	}
+	if _, err := h.liveHub.store.UpdatePlatformUser(account.ID, "disabled", nil); err != nil {
+		t.Fatal(err)
+	}
+	if loginResponse = login(); loginResponse.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled account login status=%d", loginResponse.Code)
+	}
+}
+
 func TestLoginRejectsInvalidCredentialsAndCrossOriginMutations(t *testing.T) {
 	valid, _ := json.Marshal(map[string]string{"username": testUsername, "password": testPassword})
 	for _, tt := range []struct {
@@ -132,18 +193,23 @@ func TestLoginRejectsInvalidCredentialsAndCrossOriginMutations(t *testing.T) {
 		{"GET login", "GET", "/api/auth/login", "", "", "", "", 405},
 		{"form login", "POST", "/api/auth/login", string(valid), "text/plain", "", "", 415},
 		{"cross-origin login", "POST", "/api/auth/login", string(valid), "application/json", "https://evil.test", "same-site", 403},
+		{"empty origin", "POST", "/api/auth/login", string(valid), "application/json", "", "", 403},
 		{"cross-site login", "POST", "/api/auth/login", string(valid), "application/json", "", "cross-site", 403},
 		{"null origin", "POST", "/api/auth/login", string(valid), "application/json", "null", "", 403},
 		{"cross-origin logout", "POST", "/api/auth/logout", `{}`, "application/json", "https://evil.test", "", 403},
 		{"form logout", "POST", "/api/auth/logout", `{}`, "text/plain", "", "", 415},
-		{"same-origin", "POST", "/api/auth/login", string(valid), "application/json", "https://example.com", "same-origin", 204},
+		{"same-origin", "POST", "/api/auth/login", string(valid), "application/json", "https://localhost", "same-origin", 204},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			h, _ := testHandler(t, filepath.Join(t.TempDir(), "hub-state.json"))
-			r := httptest.NewRequest(tt.method, "https://example.com"+tt.path, strings.NewReader(tt.body))
+			r := httptest.NewRequest(tt.method, "https://localhost"+tt.path, strings.NewReader(tt.body))
 			r.Header.Set("Content-Type", tt.contentType)
-			r.Header.Set("Origin", tt.origin)
-			r.Header.Set("Sec-Fetch-Site", tt.fetchSite)
+			if tt.origin != "" || tt.name == "empty origin" {
+				r.Header.Set("Origin", tt.origin)
+			}
+			if tt.fetchSite != "" {
+				r.Header.Set("Sec-Fetch-Site", tt.fetchSite)
+			}
 			w := httptest.NewRecorder()
 			h.ServeHTTP(w, r)
 			if w.Code != tt.status {
@@ -182,7 +248,7 @@ func TestLoginLimitsAndRotation(t *testing.T) {
 	h.sessions.now = func() time.Time { return now }
 	cookie := loginForTest(t, h)
 	body, _ := json.Marshal(map[string]string{"username": testUsername, "password": testPassword})
-	r := httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(string(body)))
+	r := httptest.NewRequest("POST", "http://localhost/api/auth/login", strings.NewReader(string(body)))
 	r.Header.Set("Content-Type", "application/json")
 	r.AddCookie(cookie)
 	w := httptest.NewRecorder()
@@ -196,7 +262,7 @@ func TestLoginLimitsAndRotation(t *testing.T) {
 	for i := 0; i < 18; i++ {
 		loginForTest(t, h)
 	}
-	r = httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(string(body)))
+	r = httptest.NewRequest("POST", "http://localhost/api/auth/login", strings.NewReader(string(body)))
 	r.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
@@ -208,7 +274,7 @@ func TestLoginLimitsAndRotation(t *testing.T) {
 	for i := len(h.sessions.expires); i < maxViewerSessions; i++ {
 		h.sessions.expires[sha256.Sum256([]byte(time.Unix(int64(i), 0).String()))] = now.Add(sessionLifetime)
 	}
-	r = httptest.NewRequest("POST", "/api/auth/login", strings.NewReader(string(body)))
+	r = httptest.NewRequest("POST", "http://localhost/api/auth/login", strings.NewReader(string(body)))
 	r.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)

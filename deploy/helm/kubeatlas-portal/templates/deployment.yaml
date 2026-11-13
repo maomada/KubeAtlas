@@ -66,6 +66,10 @@ spec:
               containerPort: 9290
               protocol: TCP
           env:
+            {{- if .Values.httpIPOrigin }}
+            - name: KUBEATLAS_PORTAL_HTTP_IP_ORIGIN
+              value: {{ .Values.httpIPOrigin | quote }}
+            {{- end }}
             - name: KUBEATLAS_PORTAL_USERNAME
               valueFrom:
                 secretKeyRef:

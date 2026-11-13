@@ -125,7 +125,8 @@ func TestOIDCLoginPKCENonceAndOneUseState(t *testing.T) {
 	defer authenticator.transport.CloseIdleConnections()
 	handler := &Handler{liveHub: hub, oidc: authenticator, sessions: newViewerSessions()}
 	login := httptest.NewRecorder()
-	handler.oidcLogin(login, httptest.NewRequest(http.MethodGet, "/api/auth/oidc/login", nil))
+	loginURL := strings.TrimSuffix(config.RedirectURL, "/api/auth/oidc/callback") + "/api/auth/oidc/login"
+	handler.oidcLogin(login, httptest.NewRequest(http.MethodGet, loginURL, nil))
 	if login.Code != http.StatusSeeOther {
 		t.Fatalf("login status = %d", login.Code)
 	}
@@ -151,8 +152,18 @@ func TestOIDCLoginPKCENonceAndOneUseState(t *testing.T) {
 	if stateCookie == nil {
 		t.Fatal("browser-bound state cookie was not set")
 	}
-	callbackURL := "/api/auth/oidc/callback?code=authorization-code&state=" + url.QueryEscape(state)
+	callbackURL := config.RedirectURL + "?code=authorization-code&state=" + url.QueryEscape(state)
+	wrongAuthority := httptest.NewRequest(http.MethodGet,
+		"http://localhost/api/auth/oidc/callback?code=authorization-code&state="+url.QueryEscape(state), nil)
+	wrongAuthority.AddCookie(stateCookie)
+	wrongAuthority.Header.Set("Sec-Fetch-Site", "cross-site")
+	rejected := httptest.NewRecorder()
+	handler.oidcCallback(rejected, wrongAuthority)
+	if rejected.Code != http.StatusForbidden {
+		t.Fatalf("wrong callback authority status=%d", rejected.Code)
+	}
 	callback := httptest.NewRequest(http.MethodGet, callbackURL, nil)
+	callback.Header.Set("Sec-Fetch-Site", "cross-site")
 	callback.AddCookie(stateCookie)
 	result := httptest.NewRecorder()
 	handler.oidcCallback(result, callback)
@@ -160,10 +171,11 @@ func TestOIDCLoginPKCENonceAndOneUseState(t *testing.T) {
 		t.Fatalf("callback status/location = %d %q", result.Code, result.Header().Get("Location"))
 	}
 	memberID := oidcMemberID(config.Issuer, "subject-never-exposed")
-	member, ok := store.Member(memberID)
-	if !ok || member.Status != "pending" || member.DisplayName != "Alice" ||
-		strings.Contains(member.ID, "subject-never-exposed") || strings.Contains(member.UserID, "subject-never-exposed") {
-		t.Fatalf("OIDC member = %#v, ok=%v", member, ok)
+	account, ok := store.Account(memberID)
+	if !ok || account.Status != "pending" || account.DisplayName != "Alice" ||
+		strings.Contains(account.ID, "subject-never-exposed") || strings.Contains(account.UserID, "subject-never-exposed") ||
+		len(store.OrganizationsForAccount(memberID)) != 0 {
+		t.Fatalf("OIDC account = %#v, ok=%v", account, ok)
 	}
 	replay := httptest.NewRecorder()
 	handler.oidcCallback(replay, callback)
@@ -196,7 +208,8 @@ func TestOIDCRejectsPKCEAndNonceMismatch(t *testing.T) {
 			defer authenticator.transport.CloseIdleConnections()
 			handler := &Handler{liveHub: hub, oidc: authenticator, sessions: newViewerSessions()}
 			login := httptest.NewRecorder()
-			handler.oidcLogin(login, httptest.NewRequest(http.MethodGet, "/api/auth/oidc/login", nil))
+			loginURL := strings.TrimSuffix(config.RedirectURL, "/api/auth/oidc/callback") + "/api/auth/oidc/login"
+			handler.oidcLogin(login, httptest.NewRequest(http.MethodGet, loginURL, nil))
 			authorization, _ := url.Parse(login.Header().Get("Location"))
 			query := authorization.Query()
 			issuer.mu.Lock()
@@ -220,12 +233,13 @@ func TestOIDCRejectsPKCEAndNonceMismatch(t *testing.T) {
 				}
 			}
 			callback := httptest.NewRequest(http.MethodGet,
-				"/api/auth/oidc/callback?code=authorization-code&state="+url.QueryEscape(query.Get("state")), nil)
+				config.RedirectURL+"?code=authorization-code&state="+url.QueryEscape(query.Get("state")), nil)
 			callback.AddCookie(stateCookie)
 			result := httptest.NewRecorder()
 			handler.oidcCallback(result, callback)
-			if result.Code != http.StatusSeeOther || result.Header().Get("Location") != "/login?error=sso_failed" ||
-				len(store.Members()) != 0 {
+			memberID := oidcMemberID(config.Issuer, "subject-never-exposed")
+			_, accountCreated := store.Account(memberID)
+			if result.Code != http.StatusSeeOther || result.Header().Get("Location") != "/login?error=sso_failed" || accountCreated {
 				t.Fatal("mismatched OIDC transaction was accepted")
 			}
 		})

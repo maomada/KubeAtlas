@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -182,5 +183,23 @@ func TestCLIRejectsMissingHubState(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	if err == nil || !strings.Contains(string(output), "--hub-state-file is required") {
 		t.Fatalf("CLI output = %s, error = %v", output, err)
+	}
+}
+
+func TestHTTPIPOriginFlagUsesEnvironmentAndExplicitOverride(t *testing.T) {
+	fs := flag.NewFlagSet("portal", flag.ContinueOnError)
+	value := registerHTTPIPOriginFlag(fs, func(key string) string {
+		if key == "KUBEATLAS_PORTAL_HTTP_IP_ORIGIN" {
+			return "http://192.0.2.10:9290"
+		}
+		return ""
+	})
+	if err := fs.Parse(nil); err != nil || *value != "http://192.0.2.10:9290" {
+		t.Fatalf("environment default=%q, err=%v", *value, err)
+	}
+	fs = flag.NewFlagSet("portal", flag.ContinueOnError)
+	value = registerHTTPIPOriginFlag(fs, func(string) string { return "http://192.0.2.10" })
+	if err := fs.Parse([]string{"--http-ip-origin=http://[2001:db8::10]:9290"}); err != nil || *value != "http://[2001:db8::10]:9290" {
+		t.Fatalf("explicit flag value=%q, err=%v", *value, err)
 	}
 }

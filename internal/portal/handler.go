@@ -18,6 +18,7 @@ type Credentials struct {
 	Username             string
 	Password             string
 	AllowInsecureCookies bool
+	HTTPIPOrigin         string
 	MCPAllowedHosts      []string
 	Hub                  *HubConfig
 	OIDC                 *OIDCConfig
@@ -29,6 +30,7 @@ type Handler struct {
 	password      [32]byte
 	sessions      *viewerSessions
 	secureCookies bool
+	httpIPOrigin  string
 	liveHub       *portalHub
 	oidc          *oidcAuthenticator
 }
@@ -40,20 +42,25 @@ func NewHandler(credentials Credentials, static fs.FS) (*Handler, error) {
 	if !validUsername(credentials.Username) || len(credentials.Username) > 256 || len(credentials.Password) < 16 || len(credentials.Password) > 4096 {
 		return nil, errors.New("Portal owner username must be valid (1-256 bytes) and password must contain 16-4096 bytes")
 	}
+	httpIPOrigin, err := normalizeHTTPIPOrigin(credentials.HTTPIPOrigin)
+	if err != nil {
+		return nil, err
+	}
+	credentials.HTTPIPOrigin = httpIPOrigin
 	handler := &Handler{
 		static:   static,
 		username: sha256.Sum256([]byte(credentials.Username)),
 		password: sha256.Sum256([]byte(credentials.Password)),
-		sessions: newViewerSessions(), secureCookies: !credentials.AllowInsecureCookies,
+		sessions: newViewerSessions(), secureCookies: !credentials.AllowInsecureCookies, httpIPOrigin: httpIPOrigin,
 	}
-	var err error
 	handler.liveHub, err = newPortalHub(credentials)
 	if err != nil {
 		handler.Close()
 		return nil, err
 	}
 	if credentials.OIDC != nil {
-		handler.oidc, err = newOIDCAuthenticator(*credentials.OIDC, handler.secureCookies)
+		secureOIDCCookie := handler.secureCookies || strings.HasPrefix(strings.ToLower(credentials.OIDC.RedirectURL), "https://")
+		handler.oidc, err = newOIDCAuthenticator(*credentials.OIDC, secureOIDCCookie)
 		if err != nil {
 			handler.Close()
 			return nil, err
@@ -88,20 +95,30 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var release func()
+	r, release = h.bindViewerSession(r)
+	defer release()
+
 	if h.serveHub(w, r) {
 		return
 	}
 
 	switch {
+	case r.URL.Path == "/api/auth/register":
+		h.register(w, r)
 	case r.URL.Path == "/api/auth/login":
 		h.login(w, r)
 	case r.URL.Path == "/api/auth/providers":
+		if r.URL.RawQuery != "" || r.URL.ForceQuery || !h.liveHub.policySnapshot().allows(r) {
+			hubHTTPError(w, http.StatusForbidden, "permission_denied", "Host or request URL is not allowed")
+			return
+		}
 		if r.Method != http.MethodGet {
 			w.Header().Set("Allow", http.MethodGet)
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		providers := map[string]any{"local": true, "oidc": map[string]any{"enabled": h.oidc != nil}}
+		providers := map[string]any{"local": true, "oidc": map[string]any{"enabled": h.oidc != nil}, "registrationEnabled": true}
 		if h.oidc != nil {
 			providers["oidc"] = map[string]any{"enabled": true, "loginUrl": "/api/auth/oidc/login"}
 		}
@@ -113,24 +130,24 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/api/auth/logout":
 		h.logout(w, r)
 	case r.URL.Path == "/api/auth/session":
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet || r.URL.RawQuery != "" || r.URL.ForceQuery || !h.liveHub.policySnapshot().allows(r) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		if h.requireViewer(w, r) {
 			w.WriteHeader(http.StatusNoContent)
 		}
-	case r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/mcp-access":
+	case r.URL.Path == "/" || r.URL.Path == "/login" || r.URL.Path == "/register" || r.URL.Path == "/mcp-access":
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
 		loggedIn := h.hasViewerSession(r)
-		if r.URL.Path != "/login" && !loggedIn {
+		if r.URL.Path == "/mcp-access" && !loggedIn {
 			http.Redirect(w, r, "/login", http.StatusSeeOther)
 			return
 		}
-		if r.URL.Path == "/login" && loggedIn {
+		if (r.URL.Path == "/login" || r.URL.Path == "/register") && loggedIn {
 			http.Redirect(w, r, "/", http.StatusSeeOther)
 			return
 		}

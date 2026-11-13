@@ -9,11 +9,11 @@ import (
 	"github.com/maomada/KubeAtlas/internal/hubstate"
 )
 
-func (p *portalHub) manageCredentials(w http.ResponseWriter, r *http.Request, ownerID string, member hubstate.Member) {
+func (p *portalHub) manageCredentials(w http.ResponseWriter, r *http.Request, ownerID string, member hubstate.Member, organizationID string) {
 	const base = "/api/mcp/credentials"
 	if r.URL.Path == base {
 		if r.Method == http.MethodGet {
-			hubJSON(w, http.StatusOK, map[string]any{"credentials": p.store.Credentials(ownerID), "serverTime": time.Now().UTC()})
+			hubJSON(w, http.StatusOK, map[string]any{"credentials": p.store.CredentialsForOrganization(organizationID, ownerID), "serverTime": time.Now().UTC()})
 			return
 		}
 		var input struct {
@@ -32,10 +32,10 @@ func (p *portalHub) manageCredentials(w http.ResponseWriter, r *http.Request, ow
 		issue := hubstate.IssueInput{Label: input.Label, ClusterIDs: input.ClusterIDs, ReadOnly: *input.ReadOnly, TTLSeconds: input.TTLSeconds}
 		var issued hubstate.IssuedCredential
 		var err error
-		if ownerID == p.ownerID {
-			issued, err = p.store.Issue(ownerID, issue)
+		if p.store.IsPlatformOwner(ownerID) {
+			issued, err = p.store.IssueForOrganization(organizationID, ownerID, issue)
 		} else {
-			issued, err = p.store.IssueForMember(ownerID, issue)
+			issued, err = p.store.IssueForMemberInOrganization(organizationID, ownerID, issue)
 		}
 		if err != nil {
 			hubStoreError(w, err)
@@ -56,10 +56,11 @@ func (p *portalHub) manageCredentials(w http.ResponseWriter, r *http.Request, ow
 		if !hubDecode(w, r, &struct{}{}) {
 			return
 		}
-		if err := p.store.Revoke(ownerID, parts[0]); err != nil {
+		if err := p.store.RevokeForOrganization(organizationID, ownerID, parts[0]); err != nil {
 			hubCredentialManagementError(w, err)
 			return
 		}
+		p.cancelCredentialRequests(ownerID, organizationID, parts[0])
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
@@ -71,15 +72,16 @@ func (p *portalHub) manageCredentials(w http.ResponseWriter, r *http.Request, ow
 	}
 	var issued hubstate.IssuedCredential
 	var err error
-	if ownerID == p.ownerID {
-		issued, err = p.store.Rotate(ownerID, parts[0], input.TTLSeconds)
+	if p.store.IsPlatformOwner(ownerID) {
+		issued, err = p.store.RotateForOrganization(organizationID, ownerID, parts[0], input.TTLSeconds)
 	} else {
-		issued, err = p.store.RotateForMember(ownerID, parts[0], input.TTLSeconds)
+		issued, err = p.store.RotateForMemberInOrganization(organizationID, ownerID, parts[0], input.TTLSeconds)
 	}
 	if err != nil {
 		hubCredentialManagementError(w, err)
 		return
 	}
+	p.cancelCredentialRequests(ownerID, organizationID, parts[0])
 	hubJSON(w, http.StatusOK, issued)
 }
 

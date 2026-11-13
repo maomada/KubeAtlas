@@ -100,7 +100,7 @@ func setupHubMCP(t *testing.T) (*facade, hub.Principal, *atomic.Int32) {
 		t.Fatal("fixture Agents did not connect")
 	}
 	f := &facade{hub: transport, store: store, pages: newPager()}
-	p := hub.Principal{CredentialID: "fixture", UserID: "kubeatlas:test", ClusterIDs: []string{"alpha", "beta"}, ReadOnly: true}
+	p := hub.Principal{CredentialID: "fixture", OrganizationID: "self-hosted", UserID: "kubeatlas:test", ClusterIDs: []string{"alpha", "beta"}, ReadOnly: true}
 	return f, p, &writes
 }
 

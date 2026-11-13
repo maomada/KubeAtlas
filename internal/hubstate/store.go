@@ -13,16 +13,18 @@ import (
 )
 
 const (
-	maxStoreBytes  = 16 << 20
-	maxClusters    = 100
-	maxGroups      = 100
-	maxMembers     = 1024
-	maxCredentials = 16384
-	minTTL         = 15 * 60
-	maxTTL         = 7 * 24 * 60 * 60
-	defaultTTL     = 8 * 60 * 60
-	familyLifetime = 30 * 24 * time.Hour
-	retention      = 30 * 24 * time.Hour
+	maxStoreBytes    = 16 << 20
+	maxClusters      = 100
+	maxGroups        = 100
+	maxMembers       = 1024
+	maxAccounts      = 4096
+	maxOrganizations = 100
+	maxCredentials   = 16384
+	minTTL           = 15 * 60
+	maxTTL           = 7 * 24 * 60 * 60
+	defaultTTL       = 8 * 60 * 60
+	familyLifetime   = 30 * 24 * time.Hour
+	retention        = 30 * 24 * time.Hour
 )
 
 type storedCluster struct {
@@ -40,12 +42,25 @@ type storedCredential struct {
 }
 
 type storeFile struct {
+	Version       int                              `json:"version"`
+	Clusters      map[string]storedCluster         `json:"clusters"`
+	Groups        map[string]Group                 `json:"groups"`
+	Credentials   map[string]storedCredential      `json:"credentials"`
+	Organizations map[string]Organization          `json:"organizations"`
+	Accounts      map[string]Account               `json:"accounts"`
+	Memberships   map[string]map[string]Membership `json:"memberships"`
+	Connections   *ConnectionSettings              `json:"connectionSettings"`
+	Organization  *Organization                    `json:"-"`
+	Members       map[string]Member                `json:"-"`
+}
+
+type legacyStoreFile struct {
 	Version      int                         `json:"version"`
 	Clusters     map[string]storedCluster    `json:"clusters"`
 	Groups       map[string]Group            `json:"groups"`
 	Credentials  map[string]storedCredential `json:"credentials"`
 	Organization *Organization               `json:"organization,omitempty"`
-	Members      map[string]Member           `json:"members"`
+	Members      map[string]Member           `json:"members,omitempty"`
 	Connections  *ConnectionSettings         `json:"connectionSettings,omitempty"`
 }
 
@@ -60,9 +75,7 @@ func OpenStore(path string) (*Store, error) {
 	if path == "" {
 		return nil, failure("invalid_parameters")
 	}
-	s := &Store{path: path, now: time.Now, data: storeFile{Version: 1,
-		Clusters: map[string]storedCluster{}, Groups: map[string]Group{}, Credentials: map[string]storedCredential{},
-		Organization: &Organization{ID: "self-hosted", Name: "KubeAtlas"}, Members: map[string]Member{}, Connections: &ConnectionSettings{}}}
+	s := &Store{path: path, now: time.Now, data: newStoreFile()}
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
 		return s, nil
@@ -89,31 +102,171 @@ func OpenStore(path string) (*Store, error) {
 	if !utf8.Valid(data) || !uniqueJSON(data) || !requiredFields(data) {
 		return nil, failure("store_unavailable")
 	}
-	decoder := json.NewDecoder(bytes.NewReader(data))
-	decoder.DisallowUnknownFields()
-	var file storeFile
-	if decoder.Decode(&file) != nil || decoder.Decode(new(any)) != io.EOF || !validFile(file) {
+	var version struct {
+		Version int `json:"version"`
+	}
+	if json.Unmarshal(data, &version) != nil {
 		return nil, failure("store_unavailable")
 	}
-	if file.Organization == nil {
-		file.Organization = &Organization{ID: "self-hosted", Name: "KubeAtlas"}
-		file.Members = map[string]Member{}
+	if version.Version == 1 {
+		var legacy legacyStoreFile
+		if decodeStrict(data, &legacy) != nil || !validLegacyFile(legacy) {
+			return nil, failure("store_unavailable")
+		}
+		s.data = migrateLegacy(legacy)
+		if err := s.commit(s.data); err != nil {
+			return nil, err
+		}
+	} else if version.Version == 2 {
+		var file storeFile
+		if decodeStrict(data, &file) != nil || !validFile(file) {
+			return nil, failure("store_unavailable")
+		}
+		s.data = file
+		syncAliasesFromPrimary(&s.data)
+	} else {
+		return nil, failure("store_unavailable")
 	}
-	if file.Connections == nil {
-		file.Connections = &ConnectionSettings{}
-	}
-	s.data = file
 	return s, nil
 }
 
+func newStoreFile() storeFile {
+	organization := Organization{ID: "self-hosted", Name: "KubeAtlas"}
+	return storeFile{Version: 2, Clusters: map[string]storedCluster{}, Groups: map[string]Group{},
+		Credentials: map[string]storedCredential{}, Organizations: map[string]Organization{organization.ID: organization},
+		Accounts: map[string]Account{}, Memberships: map[string]map[string]Membership{organization.ID: {}},
+		Connections: &ConnectionSettings{}, Organization: &organization, Members: map[string]Member{}}
+}
+
+func decodeStrict(data []byte, target any) error {
+	decoder := json.NewDecoder(bytes.NewReader(data))
+	decoder.DisallowUnknownFields()
+	if decoder.Decode(target) != nil || decoder.Decode(new(any)) != io.EOF {
+		return failure("store_unavailable")
+	}
+	return nil
+}
+
+func migrateLegacy(legacy legacyStoreFile) storeFile {
+	file := newStoreFile()
+	if legacy.Organization != nil {
+		file.Organizations[legacy.Organization.ID] = *legacy.Organization
+		file.Memberships[legacy.Organization.ID] = map[string]Membership{}
+	}
+	file.Clusters = legacy.Clusters
+	file.Groups = legacy.Groups
+	file.Credentials = legacy.Credentials
+	file.Connections = cloneConnectionSettings(legacy.Connections)
+	for id, cluster := range file.Clusters {
+		cluster.OrganizationID = "self-hosted"
+		file.Clusters[id] = cluster
+	}
+	for id, group := range file.Groups {
+		group.OrganizationID = "self-hosted"
+		file.Groups[id] = group
+	}
+	for id, credential := range file.Credentials {
+		credential.OrganizationID = "self-hosted"
+		file.Credentials[id] = credential
+	}
+	if legacy.Members != nil {
+		for id, member := range legacy.Members {
+			role := member.Role
+			legacyRestricted, legacyAllClusters := true, role == "admin" && len(member.ClusterIDs) == 0
+			if role == "admin" {
+				role = "owner"
+			}
+			file.Accounts[id] = Account{ID: id, UserID: member.UserID, DisplayName: member.DisplayName,
+				Status: member.Status, CreatedAt: member.CreatedAt, UpdatedAt: member.UpdatedAt}
+			file.Memberships["self-hosted"][id] = Membership{Role: role, ClusterIDs: append([]string{}, member.ClusterIDs...),
+				KubernetesGroups: append([]string{}, member.KubernetesGroups...), LegacyRestricted: legacyRestricted,
+				LegacyAllClusters: legacyAllClusters, CreatedAt: member.CreatedAt, UpdatedAt: member.UpdatedAt}
+		}
+	}
+	syncAliasesFromPrimary(&file)
+	return file
+}
+
+func syncAliasesFromPrimary(file *storeFile) {
+	if file.Organizations == nil {
+		file.Organizations = map[string]Organization{}
+	}
+	if file.Memberships == nil {
+		file.Memberships = map[string]map[string]Membership{}
+	}
+	organization, ok := file.Organizations["self-hosted"]
+	if ok {
+		copy := organization
+		file.Organization = &copy
+	}
+	file.Members = make(map[string]Member)
+	for id, membership := range file.Memberships["self-hosted"] {
+		account, exists := file.Accounts[id]
+		if !exists {
+			continue
+		}
+		file.Members[id] = Member{ID: id, UserID: account.UserID, DisplayName: account.DisplayName, Role: membership.Role,
+			Status: account.Status, ClusterIDs: append([]string{}, membership.ClusterIDs...),
+			KubernetesGroups: append([]string{}, membership.KubernetesGroups...), LegacyRestricted: membership.LegacyRestricted,
+			LegacyAllClusters: membership.LegacyAllClusters, CreatedAt: membership.CreatedAt, UpdatedAt: membership.UpdatedAt}
+	}
+}
+
+func syncPrimaryFromAliases(file *storeFile) {
+	if file.Organizations == nil {
+		file.Organizations = map[string]Organization{}
+	}
+	if file.Memberships == nil {
+		file.Memberships = map[string]map[string]Membership{}
+	}
+	if file.Organization != nil {
+		file.Organizations[file.Organization.ID] = *file.Organization
+	}
+	if file.Members == nil {
+		return
+	}
+	entries := make(map[string]Membership, len(file.Members))
+	for id, member := range file.Members {
+		previous := file.Memberships["self-hosted"][id]
+		accountID := id
+		account, ok := file.Accounts[accountID]
+		if !ok {
+			for candidate, current := range file.Accounts {
+				if current.UserID == member.UserID {
+					accountID, account, ok = candidate, current, true
+					break
+				}
+			}
+		}
+		if !ok {
+			account = Account{ID: accountID, UserID: member.UserID, CreatedAt: member.CreatedAt, UpdatedAt: member.UpdatedAt}
+		}
+		account.DisplayName, account.Status, account.UpdatedAt = member.DisplayName, member.Status, member.UpdatedAt
+		file.Accounts[accountID] = account
+		entries[id] = Membership{Role: member.Role, ClusterIDs: append([]string{}, member.ClusterIDs...),
+			KubernetesGroups: append([]string{}, member.KubernetesGroups...), LegacyRestricted: previous.LegacyRestricted,
+			LegacyAllClusters: previous.LegacyAllClusters, CreatedAt: member.CreatedAt, UpdatedAt: member.UpdatedAt}
+	}
+	file.Memberships["self-hosted"] = entries
+}
+
 func (s *Store) next(now time.Time) storeFile {
-	next := storeFile{
-		Version: 1, Clusters: make(map[string]storedCluster, len(s.data.Clusters)),
-		Groups:       make(map[string]Group, len(s.data.Groups)),
-		Credentials:  make(map[string]storedCredential, len(s.data.Credentials)),
-		Organization: &Organization{ID: s.data.Organization.ID, Name: s.data.Organization.Name},
-		Members:      make(map[string]Member, len(s.data.Members)),
-		Connections:  cloneConnectionSettings(s.data.Connections),
+	next := storeFile{Version: 2, Clusters: make(map[string]storedCluster, len(s.data.Clusters)),
+		Groups: make(map[string]Group, len(s.data.Groups)), Credentials: make(map[string]storedCredential, len(s.data.Credentials)),
+		Organizations: make(map[string]Organization, len(s.data.Organizations)), Accounts: make(map[string]Account, len(s.data.Accounts)),
+		Memberships: make(map[string]map[string]Membership, len(s.data.Memberships)), Connections: cloneConnectionSettings(s.data.Connections)}
+	for id, organization := range s.data.Organizations {
+		next.Organizations[id] = organization
+	}
+	for id, account := range s.data.Accounts {
+		next.Accounts[id] = cloneAccount(account)
+	}
+	for organizationID, entries := range s.data.Memberships {
+		copyEntries := make(map[string]Membership, len(entries))
+		for memberID, membership := range entries {
+			copyEntries[memberID] = cloneMembership(membership)
+		}
+		next.Memberships[organizationID] = copyEntries
 	}
 	for id, c := range s.data.Clusters {
 		c.Cluster = cloneCluster(c.Cluster)
@@ -121,9 +274,6 @@ func (s *Store) next(now time.Time) storeFile {
 	}
 	for id, g := range s.data.Groups {
 		next.Groups[id] = cloneGroup(g)
-	}
-	for id, m := range s.data.Members {
-		next.Members[id] = cloneMember(m)
 	}
 	for id, c := range s.data.Credentials {
 		last := c.ExpiresAt
@@ -136,14 +286,16 @@ func (s *Store) next(now time.Time) storeFile {
 		c.Credential = cloneCredential(c.Credential)
 		next.Credentials[id] = c
 	}
+	syncAliasesFromPrimary(&next)
 	return next
 }
 
 func (s *Store) commit(next storeFile) error {
+	syncAliasesFromPrimary(&next)
 	if len(next.Credentials) > maxCredentials {
 		return failure("capacity_exceeded")
 	}
-	if next.Organization == nil || next.Members == nil || !validFile(next) {
+	if !validFile(next) {
 		return failure("store_unavailable")
 	}
 	data, err := json.Marshal(next)

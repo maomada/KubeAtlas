@@ -31,7 +31,9 @@ var hubPagePaths = map[string]struct{}{
 	"/applications": {}, "/alerts": {}, "/gitops": {}, "/certs": {}, "/checks": {},
 	"/resources": {}, "/topology": {}, "/traffic": {}, "/cost": {}, "/capacity": {},
 	"/timeline": {}, "/helm": {}, "/settings": {}, "/settings/sessions": {},
-	"/settings/security": {}, "/settings/organization": {},
+	"/settings/platform": {}, "/settings/platform/users": {}, "/settings/platform/clusters": {},
+	"/settings/platform/connections": {},
+	"/settings/security":             {}, "/settings/organization": {},
 	"/settings/organization/members": {}, "/settings/organization/agent-access": {},
 	"/settings/organization/enrollment-keys": {}, "/settings/organization/activity": {},
 	"/settings/organization/issues": {}, "/settings/organization/checks": {},
@@ -172,18 +174,31 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 		hubHTTPError(w, http.StatusUnauthorized, "authentication_required", "Authorization headers are not accepted on browser routes")
 		return
 	}
+	ownerID, ok := handler.sessionOwnerID(r)
+	organizationID, orgOK := handler.sessionOrganizationID(r)
+	if !ok || !orgOK {
+		hubHTTPError(w, http.StatusUnauthorized, "authentication_required", "A Portal login session is required")
+		return
+	}
+	request, release := p.activeRequest(r, ownerID, organizationID)
+	defer release()
+	r = request
 	ctx, cancel, ok := handler.viewerSessionContext(r)
 	if !ok {
 		hubHTTPError(w, http.StatusUnauthorized, "authentication_required", "A Portal login session is required")
 		return
 	}
 	defer cancel()
-	_, member, ok := handler.sessionMember(r)
+	ownerID, member, ok := handler.sessionMember(r)
 	if !ok {
 		hubHTTPError(w, http.StatusUnauthorized, "authentication_required", "A current Portal member session is required")
 		return
 	}
 	if !requireActiveMember(w, member) {
+		return
+	}
+	if member.Role == "" {
+		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Organization membership is unavailable")
 		return
 	}
 
@@ -192,13 +207,17 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Cluster API path is not canonical")
 		return
 	}
-	cluster, exists := p.store.Cluster(clusterID)
+	cluster, exists := p.store.ClusterForOrganization(organizationID, clusterID)
 	if !exists || cluster.RevokedAt != nil {
 		hubHTTPError(w, http.StatusNotFound, "cluster_not_found", "Cluster is unavailable")
 		return
 	}
-	if !containsScope(p.memberClusterIDs(member), clusterID) {
+	if !containsScope(p.memberClusterIDs(member, organizationID), clusterID) {
 		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Member has no access to this cluster")
+		return
+	}
+	if r.Context().Err() != nil {
+		hubHTTPError(w, http.StatusUnauthorized, "authentication_required", "Portal request was cancelled")
 		return
 	}
 	if sourcePath == "/api/settings" {
@@ -215,8 +234,9 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 		return
 	}
 
+	groups := p.principalGroups(ownerID, organizationID, member)
 	principal := hub.Principal{
-		UserID: member.UserID, Groups: append([]string{}, member.KubernetesGroups...),
+		AccountID: ownerID, OrganizationID: organizationID, UserID: member.UserID, Groups: groups,
 		ClusterIDs: []string{clusterID}, ReadOnly: member.Role == "viewer",
 	}
 	client, err := p.transport.BrowserHTTPClient(clusterID, principal)
@@ -231,7 +251,7 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 		requestContext, requestCancel = context.WithTimeout(ctx, browserRequestLimit)
 		defer requestCancel()
 	}
-	request := r.Clone(requestContext)
+	request = r.Clone(requestContext)
 	if streaming && request.Body != nil && request.Body != http.NoBody {
 		hubHTTPError(w, http.StatusBadRequest, "invalid_request", "Streaming requests cannot include a body")
 		return

@@ -213,8 +213,8 @@ func TestDisablingMemberCancelsSessionAndRevokesCredentials(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	update := `{"role":"member","status":"disabled","clusterIds":["alpha"],"kubernetesGroups":[]}`
-	hubRequest(t, h, localCookie, "", http.MethodPut, "/api/hub/members/"+memberID, update, http.StatusOK)
+	update := `{"status":"disabled","memberships":[]}`
+	hubRequest(t, h, localCookie, "", http.MethodPut, "/api/hub/platform/users/"+memberID, update, http.StatusOK)
 	if response := hubRequest(t, h, cookie, "", http.MethodGet, "/api/hub", "", http.StatusUnauthorized); hubErrorCode(t, response) != "authentication_required" {
 		t.Fatalf("disabled member session error = %q", hubErrorCode(t, response))
 	}

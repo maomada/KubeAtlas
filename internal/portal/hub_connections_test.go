@@ -22,7 +22,7 @@ func TestHubConnectionSettingsAuthorizationAndPolicySnapshot(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer p.transport.Close()
-	owner := hubstate.Member{Role: "owner", Status: "active"}
+	owner := hubstate.Member{Role: "platformOwner", Status: "active"}
 	request := httptest.NewRequest(http.MethodPut, "/api/hub/connections", strings.NewReader(`{"lanURL":"https://lan.example.test/","publicURL":""}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
@@ -41,6 +41,11 @@ func TestHubConnectionSettingsAuthorizationAndPolicySnapshot(t *testing.T) {
 	}
 
 	member := hubstate.Member{Role: "member", Status: "active"}
+	getResponse := httptest.NewRecorder()
+	p.manageConnections(getResponse, httptest.NewRequest(http.MethodGet, "/api/hub/connections", nil), member)
+	if getResponse.Code != http.StatusOK {
+		t.Fatalf("active member GET status=%d body=%s", getResponse.Code, getResponse.Body.String())
+	}
 	for _, body := range []string{`{"lanURL":"https://next.example.test","publicURL":""}`, `{"lanURL":"https://evil.test","publicURL":"","extra":true}`} {
 		request := httptest.NewRequest(http.MethodPut, "/api/hub/connections", strings.NewReader(body))
 		request.Header.Set("Content-Type", "application/json")
@@ -55,8 +60,15 @@ func TestHubConnectionSettingsAuthorizationAndPolicySnapshot(t *testing.T) {
 	request.Header.Set("Content-Type", "application/json")
 	response = httptest.NewRecorder()
 	p.manageConnections(response, request, hubstate.Member{Role: "admin", Status: "active"})
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("organization owner update status=%d body=%s", response.Code, response.Body.String())
+	}
+	request = httptest.NewRequest(http.MethodPut, "/api/hub/connections", strings.NewReader(`{"lanURL":"","publicURL":"https://public.example.test"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response = httptest.NewRecorder()
+	p.manageConnections(response, request, owner)
 	if response.Code != http.StatusOK {
-		t.Fatalf("administrator update status=%d body=%s", response.Code, response.Body.String())
+		t.Fatalf("valid platform owner update status=%d body=%s", response.Code, response.Body.String())
 	}
 	newer := p.policySnapshot()
 	if newer.allows(requestFor("lan.example.test")) || !newer.allows(requestFor("public.example.test")) {
@@ -70,7 +82,7 @@ func TestHubConnectionSettingsAuthorizationAndPolicySnapshot(t *testing.T) {
 func TestHubConnectionsPersistenceFailureIsUnavailableWithoutChangingState(t *testing.T) {
 	h, statePath := newPortalHubFixture(t, false)
 	stateDir := filepath.Dir(statePath)
-	if err := os.Mkdir(stateDir, 0o700); err != nil {
+	if err := os.Remove(statePath); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.Remove(stateDir); err != nil {
@@ -123,7 +135,7 @@ func TestHubConnectionsAuthorizationThroughHandler(t *testing.T) {
 	member := newSession("oidc:"+strings.Repeat("b", 64), "member", "active")
 	pending := newSession("oidc:"+strings.Repeat("c", 64), "", "")
 	get(admin, http.StatusOK)
-	put(admin, http.StatusOK)
+	put(admin, http.StatusForbidden)
 	get(member, http.StatusOK)
 	put(member, http.StatusForbidden)
 	get(pending, http.StatusForbidden)
@@ -143,7 +155,7 @@ func TestHubConnectionsRejectsExtraJSONFields(t *testing.T) {
 	request := httptest.NewRequest(http.MethodPut, "/api/hub/connections", strings.NewReader(`{"lanURL":"","publicURL":"","unexpected":true}`))
 	request.Header.Set("Content-Type", "application/json")
 	response := httptest.NewRecorder()
-	p.manageConnections(response, request, hubstate.Member{Role: "owner"})
+	p.manageConnections(response, request, hubstate.Member{Role: "platformOwner", Status: "active"})
 	if response.Code != http.StatusBadRequest {
 		t.Fatalf("extra JSON field status=%d body=%s", response.Code, response.Body.String())
 	}

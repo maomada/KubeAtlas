@@ -88,7 +88,7 @@ func enrollmentHubOrigin(origin string) string {
 
 // ValidateHubOrigin validates the API origin used by the device-flow client.
 // The client sends its device secret in an Authorization header, so plaintext
-// is restricted to explicit loopback hosts.
+// is restricted to explicit IP literals and loopback hosts.
 func ValidateHubOrigin(raw string) error {
 	if raw == "" {
 		return errors.New("Hub API origin is required")
@@ -126,8 +126,8 @@ func ValidateHubOrigin(raw string) error {
 	if err := validateURLPort(u); err != nil {
 		return err
 	}
-	if strings.EqualFold(u.Scheme, "http") && !IsLoopbackHostname(u.Hostname()) {
-		return errors.New("Hub API origin must use https:// unless the host is localhost or a loopback address")
+	if strings.EqualFold(u.Scheme, "http") && !IsLoopbackHostname(u.Hostname()) && net.ParseIP(u.Hostname()) == nil {
+		return errors.New("Hub API origin must use https:// unless the host is localhost, loopback, or a literal IP address")
 	}
 	return nil
 }
@@ -154,8 +154,7 @@ func validHubHostname(host string) bool {
 }
 
 // ValidateWebSocketURL validates a Cloud agent endpoint. Plaintext WebSockets
-// are useful for local development, but cluster credentials must never cross a
-// non-loopback network without TLS.
+// are useful for explicitly configured IP literals and loopback development.
 func ValidateWebSocketURL(raw string) error {
 	if raw == "" {
 		return errors.New("cloud WebSocket URL is required")
@@ -179,8 +178,8 @@ func ValidateWebSocketURL(raw string) error {
 	if u.Fragment != "" || strings.Contains(raw, "#") {
 		return errors.New("cloud WebSocket URL must not include a fragment")
 	}
-	if u.Scheme == "ws" && !IsLoopbackHostname(u.Hostname()) {
-		return errors.New("cloud WebSocket URL must use wss:// unless the host is localhost or a loopback address")
+	if u.Scheme == "ws" && !IsLoopbackHostname(u.Hostname()) && net.ParseIP(u.Hostname()) == nil {
+		return errors.New("cloud WebSocket URL must use wss:// unless the host is localhost, loopback, or a literal IP address")
 	}
 	if err := validateURLPort(u); err != nil {
 		return err

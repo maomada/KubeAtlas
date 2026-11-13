@@ -161,13 +161,15 @@ func TestAgentLifecycleAndGroups(t *testing.T) {
 	if stored, _ := s.Cluster("alpha"); stored.RevokedAt.IsZero() {
 		t.Fatal("cluster pointer aliases state")
 	}
-	rotated, err := s.RotateAgentToken("alpha")
-	if err != nil || rotated.Token == a.Token || rotated.Cluster.ID != "alpha" || rotated.Cluster.RevokedAt != nil {
-		t.Fatal("rotation failed")
+	_, err = s.RotateAgentToken("alpha")
+	errorCode(t, err, "conflict")
+	reenrolled, err := s.ReenrollCluster("self-hosted", "alpha", ClusterInput{ID: "alpha", Name: "Renamed", Description: "Offline directory"})
+	if err != nil || reenrolled.Token == a.Token || reenrolled.Cluster.ID != "alpha" || reenrolled.Cluster.RevokedAt != nil {
+		t.Fatalf("re-enrollment failed: %#v, %v", reenrolled, err)
 	}
 	_, err = s.AuthenticateAgent(a.Token, "alpha")
 	errorCode(t, err, "credential_invalid")
-	if _, err = s.AuthenticateAgent(rotated.Token, "alpha"); err != nil {
+	if _, err = s.AuthenticateAgent(reenrolled.Token, "alpha"); err != nil {
 		t.Fatal(err)
 	}
 	for _, members := range [][]string{{"unknown"}, {"alpha", "alpha"}, {"*"}} {
@@ -415,7 +417,7 @@ func TestStrictStartupValidation(t *testing.T) {
 		t.Fatal(err)
 	}
 	mutations := map[string]func(*storeFile){
-		"version":    func(f *storeFile) { f.Version = 2 },
+		"version":    func(f *storeFile) { f.Version = 3 },
 		"nil map":    func(f *storeFile) { f.Clusters = nil },
 		"cluster ID": func(f *storeFile) { c := f.Clusters["alpha"]; c.ID = "other"; f.Clusters["alpha"] = c },
 		"digest":     func(f *storeFile) { c := f.Credentials[p.Credential.ID]; c.Digest = "bad"; f.Credentials[c.ID] = c },
@@ -489,8 +491,8 @@ func TestStrictStartupValidation(t *testing.T) {
 	}
 	for name, data := range map[string][]byte{
 		"trailing":         append(slices.Clone(base), []byte(` {}`)...),
-		"unknown":          bytes.Replace(base, []byte(`"version":1`), []byte(`"version":1,"extra":true`), 1),
-		"duplicate":        bytes.Replace(base, []byte(`"version":1`), []byte(`"version":2,"version":1`), 1),
+		"unknown":          bytes.Replace(base, []byte(`"version":2`), []byte(`"version":2,"extra":true`), 1),
+		"duplicate":        bytes.Replace(base, []byte(`"version":2`), []byte(`"version":2,"version":1`), 1),
 		"missing readonly": bytes.Replace(base, []byte(`"readOnly":true,`), nil, 1),
 		"null readonly":    bytes.Replace(base, []byte(`"readOnly":true`), []byte(`"readOnly":null`), 1),
 		"case alias":       bytes.Replace(base, []byte(`"readOnly":true`), []byte(`"readOnly":true,"ReadOnly":false`), 1),

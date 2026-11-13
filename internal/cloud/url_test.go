@@ -35,6 +35,7 @@ func TestValidateWebSocketURLTransportPolicy(t *testing.T) {
 		"ws://localhost:9091/agent",
 		"ws://127.0.0.2:9091/agent",
 		"ws://[::1]:9091/agent",
+		"ws://10.0.0.1:9091/agent",
 	} {
 		t.Run("valid_"+raw, func(t *testing.T) {
 			if err := ValidateWebSocketURL(raw); err != nil {
@@ -45,7 +46,6 @@ func TestValidateWebSocketURLTransportPolicy(t *testing.T) {
 
 	for _, raw := range []string{
 		"ws://api.radarhq.io/agent",
-		"ws://10.0.0.1/agent",
 		"ws://localhost.example/agent",
 		"https://api.example.test/agent",
 		"wss://user:password@api.radarhq.io/agent",
@@ -69,6 +69,7 @@ func TestValidateHubOriginTransportPolicy(t *testing.T) {
 		"http://localhost:9091",
 		"http://127.0.0.2:9091",
 		"http://[::1]:9091",
+		"http://10.0.0.1:9091",
 	} {
 		t.Run("valid_"+raw, func(t *testing.T) {
 			if err := ValidateHubOrigin(raw); err != nil {
@@ -79,7 +80,6 @@ func TestValidateHubOriginTransportPolicy(t *testing.T) {
 
 	for _, raw := range []string{
 		"http://api.radarhq.io",
-		"http://10.0.0.1",
 		"http://localhost.example",
 		"https://api.example.test/api",
 		"https://api.example.test?org=test",

@@ -77,8 +77,8 @@
 {{- end }}
 {{- end }}
 {{- end }}
-{{- if and (eq $hub.scheme "http") (not (or (eq $hubHost "localhost") (hasPrefix "127." $hubHost) (eq $hubHost "::1"))) }}
-{{- fail "hub.url must use HTTPS unless the host is localhost or loopback" }}
+{{- if and (eq $hub.scheme "http") (not (or (eq $hubHost "localhost") (hasPrefix "127." $hubHost) (eq $hubHost "::1") (hasPrefix "[" $hubAuthority) (regexMatch "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$" $hubHost))) }}
+{{- fail "hub.url must use HTTPS unless the host is localhost, loopback, or a literal IP address" }}
 {{- end }}
 {{- if not (regexMatch "^[a-z0-9][a-z0-9-]{0,62}$" .Values.hub.clusterID) }}
 {{- fail "hub.clusterID must be a lowercase DNS label" }}
@@ -171,8 +171,8 @@
 {{- if or $hub.query $hub.fragment (contains "#" (toString .Values.cloud.hubURL)) }}
 {{- fail "cloud.hubURL must not include a query string or fragment" }}
 {{- end }}
-{{- if and (eq $hub.scheme "http") (not (or (eq $hubHost "localhost") (hasPrefix "127." $hubHost) (eq $hubHost "::1"))) }}
-{{- fail "cloud.hubURL must use https:// unless the host is localhost or a loopback address" }}
+{{- if and (eq $hub.scheme "http") (not (or (eq $hubHost "localhost") (hasPrefix "127." $hubHost) (eq $hubHost "::1") (contains ":" $hubHost) (regexMatch "^[0-9]{1,3}(\\.[0-9]{1,3}){3}$" $hubHost))) }}
+{{- fail "cloud.hubURL must use https:// unless the host is localhost, loopback, or a literal IP address" }}
 {{- end }}
 {{- if and $e.key $e.existingSecret }}
 {{- fail "cloud.enrollment.key and cloud.enrollment.existingSecret are mutually exclusive: set only one (prefer existingSecret so the key stays out of the Helm release)" }}

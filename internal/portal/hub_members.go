@@ -11,29 +11,51 @@ import (
 func (p *portalHub) localMember() hubstate.Member {
 	return hubstate.Member{
 		ID: hubstate.LocalMemberID, UserID: p.userID, DisplayName: p.displayName,
-		Role: "owner", Status: "active", ClusterIDs: []string{},
+		Role: "platformOwner", Status: "active", ClusterIDs: []string{},
 		KubernetesGroups: append([]string{}, p.groups...), CreatedAt: p.startedAt, UpdatedAt: p.startedAt,
 	}
 }
 
-func (p *portalHub) memberForOwner(ownerID string) (hubstate.Member, bool) {
+func publicHubMember(member hubstate.Member) hubstate.Member {
+	if member.Role == "platformOwner" {
+		member.Role = "owner"
+	}
+	return member
+}
+
+func (p *portalHub) memberForOwner(ownerID, organizationID string) (hubstate.Member, bool) {
 	if ownerID == p.ownerID {
 		return p.localMember(), true
 	}
-	member, ok := p.store.Member(ownerID)
-	return member, ok
+	if organizationID != "" {
+		if member, ok := p.store.MemberForOrganization(organizationID, ownerID); ok {
+			return member, true
+		}
+	}
+	account, ok := p.store.Account(ownerID)
+	if !ok {
+		return hubstate.Member{}, false
+	}
+	return hubstate.Member{
+		ID: account.ID, UserID: account.UserID, DisplayName: account.DisplayName, Status: account.Status,
+		ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt,
+	}, true
 }
 
-func (p *portalHub) memberClusterIDs(member hubstate.Member) []string {
-	if member.Role == "owner" || member.Role == "admin" {
-		clusters := p.store.Clusters()
+func (p *portalHub) memberClusterIDs(member hubstate.Member, organizationID string) []string {
+	if member.Role == "platformOwner" {
+		clusters := p.store.ClustersForOrganization(organizationID)
 		ids := make([]string, 0, len(clusters))
 		for _, cluster := range clusters {
 			ids = append(ids, cluster.ID)
 		}
 		return ids
 	}
-	return append([]string{}, member.ClusterIDs...)
+	ids, err := p.store.MemberClusterIDsForOrganization(organizationID, member.ID)
+	if err != nil {
+		return []string{}
+	}
+	return ids
 }
 
 func containsScope(ids []string, target string) bool {
@@ -67,7 +89,8 @@ func (h *Handler) sessionMember(r *http.Request) (string, hubstate.Member, bool)
 	if !ok {
 		return "", hubstate.Member{}, false
 	}
-	member, ok := h.liveHub.memberForOwner(ownerID)
+	organizationID, _ := h.sessionOrganizationID(r)
+	member, ok := h.liveHub.memberForOwner(ownerID, organizationID)
 	return ownerID, member, ok
 }
 
@@ -86,30 +109,30 @@ func requireActiveMember(w http.ResponseWriter, member hubstate.Member) bool {
 }
 
 func requireHubAdmin(w http.ResponseWriter, member hubstate.Member) bool {
-	if member.Role == "owner" || member.Role == "admin" {
+	if member.Role == "owner" || member.Role == "admin" || member.Role == "platformOwner" {
 		return true
 	}
 	hubHTTPError(w, http.StatusForbidden, "permission_denied", "Administrator access is required")
 	return false
 }
 
-func (p *portalHub) organizationResponse() map[string]any {
-	organization := p.store.Organization()
+func (p *portalHub) organizationResponse(organizationID string) map[string]any {
+	organization, _ := p.store.OrganizationByID(organizationID)
 	return map[string]any{
 		"id": organization.ID, "name": organization.Name,
-		"memberCount": p.store.ActiveMemberCount() + 1,
+		"memberCount": len(p.store.MembersForOrganization(organizationID)),
 	}
 }
 
-func (p *portalHub) manageOrganization(w http.ResponseWriter, r *http.Request, member hubstate.Member) {
+func (p *portalHub) manageOrganization(w http.ResponseWriter, r *http.Request, member hubstate.Member, organizationID string, platformOwner bool) {
 	if !requireActiveMember(w, member) {
 		return
 	}
 	if r.Method == http.MethodGet {
-		hubJSON(w, http.StatusOK, p.organizationResponse())
+		hubJSON(w, http.StatusOK, p.organizationResponse(organizationID))
 		return
 	}
-	if !requireHubAdmin(w, member) {
+	if !platformOwner && !requireHubAdmin(w, member) {
 		return
 	}
 	var input struct {
@@ -118,24 +141,27 @@ func (p *portalHub) manageOrganization(w http.ResponseWriter, r *http.Request, m
 	if !hubMethod(w, r, http.MethodPut) || !hubDecode(w, r, &input, "name") {
 		return
 	}
-	if _, err := p.store.SetOrganizationName(input.Name); err != nil {
+	if _, err := p.store.SetOrganizationNameFor(organizationID, input.Name); err != nil {
 		hubStoreError(w, err)
 		return
 	}
-	hubJSON(w, http.StatusOK, p.organizationResponse())
+	hubJSON(w, http.StatusOK, p.organizationResponse(organizationID))
 }
 
-func (p *portalHub) manageMembers(w http.ResponseWriter, r *http.Request, member hubstate.Member) {
+func (p *portalHub) manageMembers(w http.ResponseWriter, r *http.Request, member hubstate.Member, organizationID string) {
 	if !requireActiveMember(w, member) || !requireHubAdmin(w, member) || !hubMethod(w, r, http.MethodGet) {
 		return
 	}
-	members := make([]hubstate.Member, 0, p.store.ActiveMemberCount()+1+len(p.store.Members()))
-	members = append(members, p.localMember())
-	members = append(members, p.store.Members()...)
+	members := p.store.MembersForOrganization(organizationID)
+	for i := range members {
+		if members[i].ID == p.ownerID {
+			members[i].ID = hubstate.LocalMemberID
+		}
+	}
 	hubJSON(w, http.StatusOK, map[string]any{"members": members})
 }
 
-func (p *portalHub) updateMember(h *Handler, w http.ResponseWriter, r *http.Request, actor hubstate.Member) {
+func (p *portalHub) updateMember(h *Handler, w http.ResponseWriter, r *http.Request, actor hubstate.Member, organizationID string) {
 	if !requireActiveMember(w, actor) || !requireHubAdmin(w, actor) {
 		return
 	}
@@ -145,32 +171,39 @@ func (p *portalHub) updateMember(h *Handler, w http.ResponseWriter, r *http.Requ
 		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Member ID is invalid")
 		return
 	}
-	if id == hubstate.LocalMemberID {
+	if id == hubstate.LocalMemberID || id == p.ownerID {
 		hubHTTPError(w, http.StatusForbidden, "permission_denied", "The local owner cannot be changed")
 		return
 	}
-	var input struct {
-		Role             string   `json:"role"`
-		Status           string   `json:"status"`
-		ClusterIDs       []string `json:"clusterIds"`
-		KubernetesGroups []string `json:"kubernetesGroups"`
-	}
-	if !hubMethod(w, r, http.MethodPut) ||
-		!hubDecode(w, r, &input, "role", "status", "clusterIds", "kubernetesGroups") {
+	if r.Method == http.MethodDelete {
+		if !hubDecode(w, r, &struct{}{}) {
+			return
+		}
+		if _, err := p.store.RemoveOrganizationMember(organizationID, id); err != nil {
+			hubStoreError(w, err)
+			return
+		}
+		h.sessions.cancelOwner(id)
+		p.cancelRequests(id, organizationID)
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	member, changed, err := p.store.UpdateMember(id, hubstate.MemberInput{
-		Role: input.Role, Status: input.Status, ClusterIDs: input.ClusterIDs,
-		KubernetesGroups: input.KubernetesGroups,
-	})
+	var input struct {
+		Role string `json:"role"`
+	}
+	if !hubMethod(w, r, http.MethodPut) || !hubDecode(w, r, &input, "role") {
+		return
+	}
+	member, changed, err := p.store.UpdateOrganizationMemberRole(organizationID, id, input.Role)
 	if err != nil {
 		hubStoreError(w, err)
 		return
 	}
 	if changed {
 		h.sessions.cancelOwner(id)
+		p.cancelRequests(id, organizationID)
 	}
-	hubJSON(w, http.StatusOK, member)
+	hubJSON(w, http.StatusOK, map[string]any{"member": member})
 }
 
 func (p *portalHub) serveSSO(w http.ResponseWriter, r *http.Request, member hubstate.Member) {

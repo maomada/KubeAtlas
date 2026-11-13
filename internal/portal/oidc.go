@@ -172,6 +172,9 @@ func validOIDCEndpoint(value string, allowLoopbackHTTP bool) bool {
 	if endpoint.Scheme != "http" || !allowLoopbackHTTP {
 		return false
 	}
+	if strings.EqualFold(endpoint.Hostname(), "localhost") {
+		return true
+	}
 	ip := net.ParseIP(endpoint.Hostname())
 	return ip != nil && ip.IsLoopback()
 }
@@ -224,6 +227,13 @@ func (t *boundedOIDCRoundTripper) RoundTrip(request *http.Request) (*http.Respon
 
 func (h *Handler) oidcStateCookieName() string {
 	if h.secureCookies {
+		return "__Host-radar_oidc_state"
+	}
+	return "radar_oidc_state"
+}
+
+func (h *Handler) oidcStateCookieNameForRequest(r *http.Request) string {
+	if h.cookieSecureForRequest(r) {
 		return "__Host-radar_oidc_state"
 	}
 	return "radar_oidc_state"
@@ -288,7 +298,7 @@ func (h *Handler) oidcLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if r.URL.RawQuery != "" || r.URL.ForceQuery || !sameSiteRequest(r) || !h.sessions.allowLogin() {
+	if r.URL.RawQuery != "" || r.URL.ForceQuery || !h.liveHub.policySnapshot().allows(r) || !h.sessions.allowLogin() {
 		http.Error(w, "OIDC login is unavailable", http.StatusForbidden)
 		return
 	}
@@ -298,8 +308,8 @@ func (h *Handler) oidcLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{
-		Name: h.oidcStateCookieName(), Value: state, Path: "/", MaxAge: int(oidcTransactionLifetime.Seconds()),
-		HttpOnly: true, Secure: h.secureCookies, SameSite: http.SameSiteLaxMode,
+		Name: h.oidcStateCookieNameForRequest(r), Value: state, Path: "/", MaxAge: int(oidcTransactionLifetime.Seconds()),
+		HttpOnly: true, Secure: h.cookieSecureForRequest(r), SameSite: http.SameSiteLaxMode,
 	})
 	http.Redirect(w, r, h.oidc.oauth.AuthCodeURL(
 		state, oauth2.AccessTypeOnline, oauth2.SetAuthURLParam("nonce", nonce),
@@ -337,9 +347,13 @@ func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	if !h.oidcCallbackAuthorityAllowed(r) {
+		http.Error(w, "OIDC callback authority is not allowed", http.StatusForbidden)
+		return
+	}
 	http.SetCookie(w, &http.Cookie{
-		Name: h.oidcStateCookieName(), Value: "", Path: "/", MaxAge: -1,
-		HttpOnly: true, Secure: h.secureCookies, SameSite: http.SameSiteLaxMode,
+		Name: h.oidcStateCookieNameForRequest(r), Value: "", Path: "/", MaxAge: -1,
+		HttpOnly: true, Secure: h.cookieSecureForRequest(r), SameSite: http.SameSiteLaxMode,
 	})
 	fail := func() {
 		http.Redirect(w, r, "/login?error=sso_failed", http.StatusSeeOther)
@@ -358,7 +372,7 @@ func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	cookies := 0
 	cookieState := ""
 	for _, cookie := range r.Cookies() {
-		if cookie.Name == h.oidcStateCookieName() {
+		if cookie.Name == h.oidcStateCookieNameForRequest(r) {
 			cookies++
 			cookieState = cookie.Value
 		}
@@ -419,6 +433,20 @@ func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
+}
+
+func (h *Handler) oidcCallbackAuthorityAllowed(r *http.Request) bool {
+	if h.oidc == nil || r.URL.Path != "/api/auth/oidc/callback" {
+		return false
+	}
+	expected, err := url.Parse(h.oidc.config.RedirectURL)
+	if err != nil || expected.Host == "" || expected.Path != r.URL.Path {
+		return false
+	}
+	if _, ok := hubAuthority(r.Host); !ok {
+		return false
+	}
+	return strings.EqualFold(expected.Host, r.Host)
 }
 
 func oidcMemberID(issuer, subject string) string {
