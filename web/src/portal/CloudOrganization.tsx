@@ -1,25 +1,50 @@
 import { useState, type FormEvent } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Badge } from '@maomada/k8s-ui'
-import { Building2, KeyRound, Pencil, Search, ShieldCheck, Users } from 'lucide-react'
-import { cloudRequest, useCloudQuery, type HubCluster } from './cloudApi'
-import { CloudDialog, CloudError, CloudLink, CloudLoading, CopyButton } from './CloudShared'
+import { Building2, Search, ShieldCheck, Users } from 'lucide-react'
+import { cloudRequest, useCloudQuery } from './cloudApi'
+import { CloudDialog, CloudError, CloudLink, CloudLoading } from './CloudShared'
 import { ThemeToggle } from './ThemeToggle'
 import { ConnectionSettingsEditor } from './ConnectionProfiles'
+import { replacePortalLocation } from './portalNavigation'
+
+export type OrganizationRole = 'owner' | 'member' | 'viewer'
+
+const organizationNameQueryPaths = ['/hub', '/hub/organization', '/hub/organizations'] as const
+const memberMutationQueryPaths = [
+  '/hub', '/hub/organization', '/hub/organizations', '/hub/members', '/hub/clusters',
+  '/hub/platform/users', '/hub/platform/clusters', '/mcp/credentials',
+] as const
+
+function invalidatePortalQueries(client: QueryClient, paths: readonly string[]) {
+  return Promise.all(paths.map(path => client.invalidateQueries({ queryKey: ['portal', '/api', path] })))
+}
+
+export interface HubOrganization {
+  id: string
+  name: string
+  role?: OrganizationRole
+}
 
 export interface HubMember {
   id: string
-  userId: string
+  userId?: string
   displayName: string
-  role: 'owner' | 'admin' | 'member' | 'viewer'
-  status: 'active' | 'pending' | 'disabled'
-  clusterIds: string[]
-  kubernetesGroups: string[]
-  createdAt: string
-  updatedAt: string
+  email?: string
+  role?: OrganizationRole
+  status?: 'active' | 'pending' | 'disabled'
 }
 
-interface Organization { id: string; name: string; memberCount: number }
+export interface HubContext {
+  enabled: boolean
+  userId: string
+  member?: HubMember | null
+  platformOwner: boolean
+  activeOrganizationId: string | null
+  organizations: HubOrganization[]
+}
+
+interface Organization { id: string; name: string }
 interface SSOConfiguration {
   enabled: boolean
   issuer?: string
@@ -30,8 +55,8 @@ interface SSOConfiguration {
   backchannelLogout: boolean
 }
 
-export function canManageOrganization(member?: HubMember) {
-  return member?.status === 'active' && (member.role === 'owner' || member.role === 'admin')
+export function canManageOrganization(member?: HubMember | null, platformOwner = false, activeOrganizationId?: string | null) {
+  return !!activeOrganizationId && (member?.status === 'active' && member.role === 'owner' || platformOwner)
 }
 
 export async function logoutPortal() {
@@ -41,31 +66,73 @@ export async function logoutPortal() {
 
 export function PendingMembership({ member, retry }: { member: HubMember; retry: () => void }) {
   const [error, setError] = useState<unknown>()
-  return <div className="cloud-page cloud-empty"><ShieldCheck size={36} /><h1>Waiting for approval</h1>
-    <p>Your identity is verified. An organization administrator must approve your membership and select your cluster access before you can continue.</p>
+  return <div className="cloud-page cloud-empty"><ShieldCheck size={36} /><h1>等待平台 Owner 审批</h1>
+    <p>账号等待平台 Owner 审批。此状态不代表身份或邮箱已验证。</p>
     <strong className="cloud-account-identity">{member.displayName}</strong>
-    <p>No cluster access or MCP credentials have been granted.</p>
+    <p>审批完成前，不会加载集群目录、连接、MCP 凭据或原生工作区数据。</p>
     {error !== undefined && <CloudError error={error} />}
-    <div className="cloud-row-actions"><ThemeToggle /><button className="cloud-button" onClick={retry}>Check approval</button><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>Sign out</button></div>
+    <div className="cloud-row-actions"><ThemeToggle /><button className="cloud-button" onClick={retry}>重新检查审批</button><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>退出登录</button></div>
   </div>
 }
 
-export function CloudOrganization({ member }: { member?: HubMember }) {
+export function DisabledMembership({ retry }: { retry: () => void }) {
+  const [error, setError] = useState<unknown>()
+  return <div className="cloud-page cloud-empty"><ShieldCheck size={36} /><h1>账号已停用</h1><p>此账号无法访问组织资源。如有疑问，请联系平台 Owner。</p>
+    {error !== undefined && <CloudError error={error} />}
+    <div className="cloud-row-actions"><ThemeToggle /><button className="cloud-button" onClick={retry}>重新检查账号状态</button><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>退出登录</button></div>
+  </div>
+}
+
+export function OrganizationSelection({ organizations, activeOrganizationId, platformOwner }: {
+  organizations: HubOrganization[]; activeOrganizationId: string | null; platformOwner: boolean
+}) {
+  const client = useQueryClient()
+  const [organizationId, setOrganizationId] = useState(activeOrganizationId ?? '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>()
+  async function select(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (busy || !organizations.some(organization => organization.id === organizationId)) return
+    setBusy(true); setError(undefined)
+    try {
+      await cloudRequest('/hub/organization/select', { method: 'POST', body: { organizationId } })
+      await client.cancelQueries()
+      client.clear()
+      replacePortalLocation('/')
+    } catch (failure) { setError(failure); setBusy(false) }
+  }
+  return <div className="cloud-page cloud-narrow">
+    <div className="cloud-page-heading"><div><h1>选择组织</h1><p>选择有效组织后才会加载组织数据。</p></div></div>
+    {organizations.length ? <section className="cloud-card"><form className="cloud-form" onSubmit={select} aria-busy={busy}>
+      <label>组织<select className="portal-control" required value={organizationId} disabled={busy} onChange={event => setOrganizationId(event.target.value)}><option value="">选择组织</option>{organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {organization.role === 'owner' ? '组织 Owner' : organization.role === 'member' ? '成员' : '只读成员'}</option>)}</select></label>
+      <button className="cloud-button cloud-primary" disabled={busy || !organizationId}>{busy ? '正在切换…' : '进入组织'}</button>
+    </form></section> : <section className="cloud-card"><h2>暂无组织成员资格</h2><p>当前没有可用组织。请联系平台 Owner 添加或审批成员资格。</p></section>}
+    {platformOwner && <CloudLink href="/settings/platform" className="cloud-button mt-4">打开平台管理</CloudLink>}
+    {error !== undefined && <CloudError error={error} />}
+    <div className="mt-5 flex items-center gap-3"><ThemeToggle /><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>退出登录</button></div>
+  </div>
+}
+
+export function CloudOrganization({ member, platformOwner = false, activeOrganizationId = null }: {
+  member?: HubMember | null; platformOwner?: boolean; activeOrganizationId?: string | null
+}) {
   const organization = useCloudQuery<Organization>('/hub/organization')
-  if (organization.isPending) return <CloudLoading label="Loading organization…" />
+  if (organization.isPending) return <CloudLoading label="正在读取组织信息…" />
   if (organization.error) return <CloudError error={organization.error} retry={() => { void organization.refetch() }} />
   if (!organization.data) return null
+  const canManage = canManageOrganization(member, platformOwner, activeOrganizationId)
   return <div className="cloud-page cloud-narrow">
-    <div className="cloud-page-heading"><div><h1>Organization</h1><p>Manage your self-hosted workspace.</p></div><Badge tone="structural">Self-hosted</Badge></div>
-    <section className="cloud-card"><header><h2><Building2 size={17} /> Organization details</h2></header>
-      <OrganizationName key={organization.data.name} organization={organization.data} editable={canManageOrganization(member)} />
+    <div className="cloud-page-heading"><div><h1>组织设置</h1><p>管理当前自托管 Hub 组织。</p></div><Badge tone="structural">{organization.data.name}</Badge></div>
+    <section className="cloud-card"><header><h2><Building2 size={17} /> 组织详情</h2></header>
+      <OrganizationName key={organization.data.name} organization={organization.data} editable={canManage} />
     </section>
-    <section className="cloud-card"><header><h2><Users size={17} /> Members and access</h2></header><p>{organization.data.memberCount} active members · Your role: {member?.role ?? 'Unknown'}</p>
-      <p>Organization roles control Hub management and cluster scope. Kubernetes RBAC still controls access to each cluster's resources.</p>
-      {canManageOrganization(member) && <CloudLink href="/settings/organization/members" className="cloud-button">Manage members</CloudLink>}
+    <section className="cloud-card"><header><h2><Users size={17} /> 成员与角色</h2></header>
+      <p>你的组织角色：{member?.role === 'owner' ? '组织 Owner' : member?.role === 'member' ? '成员' : member?.role === 'viewer' ? '只读成员' : '平台 Owner'}</p>
+      <p>组织 Owner 可管理组织设置和成员角色，相当于 Kubernetes 管理员（不等同于 cluster-admin）；成员可编辑；只读成员仅可查看。集群资源权限由服务器端 Kubernetes RBAC 强制执行。</p>
+      {canManage && <CloudLink href="/settings/organization/members" className="cloud-button">管理成员</CloudLink>}
     </section>
-    <ConnectionSettingsEditor canManage={canManageOrganization(member)} />
-    <section className="cloud-card"><h2>Deployment scope</h2><p>This Hub serves one organization. Separate organizations require separate Hub deployments; multi-organization tenancy is not implemented.</p></section>
+    <ConnectionSettingsEditor canManage={platformOwner} />
+    <section className="cloud-card"><h2>组织数据范围</h2><p>每个组织拥有独立的成员、集群目录和 MCP 凭据范围。</p></section>
   </div>
 }
 
@@ -81,87 +148,79 @@ function OrganizationName({ organization, editable }: { organization: Organizati
     try {
       const updated = await cloudRequest<Organization>('/hub/organization', { method: 'PUT', body: { name: name.trim() } })
       client.setQueryData(['portal', '/api', '/hub/organization'], updated)
+      await invalidatePortalQueries(client, organizationNameQueryPaths)
     } catch (failure) { setError(failure) } finally { setBusy(false) }
   }
   return <form className="cloud-form" onSubmit={save}>
-    <label>Organization name<input value={name} maxLength={128} required disabled={!editable || busy} onChange={event => setName(event.target.value)} /></label>
-    <small>Organization ID: {organization.id}</small>
+    <label>组织名称<input value={name} maxLength={128} required disabled={!editable || busy} onChange={event => setName(event.target.value)} /></label>
+    <small>组织 ID：{organization.id}</small>
     {error !== undefined && <CloudError error={error} />}
-    {editable && <footer><button className="cloud-button cloud-primary" disabled={busy || !name.trim() || name.trim() === organization.name}>{busy ? 'Saving…' : 'Save changes'}</button></footer>}
+    {editable && <footer><button className="cloud-button cloud-primary" disabled={busy || !name.trim() || name.trim() === organization.name}>{busy ? '正在保存…' : '保存更改'}</button></footer>}
   </form>
 }
 
-export function CloudMembers({ member }: { member?: HubMember }) {
-  const manage = canManageOrganization(member)
+export function CloudMembers({ member, platformOwner = false, activeOrganizationId = null }: {
+  member?: HubMember | null; platformOwner?: boolean; activeOrganizationId?: string | null
+}) {
+  const manage = canManageOrganization(member, platformOwner, activeOrganizationId)
+  const client = useQueryClient()
   const members = useCloudQuery<{ members: HubMember[] }>('/hub/members', '/api', manage)
-  const directory = useCloudQuery<{ clusters: HubCluster[] }>('/hub/clusters', '/api', manage)
   const [filter, setFilter] = useState('')
-  const [editing, setEditing] = useState<HubMember>()
-  if (!manage) return <div className="cloud-page"><CloudError error={new Error('Only organization owners and administrators can manage members.')} /></div>
-  const rows = members.data?.members.filter(item => `${item.displayName} ${item.userId} ${item.role} ${item.status}`.toLowerCase().includes(filter.toLowerCase())) ?? []
+  const [roles, setRoles] = useState<Record<string, OrganizationRole>>({})
+  const [busy, setBusy] = useState('')
+  const [error, setError] = useState<unknown>()
+  const [removing, setRemoving] = useState<HubMember>()
+  if (!manage) return <div className="cloud-page"><CloudError error={new Error('仅组织 Owner，或已选择组织的 平台 Owner，可以管理成员。')} /></div>
+  const rows = members.data?.members.filter(item => `${item.displayName} ${item.email ?? ''} ${item.userId ?? ''} ${item.role}`.toLowerCase().includes(filter.toLowerCase())) ?? []
+
+  async function saveRole(item: HubMember) {
+    const role = roles[item.id] ?? item.role
+    if (busy || role === item.role) return
+    setBusy(item.id); setError(undefined)
+    try {
+      const result = await cloudRequest<{ member: HubMember }>(`/hub/members/${encodeURIComponent(item.id)}`, { method: 'PUT', body: { role } })
+      client.setQueryData<{ members: HubMember[] }>(['portal', '/api', '/hub/members'], previous => previous ? { members: previous.members.map(existing => existing.id === item.id ? result.member : existing) } : previous)
+      await invalidatePortalQueries(client, memberMutationQueryPaths)
+      setRoles(current => { const next = { ...current }; delete next[item.id]; return next })
+    } catch (failure) { setError(failure) } finally { setBusy('') }
+  }
+
+  async function removeMember() {
+    if (!removing || busy) return
+    setBusy(removing.id); setError(undefined)
+    try {
+      await cloudRequest(`/hub/members/${encodeURIComponent(removing.id)}`, { method: 'DELETE' })
+      client.setQueryData<{ members: HubMember[] }>(['portal', '/api', '/hub/members'], previous => previous ? { members: previous.members.filter(existing => existing.id !== removing.id) } : previous)
+      await invalidatePortalQueries(client, memberMutationQueryPaths)
+      setRemoving(undefined)
+    } catch (failure) { setError(failure) } finally { setBusy('') }
+  }
+
   return <div className="cloud-page">
-    <div className="cloud-page-heading"><div><h1>Members</h1><p>Approve identities and manage their organization access.</p></div><Badge tone="structural">{members.data ? members.data.members.length : '…'} members</Badge></div>
-    <section className="cloud-card cloud-member-onboarding"><KeyRound size={18} /><div><h2>Add a member</h2><p>Create their account in your self-hosted identity provider, then ask them to sign in using SSO. Their first login appears here as pending; approve it and select access below. Email invitations and directory synchronization are not available.</p></div><CloudLink className="cloud-button" href="/settings/organization/sso">SSO settings</CloudLink></section>
-    {members.isPending ? <CloudLoading label="Loading members…" /> : members.error ? <CloudError error={members.error} retry={() => { void members.refetch() }} /> : <section className="cloud-table-panel">
-      <div className="cloud-table-filter"><label className="cloud-search"><Search size={16} /><input type="search" placeholder="Search members" aria-label="Search members" value={filter} onChange={event => setFilter(event.target.value)} /></label><span>{rows.length} results</span></div>
-      <div className="cloud-table-scroll"><table className="cloud-table cloud-members-table"><thead><tr><th>Member</th><th>Role</th><th>Status</th><th>Cluster scope</th><th>Access</th></tr></thead><tbody>
-        {rows.map(item => <tr key={item.id}><td><strong>{item.displayName}</strong>{item.id === member?.id && <small> · You</small>}<div className="cloud-member-id portal-mono">{item.userId}</div></td><td>{item.role}</td><td><Badge severity={item.status === 'active' ? 'success' : item.status === 'pending' ? 'warning' : 'neutral'}>{item.status}</Badge></td><td>{item.role === 'owner' || item.role === 'admin' ? 'All clusters' : `${item.clusterIds.length} selected`}</td><td>{item.role === 'owner' ? <span className="cloud-muted">Recovery account</span> : <button className="cloud-button" onClick={() => setEditing(item)}><Pencil size={13} />{item.status === 'pending' ? 'Review' : 'Edit'}</button>}</td></tr>)}
-        {!rows.length && <tr><td colSpan={5}>No members match this search.</td></tr>}
+    <div className="cloud-page-heading"><div><h1>成员管理</h1><p>管理当前组织的成员角色或移除成员。</p></div><Badge tone="structural">{members.data ? `${members.data.members.length} 位成员` : '成员'}</Badge></div>
+    <section className="cloud-card"><h2>组织角色</h2><p>组织 Owner 可管理组织设置和成员角色，相当于 Kubernetes 管理员（不等同于 cluster-admin）；成员可编辑；查看者只读。集群资源权限由服务器端 Kubernetes RBAC 强制执行。最后一位组织 Owner 由服务器保护。</p></section>
+    {error !== undefined && <CloudError error={error} />}
+    {members.isPending ? <CloudLoading label="正在读取成员…" /> : members.error ? <CloudError error={members.error} retry={() => { void members.refetch() }} /> : <section className="cloud-table-panel">
+      <div className="cloud-table-filter"><label className="cloud-search"><Search size={16} /><input type="search" placeholder="搜索成员" aria-label="搜索成员" value={filter} onChange={event => setFilter(event.target.value)} /></label><span>{rows.length} 个结果</span></div>
+      <div className="cloud-table-scroll"><table className="cloud-table cloud-members-table"><thead><tr><th>成员</th><th>组织角色</th><th>操作</th></tr></thead><tbody>
+        {rows.map(item => <tr key={item.id}><td><strong>{item.displayName}</strong>{item.id === member?.id && <small> · 你</small>}<div className="cloud-member-id portal-mono">{item.email ?? item.userId ?? item.id}</div></td><td><select aria-label={`角色：${item.displayName}`} className="portal-control" value={roles[item.id] ?? item.role} disabled={busy === item.id} onChange={event => setRoles(current => ({ ...current, [item.id]: event.target.value as OrganizationRole }))}><option value="owner">组织 Owner</option><option value="member">成员</option><option value="viewer">只读成员</option></select></td><td><div className="cloud-row-actions"><button className="cloud-button" disabled={busy === item.id || (roles[item.id] ?? item.role) === item.role} onClick={() => { void saveRole(item) }}>{busy === item.id ? '正在保存…' : '保存角色'}</button><button className="cloud-button" disabled={!!busy} onClick={() => { setRemoving(item); setError(undefined) }}>移除</button></div></td></tr>)}
       </tbody></table></div>
     </section>}
-    {editing && <MemberAccess key={editing.id} member={editing} clusters={directory.data?.clusters} directoryError={directory.error} close={() => setEditing(undefined)} />}
+    {removing && <CloudDialog title="移除组织成员" busy={!!busy} onClose={() => { if (!busy) setRemoving(undefined) }}><div className="cloud-form"><p>确定从此组织移除 {removing.displayName}？移除会撤销该组织范围内的会话和凭据，但不会停用此平台账号，也不会移除其在其他组织的成员资格。</p><p>最后一位组织 Owner 由服务器保护。</p>{error !== undefined && <CloudError error={error} />}<footer><button type="button" className="cloud-button" disabled={!!busy} onClick={() => setRemoving(undefined)}>取消</button><button type="button" className="cloud-button cloud-primary" disabled={!!busy} onClick={() => { void removeMember() }}>{busy ? '正在移除…' : '确认移除'}</button></footer></div></CloudDialog>}
   </div>
-}
-
-function MemberAccess({ member, clusters, directoryError, close }: { member: HubMember; clusters?: HubCluster[]; directoryError: unknown; close: () => void }) {
-  const client = useQueryClient()
-  const [role, setRole] = useState(member.role)
-  const [status, setStatus] = useState<HubMember['status']>(member.status === 'pending' ? 'active' : member.status)
-  const [clusterIds, setClusterIds] = useState(member.clusterIds)
-  const [groups, setGroups] = useState(member.kubernetesGroups.join('\n'))
-  const [confirmed, setConfirmed] = useState(false)
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>()
-  async function save(event: FormEvent) {
-    event.preventDefault()
-    if (busy || !confirmed || !clusters || directoryError) return
-    setBusy(true); setError(undefined)
-    try {
-      await cloudRequest(`/hub/members/${encodeURIComponent(member.id)}`, { method: 'PUT', body: {
-        role, status, clusterIds: role === 'admin' ? [] : clusterIds,
-        kubernetesGroups: [...new Set(groups.split(/[\n,]/).map(value => value.trim()).filter(Boolean))],
-      } })
-      await client.invalidateQueries({ queryKey: ['portal', '/api'] })
-      close()
-    } catch (failure) { setError(failure) } finally { setBusy(false) }
-  }
-  return <CloudDialog title="Member access" onClose={close} busy={busy}><form className="cloud-form" onSubmit={save}>
-    <strong>{member.displayName}</strong>
-    <label>Kubernetes identity<code className="cloud-member-id">{member.userId}</code></label><CopyButton value={member.userId} label="Copy identity" />
-    <label>Role<select value={role} disabled={busy} onChange={event => setRole(event.target.value as HubMember['role'])}><option value="admin">Admin — manage organization and all clusters</option><option value="member">Member — use selected clusters</option><option value="viewer">Viewer — read-only selected clusters</option></select></label>
-    <label>Status<select value={status} disabled={busy} onChange={event => setStatus(event.target.value as HubMember['status'])}><option value="active">Active</option><option value="pending">Pending approval</option><option value="disabled">Disabled</option></select></label>
-    {directoryError ? <CloudError error={directoryError} /> : !clusters ? <CloudLoading label="Loading cluster scope…" /> : role === 'admin' ? <p>Admins have access to all current and future Hub clusters. Kubernetes permissions still require explicit RBAC bindings.</p> : <fieldset className="cloud-member-scope" disabled={busy}><legend>Allowed clusters</legend>{clusters.filter(cluster => !cluster.revokedAt).map(cluster => <label key={cluster.id}><input type="checkbox" checked={clusterIds.includes(cluster.id)} onChange={event => setClusterIds(ids => event.target.checked ? [...ids, cluster.id] : ids.filter(id => id !== cluster.id))} />{cluster.name}<small>{cluster.id}</small></label>)}<small>No selection means no cluster access.</small></fieldset>}
-    <label>Kubernetes groups<textarea value={groups} disabled={busy} onChange={event => setGroups(event.target.value)} placeholder="radar:idp:team-name" /><small>Optional, one per line. Only trusted radar:* or cloud:* groups. Existing RoleBindings may grant powerful access; groups are not copied from IdP claims.</small></label>
-    <label className="cloud-confirm-access"><input type="checkbox" checked={confirmed} disabled={busy} onChange={event => setConfirmed(event.target.checked)} />I understand that saving access changes ends this member's browser sessions and revokes their existing MCP tokens.</label>
-    {error !== undefined && <CloudError error={error} />}
-    <footer><button type="button" className="cloud-button" disabled={busy} onClick={close}>Cancel</button><button className="cloud-button cloud-primary" disabled={busy || !confirmed || !clusters || !!directoryError}>{busy ? 'Saving…' : 'Save access'}</button></footer>
-  </form></CloudDialog>
 }
 
 export function CloudSSO() {
   const configuration = useCloudQuery<SSOConfiguration>('/hub/sso')
-  if (configuration.isPending) return <CloudLoading label="Loading SSO configuration…" />
+  if (configuration.isPending) return <CloudLoading label="正在读取身份提供方配置…" />
   if (configuration.error) return <CloudError error={configuration.error} retry={() => { void configuration.refetch() }} />
   const sso = configuration.data
   if (!sso) return null
-  return <div className="cloud-page cloud-narrow">
-    <div className="cloud-page-heading"><div><h1>Single sign-on</h1><p>Independent identity for your self-hosted Hub.</p></div><Badge severity={sso.enabled ? 'info' : 'neutral'}>{sso.enabled ? 'Configured' : 'Not configured'}</Badge></div>
-    <section className="cloud-card"><header><h2><ShieldCheck size={17} /> OpenID Connect</h2></header>
-      {sso.enabled ? <dl className="cloud-identity-details"><dt>Issuer</dt><dd>{sso.issuer}</dd><dt>Client ID</dt><dd>{sso.clientId}</dd><dt>Callback URL</dt><dd>{sso.redirectUrl}</dd><dt>Enrollment</dt><dd>Administrator approval required</dd></dl> : <p>Configure the Portal's OIDC issuer, client ID, callback URL and secret to enable Keycloak sign-in. Missing configuration does not disable the local recovery account.</p>}
-      <p>Configuration is managed at server startup. Client secrets are never returned to this page. Configured does not confirm current identity-provider availability.</p>
+  return <div className="cloud-page cloud-narrow"><div className="cloud-page-heading"><div><h1>身份提供方</h1><p>查看自托管 Hub 的 OIDC 配置与审批边界。</p></div></div>
+    <section className="cloud-card"><h2>OIDC 配置</h2><p>配置已启用不代表身份提供方当前可用；这不是健康状态检查。</p><p>状态：{sso.enabled ? '已配置' : '未启用'}</p>
+      <dl className="cloud-sso-details"><dt>签发方（Issuer）</dt><dd>{sso.issuer || '未配置'}</dd><dt>客户端 ID</dt><dd>{sso.clientId || '未配置'}</dd><dt>回调地址</dt><dd>{sso.redirectUrl || '未配置'}</dd><dt>新账号开通</dt><dd>需平台 Owner 审批并分配组织成员资格</dd><dt>目录同步</dt><dd>{sso.directorySync ? '已配置' : '未启用'}</dd><dt>后端通道退出登录</dt><dd>{sso.backchannelLogout ? '已配置' : '未启用'}</dd></dl>
+      {sso.enabled && <p><a className="cloud-button mt-4" href="/api/auth/oidc/login">前往组织 SSO 登录</a></p>}
     </section>
-    {sso.enabled && <section className="cloud-card"><h2>Team sign-in link</h2><p>Share this link with people who already have an account in your identity provider. First sign-in requests membership; the link itself grants no access.</p><div className="cloud-endpoint"><code>{`${window.location.origin}/api/auth/oidc/login`}</code><CopyButton value={`${window.location.origin}/api/auth/oidc/login`} label="Copy link" /></div></section>}
-    <section className="cloud-card"><h2>Access lifecycle</h2><p>First sign-in creates a pending member with no cluster access. Administrators approve roles, cluster scope and optional Kubernetes groups in Members.</p><p>Portal membership suspension ends existing Portal sessions and revokes that member's MCP tokens. Signing out only ends the current browser session, not independent MCP tokens.</p><CloudLink className="cloud-button" href="/settings/organization/members">View members</CloudLink></section>
-    <section className="cloud-card"><h2>Directory synchronization unavailable</h2><p>Directory sync and IdP-initiated back-channel logout are not implemented. Disabling a user only in Keycloak does not immediately invalidate existing Hub sessions or MCP tokens. Disable their Portal membership as well.</p></section>
+    <section className="cloud-card"><h2>同步与会话限制</h2><p>外部目录组不会自动成为 Hub 组织成员资格；新账号仍需平台 Owner 审批。组织成员和角色由 Hub 管理。</p><p>身份提供方退出不会立即撤销现有 Hub 会话或 MCP Token。</p><p>本页只显示服务器提供的配置，不提供私有 CA 上传或信任设置。</p></section>
   </div>
 }

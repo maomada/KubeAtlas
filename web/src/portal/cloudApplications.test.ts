@@ -3,7 +3,7 @@ import { foldAppGroups, type AppRow } from '@maomada/k8s-ui/utils/applications'
 import { buildFleetApplications } from './cloudApplications'
 import type { HubCluster } from './cloudApi'
 
-const cluster = (id: string): HubCluster => ({ id, name: id, description: '', environment: '', region: '', createdAt: '', updatedAt: '', configured: true, state: 'connected' })
+const cluster = (id: string): HubCluster => ({ id, organizationId: 'org-1', name: id, description: '', environment: '', region: '', createdAt: '', updatedAt: '', configured: true, state: 'connected' })
 const app = (key: string, image = 'example/app:1', version = '1'): AppRow => ({
   key, name: 'App', health: 'healthy', workload_class: 'service', versions: [version],
   workloads: [{ kind: 'Deployment', namespace: 'shop', name: 'web', image, version, health: 'healthy', ready: 2, desired: 2, restarts: 0 }],

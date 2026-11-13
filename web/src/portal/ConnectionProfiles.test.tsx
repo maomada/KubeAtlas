@@ -50,6 +50,17 @@ it('keeps empty profiles unavailable rather than falling back to the browser ori
   expect(host.textContent).not.toContain(window.location.origin)
 })
 
+it('blocks enrollment when bootstrap is explicitly unavailable', async () => {
+  const fetch = vi.fn(() => Promise.resolve(response({
+    lanURL: 'https://lan.example.test', publicURL: '', ownerUserID: 'owner',
+    catalogAvailable: true, catalog: { available: true }, bootstrapAvailable: false,
+  })))
+  vi.stubGlobal('fetch', fetch)
+  await act(async () => root.render(<ConnectionProfilesProvider><Probe /></ConnectionProfilesProvider>))
+  await act(async () => vi.waitFor(() => expect(JSON.parse(host.querySelector('output')!.textContent!).loading).toBe(false)))
+  expect(JSON.parse(host.querySelector('output')!.textContent!)).toMatchObject({ origin: 'https://lan.example.test', installAvailable: false })
+})
+
 it('clears stale installation data when a later profile refresh fails', async () => {
   let refreshFails = false
   const fetch = vi.fn(() => Promise.resolve(refreshFails ? Promise.reject(new TypeError('connection settings unavailable')) : response(data('https://lan.example.test', 'https://public.example.test'))))
@@ -60,7 +71,7 @@ it('clears stale installation data when a later profile refresh fails', async ()
   await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Refresh profile')!.click())
   expect(JSON.parse(host.querySelector('output')!.textContent!)).toMatchObject({ origin: '', installAvailable: false, loading: false, error: 'connection settings unavailable' })
   expect(host.querySelector('[role="alert"]')?.textContent).toContain('connection settings unavailable')
-  expect(host.querySelector<HTMLInputElement>('input[placeholder="https://192.0.2.10"]')?.disabled).toBe(true)
+  expect(host.querySelector<HTMLInputElement>('input[placeholder="http://192.0.2.10"]')?.disabled).toBe(true)
 })
 
 it('surfaces read and update errors and permits an explicitly empty address', async () => {
@@ -71,7 +82,7 @@ it('surfaces read and update errors and permits an explicitly empty address', as
   })
   vi.stubGlobal('fetch', fetch)
   await act(async () => root.render(<ConnectionProfilesProvider><ConnectionSettingsEditor canManage /><Probe /></ConnectionProfilesProvider>))
-  const lan = host.querySelector<HTMLInputElement>('input[placeholder="https://192.0.2.10"]')!
+  const lan = host.querySelector<HTMLInputElement>('input[placeholder="http://192.0.2.10"]')!
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(lan, '')
     lan.dispatchEvent(new Event('input', { bubbles: true }))

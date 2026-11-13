@@ -12,7 +12,7 @@ vi.mock('./cloudFleet', async importOriginal => ({
   useFleetQuery: (_clusters: unknown, path: string) => ({ data: responses.get(path), isPending: false, isFetching: fetching.has(path) }),
 }))
 
-const cluster = { id: 'demo', name: 'Demo', state: 'connected' } as HubCluster
+const cluster = { id: 'demo', organizationId: 'org-1', name: 'Demo', state: 'connected' } as HubCluster
 const result = (data: unknown) => [{ cluster, data }]
 const home = () => renderToStaticMarkup(<CloudHome clusters={[cluster]} search={null} />)
 

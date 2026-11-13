@@ -8,6 +8,7 @@ export interface HubConnections {
   publicURL: string
   ownerUserID: string
   catalogAvailable: boolean
+  bootstrapAvailable?: boolean
   catalog: {
     available: boolean
     version?: string
@@ -21,6 +22,7 @@ export interface HubConnections {
 
 interface ConnectionContextValue {
   profile: ConnectionProfile
+  profileRevision: number
   selectProfile: (profile: ConnectionProfile) => void
   connections?: HubConnections
   origin: string
@@ -45,10 +47,12 @@ function storedProfile(): ConnectionProfile {
 
 export function ConnectionProfilesProvider({ children }: { children: ReactNode }) {
   const [profile, setProfile] = useState<ConnectionProfile>(storedProfile)
+  const [profileRevision, setProfileRevision] = useState(0)
   const [connections, setConnections] = useState<HubConnections>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const refreshSequence = useRef(0)
+  const profileRef = useRef(profile)
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current
     setLoading(true)
@@ -71,6 +75,8 @@ export function ConnectionProfilesProvider({ children }: { children: ReactNode }
     return () => { cancelled = true }
   }, [refresh])
   const selectProfile = useCallback((next: ConnectionProfile) => {
+    if (profileRef.current !== next) setProfileRevision(revision => revision + 1)
+    profileRef.current = next
     setProfile(next)
     try { window.localStorage.setItem(preferenceKey, next) } catch { /* the current page still keeps the selection */ }
   }, [])
@@ -82,10 +88,11 @@ export function ConnectionProfilesProvider({ children }: { children: ReactNode }
   }, [])
   const origin = profile === 'lan' ? connections?.lanURL ?? '' : connections?.publicURL ?? ''
   const value = useMemo<ConnectionContextValue>(() => ({
+    profileRevision,
     profile, selectProfile, connections, origin, mcpURL: origin ? `${origin}/mcp` : '',
-    installAvailable: !!origin && !loading && !error && connections?.catalogAvailable === true && connections.catalog?.available === true,
+    installAvailable: !!origin && !loading && !error && connections?.catalogAvailable === true && connections.catalog?.available === true && connections.bootstrapAvailable !== false,
     loading, error, refresh, save,
-  }), [profile, selectProfile, connections, origin, loading, error, refresh, save])
+  }), [profile, profileRevision, selectProfile, connections, origin, loading, error, refresh, save])
   return <ConnectionContext.Provider value={value}>{children}</ConnectionContext.Provider>
 }
 
@@ -127,9 +134,10 @@ export function ConnectionSettingsEditor({ canManage }: { canManage: boolean }) 
     {loading && <p role="status">正在读取连接地址…</p>}
     {error && <p role="alert">{error} <button type="button" onClick={() => { void refresh() }}>重试</button></p>}
     <form className="cloud-form" onSubmit={submit}>
-      <label>局域网根地址<input type="url" autoComplete="url" placeholder="https://192.0.2.10" value={lanURL} disabled={!canManage || busy || loading || !!error} onChange={event => setDraft({ key: profileKey, lanURL: event.target.value, publicURL })} /></label>
+      <label>局域网根地址<input type="url" autoComplete="url" placeholder="http://192.0.2.10" value={lanURL} disabled={!canManage || busy || loading || !!error} onChange={event => setDraft({ key: profileKey, lanURL: event.target.value, publicURL })} /></label>
       <label>公网根地址<input type="url" autoComplete="url" placeholder="https://hub.example.com" value={publicURL} disabled={!canManage || busy || loading || !!error} onChange={event => setDraft({ key: profileKey, lanURL, publicURL: event.target.value })} /></label>
-      <small>使用 HTTPS、有效的 IP/DNS 证书和根路径；HTTP 仅允许本机回环开发地址。Agent CA 不会配置节点容器运行时的信任。</small>
+      <small>请配置节点和客户端均可访问的根地址：HTTPS 域名或 IP 必须使用有效且受信任的证书。HTTP 仅支持服务器明确启用 --insecure-cookie 后的字面 IP 地址，且只限可信网络；不支持 HTTP 域名，也不会在 TLS 验证失败时回退。本机回环地址可用于开发。</small>
+      <small>HTTP 会暴露密码、会话 Cookie、Token 和下载内容。HTTP 镜像仓库需要操作员手动配置节点容器运行时；本 Portal 不配置私有 CA 或节点信任。</small>
       {saveError && <p role="alert">{saveError}</p>}
       {saved && <p role="status">连接地址已保存；现有 Agent 不会自动重连或升级。</p>}
       {canManage && <footer><button className="cloud-button cloud-primary" disabled={busy || loading}>{busy ? '保存中…' : '保存连接地址'}</button></footer>}

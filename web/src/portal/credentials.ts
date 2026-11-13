@@ -2,6 +2,7 @@ import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
 
 export interface MCPCredential {
   id: string
+  organizationId: string
   label: string
   clusterIds: string[]
   readOnly: boolean
