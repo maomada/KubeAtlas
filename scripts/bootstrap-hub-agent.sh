@@ -72,7 +72,8 @@ device="$(jq -er '.deviceSecret | select(test("^ka_device_[0-9a-f]{64}$"))' "$wo
 code="$(jq -er '.userCode | select(test("^[A-Z2-9]{4}-[A-Z2-9]{4}$"))' "$work/response.json")" || fail 'approval code is invalid'
 namespace="kubeatlas-agent-${id:0:10}"
 release="$namespace"
-fullname="${release}-kubeatlas"
+fullname="$release"
+if [[ "$release" != *kubeatlas* ]]; then fullname="${release}-kubeatlas"; fi
 fullname="${fullname:0:63}"
 for permission in 'create namespaces' 'create secrets' 'create serviceaccounts' 'create configmaps' 'create deployments' 'create services' 'create clusterroles' 'create clusterrolebindings' 'bind clusterroles' 'escalate clusterroles' 'create roles' 'create rolebindings'; do
   read -r verb resource <<<"$permission"

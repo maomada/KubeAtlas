@@ -376,6 +376,14 @@ if HUB_OUTPUT=$(helm template kubeatlas "$CHART_DIR" \
 else
   fail "self-hosted Hub Agent values should render: $HUB_OUTPUT"
 fi
+PREFLIGHT_RELEASE=kubeatlas-agent-0123456789
+PREFLIGHT_RENDER=$(helm template "$PREFLIGHT_RELEASE" "$CHART_DIR" --set hub.enabled=true --set-string hub.url=https://hub.example.test --set hub.clusterID=production --set hub.tokenSecret=kubeatlas-hub-token --set-string hub.ownerUserID=kubeatlas:portal:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --set-string image.repository=hub.example.test/kubeatlas/agent --set-string image.digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --set auth.mode=proxy --set mcp.enabled=true) || fail "generated release Hub chart render failed"
+if grep -Fq "name: $PREFLIGHT_RELEASE-hub-role-member" <<<"$PREFLIGHT_RENDER" && grep -Fq "name: $PREFLIGHT_RELEASE-hub-infra-readonly" <<<"$PREFLIGHT_RENDER" && ! grep -Fq "name: $PREFLIGHT_RELEASE-kubeatlas-hub-role-member" <<<"$PREFLIGHT_RENDER"; then
+  pass "generated release RBAC names match radar.fullname and bootstrap preflight"
+else
+  fail "generated release RBAC names differ from bootstrap preflight"
+fi
+
 hub_render() {
   helm template kubeatlas "$CHART_DIR" --set hub.enabled=true --set-string "hub.url=$1" \
     --set hub.clusterID=production --set hub.tokenSecret=kubeatlas-hub-token \

@@ -78,6 +78,64 @@ func TestBrowserClientUsesScopedIdentityAndKeepsMCPClosed(t *testing.T) {
 	if !errors.As(err, &tunnelErr) || tunnelErr.Code != CodePermissionDenied {
 		t.Fatalf("MCP client accepted browser API: %v", err)
 	}
+	for _, role := range []string{"owner", "member", "viewer"} {
+		rolePrincipal := Principal{UserID: "portal:user", Groups: []string{"kubeatlas:hub:" + role}, ClusterIDs: []string{"alpha"}}
+		roleClient, err := h.BrowserHTTPClient("alpha", rolePrincipal)
+		if err != nil {
+			t.Fatalf("BrowserHTTPClient rejected Hub %s principal: %v", role, err)
+		}
+		roleRequest, _ := http.NewRequest(http.MethodGet, "http://localhost/api/resources", nil)
+		roleRequest.Header.Set("X-Forwarded-User", "forged")
+		roleRequest.Header.Set("X-Forwarded-Groups", "kubeatlas:evil")
+		roleRequest.Header.Set("X-KubeAtlas-Organization-ID", "forged")
+		roleResponse, err := roleClient.Do(roleRequest)
+		if err != nil {
+			t.Fatalf("Hub %s principal failed through browser transport: %v", role, err)
+		}
+		_ = roleResponse.Body.Close()
+		if roleResponse.StatusCode != http.StatusNoContent {
+			t.Fatalf("Hub %s browser transport status=%d", role, roleResponse.StatusCode)
+		}
+		observation := observations[len(observations)-1]
+		if observation.UserID != rolePrincipal.UserID || len(observation.Groups) != 1 ||
+			observation.Groups[0] != rolePrincipal.Groups[0] || observation.Auth != "" ||
+			observation.Cookie != "" || observation.Impersonate != "" {
+			t.Fatalf("Hub %s transport forwarded altered identity: %+v", role, observation)
+		}
+		mcpClient, err := h.HTTPClient("alpha", rolePrincipal)
+		if err != nil {
+			t.Fatalf("MCP HTTPClient rejected Hub %s principal: %v", role, err)
+		}
+		mcpRequest, _ := http.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader("{\"method\":\"tools/list\"}"))
+		mcpRequest.Header.Set("X-Forwarded-User", "forged")
+		mcpRequest.Header.Set("X-Forwarded-Groups", "kubeatlas:evil")
+		mcpResponse, err := mcpClient.Do(mcpRequest)
+		if err != nil {
+			t.Fatalf("Hub %s MCP transport failed: %v", role, err)
+		}
+		_ = mcpResponse.Body.Close()
+		if mcpResponse.StatusCode != http.StatusNoContent {
+			t.Fatalf("Hub %s MCP transport status=%d", role, mcpResponse.StatusCode)
+		}
+		observation = observations[len(observations)-1]
+		if observation.UserID != rolePrincipal.UserID || len(observation.Groups) != 1 ||
+			observation.Groups[0] != rolePrincipal.Groups[0] {
+			t.Fatalf("Hub %s MCP transport forwarded altered identity: %+v", role, observation)
+		}
+	}
+	for _, groups := range [][]string{{"kubeatlas:evil"}, {"system:masters"}} {
+		principal := Principal{UserID: "portal:user", Groups: groups, ClusterIDs: []string{"alpha"}}
+		before := len(observations)
+		if _, err := h.BrowserHTTPClient("alpha", principal); err == nil {
+			t.Errorf("BrowserHTTPClient accepted forbidden groups %v", groups)
+		}
+		if _, err := h.HTTPClient("alpha", principal); err == nil {
+			t.Errorf("MCP HTTPClient accepted forbidden groups %v", groups)
+		}
+		if len(observations) != before {
+			t.Errorf("forbidden groups %v reached Agent", groups)
+		}
+	}
 }
 
 func TestBrowserRequestPolicyRejectsLocalRoutesAndUnsafeUpgrades(t *testing.T) {

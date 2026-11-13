@@ -33,6 +33,11 @@ func TestForwardedIdentityAllowed(t *testing.T) {
 		{"cloud mode internal synthetic username allowed", "radar:system:alerts:o1", []string{"radar:owner"}, true, true},
 		{"cloud: AI reader identity allowed", "radar:ai:o1", []string{"radar:ai:reader"}, true, true},
 		{"cloud: no groups, valid user, allowed", "user_01ABC", nil, true, true},
+		{"cloud: Hub owner group allowed", "user_01ABC", []string{"kubeatlas:hub:owner"}, true, true},
+		{"cloud: Hub member group allowed", "user_01ABC", []string{"kubeatlas:hub:member"}, true, true},
+		{"cloud: Hub viewer group allowed", "user_01ABC", []string{"kubeatlas:hub:viewer"}, true, true},
+		{"cloud: unknown kubeatlas group rejected", "user_01ABC", []string{"kubeatlas:evil"}, true, false},
+		{"non-cloud: unknown kubeatlas group unchanged", "alice", []string{"kubeatlas:evil"}, false, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
