@@ -10,8 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maomada/KubeAtlas/internal/auth"
 	"github.com/maomada/KubeAtlas/internal/hub"
 	"github.com/maomada/KubeAtlas/internal/hubstate"
+	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
 )
 
 type blockedMCPCall struct {
@@ -67,10 +69,15 @@ func startBlockedMCP(t *testing.T, h *Handler, calls chan *blockedMCPCall, cooki
 func organizationTestRequest(h *Handler, cookie *http.Cookie, method, path, body string) *httptest.ResponseRecorder {
 	r := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
 	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Origin", "http://localhost")
+	r.Header.Set("Referer", "http://localhost/")
+	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	r.Header.Set("X-KubeAtlas-Organization-ID", "attacker-org")
 	r.Header.Set("X-Organization-ID", "attacker-org")
 	r.Header.Set("X-Kubernetes-Groups", "radar:spoofed")
 	r.Header.Set("X-Forwarded-Groups", "radar:spoofed")
+	r.Header.Set("X-Forwarded-User", "forged-user")
+	r.Header.Set("X-Radar-Role", "admin")
 	if cookie != nil {
 		r.AddCookie(cookie)
 	}
@@ -112,6 +119,23 @@ func TestOrganizationIsolationSwitchPinnedMCPAndTransferCancellation(t *testing.
 	if err != nil {
 		t.Fatal(err)
 	}
+	type nativeIdentity struct {
+		user   string
+		groups []string
+	}
+	nativeObservations := make(chan nativeIdentity, 4)
+	source := auth.Authenticate(auth.Config{Mode: "proxy", Secret: "organization-native-test-secret"})(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user := pkgauth.UserFromContext(r.Context())
+		identity := nativeIdentity{user: r.Header.Get("X-Forwarded-User"), groups: strings.Split(r.Header.Get("X-Forwarded-Groups"), ",")}
+		if user != nil {
+			identity.user = user.Username
+			identity.groups = append([]string(nil), user.Groups...)
+		}
+		nativeObservations <- identity
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte("{\"source\":\"live\"}"))
+	}))
+	startPortalHubAgent(t, h, clusterA.Token, "org-a", source)
 	if _, err := h.liveHub.store.CreateClusterForOrganization(orgB, hubstate.ClusterInput{ID: "org-b", Name: "B cluster"}); err != nil {
 		t.Fatal(err)
 	}
@@ -129,6 +153,18 @@ func TestOrganizationIsolationSwitchPinnedMCPAndTransferCancellation(t *testing.
 	addOrganizationAccount(t, h, aOnlyID, hubstate.OrganizationMembership{OrganizationID: orgA, Role: "member"})
 	sharedCookie := hubTestMemberSession(t, h, sharedID)
 	selectOrganizationForTest(t, h, sharedCookie, orgA)
+	nativeOK := organizationTestRequest(h, sharedCookie, http.MethodGet, "/c/org-a/api/health", "")
+	if nativeOK.Code != http.StatusOK || !strings.Contains(nativeOK.Body.String(), "\"source\":\"live\"") {
+		t.Fatalf("same-org native proxy status=%d body=%q", nativeOK.Code, nativeOK.Body.String())
+	}
+	select {
+	case identity := <-nativeObservations:
+		if identity.user != "kubeatlas:"+sharedID || len(identity.groups) != 1 || identity.groups[0] != "kubeatlas:hub:owner" {
+			t.Fatalf("Agent received wrong derived owner identity: %#v", identity)
+		}
+	default:
+		t.Fatal("same-org native request did not reach the live Agent")
+	}
 	snapshotRequest := httptest.NewRequest(http.MethodGet, "http://localhost/api/hub", nil)
 	snapshotRequest.AddCookie(sharedCookie)
 	bound, releaseSnapshot := h.bindViewerSession(snapshotRequest)
@@ -181,9 +217,27 @@ func TestOrganizationIsolationSwitchPinnedMCPAndTransferCancellation(t *testing.
 	if guess := organizationTestRequest(h, sharedCookie, http.MethodGet, "/api/hub/clusters/org-a", ""); guess.Code != http.StatusForbidden {
 		t.Fatalf("cross-organization cluster guess status=%d, want 403", guess.Code)
 	}
-	if guess := organizationTestRequest(h, sharedCookie, http.MethodGet, "/c/org-a/api/health", ""); guess.Code != http.StatusForbidden {
-		t.Fatalf("native cross-organization cluster guess status=%d, want 403", guess.Code)
+	guess := organizationTestRequest(h, sharedCookie, http.MethodGet, "/c/org-a/api/health", "")
+	if guess.Code != http.StatusNotFound {
+		t.Fatalf("native cross-organization cluster guess status=%d, want 404 after browser authorization", guess.Code)
 	}
+	var foreignError map[string]any
+	if err := json.Unmarshal(guess.Body.Bytes(), &foreignError); err != nil || foreignError["error_code"] != "cluster_not_found" || len(nativeObservations) != 0 {
+		t.Fatalf("foreign native request error/Agent hits = %#v/%d, want cluster_not_found/0", foreignError, len(nativeObservations))
+	}
+	selectOrganizationForTest(t, h, sharedCookie, orgA)
+	foreignOwner := organizationTestRequest(h, sharedCookie, http.MethodGet, "/c/org-b/api/health", "")
+	if foreignOwner.Code != http.StatusNotFound {
+		t.Fatalf("organization owner accessed foreign native cluster: status=%d, want 404", foreignOwner.Code)
+	}
+	var ownerError map[string]any
+	if err := json.Unmarshal(foreignOwner.Body.Bytes(), &ownerError); err != nil || ownerError["error_code"] != "cluster_not_found" {
+		t.Fatalf("organization owner foreign-cluster error = %#v, want cluster_not_found", ownerError)
+	}
+	if len(nativeObservations) != 0 {
+		t.Fatalf("foreign cluster request reached Agent: %d hits", len(nativeObservations))
+	}
+	selectOrganizationForTest(t, h, sharedCookie, orgB)
 	credentialBody, _ = json.Marshal(map[string]any{"label": "B viewer", "clusterIds": []string{"org-b"}, "readOnly": false})
 	viewerCredential := decodeHubResponse[hubstate.IssuedCredential](t,
 		hubRequest(t, h, sharedCookie, "", http.MethodPost, "/api/mcp/credentials", string(credentialBody), http.StatusCreated))
@@ -204,6 +258,36 @@ func TestOrganizationIsolationSwitchPinnedMCPAndTransferCancellation(t *testing.
 		fmt.Sprintf("{\"organizationId\":%q}", orgB))
 	if forbidden.Code != http.StatusForbidden {
 		t.Fatalf("A-only account selected B: status=%d", forbidden.Code)
+	}
+	memberCredentialBody, _ := json.Marshal(map[string]any{"label": "A member", "clusterIds": []string{"org-a"}, "readOnly": false})
+	memberCredential := decodeHubResponse[hubstate.IssuedCredential](t,
+		hubRequest(t, h, aOnlyCookie, "", http.MethodPost, "/api/mcp/credentials", string(memberCredentialBody), http.StatusCreated))
+	memberCall, memberDone := startBlockedMCP(t, h, calls, aOnlyCookie, memberCredential.Token, orgB)
+	if memberCall.principal.OrganizationID != orgA || len(memberCall.principal.Groups) != 1 ||
+		memberCall.principal.Groups[0] != "kubeatlas:hub:member" {
+		t.Fatalf("member MCP transport identity=%#v", memberCall.principal)
+	}
+	close(memberCall.release)
+	select {
+	case <-memberDone:
+	case <-time.After(time.Second):
+		t.Fatal("member MCP request did not finish")
+	}
+	if _, err := h.liveHub.store.UpdatePlatformUser(aOnlyID, "pending", nil); err != nil {
+		t.Fatal(err)
+	}
+	pendingCookie := hubTestMemberSession(t, h, aOnlyID)
+	if denied := organizationTestRequest(h, pendingCookie, http.MethodGet, "/c/org-a/api/health", ""); denied.Code != http.StatusForbidden {
+		t.Fatalf("pending account native request status=%d, want 403", denied.Code)
+	} else {
+		var denial map[string]any
+		_ = json.Unmarshal(denied.Body.Bytes(), &denial)
+		if denial["error_code"] != "member_pending" {
+			t.Fatalf("pending native request did not fail account authorization: %#v", denial)
+		}
+		if len(nativeObservations) != 0 {
+			t.Fatalf("pending native request reached Agent: %d hits", len(nativeObservations))
+		}
 	}
 	transferBody, _ := json.Marshal(map[string]string{"organizationId": orgB})
 	hubRequest(t, h, localCookie, "", http.MethodPost, "/api/hub/clusters/org-a/transfer", string(transferBody), http.StatusOK)

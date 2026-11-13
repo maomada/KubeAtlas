@@ -40,6 +40,7 @@ export FAKE_TOKEN_MODES="$tmp/token-modes.log"
 export FAKE_INSTALLER_ARGV_LOG="$tmp/installer-argv.log"
 export FAKE_INSTALLER_RUNS="$tmp/installer-runs.log"
 export FAKE_MUTATIONS="$tmp/mutations.log"
+export FAKE_GET_LOG="$tmp/get.log"
 
 curl() {
   printf 'curl' >>"$FAKE_ARGV_LOG"
@@ -120,10 +121,13 @@ kubectl() {
       if [[ "$requested" == "$FAKE_DENY_PERMISSION" ]]; then printf 'no\n'; else printf 'yes\n'; fi
       ;;
     get)
+      printf '%s/%s\n' "${2:-}" "${3:-}" >>"$FAKE_GET_LOG"
       if [[ "${2:-}" == namespace && "${3:-}" == kube-system ]]; then
         printf '%s\n' fake-kube-system-uid
       elif [[ "${2:-}" == namespace && "$FAKE_NAMESPACE_COLLISION" == 1 ]]; then
         printf 'namespace/%s\n' "$3"
+      elif [[ "${2:-}/${3:-}" == "$FAKE_COLLISION_KIND/$FAKE_COLLISION_NAME" ]]; then
+        printf '%s/%s\n' "$2" "$3"
       fi
       ;;
     cluster-info) return 0;;
@@ -153,6 +157,7 @@ export -f curl kubectl helm
 reset_case() {
   export FAKE_CONTEXT=test-context FAKE_CHANGED_CONTEXT=0 FAKE_DENY_PERMISSION=''
   export FAKE_NAMESPACE_COLLISION=0 FAKE_RELEASE_COLLISION=0
+  export FAKE_COLLISION_KIND='' FAKE_COLLISION_NAME=''
   export FAKE_CREATE_STATUS=201 FAKE_CLAIM_STATUS=200 FAKE_INSTALLER_STATUS=200
   export FAKE_CLAIM_VERSION=1.2.3 FAKE_CLAIM_ORIGIN="$FAKE_ORIGIN"
   export FAKE_CLAIM_NAMESPACE="$FAKE_NAMESPACE" FAKE_CLAIM_RELEASE="$FAKE_NAMESPACE"
@@ -167,6 +172,7 @@ reset_case() {
   : >"$FAKE_INSTALLER_ARGV_LOG"
   : >"$FAKE_INSTALLER_RUNS"
   : >"$FAKE_MUTATIONS"
+  : >"$FAKE_GET_LOG"
 }
 
 assert_no_external_downloads() {
@@ -251,6 +257,16 @@ expect_failure 'namespace collision' 'namespace collision:'
 reset_case
 export FAKE_RELEASE_COLLISION=1
 expect_failure 'release collision' 'Helm release collision:'
+
+reset_case
+export FAKE_COLLISION_KIND=clusterrolebinding
+export FAKE_COLLISION_NAME="$FAKE_NAMESPACE-hub-role-member"
+expect_failure 'rendered ClusterRoleBinding collision' "cluster-scoped resource collision: $FAKE_COLLISION_KIND/$FAKE_COLLISION_NAME"
+grep -Fxq "$FAKE_COLLISION_KIND/$FAKE_COLLISION_NAME" "$FAKE_GET_LOG" || { printf 'bootstrap did not preflight the rendered resource name\n' >&2; exit 1; }
+if grep -Fq "/claim" "$FAKE_CURL_URL_LOG"; then
+  printf 'bootstrap claimed enrollment despite the rendered resource collision\n' >&2
+  exit 1
+fi
 
 reset_case
 export FAKE_CLAIM_ORIGIN=https://other.example.test
