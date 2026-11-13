@@ -7,17 +7,30 @@ import (
 	"mime"
 	"net/http"
 	"slices"
+	"unicode/utf8"
 )
 
 func hubDecode(w http.ResponseWriter, r *http.Request, value any, keys ...string) bool {
+	return decodeHubObject(w, r, value, 32<<10, keys...)
+}
+
+func authDecode(w http.ResponseWriter, r *http.Request, value any, keys ...string) bool {
+	return decodeHubObject(w, r, value, 16<<10, keys...)
+}
+
+func decodeHubObject(w http.ResponseWriter, r *http.Request, value any, limit int64, keys ...string) bool {
 	contentType, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
 	if err != nil || contentType != "application/json" {
 		hubHTTPError(w, http.StatusUnsupportedMediaType, "invalid_parameters", "A JSON object is required")
 		return false
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 32<<10))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Request body is unreadable or exceeds 32 KiB")
+		return false
+	}
+	if !utf8.Valid(body) {
+		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Request body must be valid UTF-8")
 		return false
 	}
 	d := json.NewDecoder(bytes.NewReader(body))

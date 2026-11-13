@@ -24,10 +24,11 @@ func TestConnectionSettingsPersistAndMigrate(t *testing.T) {
 		t.Fatalf("unexpected normalized settings: %+v", settings)
 	}
 	for _, invalid := range []ConnectionSettings{
+		{LANURL: "http://192.0.2.10", PublicURL: "https://192.0.2.10"},
 		{LANURL: "https://user@example.test", PublicURL: ""},
 		{LANURL: "https://example.test/path", PublicURL: ""},
 		{LANURL: "https://*.example.test", PublicURL: ""},
-		{LANURL: "http://192.0.2.10", PublicURL: ""},
+		{LANURL: "http://hub.example.test", PublicURL: ""},
 	} {
 		if _, err := store.UpdateConnections(invalid); err == nil {
 			t.Errorf("accepted invalid origins: %+v", invalid)
@@ -42,6 +43,10 @@ func TestConnectionSettingsPersistAndMigrate(t *testing.T) {
 	if err := json.Unmarshal(data, &old); err != nil {
 		t.Fatal(err)
 	}
+	old["version"] = json.RawMessage("1")
+	delete(old, "organizations")
+	delete(old, "accounts")
+	delete(old, "memberships")
 	delete(old, "connectionSettings")
 	data, err = json.Marshal(old)
 	if err != nil {

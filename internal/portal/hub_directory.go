@@ -16,13 +16,13 @@ type hubDirectoryEntry struct {
 	Agent      *hub.Agent `json:"agent,omitempty"`
 }
 
-func (p *portalHub) directory() []hubDirectoryEntry {
+func (p *portalHub) directory(organizationID string) []hubDirectoryEntry {
 	agents := make(map[string]hub.Agent)
 	for _, agent := range p.transport.Agents() {
 		agents[agent.ClusterID] = agent
 	}
 	entries := make([]hubDirectoryEntry, 0)
-	for _, cluster := range p.store.Clusters() {
+	for _, cluster := range p.store.ClustersForOrganization(organizationID) {
 		entry := hubDirectoryEntry{Cluster: cluster, Configured: true, State: "offline"}
 		if cluster.RevokedAt != nil {
 			entry.State = "revoked"
@@ -34,14 +34,14 @@ func (p *portalHub) directory() []hubDirectoryEntry {
 	return entries
 }
 
-func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, member hubstate.Member) {
+func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, member hubstate.Member, organizationID string) {
 	const base = "/api/hub/clusters"
 	if r.URL.Path == base {
 		if r.Method == http.MethodGet {
-			entries := p.directory()
-			if member.Role != "owner" && member.Role != "admin" {
-				allowed := make(map[string]struct{}, len(member.ClusterIDs))
-				for _, id := range member.ClusterIDs {
+			entries := p.directory(organizationID)
+			if member.Role != "platformOwner" {
+				allowed := make(map[string]struct{})
+				for _, id := range p.memberClusterIDs(member, organizationID) {
 					allowed[id] = struct{}{}
 				}
 				filtered := make([]hubDirectoryEntry, 0, len(entries))
@@ -58,11 +58,15 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 		if !requireHubAdmin(w, member) {
 			return
 		}
+		if member.LegacyRestricted && !member.LegacyAllClusters && member.Role != "platformOwner" {
+			hubHTTPError(w, http.StatusForbidden, "permission_denied", "Legacy cluster scope does not permit creating clusters")
+			return
+		}
 		var input hubstate.ClusterInput
 		if !hubMethod(w, r, http.MethodPost) || !hubDecode(w, r, &input, "id", "name", "description", "environment", "region") {
 			return
 		}
-		issued, err := p.store.CreateCluster(input)
+		issued, err := p.store.CreateClusterForOrganization(organizationID, input)
 		if err != nil {
 			hubStoreError(w, err)
 			return
@@ -74,12 +78,37 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 		return
 	}
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, base+"/"), "/")
+	if len(parts) == 2 && parts[0] != "" && parts[1] == "transfer" {
+		if member.Role != "platformOwner" {
+			hubHTTPError(w, http.StatusForbidden, "permission_denied", "Platform owner access is required")
+			return
+		}
+		var input struct {
+			OrganizationID string `json:"organizationId"`
+		}
+		if !hubMethod(w, r, http.MethodPost) || !hubDecode(w, r, &input, "organizationId") {
+			return
+		}
+		cluster, err := p.store.TransferCluster(parts[0], input.OrganizationID)
+		if err != nil {
+			hubStoreError(w, err)
+			return
+		}
+		p.transport.Disconnect(parts[0])
+		p.cancelRequests("", "")
+		hubJSON(w, http.StatusOK, map[string]any{"cluster": cluster})
+		return
+	}
 	if len(parts) == 1 && parts[0] != "" {
+		if !legacyClusterAllowed(p, member, organizationID, parts[0]) {
+			hubHTTPError(w, http.StatusForbidden, "permission_denied", "Cluster is outside the member's permitted scope")
+			return
+		}
 		var input hubstate.ClusterInput
 		if !hubMethod(w, r, http.MethodPut) || !hubDecode(w, r, &input, "id", "name", "description", "environment", "region") {
 			return
 		}
-		cluster, err := p.store.UpdateCluster(parts[0], input)
+		cluster, err := p.store.UpdateClusterForOrganization(organizationID, parts[0], input)
 		if err != nil {
 			hubStoreError(w, err)
 			return
@@ -94,8 +123,12 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 	if !hubMethod(w, r, http.MethodPost) || !hubDecode(w, r, &struct{}{}) {
 		return
 	}
+	if !legacyClusterAllowed(p, member, organizationID, parts[0]) {
+		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Cluster is outside the member's permitted scope")
+		return
+	}
 	if parts[1] == "rotate" {
-		issued, err := p.store.RotateAgentToken(parts[0])
+		issued, err := p.store.RotateAgentTokenForOrganization(organizationID, parts[0])
 		if err != nil {
 			hubStoreError(w, err)
 			return
@@ -104,7 +137,7 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 		hubJSON(w, http.StatusOK, issued)
 		return
 	}
-	if err := p.store.RevokeAgentToken(parts[0]); err != nil {
+	if err := p.store.RevokeAgentTokenForOrganization(organizationID, parts[0]); err != nil {
 		hubStoreError(w, err)
 		return
 	}
@@ -112,13 +145,13 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (p *portalHub) manageGroups(w http.ResponseWriter, r *http.Request, member hubstate.Member) {
+func (p *portalHub) manageGroups(w http.ResponseWriter, r *http.Request, member hubstate.Member, organizationID string) {
 	const base = "/api/hub/groups"
 	if r.URL.Path == base && r.Method == http.MethodGet {
-		groups := p.store.Groups()
-		if member.Role != "owner" && member.Role != "admin" {
-			allowed := make(map[string]struct{}, len(member.ClusterIDs))
-			for _, id := range member.ClusterIDs {
+		groups := p.store.GroupsForOrganization(organizationID)
+		if member.Role != "platformOwner" {
+			allowed := make(map[string]struct{})
+			for _, id := range p.memberClusterIDs(member, organizationID) {
 				allowed[id] = struct{}{}
 			}
 			filtered := make([]hubstate.Group, 0, len(groups))
@@ -152,7 +185,16 @@ func (p *portalHub) manageGroups(w http.ResponseWriter, r *http.Request, member 
 		}
 		method = http.MethodPut
 		if r.Method == http.MethodDelete {
-			if err := p.store.DeleteGroup(id); err != nil {
+			if member.LegacyRestricted && !member.LegacyAllClusters && member.Role != "platformOwner" {
+				groups := p.store.GroupsForOrganization(organizationID)
+				for _, group := range groups {
+					if group.ID == id && !legacyGroupAllowed(p, member, organizationID, group.ClusterIDs) {
+						hubHTTPError(w, http.StatusForbidden, "permission_denied", "Group is outside the member's permitted scope")
+						return
+					}
+				}
+			}
+			if err := p.store.DeleteGroupForOrganization(organizationID, id); err != nil {
 				hubStoreError(w, err)
 				return
 			}
@@ -168,10 +210,32 @@ func (p *portalHub) manageGroups(w http.ResponseWriter, r *http.Request, member 
 		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Group ID cannot change")
 		return
 	}
-	group, err := p.store.SaveGroup(input)
+	if !legacyGroupAllowed(p, member, organizationID, input.ClusterIDs) {
+		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Group scope exceeds the member's permitted scope")
+		return
+	}
+	group, err := p.store.SaveGroupForOrganization(organizationID, input)
 	if err != nil {
 		hubStoreError(w, err)
 		return
 	}
 	hubJSON(w, http.StatusOK, group)
+}
+
+func legacyClusterAllowed(p *portalHub, member hubstate.Member, organizationID, clusterID string) bool {
+	return member.Role == "platformOwner" || !member.LegacyRestricted || member.LegacyAllClusters ||
+		containsScope(p.memberClusterIDs(member, organizationID), clusterID)
+}
+
+func legacyGroupAllowed(p *portalHub, member hubstate.Member, organizationID string, clusterIDs []string) bool {
+	if member.Role == "platformOwner" || !member.LegacyRestricted || member.LegacyAllClusters {
+		return true
+	}
+	allowed := p.memberClusterIDs(member, organizationID)
+	for _, clusterID := range clusterIDs {
+		if !containsScope(allowed, clusterID) {
+			return false
+		}
+	}
+	return true
 }

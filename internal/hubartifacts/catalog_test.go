@@ -26,7 +26,7 @@ func TestOpenAndReadOnlyArtifactRoutes(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = catalog.Close() })
-	if got := catalog.Availability(); !got.Available || got.ImageDigest != digest || got.ChartSHA256 == "" || got.ChartVersion != testChartVersion || len(got.Platforms) != 2 {
+	if got := catalog.Availability(); !got.Available || got.BootstrapAvailable || got.ImageDigest != digest || got.ChartSHA256 == "" || got.ChartVersion != testChartVersion || len(got.Platforms) != 2 {
 		t.Fatalf("unexpected availability: %+v", got)
 	}
 	tests := []struct {
@@ -62,6 +62,66 @@ func TestOpenAndReadOnlyArtifactRoutes(t *testing.T) {
 				t.Fatalf("missing Content-Range: %v", res.Header())
 			}
 		})
+	}
+}
+
+func TestBootstrapArtifactIsOptionalAndHashPinned(t *testing.T) {
+	dir, _, _ := makeBundle(t)
+	catalog, err := Open(dir, "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if catalog.Availability().BootstrapAvailable {
+		t.Fatal("legacy bundle advertised a bootstrap artifact")
+	}
+	response := httptest.NewRecorder()
+	catalog.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/agent/1.2.3/bootstrap.sh", nil))
+	if response.Code != http.StatusNotFound {
+		t.Fatalf("missing bootstrap status = %d", response.Code)
+	}
+	_ = catalog.Close()
+
+	bootstrap := []byte("#!/usr/bin/env bash\\nexit 0\\n")
+	if err := os.WriteFile(filepath.Join(dir, "bootstrap-hub-agent.sh"), bootstrap, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, err := os.ReadFile(filepath.Join(dir, "manifest.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var manifest Manifest
+	if err := json.Unmarshal(manifestBytes, &manifest); err != nil {
+		t.Fatal(err)
+	}
+	manifest.Bootstrap = &struct {
+		File   string `json:"file"`
+		SHA256 string `json:"sha256"`
+	}{File: "bootstrap-hub-agent.sh", SHA256: digestHex(bootstrap)}
+	manifestBytes, err = json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "manifest.json"), manifestBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err = Open(dir, "1.2.3")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !catalog.Availability().BootstrapAvailable {
+		t.Fatal("valid bootstrap artifact was not advertised")
+	}
+	response = httptest.NewRecorder()
+	catalog.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/downloads/agent/1.2.3/bootstrap.sh", nil))
+	if response.Code != http.StatusOK || !bytes.Equal(response.Body.Bytes(), bootstrap) {
+		t.Fatalf("bootstrap response status=%d body=%q", response.Code, response.Body.String())
+	}
+	_ = catalog.Close()
+	if err := os.WriteFile(filepath.Join(dir, "bootstrap-hub-agent.sh"), []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Open(dir, "1.2.3"); err == nil {
+		t.Fatal("bootstrap hash mismatch was accepted")
 	}
 }
 

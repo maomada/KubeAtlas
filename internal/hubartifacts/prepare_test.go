@@ -44,6 +44,7 @@ func TestPreparePackagesUnchangedSourceChartWithBuildAndChartVersions(t *testing
 		ChartDir:      filepath.Join("..", "..", "deploy", "helm", "kubeatlas"),
 		LayoutDir:     filepath.Join(fixture, "oci"),
 		InstallerPath: filepath.Join("..", "..", "scripts", "install-hub-agent.sh"),
+		BootstrapPath: filepath.Join("..", "..", "scripts", "bootstrap-hub-agent.sh"),
 		OutputDir:     output,
 		Version:       "1.2.3",
 		Revision:      testRevision,
@@ -58,7 +59,7 @@ func TestPreparePackagesUnchangedSourceChartWithBuildAndChartVersions(t *testing
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = catalog.Close() })
-	if catalog.manifest.Chart.Version != "0.0.0-dev."+testRevision[:12] || catalog.manifest.Version != "1.2.3" {
+	if catalog.manifest.Chart.Version != "0.0.0-dev."+testRevision[:12] || catalog.manifest.Version != "1.2.3" || !catalog.Availability().BootstrapAvailable {
 		t.Fatalf("prepared catalog versions = build %q, chart %q", catalog.manifest.Version, catalog.manifest.Chart.Version)
 	}
 }

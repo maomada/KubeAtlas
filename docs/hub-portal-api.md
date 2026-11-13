@@ -6,20 +6,39 @@ transport.
 
 ## Identity and request boundaries
 
-The local configured account remains the immutable break-glass owner. Optional
-OIDC uses an independently operated Keycloak-compatible provider with the
-authorization-code flow, S256 PKCE, nonce, issuer/audience/signature/expiry
-verification, opaque server-side sessions and a fixed callback URL. New OIDC
-identities are pending with no access until an owner or administrator approves
-them. Identity keys hash the exact issuer and subject; usernames and email are
-not account-linking keys. Only validated display names are retained.
+The configured recovery login is a persisted local account and organization
+owner membership. The platform-users API exposes its public ID alias as `local`;
+it is not a synthetic directory-only member. Optional OIDC uses an independently
+operated Keycloak-compatible provider with the authorization-code flow, S256
+PKCE, nonce, issuer/audience/signature/expiry verification, opaque server-side
+sessions and a fixed callback URL. New OIDC identities are pending accounts
+without organization memberships until a platform owner approves them and
+grants initial membership. Identity keys hash the exact issuer and subject;
+usernames and email are not account-linking keys. Only validated display names
+are retained.
 
-Hub sessions are owner-bound and every request reloads current member status,
-role, cluster scope and Kubernetes groups. Pending members may read Hub identity
-information only. Disabled members are rejected. The local owner is synthetic
-and cannot be changed through member management. An Authorization header is
-rejected on cookie management endpoints; bearer credentials cannot administer
-the Hub.
+Account statuses are `pending`, `active`, and `disabled`. Platform owners manage
+account status and organization memberships through platform-user management.
+Organization owners may change the role of an existing membership or remove
+that membership; they cannot approve pending accounts, change account status,
+or set per-user cluster/group lists. Public organization roles are only
+`owner`, `member`, and `viewer`.
+
+Hub sessions are account-bound, organization-bound and revalidate current
+account and membership state on each request. `GET /api/hub` reports
+`activeOrganizationId: null` when no organization is active; the member's
+`role` is omitted until an organization role is resolved. New memberships have
+the cluster scope of their organization. Only migrated `LegacyRestricted`
+memberships retain legacy explicit cluster and Kubernetes-group restrictions;
+an empty legacy cluster scope grants none. Viewer memberships are read-only.
+The server derives `kubeatlas:hub:owner`, `kubeatlas:hub:member`, or
+`kubeatlas:hub:viewer` from the active organization role. Client-supplied group
+and organization headers do not set authority, and there is no arbitrary
+Kubernetes-group assignment UI for new memberships.
+
+An Authorization header is rejected on cookie management endpoints; bearer
+credentials cannot administer the Hub. Pending accounts may read limited Hub
+identity information only, while disabled accounts cannot authenticate.
 
 MCP requests and the credential `current`/`refresh` endpoints require a single
 `Authorization: Bearer …` header. Cookies never substitute for an invalid or
@@ -29,12 +48,11 @@ dispatched operation. Credentials are removed from request headers before the
 MCP factory receives the authenticated principal.
 
 The local credential owner remains `portal:<SHA-256 of configured username>`.
-OIDC credential owners use the opaque `oidc:<SHA-256>` member ID. Kubernetes
-impersonation usernames are stored per member and `/api/hub` reports the current
-username and groups for explicit Kubernetes role bindings. Viewer members are
-read-only in browser and MCP routes. Member and viewer cluster scope is explicit;
-an empty scope means no clusters. Administrator scope covers all configured
-clusters. Hub roles and scopes do not grant Kubernetes RBAC.
+OIDC credential owners use the opaque `oidc:<SHA-256>` member ID. `/api/hub`
+reports the current public member and server-derived groups. Hub roles do not
+create Kubernetes RBAC by themselves; the operator must apply the Agent chart's
+role-group bindings. New organization roles receive organization-wide cluster
+scope, while migrated restricted memberships preserve their legacy scope.
 
 The browser POSTs `/api/traffic/connect-managed` through its selected Agent when
 the Hub session is writable. The Agent independently requires a fresh
@@ -51,11 +69,10 @@ Use a matching Hub and Agent/UI version for this capability. The Agent retains
 proxy that legacy route. A newer UI calling the managed route against an older
 Agent receives 404; there is no fallback to the legacy route.
 
-The local owner's groups come only from trusted server configuration. OIDC
-member groups are administrator-managed and validated against the existing
-`radar:*`/`cloud:*` vocabulary; IdP roles and groups never grant access. No
-Kubernetes RBAC binding is created automatically. PAT scope and read-only mode
-further constrain the source identity's existing access.
+OIDC claims and client headers never grant roles, cluster scope, or Kubernetes
+groups. The Hub does not automatically change remote RBAC or Agent token
+Secrets. PAT scope and read-only mode further constrain the source identity's
+existing access.
 
 Hub management and MCP routes require loopback or an exact configured `MCPAllowedHosts` authority.
 Forwarded Host headers do not authorize another authority. Foreign, malformed or
@@ -70,41 +87,77 @@ browser-bound, one-use state transaction and the fixed configured callback.
 
 | Method and path | Body / result |
 | --- | --- |
+| `GET /register` | Public account-registration page; registration creates a pending account without membership or session |
+| `GET /settings/platform` | Platform-owner-only settings page |
 | `GET /api/auth/providers` | `{local:true, oidc:{enabled, loginUrl?}}` |
 | `GET /api/auth/oidc/login` | Fixed-provider authorization redirect with `prompt=login`, state, nonce and S256 PKCE |
 | `GET /api/auth/oidc/callback` | One-use browser-bound state callback; redirects to `/` or a generic safe login error |
-| `GET /api/hub` | Existing mode/readiness fields plus the current `member` |
-| `GET /api/hub/organization` | `{id:"self-hosted", name, memberCount}`; active members only count |
-| `PUT /api/hub/organization` | `{name}`; owner/admin only |
-| `GET /api/hub/members` | All members, including the synthetic local owner; owner/admin only |
-| `PUT /api/hub/members/{urlEncodedID}` | `{role,status,clusterIds,kubernetesGroups}`; owner/admin only |
+| `GET /api/hub` | Readiness and identity; nullable `activeOrganizationId`, public organizations and current member when resolved |
+| `GET /api/hub/organizations` | `{organizations:[{id,name,role}]}`; public roles are owner/member/viewer |
+| `POST /api/hub/organizations` | Platform owner: `{name,ownerMemberId}` → `{id,name,role:"owner"}` |
+| `POST /api/hub/organization/select` | `{organizationId}` → 204; selects an organization in the current session |
+| `GET /api/hub/platform/users` | Platform owner: raw `{users:[...]}` envelope; local recovery ID is `local`; no password hashes |
+| `PUT /api/hub/platform/users/{id}` | Platform owner: `{status,memberships}` → raw user object; account status and memberships are managed here |
+| `GET /api/hub/platform/clusters` | Platform owner: `{clusters:[...]}` across organizations |
+| `GET /api/hub/organization` | `{id,name,memberCount}` for the active organization |
+| `PUT /api/hub/organization` | `{name}`; active organization owner or platform owner |
+| `GET /api/hub/members` | `{members:[...]}`; active organization owner |
+| `PUT /api/hub/members/{urlEncodedID}` | `{role}` only → `{member}`; active organization owner |
+| `DELETE /api/hub/members/{urlEncodedID}` | 204; removes only the organization membership, not the platform account |
 | `GET /api/hub/sso` | Provider metadata and approval provisioning; no client secret |
-| `GET /api/hub/clusters` | `{clusters, serverTime}` with persistent metadata and current connection status |
-| `POST /api/hub/clusters` | Cluster input → one-time `{cluster, token}` |
-| `PUT /api/hub/clusters/{id}` | Full cluster input, including the unchanged ID |
-| `POST /api/hub/clusters/{id}/rotate` | `{}` → one-time replacement Agent token |
+| `GET /api/hub/clusters` | `{clusters,serverTime}` with active organization directory entries filtered to membership scope |
+| `POST /api/hub/clusters` | Active organization owner: cluster input → one-time `{cluster,token}` |
+| `PUT /api/hub/clusters/{id}` | Active organization owner: cluster input with unchanged ID |
+| `POST /api/hub/clusters/{id}/rotate` | `{}` → one-time replacement token; revoked/transferred clusters return 409 and require fresh pairing |
 | `POST /api/hub/clusters/{id}/revoke` | `{}` → 204 |
-| `GET /api/hub/groups` | `{groups}` |
-| `POST /api/hub/groups` | Save `{id, name, clusterIds}` |
-| `PUT /api/hub/groups/{id}` | Save with unchanged ID |
-| `DELETE /api/hub/groups/{id}` | 204; no request body needed |
+| `POST /api/hub/clusters/{id}/transfer` | Platform owner: `{organizationId}` → `{cluster}` |
+| `GET /api/hub/groups` | `{groups:[...]}`; organization cluster-directory groups, not Kubernetes role groups |
+| `POST /api/hub/groups` | Active organization owner: save `{id,name,clusterIds}` |
+| `PUT /api/hub/groups/{id}` | Active organization owner: save with unchanged ID |
+| `DELETE /api/hub/groups/{id}` | 204 |
+| `GET /api/hub/connections` | Active organization members may read connection profiles |
+| `PUT /api/hub/connections` | Platform owner only: `{lanURL,publicURL}` |
 
 Cluster input contains `id`, `name`, `description`, `environment`, and `region`.
 Directory entries are `configured: true` with `state` equal to `offline`,
 `connected`, or `revoked`. A connected entry includes the current Agent session
 metadata. Connection status is an observation, not cluster health. Groups are
-organizational metadata, not implicit credential scopes; an empty group does not
-mean all clusters. PAT issuance always names explicit cluster IDs.
-
-Members and viewers see only their explicit cluster IDs in directory and group
-lists. Only active administrators and the local owner may mutate directory,
-member or organization state. A member authorization change atomically revokes
-that member's PATs and cancels its local Portal sessions.
+organizational cluster-group metadata, not Kubernetes role groups or implicit
+credential scopes; an empty group does not mean all clusters. PAT issuance
+always names explicit cluster IDs. New members see their organization's
+clusters; only migrated `LegacyRestricted` memberships keep old explicit scope.
+Role changes and removals revoke affected PATs and cancel applicable local
+Portal requests. Platform-user status changes are separate from membership
+role changes. The configured recovery membership is exposed with public ID
+`local` and cannot be changed or removed through organization member routes.
 
 Agent rotation/revocation is persisted **before** disconnecting the old session
 and invalidating in-progress authentication. A failed persistence operation does
-neither. Restart Agents with the new token file after rotation. IDs are never
-deleted or reused. Revoked Agent credentials can be replaced by explicit rotation.
+neither. Rotation is available only while the cluster token is active. Revoked or
+transferred clusters cannot be restored by rotation; approve and claim a fresh
+enrollment to pair again. IDs are never deleted or reused.
+
+## Agent enrollment and bootstrap API
+
+| Method and path | Authentication | Body / result |
+| --- | --- | --- |
+| `POST /api/hub/enrollments/command` | Portal cookie; owner/platform owner | `{profile:"lan"|"public"}` → `{command,origin}` |
+| `GET /downloads/agent/{version}/bootstrap.sh` | None; exact catalog version | Same-origin bootstrap script, hash-pinned by the generated command |
+| `POST /api/hub/enrollments` | Anonymous CLI; no cookie, Authorization header, or query | `{profile,contextName,clusterFingerprint}` → `{id,deviceSecret,userCode,expiresAt,pollIntervalSeconds}` |
+| `POST /api/hub/enrollments/lookup` | Portal cookie; owner/platform owner | `{userCode}` → request context/status only; no device secret or Agent token |
+| `POST /api/hub/enrollments/{id}/approve` | Portal cookie; owner of the selected organization or platform owner | `{userCode,organizationId,name,clusterId}` → `{id,status}`; nonempty clusterId must name a revoked cluster in that organization |
+| `POST /api/hub/enrollments/{id}/deny` | Portal cookie; owner/platform owner | `{userCode}` → 204 |
+| `POST /api/hub/enrollments/{id}/claim` | One device-secret Bearer; no cookie; empty body | Pending → `{status:"pending"}`; approved one-time claim → pinned cluster/origin/version/artifact metadata and `agentToken` |
+| `GET /downloads/agent/{version}/installer.sh` | None; exact catalog version | Installer artifact |
+| `GET /downloads/agent/{version}/chart.tgz` | None; exact catalog version | Agent chart artifact |
+| `GET /downloads/agent/{version}/checksums.txt` | None; exact catalog version | Public artifact checksums |
+| `GET /v2/kubeatlas/agent/...` | None; exact catalog image | Read-only OCI manifest and blob routes |
+
+Enrollment requests expire after ten minutes. The browser lookup and approval
+responses never contain either enrollment secret. The claim response is consumed
+before it is returned, and the Agent token cannot be recovered if that response
+is lost; create and approve a fresh pairing. Re-enrollment is restricted to an
+explicit revoked cluster in the same organization.
 
 ## Credential API
 
@@ -142,7 +195,9 @@ is not OAuth and does not imply an automatic OpenCode refresh integration.
 `lanURL` and `publicURL` origins, their derived `/mcp` endpoints, the exact
 local-owner `ownerUserID`, and whether the version-matched local artifact
 catalog is available. `PUT /api/hub/connections` accepts exactly
-`{"lanURL":"...","publicURL":"..."}` and is restricted to active owners
-and administrators. Either origin may be empty. Nonempty origins use the same
-root-origin HTTPS/loopback rules as Agent startup; the Hub does not resolve DNS
-or probe addresses. MCP and onboarding share the profile selector.
+`{"lanURL":"...","publicURL":"..."}` and is restricted to the platform owner.
+Either origin may be empty. Nonempty origins must use an accepted root HTTPS or
+HTTP literal-IP/loopback form; the Hub does not resolve DNS or probe addresses.
+Fresh HTTP literal-IP login before a profile exists separately requires the
+explicit startup `httpIPOrigin` configuration. MCP and onboarding share the
+profile selector.

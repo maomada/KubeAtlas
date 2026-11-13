@@ -9,11 +9,14 @@ import (
 func (p *portalHub) manageConnections(w http.ResponseWriter, r *http.Request, member hubstate.Member) {
 	switch r.Method {
 	case http.MethodGet:
+		if !requireActiveMember(w, member) {
+			return
+		}
 		settings := p.store.Connections()
 		p.writeConnections(w, http.StatusOK, settings)
 	case http.MethodPut:
-		if member.Role != "owner" && member.Role != "admin" {
-			hubHTTPError(w, http.StatusForbidden, "permission_denied", "Only Hub owners and administrators may update connection settings")
+		if member.Role != "platformOwner" {
+			hubHTTPError(w, http.StatusForbidden, "permission_denied", "Platform owner access is required")
 			return
 		}
 		var input hubstate.ConnectionSettings

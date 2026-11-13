@@ -17,6 +17,7 @@ type PrepareOptions struct {
 	ChartDir      string
 	LayoutDir     string
 	InstallerPath string
+	BootstrapPath string
 	OutputDir     string
 	Version       string
 	ChartVersion  string
@@ -50,6 +51,12 @@ func Prepare(options PrepareOptions) error {
 	installerInfo, err := os.Lstat(options.InstallerPath)
 	if err != nil || !installerInfo.Mode().IsRegular() || installerInfo.Mode()&os.ModeSymlink != 0 {
 		return errors.New("installer source is unavailable")
+	}
+	if options.BootstrapPath != "" {
+		bootstrapInfo, err := os.Lstat(options.BootstrapPath)
+		if err != nil || !bootstrapInfo.Mode().IsRegular() || bootstrapInfo.Mode()&os.ModeSymlink != 0 {
+			return errors.New("bootstrap source is unavailable")
+		}
 	}
 	output, err := filepath.Abs(options.OutputDir)
 	if err != nil || output == string(filepath.Separator) {
@@ -97,6 +104,11 @@ func Prepare(options PrepareOptions) error {
 	if err := copyRegular(options.InstallerPath, filepath.Join(stage, "install-hub-agent.sh"), 0o444); err != nil {
 		return err
 	}
+	if options.BootstrapPath != "" {
+		if err := copyRegular(options.BootstrapPath, filepath.Join(stage, "bootstrap-hub-agent.sh"), 0o444); err != nil {
+			return err
+		}
+	}
 	chartHash, err := hashPath(filepath.Join(stage, chartFile))
 	if err != nil {
 		return err
@@ -104,6 +116,20 @@ func Prepare(options PrepareOptions) error {
 	installerHash, err := hashPath(filepath.Join(stage, "install-hub-agent.sh"))
 	if err != nil {
 		return err
+	}
+	var bootstrap *struct {
+		File   string `json:"file"`
+		SHA256 string `json:"sha256"`
+	}
+	if options.BootstrapPath != "" {
+		bootstrapHash, err := hashPath(filepath.Join(stage, "bootstrap-hub-agent.sh"))
+		if err != nil {
+			return err
+		}
+		bootstrap = &struct {
+			File   string `json:"file"`
+			SHA256 string `json:"sha256"`
+		}{File: "bootstrap-hub-agent.sh", SHA256: bootstrapHash}
 	}
 	manifest := Manifest{SchemaVersion: 1, Version: options.Version, SourceRevision: options.Revision, Image: struct {
 		Digest string `json:"digest"`
@@ -113,6 +139,7 @@ func Prepare(options PrepareOptions) error {
 	manifest.Chart.SHA256 = chartHash
 	manifest.Installer.File = "install-hub-agent.sh"
 	manifest.Installer.SHA256 = installerHash
+	manifest.Bootstrap = bootstrap
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err

@@ -354,6 +354,25 @@ if HUB_OUTPUT=$(helm template kubeatlas "$CHART_DIR" \
   assert_contains 'fsGroup: 65532' "non-root Agent group can read the mounted token"
   assert_contains 'name: "?kubeatlas:portal:0123456789abcdef' "owner binding names the exact local-owner User"
   assert_contains 'name: cluster-admin' "only the exact owner User binding grants cluster-admin"
+  assert_contains '^    name: kubeatlas:hub:owner$' "Hub organization owner group is mapped"
+  assert_contains '^  name: admin$' "Hub organization owner maps to Kubernetes admin"
+  assert_contains '^    name: kubeatlas:hub:member$' "Hub organization member group is mapped"
+  assert_contains '^  name: edit$' "Hub organization member maps to Kubernetes edit"
+  assert_contains '^    name: kubeatlas:hub:viewer$' "Hub organization viewer group is mapped"
+  assert_contains '^  name: view$' "Hub organization viewer maps to Kubernetes view"
+  assert_contains 'name: kubeatlas:hub:owner' "Hub organization owner group is mapped"
+  assert_contains 'name: admin' "Hub organization owner maps to Kubernetes admin"
+  assert_contains 'name: kubeatlas:hub:member' "Hub member group is mapped"
+  assert_contains 'name: edit' "Hub member maps to Kubernetes edit"
+  assert_contains 'name: kubeatlas:hub:viewer' "Hub viewer group is mapped"
+  assert_contains 'name: view' "Hub viewer maps to Kubernetes view"
+  assert_contains 'name: kubeatlas-hub-role-owner' "owner group binding has a unique name"
+  assert_contains 'name: kubeatlas-hub-role-member' "member group binding has a unique name"
+  assert_contains 'name: kubeatlas-hub-role-viewer' "viewer group binding has a unique name"
+  assert_contains 'name: kubeatlas-hub-infra-readonly' "Hub infra read-only role is present"
+  assert_contains 'persistentvolumes' "Hub infra role can read persistent volumes"
+  assert_contains 'storageclasses' "Hub infra role can read storage classes"
+  assert_not_contains 'nodes/proxy' "Hub infra role does not grant node proxy access"
 else
   fail "self-hosted Hub Agent values should render: $HUB_OUTPUT"
 fi
@@ -366,6 +385,8 @@ hub_render() {
     --set auth.mode=proxy --set mcp.enabled=true
 }
 for address in \
+  'http://192.0.2.10|192.0.2.10/kubeatlas/agent' \
+  'http://[2001:db8::10]|[2001:db8::10]/kubeatlas/agent' \
   'https://192.0.2.10|192.0.2.10/kubeatlas/agent' \
   'https://192.0.2.10:8443|192.0.2.10:8443/kubeatlas/agent' \
   'https://[2001:db8::10]|[2001:db8::10]/kubeatlas/agent' \
@@ -382,7 +403,7 @@ for origin in \
   'https://[2001:db8:::10]' 'https://[1::2::3]' 'https://[1:2:3]' 'https://hub.example.test/path' \
   'https://user@hub.example.test' 'https://hub.example.test?' \
   'https://hub.example.test#fragment' 'https://hub.example.test:65536' \
-  'https://bad_host.example.test' 'https://256.0.0.1' 'http://192.0.2.10'; do
+  'https://bad_host.example.test' 'https://256.0.0.1' 'http://hub.example.test'; do
   if hub_render "$origin" "${origin#*://}/kubeatlas/agent" >/dev/null 2>&1; then
     fail "invalid Hub origin rendered: $origin"
   else
@@ -418,6 +439,7 @@ assert_not_contains --data-file "legacy registry flag is absent"
 assert_not_contains 'registry.json' "legacy registry path is absent"
 assert_contains 'path: /$' "Portal ingress is rooted at /"
 assert_contains 'pathType: Prefix' "Portal ingress matches root descendants"
+assert_not_contains 'KUBEATLAS_PORTAL_HTTP_IP_ORIGIN' "empty HTTP IP origin is not injected"
 echo
 
 if helm template kubeatlas-portal "$PORTAL_CHART_DIR" \
@@ -436,6 +458,9 @@ render_portal "Portal image tag defaults to chart appVersion"
 assert_contains 'image: "?example.test/kubeatlas-portal:0.0.0-unreleased"?$' "empty image.tag uses Chart.AppVersion"
 render_portal "Portal image tag override is honored" --set image.tag=0.2.0
 assert_contains 'image: "?example.test/kubeatlas-portal:0.2.0"?$' "explicit image.tag overrides Chart.AppVersion"
+render_portal "Portal HTTP IP origin is passed through explicitly" --set-string httpIPOrigin=http://192.0.2.10:9290
+assert_contains 'name: KUBEATLAS_PORTAL_HTTP_IP_ORIGIN' "HTTP IP origin uses its dedicated environment variable"
+assert_contains 'value: "http://192.0.2.10:9290"' "HTTP IP origin is rendered exactly"
 render_portal "Portal can mount a pre-staged read-only Hub artifact bundle" --set hubArtifacts.enabled=true --set hubArtifacts.existingClaim=hub-artifacts
 assert_contains 'name: hub-artifacts' "Portal mounts the configured artifact PVC"
 assert_contains 'readOnly: true' "Portal artifact mount is read-only"

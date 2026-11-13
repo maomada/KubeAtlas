@@ -24,11 +24,13 @@ func (s *Store) SetOrganizationName(name string) (Organization, error) {
 	defer s.mu.Unlock()
 	now := s.now().UTC()
 	next := s.next(now)
-	next.Organization.Name = name
+	organization := next.Organizations["self-hosted"]
+	organization.Name = name
+	next.Organizations["self-hosted"] = organization
 	if err := s.commit(next); err != nil {
 		return Organization{}, err
 	}
-	return *next.Organization, nil
+	return next.Organizations["self-hosted"], nil
 }
 
 func (s *Store) Member(id string) (Member, bool) {
@@ -69,39 +71,40 @@ func (s *Store) UpsertOIDCMember(id, displayName string) (Member, bool, error) {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if current, ok := s.data.Members[id]; ok {
-		if current.Status == "disabled" {
-			return cloneMember(current), false, failure("member_disabled")
-		}
-		if current.DisplayName == displayName {
-			return cloneMember(current), false, nil
-		}
-		now := s.now().UTC()
-		if now.Before(current.UpdatedAt) {
-			return Member{}, false, failure("store_unavailable")
-		}
-		current.DisplayName, current.UpdatedAt = displayName, now
-		next := s.next(now)
-		next.Members[id] = current
-		if err := s.commit(next); err != nil {
-			return Member{}, false, err
-		}
-		return cloneMember(current), false, nil
+	account, exists := s.data.Accounts[id]
+	if exists && account.Status == "disabled" {
+		return Member{}, false, failure("member_disabled")
 	}
-	if len(s.data.Members)+1 >= maxMembers {
+	created := !exists
+	if created && len(s.data.Accounts) >= maxAccounts {
 		return Member{}, false, failure("capacity_exceeded")
 	}
 	now := s.now().UTC()
-	member := Member{
-		ID: id, UserID: userID, DisplayName: displayName, Role: "member", Status: "pending",
-		ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: now, UpdatedAt: now,
+	if created {
+		account = Account{ID: id, UserID: userID, DisplayName: displayName, Status: "pending", CreatedAt: now, UpdatedAt: now}
+	} else if account.DisplayName != displayName {
+		if now.Before(account.UpdatedAt) {
+			return Member{}, false, failure("store_unavailable")
+		}
+		account.DisplayName, account.UpdatedAt = displayName, now
+	} else {
+		if membership, ok := s.data.Memberships["self-hosted"][id]; ok {
+			return cloneMember(memberFrom(account, membership)), false, nil
+		}
+		return Member{ID: id, UserID: userID, DisplayName: displayName, Status: account.Status,
+			ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt}, false, nil
 	}
 	next := s.next(now)
-	next.Members[id] = member
+	next.Accounts[id] = account
+	syncAliasesFromPrimary(&next)
 	if err := s.commit(next); err != nil {
 		return Member{}, false, err
 	}
-	return cloneMember(member), true, nil
+	if membership, ok := next.Memberships["self-hosted"][id]; ok {
+		return cloneMember(memberFrom(account, membership)), created, nil
+	}
+	return Member{ID: id, UserID: userID, DisplayName: displayName, Status: account.Status,
+		ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt}, created, nil
 }
 
 func (s *Store) UpdateMember(id string, input MemberInput) (Member, bool, error) {
@@ -112,7 +115,12 @@ func (s *Store) UpdateMember(id string, input MemberInput) (Member, bool, error)
 	defer s.mu.Unlock()
 	current, ok := s.data.Members[id]
 	if !ok {
-		return Member{}, false, failure("member_not_found")
+		account, exists := s.data.Accounts[id]
+		if !exists {
+			return Member{}, false, failure("member_not_found")
+		}
+		current = Member{ID: account.ID, UserID: account.UserID, DisplayName: account.DisplayName, Status: account.Status,
+			ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt}
 	}
 	switch input.Role {
 	case "admin", "member", "viewer":
@@ -124,12 +132,22 @@ func (s *Store) UpdateMember(id string, input MemberInput) (Member, bool, error)
 	default:
 		return Member{}, false, failure("invalid_parameters")
 	}
-	clusters, err := scope(input.ClusterIDs, s.data.Clusters, true)
+	clusters, err := scopeOrganization(input.ClusterIDs, "self-hosted", s.data.Clusters, true)
 	if err != nil {
 		return Member{}, false, err
 	}
 	if input.Role == "admin" && len(clusters) != 0 {
 		return Member{}, false, failure("invalid_scope")
+	}
+	legacy := s.data.Memberships["self-hosted"][id]
+	if input.Role == "admin" {
+		input.Role = "owner"
+		legacy.LegacyRestricted, legacy.LegacyAllClusters = true, true
+	} else {
+		attenuateLegacyMembership(&legacy, current.Role, input.Role)
+		if !legacy.LegacyRestricted {
+			legacy.LegacyRestricted = true
+		}
 	}
 	groups := append([]string{}, input.KubernetesGroups...)
 	if !validInputGroups(current.UserID, groups) {
@@ -138,6 +156,9 @@ func (s *Store) UpdateMember(id string, input MemberInput) (Member, bool, error)
 	slices.Sort(groups)
 	if !validKubernetesGroups(current.UserID, groups) {
 		return Member{}, false, failure("invalid_parameters")
+	}
+	if lowerRole(input.Role) < lowerRole(current.Role) {
+		groups = []string{}
 	}
 	authorizationChanged := current.Role != input.Role || current.Status != input.Status ||
 		!slices.Equal(current.ClusterIDs, clusters) || !slices.Equal(current.KubernetesGroups, groups)
@@ -148,16 +169,30 @@ func (s *Store) UpdateMember(id string, input MemberInput) (Member, bool, error)
 	current.Role, current.Status = input.Role, input.Status
 	current.ClusterIDs, current.KubernetesGroups, current.UpdatedAt = clusters, groups, now
 	next := s.next(now)
-	next.Members[id] = current
+	account := next.Accounts[id]
+	account.DisplayName, account.Status, account.UpdatedAt = current.DisplayName, current.Status, current.UpdatedAt
+	next.Accounts[id] = account
+	if next.Memberships["self-hosted"] == nil {
+		next.Memberships["self-hosted"] = map[string]Membership{}
+	}
+	membership := next.Memberships["self-hosted"][id]
+	if membership.CreatedAt.IsZero() {
+		membership.CreatedAt = current.CreatedAt
+	}
+	membership.Role, membership.ClusterIDs, membership.KubernetesGroups = current.Role, append([]string{}, current.ClusterIDs...), append([]string{}, current.KubernetesGroups...)
+	membership.LegacyRestricted, membership.LegacyAllClusters = legacy.LegacyRestricted, legacy.LegacyAllClusters
+	membership.UpdatedAt = current.UpdatedAt
+	next.Memberships["self-hosted"][id] = membership
 	if authorizationChanged {
 		for credentialID, credential := range next.Credentials {
-			if credential.OwnerID == id && credential.RevokedAt == nil {
+			if credential.OwnerID == id && credential.OrganizationID == "self-hosted" && credential.RevokedAt == nil {
 				revokedAt := now
 				credential.RevokedAt = &revokedAt
 				next.Credentials[credentialID] = credential
 			}
 		}
 	}
+	syncAliasesFromPrimary(&next)
 	if err := s.commit(next); err != nil {
 		return Member{}, false, err
 	}
@@ -188,7 +223,7 @@ func validInputGroups(userID string, groups []string) bool {
 }
 
 func memberScopeForOwner(member Member, clusters map[string]storedCluster) []string {
-	if member.Role == "admin" {
+	if member.Role == "admin" || member.Role == "owner" {
 		ids := make([]string, 0, len(clusters))
 		for id := range clusters {
 			ids = append(ids, id)
@@ -200,17 +235,47 @@ func memberScopeForOwner(member Member, clusters map[string]storedCluster) []str
 }
 
 func (s *Store) activeMemberScopeLocked(ownerID string) (Member, []string, error) {
-	member, ok := s.data.Members[ownerID]
+	return s.activeMemberScopeInOrganizationLocked("self-hosted", ownerID)
+}
+
+func (s *Store) activeMemberScopeInOrganizationLocked(organizationID, ownerID string) (Member, []string, error) {
+	account, ok := s.data.Accounts[ownerID]
 	if !ok {
 		return Member{}, nil, failure("member_not_found")
 	}
-	if member.Status == "pending" {
+	if account.Status == "pending" {
 		return Member{}, nil, failure("member_pending")
 	}
-	if member.Status == "disabled" {
+	if account.Status == "disabled" {
 		return Member{}, nil, failure("member_disabled")
 	}
-	return cloneMember(member), memberScopeForOwner(member, s.data.Clusters), nil
+	membership, ok := s.data.Memberships[organizationID][ownerID]
+	if !ok {
+		return Member{}, nil, failure("member_not_found")
+	}
+	member := memberFrom(account, membership)
+	if !membership.LegacyRestricted || membership.LegacyAllClusters {
+		return cloneMember(member), clusterIDsForOrganization(organizationID, s.data.Clusters), nil
+	}
+	return cloneMember(member), intersectScope(membership.ClusterIDs, clusterIDsForOrganization(organizationID, s.data.Clusters)), nil
+}
+
+func (s *Store) MemberClusterIDsForOrganization(organizationID, ownerID string) ([]string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ids, err := s.activeMemberScopeInOrganizationLocked(organizationID, ownerID)
+	return ids, err
+}
+
+func clusterIDsForOrganization(organizationID string, clusters map[string]storedCluster) []string {
+	ids := make([]string, 0)
+	for id, cluster := range clusters {
+		if cluster.OrganizationID == organizationID {
+			ids = append(ids, id)
+		}
+	}
+	slices.Sort(ids)
+	return ids
 }
 
 func subsetScope(requested, allowed []string) bool {

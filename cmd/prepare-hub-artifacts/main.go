@@ -26,6 +26,7 @@ func parseOptions(args []string) (hubartifacts.PrepareOptions, error) {
 	chart := set.String("chart", "deploy/helm/kubeatlas", "Source KubeAtlas Helm chart directory")
 	layout := set.String("layout", "", "Existing local OCI image layout directory")
 	installer := set.String("installer", "scripts/install-hub-agent.sh", "Hub Agent installer script")
+	bootstrap := set.String("bootstrap", "scripts/bootstrap-hub-agent.sh", "Optional same-origin Hub Agent bootstrap script")
 	output := set.String("output", "", "New private output directory (must not exist)")
 	version := set.String("version", "", "Exact Portal and Agent image build version")
 	chartVersion := set.String("chart-version", "", "Helm chart SemVer (defaults to 0.0.0-dev.<revision12>)")
@@ -39,7 +40,7 @@ func parseOptions(args []string) (hubartifacts.PrepareOptions, error) {
 		return hubartifacts.PrepareOptions{}, fmt.Errorf("--layout, --output, --version, --revision, and --image-digest are required")
 	}
 	return hubartifacts.PrepareOptions{
-		ChartDir: *chart, LayoutDir: *layout, InstallerPath: *installer, OutputDir: *output,
+		ChartDir: *chart, LayoutDir: *layout, InstallerPath: *installer, BootstrapPath: *bootstrap, OutputDir: *output,
 		Version: *version, ChartVersion: *chartVersion, Revision: *revision, ImageDigest: *digest, HelmBinary: *helm,
 	}, nil
 }

@@ -1,5 +1,19 @@
 # Self-Hosted KubeAtlas Cloud Hub
 
+Public registrations create pending accounts with no organization membership or
+active session. The platform owner approves pending accounts and grants initial
+membership; organization owners manage roles and scope for existing approved
+members in their organization. The configured recovery identity is the only
+platform owner; only its exact local `User` identity receives `cluster-admin`.
+The chart maps organization role groups to `admin`, `edit`, or `view`, plus
+limited infrastructure-read access. Existing Agent deployments need an
+operator-controlled chart rollout to apply those bindings; the Hub does not
+change remote RBAC or Agent token Secrets.
+Requests bind the authenticated account, active organization, and cancellation
+context at entry. Role groups are derived server-side, never accepted from
+client headers, and MCP credentials remain pinned to their issuance
+organization.
+
 The `kubeatlas-portal` binary name is retained for a self-hosted Cloud Hub that
 serves the Cloud UI, member identity, browser proxy, and live MCP transport.
 It is separate from the native KubeAtlas Agent. This repository does not
@@ -16,13 +30,22 @@ The Hub cannot start without a persistent state file. Pass
 `KUBEATLAS_PORTAL_HUB_STATE_FILE`. There is no default path or legacy mode.
 The state file holds the self-hosted organization, memberships, cluster
 assignments, and MCP credential records; protect and back it up as sensitive
-identity data. The Hub does not open, migrate, or remove older Portal data.
+identity data. Back up the state file before the first start of a version-2
+build: version-1 state migrates to version 2 in place. Do not downgrade using a
+migrated file; restore the pre-upgrade backup first. Unknown or corrupt state
+fails closed and is not reset. Migration preserves directory entries,
+credential hashes, scopes, groups, and legacy Kubernetes restrictions;
+unrelated older Portal data is not imported or removed.
 
 The local owner account is configured with
 `KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD`. The username must
 be 1–256 bytes without a colon or control characters, and the password must be
-16–4096 bytes. The owner can configure the organization, manage members and
-cluster assignments, and issue or revoke scoped MCP credentials.
+16–4096 bytes; these existing recovery-login limits are unchanged. Public
+registration has a separate rule: passwords must contain at least 12 Unicode
+scalar values, be valid UTF-8, and contain at most 72 UTF-8 bytes because
+passwords are hashed with bcrypt. The owner can configure the organization,
+manage members and cluster assignments, and issue or revoke scoped MCP
+credentials.
 
 ## Optional OIDC
 
@@ -78,7 +101,21 @@ and trusted MCP host authorities.
 
 Use TLS at a trusted reverse proxy before exposing the login page, callback,
 Hub API, Agent transport, or MCP endpoint. Cookies are secure by default;
-`--insecure-cookie` is restricted to loopback development. If a trusted proxy
+`--insecure-cookie` remains restricted to loopback development. A fresh install
+served on a trusted private network over HTTP at a literal IP can explicitly set
+`--http-ip-origin=http://192.0.2.10:9290` or
+`KUBEATLAS_PORTAL_HTTP_IP_ORIGIN=http://192.0.2.10:9290` (the Portal chart uses
+`httpIPOrigin`). This exact root origin enables login with host-scoped,
+HttpOnly, SameSite cookies without `Secure` before any LAN profile exists; it
+does not create or overwrite a connection profile. Only literal IPv4 or
+bracketed IPv6 authorities are accepted; DNS names, other hosts and ports,
+paths, queries, and fragments are not. HTTP exposes credentials and bearer
+traffic to interception, so use this only on a trusted network. Forwarded
+headers do not change the decision, and this option does not allow an HTTP OIDC
+provider. If a saved HTTPS profile uses the same external authority, HTTPS wins
+and cookies remain Secure; do not multiplex HTTP and HTTPS on one authority
+behind a proxy. Connection-profile writes are platform-owner-only; active
+members may read them. If a trusted proxy
 uses a public hostname, configure exact allowed host authorities with
 `--mcp-allowed-hosts` or `KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS`; wildcards are
 not accepted. The Hub also validates browser origin and same-origin requests.

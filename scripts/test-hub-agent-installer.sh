@@ -40,12 +40,21 @@ curl() {
   printf '%s' "$FAKE_HTTP_STATUS"
 }
 kubectl() {
-  if [[ "$1" == config ]]; then printf '%s\n' "$FAKE_CONTEXTS"; return 0; fi
   if [[ "$1" == --context ]]; then shift 2; fi
+  if [[ "$1" == config ]]; then
+    case "$2" in
+      get-contexts) printf '%s\n' "$FAKE_CONTEXTS";;
+      current-context) printf '%s\n' 'test-context';;
+      view)
+        if [[ "$*" == *jsonpath* ]]; then printf '%s\n' 'https://kube-api.example.test'; else printf '%s\n' 'current-context: test-context'; fi;;
+    esac
+    return 0
+  fi
   case "$1" in
     cluster-info) return 0;;
     auth) printf 'yes\n';;
     get)
+      if [[ "$2" == namespace && "$3" == kube-system ]]; then printf '%s\n' 'test-kube-system-uid'; return 0; fi
       local kind="$2" name="$3"
       if [[ "$kind" == namespace && "${FAKE_NAMESPACE_COLLISION:-0}" == 1 ]] ||
         [[ "$kind" == clusterrole && "${FAKE_CLUSTERROLE_COLLISION:-0}" == 1 ]]; then printf '%s/%s\n' "$kind" "$name"; fi
@@ -94,7 +103,7 @@ FAKE_CLUSTERROLE_COLLISION=0
 if output="$(printf 'n\n' | bash "$script" "${common[@]}" 2>&1)"; then
   printf 'declined installation unexpectedly succeeded\n' >&2; exit 1
 fi
-[[ "$output" == *'exact local Hub owner User to cluster-admin'* && "$output" == *'node must independently trust'* ]] || { printf 'prerequisites were not shown before confirmation: %s\n' "$output" >&2; exit 1; }
+[[ "$output" == *'only the exact local Hub owner User is bound to cluster-admin'* && "$output" == *'node must independently trust'* ]] || { printf 'prerequisites were not shown before confirmation: %s\n' "$output" >&2; exit 1; }
 [[ ! -s "$FAKE_MUTATIONS" ]] || { printf 'declined install mutated the cluster\n' >&2; exit 1; }
 : >"$FAKE_MUTATIONS"
 output="$(bash "$script" "${common[@]}" --dry-run 2>&1)"

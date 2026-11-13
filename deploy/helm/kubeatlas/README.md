@@ -550,6 +550,18 @@ kubectl delete namespace radar
 
 ## Self-hosted Hub Agent
 
-See [Hub-hosted Agent onboarding](../../../docs/hub-agent-onboarding.md) for the private local bundle, bootstrap, and trust model. Agent mode is a separate `hub` values block; it does not re-enable the legacy `cloud.enabled` contract. It requires a pinned `image.digest`, the Hub origin's `kubeatlas/agent` repository, a per-cluster token Secret mounted as a file, proxy authentication, and MCP. The chart binds cluster-admin only to the exact `hub.ownerUserID` `User`; Hub member groups are not elevated.
+When `hub.enabled=true`, the organization-scoped
+`kubeatlas:hub:owner`, `kubeatlas:hub:member`, and
+`kubeatlas:hub:viewer` groups map to Kubernetes `admin`, `edit`, and
+`view`. All three groups also receive a limited `get`/`list`/`watch` role for
+nodes, namespaces, storage classes, PVs, and PVCs. The owner group is not
+cluster-admin; only the exact `hub.ownerUserID` local `User` binding receives
+cluster-admin. These mappings do not enable legacy `cloud.enabled`.
 
-Target nodes must reach the Hub OCI endpoint and trust its TLS certificate independently of the optional Agent CA file. The default installer refuses adoption and requires a new namespace/release.
+See [Hub-hosted Agent onboarding](../../../docs/hub-agent-onboarding.md) for the private local bundle, bootstrap, and trust model. Agent mode is a separate `hub` values block; it does not re-enable the legacy `cloud.enabled` contract. It requires a pinned `image.digest`, the Hub origin's `kubeatlas/agent` repository, a per-cluster token Secret mounted as a file, proxy authentication, and MCP. The chart binds cluster-admin only to the exact `hub.ownerUserID` `User`; organization role groups receive only their mapped role and limited infrastructure-read bindings.
+
+An existing Agent deployment needs an operator-controlled Helm rollout to
+install or update these role bindings. The Hub does not remotely change Agent
+Secrets or RBAC. Target nodes must reach the Hub OCI endpoint and trust its TLS
+certificate independently of the optional Agent CA file. The default installer
+refuses adoption and requires a new namespace/release.

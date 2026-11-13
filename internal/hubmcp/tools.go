@@ -61,7 +61,7 @@ func (f *facade) selected(p hub.Principal, input listInput) ([]directoryEntry, e
 		ids = []string{input.ClusterID}
 	}
 	if input.FleetID != "" {
-		group, found := f.store.Group(input.FleetID)
+		group, found := f.store.GroupForOrganization(p.OrganizationID, input.FleetID)
 		if !found {
 			return nil, &fault{code: "group_not_found", message: "Hub group not found."}
 		}
@@ -79,7 +79,7 @@ func (f *facade) selected(p hub.Principal, input listInput) ([]directoryEntry, e
 		agents[agent.ClusterID] = agent
 	}
 	for _, id := range ids {
-		cluster, found := f.store.Cluster(id)
+		cluster, found := f.store.ClusterForOrganization(p.OrganizationID, id)
 		if !found {
 			continue
 		}

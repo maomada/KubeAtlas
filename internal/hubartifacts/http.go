@@ -54,6 +54,12 @@ func (c *Catalog) serveDownload(w http.ResponseWriter, r *http.Request) {
 	switch name {
 	case "installer.sh":
 		entry, contentType = c.files[c.installPath], "text/x-shellscript; charset=utf-8"
+	case "bootstrap.sh":
+		if c.bootstrapPath == "" {
+			c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
+			return
+		}
+		entry, contentType = c.files[c.bootstrapPath], "text/x-shellscript; charset=utf-8"
 	case "chart.tgz":
 		entry, contentType = c.files[c.chartPath], "application/gzip"
 	case "manifest.json":
@@ -69,6 +75,9 @@ func (c *Catalog) serveDownload(w http.ResponseWriter, r *http.Request) {
 		contentType = entry.mediaType
 	case "checksums.txt":
 		body := fmt.Sprintf("%s  installer.sh\n%s  chart.tgz\n%s  image-manifest.json\n", c.manifest.Installer.SHA256, c.manifest.Chart.SHA256, strings.TrimPrefix(c.manifest.Image.Digest, "sha256:"))
+		if c.manifest.Bootstrap != nil {
+			body += fmt.Sprintf("%s  bootstrap.sh\n", c.manifest.Bootstrap.SHA256)
+		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="checksums.txt"`)
 		http.ServeContent(w, r, "checksums.txt", time.Time{}, strings.NewReader(body))

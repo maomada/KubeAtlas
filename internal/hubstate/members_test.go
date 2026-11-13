@@ -16,8 +16,11 @@ func TestMemberPersistenceScopeAndCredentialRevocation(t *testing.T) {
 	cluster(t, store, "beta")
 	id := "oidc:" + strings.Repeat("a", 64)
 	member, created, err := store.UpsertOIDCMember(id, "Alice")
-	if err != nil || !created || member.Status != "pending" || member.Role != "member" || len(member.ClusterIDs) != 0 {
+	if err != nil || !created || member.Status != "pending" || member.Role != "" || len(member.ClusterIDs) != 0 {
 		t.Fatalf("new member = %#v, created=%v, err=%v", member, created, err)
+	}
+	if _, exists := store.MemberForOrganization("self-hosted", id); exists {
+		t.Fatal("new OIDC account received a membership before organization approval")
 	}
 	if _, err := store.IssueForMember(id, IssueInput{Label: "pending", ClusterIDs: []string{"alpha"}}); err == nil {
 		t.Fatal("pending member received a credential")
@@ -137,6 +140,7 @@ func TestDisabledMemberCannotIssueCredentials(t *testing.T) {
 func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	store, _ := testStore(t)
 	cluster(t, store, "alpha")
+	cluster(t, store, "beta")
 	if _, err := store.SaveGroup(GroupInput{ID: "team", Name: "Team", ClusterIDs: []string{"alpha"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -152,9 +156,38 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	if err := json.Unmarshal(data, &legacy); err != nil {
 		t.Fatal(err)
 	}
-	delete(legacy, "organization")
-	delete(legacy, "members")
-	delete(legacy, "connectionSettings")
+	legacy["version"] = json.RawMessage("1")
+	for _, section := range []string{"organizations", "accounts", "memberships"} {
+		delete(legacy, section)
+	}
+	for _, section := range []string{"clusters", "groups", "credentials"} {
+		var records map[string]map[string]json.RawMessage
+		if err := json.Unmarshal(legacy[section], &records); err != nil {
+			t.Fatal(err)
+		}
+		for _, record := range records {
+			delete(record, "organizationId")
+		}
+		legacy[section], err = json.Marshal(records)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	legacy["organization"], _ = json.Marshal(Organization{ID: "self-hosted", Name: "KubeAtlas"})
+	now := store.now().UTC()
+	adminID, memberID, viewerID := "oidc:"+strings.Repeat("a", 64), "oidc:"+strings.Repeat("b", 64), "oidc:"+strings.Repeat("c", 64)
+	legacyMembers := map[string]Member{
+		adminID: {ID: adminID, UserID: "kubeatlas:" + adminID, DisplayName: "Legacy Admin", Role: "admin", Status: "active",
+			ClusterIDs: []string{}, KubernetesGroups: []string{"radar:legacy-admin"}, CreatedAt: now, UpdatedAt: now},
+		memberID: {ID: memberID, UserID: "kubeatlas:" + memberID, DisplayName: "Legacy Member", Role: "member", Status: "active",
+			ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{"radar:legacy-member"}, CreatedAt: now, UpdatedAt: now},
+		viewerID: {ID: viewerID, UserID: "kubeatlas:" + viewerID, DisplayName: "Legacy Viewer", Role: "viewer", Status: "active",
+			ClusterIDs: []string{}, KubernetesGroups: []string{"radar:legacy-viewer"}, CreatedAt: now, UpdatedAt: now},
+	}
+	legacy["members"], err = json.Marshal(legacyMembers)
+	if err != nil {
+		t.Fatal(err)
+	}
 	data, err = json.Marshal(legacy)
 	if err != nil {
 		t.Fatal(err)
@@ -168,7 +201,7 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	}
 	migrated.now = store.now
 	if organization := migrated.Organization(); organization.ID != "self-hosted" || organization.Name != "KubeAtlas" ||
-		len(migrated.Members()) != 0 || len(migrated.Clusters()) != 1 {
+		len(migrated.Members()) != 3 || len(migrated.Clusters()) != 2 {
 		t.Fatalf("legacy state defaults were not applied: organization=%#v, members=%d, clusters=%d",
 			organization, len(migrated.Members()), len(migrated.Clusters()))
 	}
@@ -177,6 +210,40 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	}
 	if _, err := migrated.Authenticate(issued.Token, "owner"); err != nil {
 		t.Fatalf("legacy credential was lost: %v", err)
+	}
+	if store.data.Credentials[issued.Credential.ID].Digest != migrated.data.Credentials[issued.Credential.ID].Digest {
+		t.Fatal("legacy credential hash changed during migration")
+	}
+	for _, test := range []struct {
+		id  string
+		ids []string
+	}{
+		{adminID, []string{"alpha", "beta"}},
+		{memberID, []string{"alpha"}},
+		{viewerID, []string{}},
+	} {
+		ids, err := migrated.MemberClusterIDsForOrganization("self-hosted", test.id)
+		if err != nil || !slices.Equal(ids, test.ids) {
+			t.Fatalf("legacy scope for %s = %v, err=%v; want %v", test.id, ids, err, test.ids)
+		}
+		if migrated.RoleGroupForMember("self-hosted", test.id) != "" {
+			t.Fatalf("legacy member %s inherited a new role group", test.id)
+		}
+		member, ok := migrated.MemberForOrganization("self-hosted", test.id)
+		if !ok || !member.LegacyRestricted {
+			t.Fatalf("legacy restriction marker missing for %s: %#v", test.id, member)
+		}
+	}
+	if err := migrated.EnsurePlatformOwner("portal:recovery", "kubeatlas:recovery", "Recovery"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := migrated.UpdateOrganizationMemberRole("self-hosted", adminID, "member"); err != nil {
+		t.Fatal(err)
+	}
+	admin, _ := migrated.MemberForOrganization("self-hosted", adminID)
+	adminScope, err := migrated.MemberClusterIDsForOrganization("self-hosted", adminID)
+	if err != nil || len(adminScope) != 0 || len(admin.KubernetesGroups) != 0 || admin.LegacyAllClusters {
+		t.Fatalf("demoted legacy owner retained elevated grants: %#v scope=%v err=%v", admin, adminScope, err)
 	}
 	if _, err := migrated.SetOrganizationName("KubeAtlas Local"); err != nil {
 		t.Fatal(err)
@@ -189,8 +256,8 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	if err := json.Unmarshal(data, &persisted); err != nil {
 		t.Fatal(err)
 	}
-	if persisted["organization"] == nil || persisted["members"] == nil {
-		t.Fatal("legacy store extension was not persisted on mutation")
+	if persisted["organizations"] == nil || persisted["accounts"] == nil || persisted["memberships"] == nil {
+		t.Fatal("canonical v2 account and membership state was not persisted on mutation")
 	}
 	reopened, err := OpenStore(store.path)
 	if err != nil {
@@ -198,7 +265,7 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	}
 	reopened.now = store.now
 	if organization := reopened.Organization(); organization.Name != "KubeAtlas Local" ||
-		len(reopened.Clusters()) != 1 || len(reopened.Members()) != 0 {
+		len(reopened.Clusters()) != 2 || len(reopened.Members()) != 4 {
 		t.Fatalf("migrated state did not survive restart: organization=%#v", organization)
 	}
 	if _, err := reopened.Authenticate(issued.Token, "owner"); err != nil {

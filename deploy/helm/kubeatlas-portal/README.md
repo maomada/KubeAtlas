@@ -57,6 +57,23 @@ The proxy must preserve the selected Host authority and route `/api/`,
 rewriting or redirects. Nodes pulling Hub-hosted Agent images must be able to
 reach the same origin and independently trust its certificate.
 
+For a fresh install on a trusted private network that must use HTTP at a literal
+IP before any LAN connection profile exists, set the non-secret `httpIPOrigin`
+value to the exact root origin, for example:
+
+```bash
+helm upgrade --install kubeatlas-portal oci://ghcr.io/maomada/charts/kubeatlas-portal \
+  --namespace kubeatlas-portal --create-namespace --version "$VERSION" \
+  --set existingSecret=kubeatlas-portal-auth \
+  --set-string httpIPOrigin=http://192.0.2.10:9290
+```
+
+The application accepts only HTTP literal IPv4 or bracketed IPv6 authorities.
+It permits non-Secure, host-scoped cookies only for that exact authority;
+forwarded headers are ignored, and a saved HTTPS profile for the same authority
+wins. This does not create a LAN profile, permit HTTP OIDC, or make plaintext
+traffic safe on an untrusted network. `--insecure-cookie` remains loopback-only.
+
 Local owner login remains available. OIDC can be enabled with the optional
 Secret keys above. Sessions use `HttpOnly`, `Secure`, `SameSite=Strict` cookies
 and expire after eight hours or a Hub restart. OIDC directory synchronization

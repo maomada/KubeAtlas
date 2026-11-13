@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	"github.com/maomada/KubeAtlas/internal/auth"
@@ -604,7 +605,7 @@ func TestPortalSessionExpiryCancelsRequestContext(t *testing.T) {
 func TestHubPageRoutesAreExplicit(t *testing.T) {
 	for _, path := range []string{
 		"/investigations", "/install", "/settings/sessions", "/settings/security",
-		"/settings/organization", "/settings/organization/members",
+		"/settings/platform", "/settings/organization", "/settings/organization/members",
 		"/settings/organization/agent-access", "/settings/organization/enrollment-keys",
 		"/settings/organization/activity", "/settings/organization/issues",
 		"/settings/organization/checks", "/settings/organization/sso",
@@ -622,6 +623,30 @@ func TestHubPageRoutesAreExplicit(t *testing.T) {
 		if isHubPageRoute(httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)) {
 			t.Errorf("unknown or non-page route %q was accepted", path)
 		}
+	}
+}
+
+func TestPublicRegistrationAndProtectedPlatformPageRoutes(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	h.static = fstest.MapFS{"portal.html": &fstest.MapFile{Data: []byte("portal shell")}}
+
+	register := httptest.NewRecorder()
+	h.ServeHTTP(register, httptest.NewRequest(http.MethodGet, "http://localhost/register", nil))
+	if register.Code != http.StatusOK || register.Body.String() != "portal shell" {
+		t.Fatalf("public registration page status=%d body=%q", register.Code, register.Body.String())
+	}
+
+	settings := httptest.NewRecorder()
+	h.ServeHTTP(settings, httptest.NewRequest(http.MethodGet, "http://localhost/settings/platform", nil))
+	if settings.Code != http.StatusUnauthorized {
+		t.Fatalf("unauthenticated platform settings status=%d, want %d", settings.Code, http.StatusUnauthorized)
+	}
+	settings = httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "http://localhost/settings/platform", nil)
+	request.AddCookie(loginForTest(t, h))
+	h.ServeHTTP(settings, request)
+	if settings.Code != http.StatusOK || settings.Body.String() != "portal shell" {
+		t.Fatalf("authenticated platform settings status=%d body=%q", settings.Code, settings.Body.String())
 	}
 }
 

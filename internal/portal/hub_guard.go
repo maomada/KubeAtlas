@@ -58,8 +58,7 @@ func (p *hubRequestPolicy) withOrigins(origins ...string) *hubRequestPolicy {
 }
 
 func (p *hubRequestPolicy) allows(r *http.Request) bool {
-	u, ok := hubAuthority(r.Host)
-	if !ok || (!p.hosts[strings.ToLower(r.Host)] && !strings.EqualFold(u.Hostname(), "localhost") && !net.ParseIP(u.Hostname()).IsLoopback()) {
+	if !p.allowsHost(r) {
 		return false
 	}
 	if !sameSiteRequest(r) {
@@ -76,6 +75,12 @@ func (p *hubRequestPolicy) allows(r *http.Request) bool {
 	return err == nil && (origin.Scheme == "http" || origin.Scheme == "https") &&
 		strings.EqualFold(origin.Host, r.Host) && origin.User == nil && origin.Path == "" &&
 		origin.RawQuery == "" && !origin.ForceQuery && origin.Fragment == "" && !strings.Contains(origins[0], "#")
+}
+
+func (p *hubRequestPolicy) allowsHost(r *http.Request) bool {
+	u, ok := hubAuthority(r.Host)
+	return ok && (p.hosts[strings.ToLower(r.Host)] || strings.EqualFold(u.Hostname(), "localhost") ||
+		net.ParseIP(u.Hostname()) != nil && net.ParseIP(u.Hostname()).IsLoopback())
 }
 
 func (p *hubRequestPolicy) allowsBrowser(r *http.Request) bool {

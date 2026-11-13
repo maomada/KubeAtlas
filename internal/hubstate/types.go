@@ -24,9 +24,10 @@ type ClusterInput struct {
 
 type Cluster struct {
 	ClusterInput
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	RevokedAt *time.Time `json:"revokedAt,omitempty"`
+	OrganizationID string     `json:"organizationId"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	UpdatedAt      time.Time  `json:"updatedAt"`
+	RevokedAt      *time.Time `json:"revokedAt,omitempty"`
 }
 
 type IssuedAgent struct {
@@ -41,16 +42,40 @@ type GroupInput struct {
 }
 
 type Group struct {
-	ID         string    `json:"id"`
-	Name       string    `json:"name"`
-	ClusterIDs []string  `json:"clusterIds"`
-	CreatedAt  time.Time `json:"createdAt"`
-	UpdatedAt  time.Time `json:"updatedAt"`
+	ID             string    `json:"id"`
+	OrganizationID string    `json:"organizationId"`
+	Name           string    `json:"name"`
+	ClusterIDs     []string  `json:"clusterIds"`
+	CreatedAt      time.Time `json:"createdAt"`
+	UpdatedAt      time.Time `json:"updatedAt"`
 }
 
 type Organization struct {
 	ID   string `json:"id"`
 	Name string `json:"name"`
+}
+
+type Account struct {
+	ID            string    `json:"id"`
+	UserID        string    `json:"userId"`
+	Email         string    `json:"email,omitempty"`
+	DisplayName   string    `json:"displayName"`
+	Status        string    `json:"status"`
+	PasswordHash  string    `json:"passwordHash,omitempty"`
+	PlatformOwner bool      `json:"platformOwner,omitempty"`
+	Local         bool      `json:"local,omitempty"`
+	CreatedAt     time.Time `json:"createdAt"`
+	UpdatedAt     time.Time `json:"updatedAt"`
+}
+
+type Membership struct {
+	Role              string    `json:"role"`
+	ClusterIDs        []string  `json:"clusterIds"`
+	KubernetesGroups  []string  `json:"kubernetesGroups"`
+	LegacyRestricted  bool      `json:"legacyRestricted,omitempty"`
+	LegacyAllClusters bool      `json:"legacyAllClusters,omitempty"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 type ConnectionSettings struct {
@@ -59,34 +84,39 @@ type ConnectionSettings struct {
 }
 
 type Member struct {
-	ID               string    `json:"id"`
-	UserID           string    `json:"userId"`
-	DisplayName      string    `json:"displayName"`
-	Role             string    `json:"role"`
-	Status           string    `json:"status"`
-	ClusterIDs       []string  `json:"clusterIds"`
-	KubernetesGroups []string  `json:"kubernetesGroups"`
-	CreatedAt        time.Time `json:"createdAt"`
-	UpdatedAt        time.Time `json:"updatedAt"`
+	ID                string    `json:"id"`
+	UserID            string    `json:"userId"`
+	DisplayName       string    `json:"displayName"`
+	Role              string    `json:"role,omitempty"`
+	Status            string    `json:"status"`
+	ClusterIDs        []string  `json:"clusterIds"`
+	KubernetesGroups  []string  `json:"kubernetesGroups"`
+	LegacyRestricted  bool      `json:"-"`
+	LegacyAllClusters bool      `json:"-"`
+	CreatedAt         time.Time `json:"createdAt"`
+	UpdatedAt         time.Time `json:"updatedAt"`
 }
 
 type MemberInput struct {
-	Role             string
-	Status           string
-	ClusterIDs       []string
-	KubernetesGroups []string
+	Role              string
+	Status            string
+	ClusterIDs        []string
+	KubernetesGroups  []string
+	LegacyRestricted  bool `json:"-"`
+	LegacyAllClusters bool `json:"-"`
 }
 
 type Credential struct {
-	ID           string     `json:"id"`
-	OwnerID      string     `json:"ownerId"`
-	Label        string     `json:"label"`
-	ClusterIDs   []string   `json:"clusterIds"`
-	ReadOnly     bool       `json:"readOnly"`
-	CreatedAt    time.Time  `json:"createdAt"`
-	ExpiresAt    time.Time  `json:"expiresAt"`
-	RefreshUntil time.Time  `json:"refreshUntil"`
-	RevokedAt    *time.Time `json:"revokedAt,omitempty"`
+	ID             string     `json:"id"`
+	OwnerID        string     `json:"ownerId"`
+	OrganizationID string     `json:"organizationId"`
+	Label          string     `json:"label"`
+	ClusterIDs     []string   `json:"clusterIds"`
+	ReadOnly       bool       `json:"readOnly"`
+	CreatedAt      time.Time  `json:"createdAt"`
+	ExpiresAt      time.Time  `json:"expiresAt"`
+	RefreshUntil   time.Time  `json:"refreshUntil"`
+	RevokedAt      *time.Time `json:"revokedAt,omitempty"`
 }
 
 type IssueInput struct {
@@ -112,6 +142,14 @@ func cloneTime(t *time.Time) *time.Time {
 func cloneCluster(c Cluster) Cluster {
 	c.RevokedAt = cloneTime(c.RevokedAt)
 	return c
+}
+
+func cloneAccount(a Account) Account { return a }
+
+func cloneMembership(m Membership) Membership {
+	m.ClusterIDs = append([]string{}, m.ClusterIDs...)
+	m.KubernetesGroups = append([]string{}, m.KubernetesGroups...)
+	return m
 }
 
 func cloneCredential(c Credential) Credential {

@@ -22,6 +22,9 @@ func (s *Store) UpdateConnections(input ConnectionSettings) (ConnectionSettings,
 		}
 		*target = normalized
 	}
+	if ambiguousConnectionSchemes(&input) {
+		return ConnectionSettings{}, failure("invalid_parameters")
+	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

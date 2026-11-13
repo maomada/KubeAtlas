@@ -49,6 +49,10 @@ type Manifest struct {
 		File   string `json:"file"`
 		SHA256 string `json:"sha256"`
 	} `json:"installer"`
+	Bootstrap *struct {
+		File   string `json:"file"`
+		SHA256 string `json:"sha256"`
+	} `json:"bootstrap,omitempty"`
 	Image struct {
 		Digest string `json:"digest"`
 	} `json:"image"`
@@ -77,6 +81,7 @@ type Catalog struct {
 	manifestPath        string
 	chartPath           string
 	installPath         string
+	bootstrapPath       string
 	totalBytes          int64
 	descriptorCount     int
 	descriptorPlatforms map[string]string
@@ -87,15 +92,17 @@ type Catalog struct {
 }
 
 type Availability struct {
-	Available       bool     `json:"available"`
-	Version         string   `json:"version,omitempty"`
-	ChartVersion    string   `json:"chartVersion,omitempty"`
-	Platforms       []string `json:"platforms,omitempty"`
-	InstallerSHA256 string   `json:"installerSHA256,omitempty"`
-	ChartSHA256     string   `json:"chartSHA256,omitempty"`
-	ChartFile       string   `json:"chartFile,omitempty"`
-	ImageRepository string   `json:"imageRepository,omitempty"`
-	ImageDigest     string   `json:"imageDigest,omitempty"`
+	Available          bool     `json:"available"`
+	BootstrapAvailable bool     `json:"bootstrapAvailable"`
+	BootstrapSHA256    string   `json:"bootstrapSHA256,omitempty"`
+	Version            string   `json:"version,omitempty"`
+	ChartVersion       string   `json:"chartVersion,omitempty"`
+	Platforms          []string `json:"platforms,omitempty"`
+	InstallerSHA256    string   `json:"installerSHA256,omitempty"`
+	ChartSHA256        string   `json:"chartSHA256,omitempty"`
+	ChartFile          string   `json:"chartFile,omitempty"`
+	ImageRepository    string   `json:"imageRepository,omitempty"`
+	ImageDigest        string   `json:"imageDigest,omitempty"`
 }
 
 func Open(dir, expectedVersion string) (*Catalog, error) {
@@ -163,10 +170,24 @@ func Open(dir, expectedVersion string) (*Catalog, error) {
 	if err != nil {
 		return nil, errors.New("Hub Agent installer is missing or has an invalid digest")
 	}
+	var bootstrapEntry fileEntry
+	if manifest.Bootstrap != nil {
+		if manifest.Bootstrap.File != "bootstrap-hub-agent.sh" || !validHex(manifest.Bootstrap.SHA256) {
+			return nil, errors.New("Hub Agent bootstrap artifact metadata is invalid")
+		}
+		bootstrapEntry, err = verifyRootFile(rootFS, manifest.Bootstrap.File, manifest.Bootstrap.SHA256, maxInstallerSize, "text/x-shellscript; charset=utf-8")
+		if err != nil {
+			return nil, errors.New("Hub Agent bootstrap artifact is missing or has an invalid digest")
+		}
+	}
 	catalog := &Catalog{root: root, rootFS: rootFS, rootInfo: rootInfo, rootAncestors: rootAncestors, version: manifest.Version, manifest: manifest,
 		manifestPath: manifestEntry.path, chartPath: chartEntry.path, installPath: installEntry.path,
 		platforms: map[string]bool{}, manifests: map[string]fileEntry{}, blobs: map[string]fileEntry{},
 		files: map[string]fileEntry{manifestEntry.path: manifestEntry, chartEntry.path: chartEntry, installEntry.path: installEntry}}
+	if manifest.Bootstrap != nil {
+		catalog.bootstrapPath = bootstrapEntry.path
+		catalog.files[bootstrapEntry.path] = bootstrapEntry
+	}
 	if err := catalog.validateLayout(); err != nil {
 		return nil, err
 	}
@@ -211,7 +232,11 @@ func (c *Catalog) Availability() Availability {
 		}
 	}
 	sort.Strings(platforms)
-	return Availability{Available: true, Version: c.version, ChartVersion: c.manifest.Chart.Version, Platforms: platforms, InstallerSHA256: c.manifest.Installer.SHA256,
+	bootstrapSHA256 := ""
+	if c.manifest.Bootstrap != nil {
+		bootstrapSHA256 = c.manifest.Bootstrap.SHA256
+	}
+	return Availability{Available: true, BootstrapAvailable: c.bootstrapPath != "", BootstrapSHA256: bootstrapSHA256, Version: c.version, ChartVersion: c.manifest.Chart.Version, Platforms: platforms, InstallerSHA256: c.manifest.Installer.SHA256,
 		ChartSHA256: c.manifest.Chart.SHA256, ChartFile: c.manifest.Chart.File,
 		ImageRepository: "kubeatlas/agent", ImageDigest: c.manifest.Image.Digest}
 }
