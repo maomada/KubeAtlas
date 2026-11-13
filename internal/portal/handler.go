@@ -200,6 +200,7 @@ func (h *Handler) serveFile(w http.ResponseWriter, r *http.Request, name string)
 		return
 	}
 	if name == "portal.html" {
+		w.Header().Set("Referrer-Policy", "same-origin")
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	} else {
 		w.Header().Set("Content-Type", mimeType(name))

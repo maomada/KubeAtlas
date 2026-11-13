@@ -88,7 +88,8 @@ func (p *hubRequestPolicy) allowsBrowser(r *http.Request) bool {
 		return false
 	}
 	sites := r.Header.Values("Sec-Fetch-Site")
-	if len(sites) != 1 || !(strings.EqualFold(sites[0], "same-origin") || strings.EqualFold(sites[0], "none")) {
+	if len(sites) > 1 || len(sites) == 1 &&
+		!(strings.EqualFold(sites[0], "same-origin") || strings.EqualFold(sites[0], "none")) {
 		return false
 	}
 	origins := r.Header.Values("Origin")
@@ -116,6 +117,9 @@ func (p *hubRequestPolicy) allowsBrowser(r *http.Request) bool {
 			origin != nil && !strings.EqualFold(referer.Scheme, origin.Scheme) {
 			return false
 		}
+	}
+	if len(sites) == 0 && origin == nil && len(referers) == 0 {
+		return false
 	}
 	return true
 }

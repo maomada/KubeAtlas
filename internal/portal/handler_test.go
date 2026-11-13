@@ -151,3 +151,41 @@ func TestOwnerUsernameValidationAndEmbeddedAssetServing(t *testing.T) {
 		}
 	}
 }
+
+func TestPortalDocumentReferrerPolicy(t *testing.T) {
+	handler, _ := newPortalHubFixture(t, false)
+	handler.static = fstest.MapFS{
+		"portal.html":   &fstest.MapFile{Data: []byte("<html>portal</html>")},
+		"assets/app.js": &fstest.MapFile{Data: []byte("console.log('portal')")},
+	}
+	cookie := loginForTest(t, handler)
+	for _, path := range []string{"/", "/install", "/c/alpha/resources/pods"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
+			request.AddCookie(cookie)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), "<html>portal</html>") {
+				t.Fatalf("%s response = %d %q, want Portal HTML", path, response.Code, response.Body.String())
+			}
+			if got := response.Header().Get("Referrer-Policy"); got != "same-origin" {
+				t.Fatalf("%s Referrer-Policy = %q, want same-origin", path, got)
+			}
+		})
+	}
+
+	for _, path := range []string{"/api/hub", "/api/auth/providers", "/assets/app.js"} {
+		t.Run(path, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
+			request.AddCookie(cookie)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			if response.Code != http.StatusOK {
+				t.Fatalf("%s status = %d, want 200: %s", path, response.Code, response.Body.String())
+			}
+			if got := response.Header().Get("Referrer-Policy"); got != "no-referrer" {
+				t.Fatalf("%s Referrer-Policy = %q, want no-referrer", path, got)
+			}
+		})
+	}
+}
