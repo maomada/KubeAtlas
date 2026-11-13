@@ -140,18 +140,23 @@ it('creates an organization with an active initial owner and refreshes organizat
 
 it('keeps organization-creation failures inside the dialog', async () => {
   const fetch = stubDirectory((path, init) => {
-    if (path === '/api/hub/organizations' && init?.method === 'POST') return response({ message: 'Organization creation failed' }, 500)
+    if (path === '/api/hub/organizations' && init?.method === 'POST') return response({ error_code: 'organization_creation_failed', message: 'Organization creation failed', requestId: 'org-create-42' }, 500)
     throw new Error('Unexpected request: ' + path)
   })
   await renderPlatform()
-  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('创建组织')))
-  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '创建组织')!.click())
-  const dialog = document.querySelector('[role="dialog"]')!
+  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('Active user')))
+  const createOrganization = () => [...host.querySelectorAll('button')].find(button => button.textContent === '创建组织')!
+  await act(async () => vi.waitFor(() => expect(createOrganization().disabled).toBe(false)))
+  await act(async () => createOrganization().click())
+  await act(async () => vi.waitFor(() => expect(document.querySelector('[role="dialog"]')).not.toBeNull()))
+  const dialog = document.querySelector<HTMLElement>('[role="dialog"]')!
   await act(async () => setValue(dialog.querySelector<HTMLInputElement>('input')!, 'New organization'))
   await act(async () => setValue(dialog.querySelector<HTMLSelectElement>('select')!, 'local'))
   await act(async () => dialog.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   await act(async () => vi.waitFor(() => expect(dialog.textContent).toContain('Organization creation failed')))
-  expect(document.querySelector('[role="dialog"]')).not.toBeNull()
+  expect(dialog.textContent).toContain('错误代码：organization_creation_failed')
+  expect(dialog.textContent).toContain('请求 ID：org-create-42')
+  expect(document.querySelector('[role="dialog"]')).toBe(dialog)
   expect(fetch.mock.calls.some(([url, init]) => String(url) === '/api/hub/organizations' && init?.method === 'POST')).toBe(true)
 })
 

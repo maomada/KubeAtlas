@@ -67,31 +67,33 @@ function PortalMode({ path, queryClient }: { path: string; queryClient: QueryCli
   })
   const mode = useCloudQuery<HubContext>('/hub', '/api', session.data === 'authenticated')
   const [switching, setSwitching] = useState(false)
-  const [shellOrganizationId, setShellOrganizationId] = useState<string | null | undefined>(undefined)
+  const [shellAuthorizationContext, setShellAuthorizationContext] = useState<string>()
   const nativeClusterId = selectedCluster(path)
   // Keep native query data isolated when the route selects a different cluster.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const nativeClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), [nativeClusterId])
   const hub = isHubContext(mode.data) && mode.data.enabled === true ? mode.data : undefined
   const hasActiveShell = !!hub && (hub.member?.status === 'active' || hub.platformOwner) && hub.organizations.some(item => item.id === hub.activeOrganizationId)
-  const organizationChanged = !!hub && shellOrganizationId !== undefined && hub.activeOrganizationId !== shellOrganizationId
+  const shouldTrackAuthorizationContext = hasActiveShell || !!hub && hub.platformOwner && path === '/settings/platform'
+  const currentAuthorizationContext = hub ? authorizationContextKey(hub) : undefined
+  const authorizationContextChanged = currentAuthorizationContext !== undefined && shellAuthorizationContext !== undefined && currentAuthorizationContext !== shellAuthorizationContext
   useEffect(() => {
     if (session.data === 'unauthenticated' && path !== '/') replacePortalLocation('/login')
   }, [session.data, path])
   useEffect(() => {
-    // Preserve the first approved organization as the comparison point for later Hub polls.
+    if (!shouldTrackAuthorizationContext || shellAuthorizationContext !== undefined || currentAuthorizationContext === undefined) return
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (hasActiveShell && shellOrganizationId === undefined && hub) setShellOrganizationId(hub.activeOrganizationId)
-  }, [hasActiveShell, hub, shellOrganizationId])
+    setShellAuthorizationContext(currentAuthorizationContext)
+  }, [currentAuthorizationContext, shouldTrackAuthorizationContext, shellAuthorizationContext])
   useEffect(() => {
-    if (!organizationChanged) return
+    if (!authorizationContextChanged) return
     void (async () => {
       await Promise.all([queryClient.cancelQueries(), nativeClient.cancelQueries()])
       queryClient.clear()
       nativeClient.clear()
       replacePortalLocation('/')
     })()
-  }, [nativeClient, organizationChanged, queryClient])
+  }, [authorizationContextChanged, nativeClient, queryClient])
   if (session.isPending) return <CloudLoading label="正在检查门户会话…" />
   if (session.error) return <div className="cloud-page"><CloudError error={session.error} retry={() => { void session.refetch() }} /></div>
   if (session.data === 'unauthenticated') return path === '/' ? <PortalLanding /> : <CloudLoading label="正在跳转至登录页…" />
@@ -99,9 +101,9 @@ function PortalMode({ path, queryClient }: { path: string; queryClient: QueryCli
   if (mode.isPending) return <CloudLoading label="正在读取门户数据…" />
   if (mode.error || !isHubContext(mode.data) || mode.data.enabled !== true) return <div className="cloud-page"><CloudError error={mode.error ?? new Error('门户返回的数据无效')} retry={() => { void mode.refetch() }} /></div>
   const currentHub = mode.data
+  if (authorizationContextChanged) return <CloudLoading label="门户权限已更改，正在清除旧缓存…" />
   if (currentHub.member?.status === 'pending') return <PendingMembership member={currentHub.member} retry={() => { void mode.refetch() }} />
   if (currentHub.member?.status === 'disabled') return <DisabledMembership retry={() => { void mode.refetch() }} />
-  if (organizationChanged) return <CloudLoading label="组织已更改，正在清除旧缓存…" />
   const activeOrganization = currentHub.organizations.find(organization => organization.id === currentHub.activeOrganizationId)
   if ((currentHub.member?.status === 'active' || currentHub.platformOwner) && activeOrganization) return <ConnectionProfilesProvider key={currentHub.activeOrganizationId}><CloudShell hub={currentHub} queryClient={queryClient} nativeClient={nativeClient} onSwitchOrganization={async (organizationId, currentNativeClient) => {
     await cloudRequest('/hub/organization/select', { method: 'POST', body: { organizationId } })
@@ -131,6 +133,24 @@ function isHubContext(value: unknown): value is HubContext {
     if (member.status === 'active' && hub.activeOrganizationId !== null && !hub.platformOwner && !role(member.role)) return false
   }
   return true
+}
+
+function authorizationContextKey(hub: HubContext): string {
+  const organizations = hub.organizations
+    .map(({ id, role }) => ({ id, role }))
+    .sort((left, right) => left.id.localeCompare(right.id))
+  const activeOrganizationRole = organizations.find(item => item.id === hub.activeOrganizationId)?.role ?? null
+  return JSON.stringify({
+    userId: hub.userId,
+    memberId: hub.member?.id ?? null,
+    memberUserId: hub.member?.userId ?? null,
+    accountStatus: hub.member?.status ?? null,
+    memberRole: hub.member?.role ?? null,
+    activeOrganizationId: hub.activeOrganizationId,
+    activeOrganizationRole,
+    organizations,
+    platformOwner: hub.platformOwner,
+  })
 }
 
 function PlatformOnly({ path, hub }: { path: string; hub: HubContext }) {

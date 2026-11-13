@@ -136,7 +136,7 @@ export function ConnectionSettingsEditor({ canManage }: { canManage: boolean }) 
     <form className="cloud-form" onSubmit={submit}>
       <label>局域网根地址<input type="url" autoComplete="url" placeholder="http://192.0.2.10" value={lanURL} disabled={!canManage || busy || loading || !!error} onChange={event => setDraft({ key: profileKey, lanURL: event.target.value, publicURL })} /></label>
       <label>公网根地址<input type="url" autoComplete="url" placeholder="https://hub.example.com" value={publicURL} disabled={!canManage || busy || loading || !!error} onChange={event => setDraft({ key: profileKey, lanURL, publicURL: event.target.value })} /></label>
-      <small>请配置节点和客户端均可访问的根地址：HTTPS 域名或 IP 必须使用有效且受信任的证书。HTTP 仅支持服务器明确启用 --insecure-cookie 后的字面 IP 地址，且只限可信网络；不支持 HTTP 域名，也不会在 TLS 验证失败时回退。本机回环地址可用于开发。</small>
+      <small>请配置节点和客户端均可访问的根地址：HTTPS 域名或 IP 必须使用有效且受信任的证书。HTTP + 字面 IP 仅在服务器明确配置并启用相应支持后可用，且只限可信网络；不支持 HTTP 域名，也不会在 TLS 验证失败时回退。本机回环地址可用于开发。</small>
       <small>HTTP 会暴露密码、会话 Cookie、Token 和下载内容。HTTP 镜像仓库需要操作员手动配置节点容器运行时；本 Portal 不配置私有 CA 或节点信任。</small>
       {saveError && <p role="alert">{saveError}</p>}
       {saved && <p role="status">连接地址已保存；现有 Agent 不会自动重连或升级。</p>}

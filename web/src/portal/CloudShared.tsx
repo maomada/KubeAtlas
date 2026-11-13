@@ -58,7 +58,7 @@ export function UnencryptedHttpWarning({ origin, enrollment = false }: { origin?
   const hostname = url.hostname.toLowerCase()
   const loopback = hostname === 'localhost' || hostname.endsWith('.localhost') || hostname === '[::1]' || hostname === '::1' || /^127(?:\.\d{1,3}){3}$/.test(hostname)
   if (url.protocol !== 'http:' || loopback) return null
-  return <p role="alert" className="portal-card mt-5 border-warning p-4 text-sm text-warning-text">HTTP 未加密：密码、会话 Cookie 和 Token 可能被观察或篡改，下载内容也可能被拦截或修改。仅在服务器明确配置 --insecure-cookie、允许 HTTP IP Cookie 后，才可在可信网络中使用；建议使用 HTTPS。{enrollment ? ' 如需 HTTP 镜像仓库，操作员必须单独配置节点运行时；本 Portal 不会修改节点或容器运行时设置。' : ''}</p>
+  return <p role="alert" className="portal-card mt-5 border-warning p-4 text-sm text-warning-text">HTTP 未加密：密码、会话 Cookie 和 Token 可能被观察或篡改，下载内容也可能被拦截或修改。HTTP + 字面 IP 仅在服务器明确配置并启用相应支持后，才可在可信网络中使用；建议使用 HTTPS。{enrollment ? ' 如需 HTTP 镜像仓库，操作员必须单独配置节点运行时；本 Portal 不会修改节点或容器运行时设置。' : ''}</p>
 }
 
 export function relativeTime(value?: string) {

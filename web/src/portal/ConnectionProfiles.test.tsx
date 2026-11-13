@@ -82,6 +82,8 @@ it('surfaces read and update errors and permits an explicitly empty address', as
   })
   vi.stubGlobal('fetch', fetch)
   await act(async () => root.render(<ConnectionProfilesProvider><ConnectionSettingsEditor canManage /><Probe /></ConnectionProfilesProvider>))
+  expect(host.textContent).toContain('HTTP + 字面 IP 仅在服务器明确配置并启用相应支持后可用')
+  expect(host.textContent).not.toContain('--insecure-cookie')
   const lan = host.querySelector<HTMLInputElement>('input[placeholder="http://192.0.2.10"]')!
   await act(async () => {
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')!.set!.call(lan, '')

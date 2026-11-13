@@ -49,7 +49,7 @@ export function Login() {
       const session = await fetch(apiUrl('/auth/session', '/api'), {
         headers: getAuthHeaders(), credentials: getCredentialsMode(), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10000),
       })
-      if (!session.ok) throw new Error('无法建立登录会话。请优先使用 HTTPS；HTTP IP 部署仅在服务端明确启用可信网络 Cookie 选项 --insecure-cookie 时可用。HTTP 会话 Cookie 与 Token 可能被观察或篡改。')
+      if (!session.ok) throw new Error('无法建立登录会话。请优先使用 HTTPS；HTTP + 字面 IP 仅在服务端明确启用相应的可信网络 Cookie 支持后可用。HTTP 会话 Cookie 与 Token 可能被观察或篡改。')
       window.location.replace('/')
     } catch (cause) {
       setError(cause instanceof Error && cause.name === 'Error' ? cause.message : '连接门户失败，请检查网络后重试。')

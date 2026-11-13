@@ -202,6 +202,7 @@ it('looks up and approves a pairing without displaying secrets or claiming conne
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   await act(async () => vi.waitFor(() => expect(host.textContent).toContain('配对审核')))
   expect(host.textContent).toContain('sha256:abc123')
+  expect(host.textContent).toContain('ABCD-1234')
   expect(host.textContent).toContain('待处理')
   expect(host.textContent).not.toContain('never-render-this')
   const lookup = fetch.mock.calls.find(([url]) => String(url) === '/api/hub/enrollments/lookup')
@@ -215,8 +216,54 @@ it('looks up and approves a pairing without displaying secrets or claiming conne
   await act(async () => vi.waitFor(() => expect(host.textContent).toContain('配对已批准')))
   const approval = fetch.mock.calls.find(([url]) => String(url) === '/api/hub/enrollments/enrollment-1/approve')
   expect(JSON.parse(approval?.[1]?.body as string)).toEqual({ userCode: 'ABCD-1234', organizationId: 'org-1', name: 'Demo east', clusterId: 'cluster-revoked' })
-  expect(host.querySelector('.cloud-live-cluster')).toBeNull()
+  const liveRows = [...host.querySelectorAll('.cloud-live-cluster')]
+  expect(liveRows).toHaveLength(1)
+  expect(liveRows[0].textContent).toContain('cluster-revoked')
+  expect(liveRows[0].textContent).toContain('已撤销')
+  expect(liveRows.some(row => row.textContent?.includes('已连接'))).toBe(false)
   expect(host.textContent).toContain('批准不代表 Agent 已安装或已连接')
+})
+
+it('clears a reviewed pairing and confirmation when the input code changes', async () => {
+  let lookups = 0
+  const fetch = installFetch(path => {
+    if (path === '/api/hub/enrollments/lookup') {
+      lookups++
+      const userCode = lookups === 1 ? 'ABCD-1234' : 'WXYZ-5678'
+      return response({ id: 'enrollment-' + lookups, userCode, contextName: 'Demo east', clusterFingerprint: 'sha256:abc123', status: 'pending', expiresAt: '2099-01-01T00:00:00Z' })
+    }
+    if (path === '/api/hub/enrollments/enrollment-2/approve') return response({ id: 'cluster-2', status: 'approved' })
+    throw new Error('Unexpected request: ' + path)
+  })
+  await renderInstall()
+  const code = host.querySelector<HTMLInputElement>('input[maxlength="128"]')!
+  const search = async (value: string) => {
+    await act(async () => setValue(code, value))
+    await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    await act(async () => vi.waitFor(() => expect(host.textContent).toContain(value)))
+  }
+  await search('ABCD-1234')
+  await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+  expect([...host.querySelectorAll('button')].find(button => button.textContent === '批准配对')?.disabled).toBe(false)
+
+  await act(async () => setValue(code, 'WXYZ-5678'))
+  expect(host.textContent).not.toContain('ABCD-1234')
+  expect([...host.querySelectorAll('button')].find(button => button.textContent === '批准配对')).toBeUndefined()
+  expect(fetch.mock.calls.filter(([url]) => String(url).endsWith('/approve'))).toHaveLength(0)
+
+  await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  await act(async () => vi.waitFor(() => expect(lookups).toBe(2)))
+  expect(host.textContent).toContain('WXYZ-5678')
+  const approve = [...host.querySelectorAll('button')].find(button => button.textContent === '批准配对')!
+  expect(approve.disabled).toBe(true)
+  await act(async () => approve.click())
+  expect(fetch.mock.calls.filter(([url]) => String(url).endsWith('/approve'))).toHaveLength(0)
+
+  await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '批准配对')!.click())
+  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('配对已批准')))
+  const approval = fetch.mock.calls.find(([url]) => String(url).endsWith('/enrollment-2/approve'))
+  expect(JSON.parse(approval?.[1]?.body as string).userCode).toBe('WXYZ-5678')
 })
 
 it('denies only an explicitly looked-up pending code and sends the exact body', async () => {

@@ -94,6 +94,7 @@ export function CloudInstall({ hub, clusters, canManage, directoryError, onRefre
   const [commandRequestState, setCommandRequestState] = useState<{ profileRevision: number; busy: boolean }>()
   const [commandErrorState, setCommandErrorState] = useState<{ profileRevision: number; error: unknown }>()
   const [userCode, setUserCode] = useState('')
+  const lookupGeneration = useRef(0)
   const [lookup, setLookup] = useState<EnrollmentLookup>()
   const [lookupBusy, setLookupBusy] = useState(false)
   const [lookupError, setLookupError] = useState<unknown>()
@@ -158,18 +159,37 @@ export function CloudInstall({ hub, clusters, canManage, directoryError, onRefre
     }
   }
 
+  function changeUserCode(value: string) {
+    lookupGeneration.current++
+    setUserCode(value)
+    setLookup(undefined)
+    setLookupBusy(false)
+    setLookupError(undefined)
+    setClusterName('')
+    setSelectedClusterId('')
+    setOrganizationConfirmed(false)
+    setMutationError(undefined)
+    setMutationUncertain(false)
+    setCompletion(undefined)
+    setExpirySnapshot(undefined)
+  }
+
   async function lookupEnrollment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!canManage || !hub.activeOrganizationId || lookupBusy || mutationBusy || !userCode.trim()) return
+    const generation = ++lookupGeneration.current
+    const requestedUserCode = userCode.trim()
     setLookupBusy(true); setLookupError(undefined); setLookup(undefined); setCompletion(undefined); setMutationError(undefined); setMutationUncertain(false); setOrganizationConfirmed(false)
     try {
-      const result = await cloudRequest<EnrollmentLookup>('/hub/enrollments/lookup', { method: 'POST', body: { userCode: userCode.trim() } })
+      const result = await cloudRequest<EnrollmentLookup>('/hub/enrollments/lookup', { method: 'POST', body: { userCode: requestedUserCode } })
+      if (generation !== lookupGeneration.current) return
       if (typeof result.id !== 'string' || !result.id.trim() || typeof result.userCode !== 'string' || !result.userCode.trim() || typeof result.contextName !== 'string' || !result.contextName.trim() || typeof result.clusterFingerprint !== 'string' || !result.clusterFingerprint.trim() || typeof result.status !== 'string' || !result.status.trim() || typeof result.expiresAt !== 'string' || !result.expiresAt.trim() || !Number.isFinite(Date.parse(result.expiresAt))) throw new Error('配对查询信息不完整；必须包含上下文、指纹、状态和有效期。')
       setSelectedClusterId('')
       setExpirySnapshot({ id: result.id, now: Date.now() })
       setLookup({ id: result.id, userCode: result.userCode, contextName: result.contextName, clusterFingerprint: result.clusterFingerprint, status: result.status, expiresAt: result.expiresAt })
       setClusterName(result.contextName)
-    } catch (failure) { setLookupError(failure) } finally { setLookupBusy(false) }
+    } catch (failure) { if (generation === lookupGeneration.current) setLookupError(failure) }
+    finally { if (generation === lookupGeneration.current) setLookupBusy(false) }
   }
 
   async function approveEnrollment() {
@@ -211,9 +231,9 @@ export function CloudInstall({ hub, clusters, canManage, directoryError, onRefre
     </section>
 
     <section className="cloud-card"><h2>设备配对审批</h2><p>输入集群显示的配对码。系统不会列出待处理设备；只查询你提交的配对码及其上下文。</p>
-      <form className="cloud-form" onSubmit={lookupEnrollment}><label>配对码<input required maxLength={128} autoComplete="off" value={userCode} onChange={event => setUserCode(event.target.value)} /></label><button className="cloud-button" disabled={!canManage || !hub.activeOrganizationId || lookupBusy || mutationBusy || !userCode.trim()}>{lookupBusy ? '正在查询…' : '查询配对'}</button></form>
+      <form className="cloud-form" onSubmit={lookupEnrollment}><label>配对码<input required maxLength={128} autoComplete="off" value={userCode} disabled={lookupBusy || mutationBusy} onChange={event => changeUserCode(event.target.value)} /></label><button className="cloud-button" disabled={!canManage || !hub.activeOrganizationId || lookupBusy || mutationBusy || !userCode.trim()}>{lookupBusy ? '正在查询…' : '查询配对'}</button></form>
       {lookupError !== undefined && <CloudError error={lookupError} />}
-      {lookup && <div className="cloud-card mt-4 p-4"><h3>配对审核</h3><dl className="cloud-identity-details mt-4"><dt>Kubernetes 上下文</dt><dd>{lookup.contextName}</dd><dt>kube-system 指纹</dt><dd className="portal-mono">{lookup.clusterFingerprint}</dd><dt>有效期至</dt><dd>{lookup.expiresAt}</dd><dt>状态</dt><dd>{enrollmentStatusLabel(lookup.status)}</dd></dl>
+      {lookup && <div className="cloud-card mt-4 p-4"><h3>配对审核</h3><dl className="cloud-identity-details mt-4"><dt>配对码</dt><dd className="portal-mono">{lookup.userCode}</dd><dt>Kubernetes 上下文</dt><dd>{lookup.contextName}</dd><dt>kube-system 指纹</dt><dd className="portal-mono">{lookup.clusterFingerprint}</dd><dt>有效期至</dt><dd>{lookup.expiresAt}</dd><dt>状态</dt><dd>{enrollmentStatusLabel(lookup.status)}</dd></dl>
         <p>目标组织：<strong>{activeOrganization?.name ?? '不可用'}</strong>（{hub.activeOrganizationId ?? '无'}）。确认后只会在此组织内创建集群访问。</p>
         {canComplete && <div className="cloud-form mt-4"><label>集群名称<input required maxLength={128} value={clusterName} onChange={event => setClusterName(event.target.value)} /></label>
           {reEnrollmentClusters.length > 0 && <label>要重新配对的现有集群（可选）<select className="portal-control" value={selectedReEnrollment?.id ?? ''} onChange={event => setSelectedClusterId(event.target.value)}><option value="">创建新的集群记录</option>{reEnrollmentClusters.map(cluster => <option key={cluster.id} value={cluster.id}>{cluster.name} · {cluster.id}</option>)}</select></label>}

@@ -503,25 +503,25 @@ it('keeps the current organization and reports a failed switch without reloading
   }
 })
 
-it('clears old organization caches and reloads when Hub reports a change from another tab', async () => {
+it('clears old caches when Hub reports a same-organization role change, but not for an unchanged authorization poll', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState({}, '', '/c/alpha/resources')
   const nextHub = {
     ...portalHub,
-    member: { ...portalHub.member, role: 'member' as const },
-    activeOrganizationId: 'org-2',
-    organizations: [...portalHub.organizations, { id: 'org-2', name: 'Organization Two', role: 'member' as const }],
+    member: { ...portalHub.member, role: 'viewer' as const },
+    organizations: [{ ...portalHub.organizations[0], role: 'viewer' as const }],
   }
   const oldOrganizationCredential = {
     id: 'credential-org-1', organizationId: 'org-1', label: 'Old organization credential',
     clusterIds: ['alpha'], readOnly: true, createdAt: '2026-01-01T00:00:00Z',
     expiresAt: '2030-01-01T00:00:00Z', refreshUntil: '2030-02-01T00:00:00Z',
   }
+  const hubResponses = [portalHub, portalHub, nextHub]
   let hubReads = 0
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     const path = String(input)
     if (path === '/api/auth/session') return new Response(null, { status: 204 })
-    if (path === '/api/hub') return Response.json(hubReads++ === 0 ? portalHub : nextHub)
+    if (path === '/api/hub') return Response.json(hubResponses[Math.min(hubReads++, hubResponses.length - 1)])
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Old organization cluster', state: 'connected' }] })
     if (path === '/api/mcp/credentials') return Response.json({ credentials: [oldOrganizationCredential], serverTime: '2026-01-01T00:00:00Z' })
@@ -555,12 +555,22 @@ it('clears old organization caches and reloads when Hub reports a change from an
       expect(portalClient).toBeDefined()
     }))
     expect((portalClient!.getQueryData(mcpQueryKey) as { credentials: { organizationId: string }[] }).credentials[0]?.organizationId).toBe('org-1')
+
+    await act(async () => { await portalClient!.invalidateQueries({ queryKey: ['portal', '/api', '/hub'] }) })
+    await act(async () => vi.waitFor(() => expect(hubReads).toBe(2)))
+    expect(replace).not.toHaveBeenCalled()
+    expect(clear).not.toHaveBeenCalled()
+    expect(portalClient!.getQueryData(mcpQueryKey)).toBeDefined()
+    expect(nativeClient.getQueryData(['namespace-scope'])).toBeDefined()
+
     await act(async () => {
       await portalClient!.invalidateQueries({ queryKey: ['portal', '/api', '/hub'] })
     })
     await act(async () => vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/')))
 
     expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(host.textContent).not.toContain('Old organization credential')
+    expect(host.textContent).not.toContain('Old organization cluster')
     expect(portalClient!.getQueryData(mcpQueryKey)).toBeUndefined()
     expect(nativeClient.getQueryData(['namespace-scope'])).toBeUndefined()
     expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/hub/clusters')).toHaveLength(1)
