@@ -1,6 +1,7 @@
 import { useState, type AnchorHTMLAttributes, type ReactNode } from 'react'
 import { AlertTriangle, Check, Copy, Loader2, X } from 'lucide-react'
 import { Badge, DialogPortal, Tooltip } from '@maomada/k8s-ui'
+import { copyText } from '@maomada/k8s-ui/utils/clipboard'
 import { CloudRequestError, type HubCluster } from './cloudApi'
 import { navigateCloud } from './cloudNavigation'
 
@@ -43,12 +44,12 @@ export function CloudDialog({ title, children, onClose, busy = false }: {
 }
 
 export function CopyButton({ value, label = '复制' }: { value: string; label?: string }) {
-  const [copied, setCopied] = useState(false)
-  const [error, setError] = useState('')
-  return <><button className="cloud-button" type="button" onClick={async () => {
-    try { await navigator.clipboard.writeText(value); setCopied(true); setError('') }
-    catch { setError('剪贴板不可用，请手动选择并复制文本。') }
-  }}>{copied ? <Check size={14} /> : <Copy size={14} />}{copied ? '已复制' : label}</button>{error && <p role="status">{error}</p>}</>
+  const [status, setStatus] = useState<'copied' | 'failed' | null>(null)
+  return <><button className="cloud-button" type="button" onClick={() => {
+    setStatus(null)
+    void copyText(value).then(copied => setStatus(copied ? 'copied' : 'failed')).catch(() => setStatus('failed'))
+  }}>{status === 'copied' ? <Check size={14} /> : <Copy size={14} />}{status === 'copied' ? '已复制' : label}</button>
+    {status === 'failed' && <p role="status">复制失败：浏览器未能写入剪贴板，请重试或手动选择文本复制。</p>}</>
 }
 
 export function UnencryptedHttpWarning({ origin, enrollment = false }: { origin?: string; enrollment?: boolean }) {
