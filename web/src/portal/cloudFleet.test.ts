@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { fetchFleet } from './cloudFleet'
 import type { HubCluster } from './cloudApi'
 
-const cluster = (id: string, state: HubCluster['state'] = 'connected'): HubCluster => ({ id, name: id, description: '', environment: '', region: '', createdAt: '', updatedAt: '', configured: true, state })
+const cluster = (id: string, state: HubCluster['state'] = 'connected'): HubCluster => ({ id, organizationId: 'org-1', name: id, description: '', environment: '', region: '', createdAt: '', updatedAt: '', configured: true, state })
 afterEach(() => vi.unstubAllGlobals())
 
 describe('live fleet requests', () => {

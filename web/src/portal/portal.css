@@ -23,6 +23,28 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   border-radius: 14px;
 }
 .portal-mono { font-family: 'DM Mono', monospace; }
+.portal-auth-page { min-height: 100dvh; display: flex; flex-direction: column; }
+.portal-auth-header { display: flex; min-height: 64px; align-items: center; justify-content: space-between; gap: 16px; padding: 12px max(20px, calc((100% - 1120px) / 2)); border-bottom: 1px solid var(--border-default); background: var(--bg-surface); }
+.portal-auth-header > a { display: inline-flex; align-items: center; gap: 10px; color: var(--text-primary); font-weight: 650; }
+.portal-auth-header > a svg { color: var(--color-brand); }
+.portal-auth-header > a span { border-left: 1px solid var(--border-default); padding-left: 10px; color: var(--text-secondary); font-size: 13px; font-weight: 400; }
+.portal-auth-main { width: min(1120px, 100%); flex: 1; align-self: center; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); align-items: center; gap: 44px; padding: 48px 24px; }
+.portal-auth-main h1 { max-width: 680px; margin-top: 12px; font-size: clamp(28px, 4vw, 42px); font-weight: 650; line-height: 1.15; }
+.portal-auth-form-layout { max-width: 760px; grid-template-columns: minmax(0, 1fr); }
+.portal-auth-footer { padding: 16px 20px; color: var(--text-tertiary); font-size: 12px; text-align: center; }
+.cloud-org-switcher { position: relative; display: flex; min-width: 150px; flex-direction: column; gap: 3px; }
+.cloud-org-switcher select { max-width: 210px; padding: 7px 10px; font-size: 12px; }
+.cloud-org-switcher-error { position: absolute; top: 100%; left: 0; z-index: 31; max-width: 260px; color: var(--color-warning); font-size: 11px; }
+.cloud-switching-overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; background: var(--bg-base); }
+.cloud-platform-only { min-height: 100dvh; display: flex; flex-direction: column; }
+.cloud-platform-only > header { justify-content: flex-start; }
+.cloud-platform-only > header > span { flex: 1; }
+.cloud-platform-only .cloud-brand { height: auto; padding: 0; border: 0; }
+.cloud-platform-user, .cloud-platform-cluster { display: grid; grid-template-columns: minmax(150px, 1fr) auto minmax(180px, 1.3fr) auto; align-items: center; gap: 12px; padding: 14px 0; border-top: 1px solid var(--border-default); }
+.cloud-platform-user:first-of-type, .cloud-platform-cluster:first-of-type { margin-top: 14px; }
+.cloud-platform-membership { display: inline-block; margin: 2px 5px 2px 0; border: 1px solid var(--border-default); border-radius: 6px; padding: 3px 7px; font-size: 11px; }
+.cloud-platform-membership-edit { display: grid; grid-template-columns: minmax(0, 1fr) 120px auto; align-items: center; gap: 8px; }
+.cloud-live-cluster { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border-default); }
 
 .cloud-shell { display: flex; height: 100dvh; overflow: hidden; font-size: 14px; line-height: 1.5; }
 .cloud-shell h1, .cloud-shell h2, .cloud-dialog h2 { margin: 0; color: var(--text-primary); }
@@ -209,6 +231,13 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .cloud-page { padding: 23px; }
 }
 @media (max-width: 760px) {
+  .portal-auth-header { padding: 10px 16px; }
+  .portal-auth-main { grid-template-columns: minmax(0, 1fr); gap: 28px; padding: 30px 16px; }
+  .cloud-platform-user, .cloud-platform-cluster { grid-template-columns: minmax(0, 1fr) auto; }
+  .cloud-platform-user > div:nth-child(3), .cloud-platform-cluster > div:first-child { grid-column: 1 / -1; }
+  .cloud-platform-membership-edit { grid-template-columns: minmax(0, 1fr) auto; }
+  .cloud-org-switcher { min-width: 110px; }
+  .cloud-org-switcher select { max-width: 160px; }
   .cloud-sidebar, .cloud-collapsed .cloud-sidebar { position: fixed; left: -260px; top: 0; bottom: 0; width: 240px; transition: left .2s; }
   .cloud-menu-open .cloud-sidebar { left: 0; }
   .cloud-menu-open .cloud-nav-backdrop { display: block; position: fixed; inset: 0; background: rgb(0 0 0 / .45); z-index: 29; }

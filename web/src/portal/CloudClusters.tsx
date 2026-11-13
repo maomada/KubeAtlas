@@ -1,20 +1,20 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Tooltip } from '@maomada/k8s-ui'
-import { ArrowDownUp, KeyRound, Pencil, Plus, Search, Server, ShieldOff } from 'lucide-react'
+import { ArrowDownUp, Pencil, Plus, Search, Server, ShieldOff } from 'lucide-react'
 import { cloudRequest, clusterPage, type HubCluster } from './cloudApi'
-import { CloudDialog, CloudError, CloudLink, ClusterStatus, CopyButton, relativeTime } from './CloudShared'
+import { CloudDialog, CloudError, CloudLink, ClusterStatus, CopyButton, relativeTime, UnencryptedHttpWarning } from './CloudShared'
 import { ConnectionProfileSelector, useConnectionProfiles } from './ConnectionProfiles'
+import { useCloudLocation } from './cloudNavigation'
+import type { HubContext } from './CloudOrganization'
 
-interface IssuedAgent { cluster: HubCluster; token: string }
-type Action = { kind: 'edit' | 'rotate' | 'revoke'; cluster: HubCluster }
+type Action = { kind: 'edit' | 'revoke'; cluster: HubCluster }
 
 export function CloudClusters({ clusters, canManage }: { clusters: HubCluster[]; canManage: boolean }) {
   const [filter, setFilter] = useState('')
   const [sort, setSort] = useState<'name' | 'state' | 'version' | 'connectedAt'>('name')
   const [reverse, setReverse] = useState(false)
   const [action, setAction] = useState<Action>()
-  const [issued, setIssued] = useState<IssuedAgent>()
   const rows = useMemo(() => clusters.filter(cluster => [cluster.name, cluster.id, cluster.environment, cluster.region].some(value => value.toLowerCase().includes(filter.toLowerCase())))
     .sort((a, b) => {
       const value = (cluster: HubCluster) => sort === 'version' ? cluster.agent?.version ?? '' : sort === 'connectedAt' ? cluster.agent?.connectedAt ?? '' : cluster[sort]
@@ -22,20 +22,19 @@ export function CloudClusters({ clusters, canManage }: { clusters: HubCluster[];
     }), [clusters, filter, sort, reverse])
   function order(key: typeof sort) { if (sort === key) setReverse(!reverse); else { setSort(key); setReverse(false) } }
   return <div className="cloud-page">
-    <div className="cloud-page-heading"><div><h1>Clusters</h1><p>{clusters.length} {clusters.length === 1 ? 'cluster' : 'clusters'} <span className="cloud-connected">{clusters.filter(cluster => cluster.state === 'connected').length} connected</span></p></div>{canManage && <CloudLink className="cloud-button cloud-primary" href="/install"><Plus size={16} />Connect cluster</CloudLink>}</div>
-    {!clusters.length ? <div className="cloud-empty"><Server size={32} /><h2>{canManage ? 'No clusters yet' : 'No clusters assigned'}</h2><p>{canManage ? 'Connect a cluster through an outbound Agent tunnel. Current state stays in your cluster.' : 'Ask an organization administrator to grant cluster access.'}</p>{canManage && <CloudLink href="/install" className="cloud-button cloud-primary"><Plus size={16} />Connect your first cluster</CloudLink>}</div> : <section className="cloud-table-panel">
-      <div className="cloud-table-filter"><label className="cloud-search"><Search size={16} /><input type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="Filter by name, id, or tag — e.g. prod" aria-label="Filter clusters" /></label><span>{rows.length} {rows.length === 1 ? 'cluster' : 'clusters'}</span></div>
-      <div className="cloud-table-scroll"><table className="cloud-table"><thead><tr>{(['name', 'state', 'version', 'connectedAt'] as const).map((key, index) => <th key={key} aria-sort={sort === key ? reverse ? 'descending' : 'ascending' : 'none'}><button onClick={() => order(key)}>{['Name', 'Status', 'Version', 'Connected since'][index]}<ArrowDownUp size={12} /></button></th>)}<th><span className="sr-only">Actions</span></th></tr></thead><tbody>
-        {rows.map(cluster => <tr key={cluster.id} data-connected={cluster.state === 'connected'}><td><CloudLink className="cloud-cluster-name" href={clusterPage(cluster.id)}>{cluster.name}</CloudLink><div className="cloud-muted">{cluster.id}{cluster.environment && ` · ${cluster.environment}`}</div></td><td><ClusterStatus cluster={cluster} /></td><td className="portal-mono">{cluster.agent?.version ?? 'Unknown'}</td><td><Tooltip content={cluster.agent?.connectedAt ?? 'Connection time unavailable'}><span>{relativeTime(cluster.agent?.connectedAt)}</span></Tooltip></td><td>{canManage && <div className="cloud-row-actions"><button onClick={() => setAction({ kind: 'rotate', cluster })}><KeyRound size={14} />{cluster.revokedAt ? 'Reconnect' : 'Rotate token'}</button><button onClick={() => setAction({ kind: 'edit', cluster })}><Pencil size={14} />Edit</button>{!cluster.revokedAt && <button onClick={() => setAction({ kind: 'revoke', cluster })}><ShieldOff size={14} />Revoke access</button>}</div>}</td></tr>)}
-        {!rows.length && <tr><td colSpan={5} className="cloud-muted">No clusters match this filter.</td></tr>}
+    <div className="cloud-page-heading"><div><h1>集群</h1><p>{clusters.length} 个集群 <span className="cloud-connected">{clusters.filter(cluster => cluster.state === 'connected').length} 个已连接</span></p></div>{canManage && <CloudLink className="cloud-button cloud-primary" href="/install"><Plus size={16} />连接集群</CloudLink>}</div>
+    {!clusters.length ? <div className="cloud-empty"><Server size={32} /><h2>{canManage ? '暂无集群' : '尚未分配集群'}</h2><p>{canManage ? '通过出站 Agent 隧道连接集群；集群当前状态由实时目录提供。' : '请联系组织 Owner 或平台 Owner 授予组织访问权限。'}</p>{canManage && <CloudLink href="/install" className="cloud-button cloud-primary"><Plus size={16} />连接首个集群</CloudLink>}</div> : <section className="cloud-table-panel">
+      <div className="cloud-table-filter"><label className="cloud-search"><Search size={16} /><input type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="按名称、ID 或标签筛选，例如 prod" aria-label="筛选集群" /></label><span>{rows.length} 个集群</span></div>
+      <div className="cloud-table-scroll"><table className="cloud-table"><thead><tr>{(['name', 'state', 'version', 'connectedAt'] as const).map((key, index) => <th key={key} aria-sort={sort === key ? reverse ? 'descending' : 'ascending' : 'none'}><button onClick={() => order(key)}>{['名称', '状态', '版本', '连接时间'][index]}<ArrowDownUp size={12} /></button></th>)}<th><span className="sr-only">操作</span></th></tr></thead><tbody>
+        {rows.map(cluster => <tr key={cluster.id} data-connected={cluster.state === 'connected'}><td><CloudLink className="cloud-cluster-name" href={clusterPage(cluster.id)}>{cluster.name}</CloudLink><div className="cloud-muted">{cluster.id}{cluster.environment && ' · ' + cluster.environment}</div></td><td><ClusterStatus cluster={cluster} /></td><td className="portal-mono">{cluster.agent?.version ?? '未知'}</td><td><Tooltip content={cluster.agent?.connectedAt ?? '连接时间不可用'}><span>{relativeTime(cluster.agent?.connectedAt)}</span></Tooltip></td><td>{canManage && <div className="cloud-row-actions">{(cluster.revokedAt || cluster.state === 'revoked') && <CloudLink href={'/install?clusterId=' + encodeURIComponent(cluster.id)} className="cloud-text-button">重新配对</CloudLink>}<button onClick={() => setAction({ kind: 'edit', cluster })}><Pencil size={14} />编辑</button>{!cluster.revokedAt && cluster.state !== 'revoked' && <button onClick={() => setAction({ kind: 'revoke', cluster })}><ShieldOff size={14} />撤销访问</button>}</div>}</td></tr>)}
+        {!rows.length && <tr><td colSpan={5} className="cloud-muted">没有符合筛选条件的集群。</td></tr>}
       </tbody></table></div>
     </section>}
-    {canManage && action && <ClusterAction key={`${action.kind}:${action.cluster.id}`} action={action} onClose={() => setAction(undefined)} onIssued={value => { setIssued(value); setAction(undefined) }} />}
-    {issued && <AgentToken issued={issued} onClose={() => setIssued(undefined)} />}
+    {canManage && action && <ClusterAction key={action.kind + ':' + action.cluster.id} action={action} onClose={() => setAction(undefined)} />}
   </div>
 }
 
-function ClusterAction({ action, onClose, onIssued }: { action: Action; onClose: () => void; onIssued: (value: IssuedAgent) => void }) {
+function ClusterAction({ action, onClose }: { action: Action; onClose: () => void }) {
   const queryClient = useQueryClient()
   const [name, setName] = useState(action.cluster.name)
   const [environment, setEnvironment] = useState(action.cluster.environment)
@@ -49,157 +48,192 @@ function ClusterAction({ action, onClose, onIssued }: { action: Action; onClose:
     if (busy) return
     setBusy(true); setError(undefined)
     try {
-      const base = `/hub/clusters/${encodeURIComponent(action.cluster.id)}`
+      const base = '/hub/clusters/' + encodeURIComponent(action.cluster.id)
       if (action.kind === 'edit') await cloudRequest(base, { method: 'PUT', body: { id: action.cluster.id, name, environment, region, description } })
-      else if (action.kind === 'rotate') onIssued(await cloudRequest<IssuedAgent>(`${base}/rotate`, { method: 'POST', body: {} }))
-      else await cloudRequest(`${base}/revoke`, { method: 'POST', body: {} })
+      else await cloudRequest(base + '/revoke', { method: 'POST', body: {} })
       await queryClient.invalidateQueries({ queryKey: ['portal', '/api', '/hub/clusters'] })
       onClose()
     } catch (failure) { setError(failure) } finally { setBusy(false) }
   }
-  const title = action.kind === 'edit' ? 'Edit cluster' : action.kind === 'rotate' ? 'Rotate cluster token' : 'Revoke cluster access'
-  return <CloudDialog title={title} onClose={onClose} busy={busy}><form onSubmit={submit} className="cloud-form">
+  return <CloudDialog title={action.kind === 'edit' ? '编辑集群' : '撤销集群访问'} onClose={onClose} busy={busy}><form onSubmit={submit} className="cloud-form">
     {error !== undefined && <CloudError error={error} />}
-    {action.kind === 'edit' ? <><label>Name<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} /></label><label>Tag<input maxLength={128} placeholder="e.g. production" value={environment} onChange={event => setEnvironment(event.target.value)} /></label><label>Region<input maxLength={128} value={region} onChange={event => setRegion(event.target.value)} /></label><label>Description<textarea maxLength={1024} value={description} onChange={event => setDescription(event.target.value)} /></label></> : <><p>{action.kind === 'rotate' ? 'The current Agent token will stop working immediately. Save the new token, update its mounted file and restart your Agent.' : 'This disconnects the Agent and revokes its token. The cluster record and workloads remain; this does not uninstall anything.'}</p><label>Type {action.cluster.name} to confirm<input autoComplete="off" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label></>}
-    <footer><button type="button" className="cloud-button" disabled={busy} onClick={onClose}>Cancel</button><button className="cloud-button cloud-primary" disabled={busy || (action.kind !== 'edit' && confirmation !== action.cluster.name)}>{busy ? 'Saving…' : action.kind === 'edit' ? 'Save changes' : action.kind === 'rotate' ? 'Rotate token' : 'Revoke access'}</button></footer>
+    {action.kind === 'edit' ? <><label>集群名称<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} /></label><label>标签<input maxLength={128} placeholder="例如 production" value={environment} onChange={event => setEnvironment(event.target.value)} /></label><label>区域<input maxLength={128} value={region} onChange={event => setRegion(event.target.value)} /></label><label>描述<textarea maxLength={1024} value={description} onChange={event => setDescription(event.target.value)} /></label></> : <><p>此操作会撤销 Agent 访问，但保留集群记录和工作负载，不会卸载任何组件。重新连接需要重新注册并明确审批。</p><label>输入 {action.cluster.name} 以确认<input autoComplete="off" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label></>}
+    <footer><button type="button" className="cloud-button" disabled={busy} onClick={onClose}>取消</button><button className="cloud-button cloud-primary" disabled={busy || action.kind === 'revoke' && confirmation !== action.cluster.name}>{busy ? '正在保存…' : action.kind === 'edit' ? '保存更改' : '撤销访问'}</button></footer>
   </form></CloudDialog>
 }
 
-function AgentToken({ issued, onClose, newInstall = false }: { issued: IssuedAgent; onClose: () => void; newInstall?: boolean }) {
-  const profile = useConnectionProfiles()
-  const [caFile, setCAFile] = useState('')
-  const catalog = profile.connections?.catalog
-  const command = profile.installAvailable && catalog?.version && catalog.installerSHA256 && catalog.chartSHA256 && catalog.imageDigest && profile.connections?.ownerUserID
-    ? [
-      '(',
-      'set -eu',
-      'umask 077',
-      'mkdir -p "$HOME/.config/kubeatlas"',
-      'chmod 700 "$HOME/.config/kubeatlas"',
-      `TOKEN_FILE="$HOME/.config/kubeatlas/"${shellQuote(`${issued.cluster.id}.token`)}`,
-      `CA_FILE=${shellQuote(caFile)}`,
-      'read -r -s -p "Paste the one-time Hub Agent token: " KUBEATLAS_AGENT_TOKEN',
-      'printf \'\\n\'',
-      '[ -n "$KUBEATLAS_AGENT_TOKEN" ] || { printf \'Token is required\\n\' >&2; exit 1; }',
-      'printf \'%s\\n\' "$KUBEATLAS_AGENT_TOKEN" > "$TOKEN_FILE"',
-      'unset KUBEATLAS_AGENT_TOKEN',
-      'chmod 600 "$TOKEN_FILE"',
-      'CURL_CA=()',
-      'INSTALLER_CA=()',
-      'if [ -n "$CA_FILE" ]; then CURL_CA=(--cacert "$CA_FILE"); INSTALLER_CA=(--ca-file "$CA_FILE"); fi',
-      'TMP="$(mktemp -d)"',
-      'trap \'rm -rf -- "$TMP"\' EXIT',
-      `HTTP_STATUS="$(curl "\${CURL_CA[@]}" --proto '=http,https' --tlsv1.2 --fail --silent --show-error --write-out '%{http_code}' --output "$TMP/installer.sh" ${shellQuote(`${profile.origin}/downloads/agent/${catalog.version}/installer.sh`)})"`,
-      '[ "$HTTP_STATUS" = 200 ] || { printf \'Installer download returned HTTP %s\\n\' "$HTTP_STATUS" >&2; exit 1; }',
-      `printf '%s  %s\\n' ${shellQuote(catalog.installerSHA256)} "$TMP/installer.sh" | sha256sum -c -`,
-      'chmod 700 "$TMP/installer.sh"',
-      `"$TMP/installer.sh" --hub-origin ${shellQuote(profile.origin)} --context "\${KUBE_CONTEXT:?Set KUBE_CONTEXT to the intended cluster}" --cluster-id ${shellQuote(issued.cluster.id)} --version ${shellQuote(catalog.version)} --image-digest ${shellQuote(catalog.imageDigest)} --chart-sha256 ${shellQuote(catalog.chartSHA256)} --owner-user-id ${shellQuote(profile.connections.ownerUserID)} --token-file "$TOKEN_FILE" "\${INSTALLER_CA[@]}"`,
-      ')',
-    ].join('\n')
-    : ''
-  const reconnectCommand = [
-    'kubectl --context "$KUBE_CONTEXT" --namespace kubeatlas create secret generic kubeatlas-hub-token --from-file=token="$TOKEN_FILE" --dry-run=client -o yaml | kubectl --context "$KUBE_CONTEXT" apply -f -',
-    'kubectl --context "$KUBE_CONTEXT" --namespace kubeatlas rollout restart deployment/kubeatlas',
-  ].join('\n')
-  return <CloudDialog title="Agent token — shown only once" onClose={onClose}><div className="cloud-form"><p>Hub 只保存 Token 摘要；关闭此窗口后无法再次读取原文。安装命令会在终端隐藏输入 Token，并以 0600 权限创建文件。</p><label>Agent token<textarea readOnly spellCheck={false} autoComplete="off" value={issued.token} /></label><CopyButton value={issued.token} label="复制 Token" />
-    {newInstall ? <><ConnectionProfileSelector />{profile.installAvailable && command ? <><label>Optional private CA file<input autoComplete="off" value={caFile} onChange={event => setCAFile(event.target.value)} placeholder="/path/to/hub-ca.crt" /></label><p>先设置 <code>KUBE_CONTEXT</code>，运行以下命令并在提示时粘贴 Token。可选 CA 文件会同时用于安装器下载和 Agent 配置；不会使用不安全的 TLS 绕过。</p><pre className="cloud-code">{command}</pre><CopyButton value={command} label="复制安装命令" /></> : <p role="alert">{profile.error ? `连接配置读取失败：${profile.error}；不会生成安装命令。` : profile.loading ? '正在读取连接配置；暂不生成安装命令。' : '所选连接配置或匹配版本的 Hub 安装包不可用；不会生成安装命令。'}</p>}</> : <><p>轮换后，旧 Token 立即失效。安全地替换现有 Secret 文件后重启 Agent；以下示例要求显式设置 KUBE_CONTEXT 和 TOKEN_FILE。</p><pre className="cloud-code">{reconnectCommand}</pre><CopyButton value={reconnectCommand} label="复制重连命令" /></>}
-    <p className="cloud-muted">HTTPS 需要与 IP SAN/DNS SAN 匹配的证书。Agent CA 只配置 Agent 到 Hub 的信任；节点镜像运行时必须单独信任 Hub Registry 的证书。Hub 所有者通过精确 User 身份获得集群管理员权限；Agent ServiceAccount 的 impersonate 权限同样高度敏感。</p><footer><button className="cloud-button cloud-primary" onClick={onClose}>我已安全保存 Token</button></footer></div></CloudDialog>
+interface EnrollmentCommand { command: string; origin: string; profile: 'lan' | 'public'; profileRevision: number }
+
+function expiryIsValid(value: EnrollmentLookup) {
+  const expiry = Date.parse(value.expiresAt)
+  return Number.isFinite(expiry) && expiry > Date.now()
+}
+interface EnrollmentLookup { id: string; userCode: string; contextName: string; clusterFingerprint: string; status: string; expiresAt: string }
+
+function enrollmentStatusLabel(status: string) {
+  switch (status) {
+    case 'pending': return '待处理'
+    case 'approved': return '已批准'
+    case 'denied': return '已拒绝'
+    case 'expired': return '已过期'
+    case 'used': return '已使用'
+    default: return '未知状态'
+  }
 }
 
-function shellQuote(value: string): string {
-  return `'${value.replace(/'/g, `'\\''`)}'`
-}
-
-export function CloudInstall() {
+export function CloudInstall({ hub, clusters, canManage, directoryError, onRefreshClusters }: {
+  hub: HubContext; clusters: HubCluster[]; canManage: boolean; directoryError?: unknown; onRefreshClusters: () => void
+}) {
   const queryClient = useQueryClient()
   const profile = useConnectionProfiles()
-  const [id, setID] = useState('')
-  const [name, setName] = useState('')
-  const [environment, setEnvironment] = useState('')
-  const [issued, setIssued] = useState<IssuedAgent>()
-  const [registeredClusterID, setRegisteredClusterID] = useState('')
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<unknown>()
-  const [polling, setPolling] = useState(false)
-  const [connectionState, setConnectionState] = useState<'registered' | 'checking' | 'connected' | 'timeout' | 'error'>('registered')
+  const location = useCloudLocation()
+  const commandRequest = useRef<AbortController | null>(null)
+  const commandGeneration = useRef(0)
+  const profileStateRef = useRef({ profile: profile.profile, revision: profile.profileRevision })
+  const [command, setCommand] = useState<EnrollmentCommand>()
+  const [commandRequestState, setCommandRequestState] = useState<{ profileRevision: number; busy: boolean }>()
+  const [commandErrorState, setCommandErrorState] = useState<{ profileRevision: number; error: unknown }>()
+  const [userCode, setUserCode] = useState('')
+  const [lookup, setLookup] = useState<EnrollmentLookup>()
+  const [lookupBusy, setLookupBusy] = useState(false)
+  const [lookupError, setLookupError] = useState<unknown>()
+  const [clusterName, setClusterName] = useState('')
+  const [selectedClusterId, setSelectedClusterId] = useState(location.searchParams.get('clusterId') ?? '')
+  const [organizationConfirmed, setOrganizationConfirmed] = useState(false)
+  const [mutationBusy, setMutationBusy] = useState(false)
+  const [mutationError, setMutationError] = useState<unknown>()
+  const [mutationUncertain, setMutationUncertain] = useState(false)
+  const [completion, setCompletion] = useState<'approved' | 'denied'>()
+  const [expirySnapshot, setExpirySnapshot] = useState<{ id: string; now: number }>()
+
   useEffect(() => {
-    if (!registeredClusterID || !polling) return
-    const deadline = Date.now() + 120000
+    profileStateRef.current = { profile: profile.profile, revision: profile.profileRevision }
+    commandRequest.current?.abort()
+    commandRequest.current = null
+    commandGeneration.current++
+    return () => commandRequest.current?.abort()
+  }, [profile.profile, profile.profileRevision])
+
+  const lookupId = lookup?.id
+  useEffect(() => {
+    if (!lookupId) return
+    const update = () => setExpirySnapshot({ id: lookupId, now: Date.now() })
+    const timeout = window.setTimeout(update, 0)
+    const interval = window.setInterval(update, 1000)
+    return () => { window.clearTimeout(timeout); window.clearInterval(interval) }
+  }, [lookupId])
+
+  const activeOrganization = hub.organizations.find(organization => organization.id === hub.activeOrganizationId)
+  const reEnrollmentClusters = clusters.filter(cluster => cluster.organizationId === hub.activeOrganizationId && (cluster.state === 'revoked' || !!cluster.revokedAt))
+  const selectedReEnrollment = reEnrollmentClusters.find(cluster => cluster.id === selectedClusterId)
+  const commandBusy = commandRequestState?.profileRevision === profile.profileRevision && commandRequestState.busy
+  const commandError = commandErrorState?.profileRevision === profile.profileRevision ? commandErrorState.error : undefined
+  const commandVisible = command?.profileRevision === profile.profileRevision ? command : undefined
+
+  async function generateCommand() {
+    if (!canManage || !hub.activeOrganizationId || !profile.installAvailable || commandBusy) return
+    const requestedProfile = profile.profile
+    const requestedRevision = profile.profileRevision
+    const generation = ++commandGeneration.current
     const controller = new AbortController()
-    let active = true
-    let hadError = false
-    let timer: number | undefined
-    const deadlineTimer = window.setTimeout(() => {
-      if (!active) return
-      setConnectionState('error')
-      setPolling(false)
-      controller.abort()
-    }, 120000)
-    const check = async () => {
-      if (!active) return
-      if (Date.now() >= deadline) {
-        setConnectionState(hadError ? 'error' : 'timeout')
-        setPolling(false)
-        return
-      }
-      try {
-        const result = await cloudRequest<{ clusters: HubCluster[] }>('/hub/clusters', { signal: controller.signal })
-        if (!active) return
-        if (result.clusters.some(cluster => cluster.id === registeredClusterID && cluster.state === 'connected')) {
-          setConnectionState('connected')
-          setPolling(false)
-          return
-        }
-      } catch {
-        if (!active) return
-        hadError = true
-        if (Date.now() >= deadline || controller.signal.aborted) {
-          setConnectionState('error')
-          setPolling(false)
-          return
-        }
-      }
-      if (Date.now() >= deadline) {
-        setConnectionState(hadError ? 'error' : 'timeout')
-        setPolling(false)
-        return
-      }
-      timer = window.setTimeout(() => { void check() }, 5000)
-    }
-    void check()
-    return () => {
-      active = false
-      controller.abort()
-      window.clearTimeout(deadlineTimer)
-      if (timer !== undefined) window.clearTimeout(timer)
-    }
-  }, [registeredClusterID, polling])
-  async function create(event: FormEvent) {
-    event.preventDefault()
-    if (busy || !profile.installAvailable) return
-    setBusy(true); setError(undefined)
+    commandRequest.current?.abort()
+    commandRequest.current = controller
+    setCommandRequestState({ profileRevision: requestedRevision, busy: true })
+    setCommandErrorState(undefined)
+    setCommand(undefined)
     try {
-      const result = await cloudRequest<IssuedAgent>('/hub/clusters', { method: 'POST', body: { id, name, environment, region: '', description: '' } })
-      setIssued(result)
-      setRegisteredClusterID(result.cluster.id)
-      setConnectionState('registered')
-      setPolling(false)
-      await queryClient.invalidateQueries({ queryKey: ['portal', '/api', '/hub/clusters'] })
-    } catch (failure) { setError(failure) } finally { setBusy(false) }
+      const result = await cloudRequest<{ command: string; origin: string }>('/hub/enrollments/command', { method: 'POST', body: { profile: requestedProfile }, signal: controller.signal })
+      const currentProfile = profileStateRef.current
+      if (generation !== commandGeneration.current || currentProfile.profile !== requestedProfile || currentProfile.revision !== requestedRevision) return
+      if (typeof result.command !== 'string' || !result.command.trim() || typeof result.origin !== 'string' || !result.origin.trim()) throw new Error('Hub 返回的注册命令不完整。')
+      if (/--(?:token|(?:agent|device|bootstrap|mcp)-token)(?:=|\s)|\b(?:TOKEN|(?:AGENT|DEVICE|BOOTSTRAP|MCP)_TOKEN)\s*=/i.test(result.command)) throw new Error('服务器返回的命令包含疑似凭据参数，未予显示。')
+      const selectedOrigin = new URL(profile.origin)
+      const resultOrigin = new URL(result.origin)
+      if (resultOrigin.username || resultOrigin.password || resultOrigin.search || resultOrigin.hash || resultOrigin.pathname !== '/' || !['http:', 'https:'].includes(resultOrigin.protocol) || resultOrigin.origin !== selectedOrigin.origin) throw new Error('命令地址与当前选定的连接配置不匹配。')
+      setCommand({ command: result.command, origin: result.origin, profile: requestedProfile, profileRevision: requestedRevision })
+    } catch (failure) {
+      if (!controller.signal.aborted && generation === commandGeneration.current) setCommandErrorState({ profileRevision: requestedRevision, error: failure })
+    } finally {
+      if (generation === commandGeneration.current) setCommandRequestState({ profileRevision: requestedRevision, busy: false })
+    }
   }
-  const connectionMessage = connectionState === 'registered' ? 'Agent registered; start the installer and check again.'
-    : connectionState === 'checking' ? 'Checking the Agent connection…'
-      : connectionState === 'connected' ? 'Connected'
-        : connectionState === 'timeout' ? 'No connection was confirmed before the status check timed out. The current state may be unknown; retry the check.'
-          : 'The connection status could not be checked. It is unknown; retry the check.'
+
+  async function lookupEnrollment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!canManage || !hub.activeOrganizationId || lookupBusy || mutationBusy || !userCode.trim()) return
+    setLookupBusy(true); setLookupError(undefined); setLookup(undefined); setCompletion(undefined); setMutationError(undefined); setMutationUncertain(false); setOrganizationConfirmed(false)
+    try {
+      const result = await cloudRequest<EnrollmentLookup>('/hub/enrollments/lookup', { method: 'POST', body: { userCode: userCode.trim() } })
+      if (typeof result.id !== 'string' || !result.id.trim() || typeof result.userCode !== 'string' || !result.userCode.trim() || typeof result.contextName !== 'string' || !result.contextName.trim() || typeof result.clusterFingerprint !== 'string' || !result.clusterFingerprint.trim() || typeof result.status !== 'string' || !result.status.trim() || typeof result.expiresAt !== 'string' || !result.expiresAt.trim() || !Number.isFinite(Date.parse(result.expiresAt))) throw new Error('配对查询信息不完整；必须包含上下文、指纹、状态和有效期。')
+      setSelectedClusterId('')
+      setExpirySnapshot({ id: result.id, now: Date.now() })
+      setLookup({ id: result.id, userCode: result.userCode, contextName: result.contextName, clusterFingerprint: result.clusterFingerprint, status: result.status, expiresAt: result.expiresAt })
+      setClusterName(result.contextName)
+    } catch (failure) { setLookupError(failure) } finally { setLookupBusy(false) }
+  }
+
+  async function approveEnrollment() {
+    if (!canManage || !hub.activeOrganizationId || !lookup || lookup.status !== 'pending' || !expiryIsValid(lookup) || mutationUncertain || !organizationConfirmed || !clusterName.trim() || mutationBusy) return
+    setMutationBusy(true); setMutationError(undefined)
+    try {
+      const body = { userCode: lookup.userCode, organizationId: hub.activeOrganizationId, name: clusterName.trim(), ...(selectedReEnrollment ? { clusterId: selectedReEnrollment.id } : {}) }
+      const result = await cloudRequest<{ id: string; status: string }>('/hub/enrollments/' + encodeURIComponent(lookup.id) + '/approve', { method: 'POST', body })
+      if (result.status !== 'approved') throw new Error('未能确认配对批准结果。')
+      setCompletion('approved')
+      await queryClient.invalidateQueries({ queryKey: ['portal', '/api', '/hub/clusters'] })
+    } catch (failure) { setMutationUncertain(true); setMutationError(failure) }
+    finally { setMutationBusy(false) }
+  }
+
+  async function denyEnrollment() {
+    if (!canManage || !hub.activeOrganizationId || !lookup || lookup.status !== 'pending' || !expiryIsValid(lookup) || mutationUncertain || mutationBusy) return
+    setMutationBusy(true); setMutationError(undefined)
+    try {
+      await cloudRequest('/hub/enrollments/' + encodeURIComponent(lookup.id) + '/deny', { method: 'POST', body: { userCode: lookup.userCode } })
+      setCompletion('denied')
+    } catch (failure) { setMutationUncertain(true); setMutationError(failure) }
+    finally { setMutationBusy(false) }
+  }
+
+  const validExpiry = !!lookup && expirySnapshot?.id === lookup.id && Number.isFinite(Date.parse(lookup.expiresAt)) && Date.parse(lookup.expiresAt) > expirySnapshot.now
+  const canComplete = !!lookup && lookup.status === 'pending' && validExpiry && !completion
+
   return <div className="cloud-page cloud-narrow">
-    <div className="cloud-page-heading"><div><h1>Connect a cluster</h1><p>Install an outbound Agent. The Hub serves the installer, chart and pinned image.</p></div></div>
-    <ConnectionProfileSelector />
-    {profile.loading && <p role="status" className="cloud-card">正在读取 Hub 连接配置…</p>}
-    {profile.error && <p role="alert" className="cloud-card">连接配置读取失败：{profile.error}。请在 Organization 设置中重试；不会回退到浏览器地址。</p>}
-    {!profile.loading && !profile.error && !profile.installAvailable && <p role="status" className="cloud-card">所选地址尚未配置，或版本匹配的本地安装包不可用。请先在 Organization 设置中配置；不会回退到浏览器地址。</p>}
-    <section className="cloud-card"><h2>1. Register your cluster</h2><form className="cloud-form" onSubmit={create}>{error !== undefined && <CloudError error={error} />}<label>Name<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} placeholder="Production EU" /></label><label>Cluster ID<input required pattern="[a-z0-9](?:[a-z0-9]|-){0,62}" maxLength={63} value={id} onChange={event => setID(event.target.value)} placeholder="production-eu" /><small>Stable routing ID: lowercase letters, numbers and hyphens.</small></label><label>Tag<input value={environment} maxLength={128} onChange={event => setEnvironment(event.target.value)} placeholder="prod" /></label><footer><CloudLink href="/clusters" className="cloud-button">Cancel</CloudLink><button className="cloud-button cloud-primary" disabled={busy || !!issued || !profile.installAvailable}>{busy ? 'Registering…' : 'Create Agent token'}</button></footer></form></section>
-    <section className="cloud-card"><h2>2. Install and verify the Agent</h2><p>Use an explicit kube context and the private token file shown after registration. A Helm rollout is not proof of connection; the directory reports Connected only after the authenticated Agent tunnel is established.</p>{registeredClusterID && <><p role="status">Cluster {registeredClusterID}: {connectionMessage}</p><button className="cloud-button" disabled={polling || connectionState === 'connected'} onClick={() => { setConnectionState('checking'); setPolling(true) }}>{polling ? 'Checking…' : connectionState === 'timeout' || connectionState === 'error' ? 'Retry status check' : 'Check connection status'}</button></>}<CloudLink href="/clusters" className="cloud-text-button">View connection status →</CloudLink></section>
-    {issued && <AgentToken issued={issued} newInstall onClose={() => setIssued(undefined)} />}
+    <div className="cloud-page-heading"><div><h1>连接集群</h1><p>生成 Hub 提供的命令，再为当前组织审核并批准设备配对。</p></div></div>
+    <section className="cloud-card"><h2>注册命令</h2><p>命令使用已配置的内网或公网连接配置，由 Hub 生成；浏览器不会自行拼装安装命令。</p>
+      <ConnectionProfileSelector />
+      {profile.loading && <p role="status">正在读取连接配置…</p>}
+      {profile.error && <p role="alert">连接配置不可用：{profile.error}</p>}
+      {!profile.loading && !profile.error && !profile.installAvailable && <p role="status">所选连接配置或引导目录不可用，无法生成命令。</p>}
+      <button className="cloud-button cloud-primary" disabled={!canManage || !hub.activeOrganizationId || !profile.installAvailable || commandBusy} onClick={() => { void generateCommand() }}>{commandBusy ? '正在生成…' : '生成注册命令'}</button>
+      {commandError !== undefined && <CloudError error={commandError} />}
+      {commandVisible && <div className="cloud-form mt-4"><p>Hub 地址：<code className="portal-mono">{commandVisible.origin}</code></p><UnencryptedHttpWarning origin={commandVisible.origin} enrollment /><p className="text-warning-text">如需使用 HTTP 镜像仓库，操作员必须单独配置节点运行时。本 Portal 不会更改节点或容器运行时设置。</p><pre className="cloud-code">{commandVisible.command}</pre><CopyButton value={commandVisible.command} label="复制注册命令" /></div>}
+    </section>
+
+    <section className="cloud-card"><h2>设备配对审批</h2><p>输入集群显示的配对码。系统不会列出待处理设备；只查询你提交的配对码及其上下文。</p>
+      <form className="cloud-form" onSubmit={lookupEnrollment}><label>配对码<input required maxLength={128} autoComplete="off" value={userCode} onChange={event => setUserCode(event.target.value)} /></label><button className="cloud-button" disabled={!canManage || !hub.activeOrganizationId || lookupBusy || mutationBusy || !userCode.trim()}>{lookupBusy ? '正在查询…' : '查询配对'}</button></form>
+      {lookupError !== undefined && <CloudError error={lookupError} />}
+      {lookup && <div className="cloud-card mt-4 p-4"><h3>配对审核</h3><dl className="cloud-identity-details mt-4"><dt>Kubernetes 上下文</dt><dd>{lookup.contextName}</dd><dt>kube-system 指纹</dt><dd className="portal-mono">{lookup.clusterFingerprint}</dd><dt>有效期至</dt><dd>{lookup.expiresAt}</dd><dt>状态</dt><dd>{enrollmentStatusLabel(lookup.status)}</dd></dl>
+        <p>目标组织：<strong>{activeOrganization?.name ?? '不可用'}</strong>（{hub.activeOrganizationId ?? '无'}）。确认后只会在此组织内创建集群访问。</p>
+        {canComplete && <div className="cloud-form mt-4"><label>集群名称<input required maxLength={128} value={clusterName} onChange={event => setClusterName(event.target.value)} /></label>
+          {reEnrollmentClusters.length > 0 && <label>要重新配对的现有集群（可选）<select className="portal-control" value={selectedReEnrollment?.id ?? ''} onChange={event => setSelectedClusterId(event.target.value)}><option value="">创建新的集群记录</option>{reEnrollmentClusters.map(cluster => <option key={cluster.id} value={cluster.id}>{cluster.name} · {cluster.id}</option>)}</select></label>}
+          <label className="cloud-confirm-access"><input type="checkbox" checked={organizationConfirmed} onChange={event => setOrganizationConfirmed(event.target.checked)} />我确认此配对请求属于 {activeOrganization?.name ?? '当前组织'}。</label>
+          <div className="cloud-row-actions"><button type="button" className="cloud-button cloud-primary" disabled={mutationBusy || mutationUncertain || !organizationConfirmed || !clusterName.trim()} onClick={() => { void approveEnrollment() }}>{mutationBusy ? '正在提交…' : '批准配对'}</button><button type="button" className="cloud-button" disabled={mutationBusy || mutationUncertain} onClick={() => { void denyEnrollment() }}>拒绝配对</button></div>
+        </div>}
+        {mutationError !== undefined && <><CloudError error={mutationError} />{mutationUncertain && <p role="alert">系统不会自动重试配对操作；请重新查询配对码并核实状态后再决定是否重试。</p>}</>}
+        {completion === 'approved' && <p role="status" className="mt-4">配对已批准。批准不代表 Agent 已安装或已连接；请在下方实时目录中查看状态。</p>}
+        {completion === 'denied' && <p role="status" className="mt-4">配对已拒绝。</p>}
+        {lookup.status !== 'pending' && <p role="status" className="mt-4">此配对请求当前不是待处理状态，无法批准或拒绝。</p>}
+        {lookup.status === 'pending' && !validExpiry && <p role="status" className="mt-4">此配对请求已过期或有效期无效，无法批准或拒绝。</p>}
+      </div>}
+    </section>
+
+    <section className="cloud-card"><header><h2>实时集群状态</h2><button className="cloud-button" onClick={onRefreshClusters}>刷新状态</button></header>
+      <p>只有当前组织的实时集群目录明确返回已连接时，才显示“已连接”；不会仅凭提交的集群名称推断连接状态。</p>
+      {directoryError !== undefined && <CloudError error={directoryError} retry={onRefreshClusters} />}
+      {directoryError === undefined && !clusters.length && <p role="status">当前没有可用的集群状态。</p>}
+      {directoryError === undefined && clusters.map(cluster => <div className="cloud-live-cluster" key={cluster.id}><span>{cluster.name} · {cluster.id}</span><ClusterStatus cluster={cluster} /></div>)}
+    </section>
+    <CloudLink href="/clusters" className="cloud-text-button">管理集群记录 →</CloudLink>
   </div>
 }

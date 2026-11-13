@@ -26,7 +26,9 @@ function CopyValue({ value, label }: { value: string; label: string }) {
   </div>
 }
 
-export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolean }) {
+export function MCPCredentials({ readOnlyOnly = false, organizationId, organizationName }: {
+  readOnlyOnly?: boolean; organizationId: string; organizationName: string
+}) {
   const profile = useConnectionProfiles()
   const [clusters, setClusters] = useState<CredentialCluster[]>([])
   const [directoryError, setDirectoryError] = useState('')
@@ -120,6 +122,7 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
     <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
       <section className="portal-card min-w-0 p-5 lg:p-6" aria-labelledby="create-credential-title">
         <h2 id="create-credential-title" className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck size={20} className="text-accent-text" />生成访问凭据</h2>
+        <p className="mt-3 text-sm text-theme-text-secondary">不可变组织范围：{organizationName} <span className="portal-mono">({organizationId})</span>。凭据范围由当前组织决定，不能在此更改。</p>
         <form onSubmit={create} className="mt-5 space-y-4">
           <fieldset disabled={Boolean(busy || issued || loading || directoryLoading || loadError || directoryError)} className="min-w-0 space-y-4">
             <label className="block text-sm">名称<input required maxLength={100} value={label} onChange={event => setLabel(event.target.value)} className="portal-control mt-2 w-full" placeholder="例如：我的 OpenCode" /></label>
@@ -161,7 +164,7 @@ export function MCPCredentials({ readOnlyOnly = false }: { readOnlyOnly?: boolea
           const status = credentialStatus(credential, now)
           return <article key={credential.id} className="rounded-lg border border-theme-border p-4" aria-label={`凭据 ${credential.label}`}>
             <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="break-all font-medium">{credential.label}</h3><div className="flex gap-2"><Badge tone={credential.readOnly ? 'accent1' : 'accent2'}>{credential.readOnly ? '只读' : '读写'}</Badge><Badge severity={loadError ? 'neutral' : statusTones[status]}>{loadError ? '状态待确认' : statusLabels[status]}</Badge></div></div>
-            <dl className="mt-3 space-y-2 text-xs"><div><dt className="text-theme-text-tertiary">允许的集群</dt><dd className="portal-mono mt-1 break-all">{credential.clusterIds.join(' · ')}</dd></div><div><dt className="text-theme-text-tertiary">到期时间</dt><dd className="mt-1"><time dateTime={credential.expiresAt}>{formatDate(credential.expiresAt)}</time></dd></div><div><dt className="text-theme-text-tertiary">最迟可延续至</dt><dd className="mt-1">{formatDate(credential.refreshUntil)}</dd></div></dl>
+            <dl className="mt-3 space-y-2 text-xs"><div><dt className="text-theme-text-tertiary">组织范围</dt><dd className="portal-mono mt-1 break-all">{credential.organizationId || 'Unknown'}</dd></div><div><dt className="text-theme-text-tertiary">允许的集群</dt><dd className="portal-mono mt-1 break-all">{credential.clusterIds.join(' · ')}</dd></div><div><dt className="text-theme-text-tertiary">到期时间</dt><dd className="mt-1"><time dateTime={credential.expiresAt}>{formatDate(credential.expiresAt)}</time></dd></div><div><dt className="text-theme-text-tertiary">最迟可延续至</dt><dd className="mt-1">{formatDate(credential.refreshUntil)}</dd></div></dl>
             {!credential.revokedAt && <div className="mt-4 border-t border-theme-border pt-3">{revokeID === credential.id ? <div className="space-y-2"><p className="text-xs text-warning-text">确认撤销？使用此凭据的客户端将无法发起新请求。</p><div className="flex gap-2"><button type="button" className="portal-control" disabled={Boolean(busy)} onClick={() => revoke(credential.id)}>确认撤销</button><button type="button" className="portal-control" disabled={Boolean(busy)} onClick={() => setRevokeID('')}>取消</button></div></div> : <button type="button" className="text-xs text-accent-text" disabled={Boolean(busy)} onClick={() => setRevokeID(credential.id)}>撤销凭据</button>}</div>}
           </article>
         })}

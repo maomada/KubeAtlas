@@ -3,6 +3,7 @@ import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
 
 export interface HubCluster {
   id: string
+  organizationId: string
   name: string
   description: string
   environment: string

@@ -12,7 +12,7 @@ Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let host: HTMLDivElement
 let root: ReturnType<typeof createRoot>
 const credential: MCPCredential = {
-  id: 'credential-1', label: 'OpenCode', clusterIds: ['east'], readOnly: true,
+  id: 'credential-1', organizationId: 'org-1', label: 'OpenCode', clusterIds: ['east'], readOnly: true,
   createdAt: '2026-01-01T00:00:00Z', expiresAt: '2026-01-01T08:00:00Z', refreshUntil: '2026-01-31T00:00:00Z',
 }
 const cluster = { id: 'east', name: 'East' }
@@ -34,9 +34,10 @@ afterEach(() => {
 })
 
 it('limits viewer credential controls to read-only regardless of the default write option', () => {
-  const html = renderToStaticMarkup(<ConnectionProfilesProvider><MCPCredentials readOnlyOnly /></ConnectionProfilesProvider>)
+  const html = renderToStaticMarkup(<ConnectionProfilesProvider><MCPCredentials readOnlyOnly organizationId="org-1" organizationName="Example organization" /></ConnectionProfilesProvider>)
   expect(html).not.toContain('value="write"')
   expect(html).toContain('value="read"')
+  expect(html).toContain('disabled=""')
   expect(html).toContain('只读 · 查询与诊断')
 })
 
@@ -72,13 +73,15 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
     return Promise.resolve(response({ credentials: records, serverTime: credential.createdAt }))
   })
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials /></ConnectionProfilesProvider>))
+  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials organizationId="org-1" organizationName="Example organization" /></ConnectionProfilesProvider>))
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
   expect(button('生成限时 Token').disabled).toBe(true)
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   const post = fetch.mock.calls.find(([, options]) => options?.method === 'POST')!
   expect(JSON.parse(post[1]!.body as string)).toEqual({ label: 'OpenCode', clusterIds: ['east'], readOnly: true, ttlSeconds: 28800 })
+  expect(host.textContent).toContain('不可变组织范围：Example organization')
+  expect(host.textContent).toContain('org-1')
   expect(host.querySelector<HTMLInputElement>('[aria-label="新生成的 MCP Token"]')!.type).toBe('password')
   expect(host.textContent).toContain('原文仅此次可见')
   expect(host.querySelector('pre')!.textContent).not.toContain('unit-test-token')
@@ -99,7 +102,7 @@ it('surfaces uncertain creation failures without retrying the mutation', async (
     ? Promise.reject(new Error('network interruption'))
     : Promise.resolve(response({ credentials: [], serverTime: credential.createdAt })))
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials /></ConnectionProfilesProvider>))
+  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials organizationId="org-1" organizationName="Example organization" /></ConnectionProfilesProvider>))
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   expect(host.textContent).toContain('生成结果可能未确认')
@@ -118,7 +121,7 @@ it('fails closed when the Hub directory cannot be read, without falling back to 
         ? new Response(null, { status: 503 })
         : response({ credentials: [credential], serverTime: credential.createdAt })))
   vi.stubGlobal('fetch', fetch)
-  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials /></ConnectionProfilesProvider>))
+  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials organizationId="org-1" organizationName="Example organization" /></ConnectionProfilesProvider>))
   expect(host.textContent).toContain('集群目录读取失败')
   expect(button('生成限时 Token').closest('fieldset')!.disabled).toBe(true)
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
