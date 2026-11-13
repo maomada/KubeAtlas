@@ -503,14 +503,29 @@ it('keeps the current organization and reports a failed switch without reloading
   }
 })
 
-it('clears old caches when Hub reports a same-organization role change, but not for an unchanged authorization poll', async () => {
+const authorizationTransitions = [
+  {
+    label: 'a cross-tab organization switch',
+    nextHub: {
+      ...portalHub,
+      member: { ...portalHub.member, role: 'member' as const },
+      activeOrganizationId: 'org-2',
+      organizations: [...portalHub.organizations, { id: 'org-2', name: 'Organization Two', role: 'member' as const }],
+    },
+  },
+  {
+    label: 'a same-organization owner-to-viewer demotion',
+    nextHub: {
+      ...portalHub,
+      member: { ...portalHub.member, role: 'viewer' as const },
+      organizations: [{ ...portalHub.organizations[0], role: 'viewer' as const }],
+    },
+  },
+]
+
+it.each(authorizationTransitions)('clears old caches after $label, but not for an unchanged authorization poll', async ({ nextHub }) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState({}, '', '/c/alpha/resources')
-  const nextHub = {
-    ...portalHub,
-    member: { ...portalHub.member, role: 'viewer' as const },
-    organizations: [{ ...portalHub.organizations[0], role: 'viewer' as const }],
-  }
   const oldOrganizationCredential = {
     id: 'credential-org-1', organizationId: 'org-1', label: 'Old organization credential',
     clusterIds: ['alpha'], readOnly: true, createdAt: '2026-01-01T00:00:00Z',
