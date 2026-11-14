@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -174,6 +175,105 @@ func TestRegistrationCreatesPendingPasswordAccountWithoutMembership(t *testing.T
 	}
 	if loginResponse = login(); loginResponse.Code != http.StatusUnauthorized {
 		t.Fatalf("disabled account login status=%d", loginResponse.Code)
+	}
+}
+
+func TestAuthorizationRevisionAcrossHTTPLoginAndAccountDisableEnable(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	ownerCookie := loginForTest(t, h)
+	const email = "revision-cycle@example.test"
+	const password = "revision-cycle-password"
+	request := func(method, path, body string, cookie *http.Cookie) *httptest.ResponseRecorder {
+		t.Helper()
+		r := httptest.NewRequest(method, "http://localhost"+path, strings.NewReader(body))
+		if body != "" {
+			r.Header.Set("Content-Type", "application/json")
+			r.Header.Set("Origin", "http://localhost")
+			r.Header.Set("Sec-Fetch-Site", "same-origin")
+		}
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+		return w
+	}
+	registration, _ := json.Marshal(map[string]string{"email": email, "password": password})
+	if response := request(http.MethodPost, "/api/auth/register", string(registration), nil); response.Code != http.StatusCreated {
+		t.Fatalf("registration status = %d, body=%s", response.Code, response.Body.String())
+	}
+	account, ok := h.liveHub.store.AccountByEmail(email)
+	if !ok || account.AuthorizationRevision != 1 {
+		t.Fatalf("registered account = %#v, ok=%v", account, ok)
+	}
+	memberships := []hubstate.OrganizationMembership{{OrganizationID: "self-hosted", Role: "member"}}
+	updateAccount := func(status string, memberships []hubstate.OrganizationMembership) {
+		t.Helper()
+		body, err := json.Marshal(map[string]any{"status": status, "memberships": memberships})
+		if err != nil {
+			t.Fatal(err)
+		}
+		response := request(http.MethodPut, "/api/hub/platform/users/"+account.ID, string(body), ownerCookie)
+		if response.Code != http.StatusOK {
+			t.Fatalf("platform-owner account update status=%d body=%s", response.Code, response.Body.String())
+		}
+	}
+	updateAccount("active", memberships)
+	login := func() *http.Cookie {
+		t.Helper()
+		credentials, _ := json.Marshal(map[string]string{"username": email, "password": password})
+		response := request(http.MethodPost, "/api/auth/login", string(credentials), nil)
+		if response.Code != http.StatusNoContent || len(response.Result().Cookies()) != 1 {
+			t.Fatalf("login status=%d cookies=%d body=%s", response.Code, len(response.Result().Cookies()), response.Body.String())
+		}
+		return response.Result().Cookies()[0]
+	}
+	readRevision := func(cookie *http.Cookie) uint64 {
+		t.Helper()
+		response := request(http.MethodGet, "/api/hub", "", cookie)
+		if response.Code != http.StatusOK {
+			t.Fatalf("Hub response status=%d body=%s", response.Code, response.Body.String())
+		}
+		var body struct {
+			AuthorizationRevision string          `json:"authorizationRevision"`
+			Member                json.RawMessage `json:"member"`
+		}
+		if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		revision, err := strconv.ParseUint(body.AuthorizationRevision, 10, 64)
+		if err != nil || strconv.FormatUint(revision, 10) != body.AuthorizationRevision {
+			t.Fatalf("noncanonical Hub revision %q: %v", body.AuthorizationRevision, err)
+		}
+		var member map[string]json.RawMessage
+		if err := json.Unmarshal(body.Member, &member); err != nil {
+			t.Fatal(err)
+		}
+		if _, exists := member["authorizationRevision"]; exists {
+			t.Fatal("internal member revision appeared in the public member object")
+		}
+		return revision
+	}
+	firstCookie := login()
+	firstRevision := readRevision(firstCookie)
+	ordinaryCookie := login()
+	if ordinaryCookie.Value == firstCookie.Value {
+		t.Fatal("ordinary login did not issue a new cookie")
+	}
+	if got := readRevision(ordinaryCookie); got != firstRevision {
+		t.Fatalf("ordinary new-cookie revision = %d, want unchanged %d", got, firstRevision)
+	}
+	updateAccount("disabled", []hubstate.OrganizationMembership{})
+	if response := request(http.MethodGet, "/api/hub", "", ordinaryCookie); response.Code != http.StatusUnauthorized {
+		t.Fatalf("disabled account accepted its old cookie: %d", response.Code)
+	}
+	updateAccount("active", memberships)
+	if response := request(http.MethodGet, "/api/hub", "", ordinaryCookie); response.Code != http.StatusUnauthorized {
+		t.Fatalf("re-enabled account accepted its revoked old cookie: %d", response.Code)
+	}
+	reenabledCookie := login()
+	if got := readRevision(reenabledCookie); got != firstRevision+2 {
+		t.Fatalf("disable/re-enable revision = %d, want %d", got, firstRevision+2)
 	}
 }
 

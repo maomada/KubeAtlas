@@ -70,7 +70,7 @@ func (s *Store) RegisterPendingAccount(email, passwordHash string) (Account, err
 	if err := s.commit(next); err != nil {
 		return Account{}, err
 	}
-	return cloneAccount(account), nil
+	return cloneAccount(s.data.Accounts[id]), nil
 }
 
 func validEmail(email string) bool {
@@ -258,7 +258,7 @@ func (s *Store) MembersForOrganization(organizationID string) []Member {
 
 func memberFrom(account Account, membership Membership) Member {
 	return Member{ID: account.ID, UserID: account.UserID, DisplayName: account.DisplayName, Role: membership.Role,
-		Status: account.Status, ClusterIDs: append([]string{}, membership.ClusterIDs...),
+		Status: account.Status, AuthorizationRevision: account.AuthorizationRevision, ClusterIDs: append([]string{}, membership.ClusterIDs...),
 		KubernetesGroups: append([]string{}, membership.KubernetesGroups...), LegacyRestricted: membership.LegacyRestricted,
 		LegacyAllClusters: membership.LegacyAllClusters, CreatedAt: membership.CreatedAt, UpdatedAt: membership.UpdatedAt}
 }
@@ -349,7 +349,7 @@ func (s *Store) UpdateOrganizationMemberRole(organizationID, accountID, role str
 	if err := s.commit(next); err != nil {
 		return Member{}, false, err
 	}
-	return memberFrom(account, membership), true, nil
+	return memberFrom(s.data.Accounts[accountID], s.data.Memberships[organizationID][accountID]), true, nil
 }
 
 func (s *Store) RemoveOrganizationMember(organizationID, accountID string) (bool, error) {

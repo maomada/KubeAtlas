@@ -8,7 +8,11 @@ import { navigateCloud } from './cloudNavigation'
 import { logoutPortal, type HubContext } from './CloudOrganization'
 import { HUB_YAML_DRAFT_AUTHORITY_MARKER, yamlDraftStorageKey } from '@maomada/k8s-ui'
 
-const portalNavigation = vi.hoisted(() => ({ replace: vi.fn(), nativeClient: undefined as unknown, nativeProps: undefined as unknown, nativeMounts: 0, nativeUnmounts: 0 }))
+const portalNavigation = vi.hoisted(() => ({
+  replace: vi.fn(), nativeClient: undefined as unknown, nativeProps: undefined as unknown,
+  beforeNativeRender: undefined as ((props: { yamlDraftScope?: string }) => void) | undefined,
+  nativeMounts: 0, nativeUnmounts: 0,
+}))
 
 vi.mock('./portalNavigation', () => ({ replacePortalLocation: portalNavigation.replace }))
 
@@ -19,7 +23,7 @@ const scope = {
 const connections = { lanURL: 'https://lan.example.test', publicURL: 'https://public.example.test', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: false, catalog: { available: false } }
 
 const portalHub = {
-  enabled: true, userId: 'test-user',
+  enabled: true, userId: 'test-user', authorizationRevision: '1',
   member: { id: 'member-1', userId: 'test-user', displayName: 'Test User', role: 'owner' as const, status: 'active' as const },
   platformOwner: false, activeOrganizationId: 'org-1',
   organizations: [{ id: 'org-1', name: 'Organization One', role: 'owner' as const }],
@@ -29,6 +33,7 @@ vi.mock('../RadarApp', async () => {
   const { useEffect, useState } = await import('react')
   return {
     RadarApp: (props: { queryClient: QueryClientType; apiBase?: string; yamlDraftScope?: string; yamlReadOnly?: boolean }) => {
+      portalNavigation.beforeNativeRender?.(props)
       portalNavigation.nativeProps = props
       const [reviewOpen, setReviewOpen] = useState(false)
       useEffect(() => {
@@ -72,6 +77,7 @@ beforeEach(() => {
   portalNavigation.replace.mockClear()
   portalNavigation.nativeClient = undefined
   portalNavigation.nativeProps = undefined
+  portalNavigation.beforeNativeRender = undefined
   portalNavigation.nativeMounts = 0
   portalNavigation.nativeUnmounts = 0
 })
@@ -83,6 +89,11 @@ it.each([
   { label: 'permission denial', firstResponse: () => Promise.resolve(new Response(null, { status: 403 })) },
   { label: 'source failure', firstResponse: () => Promise.resolve(new Response(null, { status: 503 })) },
   { label: 'invalid metadata', firstResponse: () => Promise.resolve(Response.json({ enabled: 'true' })) },
+  { label: 'missing authorization revision', firstResponse: () => Promise.resolve(Response.json({ ...portalHub, authorizationRevision: undefined })) },
+  { label: 'empty authorization revision', firstResponse: () => Promise.resolve(Response.json({ ...portalHub, authorizationRevision: '' })) },
+  { label: 'noncanonical authorization revision', firstResponse: () => Promise.resolve(Response.json({ ...portalHub, authorizationRevision: '01' })) },
+  { label: 'line-terminated authorization revision', firstResponse: () => Promise.resolve(Response.json({ ...portalHub, authorizationRevision: '1\n' })) },
+  { label: 'out-of-range authorization revision', firstResponse: () => Promise.resolve(Response.json({ ...portalHub, authorizationRevision: '18446744073709551616' })) },
   { label: 'missing user identity', firstResponse: () => Promise.resolve(Response.json({ ...portalHub, userId: '' })) },
 ])('fails closed on $label and retries without opening the retired Portal', async ({ firstResponse }) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
@@ -538,6 +549,7 @@ const authorizationTransitions = [
     label: 'a cross-tab organization switch',
     nextHub: {
       ...portalHub,
+      authorizationRevision: '2',
       member: { ...portalHub.member, role: 'member' as const },
       activeOrganizationId: 'org-2',
       organizations: [...portalHub.organizations, { id: 'org-2', name: 'Organization Two', role: 'member' as const }],
@@ -547,9 +559,14 @@ const authorizationTransitions = [
     label: 'a same-organization owner-to-viewer demotion',
     nextHub: {
       ...portalHub,
+      authorizationRevision: '2',
       member: { ...portalHub.member, role: 'viewer' as const },
       organizations: [{ ...portalHub.organizations[0], role: 'viewer' as const }],
     },
+  },
+  {
+    label: 'same-value authority ABA with a higher revision',
+    nextHub: { ...portalHub, authorizationRevision: '3' },
   },
 ]
 
@@ -667,7 +684,7 @@ it('keeps platform endpoints inaccessible to an organization owner', async () =>
 it('allows an explicit platform owner to manage users without an active organization', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState({}, '', '/settings/platform')
-  const hub = { enabled: true, userId: 'platform-user', platformOwner: true, activeOrganizationId: null, organizations: [] }
+  const hub = { enabled: true, userId: 'platform-user', authorizationRevision: '1', platformOwner: true, activeOrganizationId: null, organizations: [] }
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     const path = String(input)
     if (path === '/api/auth/session') return new Response(null, { status: 204 })
@@ -789,6 +806,161 @@ it('keeps a native review mounted while an unchanged Hub poll is pending and aft
     expect(host.querySelector('[data-testid="native-review"]')?.textContent).toBe('Review changes')
   } finally {
     act(() => root.unmount())
+    queryCacheSpy.mockRestore()
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it('purges the prior YAML draft scope before native mount after a fresh login at revision N+2', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
+  let hub: HubContext = { ...portalHub, authorizationRevision: '1' }
+  let authenticated = true
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: authenticated ? 204 : 401 })
+    if (path === '/api/hub') return Response.json(hub)
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const queryClients = new Set<QueryClientType>()
+  const originalGetQueryCache = QueryClient.prototype.getQueryCache
+  const queryCacheSpy = vi.spyOn(QueryClient.prototype, 'getQueryCache').mockImplementation(function (this: QueryClientType) {
+    queryClients.add(this)
+    return originalGetQueryCache.call(this)
+  })
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  let root = createRoot(host)
+  let rootMounted = true
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
+    const initialProps = portalNavigation.nativeProps as { yamlDraftScope?: string }
+    const resource = { group: '', kind: 'ConfigMap', namespace: 'qa', name: 'revision-aba' }
+    const oldScope = initialProps.yamlDraftScope!
+    const oldDraftKey = yamlDraftStorageKey(oldScope, resource)
+    sessionStorage.setItem(oldDraftKey, 'old-authority-draft')
+    sessionStorage.setItem('unrelated:portal-setting', 'preserve-session-storage')
+    localStorage.setItem('unrelated:portal-setting', 'preserve-local-storage')
+    const oldMarker = sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)
+    let portalClient: QueryClientType | undefined
+    await waitForPortal(() => {
+      portalClient = [...queryClients].find(client => client.getQueryData(['portal', '/api', '/hub']) !== undefined)
+      expect(portalClient).toBeDefined()
+    })
+    authenticated = false
+    await act(async () => { await portalClient!.invalidateQueries({ queryKey: ['portal-session'] }) })
+    await waitForPortal(() => expect(portalNavigation.replace).toHaveBeenCalledWith('/login'))
+    expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(sessionStorage.getItem(oldDraftKey)).toBe('old-authority-draft')
+
+    act(() => root.unmount())
+    rootMounted = false
+    authenticated = true
+    hub = { ...portalHub, authorizationRevision: '3' }
+    portalNavigation.nativeProps = undefined
+    let checkedBeforeNativeMount = false
+    portalNavigation.beforeNativeRender = props => {
+      expect(sessionStorage.getItem(oldDraftKey)).toBeNull()
+      expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).not.toBe(oldMarker)
+      expect(props.yamlDraftScope).toBeDefined()
+      expect(props.yamlDraftScope).not.toBe(oldScope)
+      expect(sessionStorage.getItem(yamlDraftStorageKey(props.yamlDraftScope!, resource))).toBeNull()
+      expect(sessionStorage.getItem('unrelated:portal-setting')).toBe('preserve-session-storage')
+      expect(localStorage.getItem('unrelated:portal-setting')).toBe('preserve-local-storage')
+      checkedBeforeNativeMount = true
+    }
+    root = createRoot(host)
+    rootMounted = true
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
+    expect(checkedBeforeNativeMount).toBe(true)
+    expect(portalNavigation.nativeMounts).toBe(2)
+    expect(portalNavigation.nativeUnmounts).toBe(1)
+    expect(sessionStorage.getItem(oldDraftKey)).toBeNull()
+    expect(sessionStorage.getItem('unrelated:portal-setting')).toBe('preserve-session-storage')
+    expect(localStorage.getItem('unrelated:portal-setting')).toBe('preserve-local-storage')
+  } finally {
+    portalNavigation.beforeNativeRender = undefined
+    if (rootMounted) act(() => root.unmount())
+    queryCacheSpy.mockRestore()
+    host.remove()
+    localStorage.removeItem('unrelated:portal-setting')
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it('retains same-revision YAML drafts through a session 401 and a fresh Portal mount', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
+  let authenticated = true
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: authenticated ? 204 : 401 })
+    if (path === '/api/hub') return Response.json(portalHub)
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const queryClients = new Set<QueryClientType>()
+  const originalGetQueryCache = QueryClient.prototype.getQueryCache
+  const queryCacheSpy = vi.spyOn(QueryClient.prototype, 'getQueryCache').mockImplementation(function (this: QueryClientType) {
+    queryClients.add(this)
+    return originalGetQueryCache.call(this)
+  })
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  let root = createRoot(host)
+  let rootMounted = true
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
+    const initialProps = portalNavigation.nativeProps as { yamlDraftScope?: string }
+    const draftKey = yamlDraftStorageKey(initialProps.yamlDraftScope!, {
+      group: '', kind: 'ConfigMap', namespace: 'qa', name: 'same-revision',
+    })
+    sessionStorage.setItem(draftKey, 'same-authority-draft')
+    const marker = sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)
+    let portalClient: QueryClientType | undefined
+    await waitForPortal(() => {
+      portalClient = [...queryClients].find(client => client.getQueryData(['portal', '/api', '/hub']) !== undefined)
+      expect(portalClient).toBeDefined()
+    })
+
+    authenticated = false
+    await act(async () => { await portalClient!.invalidateQueries({ queryKey: ['portal-session'] }) })
+    await waitForPortal(() => expect(portalNavigation.replace).toHaveBeenCalledWith('/login'))
+    expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(sessionStorage.getItem(draftKey)).toBe('same-authority-draft')
+
+    act(() => root.unmount())
+    rootMounted = false
+    authenticated = true
+    portalNavigation.nativeProps = undefined
+    root = createRoot(host)
+    rootMounted = true
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
+    expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).toBe(marker)
+    expect(sessionStorage.getItem(draftKey)).toBe('same-authority-draft')
+    expect(portalNavigation.nativeMounts).toBe(2)
+  } finally {
+    if (rootMounted) act(() => root.unmount())
     queryCacheSpy.mockRestore()
     host.remove()
     window.history.replaceState({}, '', '/')
@@ -1048,6 +1220,7 @@ it('wires scoped read-only YAML policy and purges drafts on a mounted same-org r
 
     hub = {
       ...portalHub,
+      authorizationRevision: '2',
       member: { ...portalHub.member!, role: 'viewer' as const },
       organizations: [{ ...portalHub.organizations[0], role: 'viewer' as const }],
     }

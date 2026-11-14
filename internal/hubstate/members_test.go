@@ -19,6 +19,9 @@ func TestMemberPersistenceScopeAndCredentialRevocation(t *testing.T) {
 	if err != nil || !created || member.Status != "pending" || member.Role != "" || len(member.ClusterIDs) != 0 {
 		t.Fatalf("new member = %#v, created=%v, err=%v", member, created, err)
 	}
+	if member.AuthorizationRevision != 1 {
+		t.Fatalf("new account authorization revision = %d, want 1", member.AuthorizationRevision)
+	}
 	if _, exists := store.MemberForOrganization("self-hosted", id); exists {
 		t.Fatal("new OIDC account received a membership before organization approval")
 	}
@@ -200,6 +203,11 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 		t.Fatal(err)
 	}
 	migrated.now = store.now
+	for _, id := range []string{adminID, memberID, viewerID} {
+		if got := accountRevision(t, migrated, id); got != 0 {
+			t.Fatalf("migrated legacy account %s revision = %d, want 0", id, got)
+		}
+	}
 	if organization := migrated.Organization(); organization.ID != "self-hosted" || organization.Name != "KubeAtlas" ||
 		len(migrated.Members()) != 3 || len(migrated.Clusters()) != 2 {
 		t.Fatalf("legacy state defaults were not applied: organization=%#v, members=%d, clusters=%d",
@@ -294,6 +302,7 @@ func TestMemberUpdatePersistenceFailureIsAtomic(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	beforeRevision := accountRevision(t, store, id)
 	blocker := filepath.Join(filepath.Dir(store.path), "not-a-directory")
 	if err := os.WriteFile(blocker, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
@@ -315,6 +324,9 @@ func TestMemberUpdatePersistenceFailureIsAtomic(t *testing.T) {
 	}
 	if !bytes.Equal(before, after) {
 		t.Fatal("failed member update changed persisted state")
+	}
+	if got := accountRevision(t, store, id); got != beforeRevision {
+		t.Fatalf("failed member update changed authorization revision to %d", got)
 	}
 	member, ok := store.Member(id)
 	if !ok || member.Role != "member" || member.Status != "active" || !slices.Equal(member.ClusterIDs, []string{"alpha"}) {

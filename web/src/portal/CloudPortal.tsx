@@ -170,6 +170,7 @@ function isHubContext(value: unknown): value is HubContext {
   const role = (value: unknown) => value === 'owner' || value === 'member' || value === 'viewer'
   if (typeof hub.enabled !== 'boolean' || typeof hub.userId !== 'string' || typeof hub.platformOwner !== 'boolean') return false
   if (!hub.userId.trim()) return false
+  if (!isCanonicalAuthorizationRevision(hub.authorizationRevision)) return false
   if (hub.activeOrganizationId !== null && typeof hub.activeOrganizationId !== 'string') return false
   if (!Array.isArray(hub.organizations) || !hub.organizations.every(item => item && typeof item.id === 'string' && typeof item.name === 'string' && role(item.role))) return false
   if (hub.member !== undefined && hub.member !== null) {
@@ -182,6 +183,13 @@ function isHubContext(value: unknown): value is HubContext {
   return true
 }
 
+function isCanonicalAuthorizationRevision(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  const canonical = /^(0|[1-9]\d*)$/.exec(value)
+  if (!canonical || canonical[0] !== value) return false
+  return value.length < 20 || value.length === 20 && value <= '18446744073709551615'
+}
+
 function authorizationContextKey(hub: HubContext): string {
   const organizations = hub.organizations
     .map(({ id, role }) => ({ id, role }))
@@ -189,6 +197,7 @@ function authorizationContextKey(hub: HubContext): string {
   const activeOrganizationRole = organizations.find(item => item.id === hub.activeOrganizationId)?.role ?? null
   return JSON.stringify({
     userId: hub.userId,
+    authorizationRevision: hub.authorizationRevision,
     memberId: hub.member?.id ?? null,
     memberUserId: hub.member?.userId ?? null,
     accountStatus: hub.member?.status ?? null,

@@ -92,7 +92,7 @@ func (s *Store) UpsertOIDCMember(id, displayName string) (Member, bool, error) {
 			return cloneMember(memberFrom(account, membership)), false, nil
 		}
 		return Member{ID: id, UserID: userID, DisplayName: displayName, Status: account.Status,
-			ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt}, false, nil
+			AuthorizationRevision: account.AuthorizationRevision, ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt}, false, nil
 	}
 	next := s.next(now)
 	next.Accounts[id] = account
@@ -100,11 +100,12 @@ func (s *Store) UpsertOIDCMember(id, displayName string) (Member, bool, error) {
 	if err := s.commit(next); err != nil {
 		return Member{}, false, err
 	}
-	if membership, ok := next.Memberships["self-hosted"][id]; ok {
+	account = s.data.Accounts[id]
+	if membership, ok := s.data.Memberships["self-hosted"][id]; ok {
 		return cloneMember(memberFrom(account, membership)), created, nil
 	}
 	return Member{ID: id, UserID: userID, DisplayName: displayName, Status: account.Status,
-		ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt}, created, nil
+		AuthorizationRevision: account.AuthorizationRevision, ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt}, created, nil
 }
 
 func (s *Store) UpdateMember(id string, input MemberInput) (Member, bool, error) {
@@ -196,7 +197,7 @@ func (s *Store) UpdateMember(id string, input MemberInput) (Member, bool, error)
 	if err := s.commit(next); err != nil {
 		return Member{}, false, err
 	}
-	return cloneMember(current), authorizationChanged, nil
+	return cloneMember(s.data.Members[id]), authorizationChanged, nil
 }
 
 func validInputGroups(userID string, groups []string) bool {

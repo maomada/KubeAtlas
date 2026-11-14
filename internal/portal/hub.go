@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -234,7 +235,8 @@ func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 			organizations := p.organizationList(ownerID)
 			hubJSON(w, http.StatusOK, map[string]any{"enabled": true, "source": "live", "mcpReady": p.mcp != nil,
 				"userId": member.UserID, "groups": []string{}, "member": publicHubMember(member), "platformOwner": p.store.IsPlatformOwner(ownerID),
-				"activeOrganizationId": nil, "organizations": organizations})
+				"authorizationRevision": strconv.FormatUint(member.AuthorizationRevision, 10),
+				"activeOrganizationId":  nil, "organizations": organizations})
 		} else if member.Status == "active" && organizationID == "" && r.URL.Path == "/api/hub/organizations" && hubMethod(w, r, http.MethodGet) {
 			hubJSON(w, http.StatusOK, map[string]any{"organizations": p.organizationList(ownerID)})
 		} else if member.Status == "active" && organizationID == "" && r.URL.Path == "/api/hub/organization/select" {
@@ -257,7 +259,8 @@ func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 			}
 			hubJSON(w, http.StatusOK, map[string]any{"enabled": true, "source": "live", "mcpReady": p.mcp != nil,
 				"userId": member.UserID, "groups": append([]string{}, member.KubernetesGroups...), "member": publicHubMember(member),
-				"platformOwner": p.store.IsPlatformOwner(ownerID), "activeOrganizationId": activeOrganizationID,
+				"platformOwner":         p.store.IsPlatformOwner(ownerID),
+				"authorizationRevision": strconv.FormatUint(member.AuthorizationRevision, 10), "activeOrganizationId": activeOrganizationID,
 				"organizations": p.organizationList(ownerID)})
 		}
 	case r.URL.Path == "/api/hub/organizations" || r.URL.Path == "/api/hub/organization/select" || r.URL.Path == "/api/hub/platform/users" || strings.HasPrefix(r.URL.Path, "/api/hub/platform/users/") || r.URL.Path == "/api/hub/platform/clusters":

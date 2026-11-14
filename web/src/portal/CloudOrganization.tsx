@@ -39,6 +39,7 @@ export interface HubMember {
 export interface HubContext {
   enabled: boolean
   userId: string
+  authorizationRevision: string
   member?: HubMember | null
   platformOwner: boolean
   activeOrganizationId: string | null

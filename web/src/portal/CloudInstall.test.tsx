@@ -14,7 +14,7 @@ let host: HTMLDivElement
 let root: ReturnType<typeof createRoot>
 let client: QueryClient
 const hub: HubContext = {
-  enabled: true, userId: 'user-1',
+  enabled: true, userId: 'user-1', authorizationRevision: '1',
   member: { id: 'member-1', userId: 'user-1', displayName: 'Owner', role: 'owner', status: 'active' },
   platformOwner: false, activeOrganizationId: 'org-1',
   organizations: [{ id: 'org-1', name: 'Example organization', role: 'owner' }],

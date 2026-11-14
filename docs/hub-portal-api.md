@@ -31,6 +31,11 @@ account and membership state on each request. `GET /api/hub` reports
 the cluster scope of their organization. Only migrated `LegacyRestricted`
 memberships retain legacy explicit cluster and Kubernetes-group restrictions;
 an empty legacy cluster scope grants none. Viewer memberships are read-only.
+Both active and no-active-organization responses include the required
+`authorizationRevision` as a canonical decimal string from the same account or
+member snapshot as the response. The internal member object does not expose
+this field. It identifies authority-history changes for narrow client-side
+draft invalidation; it does not grant access or identify a session.
 The server derives `kubeatlas:hub:owner`, `kubeatlas:hub:member`, or
 `kubeatlas:hub:viewer` from the active organization role. Client-supplied group
 and organization headers do not set authority, and there is no arbitrary
@@ -92,7 +97,7 @@ browser-bound, one-use state transaction and the fixed configured callback.
 | `GET /api/auth/providers` | `{local:true, registrationEnabled:true, oidc:{enabled, loginUrl?}}` |
 | `GET /api/auth/oidc/login` | Fixed-provider authorization redirect with `prompt=login`, state, nonce and S256 PKCE |
 | `GET /api/auth/oidc/callback` | One-use browser-bound state callback; redirects to `/` or a generic safe login error |
-| `GET /api/hub` | Readiness and identity; nullable `activeOrganizationId`, public organizations and current member when resolved |
+| `GET /api/hub` | Readiness and identity; required decimal-string `authorizationRevision`, nullable `activeOrganizationId`, public organizations and current member when resolved |
 | `GET /api/hub/organizations` | `{organizations:[{id,name,role}]}`; public roles are owner/member/viewer |
 | `POST /api/hub/organizations` | Platform owner: `{name,ownerMemberId}` → `{id,name,role:"owner"}` |
 | `POST /api/hub/organization/select` | `{organizationId}` → 204; selects an organization in the current session |

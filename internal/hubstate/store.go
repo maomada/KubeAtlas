@@ -206,7 +206,7 @@ func syncAliasesFromPrimary(file *storeFile) {
 			continue
 		}
 		file.Members[id] = Member{ID: id, UserID: account.UserID, DisplayName: account.DisplayName, Role: membership.Role,
-			Status: account.Status, ClusterIDs: append([]string{}, membership.ClusterIDs...),
+			Status: account.Status, AuthorizationRevision: account.AuthorizationRevision, ClusterIDs: append([]string{}, membership.ClusterIDs...),
 			KubernetesGroups: append([]string{}, membership.KubernetesGroups...), LegacyRestricted: membership.LegacyRestricted,
 			LegacyAllClusters: membership.LegacyAllClusters, CreatedAt: membership.CreatedAt, UpdatedAt: membership.UpdatedAt}
 	}
@@ -291,6 +291,17 @@ func (s *Store) next(now time.Time) storeFile {
 }
 
 func (s *Store) commit(next storeFile) error {
+	if next.Accounts == nil {
+		return failure("store_unavailable")
+	}
+	accounts := make(map[string]Account, len(next.Accounts))
+	for id, account := range next.Accounts {
+		accounts[id] = account
+	}
+	next.Accounts = accounts
+	if err := applyAuthorizationRevisions(s.data, &next); err != nil {
+		return err
+	}
 	syncAliasesFromPrimary(&next)
 	if len(next.Credentials) > maxCredentials {
 		return failure("capacity_exceeded")

@@ -3,6 +3,7 @@ package portal
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -35,6 +36,15 @@ func TestHubMemberStatusAndUnresolvedRoleResponse(t *testing.T) {
 		if err := json.Unmarshal(body["member"], &member); err != nil {
 			t.Fatalf("member response decode: %v", err)
 		}
+		account, ok := h.liveHub.store.Account(test.id)
+		var revision string
+		if !ok || json.Unmarshal(body["authorizationRevision"], &revision) != nil ||
+			revision != strconv.FormatUint(account.AuthorizationRevision, 10) {
+			t.Fatalf("Hub authorization revision = %q, account=%#v, ok=%v", revision, account, ok)
+		}
+		if _, exposed := member["authorizationRevision"]; exposed {
+			t.Fatalf("member exposed its internal authorization revision: %s", response.Body.String())
+		}
 		var status string
 		if err := json.Unmarshal(member["status"], &status); err != nil || status != test.status {
 			t.Fatalf("member status = %q, want %q (error %v)", status, test.status, err)
@@ -49,7 +59,7 @@ func TestHubMemberStatusAndUnresolvedRoleResponse(t *testing.T) {
 		if err := json.Unmarshal(body["member"], &publicMember); err != nil {
 			t.Fatal(err)
 		}
-		account, ok := h.liveHub.store.Account(test.id)
+		account, ok = h.liveHub.store.Account(test.id)
 		if !ok || publicMember.ClusterIDs == nil || publicMember.KubernetesGroups == nil ||
 			len(publicMember.ClusterIDs) != 0 || len(publicMember.KubernetesGroups) != 0 ||
 			publicMember.CreatedAt.IsZero() || publicMember.UpdatedAt.IsZero() ||
@@ -59,6 +69,17 @@ func TestHubMemberStatusAndUnresolvedRoleResponse(t *testing.T) {
 	}
 
 	localCookie := loginForTest(t, h)
+	localResponse := hubRequest(t, h, localCookie, "", http.MethodGet, "/api/hub", "", http.StatusOK)
+	var localBody map[string]json.RawMessage
+	if err := json.Unmarshal(localResponse.Body.Bytes(), &localBody); err != nil {
+		t.Fatal(err)
+	}
+	localAccount, ok := h.liveHub.store.Account(h.liveHub.ownerID)
+	var localRevision string
+	if !ok || json.Unmarshal(localBody["authorizationRevision"], &localRevision) != nil ||
+		localRevision != strconv.FormatUint(localAccount.AuthorizationRevision, 10) {
+		t.Fatalf("local owner revision = %q, account=%#v, ok=%v", localRevision, localAccount, ok)
+	}
 	wantStatuses := map[string]string{}
 	for index, status := range []string{"pending", "active", "disabled"} {
 		id := "oidc:" + strings.Repeat(string(rune('c'+index)), 64)

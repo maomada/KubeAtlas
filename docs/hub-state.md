@@ -44,12 +44,25 @@ organization-scoped cluster metadata and an Agent-token digest. Group records
 contain organization-scoped cluster-group metadata. Credential records contain
 organization-scoped PAT metadata, token digests, family ancestry, and TTL
 metadata. Accounts contain identity, email/display name, account status, a
-stored bcrypt hash where applicable, and local/platform-owner markers.
-Membership records contain the organization role, legacy cluster and
-Kubernetes-group scope, and timestamps. `connectionSettings` contains the
-stored LAN and public origins. Plaintext passwords and tokens are not persisted.
+stored bcrypt hash where applicable, local/platform-owner markers, and the
+server-managed `authorizationRevision` counter. The counter is an optional
+unsigned 64-bit account field when loading legacy state; an absent value means
+zero, and newly created accounts start at one. Each atomic commit compares the
+canonical account authorization fields and per-organization membership
+semantics, incrementing once when those change. It ignores display-name and
+timestamp changes and unrelated writes. This counter is invalidation metadata,
+not authorization state or a session identifier. Membership records contain
+the organization role, legacy cluster and Kubernetes-group scope, and
+timestamps. `connectionSettings` contains the stored LAN and public origins.
+Plaintext passwords and tokens are not persisted.
 Version-1-only `organization` and `members` aliases are migration input, not
 version-2 root fields.
+
+Legacy version-2 accounts without `authorizationRevision` load as revision
+zero. New writes persist the field, including zero for unchanged legacy
+accounts; older binaries reject it as an unknown field. Downgrade from a
+revision-aware state file is unsupported: restore a verified pre-upgrade
+backup instead of resetting or rewriting the state.
 
 Migration preserves cluster and group records, credential digests, connection
 settings, existing Kubernetes groups, and member cluster scopes. Every migrated
@@ -69,8 +82,10 @@ Each mutation works on a copy, serializes the complete bounded state, writes a
 same-directory temporary file with `0600`, syncs and closes it, then renames it
 over the store. Only successful rename publishes new in-memory state. Any
 failure before rename leaves the prior state and credentials intact and returns
-a generic typed error. Rename is the commit point: subsequent best-effort
-directory sync cannot be reported as rollback. A power failure on storage that
+a generic typed error. Authorization revisions are computed from the live
+state and mutation copy before validation or persistence; overflow rejects the
+entire commit. Rename is the commit point: subsequent best-effort directory
+sync cannot be reported as rollback. A power failure on storage that
 does not honor file/directory durability may lose the last update; operators
 must choose appropriate persistent storage. The file is not encrypted and local
 writers can alter grants; protect it and its backups as authentication state.

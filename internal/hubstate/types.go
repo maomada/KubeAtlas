@@ -56,16 +56,17 @@ type Organization struct {
 }
 
 type Account struct {
-	ID            string    `json:"id"`
-	UserID        string    `json:"userId"`
-	Email         string    `json:"email,omitempty"`
-	DisplayName   string    `json:"displayName"`
-	Status        string    `json:"status"`
-	PasswordHash  string    `json:"passwordHash,omitempty"`
-	PlatformOwner bool      `json:"platformOwner,omitempty"`
-	Local         bool      `json:"local,omitempty"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID                    string    `json:"id"`
+	UserID                string    `json:"userId"`
+	Email                 string    `json:"email,omitempty"`
+	DisplayName           string    `json:"displayName"`
+	Status                string    `json:"status"`
+	AuthorizationRevision uint64    `json:"authorizationRevision"`
+	PasswordHash          string    `json:"passwordHash,omitempty"`
+	PlatformOwner         bool      `json:"platformOwner,omitempty"`
+	Local                 bool      `json:"local,omitempty"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
 }
 
 type Membership struct {
@@ -84,17 +85,18 @@ type ConnectionSettings struct {
 }
 
 type Member struct {
-	ID                string    `json:"id"`
-	UserID            string    `json:"userId"`
-	DisplayName       string    `json:"displayName"`
-	Role              string    `json:"role,omitempty"`
-	Status            string    `json:"status"`
-	ClusterIDs        []string  `json:"clusterIds"`
-	KubernetesGroups  []string  `json:"kubernetesGroups"`
-	LegacyRestricted  bool      `json:"-"`
-	LegacyAllClusters bool      `json:"-"`
-	CreatedAt         time.Time `json:"createdAt"`
-	UpdatedAt         time.Time `json:"updatedAt"`
+	ID                    string    `json:"id"`
+	UserID                string    `json:"userId"`
+	DisplayName           string    `json:"displayName"`
+	Role                  string    `json:"role,omitempty"`
+	Status                string    `json:"status"`
+	AuthorizationRevision uint64    `json:"-"`
+	ClusterIDs            []string  `json:"clusterIds"`
+	KubernetesGroups      []string  `json:"kubernetesGroups"`
+	LegacyRestricted      bool      `json:"-"`
+	LegacyAllClusters     bool      `json:"-"`
+	CreatedAt             time.Time `json:"createdAt"`
+	UpdatedAt             time.Time `json:"updatedAt"`
 }
 
 type MemberInput struct {

@@ -9,9 +9,10 @@ import (
 )
 
 func (p *portalHub) localMember() hubstate.Member {
+	account, _ := p.store.Account(p.ownerID)
 	return hubstate.Member{
 		ID: hubstate.LocalMemberID, UserID: p.userID, DisplayName: p.displayName,
-		Role: "platformOwner", Status: "active", ClusterIDs: []string{},
+		Role: "platformOwner", Status: "active", AuthorizationRevision: account.AuthorizationRevision, ClusterIDs: []string{},
 		KubernetesGroups: append([]string{}, p.groups...), CreatedAt: p.startedAt, UpdatedAt: p.startedAt,
 	}
 }
@@ -38,7 +39,7 @@ func (p *portalHub) memberForOwner(ownerID, organizationID string) (hubstate.Mem
 	}
 	return hubstate.Member{
 		ID: account.ID, UserID: account.UserID, DisplayName: account.DisplayName, Status: account.Status,
-		ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt,
+		AuthorizationRevision: account.AuthorizationRevision, ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: account.CreatedAt, UpdatedAt: account.UpdatedAt,
 	}, true
 }
 

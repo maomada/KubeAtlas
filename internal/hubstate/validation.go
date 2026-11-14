@@ -167,7 +167,13 @@ func requiredV2Fields(data []byte) bool {
 			}
 		}
 		for field := range account {
-			if !slices.Contains(append(accountFields, "email", "passwordHash", "platformOwner", "local"), field) {
+			if !slices.Contains(append(accountFields, "email", "passwordHash", "platformOwner", "local", "authorizationRevision"), field) {
+				return false
+			}
+		}
+		if raw, exists := account["authorizationRevision"]; exists {
+			var revision uint64
+			if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &revision) != nil {
 				return false
 			}
 		}

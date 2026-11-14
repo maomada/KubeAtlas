@@ -14,6 +14,16 @@ context at entry. Role groups are derived server-side, never accepted from
 client headers, and MCP credentials remain pinned to their issuance
 organization.
 
+The Hub persists a per-account authorization revision and returns it as a
+canonical decimal string in both active and pending/no-organization
+`GET /api/hub` responses. It advances only when account authorization fields
+or organization membership semantics change; timestamps and display-name-only
+updates do not advance it. The revision is invalidation metadata, not a
+permission grant or session ID. Portal YAML draft scopes include the revision:
+same-revision login, reload, and ordinary session recovery retain the narrow
+draft scope, while a changed revision invalidates drafts from the prior
+authority. Missing or malformed revision metadata fails closed in the UI.
+
 The `kubeatlas-portal` binary name is retained for a self-hosted Cloud Hub that
 serves the Cloud UI, member identity, browser proxy, and live MCP transport.
 It is separate from the native KubeAtlas Agent. This repository does not
