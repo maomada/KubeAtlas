@@ -112,9 +112,10 @@ function render(props: {
 }
 
 function renderWithPolicy(
-  props: { onSave: () => Promise<void>; onPreview: () => Promise<ReturnType<typeof reviewed>>; schemaLoader?: () => unknown; onSaved?: () => void },
+  props: { onSave: () => Promise<void>; onPreview: () => Promise<ReturnType<typeof reviewed>>; schemaLoader?: () => unknown; onSaved?: () => void; onDuplicate?: (params: { kind: string; namespace: string; name: string; yaml: string }) => void },
   scope?: string,
   readOnly = false,
+  leafReadOnly = false,
 ) {
   act(() => root.render(
     <YamlDraftPolicyProvider scope={scope} readOnly={readOnly}>
@@ -123,10 +124,12 @@ function renderWithPolicy(
         data={data}
         onCopy={() => {}}
         copied={false}
+        readOnly={leafReadOnly}
         onSave={props.onSave}
         onPreview={props.onPreview}
         schemaLoader={props.schemaLoader as never}
         onSaved={props.onSaved}
+        onDuplicate={props.onDuplicate}
       />
     </YamlDraftPolicyProvider>,
   ));
@@ -143,6 +146,31 @@ const click = async (label: RegExp) => {
   });
 };
 const text = () => document.body.textContent ?? "";
+
+it('keeps Duplicate available to writable owners and hides it for Viewer or leaf read-only mode', () => {
+  const onDuplicate = vi.fn()
+  const onSave = vi.fn(async () => {})
+  const onPreview = vi.fn(async () => reviewed('1'))
+  const props = { onSave, onPreview, onDuplicate }
+  renderWithPolicy(props, 'org-a:owner:logical-cluster-a')
+  const duplicate = [...host.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Duplicate')
+  expect(duplicate).not.toBeUndefined()
+  act(() => duplicate!.click())
+  expect(onDuplicate).toHaveBeenCalledWith(expect.objectContaining({
+    kind: 'ConfigMap',
+    namespace: 'shop',
+    name: 'app',
+    yaml: expect.any(String),
+  }))
+
+  renderWithPolicy(props, 'org-b:viewer:logical-cluster-b', true)
+  expect([...host.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Duplicate')).toBe(false)
+  expect(onDuplicate).toHaveBeenCalledTimes(1)
+
+  renderWithPolicy(props, 'org-a:owner:logical-cluster-a', false, true)
+  expect([...host.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Duplicate')).toBe(false)
+  expect(onDuplicate).toHaveBeenCalledTimes(1)
+})
 
 it("says the resource changed after review, and only for the attempt that found it", async () => {
   const onPreview = vi

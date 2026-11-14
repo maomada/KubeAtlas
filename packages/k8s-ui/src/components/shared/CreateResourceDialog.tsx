@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, useId } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useRef, useState, type DragEvent as ReactDragEvent, useId } from 'react'
 import { AlertTriangle, Check, Loader2, Upload, X } from 'lucide-react'
 import { Collapse, CollapseChevron, useDisclosure } from '../ui/Collapse'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -20,6 +20,7 @@ import {
   YAML_FILE_ACCEPT,
   type FileDragState,
 } from '../../utils/yaml-file-import'
+import { useYamlDraftPolicy } from './YamlDraftPolicy'
 
 // A frame this close to the last one means the main thread is keeping up; a
 // blocked editor produces gaps far larger.
@@ -67,7 +68,44 @@ export interface CreateResourceDialogProps {
   lockMode?: boolean
 }
 
-export function CreateResourceDialog({
+type DialogAttempt = { operationGeneration: number }
+type DialogPolicyBoundary = { policyKey: string; open: boolean; invalidated: boolean }
+type CreateResourceDialogInnerProps = CreateResourceDialogProps & { policyReadOnly: boolean }
+
+export function CreateResourceDialog(props: CreateResourceDialogProps) {
+  const { open, onClose } = props
+  const { scope, readOnly: policyReadOnly = false } = useYamlDraftPolicy()
+  const policyKey = JSON.stringify([scope ?? null, policyReadOnly])
+  const [boundary, setBoundary] = useState<DialogPolicyBoundary>(() => ({
+    policyKey,
+    open,
+    invalidated: false,
+  }))
+  const policyChanged = boundary.policyKey !== policyKey
+  if (policyChanged || boundary.open !== open) {
+    setBoundary(previous => ({
+      policyKey,
+      open,
+      invalidated: open && (previous.invalidated || previous.policyKey !== policyKey),
+    }))
+  }
+  const blocked = policyReadOnly || (open && (policyChanged || boundary.invalidated))
+  const closeNotified = useRef(false)
+  useEffect(() => {
+    if (!open || !blocked) {
+      closeNotified.current = false
+      return
+    }
+    if (closeNotified.current) return
+    closeNotified.current = true
+    onClose()
+  }, [open, blocked, onClose])
+
+  if (blocked) return null
+  return <CreateResourceDialogInner key={policyKey} {...props} policyReadOnly={policyReadOnly} />
+}
+
+function CreateResourceDialogInner({
   open,
   onClose,
   onBack,
@@ -83,7 +121,9 @@ export function CreateResourceDialog({
   onCreated,
   initialMode = 'apply',
   lockMode = false,
-}: CreateResourceDialogProps) {
+  policyReadOnly,
+}: CreateResourceDialogInnerProps) {
+  const previousOpen = useRef(open)
   const titleId = useId()
   const [yaml, setYaml] = useState(initialYaml)
   const pauseContextYaml = useDebouncedValue(onPreview ? '' : yaml, 200)
@@ -103,6 +143,8 @@ export function CreateResourceDialog({
     context?: string
   } | null>(null)
   const closeTimer = useRef<number | undefined>(undefined)
+  const operationGeneration = useRef(0)
+  const mounted = useRef(false)
   const [drag, setDrag] = useState<FileDragState>('none')
   const [pendingImport, setPendingImport] = useState<{ fileName: string; yaml: string } | null>(null)
   const [importing, setImporting] = useState<string | null>(null)
@@ -132,16 +174,46 @@ export function CreateResourceDialog({
     window.clearTimeout(closeTimer.current)
     closeTimer.current = undefined
   }, [])
-  useEffect(() => () => { retireDeferredImports(); cancelScheduledClose() }, [retireDeferredImports, cancelScheduledClose])
+  const canStartOperation = useCallback(() => {
+    return mounted.current && open && !policyReadOnly
+  }, [open, policyReadOnly])
+  const beginAttempt = useCallback((): DialogAttempt | null => {
+    if (!canStartOperation()) return null
+    return { operationGeneration: operationGeneration.current }
+  }, [canStartOperation])
+  const isCurrentAttempt = useCallback((attempt: DialogAttempt) => {
+    return mounted.current &&
+      attempt.operationGeneration === operationGeneration.current &&
+      open &&
+      !policyReadOnly
+  }, [open, policyReadOnly])
 
-  const scheduleFrame = useCallback((generation: number, run: () => void) => {
+  useLayoutEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      operationGeneration.current += 1
+      retireDeferredImports()
+      cancelScheduledClose()
+    }
+  }, [retireDeferredImports, cancelScheduledClose])
+
+  useLayoutEffect(() => {
+    if (previousOpen.current === open) return
+    previousOpen.current = open
+    operationGeneration.current += 1
+    retireDeferredImports()
+    cancelScheduledClose()
+  }, [open, retireDeferredImports, cancelScheduledClose])
+
+  const scheduleFrame = useCallback((generation: number, attempt: DialogAttempt, run: () => void) => {
     const id = requestAnimationFrame(() => {
       scheduledFrames.current.delete(id)
-      if (generation !== importGeneration.current) return
+      if (generation !== importGeneration.current || !isCurrentAttempt(attempt)) return
       run()
     })
     scheduledFrames.current.add(id)
-  }, [])
+  }, [isCurrentAttempt])
 
   useEffect(() => {
     if (!open) return
@@ -164,6 +236,7 @@ export function CreateResourceDialog({
 
   const pending = isApplying || isPreviewing
   const closeNow = useCallback(() => {
+    operationGeneration.current += 1
     cancelScheduledClose()
     retireDeferredImports()
     setError(null)
@@ -184,7 +257,8 @@ export function CreateResourceDialog({
   }, [])
 
   const finishApply = useCallback(
-    (results: ApplyResult[], appliedMode: 'apply' | 'create', wasDryRun: boolean, submittedYaml: string) => {
+    (results: ApplyResult[], appliedMode: 'apply' | 'create', wasDryRun: boolean, submittedYaml: string, attempt: DialogAttempt) => {
+      if (!isCurrentAttempt(attempt)) return
       const action = appliedMode === 'create' ? '已创建' : '已应用'
       const dryRunLabel = wasDryRun ? ' (dry run)' : ''
       if (results.length === 1) {
@@ -201,10 +275,12 @@ export function CreateResourceDialog({
         closeNow()
         onCreated(results[0], submittedYaml)
       } else {
-        closeTimer.current = window.setTimeout(closeNow, 1200)
+        closeTimer.current = window.setTimeout(() => {
+          if (isCurrentAttempt(attempt)) closeNow()
+        }, 1200)
       }
     },
-    [closeNow, onCreated],
+    [closeNow, isCurrentAttempt, onCreated],
   )
 
   // Handing a document to the editor parses the whole buffer and blocks the
@@ -213,10 +289,10 @@ export function CreateResourceDialog({
   // spinner would only freeze mid-turn, so this says what is happening instead
   // of pretending to animate.
   const loadIntoEditor = useCallback(
-    (fileName: string, content: string, generation: number) => {
+    (fileName: string, content: string, generation: number, attempt: DialogAttempt) => {
       setImporting(fileName)
-      scheduleFrame(generation, () => {
-        scheduleFrame(generation, () => {
+      scheduleFrame(generation, attempt, () => {
+        scheduleFrame(generation, attempt, () => {
           setYaml(content)
           // Clearing it in this same callback would batch it into the very
           // render that blocks, retiring the status while the editor is still
@@ -230,9 +306,9 @@ export function CreateResourceDialog({
               return
             }
             previous = now
-            scheduleFrame(generation, clearWhenResponsive)
+            scheduleFrame(generation, attempt, clearWhenResponsive)
           }
-          scheduleFrame(generation, clearWhenResponsive)
+          scheduleFrame(generation, attempt, clearWhenResponsive)
         })
       })
     },
@@ -241,11 +317,13 @@ export function CreateResourceDialog({
 
   const loadFiles = useCallback(
     async (files: File[]) => {
+      const attempt = beginAttempt()
+      if (!attempt) return
       const generation = ++importGeneration.current
       const result = await readYamlFile(files)
       // A newer import, a close or a reopen happened while this one was
       // reading; its result describes an editor that has moved on.
-      if (generation !== importGeneration.current) return
+      if (generation !== importGeneration.current || !isCurrentAttempt(attempt)) return
       // This import owns the status from here. Taking the generation retired
       // the frames that would have cleared a previous import's overlay, so
       // every path out of this function has to leave it in a sane state — the
@@ -262,9 +340,9 @@ export function CreateResourceDialog({
         setPendingImport({ fileName: result.fileName, yaml: result.yaml })
         return
       }
-      loadIntoEditor(result.fileName, result.yaml, generation)
+      loadIntoEditor(result.fileName, result.yaml, generation, attempt)
     },
-    [initialYaml, loadIntoEditor],
+    [beginAttempt, initialYaml, isCurrentAttempt, loadIntoEditor],
   )
 
   const handleDragEnter = useCallback((event: ReactDragEvent) => {
@@ -313,6 +391,8 @@ export function CreateResourceDialog({
   }, [lockMode, onPreview])
 
   const handleSubmit = useCallback(async () => {
+    const attempt = beginAttempt()
+    if (!attempt) return
     if (!yaml.trim()) {
       setError('必须填写 YAML 内容')
       return
@@ -323,6 +403,7 @@ export function CreateResourceDialog({
       if (onPreview) {
         const reviewedForce = mode === 'apply' && force
         const result = await onPreview({ yaml, mode, force: reviewedForce })
+        if (!isCurrentAttempt(attempt)) return
         setPreview({
           yaml,
           mode,
@@ -339,15 +420,18 @@ export function CreateResourceDialog({
         dryRun,
         force: mode === 'apply' && force,
       })
-      finishApply(results, mode, dryRun, yaml)
+      if (!isCurrentAttempt(attempt)) return
+      finishApply(results, mode, dryRun, yaml, attempt)
     } catch (caught) {
+      if (!isCurrentAttempt(attempt)) return
       setError(caught instanceof Error ? caught.message : '未知错误')
       if (!onPreview) recoverPartialCreate(caught, yaml, mode, dryRun)
     }
-  }, [yaml, mode, dryRun, force, onApply, onPreview, finishApply, recoverPartialCreate])
+  }, [beginAttempt, yaml, mode, dryRun, force, onApply, onPreview, finishApply, isCurrentAttempt, recoverPartialCreate])
 
   const handleApplyReviewed = useCallback(async () => {
-    if (!preview) return
+    const attempt = beginAttempt()
+    if (!preview || !attempt) return
     setError(null)
     try {
       const reviewedResourceVersions = reviewedResourceVersionsForPreview(preview.documents)
@@ -359,18 +443,22 @@ export function CreateResourceDialog({
         reviewedResourceVersions,
         reviewedContext: preview.context,
       })
-      finishApply(results, preview.mode, false, preview.yaml)
+      if (!isCurrentAttempt(attempt)) return
+      finishApply(results, preview.mode, false, preview.yaml, attempt)
     } catch (caught) {
+      if (!isCurrentAttempt(attempt)) return
       const message = caught instanceof Error ? caught.message : '未知错误'
       setError(message)
       if (recoverPartialCreate(caught, preview.yaml, preview.mode, false)) return
       if (onPreview) {
         try {
+          if (!isCurrentAttempt(attempt)) return
           const refreshed = await onPreview({
             yaml: preview.yaml,
             mode: preview.mode,
             force: preview.force,
           })
+          if (!isCurrentAttempt(attempt)) return
           setPreview({
             ...preview,
             documents: refreshed.documents,
@@ -382,7 +470,19 @@ export function CreateResourceDialog({
         }
       }
     }
-  }, [preview, onApply, onPreview, finishApply, recoverPartialCreate])
+  }, [beginAttempt, preview, onApply, onPreview, finishApply, isCurrentAttempt, recoverPartialCreate])
+
+  const guardedSchemaLoader = useCallback(async (...args: Parameters<YamlSchemaLoader>) => {
+    const attempt = beginAttempt()
+    if (!attempt || !schemaLoader) return { schemas: [] }
+    try {
+      const result = await schemaLoader(...args)
+      return isCurrentAttempt(attempt) ? result : { schemas: [] }
+    } catch (error) {
+      if (!isCurrentAttempt(attempt)) return { schemas: [] }
+      throw error
+    }
+  }, [beginAttempt, isCurrentAttempt, schemaLoader])
 
   const dialogTitle = title || '创建资源'
   const showModeControls = !lockMode
@@ -415,6 +515,7 @@ export function CreateResourceDialog({
           }
           onClose={handleClose}
           onBack={() => {
+            if (!canStartOperation()) return
             setError(null)
             setPreview(null)
           }}
@@ -475,7 +576,7 @@ export function CreateResourceDialog({
                 onChange={setYaml}
                 height="100%"
                 onValidate={handleValidate}
-                schemaLoader={schemaLoader}
+                schemaLoader={schemaLoader ? guardedSchemaLoader : undefined}
               />
               {importing && (
                 <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded-md border border-theme-border bg-theme-base/85">
@@ -583,6 +684,7 @@ export function CreateResourceDialog({
                 <button
                   type="button"
                   onClick={() => {
+                    if (!canStartOperation()) return
                     cancelScheduledClose()
                     retireDeferredImports()
                     onBack(yamlRef.current)
@@ -622,8 +724,11 @@ export function CreateResourceDialog({
           // so it loads under a fresh generation rather than the one the read
           // started under, which anything since may have retired.
           if (pendingImport) {
-            const generation = ++importGeneration.current
-            loadIntoEditor(pendingImport.fileName, pendingImport.yaml, generation)
+            const attempt = beginAttempt()
+            if (attempt) {
+              const generation = ++importGeneration.current
+              loadIntoEditor(pendingImport.fileName, pendingImport.yaml, generation, attempt)
+            }
           }
           setPendingImport(null)
         }}

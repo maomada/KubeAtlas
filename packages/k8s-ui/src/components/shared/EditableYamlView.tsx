@@ -643,17 +643,18 @@ function EditableYamlViewInstance({
               Download
             </button>
           </Tooltip>
-          {onDuplicate && (
+          {onDuplicate && !readOnly && (
             <Tooltip content="Duplicate as new resource">
               <button
-                onClick={() =>
+                onClick={() => {
+                  if (readOnly) return
                   onDuplicate({
                     kind: resource.kind,
                     namespace: resource.namespace,
                     name: resource.name,
                     yaml: yamlContent,
                   })
-                }
+                }}
                 className="flex items-center gap-1 px-2 py-1 text-xs text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded"
               >
                 <CopyPlus className="w-3.5 h-3.5" />
