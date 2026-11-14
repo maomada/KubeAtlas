@@ -41,6 +41,8 @@ When `navSlots.embedded` is true, Radar sizes itself to the host container (`hei
 
 Embedded mode renders only the active view. Radar Hub owns the sidebar, top bar, cluster selector, and navigation. `onClusterLoadStateChange` supplies the loading status for Hub's top bar.
 
+Hosts may pass `yamlDraftScope` to isolate session-restored YAML drafts by authenticated authority and API target. The value must be stable for the same authority/target and must not contain credentials. Omit it to preserve the library's existing unscoped re-auth draft recovery. `yamlReadOnly` disables YAML editing and draft restoration across the app; leaf-level `readOnly` remains additive.
+
 The standalone Fleet Manager route and navigation entry are disabled when
 `navSlots.embedded` is true. They do not replace the host's fleet selection or
 change the configured per-cluster API base.

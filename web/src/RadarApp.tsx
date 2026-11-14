@@ -39,6 +39,7 @@ import { NavCustomizationProvider } from "./context/NavCustomization";
 import { FilterLocationBridge } from "./filter/FilterLocationBridge";
 import type { NavCustomization } from "./context/NavCustomization";
 import { RadarUpgradeHostProvider } from "./context/RadarUpgradeHost";
+import { YamlDraftPolicyProvider } from "@maomada/k8s-ui";
 import type {
   RadarUpgradeHost,
   RadarUpgradeRequest,
@@ -74,6 +75,10 @@ declare module "@tanstack/react-query" {
 export interface RadarAppProps {
   /** API base URL (REST + SSE + WS). Defaults to '/api' (same-origin). */
   apiBase?: string;
+  /** Stable, non-secret identity for scoping session-restored YAML drafts. Omit to retain legacy recovery behavior. */
+  yamlDraftScope?: string;
+  /** Disables YAML editing and draft restoration for the whole app. */
+  yamlReadOnly?: boolean;
   /**
    * The version of the KubeAtlas behind `apiBase`, as the host knows it (KubeAtlas
    * Cloud: the cluster's `radar_version`). KubeAtlas prefers that KubeAtlas's own
@@ -227,6 +232,8 @@ export function makeDefaultQueryClient(): QueryClient {
 
 export function RadarApp({
   apiBase,
+  yamlDraftScope,
+  yamlReadOnly,
   radarVersion,
   onRequestRadarUpgrade,
   basename,
@@ -267,6 +274,7 @@ export function RadarApp({
   );
 
   const inner = (
+    <YamlDraftPolicyProvider scope={yamlDraftScope} readOnly={yamlReadOnly}>
     <ThemeProvider>
       <QueryClientProvider client={client}>
         <ToastProvider>
@@ -301,6 +309,7 @@ export function RadarApp({
         </ToastProvider>
       </QueryClientProvider>
     </ThemeProvider>
+    </YamlDraftPolicyProvider>
   );
 
   if (router === "memory") {

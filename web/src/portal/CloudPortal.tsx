@@ -26,6 +26,7 @@ import { ConnectionProfilesProvider, useConnectionProfiles } from './ConnectionP
 import { probePortalSession } from './auth'
 import { Login } from './Login'
 import { PortalLanding, Register } from './Registration'
+import { hubYamlDraftScope, reconcileHubYamlDrafts, subscribeToHubYamlDraftInvalidation, type HubYamlDraftInvalidationEvent } from './hubYamlDrafts'
 
 const NativeRadar = lazy(() => import('../RadarApp').then(module => ({ default: module.RadarApp })))
 
@@ -49,6 +50,24 @@ const navigation: NavItem[] = [
 
 export function PortalEntry() {
   const [client] = useState(() => new QueryClient({ defaultOptions: { queries: { retry: false, refetchOnWindowFocus: false } } }))
+  const [sessionInvalidation, setSessionInvalidation] = useState<HubYamlDraftInvalidationEvent>()
+  useEffect(() => subscribeToHubYamlDraftInvalidation(event => {
+    if (event.type === 'purge') {
+      flushSync(() => setSessionInvalidation(event))
+    } else {
+      setSessionInvalidation(event)
+    }
+  }), [])
+  if (sessionInvalidation?.type === 'logout-failed') return <div className="cloud-page"><CloudError error={sessionInvalidation.error} retry={() => { void logoutPortal().catch(() => {}) }} /></div>
+  if (sessionInvalidation?.type === 'purge-failed') return <div className="cloud-page"><CloudError error={sessionInvalidation.error} /></div>
+  if (sessionInvalidation?.type === 'purge' || sessionInvalidation?.type === 'purge-cleared') {
+    const label = sessionInvalidation.type === 'purge-cleared'
+      ? 'Session changed in another tab; saved YAML drafts were discarded.'
+      : sessionInvalidation.source === 'local'
+        ? '正在退出并清除本地 YAML 草稿…'
+        : 'Session changed in another tab; locking YAML editing…'
+    return <div className="cloud-page cloud-empty"><CloudLoading label={label} /><button className="cloud-button" onClick={() => window.location.reload()}>刷新页面</button></div>
+  }
   return <QueryClientProvider client={client}><PortalRoutes queryClient={client} /></QueryClientProvider>
 }
 
@@ -68,15 +87,31 @@ function PortalMode({ path, queryClient }: { path: string; queryClient: QueryCli
   const mode = useCloudQuery<HubContext>('/hub', '/api', session.data === 'authenticated')
   const [switching, setSwitching] = useState(false)
   const [shellAuthorizationContext, setShellAuthorizationContext] = useState<string>()
+  const [reconciledDraftContext, setReconciledDraftContext] = useState<string>()
+  const [draftStorageErrorContext, setDraftStorageErrorContext] = useState<string>()
+  const [draftReconcileRetry, setDraftReconcileRetry] = useState(0)
   const nativeClusterId = selectedCluster(path)
+  const nativeClusterScope = nativeClusterId ? JSON.stringify({ clusterId: nativeClusterId, apiBase: clusterBase(nativeClusterId) }) : undefined
   // Keep native query data isolated when the route selects a different cluster.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const nativeClient = useMemo(() => new QueryClient({ defaultOptions: { queries: { retry: false } } }), [nativeClusterId])
-  const hub = isHubContext(mode.data) && mode.data.enabled === true ? mode.data : undefined
+  const authorityHub = isHubContext(mode.data) ? mode.data : undefined
+  const hub = authorityHub?.enabled === true ? authorityHub : undefined
   const hasActiveShell = !!hub && (hub.member?.status === 'active' || hub.platformOwner) && hub.organizations.some(item => item.id === hub.activeOrganizationId)
   const shouldTrackAuthorizationContext = hasActiveShell || !!hub && hub.platformOwner && path === '/settings/platform'
-  const currentAuthorizationContext = hub ? authorizationContextKey(hub) : undefined
+  const currentAuthorizationContext = authorityHub ? authorizationContextKey(authorityHub) : undefined
+  const draftAuthority = currentAuthorizationContext === undefined ? undefined : JSON.stringify({ authorization: currentAuthorizationContext, enabled: authorityHub?.enabled })
+  const draftReconcileKey = draftAuthority === undefined ? undefined : JSON.stringify([draftAuthority, nativeClusterScope ?? null])
   const authorizationContextChanged = currentAuthorizationContext !== undefined && shellAuthorizationContext !== undefined && currentAuthorizationContext !== shellAuthorizationContext
+  useEffect(() => {
+    if (session.data !== 'authenticated' || mode.isPending || !draftAuthority || !draftReconcileKey) return
+    if (reconcileHubYamlDrafts(draftAuthority, nativeClusterScope)) {
+      setReconciledDraftContext(draftReconcileKey)
+      setDraftStorageErrorContext(undefined)
+    } else {
+      setDraftStorageErrorContext(draftReconcileKey)
+    }
+  }, [draftAuthority, draftReconcileKey, draftReconcileRetry, mode.isPending, nativeClusterScope, session.data])
   useEffect(() => {
     if (session.data === 'unauthenticated' && path !== '/') replacePortalLocation('/login')
   }, [session.data, path])
@@ -87,25 +122,36 @@ function PortalMode({ path, queryClient }: { path: string; queryClient: QueryCli
   }, [currentAuthorizationContext, shouldTrackAuthorizationContext, shellAuthorizationContext])
   useEffect(() => {
     if (!authorizationContextChanged) return
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSwitching(true)
     void (async () => {
       await Promise.all([queryClient.cancelQueries(), nativeClient.cancelQueries()])
       queryClient.clear()
       nativeClient.clear()
+      setShellAuthorizationContext(currentAuthorizationContext)
       replacePortalLocation('/')
     })()
-  }, [authorizationContextChanged, nativeClient, queryClient])
+  }, [authorizationContextChanged, currentAuthorizationContext, nativeClient, queryClient])
   if (session.isPending) return <CloudLoading label="正在检查门户会话…" />
   if (session.error) return <div className="cloud-page"><CloudError error={session.error} retry={() => { void session.refetch() }} /></div>
   if (session.data === 'unauthenticated') return path === '/' ? <PortalLanding /> : <CloudLoading label="正在跳转至登录页…" />
   if (switching) return <CloudLoading label="正在切换组织…" />
   if (mode.isPending) return <CloudLoading label="正在读取门户数据…" />
-  if (mode.error || !isHubContext(mode.data) || mode.data.enabled !== true) return <div className="cloud-page"><CloudError error={mode.error ?? new Error('门户返回的数据无效')} retry={() => { void mode.refetch() }} /></div>
+  if (mode.error || !isHubContext(mode.data)) return <div className="cloud-page"><CloudError error={mode.error ?? new Error('门户返回的数据无效')} retry={() => { void mode.refetch() }} /></div>
   const currentHub = mode.data
+  if (draftReconcileKey && draftStorageErrorContext === draftReconcileKey) return <div className="cloud-page"><CloudError error={new Error('Unable to isolate saved YAML drafts for this Portal session.')} retry={() => setDraftReconcileRetry(value => value + 1)} /></div>
+  if (session.data === 'authenticated' && draftReconcileKey && reconciledDraftContext !== draftReconcileKey) return <CloudLoading label="正在隔离门户 YAML 草稿…" />
+  if (!currentHub.enabled) return <div className="cloud-page"><CloudError error={new Error('门户未启用')} retry={() => { void mode.refetch() }} /></div>
   if (authorizationContextChanged) return <CloudLoading label="门户权限已更改，正在清除旧缓存…" />
   if (currentHub.member?.status === 'pending') return <PendingMembership member={currentHub.member} retry={() => { void mode.refetch() }} />
   if (currentHub.member?.status === 'disabled') return <DisabledMembership retry={() => { void mode.refetch() }} />
   const activeOrganization = currentHub.organizations.find(organization => organization.id === currentHub.activeOrganizationId)
-  if ((currentHub.member?.status === 'active' || currentHub.platformOwner) && activeOrganization) return <ConnectionProfilesProvider key={currentHub.activeOrganizationId}><CloudShell hub={currentHub} queryClient={queryClient} nativeClient={nativeClient} onSwitchOrganization={async (organizationId, currentNativeClient) => {
+  const nativeYamlDraftScope = nativeClusterId && nativeClusterScope && draftAuthority ? hubYamlDraftScope(draftAuthority, nativeClusterId, clusterBase(nativeClusterId)) : undefined
+  const nativeYamlReadOnly = !currentHub.platformOwner && (
+    currentHub.member?.role === 'viewer' || activeOrganization?.role === 'viewer' ||
+    activeOrganization?.role !== currentHub.member?.role
+  )
+  if ((currentHub.member?.status === 'active' || currentHub.platformOwner) && activeOrganization) return <ConnectionProfilesProvider key={currentHub.activeOrganizationId}><CloudShell hub={currentHub} queryClient={queryClient} nativeClient={nativeClient} yamlDraftScope={nativeYamlDraftScope} yamlReadOnly={nativeYamlReadOnly} onSwitchOrganization={async (organizationId, currentNativeClient) => {
     await cloudRequest('/hub/organization/select', { method: 'POST', body: { organizationId } })
     flushSync(() => setSwitching(true))
     await queryClient.cancelQueries()
@@ -123,6 +169,7 @@ function isHubContext(value: unknown): value is HubContext {
   const hub = value as Record<string, unknown>
   const role = (value: unknown) => value === 'owner' || value === 'member' || value === 'viewer'
   if (typeof hub.enabled !== 'boolean' || typeof hub.userId !== 'string' || typeof hub.platformOwner !== 'boolean') return false
+  if (!hub.userId.trim()) return false
   if (hub.activeOrganizationId !== null && typeof hub.activeOrganizationId !== 'string') return false
   if (!Array.isArray(hub.organizations) || !hub.organizations.every(item => item && typeof item.id === 'string' && typeof item.name === 'string' && role(item.role))) return false
   if (hub.member !== undefined && hub.member !== null) {
@@ -193,10 +240,12 @@ function InvestigationGate({ id, children }: { id: string; children: ReactNode }
   return children
 }
 
-function CloudShell({ hub, queryClient, nativeClient, onSwitchOrganization }: {
+function CloudShell({ hub, queryClient, nativeClient, yamlDraftScope, yamlReadOnly, onSwitchOrganization }: {
   hub: HubContext
   queryClient: QueryClient
   nativeClient: QueryClient
+  yamlDraftScope?: string
+  yamlReadOnly: boolean
   onSwitchOrganization: (organizationId: string, nativeClient: QueryClient) => Promise<void>
 }) {
   const { userId, member, platformOwner } = hub
@@ -303,7 +352,9 @@ function CloudShell({ hub, queryClient, nativeClient, onSwitchOrganization }: {
   else if (directory.error) content = <CloudError error={directory.error} retry={() => { void directory.refetch() }} />
   else if (location.pathname.startsWith('/c/') && !id || missingSelection) content = <CloudError error={new Error('Invalid or unknown cluster selection')} />
   else if (id && !nativePath) content = <div className="cloud-page"><CloudError error={new Error(cluster?.revokedAt ? 'Agent access is revoked. Explicit re-enrollment is required before it can reconnect.' : 'Cluster is offline. Live data is unavailable; no snapshot is substituted.')} /><CloudLink href="/clusters" className="cloud-button">Manage cluster</CloudLink></div>
-  else if (nativePath) content = <Suspense fallback={<CloudLoading label="Opening live cluster…" />}><NativeRadar key={id} apiBase={clusterBase(id)} basename={`/c/${id}`} queryClient={nativeClient} navSlots={{ embedded: true, fleetTakeoverHref: target => target === 'gitops' ? undefined : `/${target}?cluster=${encodeURIComponent(id)}`, onHostNavigate: navigateCloud }} /></Suspense>
+  else if (nativePath) content = yamlDraftScope
+    ? <Suspense fallback={<CloudLoading label="Opening live cluster…" />}><NativeRadar key={id} apiBase={clusterBase(id)} basename={`/c/${id}`} queryClient={nativeClient} yamlDraftScope={yamlDraftScope} yamlReadOnly={yamlReadOnly} navSlots={{ embedded: true, fleetTakeoverHref: target => target === 'gitops' ? undefined : `/${target}?cluster=${encodeURIComponent(id)}`, onHostNavigate: navigateCloud }} /></Suspense>
+    : <CloudLoading label="正在验证门户 YAML 草稿权限…" />
   else if (view === '/' && !canManage && !clusters.length) content = <div className="cloud-page cloud-empty"><ShieldCheck size={32} /><h1>No clusters assigned</h1><p>Ask an organization administrator to grant cluster access. No cluster health assessment is available.</p><CloudLink className="cloud-button" href="/settings/organization">Organization details</CloudLink></div>
   else if (view === '/') content = <CloudHome clusters={fleetScope} search={search} />
   else if (view === '/clusters') content = <CloudClusters clusters={clusters} canManage={canManage} />

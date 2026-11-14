@@ -11,6 +11,7 @@ import { setApiBase } from '../api/config'
 import { ThemeToggle } from './ThemeToggle'
 import { ConnectionProfilesProvider } from './ConnectionProfiles'
 import { UnencryptedHttpWarning } from './CloudShared'
+import { HUB_YAML_DRAFT_AUTHORITY_MARKER } from '@maomada/k8s-ui'
 
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 let host: HTMLDivElement
@@ -65,8 +66,15 @@ it('keeps organization ownership separate from explicit platform authority', () 
 })
 
 it('keeps a rejected logout visible on organization selection', async () => {
+  sessionStorage.clear()
+  sessionStorage.setItem('radar_yaml_draft:ConfigMap/qa/config', 'unsaved')
+  sessionStorage.setItem(HUB_YAML_DRAFT_AUTHORITY_MARKER, 'authority-marker')
+  let draftsWerePurgedBeforeRequest = false
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
-    if (String(input) === '/api/auth/logout') return Response.json({ message: 'Logout unavailable' }, { status: 503 })
+    if (String(input) === '/api/auth/logout') {
+      draftsWerePurgedBeforeRequest = sessionStorage.getItem('radar_yaml_draft:ConfigMap/qa/config') === null && sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER) === null
+      return Response.json({ message: 'Logout unavailable' }, { status: 503 })
+    }
     throw new Error('Unexpected request: ' + String(input))
   })
   vi.stubGlobal('fetch', fetch)
@@ -74,6 +82,7 @@ it('keeps a rejected logout visible on organization selection', async () => {
   await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '退出登录')!.click())
   await act(async () => vi.waitFor(() => expect(host.textContent).toContain('Logout unavailable')))
   expect(fetch.mock.calls[0]?.[0]).toBe('/api/auth/logout')
+  expect(draftsWerePurgedBeforeRequest).toBe(true)
 })
 
 it('shows structured request error codes and request IDs', async () => {

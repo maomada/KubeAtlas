@@ -8,11 +8,29 @@ import { act } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { resourceToYaml } from "../../utils/yaml";
+import type { YamlEditorProps } from "../ui/YamlEditor";
 
 vi.mock("../ui/YamlEditor", async () => {
   const { useEffect } = await import("react");
   return {
-    YamlEditor: () => <div />,
+    YamlEditor: ({
+      value,
+      onChange,
+      schemaLoader,
+    }: Pick<YamlEditorProps, "value" | "onChange" | "schemaLoader">) => (
+      <>
+        <textarea
+          data-testid="yaml-editor-value"
+          value={value}
+          onChange={(event) => onChange?.(event.target.value)}
+        />
+        {schemaLoader && (
+          <button type="button" onClick={() => { void schemaLoader([]); }}>
+            Load schemas
+          </button>
+        )}
+      </>
+    ),
     YamlDiffEditor: ({
       onReadyChange,
     }: {
@@ -25,6 +43,8 @@ vi.mock("../ui/YamlEditor", async () => {
 });
 
 const { EditableYamlView } = await import("./EditableYamlView");
+const { YamlDraftPolicyProvider } = await import("./YamlDraftPolicy");
+const { yamlDraftStorageKey } = await import("./yamlDraftStorage");
 
 vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
 vi.stubGlobal(
@@ -89,6 +109,27 @@ function render(props: {
       />,
     ),
   );
+}
+
+function renderWithPolicy(
+  props: { onSave: () => Promise<void>; onPreview: () => Promise<ReturnType<typeof reviewed>>; schemaLoader?: () => unknown; onSaved?: () => void },
+  scope?: string,
+  readOnly = false,
+) {
+  act(() => root.render(
+    <YamlDraftPolicyProvider scope={scope} readOnly={readOnly}>
+      <EditableYamlView
+        resource={resource as never}
+        data={data}
+        onCopy={() => {}}
+        copied={false}
+        onSave={props.onSave}
+        onPreview={props.onPreview}
+        schemaLoader={props.schemaLoader as never}
+        onSaved={props.onSaved}
+      />
+    </YamlDraftPolicyProvider>,
+  ));
 }
 
 const click = async (label: RegExp) => {
@@ -330,4 +371,183 @@ it("retains raw acknowledged ref-less pause evidence through editor and status-f
   expect(text()).toContain("Server preview keeps the pause request on TaskClaim shop/ref-less");
   expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ yaml: clean }));
   expect(raw.status.conditions[0].reason).toBe("ReconcilePaused");
+});
+
+it("keeps standalone recovery while ignoring legacy drafts in scoped Hub mode", () => {
+  const draft = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: shop\ndata:\n  owner: unsaved\n";
+  const onSave = vi.fn(async () => {});
+  const onPreview = vi.fn(async () => reviewed("1"));
+  sessionStorage.setItem("radar_yaml_draft:ConfigMap/shop/app", draft);
+  render({ onSave, onPreview });
+  expect(text()).toContain("Editing Resource");
+  expect(text()).toContain("Review changes");
+
+  sessionStorage.clear();
+  sessionStorage.setItem("radar_yaml_draft:ConfigMap/shop/app", draft);
+  renderWithPolicy({ onSave, onPreview }, "hub-owner-a-cluster-a");
+  expect(text()).not.toContain("Editing Resource");
+  expect(text()).not.toContain("Review changes");
+  expect(onPreview).not.toHaveBeenCalled();
+  expect(onSave).not.toHaveBeenCalled();
+  expect(sessionStorage.getItem("radar_yaml_draft:ConfigMap/shop/app")).toBe(draft);
+});
+
+it("restores a scoped draft after a same-scope remount and ignores it in another scope", () => {
+  const draft = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: shop\ndata:\n  owner: unsaved\n";
+  const scope = "owner-a:cluster-a";
+  const otherScope = "owner-a:cluster-b";
+  const draftKey = yamlDraftStorageKey(scope, resource);
+  const onSave = vi.fn(async () => {});
+  const onPreview = vi.fn(async () => reviewed("1"));
+  const editorYaml = () => host.querySelector<HTMLTextAreaElement>('[data-testid="yaml-editor-value"]')?.value;
+  sessionStorage.setItem(draftKey, draft);
+
+  renderWithPolicy({ onSave, onPreview }, scope);
+  expect(text()).toContain("Editing Resource");
+  expect(editorYaml()).toBe(draft);
+  expect(sessionStorage.getItem(draftKey)).toBe(draft);
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  renderWithPolicy({ onSave, onPreview }, scope);
+  expect(text()).toContain("Editing Resource");
+  expect(editorYaml()).toBe(draft);
+  expect(sessionStorage.getItem(draftKey)).toBe(draft);
+
+  act(() => root.unmount());
+  root = createRoot(host);
+  renderWithPolicy({ onSave, onPreview }, otherScope);
+  expect(text()).not.toContain("Editing Resource");
+  expect(text()).not.toContain("Review changes");
+  expect(editorYaml()).toBeUndefined();
+  expect(sessionStorage.getItem(draftKey)).toBe(draft);
+  expect(sessionStorage.getItem(yamlDraftStorageKey(otherScope, resource))).toBeNull();
+  expect(onPreview).not.toHaveBeenCalled();
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+it("keeps a leaf read-only policy additive to a writable host policy", () => {
+  const draft = "owner-unsaved";
+  sessionStorage.setItem("radar_yaml_draft:ConfigMap/shop/app", draft);
+  sessionStorage.setItem(yamlDraftStorageKey("library-scope", resource), draft);
+  act(() => root.render(
+    <YamlDraftPolicyProvider scope="library-scope" readOnly={false}>
+      <EditableYamlView resource={resource as never} data={data} onCopy={() => {}} copied={false} readOnly />
+    </YamlDraftPolicyProvider>,
+  ));
+  expect(text()).not.toContain("Editing Resource");
+  expect(text()).not.toContain("Review changes");
+  expect([...host.querySelectorAll("button")].some(button => button.textContent?.trim() === "Edit")).toBe(false);
+  expect(sessionStorage.getItem(yamlDraftStorageKey("library-scope", resource))).toBeNull();
+});
+
+it("does not restore an Owner A draft for another owner or a Viewer", () => {
+  const onSave = vi.fn(async () => {});
+  const onPreview = vi.fn(async () => reviewed("1"));
+  const ownerAScope = "org-a:owner:logical-cluster-a";
+  sessionStorage.setItem(yamlDraftStorageKey(ownerAScope, resource), "owner-unsaved");
+
+  renderWithPolicy({ onSave, onPreview }, "org-a:owner-b:logical-cluster-a");
+  expect(text()).not.toContain("Editing Resource");
+  expect(text()).not.toContain("Review changes");
+
+  renderWithPolicy({ onSave, onPreview }, "org-b:viewer:logical-cluster-b", true);
+  expect(text()).not.toContain("Editing Resource");
+  expect(text()).not.toContain("Review changes");
+  expect(text()).not.toContain("Apply reviewed changes");
+  expect(onPreview).not.toHaveBeenCalled();
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+it("keeps Viewer mode from invoking schema, preview, or save callbacks", async () => {
+  const ownerSchemaLoader = vi.fn(async () => ({ schemas: [] }));
+  const ownerScope = "org-a:owner:logical-cluster-a";
+  sessionStorage.setItem(yamlDraftStorageKey(ownerScope, resource), "owner-unsaved");
+  const onSave = vi.fn(async () => {});
+  const onPreview = vi.fn(async () => reviewed("1"));
+  renderWithPolicy({ onSave, onPreview, schemaLoader: ownerSchemaLoader }, ownerScope);
+  expect(host.querySelector<HTMLTextAreaElement>('[data-testid="yaml-editor-value"]')?.value).toBe("owner-unsaved");
+  await click(/Load schemas/);
+  expect(ownerSchemaLoader).toHaveBeenCalledTimes(1);
+
+  const schemaLoader = vi.fn(async () => undefined);
+  const scope = "org-b:viewer:logical-cluster-b";
+  sessionStorage.setItem(yamlDraftStorageKey(scope, resource), "owner-unsaved");
+  renderWithPolicy({ onSave, onPreview, schemaLoader }, scope, true);
+  expect(text()).not.toContain("Editing Resource");
+  expect(text()).not.toContain("Review changes");
+  expect(host.querySelector('[data-testid="yaml-editor-value"]')).toBeNull();
+  expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Load schemas")).toBe(false);
+  expect(ownerSchemaLoader).toHaveBeenCalledTimes(1);
+  expect(schemaLoader).not.toHaveBeenCalled();
+  expect(onPreview).not.toHaveBeenCalled();
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+it("remounts when scope changes and ignores a late preview from the previous scope", async () => {
+  let finishPreview: (result: ReturnType<typeof reviewed>) => void = () => {};
+  const onPreview = vi.fn(() => new Promise<ReturnType<typeof reviewed>>(resolve => { finishPreview = resolve; }));
+  const onSave = vi.fn(async () => {});
+  renderWithPolicy({ onSave, onPreview }, "owner-a:cluster-a");
+  await click(/^Edit$/);
+  await click(/Review changes/);
+  expect(onPreview).toHaveBeenCalledTimes(1);
+
+  renderWithPolicy({ onSave, onPreview }, "viewer-b:cluster-b", true);
+  await act(async () => {
+    finishPreview(reviewed("1"));
+    await Promise.resolve();
+  });
+  expect(text()).not.toContain("Editing Resource");
+  expect(text()).not.toContain("Review changes");
+  expect(text()).not.toContain("Apply reviewed changes");
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+it("does not notify the next scope after a reviewed save completes late", async () => {
+  let finishSave: () => void = () => {};
+  const onSave = vi.fn(() => new Promise<void>(resolve => { finishSave = resolve; }));
+  const onPreview = vi.fn(async () => reviewed("1"));
+  const onSaved = vi.fn();
+  renderWithPolicy({ onSave, onPreview, onSaved }, "owner-a:cluster-a");
+  await click(/^Edit$/);
+  await click(/Review changes/);
+  await click(/Apply/);
+  expect(onSave).toHaveBeenCalledTimes(1);
+
+  renderWithPolicy({ onSave, onPreview, onSaved }, "owner-b:cluster-b");
+  vi.useFakeTimers();
+  try {
+    await act(async () => {
+      finishSave();
+      await Promise.resolve();
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1100);
+    });
+    expect(onSaved).not.toHaveBeenCalled();
+    expect(text()).not.toContain("Apply reviewed changes");
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it("does not preview again when a reviewed save fails after the scope changes", async () => {
+  let failSave: (error: Error) => void = () => {};
+  const onSave = vi.fn(() => new Promise<void>((_resolve, reject) => { failSave = reject; }));
+  const onPreview = vi.fn(async () => reviewed("1"));
+  renderWithPolicy({ onSave, onPreview }, "owner-a:cluster-a");
+  await click(/^Edit$/);
+  await click(/Review changes/);
+  await click(/Apply/);
+  expect(onPreview).toHaveBeenCalledTimes(1);
+
+  renderWithPolicy({ onSave, onPreview }, "viewer-b:cluster-b", true);
+  await act(async () => {
+    failSave(new Error("save failed"));
+    await Promise.resolve();
+  });
+  expect(onPreview).toHaveBeenCalledTimes(1);
+  expect(text()).not.toContain("Editing Resource");
+  expect(text()).not.toContain("Apply reviewed changes");
 });

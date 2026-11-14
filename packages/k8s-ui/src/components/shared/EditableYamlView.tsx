@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import {
   Copy,
   CopyPlus,
@@ -23,6 +23,8 @@ import type { SelectedResource } from '../../types'
 import { resourceToYaml } from '../../utils/yaml'
 import { triggerDownload } from '../../utils/download'
 import { isCoreBatchJob } from '../../utils/api-resources'
+import { useYamlDraftPolicy } from './YamlDraftPolicy'
+import { yamlDraftStorageKey } from './yamlDraftStorage'
 
 // ============================================================================
 // SUCCESS ANIMATION
@@ -181,12 +183,27 @@ export interface EditableYamlViewProps {
   onDownload?: (content: string, mime: string, filename: string) => void
 }
 
-export function EditableYamlView({
+export function EditableYamlView(props: EditableYamlViewProps) {
+  const policy = useYamlDraftPolicy()
+  const readOnly = Boolean(props.readOnly || policy.readOnly)
+  const draftKey = yamlDraftStorageKey(policy.scope, props.resource)
+  return (
+    <EditableYamlViewInstance
+      key={JSON.stringify([draftKey, readOnly])}
+      {...props}
+      draftScope={policy.scope}
+      readOnly={readOnly}
+    />
+  )
+}
+
+function EditableYamlViewInstance({
   resource,
   data,
   onCopy,
   copied,
   readOnly = false,
+  draftScope,
   onSaved,
   onSave,
   isSaving,
@@ -197,8 +214,8 @@ export function EditableYamlView({
   schemaLoader,
   onDuplicate,
   onDownload,
-}: EditableYamlViewProps) {
-  const draftKey = `radar_yaml_draft:${resource.kind}/${resource.namespace}/${resource.name}`
+}: EditableYamlViewProps & { draftScope?: string }) {
+  const draftKey = yamlDraftStorageKey(draftScope, resource)
 
   // Restore draft from sessionStorage (e.g., after session-expiry redirect).
   // All sessionStorage calls are wrapped in try-catch — storage can throw
@@ -207,6 +224,37 @@ export function EditableYamlView({
   // Bumped by every apply and every change of review, so a refresh that lands
   // late never replaces the review that is on screen now.
   const reviewGeneration = useRef(0)
+  const mounted = useRef(false)
+  const savedNotificationTimer = useRef<number | undefined>(undefined)
+  useLayoutEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+      if (savedNotificationTimer.current !== undefined) {
+        window.clearTimeout(savedNotificationTimer.current)
+      }
+    }
+  }, [])
+  const isCurrent = useCallback((attempt?: number) =>
+    mounted.current && !readOnly && (attempt === undefined || attempt === reviewGeneration.current),
+  [readOnly])
+  const guardedSchemaLoader = useMemo(() => {
+    if (!schemaLoader) return undefined
+    return async (...args: Parameters<NonNullable<typeof schemaLoader>>) => {
+      if (!isCurrent()) return { schemas: [] }
+      const result = await schemaLoader(...args)
+      return isCurrent() ? result : { schemas: [] }
+    }
+  }, [isCurrent, schemaLoader])
+  const notifySaved = useCallback(() => {
+    if (savedNotificationTimer.current !== undefined) {
+      window.clearTimeout(savedNotificationTimer.current)
+    }
+    savedNotificationTimer.current = window.setTimeout(() => {
+      savedNotificationTimer.current = undefined
+      if (isCurrent()) onSaved?.()
+    }, 1000)
+  }, [isCurrent, onSaved])
   const [isEditing, setIsEditing] = useState(savedDraft.current !== null)
   const [editedYaml, setEditedYaml] = useState(savedDraft.current ?? '')
   const pauseContextYaml = useDebouncedValue(!onPreview && isEditing ? editedYaml : '', 200)
@@ -238,6 +286,7 @@ export function EditableYamlView({
 
   // Autosave draft to sessionStorage while editing (best-effort)
   useEffect(() => {
+    if (!mounted.current) return
     if (readOnly) {
       setIsEditing(false)
       setEditedYaml('')
@@ -250,7 +299,7 @@ export function EditableYamlView({
     } else {
       safeSessionRemove(draftKey)
     }
-  }, [isEditing, editedYaml, draftKey, readOnly])
+  }, [isEditing, editedYaml, draftKey, isCurrent, readOnly])
 
   const handleDownload = useCallback(() => {
     const yaml = resourceToYaml(data)
@@ -262,25 +311,26 @@ export function EditableYamlView({
   }, [data, resource.kind, resource.name, onDownload])
 
   const handleStartEdit = useCallback(() => {
-    if (readOnly) return
+    if (!isCurrent()) return
     reviewGeneration.current++
     setEditedYaml(resourceToYaml(data))
     setYamlErrors([])
     setPreview(null)
     setIsEditing(true)
-  }, [data, readOnly])
+  }, [data, isCurrent])
 
   const handleCancelEdit = useCallback(() => {
+    if (!isCurrent()) return
     reviewGeneration.current++
     setIsEditing(false)
     setEditedYaml('')
     setYamlErrors([])
     setPreview(null)
-  }, [])
+  }, [isCurrent])
 
   const handleSaveEdit = useCallback(async () => {
-    if (yamlErrors.length > 0 || !onSave) return
-    reviewGeneration.current++
+    if (!isCurrent() || yamlErrors.length > 0 || !onSave) return
+    const attempt = ++reviewGeneration.current
 
     try {
       if (onPreview) {
@@ -294,6 +344,7 @@ export function EditableYamlView({
             name: resource.name,
           },
         })
+        if (!isCurrent(attempt)) return
         setPreview({
           yaml: editedYaml,
           force,
@@ -312,16 +363,17 @@ export function EditableYamlView({
         yaml: editedYaml,
         force,
       })
+      if (!isCurrent(attempt)) return
       setIsEditing(false)
       setEditedYaml('')
-      setTimeout(() => onSaved?.(), 1000)
+      notifySaved()
     } catch {
       // Error handled by caller via saveError prop
     }
-  }, [onSave, onPreview, resource, data, editedYaml, yamlErrors, onSaved, force])
+  }, [isCurrent, notifySaved, onSave, onPreview, resource, data, editedYaml, yamlErrors, force])
 
   const handleApplyReviewed = useCallback(async () => {
-    if (!preview || !onSave) return
+    if (!isCurrent() || !preview || !onSave) return
     // The notice belongs to one attempt: a retry that fails for another reason
     // (and can't refresh) must show its own error, not the last notice.
     const attempt = ++reviewGeneration.current
@@ -336,12 +388,13 @@ export function EditableYamlView({
         reviewedResourceVersion: preview.documents[0]?.reviewedResourceVersion,
         reviewedContext: preview.context,
       })
+      if (!isCurrent(attempt)) return
       setPreview(null)
       setIsEditing(false)
       setEditedYaml('')
-      setTimeout(() => onSaved?.(), 1000)
+      notifySaved()
     } catch {
-      if (onPreview) {
+      if (isCurrent(attempt) && onPreview) {
         try {
           const refreshed = await onPreview({
             yaml: preview.yaml,
@@ -353,7 +406,7 @@ export function EditableYamlView({
               name: resource.name,
             },
           })
-          if (attempt !== reviewGeneration.current) return
+          if (!isCurrent(attempt)) return
           // Changed means the same resource, on the same cluster, at a newer
           // version. A deleted resource has no version, and a cluster switch
           // is its own error.
@@ -372,11 +425,12 @@ export function EditableYamlView({
         }
       }
     }
-  }, [preview, onSave, onPreview, resource, onSaved])
+  }, [preview, isCurrent, notifySaved, onSave, onPreview, resource])
 
   const handleYamlValidate = useCallback((_isValid: boolean, errors: string[]) => {
+    if (!isCurrent()) return
     setYamlErrors(errors)
-  }, [])
+  }, [isCurrent])
 
   const yamlContent = yamlStringify(data, { lineWidth: 0, indent: 2 })
   const editWarning = getEditWarning(resource.kind, resource.group)
@@ -398,6 +452,7 @@ export function EditableYamlView({
           applyError={saveError}
           changedSinceReview={preview.changedSinceReview}
           onBack={() => {
+            if (!isCurrent()) return
             reviewGeneration.current++
             setPreview(null)
           }}
@@ -544,7 +599,7 @@ export function EditableYamlView({
             value={editedYaml}
             onChange={setEditedYaml}
             onValidate={handleYamlValidate}
-            schemaLoader={schemaLoader}
+            schemaLoader={guardedSchemaLoader}
             height="100%"
             kind={resource.kind}
           />

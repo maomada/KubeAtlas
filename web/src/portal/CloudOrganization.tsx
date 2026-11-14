@@ -4,6 +4,7 @@ import { Badge } from '@maomada/k8s-ui'
 import { Building2, Search, ShieldCheck, Users } from 'lucide-react'
 import { cloudRequest, useCloudQuery } from './cloudApi'
 import { CloudDialog, CloudError, CloudLink, CloudLoading } from './CloudShared'
+import { invalidateHubYamlDrafts, reportHubYamlLogoutFailure } from './hubYamlDrafts'
 import { ThemeToggle } from './ThemeToggle'
 import { ConnectionSettingsEditor } from './ConnectionProfiles'
 import { replacePortalLocation } from './portalNavigation'
@@ -60,8 +61,22 @@ export function canManageOrganization(member?: HubMember | null, platformOwner =
 }
 
 export async function logoutPortal() {
-  const result = await cloudRequest<{ logoutUrl: string } | undefined>('/auth/logout', { method: 'POST', body: {} })
-  window.location.replace(result?.logoutUrl ?? '/login')
+  const draftsCleared = invalidateHubYamlDrafts()
+  let logoutCompleted = false
+  try {
+    const result = await cloudRequest<{ logoutUrl: string } | undefined>('/auth/logout', { method: 'POST', body: {} })
+    logoutCompleted = true
+    if (!draftsCleared) {
+      throw new Error('Server logout completed, but saved YAML drafts could not be removed. This tab remains locked.')
+    }
+    replacePortalLocation(result?.logoutUrl ?? '/login')
+  } catch (error) {
+    const failure = !draftsCleared && !logoutCompleted
+      ? new Error(`Unable to remove saved YAML drafts; server logout also failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+      : error
+    reportHubYamlLogoutFailure(failure)
+    throw failure
+  }
 }
 
 export function PendingMembership({ member, retry }: { member: HubMember; retry: () => void }) {

@@ -5,8 +5,10 @@ import { QueryClient, type QueryClient as QueryClientType } from '@tanstack/reac
 import { beforeEach, expect, it, vi } from 'vitest'
 import { PortalEntry } from './CloudPortal'
 import { navigateCloud } from './cloudNavigation'
+import { logoutPortal, type HubContext } from './CloudOrganization'
+import { HUB_YAML_DRAFT_AUTHORITY_MARKER, yamlDraftStorageKey } from '@maomada/k8s-ui'
 
-const portalNavigation = vi.hoisted(() => ({ replace: vi.fn(), nativeClient: undefined as unknown }))
+const portalNavigation = vi.hoisted(() => ({ replace: vi.fn(), nativeClient: undefined as unknown, nativeProps: undefined as unknown, nativeMounts: 0, nativeUnmounts: 0 }))
 
 vi.mock('./portalNavigation', () => ({ replacePortalLocation: portalNavigation.replace }))
 
@@ -23,12 +25,28 @@ const portalHub = {
   organizations: [{ id: 'org-1', name: 'Organization One', role: 'owner' as const }],
 }
 
-vi.mock('../RadarApp', () => ({
-  RadarApp: ({ queryClient }: { queryClient: QueryClientType }) => <button onClick={() => {
-    portalNavigation.nativeClient = queryClient
-    queryClient.setQueryData(['namespace-scope'], { ...scope, actives: ['demo-staging'] })
-  }}>Change native namespace</button>,
-}))
+vi.mock('../RadarApp', async () => {
+  const { useEffect, useState } = await import('react')
+  return {
+    RadarApp: (props: { queryClient: QueryClientType; apiBase?: string; yamlDraftScope?: string; yamlReadOnly?: boolean }) => {
+      portalNavigation.nativeProps = props
+      const [reviewOpen, setReviewOpen] = useState(false)
+      useEffect(() => {
+        portalNavigation.nativeMounts++
+        return () => { portalNavigation.nativeUnmounts++ }
+      }, [])
+      return <>
+        <button onClick={() => {
+          const { queryClient } = props
+          portalNavigation.nativeClient = queryClient
+          queryClient.setQueryData(['namespace-scope'], { ...scope, actives: ['demo-staging'] })
+        }}>Change native namespace</button>
+        <button onClick={() => setReviewOpen(true)}>Open native review</button>
+        {reviewOpen && <span data-testid="native-review">Review changes</span>}
+      </>
+    },
+  }
+})
 
 vi.mock('@maomada/k8s-ui', async importOriginal => {
   const actual = await importOriginal<typeof import('@maomada/k8s-ui')>()
@@ -42,9 +60,20 @@ vi.mock('@maomada/k8s-ui', async importOriginal => {
   }
 })
 
+async function waitForPortal(assertion: () => void, options?: Parameters<typeof vi.waitFor>[1]) {
+  await vi.waitFor(async () => {
+    await act(async () => {})
+    assertion()
+  }, options)
+}
+
 beforeEach(() => {
+  sessionStorage.clear()
   portalNavigation.replace.mockClear()
   portalNavigation.nativeClient = undefined
+  portalNavigation.nativeProps = undefined
+  portalNavigation.nativeMounts = 0
+  portalNavigation.nativeUnmounts = 0
 })
 
 it.each([
@@ -54,6 +83,7 @@ it.each([
   { label: 'permission denial', firstResponse: () => Promise.resolve(new Response(null, { status: 403 })) },
   { label: 'source failure', firstResponse: () => Promise.resolve(new Response(null, { status: 503 })) },
   { label: 'invalid metadata', firstResponse: () => Promise.resolve(Response.json({ enabled: 'true' })) },
+  { label: 'missing user identity', firstResponse: () => Promise.resolve(Response.json({ ...portalHub, userId: '' })) },
 ])('fails closed on $label and retries without opening the retired Portal', async ({ firstResponse }) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState({}, '', '/settings')
@@ -76,11 +106,11 @@ it.each([
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('[role="alert"]')).not.toBeNull()))
+    await waitForPortal(() => expect(host.querySelector('[role="alert"]')).not.toBeNull())
     expect(host.querySelector('.cloud-shell')).toBeNull()
     expect(fetch.mock.calls.some(([url]) => String(url) === '/api/clusters' || String(url).startsWith('/api/fleet'))).toBe(false)
     await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '重试')!.click())
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).not.toBeNull()))
+    await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
     expect(host.querySelector('a[href="/fleet"]')).toBeNull()
     expect(fetch.mock.calls.some(([url]) => String(url) === '/api/clusters' || String(url).startsWith('/api/fleet'))).toBe(false)
   } finally {
@@ -114,7 +144,7 @@ it.each([
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.textContent).toContain(eligible ? 'Opening live cluster…' : 'AI investigations unavailable')))
+    await waitForPortal(() => expect(host.textContent).toContain(eligible ? 'Opening live cluster…' : 'AI investigations unavailable'))
     expect(window.location.pathname).toBe(`/c/${id}/investigations`)
     if (!eligible) expect(host.textContent).not.toContain('Change native namespace')
   } finally {
@@ -151,7 +181,7 @@ it('reserves host search shortcuts before native listeners without stealing edit
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('Alpha')))
+    await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('Alpha'))
     const search = host.querySelector('header input')!
     for (const keys of [{ key: '/' }, { key: 'k', ctrlKey: true }, { key: 'k', metaKey: true }]) {
       const event = new KeyboardEvent('keydown', { ...keys, bubbles: true, cancelable: true })
@@ -216,20 +246,20 @@ it('shares the native namespace cache when entering and switching clusters', asy
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('Alpha')))
+    await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('Alpha'))
     await act(async () => navigateCloud('/c/alpha/resources/pods?namespaces=demo-shop'))
-    await act(async () => vi.waitFor(() => expect(host.textContent).toContain('Change native namespace')))
+    await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
     const topology = [...host.querySelectorAll('a')].find(link => link.textContent === 'Topology')
     expect(topology?.getAttribute('href')).toBe('/c/alpha/topology?namespaces=demo-shop')
-    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('demo-shop')))
+    await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('demo-shop'))
     await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Change native namespace')!.click())
-    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('demo-staging')))
+    await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('demo-staging'))
     expect(host.querySelector('header')?.textContent).not.toContain('demo-shop')
     await act(async () => navigateCloud('/c/beta/topology?namespaces=demo-shop'))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('demo-shop')))
+    await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('demo-shop'))
     expect(host.querySelector('header')?.textContent).toContain('Beta')
     await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Change native namespace')!.click())
-    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('demo-staging')))
+    await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('demo-staging'))
   } finally {
     act(() => root.unmount())
     host.remove()
@@ -275,9 +305,9 @@ it('reconciles the namespace cache after an uncertain host write', async () => {
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('demo-shop')))
+    await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('demo-shop'))
     await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Apply host namespace')!.click())
-    await act(async () => vi.waitFor(() => expect(host.querySelector('header')?.textContent).toContain('demo-staging')))
+    await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('demo-staging'))
     expect(scopeReads).toBe(2)
     expect(apiResourceReads).toBe(1)
   } finally {
@@ -303,7 +333,7 @@ it('probes the root session without redirecting a 401 and shows public links', a
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.textContent).toContain('KubeAtlas · 自托管集群门户')))
+    await waitForPortal(() => expect(host.textContent).toContain('KubeAtlas · 自托管集群门户'))
     expect(host.querySelector('a[href="/login"]')).not.toBeNull()
     expect(host.querySelector('a[href="/register"]')).not.toBeNull()
     expect(window.location.pathname).toBe('/')
@@ -332,7 +362,7 @@ it('redirects a private unauthenticated route to the login page', async () => {
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/login')))
+    await waitForPortal(() => expect(replace).toHaveBeenCalledWith('/login'))
     expect(fetch.mock.calls.some(([url]) => ['/api/hub', '/api/hub/connections', '/api/hub/clusters', '/api/mcp/credentials'].includes(String(url)))).toBe(false)
   } finally {
     act(() => root.unmount())
@@ -361,11 +391,11 @@ it('shows a retry for a non-401 session failure without mounting Portal resource
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('[role="alert"]')?.textContent).toContain('HTTP 503')))
+    await waitForPortal(() => expect(host.querySelector('[role="alert"]')?.textContent).toContain('HTTP 503'))
     expect(host.querySelector('.cloud-shell')).toBeNull()
     expect(fetch.mock.calls.some(([url]) => String(url) === '/api/hub')).toBe(false)
   await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '重试')!.click())
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).not.toBeNull()))
+    await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
     expect(sessionReads).toBe(2)
   } finally {
     act(() => root.unmount())
@@ -402,7 +432,7 @@ it.each([
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.textContent).toContain(expected)))
+    await waitForPortal(() => expect(host.textContent).toContain(expected))
     expect(host.querySelector('.cloud-shell')).toBeNull()
     expect(fetch.mock.calls.some(([url]) => ['/api/hub/connections', '/api/hub/clusters', '/api/mcp/credentials', '/api/clusters'].includes(String(url)))).toBe(false)
     if (memberStatus === 'pending') {
@@ -440,13 +470,13 @@ it('clears both query clients and reloads after the exact organization-select re
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).not.toBeNull()))
+    await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
     const select = host.querySelector<HTMLSelectElement>('#portal-organization-switcher')!
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'org-2')
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).toBeNull()))
+    await waitForPortal(() => expect(host.querySelector('.cloud-shell')).toBeNull())
     const request = fetch.mock.calls.find(([url]) => String(url) === '/api/hub/organization/select')
     expect(request?.[1]?.method).toBe('POST')
     expect(JSON.parse(request?.[1]?.body as string)).toEqual({ organizationId: 'org-2' })
@@ -485,13 +515,13 @@ it('keeps the current organization and reports a failed switch without reloading
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).not.toBeNull()))
+    await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
     const select = host.querySelector<HTMLSelectElement>('#portal-organization-switcher')!
     await act(async () => {
       Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value')!.set!.call(select, 'org-2')
       select.dispatchEvent(new Event('change', { bubbles: true }))
     })
-    await act(async () => vi.waitFor(() => expect(host.textContent).toContain('switch rejected')))
+    await waitForPortal(() => expect(host.textContent).toContain('switch rejected'))
     expect(host.querySelector('.cloud-shell')).not.toBeNull()
     expect(host.querySelector<HTMLSelectElement>('#portal-organization-switcher')?.value).toBe('org-1')
     expect(replace).not.toHaveBeenCalled()
@@ -540,6 +570,8 @@ it.each(authorizationTransitions)('clears old caches after $label, but not for a
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Old organization cluster', state: 'connected' }] })
     if (path === '/api/mcp/credentials') return Response.json({ credentials: [oldOrganizationCredential], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
     throw new Error('Unexpected request: ' + path)
   })
   vi.stubGlobal('fetch', fetch)
@@ -557,22 +589,22 @@ it.each(authorizationTransitions)('clears old caches after $label, but not for a
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).not.toBeNull()))
-    await act(async () => vi.waitFor(() => expect([...host.querySelectorAll('button')].some(button => button.textContent === 'Change native namespace')).toBe(true)))
+    await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
+    await waitForPortal(() => expect([...host.querySelectorAll('button')].some(button => button.textContent === 'Change native namespace')).toBe(true))
     await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Change native namespace')!.click())
     const nativeClient = portalNavigation.nativeClient as QueryClientType
     expect(nativeClient.getQueryData(['namespace-scope'])).toBeDefined()
 
     let portalClient: QueryClientType | undefined
     const mcpQueryKey = ['portal', '/api', '/mcp/credentials'] as const
-    await act(async () => vi.waitFor(() => {
+    await waitForPortal(() => {
       portalClient = [...queryClients].find(client => client.getQueryData(mcpQueryKey) !== undefined && client.getQueryData(['portal', '/api', '/hub']) !== undefined)
       expect(portalClient).toBeDefined()
-    }))
+    })
     expect((portalClient!.getQueryData(mcpQueryKey) as { credentials: { organizationId: string }[] }).credentials[0]?.organizationId).toBe('org-1')
 
     await act(async () => { await portalClient!.invalidateQueries({ queryKey: ['portal', '/api', '/hub'] }) })
-    await act(async () => vi.waitFor(() => expect(hubReads).toBe(2)))
+    await waitForPortal(() => expect(hubReads).toBe(2))
     expect(replace).not.toHaveBeenCalled()
     expect(clear).not.toHaveBeenCalled()
     expect(portalClient!.getQueryData(mcpQueryKey)).toBeDefined()
@@ -581,7 +613,7 @@ it.each(authorizationTransitions)('clears old caches after $label, but not for a
     await act(async () => {
       await portalClient!.invalidateQueries({ queryKey: ['portal', '/api', '/hub'] })
     })
-    await act(async () => vi.waitFor(() => expect(replace).toHaveBeenCalledWith('/')))
+    await waitForPortal(() => expect(replace).toHaveBeenCalledWith('/'))
 
     expect(host.querySelector('.cloud-shell')).toBeNull()
     expect(host.textContent).not.toContain('Old organization credential')
@@ -621,7 +653,7 @@ it('keeps platform endpoints inaccessible to an organization owner', async () =>
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).not.toBeNull()))
+    await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
     expect(host.textContent).toContain('平台管理需要明确的平台 Owner 权限')
     expect(fetch.mock.calls.some(([url]) => String(url).includes('/hub/platform/') || String(url) === '/api/hub/organizations')).toBe(false)
   } finally {
@@ -651,7 +683,7 @@ it('allows an explicit platform owner to manage users without an active organiza
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.textContent).toContain('平台管理')))
+    await waitForPortal(() => expect(host.textContent).toContain('平台管理'))
     expect(fetch.mock.calls.some(([url]) => ['/api/hub/platform/users', '/api/hub/organizations', '/api/hub/platform/clusters'].includes(String(url)))).toBe(true)
     expect(fetch.mock.calls.some(([url]) => ['/api/hub/connections', '/api/hub/clusters', '/api/mcp/credentials'].includes(String(url)))).toBe(false)
   } finally {
@@ -681,16 +713,371 @@ it('mounts an active-organization shell for an explicit platform owner without a
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-shell')).not.toBeNull()))
+    await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
     expect(host.querySelector('a[aria-label="平台管理"]')).not.toBeNull()
     await act(async () => {
       window.history.replaceState({}, '', '/settings')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
-    await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-settings a[href="/settings/platform"]')?.textContent).toBe('平台管理')))
+    await waitForPortal(() => expect(host.querySelector('.cloud-settings a[href="/settings/platform"]')?.textContent).toBe('平台管理'))
     expect(fetch.mock.calls.some(([url]) => String(url) === '/api/hub/connections')).toBe(true)
   } finally {
     act(() => root.unmount())
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it('keeps a native review mounted while an unchanged Hub poll is pending and after it resolves', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/c/alpha/resources')
+  let hubReads = 0
+  let finishHubPoll: (response: Response) => void = () => {}
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: 204 })
+    if (path === '/api/hub') {
+      hubReads++
+      if (hubReads === 1) return Response.json(portalHub)
+      return new Promise<Response>(resolve => { finishHubPoll = resolve })
+    }
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const queryClients = new Set<QueryClientType>()
+  const originalGetQueryCache = QueryClient.prototype.getQueryCache
+  const queryCacheSpy = vi.spyOn(QueryClient.prototype, 'getQueryCache').mockImplementation(function (this: QueryClientType) {
+    queryClients.add(this)
+    return originalGetQueryCache.call(this)
+  })
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).not.toBeNull())
+    await waitForPortal(() => expect([...host.querySelectorAll('button')].some(button => button.textContent === 'Open native review')).toBe(true))
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Open native review')!.click())
+    expect(host.querySelector('[data-testid="native-review"]')?.textContent).toBe('Review changes')
+    expect(portalNavigation.nativeMounts).toBe(1)
+
+    const portalClient = [...queryClients].find(client => client.getQueryData(['portal', '/api', '/hub']) !== undefined)
+    expect(portalClient).toBeDefined()
+    let refetch: Promise<void> | undefined
+    await act(async () => {
+      refetch = portalClient!.invalidateQueries({ queryKey: ['portal', '/api', '/hub'] })
+      await Promise.resolve()
+    })
+    await waitForPortal(() => expect(hubReads).toBe(2))
+    expect(portalNavigation.nativeMounts).toBe(1)
+    expect(portalNavigation.nativeUnmounts).toBe(0)
+    expect(host.querySelector('[data-testid="native-review"]')?.textContent).toBe('Review changes')
+
+    await act(async () => {
+      finishHubPoll(Response.json(portalHub))
+      await refetch
+    })
+    expect(portalNavigation.nativeMounts).toBe(1)
+    expect(portalNavigation.nativeUnmounts).toBe(0)
+    expect(host.querySelector('[data-testid="native-review"]')?.textContent).toBe('Review changes')
+  } finally {
+    act(() => root.unmount())
+    queryCacheSpy.mockRestore()
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it('unmounts native editing before local logout purges drafts and stays gated after logout failure', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
+  sessionStorage.clear()
+  let draftKey: string | undefined
+  let finishLogout: (response: Response) => void = () => {}
+  let logoutStartedAfterUnmount = false
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: 204 })
+    if (path === '/api/hub') return Response.json(portalHub)
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
+    if (path === '/api/auth/logout') {
+      logoutStartedAfterUnmount = portalNavigation.nativeUnmounts === 1 && draftKey !== undefined && sessionStorage.getItem(draftKey) === null
+      return new Promise<Response>(resolve => { finishLogout = resolve })
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect([...host.querySelectorAll('button')].some(button => button.textContent === 'Open native review')).toBe(true))
+    const nativeProps = portalNavigation.nativeProps as { yamlDraftScope: string }
+    draftKey = yamlDraftStorageKey(nativeProps.yamlDraftScope, { group: '', kind: 'ConfigMap', namespace: 'qa', name: 'config' })
+    sessionStorage.setItem(draftKey, 'owner-unsaved')
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Open native review')!.click())
+    expect(host.querySelector('[data-testid="native-review"]')).not.toBeNull()
+
+    let logout: Promise<void> | undefined
+    await act(async () => {
+      logout = logoutPortal().catch(() => {})
+      await Promise.resolve()
+    })
+    expect(logoutStartedAfterUnmount).toBe(true)
+    expect(sessionStorage.getItem(draftKey)).toBeNull()
+    expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).toBeNull()
+    expect(host.querySelector('[data-testid="native-review"]')).toBeNull()
+
+    finishLogout(Response.json({ message: 'Logout unavailable' }, { status: 503 }))
+    await act(async () => { await logout })
+    expect(host.textContent).toContain('Logout unavailable')
+    expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(sessionStorage.getItem(draftKey)).toBeNull()
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it('attempts server logout when local draft removal fails and stays gated', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
+  sessionStorage.clear()
+  let draftKey: string | undefined
+  let nativeUnmountsWhenLogoutRequested = 0
+  let draftWhenLogoutRequested: string | null = null
+  let removeItemAttempts = 0
+  let removeItemAttemptsWhenLogoutRequested = 0
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: 204 })
+    if (path === '/api/hub') return Response.json(portalHub)
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
+    if (path === '/api/auth/logout') {
+      nativeUnmountsWhenLogoutRequested = portalNavigation.nativeUnmounts
+      draftWhenLogoutRequested = draftKey === undefined ? null : sessionStorage.getItem(draftKey)
+      removeItemAttemptsWhenLogoutRequested = removeItemAttempts
+      return Response.json({ logoutUrl: '/login' })
+    }
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const removeItem = vi.spyOn(Storage.prototype, 'removeItem')
+  let logoutError: unknown
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect([...host.querySelectorAll('button')].some(button => button.textContent === 'Open native review')).toBe(true))
+    const nativeProps = portalNavigation.nativeProps as { yamlDraftScope: string }
+    draftKey = yamlDraftStorageKey(nativeProps.yamlDraftScope, { group: '', kind: 'ConfigMap', namespace: 'qa', name: 'config' })
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Open native review')!.click())
+    expect(host.querySelector('[data-testid="native-review"]')).not.toBeNull()
+    sessionStorage.setItem(draftKey, 'owner-unsaved')
+    expect(sessionStorage.getItem(draftKey)).toBe('owner-unsaved')
+    removeItem.mockImplementation(() => {
+      removeItemAttempts++
+      throw new Error('Storage access denied')
+    })
+
+    await act(async () => {
+      try {
+        await logoutPortal()
+      } catch (error) {
+        logoutError = error
+      }
+    })
+
+    expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/auth/logout')).toHaveLength(1)
+    expect(nativeUnmountsWhenLogoutRequested).toBe(1)
+    expect(removeItemAttemptsWhenLogoutRequested).toBeGreaterThan(0)
+    expect(draftWhenLogoutRequested).toBe('owner-unsaved')
+    expect(removeItem).toHaveBeenCalled()
+    expect(portalNavigation.nativeMounts).toBe(1)
+    expect(portalNavigation.nativeUnmounts).toBe(1)
+    expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(host.querySelector('[data-testid="native-review"]')).toBeNull()
+    expect(host.textContent).toContain('Server logout completed')
+    expect(host.textContent).toContain('saved YAML drafts could not be removed')
+    expect(portalNavigation.replace).not.toHaveBeenCalled()
+    expect(sessionStorage.getItem(draftKey)).toBe('owner-unsaved')
+    expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).not.toBeNull()
+    expect(logoutError).toBeInstanceOf(Error)
+    expect((logoutError as Error).message).toContain('saved YAML drafts could not be removed')
+  } finally {
+    removeItem.mockRestore()
+    act(() => root.unmount())
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it('keeps Portal gated and reports remote YAML storage failure honestly', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
+  sessionStorage.clear()
+  let draftKey: string | undefined
+  let nativeUnmountsWhenClearStarted = 0
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: 204 })
+    if (path === '/api/hub') return Response.json(portalHub)
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const removeItem = vi.spyOn(Storage.prototype, 'removeItem')
+  let remoteSender: BroadcastChannel | undefined
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect([...host.querySelectorAll('button')].some(button => button.textContent === 'Open native review')).toBe(true))
+    const nativeProps = portalNavigation.nativeProps as { yamlDraftScope: string }
+    draftKey = yamlDraftStorageKey(nativeProps.yamlDraftScope, { group: '', kind: 'ConfigMap', namespace: 'qa', name: 'config' })
+    await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Open native review')!.click())
+    expect(host.querySelector('[data-testid="native-review"]')).not.toBeNull()
+    sessionStorage.setItem(draftKey, 'remote-unsaved')
+    removeItem.mockImplementation(() => {
+      nativeUnmountsWhenClearStarted = portalNavigation.nativeUnmounts
+      throw new Error('Storage access denied')
+    })
+    remoteSender = new BroadcastChannel('kubeatlas-hub-yaml-draft-purge')
+
+    await act(async () => {
+      remoteSender?.postMessage({ type: 'purge' })
+      await new Promise(resolve => setTimeout(resolve, 10))
+    })
+    await waitForPortal(() => expect(host.textContent).toContain('Unable to remove saved YAML drafts after a session change in another tab'))
+
+    expect(nativeUnmountsWhenClearStarted).toBe(1)
+    expect(portalNavigation.nativeMounts).toBe(1)
+    expect(portalNavigation.nativeUnmounts).toBe(1)
+    expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(host.querySelector('[data-testid="native-review"]')).toBeNull()
+    expect(host.textContent).not.toContain('saved YAML drafts were discarded')
+    expect(sessionStorage.getItem(draftKey)).toBe('remote-unsaved')
+    expect(removeItem).toHaveBeenCalled()
+  } finally {
+    removeItem.mockRestore()
+    remoteSender?.close()
+    act(() => root.unmount())
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it('wires scoped read-only YAML policy and purges drafts on a mounted same-org role change', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
+  sessionStorage.clear()
+  sessionStorage.setItem('radar_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0', 'legacy-owner-draft')
+  let hub: HubContext = portalHub
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: 204 })
+    if (path === '/api/hub') return Response.json(hub)
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
+    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
+    if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
+    if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
+    if (path === '/c/alpha/api/api-resources') return Response.json([])
+    throw new Error(`Unexpected request: ${path}`)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const queryClients = new Set<QueryClientType>()
+  const originalGetQueryCache = QueryClient.prototype.getQueryCache
+  const queryCacheSpy = vi.spyOn(QueryClient.prototype, 'getQueryCache').mockImplementation(function (this: QueryClientType) {
+    queryClients.add(this)
+    return originalGetQueryCache.call(this)
+  })
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  let root = createRoot(host)
+  let rootMounted = true
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
+    let portalClient: QueryClientType | undefined
+    await waitForPortal(() => {
+      portalClient = [...queryClients].find(client => client.getQueryData(['portal', '/api', '/hub']) !== undefined)
+      expect(portalClient).toBeDefined()
+    })
+    const ownerProps = portalNavigation.nativeProps as { apiBase?: string; yamlDraftScope?: string; yamlReadOnly?: boolean }
+    expect(ownerProps.apiBase).toBe('/c/alpha/api')
+    expect(ownerProps.yamlReadOnly).toBe(false)
+    expect(ownerProps.yamlDraftScope).toContain('"clusterId":"alpha"')
+    expect(ownerProps.yamlDraftScope).toContain('/c/alpha/api')
+    expect(sessionStorage.getItem('radar_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0')).toBeNull()
+    expect(sessionStorage.getItem('activeOrganizationId')).toBeNull()
+    const oldDraftKey = yamlDraftStorageKey(ownerProps.yamlDraftScope!, {
+      group: '', kind: 'ConfigMap', namespace: 'qa-cdf2599-native', name: 'kubeatlas-agent-88ca3f0',
+    })
+    sessionStorage.setItem(oldDraftKey, 'owner-unsaved')
+
+    hub = {
+      ...portalHub,
+      member: { ...portalHub.member!, role: 'viewer' as const },
+      organizations: [{ ...portalHub.organizations[0], role: 'viewer' as const }],
+    }
+    portalNavigation.nativeProps = undefined
+    await act(async () => { await portalClient!.invalidateQueries({ queryKey: ['portal', '/api', '/hub'] }) })
+    await waitForPortal(() => expect(portalNavigation.replace).toHaveBeenCalledWith('/'))
+    expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(portalNavigation.nativeUnmounts).toBe(1)
+    expect(portalNavigation.nativeProps).toBeUndefined()
+    expect(sessionStorage.getItem(oldDraftKey)).toBeNull()
+    expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).toContain('viewer')
+
+    act(() => root.unmount())
+    rootMounted = false
+    window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
+    portalNavigation.nativeProps = undefined
+    root = createRoot(host)
+    rootMounted = true
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
+    const viewerProps = portalNavigation.nativeProps as { yamlDraftScope?: string; yamlReadOnly?: boolean }
+    expect(viewerProps.yamlReadOnly).toBe(true)
+    expect(viewerProps.yamlDraftScope).not.toBe(ownerProps.yamlDraftScope)
+    expect(sessionStorage.getItem(oldDraftKey)).toBeNull()
+    expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).toContain('viewer')
+    expect(portalNavigation.nativeMounts).toBe(2)
+    expect(portalNavigation.nativeUnmounts).toBe(1)
+  } finally {
+    if (rootMounted) act(() => root.unmount())
+    queryCacheSpy.mockRestore()
     host.remove()
     window.history.replaceState({}, '', '/')
     vi.unstubAllGlobals()
