@@ -6,8 +6,10 @@ import (
 	"errors"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"path"
+	"strconv"
 	"strings"
 	"unicode"
 )
@@ -157,7 +159,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}
-		if r.URL.Path != "/login" && !h.requireViewer(w, r) {
+		if r.URL.Path != "/login" && !h.requireHubPageViewer(w, r) {
 			return
 		}
 		h.serveFile(w, r, "portal.html")
@@ -231,6 +233,55 @@ func (h *Handler) requireViewer(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	return true
+}
+
+func (h *Handler) requireHubPageViewer(w http.ResponseWriter, r *http.Request) bool {
+	if h.hasViewerSession(r) {
+		return true
+	}
+	if isHubDocumentNavigation(r) {
+		http.Redirect(w, r, "/login", http.StatusSeeOther)
+		return false
+	}
+	http.Error(w, "unauthorized", http.StatusUnauthorized)
+	return false
+}
+
+func isHubDocumentNavigation(r *http.Request) bool {
+	if r.Method != http.MethodGet || !acceptsHTML(r.Header.Values("Accept")) {
+		return false
+	}
+	sites := r.Header.Values("Sec-Fetch-Site")
+	if len(sites) > 1 || len(sites) == 1 &&
+		!strings.EqualFold(sites[0], "same-origin") && !strings.EqualFold(sites[0], "none") {
+		return false
+	}
+	modes := r.Header.Values("Sec-Fetch-Mode")
+	destinations := r.Header.Values("Sec-Fetch-Dest")
+	if len(modes) == 0 && len(destinations) == 0 {
+		return true
+	}
+	return len(modes) == 1 && strings.EqualFold(modes[0], "navigate") &&
+		len(destinations) == 1 && strings.EqualFold(destinations[0], "document")
+}
+
+func acceptsHTML(values []string) bool {
+	for _, value := range values {
+		for _, mediaRange := range strings.Split(value, ",") {
+			mediaType, parameters, err := mime.ParseMediaType(strings.TrimSpace(mediaRange))
+			if err != nil || !strings.EqualFold(mediaType, "text/html") {
+				continue
+			}
+			if quality, ok := parameters["q"]; ok {
+				parsed, err := strconv.ParseFloat(quality, 64)
+				if err != nil || !(parsed > 0 && parsed <= 1) {
+					continue
+				}
+			}
+			return true
+		}
+	}
+	return false
 }
 
 func validUsername(value string) bool {

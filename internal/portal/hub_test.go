@@ -650,6 +650,210 @@ func TestPublicRegistrationAndProtectedPlatformPageRoutes(t *testing.T) {
 	}
 }
 
+func TestPortalNativeDocumentLoginRecovery(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		target    string
+		session   string
+		fetchMeta bool
+	}{
+		{name: "missing session", target: "https://localhost/c/alpha/resources/configmaps", fetchMeta: true},
+		{name: "external return URL ignored", target: "https://localhost/c/alpha/resources/configmaps?return=https://example.invalid", fetchMeta: true},
+		{name: "expired session", target: "https://localhost/c/alpha/resources/configmaps", session: "expired", fetchMeta: true},
+		{name: "revoked session", target: "https://localhost/c/alpha/resources/configmaps", session: "revoked", fetchMeta: true},
+		{name: "HTTP IP without Fetch Metadata", target: "http://192.0.2.10:9461/c/alpha/resources/configmaps"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h, _ := newPortalHubFixture(t, false)
+			h.static = fstest.MapFS{"portal.html": &fstest.MapFile{Data: []byte("portal shell")}}
+
+			var cookie *http.Cookie
+			if tc.session == "expired" {
+				now := time.Now()
+				h.sessions.now = func() time.Time { return now }
+				cookie = loginForTest(t, h)
+				now = now.Add(sessionLifetime + time.Second)
+			} else if tc.session == "revoked" {
+				cookie = loginForTest(t, h)
+				logout := httptest.NewRequest(http.MethodPost, "http://localhost/api/auth/logout", strings.NewReader(`{}`))
+				logout.Header.Set("Content-Type", "application/json")
+				logout.Header.Set("Origin", "http://localhost")
+				logout.Header.Set("Sec-Fetch-Site", "same-origin")
+				logout.AddCookie(cookie)
+				logoutResponse := httptest.NewRecorder()
+				h.ServeHTTP(logoutResponse, logout)
+				if logoutResponse.Code != http.StatusNoContent {
+					t.Fatalf("revoke session status=%d body=%q", logoutResponse.Code, logoutResponse.Body.String())
+				}
+			}
+
+			request := httptest.NewRequest(http.MethodGet, tc.target, nil)
+			request.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+			if tc.fetchMeta {
+				request.Header.Set("Sec-Fetch-Site", "same-origin")
+				request.Header.Set("Sec-Fetch-Mode", "navigate")
+				request.Header.Set("Sec-Fetch-Dest", "document")
+			}
+			if cookie != nil {
+				request.AddCookie(cookie)
+			}
+			response := httptest.NewRecorder()
+			h.ServeHTTP(response, request)
+			if response.Code != http.StatusSeeOther || response.Header().Get("Location") != "/login" {
+				t.Fatalf("document recovery status=%d location=%q body=%q", response.Code, response.Header().Get("Location"), response.Body.String())
+			}
+			if !strings.HasPrefix(response.Header().Get("Content-Type"), "text/html") ||
+				response.Header().Get("Cache-Control") != "no-store" ||
+				response.Header().Get("Referrer-Policy") != "no-referrer" {
+				t.Fatalf("unsafe document recovery headers: %#v", response.Header())
+			}
+		})
+	}
+}
+
+func TestPortalDocumentRecoveryPreservesNonDocumentResponses(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	h.static = fstest.MapFS{
+		"portal.html":   &fstest.MapFile{Data: []byte("portal shell")},
+		"assets/app.js": &fstest.MapFile{Data: []byte("portal asset")},
+	}
+	request := func(method, path string, cookie *http.Cookie, metadata string, websocket bool) *httptest.ResponseRecorder {
+		var body io.Reader
+		if method != http.MethodGet {
+			body = strings.NewReader(`{}`)
+		}
+		r := httptest.NewRequest(method, "http://localhost"+path, body)
+		r.Header.Set("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+		r.Header.Set("Origin", "http://localhost")
+		r.Header.Set("Sec-Fetch-Site", "same-origin")
+		r.Header.Set("Sec-Fetch-Mode", "navigate")
+		r.Header.Set("Sec-Fetch-Dest", "document")
+		if method != http.MethodGet {
+			r.Header.Set("Content-Type", "application/json")
+		}
+		if metadata == "cors" {
+			r.Header.Set("Sec-Fetch-Mode", "cors")
+			r.Header.Set("Sec-Fetch-Dest", "empty")
+		}
+		switch metadata {
+		case "cross-site", "same-site":
+			r.Header.Set("Sec-Fetch-Site", metadata)
+		case "duplicate-site":
+			r.Header.Add("Sec-Fetch-Site", "same-origin")
+		case "duplicate-mode":
+			r.Header.Add("Sec-Fetch-Mode", "navigate")
+		case "duplicate-dest":
+			r.Header.Add("Sec-Fetch-Dest", "document")
+		case "missing-accept":
+			r.Header.Del("Accept")
+		case "zero-quality":
+			r.Header.Set("Accept", "text/html;q=0, */*;q=1")
+		}
+		if websocket {
+			r.Header.Set("Connection", "Upgrade")
+			r.Header.Set("Upgrade", "websocket")
+			r.Header.Set("Sec-WebSocket-Version", "13")
+		}
+		if cookie != nil {
+			r.AddCookie(cookie)
+		}
+		response := httptest.NewRecorder()
+		h.ServeHTTP(response, r)
+		return response
+	}
+
+	authenticated := loginForTest(t, h)
+	page := request(http.MethodGet, "/c/alpha/resources/configmaps", authenticated, "", false)
+	if page.Code != http.StatusOK || page.Body.String() != "portal shell" || page.Header().Get("Location") != "" {
+		t.Fatalf("authenticated native page status=%d location=%q body=%q", page.Code, page.Header().Get("Location"), page.Body.String())
+	}
+
+	for _, tc := range []struct {
+		name        string
+		method      string
+		path        string
+		metadata    string
+		websocket   bool
+		status      int
+		contentType string
+	}{
+		{name: "API schema despite forged document headers", method: http.MethodGet, path: "/c/alpha/api/resources/schemas", status: http.StatusUnauthorized, contentType: "application/json"},
+		{name: "SSE despite forged document headers", method: http.MethodGet, path: "/c/alpha/api/events/stream", status: http.StatusUnauthorized, contentType: "application/json"},
+		{name: "WebSocket despite forged document headers", method: http.MethodGet, path: "/c/alpha/api/events/stream", websocket: true, status: http.StatusUnauthorized, contentType: "application/json"},
+		{name: "API mutation despite forged document headers", method: http.MethodPost, path: "/c/alpha/api/resources/apply", status: http.StatusUnauthorized, contentType: "application/json"},
+		{name: "MCP management despite forged document headers", method: http.MethodGet, path: "/api/mcp/credentials", status: http.StatusUnauthorized, contentType: "application/json"},
+		{name: "MCP despite forged document headers", method: http.MethodPost, path: "/mcp", status: http.StatusUnauthorized, contentType: "application/json"},
+		{name: "asset despite forged document headers", method: http.MethodGet, path: "/assets/app.js", status: http.StatusOK, contentType: "text/javascript"},
+		{name: "page mutation", method: http.MethodPost, path: "/c/alpha/resources/configmaps", status: http.StatusMethodNotAllowed, contentType: "text/plain"},
+		{name: "page fetch without Accept", method: http.MethodGet, path: "/c/alpha/resources/configmaps", metadata: "missing-accept", status: http.StatusUnauthorized, contentType: "text/plain"},
+		{name: "HTML with zero quality", method: http.MethodGet, path: "/c/alpha/resources/configmaps", metadata: "zero-quality", status: http.StatusUnauthorized, contentType: "text/plain"},
+		{name: "cross-site document metadata", method: http.MethodGet, path: "/c/alpha/resources/configmaps", metadata: "cross-site", status: http.StatusUnauthorized, contentType: "text/plain"},
+		{name: "same-site document metadata", method: http.MethodGet, path: "/c/alpha/resources/configmaps", metadata: "same-site", status: http.StatusUnauthorized, contentType: "text/plain"},
+		{name: "mismatched document metadata", method: http.MethodGet, path: "/c/alpha/resources/configmaps", metadata: "cors", status: http.StatusUnauthorized, contentType: "text/plain"},
+		{name: "duplicate Fetch Site metadata", method: http.MethodGet, path: "/c/alpha/resources/configmaps", metadata: "duplicate-site", status: http.StatusUnauthorized, contentType: "text/plain"},
+		{name: "duplicate Fetch Mode metadata", method: http.MethodGet, path: "/c/alpha/resources/configmaps", metadata: "duplicate-mode", status: http.StatusUnauthorized, contentType: "text/plain"},
+		{name: "duplicate Fetch Dest metadata", method: http.MethodGet, path: "/c/alpha/resources/configmaps", metadata: "duplicate-dest", status: http.StatusUnauthorized, contentType: "text/plain"},
+		{name: "unsupported HEAD document method", method: http.MethodHead, path: "/c/alpha/resources/configmaps", status: http.StatusMethodNotAllowed, contentType: "text/plain"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			response := request(tc.method, tc.path, nil, tc.metadata, tc.websocket)
+			if response.Code != tc.status || response.Header().Get("Location") != "" ||
+				!strings.HasPrefix(response.Header().Get("Content-Type"), tc.contentType) {
+				t.Fatalf("response status=%d location=%q content-type=%q body=%q; want status=%d content-type prefix %q",
+					response.Code, response.Header().Get("Location"), response.Header().Get("Content-Type"), response.Body.String(), tc.status, tc.contentType)
+			}
+		})
+	}
+}
+
+func TestPortalDocumentRecoveryPreservesForeignClusterDenial(t *testing.T) {
+	h, _ := newPortalHubFixture(t, false)
+	h.static = fstest.MapFS{"portal.html": &fstest.MapFile{Data: []byte("portal shell")}}
+	owner := loginForTest(t, h)
+	for _, cluster := range []struct{ id, name string }{{"alpha", "Alpha"}, {"beta", "Beta"}} {
+		hubRequest(t, h, owner, "", http.MethodPost, "/api/hub/clusters",
+			`{"id":"`+cluster.id+`","name":"`+cluster.name+`"}`, http.StatusCreated)
+	}
+	memberID := "oidc:" + strings.Repeat("e", 64)
+	if _, _, err := h.liveHub.store.UpsertOIDCMember(memberID, "Viewer"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := h.liveHub.store.UpdateMember(memberID, hubstate.MemberInput{
+		Role: "viewer", Status: "active", ClusterIDs: []string{"alpha"},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	viewer := hubTestMemberSession(t, h, memberID)
+
+	pageRequest := httptest.NewRequest(http.MethodGet, "http://localhost/c/alpha/resources/configmaps", nil)
+	pageRequest.Header.Set("Accept", "text/html")
+	pageRequest.Header.Set("Sec-Fetch-Site", "same-origin")
+	pageRequest.Header.Set("Sec-Fetch-Mode", "navigate")
+	pageRequest.Header.Set("Sec-Fetch-Dest", "document")
+	pageRequest.AddCookie(viewer)
+	pageResponse := httptest.NewRecorder()
+	h.ServeHTTP(pageResponse, pageRequest)
+	if pageResponse.Code != http.StatusOK || pageResponse.Body.String() != "portal shell" || pageResponse.Header().Get("Location") != "" {
+		t.Fatalf("authenticated viewer page status=%d location=%q body=%q", pageResponse.Code, pageResponse.Header().Get("Location"), pageResponse.Body.String())
+	}
+
+	foreignRequest := httptest.NewRequest(http.MethodGet, "http://localhost/c/beta/api/resources/schemas", nil)
+	foreignRequest.Header.Set("Accept", "text/html")
+	foreignRequest.Header.Set("Origin", "http://localhost")
+	foreignRequest.Header.Set("Sec-Fetch-Site", "same-origin")
+	foreignRequest.Header.Set("Sec-Fetch-Mode", "navigate")
+	foreignRequest.Header.Set("Sec-Fetch-Dest", "document")
+	foreignRequest.AddCookie(viewer)
+	foreignResponse := httptest.NewRecorder()
+	h.ServeHTTP(foreignResponse, foreignRequest)
+	if foreignResponse.Code != http.StatusForbidden || foreignResponse.Header().Get("Location") != "" ||
+		foreignResponse.Header().Get("Content-Type") != "application/json" ||
+		hubErrorCode(t, foreignResponse) != "permission_denied" {
+		t.Fatalf("foreign cluster status=%d location=%q content-type=%q body=%q",
+			foreignResponse.Code, foreignResponse.Header().Get("Location"), foreignResponse.Header().Get("Content-Type"), foreignResponse.Body.String())
+	}
+}
+
 func TestPortalHubCredentialsSurviveSessionAndProcessRestart(t *testing.T) {
 	h, statePath := newPortalHubFixture(t, true)
 	cookie := loginForTest(t, h)
