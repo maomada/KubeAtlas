@@ -51,6 +51,23 @@ describe('Omnibar note', () => {
   const namespace = searchCoverageNote(coverageOf([{ kind: '*', group: '', reason: 'radar_namespace_not_collected', namespaces: ['rel-owner'] }]), {})!
   const loading = searchCoverageNote(coverageOf([{ kind: '*', group: '', reason: 'kind_sync_pending' }]), {})!
 
+  it('keeps resource identity values raw and localizes the issue count', () => {
+    const hit = {
+      score: 1,
+      kind: 'Secret',
+      namespace: 'system-ops',
+      name: 'registry-credential',
+      summaryContext: { issueCount: 2 },
+    }
+    act(() => {
+      root.render(<Omnibar onOpenResource={vi.fn()} commandItems={[]} searchData={{ hits: [hit] }} />)
+    })
+    typeQuery('registry-credential')
+    expect(document.body.textContent).toContain('Secret · system-ops')
+    expect(document.body.textContent).toContain('registry-credential')
+    expect(document.body.textContent).toContain('2 个问题')
+  })
+
   it.each([
     ['alone', [], []],
     ['before a namespace note', [], [namespace]],

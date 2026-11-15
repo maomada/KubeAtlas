@@ -70,10 +70,11 @@ function installFetch(handler: (path: string, init?: RequestInit) => Response | 
 
 it('requests a configured server command and invalidates it across profile changes', async () => {
   let commandNumber = 0
+  const command = 'kubeatlas agent enroll --version v1.4.2 --sha256 abc123 --image registry.example/agent@sha256:abc123 --origin https://lan.example.test'
   const fetch = installFetch(path => {
     if (path === '/api/hub/enrollments/command') {
       commandNumber++
-      return response({ command: 'kubeatlas agent enroll --version v1.4.2 --sha256 abc123 --image registry.example/agent@sha256:abc123 --origin https://lan.example.test', origin: 'https://lan.example.test' })
+      return response({ command, origin: 'https://lan.example.test' })
     }
     throw new Error('Unexpected request: ' + path)
   })
@@ -85,6 +86,7 @@ it('requests a configured server command and invalidates it across profile chang
   expect(request?.[1]?.method).toBe('POST')
   expect(JSON.parse(request?.[1]?.body as string)).toEqual({ profile: 'lan' })
   expect(host.textContent).toContain('Hub 地址：https://lan.example.test')
+  expect(host.querySelector('pre')?.textContent).toBe(command)
   expect(host.textContent).toContain('--image registry.example/agent@sha256:abc123')
   await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '公网')!.click())
   expect(host.textContent).not.toContain('kubeatlas agent enroll')

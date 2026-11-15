@@ -63,7 +63,7 @@ export function UnencryptedHttpWarning({ origin, enrollment = false }: { origin?
 }
 
 export function relativeTime(value?: string) {
-  if (!value || !Number.isFinite(Date.parse(value))) return 'Unknown'
+  if (!value || !Number.isFinite(Date.parse(value))) return '未知'
   const minutes = Math.max(0, Math.floor((Date.now() - Date.parse(value)) / 60000))
-  return minutes < 1 ? 'Just now' : minutes < 60 ? `${minutes}m ago` : minutes < 1440 ? `${Math.floor(minutes / 60)}h ago` : `${Math.floor(minutes / 1440)}d ago`
+  return minutes < 1 ? '刚刚' : minutes < 60 ? `${minutes} 分钟前` : minutes < 1440 ? `${Math.floor(minutes / 60)} 小时前` : `${Math.floor(minutes / 1440)} 天前`
 }

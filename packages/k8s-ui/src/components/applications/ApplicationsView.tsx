@@ -65,7 +65,7 @@ function ApplicationRuntimeCell({ apps, workloadClass, ready, desired }: { apps:
   }
   const runtimes = apps.map(batchRuntimeForApp)
   const worst = runtimes.reduce((current, runtime) => (HEALTH_RANK[runtime.health] ?? 0) > (HEALTH_RANK[current.health] ?? 0) ? runtime : current, runtimes[0])
-  if (!worst) return <span className="text-xs text-theme-text-tertiary">Idle</span>
+  if (!worst) return <span className="text-xs text-theme-text-tertiary">未运行</span>
   const same = runtimes.every((runtime) => runtime.label === worst.label)
   const label = same ? worst.label : `${runtimes.length} states`
   return (
@@ -319,7 +319,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
   const total = all.length
   const envOptions = Object.entries(counts.env)
     .sort((a, b) => (envRank(b[0] === 'none' ? undefined : b[0]) ?? -1) - (envRank(a[0] === 'none' ? undefined : a[0]) ?? -1))
-    .map(([env, count]) => ({ value: env, label: env === 'none' ? 'unlabeled' : env, count }))
+    .map(([env, count]) => ({ value: env, label: env === 'none' ? '未标注' : env, count }))
 
   // First fetch, nothing to show yet: drive the shape-stable skeleton. The
   // loaded state hides zero-count health tiles, so without this the header
@@ -355,7 +355,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
           actions={
             <>
               {headerActions}
-              <SummaryTile label={total === 1 ? 'application' : 'applications'} value={total} loading={initialLoading} />
+              <SummaryTile label="应用" value={total} loading={initialLoading} />
               {healthTile('unhealthy', 'error')}
               {healthTile('degraded', 'warning')}
               {healthTile('healthy', 'success')}
@@ -369,7 +369,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
         ) : (
           <DistributionBar
             className="mt-3"
-            ariaLabel="Health distribution"
+            ariaLabel="健康状态分布"
             segments={HEALTH_ORDER.map((h) => ({ key: h, count: counts.health[h] ?? 0, fillClass: HEALTH_META[h].bar }))}
           />
         )}
@@ -382,33 +382,33 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
             the consuming app's Tailwind breakpoint config (Hub uses defaults). */}
         <aside className="flex w-52 shrink-0 flex-col overflow-hidden border-r border-theme-border bg-theme-surface/90 max-[899px]:max-h-72 max-[899px]:w-full max-[899px]:border-b max-[899px]:border-r-0">
           <div className="flex items-center justify-between border-b border-theme-border px-3 py-2">
-            <span className="text-sm font-medium text-theme-text-secondary">Filters</span>
+            <span className="text-sm font-medium text-theme-text-secondary">筛选</span>
             {anyFilterActive && (
-              <button type="button" onClick={clearAllFilters} className="text-[10px] font-medium text-blue-500 hover:text-blue-400">Clear</button>
+              <button type="button" onClick={clearAllFilters} className="text-[10px] font-medium text-blue-500 hover:text-blue-400">清除</button>
             )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {initialLoading ? (
               <BoardRailSkeleton
                 sections={[
-                  ['Status', 5],
-                  ['Class', 3],
-                  ['Type', 4],
-                  ['Environment', 3],
-                  ['Source', 3],
+                  ['状态', 5],
+                  ['类别', 3],
+                  ['类型', 4],
+                  ['环境', 3],
+                  ['来源', 3],
                 ]}
               />
             ) : (
               <>
-            <Facet icon={HeartPulse} title="Status" options={HEALTH_ORDER.map((h) => ({ value: h, label: HEALTH_META[h].label, count: counts.health[h] ?? 0, tone: HEALTH_TONE[h] }))} selected={fHealth} onToggle={(v) => filters.toggle('health', v)} />
-            <Facet icon={Layers} title="Class" options={CLASS_ORDER.map((c) => ({ value: c, label: CLASS_META[c].label, count: counts.workloadClass[c] ?? 0 }))} selected={fClass} onToggle={(v) => filters.toggle('class', v)} />
-            <Facet icon={Shapes} title="Type" options={CATEGORY_ORDER.map((c) => ({ value: c, label: CATEGORY_META[c].label, count: counts.category[c] ?? 0, tooltip: CATEGORY_META[c].tooltip }))} selected={fType} onToggle={(v) => filters.toggle('type', v)} />
-            <Facet icon={Globe} title="Environment" info={<EnvHint />} options={envOptions} selected={fEnv} onToggle={(v) => filters.toggle('env', v)} />
-            <Facet icon={Tag} title="Source" options={SOURCE_ORDER.map((s) => ({ value: s, label: SOURCE_META[s].label, count: counts.source[s] ?? 0 }))} selected={fSource} onToggle={(v) => filters.toggle('source', v)} />
+            <Facet icon={HeartPulse} title="状态" options={HEALTH_ORDER.map((h) => ({ value: h, label: HEALTH_META[h].label, count: counts.health[h] ?? 0, tone: HEALTH_TONE[h] }))} selected={fHealth} onToggle={(v) => filters.toggle('health', v)} />
+            <Facet icon={Layers} title="类别" options={CLASS_ORDER.map((c) => ({ value: c, label: CLASS_META[c].label, count: counts.workloadClass[c] ?? 0 }))} selected={fClass} onToggle={(v) => filters.toggle('class', v)} />
+            <Facet icon={Shapes} title="类型" options={CATEGORY_ORDER.map((c) => ({ value: c, label: CATEGORY_META[c].label, count: counts.category[c] ?? 0, tooltip: CATEGORY_META[c].tooltip }))} selected={fType} onToggle={(v) => filters.toggle('type', v)} />
+            <Facet icon={Globe} title="环境" info={<EnvHint />} options={envOptions} selected={fEnv} onToggle={(v) => filters.toggle('env', v)} />
+            <Facet icon={Tag} title="来源" options={SOURCE_ORDER.map((s) => ({ value: s, label: SOURCE_META[s].label, count: counts.source[s] ?? 0 }))} selected={fSource} onToggle={(v) => filters.toggle('source', v)} />
             {systemCount > 0 && (
               <label className="flex cursor-pointer items-center gap-2 border-b border-theme-border px-3 py-2 text-[11px] text-theme-text-secondary hover:bg-theme-hover">
                 <input type="checkbox" checked={showSystem} onChange={(e) => filters.setBoolean('system', e.target.checked)} className="accent-skyhook-500" />
-                <span>Show system namespaces</span>
+                <span>显示系统命名空间</span>
                 <span className="ml-auto tabular-nums text-theme-text-tertiary">{systemCount}</span>
               </label>
             )}
@@ -451,8 +451,8 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                 <EmptyState
                   tone="filtered"
                   variant="card"
-                  headline={total === 0 ? 'No applications detected yet' : 'No applications match the filters'}
-                  body={total === 0 ? 'Deploy services, workers, or jobs to this cluster to see them grouped by app.' : 'Clear the filters above.'}
+                  headline={total === 0 ? '尚未发现应用' : '没有符合筛选条件的应用'}
+                  body={total === 0 ? '在此集群中部署服务、工作进程或任务后，即可按应用分组查看。' : '清除上方筛选条件以查看结果。'}
                 />
               </div>
             )
@@ -460,22 +460,22 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
               <table className="w-full text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-theme-base">
                   <tr>
-                    <SortableTh label="Application" sortKey="name" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
+                    <SortableTh label="应用" sortKey="name" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
                     {variant === 'single' ? (
                       <>
-                        <th className={TH_CLASS}>Namespace</th>
-                        <th className={TH_CLASS}>Env</th>
+                        <th className={TH_CLASS}>命名空间</th>
+                        <th className={TH_CLASS}>环境</th>
                       </>
                     ) : (
                       <>
-                        <th className={TH_CLASS}>Cluster</th>
-                        <th className={TH_CLASS}>Envs</th>
+                        <th className={TH_CLASS}>集群</th>
+                        <th className={TH_CLASS}>环境</th>
                       </>
                     )}
-                    <th className={TH_CLASS}>Class</th>
-                    <SortableTh label="Runtime" sortKey="ready" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
-                    <SortableTh label="Version" sortKey="version" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
-                    <th className={TH_CLASS}>Workloads</th>
+                    <th className={TH_CLASS}>类别</th>
+                    <SortableTh label="运行状态" sortKey="ready" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
+                    <SortableTh label="版本" sortKey="version" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
+                    <th className={TH_CLASS}>工作负载</th>
                     <th className={clsx(TH_CLASS, 'w-8')} />
                   </tr>
                 </thead>
@@ -600,7 +600,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                           <td className="px-2 py-2.5">
                             {e.env ? (
                               e.envInferred ? (
-                                <Tooltip content={`Inferred from namespace "${e.namespace || e.env}" — confirm with an environment label.`} delay={150}>
+                                <Tooltip content={`根据命名空间“${e.namespace || e.env}”推断，请通过环境标签确认。`} delay={150}>
                                   <span className={`${CHIP} italic ${CHIP_TONE.muted}`}>~{e.env}</span>
                                 </Tooltip>
                               ) : (
@@ -631,11 +631,11 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                               <span className="flex flex-wrap items-center gap-1">
                                 {e.envs.map((s) =>
                                   s.inferred ? (
-                                    <Tooltip key={s.env || 'none'} content={`${s.env || 'unlabeled'} — inferred from namespace; confirm with an environment label.`} delay={150}>
+                                    <Tooltip key={s.env || 'none'} content={`${s.env || '未标注'}——根据命名空间推断，请通过环境标签确认。`} delay={150}>
                                       <span className={`${CHIP} italic ${CHIP_TONE.muted} gap-1`}><StatusDot tone={mapHealthToTone(s.health)} />~{s.env}</span>
                                     </Tooltip>
                                   ) : (
-                                    <span key={s.env || 'none'} className={`${CHIP} ${CHIP_TONE.neutral} gap-1`}><StatusDot tone={mapHealthToTone(s.health)} />{s.env || 'unlabeled'}</span>
+                                    <span key={s.env || 'none'} className={`${CHIP} ${CHIP_TONE.neutral} gap-1`}><StatusDot tone={mapHealthToTone(s.health)} />{s.env || '未标注'}</span>
                                   ),
                                 )}
                               </span>
@@ -650,14 +650,14 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                       <td className="px-2 py-2.5">
                         {e.variant === 'fleet' ? (
                           e.versionSkew ? (
-                            <Tooltip content={`Version skew across clusters: ${e.versions.join(', ')}`} delay={150}>
-                              <span className={`${CHIP} ${CHIP_TONE.amber}`}>version skew</span>
+                            <Tooltip content={`集群间版本不一致：${e.versions.join('、')}`} delay={150}>
+                              <span className={`${CHIP} ${CHIP_TONE.amber}`}>版本不一致</span>
                             </Tooltip>
                           ) : e.versions.length === 1 ? (
                             <span className="font-mono text-xs text-theme-text-secondary">{e.versions[0]}</span>
                           ) : e.versions.length > 1 ? (
                             <Tooltip content={e.versions.join(', ')} delay={150}>
-                              <span className={`${CHIP} ${CHIP_TONE.neutral}`}>{e.versions.length} versions</span>
+                              <span className={`${CHIP} ${CHIP_TONE.neutral}`}>{e.versions.length} 个版本</span>
                             </Tooltip>
                           ) : (
                             <span className="text-theme-text-tertiary">—</span>

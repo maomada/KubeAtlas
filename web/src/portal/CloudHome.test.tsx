@@ -2,7 +2,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { CloudHome } from './CloudHome'
-import { CloudIssues } from './CloudFleetViews'
+import { CloudChecks, CloudIssues } from './CloudFleetViews'
 import type { HubCluster } from './cloudApi'
 
 const responses = new Map<string, unknown>()
@@ -26,16 +26,16 @@ beforeEach(() => {
 it('does not treat legacy empty issues as healthy when namespace access is restricted', () => {
   responses.set('/dashboard', result({ cluster: { connected: false }, accessRestricted: true }))
   const html = home()
-  expect(html).toContain('Namespace access is unavailable in Demo')
-  expect(html).toContain('Health is not fully known')
-  expect(html).not.toContain('Fleet is healthy')
+  expect(html).toContain('无法读取 Demo 的命名空间')
+  expect(html).toContain('集群健康状态尚不完整')
+  expect(html).not.toContain('集群运行正常')
   expect(html).not.toContain('is-healthy')
 })
 
 it.each(['degraded', 'limited', 'unknown'])('does not claim all-clear for %s issue visibility on either fleet surface', state => {
   responses.set('/issues', result({ issues: [], visibility: { state } }))
-  expect(home()).not.toContain('Fleet is healthy')
-  expect(renderToStaticMarkup(<CloudIssues clusters={[cluster]} />)).toContain('Issue visibility is incomplete')
+  expect(home()).not.toContain('集群运行正常')
+  expect(renderToStaticMarkup(<CloudIssues clusters={[cluster]} />)).toContain('问题可见性不完整')
 })
 
 it.each([
@@ -44,18 +44,38 @@ it.each([
   { cluster: { connected: true }, deferredLoading: true },
 ])('requires complete dashboard coverage before declaring health (%j)', dashboard => {
   responses.set('/dashboard', result(dashboard))
-  expect(home()).toContain('Health is not fully known')
+  expect(home()).toContain('集群健康状态尚不完整')
+  expect(home()).toContain('请连接所有已选集群并处理数据覆盖警告')
 })
 
 it('does not declare health while refreshing or missing a source', () => {
   fetching.add('/dashboard')
-  expect(home()).not.toContain('Fleet is healthy')
+  expect(home()).not.toContain('集群运行正常')
   fetching.clear()
   responses.set('/dashboard', [{ cluster, error: new Error('Agent disconnected') }])
-  expect(home()).toContain('Health is not fully known')
+  expect(home()).toContain('集群健康状态尚不完整')
 })
 
 it('allows an all-clear only when both sources report complete visible scope', () => {
-  expect(home()).toContain('Fleet is healthy')
-  expect(home()).toContain('No live issues in your visible fleet scope right now.')
+  expect(home()).toContain('集群运行正常')
+  expect(home()).toContain('当前可见集群范围内没有实时问题。')
+})
+
+it('localizes grouped-check availability while preserving the cluster name', () => {
+  responses.set('/audit', result({ checks: {}, summary: { passing: 0, warning: 0, danger: 0 }, missingInputs: [] }))
+  const html = renderToStaticMarkup(<CloudChecks clusters={[cluster]} />)
+  expect(html).toContain('Demo：检查分组不可用')
+  expect(html).toContain('不可用的输入')
+})
+
+it('localizes dashboard copy while preserving native resource names and identifiers', () => {
+  const html = home()
+  expect(html).toContain('集群')
+  expect(html).toContain('Pods、deployments、namespaces、secrets')
+  expect(html).toContain('Demo')
+  const issues = renderToStaticMarkup(<CloudIssues clusters={[cluster]} />)
+  expect(issues).toContain('aria-label="搜索问题"')
+  expect(issues).toContain('aria-label="严重程度"')
+  expect(issues).toContain('<option value="critical">严重</option>')
+  expect(issues).toContain('<option value="warning">警告</option>')
 })

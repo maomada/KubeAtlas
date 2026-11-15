@@ -4,10 +4,12 @@ import {
   buildSingleAppEntry,
   searchTextForEntry,
   foldAppGroups,
+  CLASS_META,
   type AppRow,
   type SingleAppEntry,
   rolloutSummaryForApps,
 } from '../../utils/applications'
+import { CategoryTooltip, ProvenanceTooltip } from './AppTooltips'
 import { ReadyBar } from './ReadyBar'
 
 // Parity tests for the pure core the shared ApplicationsView is built on:
@@ -37,6 +39,46 @@ const app = (over: Partial<AppRow> = {}): AppRow => ({
 })
 
 describe('buildSingleAppEntry', () => {
+  it('matches Chinese and English labels without changing filter values', () => {
+    const entry = buildSingleAppEntry(app({ workload_class: 'service' }))
+    const text = searchTextForEntry(entry)
+
+    expect(text).toContain('service')
+    expect(text).toContain('服务')
+    expect(text).toContain('app')
+    expect(text).toContain('应用')
+    expect(entry.workloadClass).toBe('service')
+    expect(entry.classSet).toEqual(['service'])
+    expect(entry.category).toBe('app')
+    expect(CLASS_META.unknown.tooltip).toBe('无法根据工作负载推断运行类别。')
+  })
+
+  it('renders coherent provenance wording for label grouping', () => {
+    const html = renderToStaticMarkup(<ProvenanceTooltip tier={6} appKey="default/api" confidence="high" />)
+    expect(html).toContain('按标签')
+    expect(html).toContain('app.kubernetes.io/instance')
+    expect(html).toContain('分组')
+    expect(html).not.toContain('标签</code> 标签')
+
+    const category = renderToStaticMarkup(<CategoryTooltip category="addon" />)
+    expect(category).toContain('平台附加组件')
+    expect(category).not.toContain('Platform add-on')
+  })
+
+  it('keeps native resource kinds and namespace/name identity values in search data', () => {
+    const entry = buildSingleAppEntry(app({
+      key: 'secure/api-secret',
+      name: 'api-secret',
+      namespace: 'secure',
+      workloads: [wl({ kind: 'Secret', namespace: 'secure', name: 'api-secret' })],
+    }))
+    expect(entry.kinds).toEqual({ Secret: 1 })
+    const text = searchTextForEntry(entry)
+    expect(text).toContain('secret')
+    expect(text).toContain('secure')
+    expect(text).toContain('api-secret')
+  })
+
   it('tags the single variant and aggregates ready/desired + kinds', () => {
     const e = buildSingleAppEntry(
       app({

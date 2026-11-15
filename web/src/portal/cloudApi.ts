@@ -35,7 +35,7 @@ export class CloudRequestError extends Error {
 }
 
 export function clusterBase(clusterId: string): string {
-  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(clusterId)) throw new Error('Invalid cluster ID')
+  if (!/^[a-z0-9][a-z0-9-]{0,62}$/.test(clusterId)) throw new Error('集群 ID 无效')
   return `/c/${encodeURIComponent(clusterId)}/api`
 }
 
@@ -60,7 +60,7 @@ export async function cloudRequest<T>(path: string, options: {
       ? await response.json().catch(() => null) : null
     const detail = error && typeof error === 'object' ? error as Record<string, unknown> : {}
     const message = typeof detail.message === 'string' ? detail.message
-      : typeof detail.error === 'string' ? detail.error : `Request failed (HTTP ${response.status})`
+      : typeof detail.error === 'string' ? detail.error : `请求失败（HTTP ${response.status}）`
     if (response.status === 401 && base === '/api') window.location.replace('/login?expired=1')
     throw new CloudRequestError(message, response.status,
       typeof detail.error_code === 'string' ? detail.error_code : undefined,

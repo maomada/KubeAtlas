@@ -19,13 +19,13 @@ export async function fetchFleet<T>(clusters: HubCluster[], path: string, signal
       const index = next++
       const cluster = clusters[index]
       if (cluster.state !== 'connected') {
-        results[index] = { cluster, error: new CloudRequestError(cluster.revokedAt ? 'Agent access revoked' : 'Agent disconnected', 503, 'cluster_unavailable') }
+        results[index] = { cluster, error: new CloudRequestError(cluster.revokedAt ? 'Agent 访问已撤销' : 'Agent 未连接', 503, 'cluster_unavailable') }
         continue
       }
       try { results[index] = { cluster, data: await cloudRequest<T>(path, { base: clusterBase(cluster.id), signal }) } }
       catch (error) {
         signal.throwIfAborted()
-        results[index] = { cluster, error: error instanceof Error ? error : new Error('Cluster request failed') }
+        results[index] = { cluster, error: error instanceof Error ? error : new Error('集群请求失败') }
       }
     }
   }))

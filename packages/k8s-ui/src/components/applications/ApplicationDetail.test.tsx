@@ -502,11 +502,12 @@ describe("ApplicationDetail shell", () => {
 
     expect(html).toContain('Degraded')
     expect(html).toContain('Runtime')
-    expect(html).toContain('Healthy')
+    expect(html).toContain('健康')
     expect(html).toContain('4/4 ready')
     expect(html).toContain('Delivery')
     expect(html.match(/Synced/g)).toHaveLength(2)
-    expect((html.match(/Degraded/g) ?? []).length).toBeGreaterThanOrEqual(3)
+    expect(html).toContain('降级')
+    expect(html.match(/Degraded/g)).toHaveLength(2)
   })
 
   it('warns when application workloads resolve to different deployment sources', () => {
@@ -805,7 +806,7 @@ describe("ApplicationDetail shell", () => {
     };
     const html = renderDetail({ app: batchApp });
 
-    expect(html).toMatch(/<span class="text-sm font-semibold">Degraded<\/span>/);
+    expect(html).toMatch(/<span class="text-sm font-semibold">降级<\/span>/);
     expect(html).toContain("Succeeded");
   });
 });

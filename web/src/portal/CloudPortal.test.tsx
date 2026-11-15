@@ -155,7 +155,7 @@ it.each([
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await waitForPortal(() => expect(host.textContent).toContain(eligible ? 'Opening live cluster…' : 'AI investigations unavailable'))
+    await waitForPortal(() => expect(host.textContent).toContain(eligible ? '正在打开集群实时视图…' : 'AI 调查功能不可用'))
     expect(window.location.pathname).toBe(`/c/${id}/investigations`)
     if (!eligible) expect(host.textContent).not.toContain('Change native namespace')
   } finally {
@@ -260,7 +260,7 @@ it('shares the native namespace cache when entering and switching clusters', asy
     await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('Alpha'))
     await act(async () => navigateCloud('/c/alpha/resources/pods?namespaces=demo-shop'))
     await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
-    const topology = [...host.querySelectorAll('a')].find(link => link.textContent === 'Topology')
+    const topology = [...host.querySelectorAll('a')].find(link => link.textContent === '拓扑')
     expect(topology?.getAttribute('href')).toBe('/c/alpha/topology?namespaces=demo-shop')
     await waitForPortal(() => expect(host.querySelector('header')?.textContent).toContain('demo-shop'))
     await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Change native namespace')!.click())
@@ -671,7 +671,7 @@ it('keeps platform endpoints inaccessible to an organization owner', async () =>
   try {
     await act(async () => root.render(<PortalEntry />))
     await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
-    expect(host.textContent).toContain('平台管理需要明确的平台 Owner 权限')
+    await waitForPortal(() => expect(host.textContent).toContain('平台管理需要明确的平台 Owner 权限'))
     expect(fetch.mock.calls.some(([url]) => String(url).includes('/hub/platform/') || String(url) === '/api/hub/organizations')).toBe(false)
   } finally {
     act(() => root.unmount())
@@ -1091,13 +1091,13 @@ it('attempts server logout when local draft removal fails and stays gated', asyn
     expect(portalNavigation.nativeUnmounts).toBe(1)
     expect(host.querySelector('.cloud-shell')).toBeNull()
     expect(host.querySelector('[data-testid="native-review"]')).toBeNull()
-    expect(host.textContent).toContain('Server logout completed')
-    expect(host.textContent).toContain('saved YAML drafts could not be removed')
+    expect(host.textContent).toContain('服务器已完成退出登录')
+    expect(host.textContent).toContain('未能删除已保存的 YAML 草稿')
     expect(portalNavigation.replace).not.toHaveBeenCalled()
     expect(sessionStorage.getItem(draftKey)).toBe('owner-unsaved')
     expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).not.toBeNull()
     expect(logoutError).toBeInstanceOf(Error)
-    expect((logoutError as Error).message).toContain('saved YAML drafts could not be removed')
+    expect((logoutError as Error).message).toContain('未能删除已保存的 YAML 草稿')
   } finally {
     removeItem.mockRestore()
     act(() => root.unmount())

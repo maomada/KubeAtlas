@@ -59,7 +59,7 @@ it('fails closed when registration is disabled or provider configuration is unav
     })
     vi.stubGlobal('fetch', fetch)
     await act(async () => root.render(<Register key={providerResponse.status} />))
-    const expected = providerResponse.status === 200 ? '未开放公开注册' : 'Authentication options are unavailable'
+    const expected = providerResponse.status === 200 ? '未开放公开注册' : '认证选项不可用'
     await act(async () => vi.waitFor(() => expect(host.textContent).toContain(expected)))
     expect(host.querySelector('form')).toBeNull()
     expect(fetch.mock.calls.some(([url]) => String(url) === '/api/auth/register')).toBe(false)

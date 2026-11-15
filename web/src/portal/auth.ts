@@ -11,7 +11,7 @@ export async function probePortalSession(signal?: AbortSignal): Promise<'authent
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
   })
   if (response.status === 401) return 'unauthenticated'
-  if (!response.ok) throw new Error(`Session check failed (HTTP ${response.status})`)
+  if (!response.ok) throw new Error(`会话检查失败（HTTP ${response.status}）`)
   return 'authenticated'
 }
 
@@ -21,9 +21,9 @@ export async function fetchAuthProviders(signal?: AbortSignal): Promise<AuthProv
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
   })
   if (response.status === 404) return { registrationEnabled: false, oidcEnabled: false }
-  if (!response.ok) throw new Error('Authentication options are unavailable.')
+  if (!response.ok) throw new Error('认证选项不可用。')
   const value: unknown = await response.json()
-  if (!value || typeof value !== 'object') throw new Error('Authentication options are invalid.')
+  if (!value || typeof value !== 'object') throw new Error('认证选项无效。')
   const providers = value as Record<string, unknown>
   const oidc = providers.oidc && typeof providers.oidc === 'object' ? providers.oidc as Record<string, unknown> : undefined
   return { registrationEnabled: providers.registrationEnabled === true, oidcEnabled: oidc?.enabled === true }

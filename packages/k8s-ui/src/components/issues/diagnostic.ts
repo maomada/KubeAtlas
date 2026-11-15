@@ -8,13 +8,13 @@
 export function diagnosticRoleLabel(role: string): string {
   switch (role) {
     case 'candidate':
-      return 'Possible cause';
+      return '可能原因';
     case 'affected':
-      return 'Affected';
+      return '受影响对象';
     case 'rollup':
-      return 'Grouped';
+      return '汇总';
     default:
-      return 'Context';
+      return '上下文';
   }
 }
 
@@ -23,37 +23,37 @@ export function diagnosticRoleLabel(role: string): string {
 export function diagnosticFactLabel(type: string): string {
   switch (type) {
     case 'explicit_reference':
-      return 'Missing reference';
+      return '缺少引用';
     case 'node_startup_corroboration':
-      return 'Same-node failures';
+      return '同节点故障';
     case 'owner_rollup':
-      return 'Grouped from pods';
+      return '由 Pod 汇总';
     case 'selected_backend_issue':
-      return 'Backend pods';
+      return '后端 Pod';
     case 'service_config_mismatch':
-      return 'Service config';
+      return 'Service 配置';
     case 'service_env_reference':
-      return 'Referenced service';
+      return '被引用的服务';
     case 'probe_target_mismatch':
-      return 'Probe target';
+      return '探针目标';
     case 'blocked_init_container':
-      return 'Init container';
+      return '初始化容器';
     case 'restart_cause':
-      return 'Restart evidence';
+      return '重启证据';
     case 'pod_template_divergence':
-      return 'Pod/template differences';
+      return 'Pod/模板差异';
     case 'node_blast_radius':
-      return 'Affected workloads';
+      return '受影响的工作负载';
     case 'pvc_blast_radius':
-      return 'Blocked pods';
+      return '受阻的 Pod';
     case 'apiservice_hpa':
-      return 'Stalled autoscalers';
+      return '停滞的自动扩缩器';
     case 'secret_not_ready':
-      return 'Dependent pods';
+      return '依赖此项的 Pod';
     case 'admission_webhook_backend':
-      return 'Admission dependency';
+      return '准入依赖项';
     case 'network_policy_isolates':
-      return 'Affected resources';
+      return '受影响的资源';
     default:
       return type.replace(/_/g, ' ');
   }
@@ -68,13 +68,13 @@ export function incidentParentLabel(factType?: string, confidence?: string): str
     case 'pvc_blast_radius':
     case 'secret_not_ready':
     case 'admission_webhook_backend':
-      return 'Caused by';
+      return '原因';
     case 'apiservice_hpa':
-      return 'Likely cause';
+      return '可能原因';
     case 'node_blast_radius':
-      return 'Related';
+      return '相关';
     default:
-      return confidence === 'high' ? 'Caused by' : 'Possible cause';
+      return confidence === 'high' ? '原因' : '可能原因';
   }
 }
 
@@ -84,11 +84,11 @@ export function incidentParentLabel(factType?: string, confidence?: string): str
 export function confidenceTitle(confidence: string): string {
   switch (confidence) {
     case 'high':
-      return 'High confidence: a declared structural link (selector, owner, or claim reference).';
+      return '置信度高：存在明确的结构关联（selector、owner 或 claim 引用）。';
     case 'medium':
-      return 'Medium confidence: these resources are related, but causation is inferred — verify before acting.';
+      return '置信度中等：这些资源有关联，但因果关系是推断所得；采取行动前请先核实。';
     case 'low':
-      return 'Low confidence: a heuristic match.';
+      return '置信度低：这是根据启发式规则匹配的结果。';
     default:
       return '';
   }

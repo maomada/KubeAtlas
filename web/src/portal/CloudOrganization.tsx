@@ -68,12 +68,12 @@ export async function logoutPortal() {
     const result = await cloudRequest<{ logoutUrl: string } | undefined>('/auth/logout', { method: 'POST', body: {} })
     logoutCompleted = true
     if (!draftsCleared) {
-      throw new Error('Server logout completed, but saved YAML drafts could not be removed. This tab remains locked.')
+      throw new Error('服务器已完成退出登录，但未能删除已保存的 YAML 草稿。此标签页仍保持锁定。')
     }
     replacePortalLocation(result?.logoutUrl ?? '/login')
   } catch (error) {
     const failure = !draftsCleared && !logoutCompleted
-      ? new Error(`Unable to remove saved YAML drafts; server logout also failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error })
+      ? new Error(`无法删除已保存的 YAML 草稿；服务器退出登录也失败：${error instanceof Error ? error.message : String(error)}`, { cause: error })
       : error
     reportHubYamlLogoutFailure(failure)
     throw failure
