@@ -3,7 +3,7 @@ import clsx from 'clsx'
 import { Collapse } from '../ui/Collapse'
 import type { WorkloadPodInfo } from '../../types'
 import type { NavigateToResource } from '../../utils/navigation'
-import { formatAge } from '../resources/resource-utils'
+import { formatWorkloadRelativeAgeTime } from './workload-presentation'
 
 export function PodRow({
   name,
@@ -124,7 +124,7 @@ export function workloadPodDetail(pod: WorkloadPodInfo): string {
   if (pod.lastTerminationReason && !['Unknown', 'Completed'].includes(pod.lastTerminationReason)) {
     parts.push(`最近：${pod.lastTerminationReason}`)
   }
-  if (pod.createdAt) parts.push(`创建于 ${formatAge(pod.createdAt)} 前`)
+  if (pod.createdAt) parts.push(`创建于 ${formatWorkloadRelativeAgeTime(pod.createdAt)}`)
   return parts.join(' · ')
 }
 

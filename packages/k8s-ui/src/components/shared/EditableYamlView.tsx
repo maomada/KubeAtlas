@@ -36,7 +36,7 @@ export function SaveSuccessAnimation() {
       <div className="flex justify-center animate-fade-in-out">
         <div className="mt-2 px-4 py-2 bg-green-600/90 dark:bg-green-500/90 backdrop-blur-sm rounded-lg shadow-lg flex items-center gap-2">
           <Check className="w-4 h-4 text-white" />
-          <span className="text-white text-sm font-medium">Saved</span>
+          <span className="text-white text-sm font-medium">已保存</span>
         </div>
       </div>
     </div>
@@ -465,7 +465,7 @@ function EditableYamlViewInstance({
         <div className="flex items-center justify-between px-4 py-2 border-b border-theme-border bg-theme-elevated/50">
           <div className="flex items-center gap-2">
             <Pencil className="w-4 h-4 text-blue-400" />
-            <span className="text-sm font-medium text-theme-text-primary">Editing Resource</span>
+            <span className="text-sm font-medium text-theme-text-primary">正在编辑资源</span>
           </div>
           <div className="flex items-center gap-2">
             <button
@@ -474,21 +474,19 @@ function EditableYamlViewInstance({
               className="flex items-center gap-1 px-3 py-1.5 text-xs text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-surface rounded border border-theme-border disabled:opacity-50"
             >
               <XCircle className="w-3.5 h-3.5" />
-              Cancel
+              取消
             </button>
             <Tooltip
               content={
                 <div className="space-y-1.5 max-w-[19rem]">
-                  <p>Override field ownership (server-side apply).</p>
+                  <p>覆盖字段所有权（server-side apply）。</p>
                   <p>
-                    <span className="font-medium text-theme-text-primary">On (default):</span> your
-                    edits overwrite fields owned by Helm/Flux/Argo/kubectl — but an active
-                    controller may reconcile them back on its next sync.
+                    <span className="font-medium text-theme-text-primary">启用（默认）：</span>
+                    你的修改会覆盖 Helm/Flux/Argo/kubectl 管理的字段，但活动控制器可能会在下次同步时将其恢复。
                   </p>
                   <p>
-                    <span className="font-medium text-theme-text-primary">Off:</span> if another
-                    manager owns a field you changed, the whole save is rejected with a conflict
-                    (nothing is applied).
+                    <span className="font-medium text-theme-text-primary">关闭：</span>
+                    如果其他管理器拥有你修改的字段，整个保存会因冲突被拒绝（不会应用任何内容）。
                   </p>
                 </div>
               }
@@ -502,7 +500,7 @@ function EditableYamlViewInstance({
                   onChange={(e) => setForce(e.target.checked)}
                   className="w-3.5 h-3.5 rounded border-theme-border bg-theme-base"
                 />
-                Force
+                强制覆盖
               </label>
             </Tooltip>
             <button
@@ -518,12 +516,12 @@ function EditableYamlViewInstance({
                 <Save className="w-3.5 h-3.5" />
               )}
               {isPreviewing
-                ? 'Preparing review…'
+                ? '正在准备审查…'
                 : isSaving
-                  ? 'Saving…'
+                  ? '正在保存…'
                   : onPreview
-                    ? 'Review changes'
-                    : 'Save'}
+                    ? '查看更改'
+                    : '保存'}
             </button>
           </div>
         </div>
@@ -548,7 +546,7 @@ function EditableYamlViewInstance({
                     rel="noopener noreferrer"
                     className="ml-1.5 text-blue-600 dark:text-blue-300 hover:underline"
                   >
-                    Learn more →
+                    了解更多 →
                   </a>
                 )}
               </div>
@@ -574,14 +572,14 @@ function EditableYamlViewInstance({
             <div className="flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-300 mt-0.5 shrink-0" />
               <div className="text-xs text-red-600 dark:text-red-300 flex-1">
-                <div className="font-medium">{previewError ? 'Preview failed' : 'Save failed'}</div>
+                <div className="font-medium">{previewError ? '预览失败' : '保存失败'}</div>
                 <div className="mt-1">{previewError || formattedError?.summary}</div>
                 {formattedError?.details && (
                   <button
                     onClick={() => setShowErrorDetails(!showErrorDetails)}
                     className="mt-1 text-red-500 dark:text-red-300 hover:text-red-700 dark:hover:text-red-200 underline"
                   >
-                    {showErrorDetails ? 'Hide details' : 'Show details'}
+                    {showErrorDetails ? '隐藏详情' : '显示详情'}
                   </button>
                 )}
                 {showErrorDetails && formattedError?.details && (
@@ -620,7 +618,7 @@ function EditableYamlViewInstance({
               className="flex items-center gap-1 px-2 py-1 text-xs text-accent-text hover:text-accent-light hover:bg-theme-elevated rounded"
             >
               <Pencil className="w-3.5 h-3.5" />
-              Edit
+              编辑
             </button>
           )}
           <button
@@ -632,19 +630,19 @@ function EditableYamlViewInstance({
             ) : (
               <Copy className="w-3.5 h-3.5" />
             )}
-            Copy
+            复制
           </button>
-          <Tooltip content="Download manifest as YAML (server-generated fields stripped)">
+          <Tooltip content="下载 YAML 清单（已剥离服务器生成的字段）">
             <button
               onClick={handleDownload}
               className="flex items-center gap-1 px-2 py-1 text-xs text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded"
             >
               <Download className="w-3.5 h-3.5" />
-              Download
+              下载
             </button>
           </Tooltip>
           {onDuplicate && !readOnly && (
-            <Tooltip content="Duplicate as new resource">
+            <Tooltip content="复制为新资源">
               <button
                 onClick={() => {
                   if (readOnly) return
@@ -658,7 +656,7 @@ function EditableYamlViewInstance({
                 className="flex items-center gap-1 px-2 py-1 text-xs text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded"
               >
                 <CopyPlus className="w-3.5 h-3.5" />
-                Duplicate
+                创建副本
               </button>
             </Tooltip>
           )}

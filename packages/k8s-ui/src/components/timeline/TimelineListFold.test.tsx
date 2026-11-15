@@ -40,6 +40,7 @@ const click = () => act(async () => foldButton().click())
 
 it('starts closed and toggles on click', async () => {
   await render(ROWS)
+  expect(container.textContent).toContain('（1 项）')
   expect(isOpen()).toBe(false)
   await click()
   expect(isOpen()).toBe(true)

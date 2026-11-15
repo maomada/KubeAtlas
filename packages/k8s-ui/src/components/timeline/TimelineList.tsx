@@ -544,7 +544,7 @@ export function TimelineList({ events, isLoading, onRefresh, onQueryChange, hasL
                   <Clock className="w-4 h-4 text-theme-text-tertiary" />
                   <span className="text-sm font-medium text-theme-text-secondary">{group.label}</span>
                   <span className="text-xs text-theme-text-disabled">
-                    ({pluralize(group.items.length, 'item')})
+                    （{group.items.length} 项）
                   </span>
                 </div>
 

@@ -5,6 +5,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import type { ReactNode } from 'react'
 import { expect, it, vi } from 'vitest'
 import { WorkloadView } from './WorkloadView'
+import { WorkloadRolloutNotice } from './WorkloadRolloutNotice'
+import type { Topology } from '../../types/core'
+import { getWorkloadRolloutActivity } from '../../utils/workload-rollout'
 
 const renderer = vi.hoisted(() => vi.fn(({ mainFooter }: { mainFooter?: ReactNode }) => <div>Generic renderer and Conditions{mainFooter}</div>))
 vi.mock('../shared/ResourceRendererDispatch', async (original) => ({ ...await original<typeof import('../shared/ResourceRendererDispatch')>(), ResourceRendererDispatch: renderer }))
@@ -170,11 +173,12 @@ it('localizes serving exposure labels and address fallback while preserving Kube
 })
 
 it('localizes CronJob and Job chrome while preserving names, phases, and backend messages', () => {
-  const cronJob = { apiVersion: 'batch/v1', kind: 'CronJob', metadata: { name: 'nightly', namespace: 'batch' }, spec: { schedule: '0 * * * *', suspend: false, successfulJobsHistoryLimit: 2, failedJobsHistoryLimit: 1 }, status: { active: [{ kind: 'Job', namespace: 'batch', name: 'nightly-20260421' }], lastScheduleTime: '2026-04-21T00:00:00Z' } }
+  const cronJob = { apiVersion: 'batch/v1', kind: 'CronJob', metadata: { name: 'nightly', namespace: 'batch' }, spec: { schedule: '0 * * * *', suspend: false, successfulJobsHistoryLimit: 2, failedJobsHistoryLimit: 1 }, status: { active: [{ kind: 'Job', namespace: 'batch', name: 'nightly-20260421' }], lastScheduleTime: new Date(Date.now() - 4 * 60 * 60_000 - 60_000).toISOString() } }
   const relationships = { scalers: [{ kind: 'HorizontalPodAutoscaler', group: 'autoscaling', namespace: 'batch', name: 'nightly-scale' }], monitors: [{ kind: 'PodMonitor', group: 'monitoring.coreos.com', namespace: 'batch', name: 'nightly-monitor' }] }
   const renderCron = (resource: Parameters<typeof WorkloadView>[0]['resource']) => renderToStaticMarkup(<WorkloadView kind="cronjobs" namespace="batch" name="nightly" onBack={() => {}} resource={resource} relationships={relationships} activeTab="overview" />)
   const active = renderCron(cronJob)
   for (const label of ['运行记录', '运行中的 Job', '最近调度', '最近成功', '保留历史', '受控于', '监控来源']) expect(active).toContain(label)
+  expect(active).toContain('4 小时前')
   for (const value of ['CronJob', 'Job', 'nightly-20260421', '0 * * * *']) expect(active).toContain(value)
   for (const english of ['Runs', 'Active jobs', 'Last schedule', 'Retained history', 'Controlled by', 'Monitored By']) expect(active).not.toContain(english)
   const suspended = renderCron({ ...cronJob, spec: { ...cronJob.spec, suspend: true }, status: {} })
@@ -185,4 +189,141 @@ it('localizes CronJob and Job chrome while preserving names, phases, and backend
   expect(failed).toContain('当前没有为此 Job 保留的 Pod。')
   expect(failed).toContain('Failed')
   expect(failed).toContain('raw job failure message')
+})
+
+it('localizes generated workload readiness while preserving raw phases, strategies, and controller values', () => {
+  const pod = { name: 'api-7f9d8', phase: 'Running', ready: true, containers: ['api'], restartCount: 0, healthLevel: 'healthy' as const }
+  const render = (kind: string, resource: any) => renderToStaticMarkup(
+    <WorkloadView kind={kind} namespace="demo" name="api" onBack={() => {}} resource={resource} workloadPods={[pod]} activeTab="overview" />,
+  )
+  const deployment = render('deployments', {
+    apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'api', namespace: 'demo', generation: 2 },
+    spec: { replicas: 2, strategy: { type: 'RollingUpdate' }, template: { spec: { containers: [{ name: 'api', image: 'nginx:1' }] } } },
+    status: { observedGeneration: 1, replicas: 2, readyReplicas: 1, availableReplicas: 1, updatedReplicas: 1, unavailableReplicas: 1 },
+  })
+  expect(deployment).toContain('1/2 已更新 · 1 可用')
+  expect(deployment).toContain('全部就绪')
+  expect(deployment).toContain('Running')
+  expect(deployment).toContain('RollingUpdate')
+
+  const generatedDeadline = render('deployments', {
+    apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'api', namespace: 'demo', generation: 2 },
+    spec: { replicas: 1 },
+    status: { observedGeneration: 2, conditions: [{ type: 'Progressing', status: 'False', reason: 'ProgressDeadlineExceeded' }] },
+  })
+  expect(generatedDeadline).toContain('发布已超过期限')
+  expect(generatedDeadline).not.toContain('Progress deadline exceeded')
+
+  const backendDeadlineMessage = render('deployments', {
+    apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'api', namespace: 'demo', generation: 2 },
+    spec: { replicas: 1 },
+    status: { observedGeneration: 2, conditions: [{ type: 'Progressing', status: 'False', reason: 'ProgressDeadlineExceeded', message: 'Progress deadline exceeded' }] },
+  })
+  expect(backendDeadlineMessage).toContain('Progress deadline exceeded')
+  expect(backendDeadlineMessage).not.toContain('发布已超过期限')
+
+  const daemonSet = render('daemonsets', {
+    apiVersion: 'apps/v1', kind: 'DaemonSet', metadata: { name: 'api', namespace: 'demo' },
+    spec: { updateStrategy: { type: 'RollingUpdate' }, template: { spec: { containers: [{ name: 'api', image: 'nginx:1' }] } } },
+    status: { desiredNumberScheduled: 2, currentNumberScheduled: 2, numberReady: 1, updatedNumberScheduled: 1, numberAvailable: 1, numberUnavailable: 1 },
+  })
+  expect(daemonSet).toContain('1/2 已更新')
+  expect(daemonSet).toContain('1/2 个节点就绪')
+  expect(daemonSet).toContain('目标节点')
+  expect(daemonSet).toContain('DaemonSet')
+  expect(daemonSet).toContain('Running')
+
+  const statefulSet = render('statefulsets', {
+    apiVersion: 'apps/v1', kind: 'StatefulSet', metadata: { name: 'api', namespace: 'demo' },
+    spec: { replicas: 1, updateStrategy: { type: 'RollingUpdate', rollingUpdate: { partition: 0 } }, template: { spec: { containers: [{ name: 'api', image: 'nginx:1' }] } } },
+    status: { replicas: 1, readyReplicas: 1, availableReplicas: 1, updatedReplicas: 1, currentRevision: 'api-1', updateRevision: 'api-2' },
+  })
+  expect(statefulSet).toContain('1/1 已更新 · 1 可用')
+  expect(statefulSet).toContain('1/1 就绪 · 1 个副本')
+  expect(statefulSet).toContain('RollingUpdate')
+  expect(statefulSet).toContain('api-1')
+  expect(statefulSet).toContain('api-2')
+})
+
+it('localizes only generated rollout details and preserves raw collision messages and reasons', () => {
+  const render = (kind: string, resource: any) => renderToStaticMarkup(
+    <WorkloadView kind={kind} namespace="demo" name="api" onBack={() => {}} resource={resource} activeTab="overview" />,
+  )
+  const generated = render('deployments', {
+    apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'api', namespace: 'demo', generation: 1 },
+    spec: { replicas: 0 },
+    status: { observedGeneration: 1 },
+  })
+  expect(generated).toContain('未请求副本')
+  expect(generated).not.toContain('No replicas requested')
+
+  const rawConditionMessage = render('deployments', {
+    apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'api', namespace: 'demo', generation: 1 },
+    spec: { replicas: 1 },
+    status: { observedGeneration: 1, conditions: [{ type: 'Progressing', status: 'False', reason: 'ProgressDeadlineExceeded', message: 'No replicas requested' }] },
+  })
+  expect(rawConditionMessage).toContain('No replicas requested')
+  expect(rawConditionMessage).not.toContain('未请求副本')
+
+  const rawReasonActivity = getWorkloadRolloutActivity({
+    apiVersion: 'argoproj.io/v1alpha1', kind: 'Rollout', metadata: { name: 'api', namespace: 'demo' },
+    spec: { replicas: 1 },
+    status: { conditions: [{ type: 'InvalidSpec', status: 'True', reason: 'No replicas requested' }] },
+  }, 'rollout')
+  const rawReason = renderToStaticMarkup(<WorkloadRolloutNotice activity={rawReasonActivity} />)
+  expect(rawReasonActivity.detailSource).toBe('raw')
+  expect(rawReason).toContain('No replicas requested')
+  expect(rawReason).not.toContain('未请求副本')
+
+  const rawStatusActivity = getWorkloadRolloutActivity({
+    apiVersion: 'argoproj.io/v1alpha1', kind: 'Rollout', metadata: { name: 'api', namespace: 'demo' },
+    spec: { replicas: 1 },
+    status: { phase: 'degraded', message: '1/1 ready' },
+  }, 'rollout')
+  const rawStatusMessage = renderToStaticMarkup(<WorkloadRolloutNotice activity={rawStatusActivity} />)
+  expect(rawStatusActivity.detailSource).toBe('raw')
+  expect(rawStatusMessage).toContain('1/1 ready')
+  expect(rawStatusMessage).not.toContain('1/1 就绪')
+})
+
+it('keeps external rollout details raw while local synthetic notice details are translated', () => {
+  const rawActivity = {
+    phase: 'stalled' as const, active: false, manual: false, label: 'Rollout stalled', detail: 'No replicas requested',
+    desired: 1, updated: 0, ready: 0, available: 0,
+  }
+  const rawNotice = renderToStaticMarkup(<WorkloadRolloutNotice activity={rawActivity} />)
+  expect(rawNotice).toContain('No replicas requested')
+  expect(rawNotice).not.toContain('未请求副本')
+
+  const syntheticNotice = renderToStaticMarkup(<WorkloadRolloutNotice activity={{
+    phase: 'idle', active: false, manual: false, label: 'Stable', detail: '', desired: 1, updated: 1, ready: 1, available: 1,
+  }} recentImageSave />)
+  expect(syntheticNotice).toContain('模板更改已接受，正在等待实时发布状态')
+  expect(syntheticNotice).not.toContain('The template change was accepted')
+})
+
+it('localizes the related-manifest object selector without changing native kinds', () => {
+  const topology: Topology = {
+    nodes: [
+      { id: 'deployment', kind: 'Deployment', name: 'api', status: 'healthy', data: { namespace: 'demo', apiVersion: 'apps/v1', resourceKind: 'Deployment' } },
+      { id: 'service', kind: 'Service', name: 'api-service', status: 'healthy', data: { namespace: 'demo', apiVersion: 'v1', resourceKind: 'Service' } },
+    ],
+    edges: [{ id: 'exposes', source: 'service', target: 'deployment', type: 'exposes' }],
+  }
+  const html = renderToStaticMarkup(
+    <WorkloadView
+      kind="Deployment"
+      namespace="demo"
+      name="api"
+      onBack={() => {}}
+      resource={{ apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'api', namespace: 'demo' }, spec: {}, status: {} }}
+      topology={topology}
+      activeTab="yaml"
+      renderRelatedYaml={() => <div>Related manifest</div>}
+    />,
+  )
+  expect(html).toContain('对象')
+  expect(html).toContain('api-service')
+  expect(html).toContain('Service')
+  expect(html).not.toContain('Objects')
 })

@@ -1,6 +1,7 @@
 import { AlertTriangle, Check, Clock3, Loader2, Pause } from 'lucide-react'
 import { Badge, type BadgeSeverity } from '../ui/Badge'
 import type { WorkloadRolloutActivity } from '../../utils/workload-rollout'
+import { formatWorkloadRolloutDetail, formatWorkloadRolloutLabel } from './workload-presentation'
 
 export function WorkloadRolloutNotice({
   activity,
@@ -13,8 +14,11 @@ export function WorkloadRolloutNotice({
 }) {
   if (activity.phase === 'idle' && !recentImageSave) return null
   const shown = activity.phase === 'idle' && recentImageSave
-    ? { ...activity, phase: 'applying' as const, active: true, label: 'Waiting for controller', detail: 'The template change was accepted; waiting for live rollout status' }
+    ? { ...activity, phase: 'applying' as const, active: true, label: 'Waiting for controller', detail: 'The template change was accepted; waiting for live rollout status', detailSource: 'generated' as const }
     : activity
+  const detail = shown.detailSource === 'generated'
+    ? formatWorkloadRolloutDetail(shown.detail)
+    : shown.detail
   const severity: BadgeSeverity = shown.phase === 'stalled'
     ? 'error'
     : shown.phase === 'paused' || shown.manual
@@ -47,12 +51,12 @@ export function WorkloadRolloutNotice({
           <div className="flex min-w-0 flex-wrap items-center gap-1.5">
             {recentImageSave && (
               <span className="inline-flex items-center gap-1 text-xs font-medium text-theme-text-secondary">
-                <Check className="h-3.5 w-3.5" /> Image saved <span aria-hidden>·</span>
+                <Check className="h-3.5 w-3.5" /> 镜像已保存 <span aria-hidden>·</span>
               </span>
             )}
-            <Badge severity={severity}>{shown.label}</Badge>
+            <Badge severity={severity}>{formatWorkloadRolloutLabel(shown.label)}</Badge>
           </div>
-          {shown.detail && <div className="mt-1 text-xs leading-5 text-theme-text-secondary">{shown.detail}</div>}
+          {detail && <div className="mt-1 text-xs leading-5 text-theme-text-secondary">{detail}</div>}
         </div>
       </div>
     </div>

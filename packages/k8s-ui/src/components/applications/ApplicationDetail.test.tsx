@@ -336,6 +336,7 @@ describe("ApplicationDetail shell", () => {
     for (const label of ['概览', '拓扑', '时间线', 'YAML', '运行时实例', '服务配置', '配置输入', '近期活动', '目标副本数', '策略', '仅内部 Service', '受控于']) {
       expect(html.includes(label)).toBe(true)
     }
+    expect(html).toMatch(/class="[^"]*shrink-0 whitespace-nowrap[^"]*">环境/)
     for (const value of ['Deployment', 'Service', 'cm', 'checkout-api', 'checkout-config', 'Running', 'BackOff', 'Back-off restarting failed container', 'RollingUpdate', '内部']) {
       expect(html.includes(value)).toBe(true)
     }

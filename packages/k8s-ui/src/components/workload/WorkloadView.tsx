@@ -67,8 +67,6 @@ import { CrossplanePauseChip } from '../resources/renderers/CrossplanePauseConte
 import { hpaStateLabel } from '../resources/resource-utils-hpa'
 import {
   cronToHuman,
-  formatAge,
-  formatDuration,
   getGatewayAddresses,
   getGatewayListeners,
   getIngressAddress,
@@ -80,7 +78,14 @@ import { ServicePortCards, type ServicePortRenderProps } from '../resources/rend
 import { rolloutMayAdvanceAutomatically, type WorkloadRolloutActivity } from '../../utils/workload-rollout'
 import { WorkloadRolloutNotice } from './WorkloadRolloutNotice'
 import { isCoreBatchJob } from '../../utils/api-resources'
-import { formatRelativeAgeTime } from '../../utils/format'
+import {
+  formatWorkloadCronDescription,
+  formatWorkloadDuration,
+  formatWorkloadRelativeAgeTime,
+  formatWorkloadRolloutDetail,
+  formatWorkloadRolloutLabel,
+  formatWorkloadStatusText,
+} from './workload-presentation'
 
 export type WorkloadTabType = 'overview' | 'spec' | 'topology' | 'timeline' | 'logs' | 'metrics' | 'reachability' | 'cost' | 'yaml'
 type TabType = WorkloadTabType
@@ -809,7 +814,7 @@ export function WorkloadView({
     {
       id: 'workload-escape',
       keys: 'Escape',
-      description: expanded ? 'Go back' : 'Close drawer',
+      description: expanded ? '返回' : '关闭抽屉',
       category: expanded ? 'Navigation' as const : 'Drawer' as const,
       // 'drawer' (top priority) in both modes so when this is the fullscreen
       // overlay its Escape unambiguously wins over any background view's Escape
@@ -821,7 +826,7 @@ export function WorkloadView({
     {
       id: 'drawer-yaml',
       keys: 'y',
-      description: 'Switch to YAML view',
+      description: '切换到 YAML 视图',
       category: 'Drawer' as const,
       scope: 'drawer' as const,
       handler: () => switchView(true),
@@ -830,7 +835,7 @@ export function WorkloadView({
     {
       id: 'drawer-detail',
       keys: 'e',
-      description: 'Switch to detail view',
+      description: '切换到详情视图',
       category: 'Drawer' as const,
       scope: 'drawer' as const,
       handler: () => switchView(false),
@@ -849,6 +854,11 @@ export function WorkloadView({
   const status = resourceGone
     ? { text: 'Deleted', color: 'status-unknown' }
     : rolloutDisplay?.status ?? getResourceStatus(apiKind, resource)
+  const displayStatusText = status
+    ? isWorkloadSummaryKind(apiKind) || status.text === 'Deleted'
+      ? formatWorkloadStatusText(status.text)
+      : status.text
+    : ''
   // The host's actions, and the host's renderers with their per-container
   // terminal, logs, scale and env controls, would act on an object that no
   // longer exists. The plain renderers show the last copy without them.
@@ -980,7 +990,7 @@ export function WorkloadView({
               </span>
               {renderStatusBadge && resource && !resourceGone ? renderStatusBadge(resource) : status && (
                 <span className={clsx('badge', status.color)}>
-                  {status.text}
+                  {displayStatusText}
                 </span>
               )}
               {!resourceGone && crossplaneResource && <CrossplanePauseChip state={getCrossplanePauseState(resource)} />}
@@ -1172,11 +1182,11 @@ export function WorkloadView({
       subheader={resourceGone ? undefined : subheader}
       nav={
         breadcrumb || hideBackButton ? undefined : (
-          <Tooltip content="Go back (Esc)" delay={150} position="bottom">
+          <Tooltip content="返回（Esc）" delay={150} position="bottom">
             <button
               onClick={onBack}
               className="p-1.5 mt-0.5 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-lg transition-colors"
-              aria-label="Go back"
+              aria-label="返回"
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
@@ -1207,7 +1217,7 @@ export function WorkloadView({
             )}
             {renderStatusBadge && resource && !resourceGone ? renderStatusBadge(resource) : status && (
               <span className={clsx('badge whitespace-nowrap', status.color)}>
-                {status.text}
+                {displayStatusText}
               </span>
             )}
             {!resourceGone && crossplaneResource && <CrossplanePauseChip state={getCrossplanePauseState(resource)} />}
@@ -1219,7 +1229,7 @@ export function WorkloadView({
             {/* On the title line the kind and status wrap together, never apart. */}
             {inlineBadges ? <span className="inline-flex items-center gap-x-3">{kindAndStatus}</span> : kindAndStatus}
             {namespace && namespace !== '_' && (
-              <span className="whitespace-nowrap">Namespace: <span className="text-theme-text-primary">{namespace}</span></span>
+              <span className="whitespace-nowrap">命名空间：<span className="text-theme-text-primary">{namespace}</span></span>
             )}
             {namespace && namespace !== '_' && namespaceNote}
           </>
@@ -1243,7 +1253,7 @@ export function WorkloadView({
           ),
           onOpenLiveTraffic && <LiveTrafficChip key="live-traffic" onClick={onOpenLiveTraffic} />,
           relationships?.owner && !showOwnershipHeading && (
-            <span key="owner">Owner: <button onClick={() => onNavigateToResource?.(refToSelectedResource(relationships.owner!))} className="text-blue-500 hover:underline">{relationships.owner.name}</button></span>
+            <span key="owner">所有者：<button onClick={() => onNavigateToResource?.(refToSelectedResource(relationships.owner!))} className="text-blue-500 hover:underline">{relationships.owner.name}</button></span>
           ),
         ].filter(Boolean)
         if (inlineBadges && !(showOwnershipHeading && ownershipContext)) {
@@ -1307,11 +1317,11 @@ export function WorkloadView({
             </button>
           </Tooltip>
           {onCollapseToDrawer && (
-            <Tooltip content="Collapse to drawer" delay={150} position="bottom">
+            <Tooltip content="收起为抽屉" delay={150} position="bottom">
               <button
                 onClick={onCollapseToDrawer}
                 className="p-1.5 mt-0.5 text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated rounded-lg transition-colors"
-                aria-label="Collapse to drawer"
+                aria-label="收起为抽屉"
               >
                 <Minimize2 className="w-5 h-5" />
               </button>
@@ -1404,7 +1414,7 @@ export function WorkloadView({
                 focusNodeId={neighborhoodFocusId}
               />
             ) : (
-              <PaneLoader label="Loading topology…" className="absolute inset-0" />
+              <PaneLoader label="正在加载拓扑…" className="absolute inset-0" />
             )}
           </div>
         )}
@@ -1460,7 +1470,7 @@ export function WorkloadView({
           <div className="flex h-full min-h-0">
             {renderRelatedYaml && yamlObjects.length > 1 && (
               <div className="flex w-56 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-theme-border bg-theme-base px-2 py-2">
-                <div className="px-1.5 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-theme-text-tertiary">Objects</div>
+                <div className="px-1.5 pb-1 pt-0.5 text-[10px] font-medium uppercase tracking-wide text-theme-text-tertiary">对象</div>
                 {yamlObjects.map((o) => {
                   const active = o.primary ? yamlObjectId === null : yamlObjectId === o.id
                   return (
@@ -1591,8 +1601,8 @@ function DeletedResourceNotice({
   return (
     <AlertBanner
       variant="warning"
-      title={`This ${kindLabel} no longer exists in the cluster`}
-      message="You're looking at the last version Radar loaded before it was deleted."
+      title={`此 ${kindLabel} 已不在集群中`}
+      message="当前显示的是资源删除前 KubeAtlas 加载的最后一个版本。"
     >
       {owner && onNavigateToResource && (
         <button
@@ -1600,7 +1610,7 @@ function DeletedResourceNotice({
           onClick={() => onNavigateToResource(refToSelectedResource(owner))}
           className="mt-2 text-xs text-accent-text hover:underline"
         >
-          Go to its {displayKindName(owner.kind, owner.kind)} {owner.name}
+          前往其 {displayKindName(owner.kind, owner.kind)} {owner.name}
         </button>
       )}
     </AlertBanner>
@@ -1609,13 +1619,13 @@ function DeletedResourceNotice({
 
 function OpenInGitOpsChip({ onClick }: { onClick: () => void }) {
   return (
-    <Tooltip content="Open this resource in the GitOps tab (tree + insights + ops)" delay={150}>
+    <Tooltip content="在 GitOps 标签页中打开此资源（树视图、洞察和操作）" delay={150}>
       <button
         type="button"
         onClick={onClick}
         className="inline-flex items-center gap-1 rounded border border-skyhook-500/40 bg-skyhook-500/10 px-1.5 py-0.5 text-[11px] font-medium text-skyhook-500 hover:bg-skyhook-500/20 transition-colors"
       >
-        Open in GitOps
+        在 GitOps 中打开
         <ArrowRight className="h-3 w-3 shrink-0" />
       </button>
     </Tooltip>
@@ -1624,7 +1634,7 @@ function OpenInGitOpsChip({ onClick }: { onClick: () => void }) {
 
 function LiveTrafficChip({ onClick }: { onClick: () => void }) {
   return (
-    <Tooltip content="What this workload talks to, from the cluster's traffic source" delay={150}>
+    <Tooltip content="根据集群流量来源查看此工作负载的通信对象" delay={150}>
       <button
         type="button"
         onClick={onClick}
@@ -1698,11 +1708,11 @@ function OwnershipHeading({
           </h1>
         </Tooltip>
       </div>
-      <Tooltip content="Copy pod name" delay={150}>
+      <Tooltip content="复制 Pod 名称" delay={150}>
         <button
           onClick={onCopy}
           className="shrink-0 rounded p-1 text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary"
-          aria-label="Copy pod name"
+          aria-label="复制 Pod 名称"
         >
           {copied ? <Check className="h-3.5 w-3.5 text-green-400" /> : <Copy className="h-3.5 w-3.5" />}
         </button>
@@ -1848,7 +1858,7 @@ function EventsTab({
     return (
       <div className="flex items-center justify-center h-full text-theme-text-tertiary">
         <RefreshCw className="w-5 h-5 animate-spin mr-2" />
-        Loading events…
+        正在加载事件…
       </div>
     )
   }
@@ -1856,14 +1866,14 @@ function EventsTab({
   if (error && events.length === 0) {
     return (
       <div className="p-4">
-        <AlertBanner variant="error" title="Couldn't load this workload's history" message={error.message}>
+        <AlertBanner variant="error" title="无法加载此工作负载的历史记录" message={error.message}>
           {onRetry && (
             <button
               type="button"
               onClick={onRetry}
               className="mt-2 rounded border border-theme-border bg-theme-surface px-2 py-1 text-xs text-theme-text-primary transition-colors hover:bg-theme-hover"
             >
-              Try again
+              重试
             </button>
           )}
         </AlertBanner>
@@ -1876,16 +1886,16 @@ function EventsTab({
       {focusEvent && !focusFound && (
         <div className="shrink-0 border-b border-theme-border px-4 py-2 text-xs text-theme-text-secondary" role="status">
           {olderError || error
-            ? "Couldn't find the reported error because some history couldn't be loaded."
+            ? '无法定位已报告的错误，因为部分历史记录未能加载。'
             : truncated && onLoadOlder
-              ? 'Finding the reported error in older history…'
-              : 'The reported error is not available in the retained timeline history.'}
+              ? '正在较早的历史记录中查找已报告的错误…'
+              : '保留的时间线历史记录中没有此错误。'}
         </div>
       )}
       {error && (
         <div className="shrink-0 flex flex-wrap items-center gap-x-2 border-b border-theme-border bg-theme-base px-4 py-1.5 text-xs" role="alert">
           <span className="text-[var(--color-error)]" title={error.message}>
-            Couldn't load this workload's history. Showing only what loaded.
+            无法加载此工作负载的历史记录。仅显示已加载的内容。
           </span>
           {onRetry && (
             <button
@@ -1893,7 +1903,7 @@ function EventsTab({
               onClick={onRetry}
               className="underline decoration-theme-border underline-offset-2 text-theme-text-secondary hover:text-theme-text-primary"
             >
-              Try again
+              重试
             </button>
           )}
         </div>
@@ -1902,13 +1912,13 @@ function EventsTab({
         <div className="shrink-0 flex flex-wrap items-center gap-x-2 gap-y-0.5 border-b border-theme-border bg-theme-base px-4 py-1.5 text-xs text-theme-text-secondary" role="note">
           {scoped && (
             <span className="text-theme-text-tertiary">
-              This workload, what it runs, and the Services, Ingresses, config and scalers attached to it.
+              此工作负载、它运行的内容，以及关联的 Service、Ingress、配置和扩缩器。
             </span>
           )}
-          {incomplete && <span>This workload has more past runs and related resources than Radar follows, so some are left out.</span>}
-          {truncated && <span>Showing the most recent events. Older history exists.</span>}
+          {incomplete && <span>此工作负载的历史运行和关联资源超出当前跟踪范围，因此部分内容未显示。</span>}
+          {truncated && <span>正在显示最新事件。较早的历史记录仍然存在。</span>}
           {truncated && olderError && (
-            <span className="text-[var(--color-error)]" title={olderError.message}>Couldn't load older events.</span>
+            <span className="text-[var(--color-error)]" title={olderError.message}>无法加载更早的事件。</span>
           )}
           {truncated && onLoadOlder && (
             <button
@@ -1917,7 +1927,7 @@ function EventsTab({
               disabled={loadingOlder}
               className="underline decoration-theme-border underline-offset-2 hover:text-theme-text-primary disabled:opacity-60"
             >
-              {loadingOlder ? 'Loading…' : olderError ? 'Try again' : 'Load older'}
+              {loadingOlder ? '正在加载…' : olderError ? '重试' : '加载更早记录'}
             </button>
           )}
         </div>
@@ -2548,7 +2558,7 @@ function WorkloadStatusStrip({
     : baseStateDetail
   const podItem = servingMode && typeof podSummary.total === 'number'
     ? {
-        label: 'Pods',
+        label: 'Pod',
         value: `${podSummary.total}`,
         detail: podSummary.total === 0
           ? '当前无运行实例'
@@ -2556,7 +2566,7 @@ function WorkloadStatusStrip({
             ? `${podSummary.notReady} 个需关注`
             : '运行时实例',
       }
-    : { label: 'Pods', value: podSummary.label, detail: podSummary.detail }
+    : { label: 'Pod', value: podSummary.label, detail: podSummary.detail }
   const items = [
     { label: '状态', value: <span className={clsx('badge-sm', state.badgeClass)}>{state.label}</span>, detail: stateDetail },
     { label: '就绪', value: readiness.readyLabel, detail: readiness.detail },
@@ -2579,19 +2589,46 @@ function WorkloadStatusStrip({
   )
 }
 
+function isWorkloadSummaryKind(apiKind: string): boolean {
+  const kind = apiKind.toLowerCase().split('/').pop()?.replace(/s$/, '') ?? ''
+  return ['deployment', 'daemonset', 'statefulset', 'job', 'cronjob'].includes(kind)
+}
+
 function getReplicatedWorkloadState(resource: any, apiKind: string, workloadPods?: WorkloadPodInfo[]): ReplicatedWorkloadState {
   const { activity: rollout, status } = getWorkloadDisplayStatus(resource, apiKind, workloadPods)
+  const detail = formatWorkloadRolloutDetailForResource(resource, apiKind, rollout.detail || '', rollout.detailSource)
   if (rollout.phase !== 'idle' || rollout.label !== 'Stable') {
-    return stateSummary(rollout.label, rollout.detail || '', status.color, status.level, rollout)
+    return stateSummary(formatWorkloadRolloutLabel(rollout.label), detail, status.color, status.level, rollout)
   }
   const label = status.level === 'healthy'
-    ? 'Healthy'
+    ? '健康'
     : status.level === 'degraded'
-      ? 'Degraded'
+      ? '需关注'
       : status.level === 'unhealthy'
-        ? 'Unhealthy'
-        : 'Stable'
-  return stateSummary(label, rollout.detail || status.text, status.color, status.level, rollout)
+        ? '不健康'
+        : '稳定'
+  return stateSummary(label, detail || formatWorkloadStatusText(status.text), status.color, status.level, rollout)
+}
+
+function formatWorkloadRolloutDetailForResource(
+  resource: any,
+  apiKind: string,
+  detail: string,
+  detailSource: WorkloadRolloutActivity['detailSource'],
+): string {
+  if (detailSource !== 'generated') return detail
+  const kind = apiKind.toLowerCase().split('/').pop()?.replace(/s$/, '')
+  const progressCondition = resource?.status?.conditions?.find((condition: any) => condition.type === 'Progressing')
+  if (
+    ['deployment', 'daemonset', 'statefulset'].includes(kind ?? '')
+    && detail === 'Progress deadline exceeded'
+    && progressCondition
+    && !progressCondition.message
+    && (progressCondition.status === 'False' || progressCondition.reason === 'ProgressDeadlineExceeded')
+  ) {
+    return '发布已超过期限'
+  }
+  return formatWorkloadRolloutDetail(detail)
 }
 
 function stateSummary(
@@ -2668,7 +2705,7 @@ function buildSummaryMetrics(
         icon: Clock3,
       },
       {
-        label: 'Pods',
+        label: 'Pod',
         value: podSummary.label,
         detail: podSummary.detail,
         icon: Boxes,
@@ -2688,14 +2725,14 @@ function buildSummaryMetrics(
       {
         label: '调度计划',
         value: spec.schedule || '-',
-        detail: spec.schedule ? cronToHuman(spec.schedule) : 'Cron 表达式不可用',
+        detail: spec.schedule ? formatWorkloadCronDescription(cronToHuman(spec.schedule)) : 'Cron 表达式不可用',
         icon: Clock3,
         mono: Boolean(spec.schedule),
       },
       {
         label: '最近运行',
-        value: status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : '从未',
-        detail: status.lastSuccessfulTime ? `最近成功：${formatRelativeAgeTime(status.lastSuccessfulTime)}` : '尚无成功运行记录',
+        value: formatWorkloadRelativeAgeTime(status.lastScheduleTime, '从未'),
+        detail: status.lastSuccessfulTime ? `最近成功：${formatWorkloadRelativeAgeTime(status.lastSuccessfulTime)}` : '尚无成功运行记录',
         icon: Activity,
       },
       {
@@ -2710,19 +2747,19 @@ function buildSummaryMetrics(
   const control = runtimeControlSurface(apiKind)
   return [
     {
-      label: 'State',
+      label: '状态',
       value: <span className={clsx('badge', readiness.healthBadge)}>{readiness.healthLabel}</span>,
       detail: resourceKind,
       icon: readiness.hasIssue ? AlertTriangle : CheckCircle2,
     },
     {
-      label: 'Readiness',
+      label: '就绪',
       value: readiness.readyLabel,
       detail: readiness.detail,
       icon: Server,
     },
     {
-      label: 'Pods',
+      label: 'Pod',
       value: podSummary.label,
       detail: podSummary.detail,
       icon: Boxes,
@@ -2760,15 +2797,15 @@ function getReadinessSummary(resource: any, apiKind: string): ReadinessSummary {
     const healthy = !noTargets && ready >= desired && unavailable === 0
     return {
       readyLabel: `${Math.min(ready, desired)}/${desired}`,
-      detail: `${updated}/${desired} up-to-date`,
-      healthLabel: noTargets ? 'No targets' : healthy ? 'Healthy' : 'Degraded',
+      detail: `${updated}/${desired} 已更新`,
+      healthLabel: noTargets ? '无匹配节点' : healthy ? '健康' : '需关注',
       healthBadge: noTargets ? 'bg-theme-elevated text-theme-text-secondary' : healthy ? 'status-healthy' : 'status-degraded',
       hasIssue: !healthy && !noTargets,
       stats: [
-        { label: 'Desired', value: desired },
-        { label: 'Ready', value: Math.min(ready, desired), tone: ready >= desired ? 'good' : 'warn' },
-        { label: 'Available', value: available },
-        { label: 'Unavailable', value: unavailable, tone: unavailable > 0 ? 'warn' : 'default' },
+        { label: '目标', value: desired },
+        { label: '就绪', value: Math.min(ready, desired), tone: ready >= desired ? 'good' : 'warn' },
+        { label: '可用', value: available },
+        { label: '不可用', value: unavailable, tone: unavailable > 0 ? 'warn' : 'default' },
       ],
     }
   }
@@ -2811,8 +2848,8 @@ function getReadinessSummary(resource: any, apiKind: string): ReadinessSummary {
         { label: '调度计划', value: spec.schedule || '-' },
         { label: '运行中的 Job', value: active, tone: active > 0 ? 'warn' : 'default' },
         { label: '暂停', value: suspended ? '是' : '否', tone: suspended ? 'warn' : 'default' },
-        { label: '最近调度', value: status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : '-' },
-        { label: '最近成功', value: status.lastSuccessfulTime ? formatRelativeAgeTime(status.lastSuccessfulTime) : '-' },
+        { label: '最近调度', value: status.lastScheduleTime ? formatWorkloadRelativeAgeTime(status.lastScheduleTime) : '-' },
+        { label: '最近成功', value: status.lastSuccessfulTime ? formatWorkloadRelativeAgeTime(status.lastSuccessfulTime) : '-' },
       ],
     }
   }
@@ -2828,17 +2865,17 @@ function getReadinessSummary(resource: any, apiKind: string): ReadinessSummary {
   const healthy = !scaledToZero && ready >= desired && unavailable === 0
   return {
     readyLabel: `${targetReady}/${desired}`,
-    detail: `${updated}/${desired} updated · ${available} available`,
-    healthLabel: scaledToZero ? 'Scaled to zero' : healthy ? 'Healthy' : 'Degraded',
+    detail: `${updated}/${desired} 已更新 · ${available} 可用`,
+    healthLabel: scaledToZero ? '已缩至零' : healthy ? '健康' : '需关注',
     healthBadge: scaledToZero ? 'bg-theme-elevated text-theme-text-secondary' : healthy ? 'status-healthy' : 'status-degraded',
     hasIssue: !healthy && !scaledToZero,
     stats: [
-      { label: 'Desired', value: desired },
-      { label: 'Current', value: current },
-      { label: 'Ready', value: targetReady, tone: ready >= desired ? 'good' : 'warn' },
-      { label: 'Updated', value: updated },
-      { label: 'Available', value: available },
-      { label: 'Unavailable', value: unavailable, tone: unavailable > 0 ? 'warn' : 'default' },
+      { label: '目标', value: desired },
+      { label: '当前', value: current },
+      { label: '就绪', value: targetReady, tone: ready >= desired ? 'good' : 'warn' },
+      { label: '已更新', value: updated },
+      { label: '可用', value: available },
+      { label: '不可用', value: unavailable, tone: unavailable > 0 ? 'warn' : 'default' },
     ],
   }
 }
@@ -2851,7 +2888,7 @@ function getPodSummary(workloadPods: WorkloadPodInfo[] | undefined, relationship
     const notReady = total - ready
     return {
       label: `${ready}/${total}`,
-      detail: total === 0 ? (k === 'jobs' ? 'no pods retained' : 'no pods found') : notReady === 0 ? 'all ready' : `${notReady} need attention`,
+      detail: total === 0 ? (k === 'jobs' ? '未保留 Pod' : '未找到 Pod') : notReady === 0 ? '全部就绪' : `${notReady} 个需关注`,
       ready,
       total,
       notReady,
@@ -2860,7 +2897,7 @@ function getPodSummary(workloadPods: WorkloadPodInfo[] | undefined, relationship
   const count = relationships?.pods?.length ?? 0
   return {
     label: count ? String(count) : '-',
-    detail: count ? 'status unavailable' : k === 'jobs' ? 'no pods retained' : 'no pod refs',
+    detail: count ? '状态不可用' : k === 'jobs' ? '未保留 Pod' : '没有 Pod 引用',
     ready: undefined,
     total: count || undefined,
     notReady: undefined,
@@ -2877,7 +2914,7 @@ function runtimeControlSurface(apiKind: string): { metricLabel: string; cardTitl
   const k = apiKind.toLowerCase()
   if (k === 'cronjobs') return { metricLabel: '调度计划', cardTitle: '调度计划', icon: Clock3 }
   if (k === 'jobs') return { metricLabel: '执行状态', cardTitle: '执行情况', icon: Activity }
-  return { metricLabel: 'Scaling', cardTitle: 'Scaling', icon: Scale }
+  return { metricLabel: '扩缩容', cardTitle: '扩缩容', icon: Scale }
 }
 
 function getScalingSummary(
@@ -2895,8 +2932,8 @@ function getScalingSummary(
 
   if (k === 'daemonsets') {
     return {
-      label: 'Node scheduled',
-      detail: `${status.desiredNumberScheduled ?? 0} desired nodes`,
+      label: '节点调度',
+      detail: `${status.desiredNumberScheduled ?? 0} 个目标节点`,
       stats: [
         { label: 'Controller', value: 'DaemonSet' },
         { label: 'Desired nodes', value: status.desiredNumberScheduled ?? '-' },
@@ -2911,8 +2948,8 @@ function getScalingSummary(
       label: phase,
       detail: '',
       stats: [
-        { label: '开始时间', value: status.startTime ? formatRelativeAgeTime(status.startTime) : '-' },
-        { label: '完成时间', value: status.completionTime ? formatRelativeAgeTime(status.completionTime) : phase === 'Running' ? 'Running' : '-' },
+        { label: '开始时间', value: status.startTime ? formatWorkloadRelativeAgeTime(status.startTime) : '-' },
+        { label: '完成时间', value: status.completionTime ? formatWorkloadRelativeAgeTime(status.completionTime) : phase === 'Running' ? 'Running' : '-' },
         { label: '并行度', value: spec.parallelism ?? 1 },
         { label: '完成数', value: spec.completions ?? 1 },
         { label: '完成模式', value: spec.completionMode ?? 'NonIndexed' },
@@ -2928,7 +2965,7 @@ function getScalingSummary(
       detail: '',
       stats: [
         { label: '调度计划', value: spec.schedule ?? '-' },
-        { label: '计划说明', value: spec.schedule ? cronToHuman(spec.schedule) : '-' },
+        { label: '计划说明', value: spec.schedule ? formatWorkloadCronDescription(cronToHuman(spec.schedule)) : '-' },
         { label: '并发策略', value: spec.concurrencyPolicy ?? 'Allow' },
         { label: '启动截止时间', value: spec.startingDeadlineSeconds ? `${spec.startingDeadlineSeconds}s` : '无' },
         { label: '成功历史保留数', value: spec.successfulJobsHistoryLimit ?? 3 },
@@ -2940,8 +2977,8 @@ function getScalingSummary(
 
   if (scalers.length > 0 || primaryDiagnosis) {
     return {
-      label: scalers.length > 0 ? `${scalers.length} controller${scalers.length === 1 ? '' : 's'}` : hpaStateLabel(primaryDiagnosis!.state),
-      detail: primaryDiagnosis ? hpaStateLabel(primaryDiagnosis.state) : 'replicas controlled externally',
+      label: scalers.length > 0 ? `${scalers.length} 个控制器` : hpaStateLabel(primaryDiagnosis!.state),
+      detail: primaryDiagnosis ? hpaStateLabel(primaryDiagnosis.state) : '副本由外部控制器管理',
       stats: [
         { label: 'Desired', value: primaryDiagnosis?.bounds?.desired ?? spec.replicas ?? '-' },
         { label: 'Current', value: primaryDiagnosis?.bounds?.current ?? status.replicas ?? '-' },
@@ -2952,8 +2989,8 @@ function getScalingSummary(
   }
 
   return {
-    label: spec.replicas !== undefined ? `${spec.replicas} replicas` : 'Manual',
-    detail: 'replicas from workload spec',
+    label: spec.replicas !== undefined ? `${spec.replicas} 个副本` : '手动',
+    detail: '副本数来自工作负载配置',
     stats: [
       { label: 'Desired', value: spec.replicas ?? '-' },
       { label: 'Current', value: status.replicas ?? '-' },
@@ -2968,7 +3005,7 @@ function CurrentStateCard({ resource, apiKind, readiness }: { resource: any; api
   const containers = templateSpec?.containers ?? []
   const images = containers.filter((container: any) => container?.name && container?.image)
   const k = apiKind.toLowerCase()
-  const title = k === 'jobs' ? '执行状态' : k === 'cronjobs' ? '调度状态' : 'Current state'
+  const title = k === 'jobs' ? '执行状态' : k === 'cronjobs' ? '调度状态' : '当前状态'
   const generation = metadata.generation
   const observedGeneration = resource?.status?.observedGeneration
   const controllerBehind =
@@ -2984,11 +3021,11 @@ function CurrentStateCard({ resource, apiKind, readiness }: { resource: any; api
         ))}
         {controllerBehind && (
           <>
-            <OverviewStat label="Spec generation" value={generation} tone="warn" />
-            <OverviewStat label="Controller seen" value={observedGeneration} tone="warn" />
+            <OverviewStat label="配置版本" value={generation} tone="warn" />
+            <OverviewStat label="控制器已观察版本" value={observedGeneration} tone="warn" />
           </>
         )}
-        <OverviewStat label="Age" value={metadata.creationTimestamp ? formatAge(metadata.creationTimestamp) : '-'} />
+        <OverviewStat label="创建时间" value={metadata.creationTimestamp ? formatWorkloadRelativeAgeTime(metadata.creationTimestamp) : '-'} />
       </div>
       <div className="mt-4 grid gap-2 border-t border-theme-border pt-3 text-sm sm:grid-cols-2">
         <InlineFact label="Kind" value={displayKindName(apiKind, resource?.kind)} />
@@ -3044,7 +3081,7 @@ function formatJobDuration(job: any): string {
   const endRaw = job?.status?.completionTime
   const end = endRaw ? Date.parse(endRaw) : Date.now()
   if (Number.isNaN(start) || Number.isNaN(end) || end < start) return ''
-  return formatDuration(end - start, true)
+  return formatWorkloadDuration(end - start)
 }
 
 function OverviewStat({ label, value, tone = 'default' }: { label: string; value: ReactNode; tone?: 'default' | 'good' | 'warn' }) {
@@ -3552,8 +3589,8 @@ function CronJobRunsCard({
     >
       <div className="mb-3 grid gap-x-8 gap-y-3 sm:grid-cols-2">
         <OverviewStat label="运行中的 Job" value={activeJobs.length} tone={activeJobs.length > 0 ? 'warn' : 'default'} />
-        <OverviewStat label="最近调度" value={status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : '从未'} />
-        <OverviewStat label="最近成功" value={status.lastSuccessfulTime ? formatRelativeAgeTime(status.lastSuccessfulTime) : '从未'} />
+        <OverviewStat label="最近调度" value={formatWorkloadRelativeAgeTime(status.lastScheduleTime, '从未')} />
+        <OverviewStat label="最近成功" value={formatWorkloadRelativeAgeTime(status.lastSuccessfulTime, '从未')} />
         <OverviewStat label="保留历史" value={`成功 ${spec.successfulJobsHistoryLimit ?? 3} / 失败 ${spec.failedJobsHistoryLimit ?? 1}`} />
       </div>
 
@@ -3619,7 +3656,7 @@ function ScalingCard({
     <OverviewCard title={title} icon={icon}>
       <div className="mb-3 grid gap-x-8 gap-y-3 sm:grid-cols-2">
         {scaling.stats.map((stat) => (
-          <OverviewStat key={String(stat.label)} label={stat.label} value={stat.value} tone={stat.tone} />
+          <OverviewStat key={String(stat.label)} label={rolloutFactDisplayLabel(String(stat.label))} value={stat.value} tone={stat.tone} />
         ))}
       </div>
       {scalerRefs.length > 0 ? (
@@ -3632,7 +3669,7 @@ function ScalingCard({
           </div>
           {scalerDiagnostics?.map((entry) => (
             <div key={`${entry.ref.kind}/${entry.ref.namespace}/${entry.ref.name}`} className="rounded-md border border-theme-border bg-theme-base px-3 py-2 text-xs text-theme-text-secondary">
-              {entry.loading ? 'Loading autoscaler diagnosis…' : entry.error ? 'Autoscaler diagnosis unavailable' : entry.diagnosis ? hpaStateLabel(entry.diagnosis.state) : 'Autoscaler status unavailable'}
+              {entry.loading ? '正在加载自动扩缩器诊断…' : entry.error ? '自动扩缩器诊断不可用' : entry.diagnosis ? hpaStateLabel(entry.diagnosis.state) : '自动扩缩器状态不可用'}
               {entry.diagnosis?.summary && <span className="ml-1 text-theme-text-tertiary">{entry.diagnosis.summary}</span>}
             </div>
           ))}
@@ -3663,7 +3700,7 @@ function RolloutProgressBar({ progress, state }: { progress: RolloutProgressSumm
   return (
     <div className="rounded-md border border-theme-border bg-theme-base px-3 py-2">
       <div className="mb-1.5 flex min-w-0 items-center justify-between gap-3 text-xs">
-        <span className="font-medium text-theme-text-secondary">Rollout progress</span>
+        <span className="font-medium text-theme-text-secondary">发布进度</span>
         <span className="min-w-0 truncate text-theme-text-tertiary">
           {progress.updatedLabel} · {progress.readyLabel}
         </span>
@@ -3677,7 +3714,7 @@ function RolloutProgressBar({ progress, state }: { progress: RolloutProgressSumm
       </div>
       {progress.unavailable > 0 && (
         <div className="mt-1.5 text-xs text-amber-600 dark:text-amber-300">
-          {progress.unavailable} unavailable while rollout converges.
+          发布进行中，{progress.unavailable} 个副本暂不可用。
         </div>
       )}
     </div>
@@ -3781,6 +3818,8 @@ function rolloutFacts(
 function rolloutFactDisplayLabel(label: string): string {
   const labels: Record<string, string> = {
     'Target nodes': '目标节点数',
+    'Desired nodes': '目标节点',
+    Controller: '控制器',
     Scheduled: '已调度',
     Updated: '已更新',
     Unavailable: '不可用',
@@ -3792,6 +3831,8 @@ function rolloutFactDisplayLabel(label: string): string {
     Revision: '修订版本',
     Partition: '分区',
     Desired: '期望值',
+    Min: '最小',
+    Max: '最大',
   }
   return ownDisplayLabel(labels, label)
 }
@@ -3817,8 +3858,8 @@ function rolloutProgress(resource: any, apiKind: string, state: ReplicatedWorklo
       desired,
       ready,
       unavailable,
-      updatedLabel: `${updated}/${desired} nodes updated`,
-      readyLabel: `${ready}/${desired} nodes ready`,
+      updatedLabel: `${updated}/${desired} 个节点已更新`,
+      readyLabel: `${ready}/${desired} 个节点就绪`,
     }
   }
 
@@ -3835,8 +3876,8 @@ function rolloutProgress(resource: any, apiKind: string, state: ReplicatedWorklo
     desired,
     ready,
     unavailable,
-    updatedLabel: `${updated}/${desired} updated`,
-    readyLabel: `${Math.min(ready, configuredDesired)}/${configuredDesired} ready`,
+    updatedLabel: `${updated}/${desired} 已更新`,
+    readyLabel: `${Math.min(ready, configuredDesired)}/${configuredDesired} 就绪`,
   }
 }
 
@@ -3852,15 +3893,15 @@ function rolloutHeadline(resource: any, apiKind: string, readiness: ReadinessSum
   const status = resource?.status || {}
   const k = apiKind.toLowerCase()
   if (k === 'daemonsets') {
-    return `${readiness.readyLabel} ready on nodes`
+    return `${readiness.readyLabel} 个节点就绪`
   }
   if (k === 'statefulsets') {
     const revision = status.updateRevision && status.currentRevision && status.updateRevision !== status.currentRevision
       ? `${status.currentRevision} -> ${status.updateRevision}`
       : status.currentRevision || status.updateRevision
-    return `${readiness.readyLabel} ready · ${scaling.label}${revision && status.updateRevision !== status.currentRevision ? ' · updating revision' : ''}`
+    return `${readiness.readyLabel} 就绪 · ${scaling.label}${revision && status.updateRevision !== status.currentRevision ? ' · 正在更新版本' : ''}`
   }
-  return `${readiness.readyLabel} ready · ${scaling.label}`
+  return `${readiness.readyLabel} 就绪 · ${scaling.label}`
 }
 
 function ServingDependenciesCard({
@@ -4032,7 +4073,7 @@ function ActivityCard({
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium text-theme-text-primary">{event.reason || event.eventType || '更新'}</span>
-                    <span className="shrink-0 text-xs text-theme-text-tertiary">{formatRelativeAgeTime(event.timestamp)}</span>
+                    <span className="shrink-0 text-xs text-theme-text-tertiary">{formatWorkloadRelativeAgeTime(event.timestamp)}</span>
                   </div>
                   <div className="mt-0.5 line-clamp-2 text-xs text-theme-text-secondary">
                     {event.message || event.diff?.summary || `${event.kind} ${event.name}`}

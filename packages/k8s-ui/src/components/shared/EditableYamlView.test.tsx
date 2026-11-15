@@ -42,7 +42,7 @@ vi.mock("../ui/YamlEditor", async () => {
   };
 });
 
-const { EditableYamlView } = await import("./EditableYamlView");
+const { EditableYamlView, SaveSuccessAnimation } = await import("./EditableYamlView");
 const { YamlDraftPolicyProvider } = await import("./YamlDraftPolicy");
 const { yamlDraftStorageKey } = await import("./yamlDraftStorage");
 
@@ -67,6 +67,22 @@ beforeEach(() => {
 afterEach(() => {
   act(() => root.unmount());
   host.remove();
+});
+
+it('shows localized editor controls and save confirmation', async () => {
+  act(() => root.render(<SaveSuccessAnimation />));
+  expect(host.textContent).toContain('已保存');
+
+  const onSave = vi.fn(async () => {});
+  const onPreview = vi.fn(async () => reviewed('1'));
+  renderWithPolicy({ onSave, onPreview });
+  await click(/^编辑$/);
+  expect(host.textContent).toContain('正在编辑资源');
+  expect(host.textContent).toContain('取消');
+  const forceLabel = [...host.querySelectorAll('label')].find(label => label.textContent?.trim() === '强制覆盖');
+  expect(forceLabel?.querySelector('input')?.checked).toBe(true);
+  await click(/查看更改/);
+  expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ force: true }));
 });
 
 const resource = { kind: "ConfigMap", namespace: "shop", name: "app" };
@@ -153,7 +169,7 @@ it('keeps Duplicate available to writable owners and hides it for Viewer or leaf
   const onPreview = vi.fn(async () => reviewed('1'))
   const props = { onSave, onPreview, onDuplicate }
   renderWithPolicy(props, 'org-a:owner:logical-cluster-a')
-  const duplicate = [...host.querySelectorAll('button')].find(button => button.textContent?.trim() === 'Duplicate')
+  const duplicate = [...host.querySelectorAll('button')].find(button => button.textContent?.trim() === '创建副本')
   expect(duplicate).not.toBeUndefined()
   act(() => duplicate!.click())
   expect(onDuplicate).toHaveBeenCalledWith(expect.objectContaining({
@@ -164,12 +180,40 @@ it('keeps Duplicate available to writable owners and hides it for Viewer or leaf
   }))
 
   renderWithPolicy(props, 'org-b:viewer:logical-cluster-b', true)
-  expect([...host.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Duplicate')).toBe(false)
+  expect([...host.querySelectorAll('button')].some(button => button.textContent?.trim() === '创建副本')).toBe(false)
   expect(onDuplicate).toHaveBeenCalledTimes(1)
 
   renderWithPolicy(props, 'org-a:owner:logical-cluster-a', false, true)
-  expect([...host.querySelectorAll('button')].some(button => button.textContent?.trim() === 'Duplicate')).toBe(false)
+  expect([...host.querySelectorAll('button')].some(button => button.textContent?.trim() === '创建副本')).toBe(false)
   expect(onDuplicate).toHaveBeenCalledTimes(1)
+})
+
+it('localizes the manifest toolbar while preserving its duplicate action', () => {
+  const onDuplicate = vi.fn()
+  const onCopy = vi.fn()
+  const onDownload = vi.fn()
+  act(() => root.render(
+    <EditableYamlView
+      resource={resource as never}
+      data={data}
+      onCopy={onCopy}
+      copied={false}
+      onSave={async () => {}}
+      onDuplicate={onDuplicate}
+      onDownload={onDownload}
+    />,
+  ))
+  const labels = [...host.querySelectorAll('button')].map((button) => button.textContent?.trim())
+  for (const label of ['编辑', '复制', '下载', '创建副本']) expect(labels).toContain(label)
+  const copy = [...host.querySelectorAll('button')].find((button) => button.textContent?.trim() === '复制')!
+  act(() => copy.click())
+  expect(onCopy).toHaveBeenCalledWith(expect.stringContaining('kind: ConfigMap'))
+  const download = [...host.querySelectorAll('button')].find((button) => button.textContent?.trim() === '下载')!
+  act(() => download.click())
+  expect(onDownload).toHaveBeenCalledWith(expect.stringContaining('kind: ConfigMap'), 'application/yaml', 'configmap-app.yaml')
+  const duplicate = [...host.querySelectorAll('button')].find((button) => button.textContent?.trim() === '创建副本')!
+  act(() => duplicate.click())
+  expect(onDuplicate).toHaveBeenCalledWith(expect.objectContaining({ kind: 'ConfigMap', namespace: 'shop', name: 'app', yaml: expect.any(String) }))
 })
 
 it("says the resource changed after review, and only for the attempt that found it", async () => {
@@ -184,25 +228,25 @@ it("says the resource changed after review, and only for the attempt that found 
     .mockRejectedValueOnce(new Error("forbidden"));
   render({ onSave, onPreview });
 
-  await click(/^Edit$/);
-  await click(/Review changes/);
-  await click(/Apply reviewed changes/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
+  await click(/应用已审查的更改/);
   render({
     onSave,
     onPreview,
     saveError:
       "resource changed after review; review the latest version before applying",
   });
-  expect(text()).toContain("This resource changed after your review");
+  expect(text()).toContain("此资源在审查后已发生变化");
   expect(text()).not.toContain("review the latest version before applying");
 
-  await click(/Apply reviewed changes/);
+  await click(/应用已审查的更改/);
   render({
     onSave,
     onPreview,
     saveError: "forbidden: cannot patch configmaps",
   });
-  expect(text()).not.toContain("This resource changed after your review");
+  expect(text()).not.toContain("此资源在审查后已发生变化");
   expect(text()).toContain("forbidden: cannot patch configmaps");
   expect(onSave).toHaveBeenCalledTimes(2);
   expect(onPreview).toHaveBeenCalledTimes(3);
@@ -212,15 +256,15 @@ it("says nothing extra when the refreshed review found the same version", async 
   const onPreview = vi.fn().mockResolvedValue(reviewed("1"));
   const onSave = vi.fn().mockRejectedValueOnce(new Error("webhook denied"));
   render({ onSave, onPreview });
-  await click(/^Edit$/);
-  await click(/Review changes/);
-  await click(/Apply reviewed changes/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
+  await click(/应用已审查的更改/);
   render({
     onSave,
     onPreview,
     saveError: "admission webhook denied the request",
   });
-  expect(text()).not.toContain("This resource changed after your review");
+  expect(text()).not.toContain("此资源在审查后已发生变化");
   expect(text()).toContain("admission webhook denied the request");
   expect(onPreview).toHaveBeenCalledTimes(2);
 });
@@ -245,11 +289,11 @@ it("doesn't call a deleted resource changed", async () => {
     .mockResolvedValueOnce(gone);
   const onSave = vi.fn().mockRejectedValueOnce(new Error("not found"));
   render({ onSave, onPreview });
-  await click(/^Edit$/);
-  await click(/Review changes/);
-  await click(/Apply reviewed changes/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
+  await click(/应用已审查的更改/);
   render({ onSave, onPreview, saveError: 'configmaps "app" not found' });
-  expect(text()).not.toContain("This resource changed after your review");
+  expect(text()).not.toContain("此资源在审查后已发生变化");
   expect(text()).toContain('configmaps "app" not found');
 });
 
@@ -260,15 +304,15 @@ it("doesn't call a switched cluster a changed resource", async () => {
     .mockResolvedValueOnce({ ...reviewed("2"), context: "kind-b" });
   const onSave = vi.fn().mockRejectedValueOnce(new Error("cluster changed"));
   render({ onSave, onPreview });
-  await click(/^Edit$/);
-  await click(/Review changes/);
-  await click(/Apply reviewed changes/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
+  await click(/应用已审查的更改/);
   render({
     onSave,
     onPreview,
     saveError: "the active cluster changed after review",
   });
-  expect(text()).not.toContain("This resource changed after your review");
+  expect(text()).not.toContain("此资源在审查后已发生变化");
   expect(text()).toContain("the active cluster changed after review");
 });
 
@@ -288,10 +332,10 @@ it("ignores an earlier attempt's refresh that lands after a newer attempt", asyn
     .mockRejectedValueOnce(new Error("conflict"))
     .mockRejectedValueOnce(new Error("forbidden"));
   render({ onSave, onPreview });
-  await click(/^Edit$/);
-  await click(/Review changes/);
-  await click(/Apply reviewed changes/);
-  await click(/Apply reviewed changes/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
+  await click(/应用已审查的更改/);
+  await click(/应用已审查的更改/);
   await act(async () => {
     finishFirstRefresh(reviewed("2"));
     await new Promise((r) => setTimeout(r, 0));
@@ -301,7 +345,7 @@ it("ignores an earlier attempt's refresh that lands after a newer attempt", asyn
     onPreview,
     saveError: "forbidden: cannot patch configmaps",
   });
-  expect(text()).not.toContain("This resource changed after your review");
+  expect(text()).not.toContain("此资源在审查后已发生变化");
   expect(text()).toContain("forbidden: cannot patch configmaps");
 });
 
@@ -321,17 +365,17 @@ it("drops a refresh from an apply made before going back to a newer review", asy
     .mockRejectedValueOnce(new Error("conflict"))
     .mockResolvedValueOnce(undefined);
   render({ onSave, onPreview });
-  await click(/^Edit$/);
-  await click(/Review changes/);
-  await click(/Apply reviewed changes/);
-  await click(/Back to edit/);
-  await click(/Review changes/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
+  await click(/应用已审查的更改/);
+  await click(/返回编辑/);
+  await click(/查看更改/);
   await act(async () => {
     finishFirstRefresh(reviewed("2"));
     await new Promise((r) => setTimeout(r, 0));
   });
-  expect(text()).not.toContain("This resource changed after your review");
-  await click(/Apply reviewed changes/);
+  expect(text()).not.toContain("此资源在审查后已发生变化");
+  await click(/应用已审查的更改/);
   expect(onSave).toHaveBeenLastCalledWith(
     expect.objectContaining({ reviewedResourceVersion: "3" }),
   );
@@ -339,7 +383,7 @@ it("drops a refresh from an apply made before going back to a newer review", asy
 
 it("uses the accent token for a generic ConfigMap Edit control", () => {
   render({ onSave: async () => {}, onPreview: async () => reviewed("1") });
-  const edit = [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === "Edit")!;
+  const edit = [...host.querySelectorAll("button")].find((b) => b.textContent?.trim() === "编辑")!;
   expect(edit.classList.contains("text-accent-text")).toBe(true);
   expect(edit.className).not.toContain("text-blue-");
 });
@@ -363,7 +407,7 @@ it("does not carry a paused baseline to a different API group in a direct editor
   act(() => root.render(<EditableYamlView resource={target as never} data={baseline} onCopy={() => {}} copied={false} onSave={onSave} />));
   expect(text()).not.toContain("Pause affects reconciliation");
   expect(text()).not.toContain("Existing pause state is unknown");
-  await click(/^Save$/);
+  await click(/^保存$/);
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({ kind: "TaskBucket", namespace: "shop", name: "archive", yaml }));
 });
 
@@ -373,7 +417,7 @@ it("does not infer annotation omission before the first direct-edit debounce set
     const target = { kind: "TaskBucket", namespace: "shop", name: "archive" };
     const baseline = { apiVersion: "example.test/v1", kind: "TaskBucket", metadata: { name: "archive", namespace: "shop", annotations: { "crossplane.io/paused": "true" } }, spec: { providerConfigRef: { name: "default" } } };
     act(() => root.render(<EditableYamlView resource={target as never} data={baseline} onCopy={() => {}} copied={false} onSave={async () => {}} />));
-    const edit = [...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "Edit")!;
+    const edit = [...host.querySelectorAll("button")].find(button => button.textContent?.trim() === "编辑")!;
     act(() => edit.click());
     expect(text()).not.toContain("Omitting the annotation");
     act(() => vi.advanceTimersByTime(200));
@@ -393,8 +437,8 @@ it("retains raw acknowledged ref-less pause evidence through editor and status-f
   expect(clean).not.toContain("ReconcilePaused");
   const onPreview = vi.fn(async () => ({ documents: [{ index: 0, status: "accepted" as const, action: "update" as const, baselineYaml: clean, predictedYaml: clean, reviewedResourceVersion: "1" }], nonAtomic: false }));
   act(() => root.render(<EditableYamlView resource={target as never} data={raw} onCopy={() => {}} copied={false} onSave={async () => {}} onPreview={onPreview} />));
-  await click(/^Edit$/);
-  await click(/Review changes/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
   expect(text()).toContain("Pause affects reconciliation");
   expect(text()).toContain("Server preview keeps the pause request on TaskClaim shop/ref-less");
   expect(onPreview).toHaveBeenCalledWith(expect.objectContaining({ yaml: clean }));
@@ -407,14 +451,14 @@ it("keeps standalone recovery while ignoring legacy drafts in scoped Hub mode", 
   const onPreview = vi.fn(async () => reviewed("1"));
   sessionStorage.setItem("radar_yaml_draft:ConfigMap/shop/app", draft);
   render({ onSave, onPreview });
-  expect(text()).toContain("Editing Resource");
-  expect(text()).toContain("Review changes");
+  expect(text()).toContain("正在编辑资源");
+  expect(text()).toContain("查看更改");
 
   sessionStorage.clear();
   sessionStorage.setItem("radar_yaml_draft:ConfigMap/shop/app", draft);
   renderWithPolicy({ onSave, onPreview }, "hub-owner-a-cluster-a");
-  expect(text()).not.toContain("Editing Resource");
-  expect(text()).not.toContain("Review changes");
+  expect(text()).not.toContain("正在编辑资源");
+  expect(text()).not.toContain("查看更改");
   expect(onPreview).not.toHaveBeenCalled();
   expect(onSave).not.toHaveBeenCalled();
   expect(sessionStorage.getItem("radar_yaml_draft:ConfigMap/shop/app")).toBe(draft);
@@ -431,22 +475,22 @@ it("restores a scoped draft after a same-scope remount and ignores it in another
   sessionStorage.setItem(draftKey, draft);
 
   renderWithPolicy({ onSave, onPreview }, scope);
-  expect(text()).toContain("Editing Resource");
+  expect(text()).toContain("正在编辑资源");
   expect(editorYaml()).toBe(draft);
   expect(sessionStorage.getItem(draftKey)).toBe(draft);
 
   act(() => root.unmount());
   root = createRoot(host);
   renderWithPolicy({ onSave, onPreview }, scope);
-  expect(text()).toContain("Editing Resource");
+  expect(text()).toContain("正在编辑资源");
   expect(editorYaml()).toBe(draft);
   expect(sessionStorage.getItem(draftKey)).toBe(draft);
 
   act(() => root.unmount());
   root = createRoot(host);
   renderWithPolicy({ onSave, onPreview }, otherScope);
-  expect(text()).not.toContain("Editing Resource");
-  expect(text()).not.toContain("Review changes");
+  expect(text()).not.toContain("正在编辑资源");
+  expect(text()).not.toContain("查看更改");
   expect(editorYaml()).toBeUndefined();
   expect(sessionStorage.getItem(draftKey)).toBe(draft);
   expect(sessionStorage.getItem(yamlDraftStorageKey(otherScope, resource))).toBeNull();
@@ -463,9 +507,9 @@ it("keeps a leaf read-only policy additive to a writable host policy", () => {
       <EditableYamlView resource={resource as never} data={data} onCopy={() => {}} copied={false} readOnly />
     </YamlDraftPolicyProvider>,
   ));
-  expect(text()).not.toContain("Editing Resource");
-  expect(text()).not.toContain("Review changes");
-  expect([...host.querySelectorAll("button")].some(button => button.textContent?.trim() === "Edit")).toBe(false);
+  expect(text()).not.toContain("正在编辑资源");
+  expect(text()).not.toContain("查看更改");
+  expect([...host.querySelectorAll("button")].some(button => button.textContent?.trim() === "编辑")).toBe(false);
   expect(sessionStorage.getItem(yamlDraftStorageKey("library-scope", resource))).toBeNull();
 });
 
@@ -476,13 +520,13 @@ it("does not restore an Owner A draft for another owner or a Viewer", () => {
   sessionStorage.setItem(yamlDraftStorageKey(ownerAScope, resource), "owner-unsaved");
 
   renderWithPolicy({ onSave, onPreview }, "org-a:owner-b:logical-cluster-a");
-  expect(text()).not.toContain("Editing Resource");
-  expect(text()).not.toContain("Review changes");
+  expect(text()).not.toContain("正在编辑资源");
+  expect(text()).not.toContain("查看更改");
 
   renderWithPolicy({ onSave, onPreview }, "org-b:viewer:logical-cluster-b", true);
-  expect(text()).not.toContain("Editing Resource");
-  expect(text()).not.toContain("Review changes");
-  expect(text()).not.toContain("Apply reviewed changes");
+  expect(text()).not.toContain("正在编辑资源");
+  expect(text()).not.toContain("查看更改");
+  expect(text()).not.toContain("应用已审查的更改");
   expect(onPreview).not.toHaveBeenCalled();
   expect(onSave).not.toHaveBeenCalled();
 });
@@ -502,8 +546,8 @@ it("keeps Viewer mode from invoking schema, preview, or save callbacks", async (
   const scope = "org-b:viewer:logical-cluster-b";
   sessionStorage.setItem(yamlDraftStorageKey(scope, resource), "owner-unsaved");
   renderWithPolicy({ onSave, onPreview, schemaLoader }, scope, true);
-  expect(text()).not.toContain("Editing Resource");
-  expect(text()).not.toContain("Review changes");
+  expect(text()).not.toContain("正在编辑资源");
+  expect(text()).not.toContain("查看更改");
   expect(host.querySelector('[data-testid="yaml-editor-value"]')).toBeNull();
   expect([...host.querySelectorAll("button")].some((button) => button.textContent === "Load schemas")).toBe(false);
   expect(ownerSchemaLoader).toHaveBeenCalledTimes(1);
@@ -517,8 +561,8 @@ it("remounts when scope changes and ignores a late preview from the previous sco
   const onPreview = vi.fn(() => new Promise<ReturnType<typeof reviewed>>(resolve => { finishPreview = resolve; }));
   const onSave = vi.fn(async () => {});
   renderWithPolicy({ onSave, onPreview }, "owner-a:cluster-a");
-  await click(/^Edit$/);
-  await click(/Review changes/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
   expect(onPreview).toHaveBeenCalledTimes(1);
 
   renderWithPolicy({ onSave, onPreview }, "viewer-b:cluster-b", true);
@@ -526,9 +570,9 @@ it("remounts when scope changes and ignores a late preview from the previous sco
     finishPreview(reviewed("1"));
     await Promise.resolve();
   });
-  expect(text()).not.toContain("Editing Resource");
-  expect(text()).not.toContain("Review changes");
-  expect(text()).not.toContain("Apply reviewed changes");
+  expect(text()).not.toContain("正在编辑资源");
+  expect(text()).not.toContain("查看更改");
+  expect(text()).not.toContain("应用已审查的更改");
   expect(onSave).not.toHaveBeenCalled();
 });
 
@@ -538,9 +582,9 @@ it("does not notify the next scope after a reviewed save completes late", async 
   const onPreview = vi.fn(async () => reviewed("1"));
   const onSaved = vi.fn();
   renderWithPolicy({ onSave, onPreview, onSaved }, "owner-a:cluster-a");
-  await click(/^Edit$/);
-  await click(/Review changes/);
-  await click(/Apply/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
+  await click(/应用/);
   expect(onSave).toHaveBeenCalledTimes(1);
 
   renderWithPolicy({ onSave, onPreview, onSaved }, "owner-b:cluster-b");
@@ -554,7 +598,7 @@ it("does not notify the next scope after a reviewed save completes late", async 
       await vi.advanceTimersByTimeAsync(1100);
     });
     expect(onSaved).not.toHaveBeenCalled();
-    expect(text()).not.toContain("Apply reviewed changes");
+    expect(text()).not.toContain("应用已审查的更改");
   } finally {
     vi.useRealTimers();
   }
@@ -565,9 +609,9 @@ it("does not preview again when a reviewed save fails after the scope changes", 
   const onSave = vi.fn(() => new Promise<void>((_resolve, reject) => { failSave = reject; }));
   const onPreview = vi.fn(async () => reviewed("1"));
   renderWithPolicy({ onSave, onPreview }, "owner-a:cluster-a");
-  await click(/^Edit$/);
-  await click(/Review changes/);
-  await click(/Apply/);
+  await click(/^编辑$/);
+  await click(/查看更改/);
+  await click(/应用/);
   expect(onPreview).toHaveBeenCalledTimes(1);
 
   renderWithPolicy({ onSave, onPreview }, "viewer-b:cluster-b", true);
@@ -576,6 +620,6 @@ it("does not preview again when a reviewed save fails after the scope changes", 
     await Promise.resolve();
   });
   expect(onPreview).toHaveBeenCalledTimes(1);
-  expect(text()).not.toContain("Editing Resource");
-  expect(text()).not.toContain("Apply reviewed changes");
+  expect(text()).not.toContain("正在编辑资源");
+  expect(text()).not.toContain("应用已审查的更改");
 });

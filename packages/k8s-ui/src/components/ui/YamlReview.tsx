@@ -56,6 +56,21 @@ function previewSeverity(status: YamlPreviewResult['status']) {
   return 'warning' as const
 }
 
+function previewStatusLabel(status: YamlPreviewResult['status']) {
+  switch (status) {
+    case 'accepted': return '已接受'
+    case 'rejected': return '已拒绝'
+    case 'unavailable': return '无法预览'
+    default: return status
+  }
+}
+
+function previewActionLabel(action: NonNullable<YamlPreviewResult['action']>) {
+  if (action === 'create') return '将创建'
+  if (action === 'update') return '将更新'
+  return `将${action}`
+}
+
 // The server's refusal when the resource moved past the reviewed version. The
 // changed-after-review notice already says this, so only this error gives way
 // to it; a timeout or an admission denial still shows beside the notice.
@@ -98,7 +113,7 @@ export function YamlReview({
   isApplying = false,
   applyError,
   changedSinceReview = false,
-  applyLabel = 'Apply reviewed changes',
+  applyLabel = '应用已审查的更改',
   onClose,
   onBack,
   onApply,
@@ -158,13 +173,13 @@ export function YamlReview({
   const accepted = documents.filter((document) => document.status === 'accepted')
   const canApply = canApplyYamlPreview(documents, unavailableAcknowledged, diffReady)
   const applyBlockedReason = isApplying
-    ? 'Applying reviewed changes'
+    ? '正在应用已审查的更改'
     : rejected.length > 0
-      ? `Fix ${rejected.length} rejected document${rejected.length === 1 ? '' : 's'} before applying`
+      ? `应用前请修正 ${rejected.length} 个被拒绝的文档`
       : unavailable.length > 0 && !unavailableAcknowledged
-        ? `Acknowledge ${unavailable.length} unverified document${unavailable.length === 1 ? '' : 's'} before applying`
+        ? `应用前请确认 ${unavailable.length} 个未经验证的文档`
         : !diffReady
-          ? 'Waiting for the review diff to render'
+          ? '正在等待审查差异呈现'
           : undefined
   const noChanges = selected?.status === 'accepted' && before === after
 
@@ -194,16 +209,15 @@ export function YamlReview({
           className="flex items-center gap-1.5 rounded px-2 py-1 text-xs text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary disabled:opacity-50"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Back to edit
+          返回编辑
         </button>
         <div className="h-4 w-px bg-theme-border" />
         <div>
           <div id={titleId} className="text-sm font-semibold text-theme-text-primary">
-            Review cluster-admitted changes
+            审查集群准入的更改
           </div>
           <div className="text-xs text-theme-text-tertiary">
-            {accepted.length} accepted · {rejected.length} rejected · {unavailable.length} not
-            previewable
+            {accepted.length} 个已接受 · {rejected.length} 个已拒绝 · {unavailable.length} 个无法预览
           </div>
         </div>
         <div className="ml-auto flex items-center gap-2">
@@ -217,7 +231,7 @@ export function YamlReview({
               aria-pressed={!unified}
               className={`rounded px-2 py-1 ${!unified ? 'bg-theme-elevated text-theme-text-primary' : 'text-theme-text-tertiary hover:text-theme-text-secondary'}`}
             >
-              Side by side
+              并排
             </button>
             <button
               type="button"
@@ -228,7 +242,7 @@ export function YamlReview({
               aria-pressed={unified}
               className={`rounded px-2 py-1 ${unified ? 'bg-theme-elevated text-theme-text-primary' : 'text-theme-text-tertiary hover:text-theme-text-secondary'}`}
             >
-              Unified
+              统一视图
             </button>
           </div>
           <label className="flex items-center gap-1.5 text-xs text-theme-text-secondary">
@@ -238,14 +252,14 @@ export function YamlReview({
               onChange={(event) => setHideUnchanged(event.target.checked)}
               className="h-3.5 w-3.5 rounded border-theme-border bg-theme-base"
             />
-            Collapse unchanged
+            折叠未更改内容
           </label>
           {onClose && (
             <button
               type="button"
               onClick={onClose}
               disabled={isApplying}
-              aria-label="Close review"
+              aria-label="关闭审查"
               className="rounded p-1 text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary disabled:opacity-50"
             >
               <X className="h-4 w-4" />
@@ -258,7 +272,7 @@ export function YamlReview({
         {documents.length > 1 && (
           <nav
             className="max-h-36 shrink-0 overflow-auto border-b border-theme-border bg-theme-surface p-2 md:max-h-none md:w-56 md:border-b-0 md:border-r"
-            aria-label="Previewed YAML documents"
+            aria-label="预览的 YAML 文档"
           >
             {documents.map((document, index) => (
               <button
@@ -284,11 +298,11 @@ export function YamlReview({
                 />
                 <span className="min-w-0">
                   <span className="block truncate text-xs font-medium text-theme-text-primary">
-                    {document.kind || `Document ${document.index + 1}`}
+                    {document.kind || `文档 ${document.index + 1}`}
                   </span>
                   <span className="block truncate text-[11px] text-theme-text-tertiary">
                     {document.namespace ? `${document.namespace}/` : ''}
-                    {document.name || 'Unnamed'}
+                    {document.name || '未命名'}
                   </span>
                 </span>
               </button>
@@ -305,28 +319,28 @@ export function YamlReview({
                 ) : (
                   <AlertTriangle className="h-3 w-3" />
                 )}
-                {selected.status === 'unavailable' ? 'Not previewable' : selected.status}
+                {previewStatusLabel(selected.status)}
               </Badge>
               {selected.action && selected.action !== 'unknown' && (
                 <Badge severity="neutral" size="sm">
-                  Will {selected.action}
+                  {previewActionLabel(selected.action)}
                 </Badge>
               )}
               <span className="text-xs text-theme-text-tertiary">
                 {selected.baselineYaml
-                  ? 'Live at review → server preview'
+                  ? '审查时的实时版本 → 服务器预览'
                   : originalYaml
-                    ? 'Live when editing started → server preview'
-                    : 'Effective submitted object → server preview'}
+                    ? '开始编辑时的实时版本 → 服务器预览'
+                    : '实际提交的对象 → 服务器预览'}
               </span>
               {selected.redacted && (
                 <Badge tone="note" size="sm">
-                  Secret values masked
+                  Secret 值已遮蔽
                 </Badge>
               )}
               {noChanges && (
                 <Badge severity="neutral" size="sm">
-                  No effective changes
+                  没有实际更改
                 </Badge>
               )}
             </div>
@@ -373,8 +387,8 @@ export function YamlReview({
         {changedSinceReview && (
           <AlertBanner
             variant="warning"
-            title="This resource changed after your review"
-            message="The diff above now shows its latest version. Check it, then apply again."
+            title="此资源在审查后已发生变化"
+            message="上方差异现已显示最新版本。请检查后重新应用。"
           />
         )}
         {/* The notice above already says why the apply was refused; the
@@ -388,8 +402,7 @@ export function YamlReview({
           <div className="mb-2 flex items-start gap-2 text-xs text-theme-text-secondary">
             <ShieldAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning-text" />
             <span>
-              Resources apply sequentially, not atomically. Earlier documents can succeed before a
-              later document fails.
+              资源将按顺序应用，而非以原子方式应用。后续文档失败前，前面的文档可能已成功应用。
             </span>
           </div>
         )}
@@ -402,32 +415,30 @@ export function YamlReview({
               className="mt-0.5 h-3.5 w-3.5 rounded border-theme-border bg-theme-base"
             />
             <span>
-              Apply with {unavailable.length} unverified document
-              {unavailable.length === 1 ? '' : 's'}. This can happen when documents depend on
-              earlier resources, an API does not support dry-run, or live state could not be read.
-              Unverified documents are not protected against changes after review.
+              仍要应用 {unavailable.length} 个未经验证的文档。文档可能依赖前面的资源、API 不支持 dry-run，或无法读取实时状态。
+              未经验证的文档无法防止审查后发生更改。
             </span>
           </label>
         )}
         {rejected.length > 0 && (
           <div className="mb-2 flex items-center gap-2 text-xs text-red-600 dark:text-red-400">
             <ShieldAlert className="h-3.5 w-3.5" />
-            Fix the rejected document{rejected.length === 1 ? '' : 's'} before applying.
+            应用前请修正被拒绝的文档。
           </div>
         )}
         <div className="flex items-center justify-between gap-3">
           <div className="flex min-w-0 flex-wrap items-center gap-2 text-xs text-theme-text-tertiary">
             <span className="flex items-center gap-2">
               <ShieldCheck className="h-3.5 w-3.5 shrink-0" />
-              Preview used Kubernetes server-side dry-run. Admission can still change before apply.
+              预览使用 Kubernetes server-side dry-run。应用前，准入结果仍可能变化。
             </span>
             <Badge severity={force ? 'warning' : 'neutral'} size="sm">
-              Force {force ? 'on' : 'off'}
+              强制覆盖：{force ? '开启' : '关闭'}
             </Badge>
             <span>
               {force
-                ? 'Other managers’ fields can be overwritten.'
-                : 'Other-manager conflicts block the save.'}
+                ? '其他管理器拥有的字段可能被覆盖。'
+                : '与其他管理器字段的冲突会阻止保存。'}
             </span>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -447,7 +458,7 @@ export function YamlReview({
               className="btn-brand flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-4 py-1.5 text-xs font-medium disabled:cursor-not-allowed"
             >
               {isApplying && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
-              {isApplying ? 'Applying…' : applyLabel}
+              {isApplying ? '正在应用…' : applyLabel}
             </button>
           </div>
         </div>

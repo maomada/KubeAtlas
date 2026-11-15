@@ -264,14 +264,16 @@ export type ApplicationDetailProps = {
 
 function ContextFact({
   label,
+  labelClassName,
   children,
 }: {
   label: string;
+  labelClassName?: string;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 items-baseline gap-1.5">
-      <span className="text-[10px] uppercase tracking-wide text-theme-text-tertiary">
+      <span className={`text-[10px] uppercase tracking-wide text-theme-text-tertiary ${labelClassName ?? ''}`}>
         {label}
       </span>
       <span className="min-w-0 truncate text-xs text-theme-text-secondary">
@@ -689,7 +691,7 @@ export function ApplicationDetail({
           // envs — prominent, in existing header space, no extra row. Inline
           // pills for a handful; a picker beyond that (scales to ~any count).
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="text-[10px] uppercase tracking-wide text-theme-text-tertiary">
+            <span className="shrink-0 whitespace-nowrap text-[10px] uppercase tracking-wide text-theme-text-tertiary">
               环境
             </span>
             <EnvSwitcher
@@ -700,7 +702,7 @@ export function ApplicationDetail({
             />
           </div>
         ) : env ? (
-          <ContextFact label="环境">
+          <ContextFact label="环境" labelClassName="shrink-0 whitespace-nowrap">
             {inferred ? (
               <Tooltip
                 content={`根据命名空间 "${namespace || env}" 推断，请通过环境标签确认。`}
