@@ -46,7 +46,8 @@ export async function cloudRequest<T>(path: string, options: {
   base?: string
 } = {}): Promise<T> {
   const { method = 'GET', body, signal, base = '/api' } = options
-  const response = await fetch(apiUrl(path, base), {
+  const requestUrl = apiUrl(path, base)
+  const requestInit: RequestInit = {
     method,
     credentials: getCredentialsMode(),
     cache: 'no-store',
@@ -54,7 +55,17 @@ export async function cloudRequest<T>(path: string, options: {
     headers: { ...getAuthHeaders(), ...(body === undefined ? {} : { 'Content-Type': 'application/json' }) },
     body: body === undefined ? undefined : JSON.stringify(body),
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(20000)]) : AbortSignal.timeout(20000),
-  })
+  }
+  let response: Response
+  try {
+    response = await fetch(requestUrl, requestInit)
+  } catch (failure) {
+    if (signal?.aborted || (failure instanceof Error && failure.name === 'AbortError')) throw failure
+    if (failure instanceof TypeError) {
+      throw new Error('网络请求失败，请检查网络连接后重试。', { cause: failure })
+    }
+    throw failure
+  }
   if (!response.ok) {
     const error: unknown = response.headers.get('Content-Type')?.includes('application/json')
       ? await response.json().catch(() => null) : null

@@ -12,7 +12,7 @@ const workload = {
 describe('workload monitoring projection', () => {
   it('renders monitors in the related dependency card', () => {
     const html = renderToStaticMarkup(<WorkloadView kind="deployments" namespace="demo" name="web" onBack={() => {}} resource={workload} relationships={{ monitors: [{ kind: 'PodMonitor', group: 'monitoring.coreos.com', namespace: 'demo', name: 'scraper' }] }} />)
-    expect(html).toContain('Monitored By')
+    expect(html).toContain('监控来源')
     expect(html).toContain('scraper')
   })
 })
@@ -21,7 +21,7 @@ describe('workload monitoring projection', () => {
 describe('workload upstream projection', () => {
   it('keeps other routing sources visible as entrypoints', () => {
     const html = renderToStaticMarkup(<WorkloadView kind="deployments" namespace="demo" name="web" onBack={() => {}} resource={workload} relationships={{ routedFrom: [{ kind: 'Broker', group: 'eventing.knative.dev', namespace: 'demo', name: 'messages' }] }} />)
-    expect(html).toContain('Entry point resources')
+    expect(html).toContain('入口资源')
     expect(html).toContain('messages')
   })
 })
@@ -30,9 +30,9 @@ describe('workload upstream projection', () => {
 describe('workload staged-policy projection', () => {
   it('shows staging without calling it an enforcing network policy', () => {
     const html = renderToStaticMarkup(<WorkloadView kind="deployments" namespace="demo" name="web" onBack={() => {}} resource={workload} relationships={{ stagedPolicies: [{ kind: 'StagedNetworkPolicy', group: 'projectcalico.org', namespace: 'demo', name: 'preview' }] }} />)
-    expect(html).toContain('Staged Policies')
+    expect(html).toContain('暂存策略')
     expect(html).toContain('preview')
-    expect(html).not.toContain('Network policies')
+    expect(html).not.toContain('网络策略')
   })
 })
 

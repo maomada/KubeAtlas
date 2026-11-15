@@ -117,6 +117,28 @@ it('ignores a command response from a profile that changed while the request was
   expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/hub/enrollments/command').map(([, init]) => JSON.parse(init?.body as string))).toEqual([{ profile: 'lan' }, { profile: 'public' }])
 })
 
+it('preserves AbortError when a profile change cancels command generation', async () => {
+  let requestSignal: AbortSignal | undefined
+  const fetch = installFetch((path, init) => {
+    if (path !== '/api/hub/enrollments/command') throw new Error('Unexpected request: ' + path)
+    requestSignal = init?.signal ?? undefined
+    return new Promise<Response>((_, reject) => {
+      requestSignal?.addEventListener('abort', () => reject(new DOMException('Aborted by profile change', 'AbortError')), { once: true })
+    })
+  })
+  await renderInstall()
+  await act(async () => vi.waitFor(() => expect(host.querySelector<HTMLButtonElement>('button.cloud-primary')?.disabled).toBe(false)))
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '生成注册命令')!.click())
+  await act(async () => vi.waitFor(() => expect(requestSignal).toBeDefined()))
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '公网')!.click())
+  await act(async () => vi.waitFor(() => expect(requestSignal?.aborted).toBe(true)))
+  await act(async () => Promise.resolve())
+  expect(host.textContent).not.toContain('Aborted by profile change')
+  expect(host.textContent).not.toContain('Failed to fetch')
+  expect(host.textContent).not.toContain('网络请求失败')
+  expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/hub/enrollments/command')).toHaveLength(1)
+})
+
 it('fails closed for unavailable bootstrap data and does not issue a command', async () => {
   const fetch = installFetch(path => { throw new Error('Unexpected request: ' + path) }, profile(false))
   await renderInstall()
@@ -136,6 +158,19 @@ it('shows command errors without retrying', async () => {
   await act(async () => vi.waitFor(() => expect(host.querySelector<HTMLButtonElement>('button.cloud-primary')?.disabled).toBe(false)))
   await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '生成注册命令')!.click())
   await act(async () => vi.waitFor(() => expect(host.textContent).toContain('bootstrap unavailable')))
+  expect(host.textContent).not.toContain('无法连接到 Hub')
+  expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/hub/enrollments/command')).toHaveLength(1)
+})
+
+it('localizes a browser transport failure for enrollment command requests', async () => {
+  const fetch = installFetch(path => path === '/api/hub/enrollments/command'
+    ? Promise.reject(new TypeError('Failed to fetch'))
+    : Promise.reject(new Error('Unexpected request: ' + path)))
+  await renderInstall()
+  await act(async () => vi.waitFor(() => expect(host.querySelector<HTMLButtonElement>('button.cloud-primary')?.disabled).toBe(false)))
+  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '生成注册命令')!.click())
+  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('网络请求失败，请检查网络连接后重试。')))
+  expect(host.textContent).not.toContain('Failed to fetch')
   expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/hub/enrollments/command')).toHaveLength(1)
 })
 

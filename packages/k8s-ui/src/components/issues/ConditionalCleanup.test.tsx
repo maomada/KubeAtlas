@@ -55,7 +55,7 @@ it('keeps a conditional cleanup closed behind its condition, apart from the next
   expect(panel.firstElementChild!.hasAttribute('inert')).toBe(true)
   expect(panel.textContent).toContain(kubectl)
 
-  const nextStep = [...element.querySelectorAll('section')].find((section) => section.querySelector('h4')?.textContent === 'Next step')
+  const nextStep = [...element.querySelectorAll('section')].find((section) => section.querySelector('h4')?.textContent === '下一步')
   expect(nextStep?.textContent).toContain('restore it')
   expect(nextStep?.textContent).not.toContain('kubectl')
   expect(nextStep?.textContent).not.toContain('patch_resource')

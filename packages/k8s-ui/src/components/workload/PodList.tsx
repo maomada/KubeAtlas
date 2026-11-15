@@ -109,7 +109,7 @@ export function PodListToggle({
         onClick={onToggle}
         className="text-xs font-medium text-accent-text hover:underline"
       >
-        {expanded ? `Collapse ${label}` : `Show ${hiddenCount} more ${label}`}
+        {expanded ? `收起 ${label}` : `再显示 ${hiddenCount} 个 ${label}`}
       </button>
     </div>
   )
@@ -119,21 +119,21 @@ export function workloadPodDetail(pod: WorkloadPodInfo): string {
   const parts: string[] = []
   if (pod.phase) parts.push(pod.reason ? `${pod.phase} / ${pod.reason}` : pod.phase)
   else if (pod.reason) parts.push(pod.reason)
-  parts.push(`${pod.containers.length} container${pod.containers.length === 1 ? '' : 's'}`)
-  if ((pod.restartCount ?? 0) > 0) parts.push(`${pod.restartCount} restart${pod.restartCount === 1 ? '' : 's'}`)
+  parts.push(`${pod.containers.length} 个容器`)
+  if ((pod.restartCount ?? 0) > 0) parts.push(`${pod.restartCount} 次重启`)
   if (pod.lastTerminationReason && !['Unknown', 'Completed'].includes(pod.lastTerminationReason)) {
-    parts.push(`last ${pod.lastTerminationReason}`)
+    parts.push(`最近：${pod.lastTerminationReason}`)
   }
-  if (pod.createdAt) parts.push(`${formatAge(pod.createdAt)} old`)
+  if (pod.createdAt) parts.push(`创建于 ${formatAge(pod.createdAt)} 前`)
   return parts.join(' · ')
 }
 
 export function podStatusLabel(healthLevel: WorkloadPodInfo['healthLevel'] | undefined, ready: boolean | null): string {
-  if (healthLevel === 'unhealthy') return 'Unhealthy'
-  if (healthLevel === 'degraded') return 'Degraded'
-  if (healthLevel === 'neutral') return ready ? 'Ready' : 'Neutral'
-  if (healthLevel === 'unknown') return 'Unknown'
-  return ready === null ? 'Unknown' : ready ? 'Ready' : 'Not ready'
+  if (healthLevel === 'unhealthy') return '不健康'
+  if (healthLevel === 'degraded') return '状态降级'
+  if (healthLevel === 'neutral') return ready ? '就绪' : '中性'
+  if (healthLevel === 'unknown') return '未知'
+  return ready === null ? '未知' : ready ? '就绪' : '未就绪'
 }
 
 export function podStatusClass(healthLevel: WorkloadPodInfo['healthLevel'] | undefined, ready: boolean | null): string {
@@ -151,4 +151,3 @@ export function podDotClass(healthLevel: WorkloadPodInfo['healthLevel'] | undefi
   if (healthLevel === 'unknown' || ready === null) return 'bg-theme-text-tertiary'
   return ready ? 'bg-emerald-500' : 'bg-amber-500'
 }
-

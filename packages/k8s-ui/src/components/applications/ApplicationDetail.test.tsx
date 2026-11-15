@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToString } from 'react-dom/server'
 import { ApplicationDetail, type ApplicationDetailProps } from './ApplicationDetail'
+import { WorkloadView } from '../workload/WorkloadView'
 import type { AppHistory, AppRow, AppSourceRef } from '../../utils/applications'
 import { workloadKey } from '../../utils/topology-neighborhood'
 
@@ -283,6 +284,101 @@ describe("ApplicationDetail shell", () => {
     expect(html).toContain("checkout-api");
     expect(html).not.toContain("应用视图");
   });
+
+  it('renders localized single-workload chrome while preserving Kubernetes and event values', () => {
+    const singleApp: AppRow = { ...app, workloads: [app.workloads[0]] }
+    const html = renderDetail({
+      app: singleApp,
+      renderWorkload: (workload) => (
+        <WorkloadView
+          kind="deployments"
+          namespace={workload.namespace}
+          name={workload.name}
+          onBack={() => {}}
+          hideBackButton
+          compactHeader
+          resource={{
+            apiVersion: 'apps/v1',
+            kind: 'Deployment',
+            metadata: { name: 'checkout-api', namespace: 'prod' },
+            spec: { replicas: 1, strategy: { type: 'RollingUpdate' }, template: { spec: { serviceAccountName: 'checkout', containers: [{ name: 'api', image: 'registry.example/checkout:v1' }] } } },
+            status: { replicas: 1, readyReplicas: 1, availableReplicas: 1, updatedReplicas: 1 },
+          }}
+          relationships={{
+            services: [{ kind: 'Service', namespace: 'prod', name: 'checkout-api' }],
+            configRefs: [{ kind: 'ConfigMap', namespace: 'prod', name: 'checkout-config' }],
+            pods: [{ kind: 'Pod', namespace: 'prod', name: 'checkout-api-7f9d8' }],
+            scalers: [{ kind: 'HorizontalPodAutoscaler', group: 'autoscaling', namespace: 'prod', name: 'checkout-api-hpa' }],
+          }}
+          workloadPods={[{
+            name: 'checkout-api-7f9d8',
+            phase: 'Running',
+            ready: true,
+            containers: ['api'],
+            restartCount: 0,
+            healthLevel: 'healthy',
+          }]}
+          allEvents={[{
+            id: 'event-1',
+            timestamp: '2026-02-12T12:00:00Z',
+            source: 'k8s_event',
+            kind: 'Deployment',
+            namespace: 'prod',
+            name: 'checkout-api',
+            eventType: 'Warning',
+            reason: 'BackOff',
+            message: 'Back-off restarting failed container',
+          }]}
+        />
+      ),
+    })
+
+    for (const label of ['概览', '拓扑', '时间线', 'YAML', '运行时实例', '服务配置', '配置输入', '近期活动', '目标副本数', '策略', '仅内部 Service', '受控于']) {
+      expect(html.includes(label)).toBe(true)
+    }
+    for (const value of ['Deployment', 'Service', 'cm', 'checkout-api', 'checkout-config', 'Running', 'BackOff', 'Back-off restarting failed container', 'RollingUpdate', '内部']) {
+      expect(html.includes(value)).toBe(true)
+    }
+    expect(html.includes('runtime instances')).toBe(false)
+    expect(html.includes('Serving configuration')).toBe(false)
+    expect(html.includes('Configuration inputs')).toBe(false)
+    expect(html.includes('Recent activity')).toBe(false)
+    expect(html.includes('Controlled by')).toBe(false)
+    expect(html.includes('控制对象')).toBe(false)
+  })
+
+  it('localizes workload empty and error copy while preserving backend messages', () => {
+    const singleApp: AppRow = { ...app, workloads: [app.workloads[0]] }
+    const renderWorkload = (workload: { namespace: string; name: string }, failure = false) => (
+      <WorkloadView
+        kind="deployments"
+        namespace={workload.namespace}
+        name={workload.name}
+        onBack={() => {}}
+        resource={{
+          apiVersion: 'apps/v1',
+          kind: 'Deployment',
+          metadata: { name: workload.name, namespace: workload.namespace },
+          spec: { replicas: 1, template: { spec: { serviceAccountName: 'default', containers: [{ name: 'api', image: 'registry.example/checkout:v1' }] } } },
+          status: { replicas: 1, readyReplicas: 1 },
+        }}
+        relationships={{ configRefs: [] }}
+        workloadPods={failure ? undefined : []}
+        workloadPodsError={failure ? new Error('raw pod endpoint message') : undefined}
+        resourceFocusedUpdatesError={failure ? new Error('raw update API message') : undefined}
+      />
+    )
+    const empty = renderDetail({ app: singleApp, renderWorkload: (workload) => renderWorkload(workload) })
+    expect(empty.includes('当前没有与此工作负载匹配的 Pod。')).toBe(true)
+    expect(empty.includes('未捕获到近期活动。')).toBe(true)
+    expect(empty.includes('未发现 ConfigMap 或 Secret 引用。')).toBe(true)
+
+    const failed = renderDetail({ app: singleApp, renderWorkload: (workload) => renderWorkload(workload, true) })
+    expect(failed.includes('Pod 就绪状态不可用。请使用日志或时间线进一步检查。')).toBe(true)
+    expect(failed.includes('变更加载失败：')).toBe(true)
+    expect(failed.includes('raw update API message')).toBe(true)
+    expect(failed.includes('Failed to load events')).toBe(false)
+  })
 
   // A controlled host's only way to say "no workload in the URL" is null, so
   // without this the application scope a single-workload app must not have

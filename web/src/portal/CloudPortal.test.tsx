@@ -155,9 +155,13 @@ it.each([
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await waitForPortal(() => expect(host.textContent).toContain(eligible ? '正在打开集群实时视图…' : 'AI 调查功能不可用'))
+    if (eligible) {
+      await waitForPortal(() => expect(host.textContent).toContain('Change native namespace'))
+    } else {
+      await waitForPortal(() => expect(host.textContent).toContain('AI 调查功能不可用'))
+      expect(host.textContent).not.toContain('Change native namespace')
+    }
     expect(window.location.pathname).toBe(`/c/${id}/investigations`)
-    if (!eligible) expect(host.textContent).not.toContain('Change native namespace')
   } finally {
     act(() => root.unmount())
     host.remove()

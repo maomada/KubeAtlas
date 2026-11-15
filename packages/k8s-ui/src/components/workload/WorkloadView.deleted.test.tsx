@@ -42,7 +42,7 @@ describe('WorkloadView for an object deleted while open', () => {
     expect(html).not.toContain('Diagnose')
     expect(html).not.toContain('Host issues panel')
     expect(html).not.toContain('Host reachability panel')
-    expect(html).not.toContain('Reachability')
+    expect(html).not.toContain('可达性')
   })
 
   it('shows the live view when the fetch failed for another reason', () => {
@@ -53,7 +53,7 @@ describe('WorkloadView for an object deleted while open', () => {
     expect(html).toContain('Diagnose')
     expect(html).toContain('Host issues panel')
     expect(html).toContain('Host reachability panel')
-    expect(html).toContain('Reachability')
+    expect(html).toContain('可达性')
   })
 })
 

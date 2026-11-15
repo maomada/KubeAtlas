@@ -921,24 +921,24 @@ export function WorkloadView({
   const expandedSummary = expanded && resource ? renderSummaryForState?.({ ...summaryContext, context: 'expanded' }) ?? null : null
   const drawerSummary = !expanded && resource ? renderSummaryForState?.({ ...summaryContext, context: 'drawer' }) ?? null : null
   const tabs: DetailShellTab<TabType>[] = [
-    { id: 'overview', label: 'Overview', icon: <Layers className="w-4 h-4" /> },
-    { id: 'spec', label: specTab?.label ?? 'Spec & status', icon: specTab?.icon ?? <FileText className="w-4 h-4" />, hidden: !expandedSummary },
-    { id: 'topology', label: 'Topology', icon: <Network className="w-4 h-4" />, hidden: topologyTabHidden },
+    { id: 'overview', label: '概览', icon: <Layers className="w-4 h-4" /> },
+    { id: 'spec', label: specTab?.label ?? '规格与状态', icon: specTab?.icon ?? <FileText className="w-4 h-4" />, hidden: !expandedSummary },
+    { id: 'topology', label: '拓扑', icon: <Network className="w-4 h-4" />, hidden: topologyTabHidden },
     {
       id: 'timeline',
-      label: 'Timeline',
+      label: '时间线',
       icon: <Activity className="w-4 h-4" />,
       badge: resourceEvents.length > 0 ? <span className="ml-1 badge-sm bg-theme-elevated">{resourceEvents.length}</span> : undefined,
     },
-    { id: 'logs', label: 'Logs', icon: <Terminal className="w-4 h-4" />, hidden: !logsTabVisible },
-    { id: 'metrics', label: 'Metrics', icon: <BarChart3 className="w-4 h-4" />, hidden: !metricsTabVisible },
+    { id: 'logs', label: '日志', icon: <Terminal className="w-4 h-4" />, hidden: !logsTabVisible },
+    { id: 'metrics', label: '指标', icon: <BarChart3 className="w-4 h-4" />, hidden: !metricsTabVisible },
     {
       id: 'reachability',
-      label: 'Reachability',
+      label: '可达性',
       icon: <Stethoscope className="w-4 h-4" />,
       hidden: !(renderDiagnoseTabForState && (isDiagnoseKind(apiKind, group) || (reachableVia?.length ?? 0) > 0)),
     },
-    { id: 'cost', label: 'Cost', icon: <Coins className="w-4 h-4" />, hidden: !costTabVisible },
+    { id: 'cost', label: '成本', icon: <Coins className="w-4 h-4" />, hidden: !costTabVisible },
     { id: 'yaml', label: 'YAML', icon: <FileText className="w-4 h-4" /> },
   ]
   const allTabs = orderTabs(mergeExtraTabs(tabs, expanded ? extraTabsForState : undefined), expanded ? tabOrder : undefined)
@@ -1098,9 +1098,9 @@ export function WorkloadView({
           ) : (
             <OperationalIssuesShownContext.Provider value={!!hasOperationalIssues || !!operationalIssuesPending}>
               {drawerSummary && (
-                <div className="px-4 pt-3" role="tablist" aria-label="Detail view">
+                <div className="px-4 pt-3" role="tablist" aria-label="详情视图">
                   <div className="inline-flex rounded-lg bg-theme-elevated p-0.5 text-xs">
-                    {([['overview', 'Overview'], ['spec', 'Spec & status']] as const).map(([id, label]) => {
+                    {([['overview', '概览'], ['spec', '规格与状态']] as const).map(([id, label]) => {
                       const on = id === 'spec' ? drawerSpec : !drawerSpec
                       return (
                         <button
@@ -2103,7 +2103,7 @@ function InfoTab({
               onClick={onSwitchToTimeline}
               className="text-xs text-theme-text-tertiary transition-colors hover:text-theme-text-secondary"
             >
-              Showing recent events for this resource. Switch to the <span className="underline">Timeline</span> tab for full history and relationships.
+              此处显示该资源的近期事件。切换到<span className="underline">时间线</span>选项卡可查看完整历史和关联关系。
             </button>
           )}
           renderSidebar={(sidebarSections) => (
@@ -2274,10 +2274,10 @@ function WorkloadOverviewTab({
   const secondaryRelationshipGroups = showServingPath ? dependencyRelationshipGroups : relationshipGroups
   const relationshipCardTitle =
     overviewShape === 'job' || overviewShape === 'cronjob'
-      ? 'Related resources'
+      ? '相关资源'
       : showServingPath
-        ? 'Dependencies'
-        : 'Related resources'
+        ? '依赖项'
+        : '相关资源'
 
   if (overviewShape === 'replicated') {
     const state = getReplicatedWorkloadState(resource, apiKind, workloadPods)
@@ -2303,7 +2303,7 @@ function WorkloadOverviewTab({
                 onClick={onEvaluateCapacity}
                 className="text-xs font-medium text-accent-text hover:underline"
               >
-                Evaluate pending pods against Karpenter NodePools →
+                使用 Karpenter NodePools 评估待调度的 Pod →
               </button>
             </div>
           )}
@@ -2350,7 +2350,7 @@ function WorkloadOverviewTab({
                   />
                   {observationGroups.length > 0 && (
                     <ServingDependenciesCard
-                      title="Related resources"
+                      title="相关资源"
                       groups={observationGroups}
                       onNavigate={onNavigate}
                       onSwitchToTopology={onSwitchToTopology}
@@ -2414,7 +2414,7 @@ function WorkloadOverviewTab({
               ) : (
                 <PodsAttentionCard
                   namespace={selectedResource.namespace}
-                  emptyText={overviewShape === 'job' ? 'No Pods are currently retained for this Job.' : undefined}
+                  emptyText={overviewShape === 'job' ? '当前没有为此 Job 保留的 Pod。' : undefined}
                   workloadPods={workloadPods}
                   workloadPodsLoading={workloadPodsLoading}
                   workloadPodsError={workloadPodsError}
@@ -2540,28 +2540,28 @@ function WorkloadStatusStrip({
   recentImageSave?: boolean
 }) {
   const servingMode = Boolean(servingSummary)
-  const baseStateDetail = servingMode && state.healthy ? 'runtime health' : state.detail
+  const baseStateDetail = servingMode && state.healthy ? '运行时健康' : state.detail
   const stateDetail = recentImageSave
     ? state.rollout.phase === 'idle'
-      ? 'Image saved · waiting for controller status'
-      : `Image saved · ${baseStateDetail}`
+      ? '镜像已保存 · 等待控制器状态'
+      : `镜像已保存 · ${baseStateDetail}`
     : baseStateDetail
   const podItem = servingMode && typeof podSummary.total === 'number'
     ? {
         label: 'Pods',
         value: `${podSummary.total}`,
         detail: podSummary.total === 0
-          ? 'none running'
+          ? '当前无运行实例'
           : (podSummary.notReady ?? 0) > 0
-            ? `${podSummary.notReady} need attention`
-            : 'runtime instances',
+            ? `${podSummary.notReady} 个需关注`
+            : '运行时实例',
       }
     : { label: 'Pods', value: podSummary.label, detail: podSummary.detail }
   const items = [
-    { label: 'State', value: <span className={clsx('badge-sm', state.badgeClass)}>{state.label}</span>, detail: stateDetail },
-    { label: 'Ready', value: readiness.readyLabel, detail: readiness.detail },
+    { label: '状态', value: <span className={clsx('badge-sm', state.badgeClass)}>{state.label}</span>, detail: stateDetail },
+    { label: '就绪', value: readiness.readyLabel, detail: readiness.detail },
     podItem,
-    servingSummary ? { label: 'Exposure', value: servingSummary, detail: 'configured, not probed' } : null,
+    servingSummary ? { label: '暴露情况', value: servingSummary, detail: '已配置，未探测' } : null,
   ].filter(Boolean) as Array<{ label: string; value: ReactNode; detail?: ReactNode }>
 
   return (
@@ -2620,10 +2620,10 @@ function buildServingStripSummary(groups: RelationshipGroup[], details?: Serving
     .map((detail) => detail.resource)
     .filter(Boolean)
   const serviceTypes = new Set(serviceResources.map((service) => service?.spec?.type || 'ClusterIP'))
-  if (entrypoints.length > 0) return 'External entrypoint'
-  if ([...serviceTypes].some((type) => ['LoadBalancer', 'NodePort', 'ExternalName'].includes(String(type)))) return 'External service'
-  if (services.length > 0) return 'Internal service'
-  return 'None'
+  if (entrypoints.length > 0) return '外部入口'
+  if ([...serviceTypes].some((type) => ['LoadBalancer', 'NodePort', 'ExternalName'].includes(String(type)))) return '外部 Service'
+  if (services.length > 0) return '内部 Service'
+  return '无'
 }
 
 interface SummaryMetricConfig {
@@ -2650,21 +2650,21 @@ function buildSummaryMetrics(
     const duration = formatJobDuration(resource)
     return [
       {
-        label: 'State',
+        label: '状态',
         value: <span className={clsx('badge', readiness.healthBadge)}>{readiness.healthLabel}</span>,
         detail: resourceKind,
         icon: readiness.hasIssue ? AlertTriangle : Activity,
       },
       {
-        label: 'Progress',
+        label: '进度',
         value: readiness.readyLabel,
         detail: readiness.detail,
         icon: CheckCircle2,
       },
       {
-        label: 'Duration',
+        label: '持续时间',
         value: duration || '-',
-        detail: status.startTime ? (status.completionTime ? 'finished run' : 'current run') : 'not started',
+        detail: status.startTime ? (status.completionTime ? '已完成的运行' : '当前运行') : '尚未开始',
         icon: Clock3,
       },
       {
@@ -2680,28 +2680,28 @@ function buildSummaryMetrics(
     const active = Array.isArray(status.active) ? status.active.length : 0
     return [
       {
-        label: 'State',
+        label: '状态',
         value: <span className={clsx('badge', readiness.healthBadge)}>{readiness.healthLabel}</span>,
-        detail: spec.suspend ? 'schedule suspended' : active > 0 ? 'run in progress' : 'waiting for next run',
+        detail: spec.suspend ? '计划已暂停' : active > 0 ? '运行进行中' : '等待下一次计划运行',
         icon: readiness.hasIssue ? AlertTriangle : Clock3,
       },
       {
-        label: 'Schedule',
+        label: '调度计划',
         value: spec.schedule || '-',
-        detail: spec.schedule ? cronToHuman(spec.schedule) : 'cron unavailable',
+        detail: spec.schedule ? cronToHuman(spec.schedule) : 'Cron 表达式不可用',
         icon: Clock3,
         mono: Boolean(spec.schedule),
       },
       {
-        label: 'Latest run',
-        value: status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : 'Never',
-        detail: status.lastSuccessfulTime ? `last success ${formatRelativeAgeTime(status.lastSuccessfulTime)}` : 'no successful run recorded',
+        label: '最近运行',
+        value: status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : '从未',
+        detail: status.lastSuccessfulTime ? `最近成功：${formatRelativeAgeTime(status.lastSuccessfulTime)}` : '尚无成功运行记录',
         icon: Activity,
       },
       {
-        label: 'Active jobs',
+        label: '运行中的 Job',
         value: active,
-        detail: active > 0 ? 'currently running' : 'none running',
+        detail: active > 0 ? '正在运行' : '没有运行中的 Job',
         icon: Boxes,
       },
     ]
@@ -2782,15 +2782,15 @@ function getReadinessSummary(resource: any, apiKind: string): ReadinessSummary {
     const complete = phase === 'Complete'
     return {
       readyLabel: `${succeeded}/${desired}`,
-      detail: complete ? 'completed successfully' : phase === 'Failed' ? jobConditionMessage(resource) || `${failed} failed` : active > 0 ? `${active} active` : 'waiting for pods',
+      detail: complete ? '已成功完成' : phase === 'Failed' ? jobConditionMessage(resource) || `失败 ${failed} 次` : active > 0 ? `运行中 ${active} 个 Job` : '等待 Pod 启动',
       healthLabel: phase,
       healthBadge: phase === 'Failed' ? 'status-unhealthy' : phase === 'Pending' ? 'status-degraded' : complete ? 'status-healthy' : 'status-neutral',
       hasIssue: phase === 'Failed',
       stats: [
-        { label: 'Completions', value: `${succeeded}/${desired}`, tone: complete ? 'good' : 'default' },
-        { label: 'Active', value: active },
-        { label: 'Failed attempts', value: failed, tone: phase === 'Failed' ? 'warn' : 'default' },
-        { label: 'Parallelism', value: spec.parallelism ?? '-' },
+        { label: '完成数', value: `${succeeded}/${desired}`, tone: complete ? 'good' : 'default' },
+        { label: '运行中', value: active },
+        { label: '失败次数', value: failed, tone: phase === 'Failed' ? 'warn' : 'default' },
+        { label: '并行度', value: spec.parallelism ?? '-' },
       ],
     }
   }
@@ -2802,17 +2802,17 @@ function getReadinessSummary(resource: any, apiKind: string): ReadinessSummary {
     const lastSuccess = status.lastSuccessfulTime ? Date.parse(status.lastSuccessfulTime) : 0
     const missingRecentSuccess = !suspended && active === 0 && lastSchedule > 0 && lastSchedule > lastSuccess
     return {
-      readyLabel: active > 0 ? `${active} active` : 'Idle',
-      detail: spec.schedule ? `schedule ${spec.schedule}` : 'scheduled job',
-      healthLabel: missingRecentSuccess ? 'No recent success' : suspended ? 'Suspended' : active > 0 ? 'Active' : 'Scheduled',
+      readyLabel: active > 0 ? `运行中 ${active} 个 Job` : '空闲',
+      detail: spec.schedule ? `计划：${spec.schedule}` : '计划任务',
+      healthLabel: missingRecentSuccess ? '近期无成功记录' : suspended ? '已暂停' : active > 0 ? '运行中' : '已计划',
       healthBadge: missingRecentSuccess ? 'status-degraded' : suspended ? 'status-neutral' : active > 0 ? 'status-neutral' : 'status-healthy',
       hasIssue: missingRecentSuccess,
       stats: [
-        { label: 'Schedule', value: spec.schedule || '-' },
-        { label: 'Active jobs', value: active, tone: active > 0 ? 'warn' : 'default' },
-        { label: 'Suspend', value: suspended ? 'Yes' : 'No', tone: suspended ? 'warn' : 'default' },
-        { label: 'Last schedule', value: status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : '-' },
-        { label: 'Last success', value: status.lastSuccessfulTime ? formatRelativeAgeTime(status.lastSuccessfulTime) : '-' },
+        { label: '调度计划', value: spec.schedule || '-' },
+        { label: '运行中的 Job', value: active, tone: active > 0 ? 'warn' : 'default' },
+        { label: '暂停', value: suspended ? '是' : '否', tone: suspended ? 'warn' : 'default' },
+        { label: '最近调度', value: status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : '-' },
+        { label: '最近成功', value: status.lastSuccessfulTime ? formatRelativeAgeTime(status.lastSuccessfulTime) : '-' },
       ],
     }
   }
@@ -2875,8 +2875,8 @@ interface ScalingSummary {
 
 function runtimeControlSurface(apiKind: string): { metricLabel: string; cardTitle: string; icon: ComponentType<{ className?: string }> } {
   const k = apiKind.toLowerCase()
-  if (k === 'cronjobs') return { metricLabel: 'Schedule', cardTitle: 'Schedule', icon: Clock3 }
-  if (k === 'jobs') return { metricLabel: 'Execution', cardTitle: 'Execution', icon: Activity }
+  if (k === 'cronjobs') return { metricLabel: '调度计划', cardTitle: '调度计划', icon: Clock3 }
+  if (k === 'jobs') return { metricLabel: '执行状态', cardTitle: '执行情况', icon: Activity }
   return { metricLabel: 'Scaling', cardTitle: 'Scaling', icon: Scale }
 }
 
@@ -2911,29 +2911,29 @@ function getScalingSummary(
       label: phase,
       detail: '',
       stats: [
-        { label: 'Started', value: status.startTime ? formatRelativeAgeTime(status.startTime) : '-' },
-        { label: 'Finished', value: status.completionTime ? formatRelativeAgeTime(status.completionTime) : phase === 'Running' ? 'Running' : '-' },
-        { label: 'Parallelism', value: spec.parallelism ?? 1 },
-        { label: 'Completions', value: spec.completions ?? 1 },
-        { label: 'Completion mode', value: spec.completionMode ?? 'NonIndexed' },
-        { label: 'Backoff limit', value: spec.backoffLimit ?? 6 },
-        { label: 'TTL after finish', value: spec.ttlSecondsAfterFinished != null ? `${spec.ttlSecondsAfterFinished}s` : 'None' },
+        { label: '开始时间', value: status.startTime ? formatRelativeAgeTime(status.startTime) : '-' },
+        { label: '完成时间', value: status.completionTime ? formatRelativeAgeTime(status.completionTime) : phase === 'Running' ? 'Running' : '-' },
+        { label: '并行度', value: spec.parallelism ?? 1 },
+        { label: '完成数', value: spec.completions ?? 1 },
+        { label: '完成模式', value: spec.completionMode ?? 'NonIndexed' },
+        { label: '重试上限', value: spec.backoffLimit ?? 6 },
+        { label: '完成后 TTL', value: spec.ttlSecondsAfterFinished != null ? `${spec.ttlSecondsAfterFinished}s` : '无' },
       ],
     }
   }
 
   if (k === 'cronjobs') {
     return {
-      label: spec.suspend ? 'Suspended' : 'Scheduled',
+      label: spec.suspend ? '已暂停' : '已计划',
       detail: '',
       stats: [
-        { label: 'Schedule', value: spec.schedule ?? '-' },
-        { label: 'Human', value: spec.schedule ? cronToHuman(spec.schedule) : '-' },
-        { label: 'Concurrency', value: spec.concurrencyPolicy ?? 'Allow' },
-        { label: 'Starting deadline', value: spec.startingDeadlineSeconds ? `${spec.startingDeadlineSeconds}s` : 'None' },
-        { label: 'Success history', value: spec.successfulJobsHistoryLimit ?? 3 },
-        { label: 'Failed history', value: spec.failedJobsHistoryLimit ?? 1 },
-        { label: 'Suspend', value: spec.suspend ? 'Yes' : 'No', tone: spec.suspend ? 'warn' : 'default' },
+        { label: '调度计划', value: spec.schedule ?? '-' },
+        { label: '计划说明', value: spec.schedule ? cronToHuman(spec.schedule) : '-' },
+        { label: '并发策略', value: spec.concurrencyPolicy ?? 'Allow' },
+        { label: '启动截止时间', value: spec.startingDeadlineSeconds ? `${spec.startingDeadlineSeconds}s` : '无' },
+        { label: '成功历史保留数', value: spec.successfulJobsHistoryLimit ?? 3 },
+        { label: '失败历史保留数', value: spec.failedJobsHistoryLimit ?? 1 },
+        { label: '暂停', value: spec.suspend ? '是' : '否', tone: spec.suspend ? 'warn' : 'default' },
       ],
     }
   }
@@ -2968,7 +2968,7 @@ function CurrentStateCard({ resource, apiKind, readiness }: { resource: any; api
   const containers = templateSpec?.containers ?? []
   const images = containers.filter((container: any) => container?.name && container?.image)
   const k = apiKind.toLowerCase()
-  const title = k === 'jobs' ? 'Execution state' : k === 'cronjobs' ? 'Schedule state' : 'Current state'
+  const title = k === 'jobs' ? '执行状态' : k === 'cronjobs' ? '调度状态' : 'Current state'
   const generation = metadata.generation
   const observedGeneration = resource?.status?.observedGeneration
   const controllerBehind =
@@ -3114,12 +3114,12 @@ function RuntimeCard({
 
   return (
     <OverviewCard
-      title="Runtime"
+      title="运行时"
       icon={Boxes}
       action={onSwitchToLogs && (
         <button type="button" onClick={onSwitchToLogs} className="inline-flex items-center gap-1 text-xs text-accent-text hover:underline">
           <Terminal className="h-3.5 w-3.5" />
-          Logs
+          日志
         </button>
       )}
     >
@@ -3132,7 +3132,7 @@ function RuntimeCard({
 
           <div className="flex flex-wrap gap-1.5">
             {facts.map((fact) => (
-              <RolloutFactChip key={String(fact.label)} label={fact.label} value={fact.value} tone={fact.tone} />
+              <RolloutFactChip key={String(fact.label)} label={rolloutFactDisplayLabel(fact.label)} value={fact.value} tone={fact.tone} />
             ))}
           </div>
 
@@ -3140,7 +3140,7 @@ function RuntimeCard({
 
           {scalerRefs.length > 0 ? (
             <div className="rounded-md border border-theme-border bg-theme-base px-3 py-2">
-              <div className="mb-1 text-xs font-medium text-theme-text-tertiary">Controlled by</div>
+              <div className="mb-1 text-xs font-medium text-theme-text-tertiary">受控于</div>
               <div className="flex flex-wrap gap-1.5">
                 {scalerRefs.slice(0, RELATIONSHIP_REF_LIMIT).map((ref) => (
                   <ResourceRefBadge key={`${ref.kind}/${ref.namespace}/${ref.name}`} resourceRef={ref} onClick={navigateRef} wrapAtSeparator />
@@ -3148,7 +3148,7 @@ function RuntimeCard({
               </div>
               {scalerDiagnostics?.map((entry) => (
                 <div key={`${entry.ref.kind}/${entry.ref.namespace}/${entry.ref.name}`} className="mt-2 text-xs text-theme-text-secondary">
-                  {entry.loading ? 'Loading autoscaler diagnosis...' : entry.error ? 'Autoscaler diagnosis unavailable' : entry.diagnosis ? hpaStateLabel(entry.diagnosis.state) : 'Autoscaler status unavailable'}
+                  {entry.loading ? '正在加载自动扩缩器诊断…' : entry.error ? '自动扩缩器诊断不可用' : entry.diagnosis ? hpaStateLabel(entry.diagnosis.state) : '自动扩缩器状态不可用'}
                   {entry.diagnosis?.summary && <span className="ml-1 text-theme-text-tertiary">{entry.diagnosis.summary}</span>}
                 </div>
               ))}
@@ -3202,7 +3202,7 @@ function PodsAttentionCard({
       action={onSwitchToLogs && (
         <button type="button" onClick={onSwitchToLogs} className="inline-flex items-center gap-1 text-xs text-accent-text hover:underline">
           <Terminal className="h-3.5 w-3.5" />
-          Logs
+          日志
         </button>
       )}
     >
@@ -3251,10 +3251,10 @@ function PodsListContent({
   return (
     <>
       {workloadPodsLoading ? (
-        <div className="text-sm text-theme-text-tertiary">Loading pod readiness…</div>
+          <div className="text-sm text-theme-text-tertiary">正在加载 Pod 就绪状态…</div>
       ) : workloadPodsError ? (
         <div className="rounded-md border border-amber-500/30 bg-amber-500/10 p-3 text-sm text-amber-600 dark:text-amber-300">
-          Pod readiness unavailable. Use Logs or Timeline for deeper inspection.
+          Pod 就绪状态不可用。请使用日志或时间线进一步检查。
         </div>
       ) : workloadPods ? (
         visiblePods.length > 0 ? (
@@ -3276,7 +3276,7 @@ function PodsListContent({
               <PodListToggle
                 expanded={expandedPods}
                 hiddenCount={hiddenPodCount}
-                label="pods"
+                label="Pods"
                 onToggle={() => setExpandedPods((value) => !value)}
               />
             )}
@@ -3294,7 +3294,7 @@ function PodsListContent({
             ))}
           </PodListFrame>
         ) : (
-          <div className="text-sm text-theme-text-tertiary">{emptyText || 'No pods currently match this workload.'}</div>
+          <div className="text-sm text-theme-text-tertiary">{emptyText || '当前没有与此工作负载匹配的 Pod。'}</div>
         )
       ) : fallbackPods.length > 0 ? (
         <PodListFrame
@@ -3306,7 +3306,7 @@ function PodsListContent({
               name={pod.name}
               namespace={pod.namespace || namespace}
               ready={null}
-              detail="status unavailable"
+              detail="状态不可用"
               onNavigate={onNavigate}
             />
           ))}
@@ -3314,7 +3314,7 @@ function PodsListContent({
             <PodListToggle
               expanded={expandedPods}
               hiddenCount={hiddenFallbackCount}
-              label="pods"
+              label="Pods"
               onToggle={() => setExpandedPods((value) => !value)}
             />
           )}
@@ -3325,13 +3325,13 @@ function PodsListContent({
               name={pod.name}
               namespace={pod.namespace || namespace}
               ready={null}
-              detail="status unavailable"
+              detail="状态不可用"
               onNavigate={onNavigate}
             />
           ))}
         </PodListFrame>
       ) : (
-        <div className="text-sm text-theme-text-tertiary">{emptyText || 'No pod relationships found.'}</div>
+        <div className="text-sm text-theme-text-tertiary">{emptyText || '未找到 Pod 关系。'}</div>
       )}
     </>
   )
@@ -3357,7 +3357,7 @@ function podSeverityRank(pod: WorkloadPodInfo): number {
 }
 
 function MoreRows({ count, label }: { count: number; label: string }) {
-  return <div className="text-xs text-theme-text-tertiary">+{count} more {label} hidden from this overview.</div>
+  return <div className="text-xs text-theme-text-tertiary">此概览中未显示另外 {count} 个 {label}。</div>
 }
 
 type RelationshipGroup = { label: string; refs: ResourceRef[] }
@@ -3392,20 +3392,20 @@ function ServingConfigurationCard({
   const exposure = summarizeServingExposure(serviceResources, serviceCount, entrypointCount, externalLabels, serviceDetailsLoading)
   const pathDetail =
     entrypointCount > 0 && serviceCount > 0
-      ? `${entrypointCount} entry point${entrypointCount === 1 ? '' : 's'} route to ${serviceCount} service${serviceCount === 1 ? '' : 's'}.`
+      ? `${entrypointCount} 个入口指向 ${serviceCount} 个 Service。`
       : entrypointCount > 0
-        ? `${entrypointCount} entry point${entrypointCount === 1 ? '' : 's'} detected. Use Topology to inspect the serving graph.`
-      : `${serviceCount} service${serviceCount === 1 ? ' targets' : 's target'} this workload without an ingress or route.`
+        ? `检测到 ${entrypointCount} 个入口。可在拓扑中查看服务关系图。`
+      : `${serviceCount} 个 Service 指向此工作负载，未配置 Ingress 或 Route。`
   const navigateRef = onNavigate ? (ref: ResourceRef) => onNavigate(refToSelectedResource(ref)) : undefined
 
   return (
     <OverviewCard
-      title="Serving configuration"
+      title="服务配置"
       icon={Network}
       action={onSwitchToTopology && (
         <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-accent-text hover:underline">
           <GitBranch className="h-3.5 w-3.5" />
-          Topology
+          拓扑
         </button>
       )}
     >
@@ -3418,7 +3418,7 @@ function ServingConfigurationCard({
         <div className="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(18rem,0.8fr)]">
           <div className="min-w-0 space-y-3">
             <div className="grid gap-3 sm:grid-cols-2">
-              <OverviewStat label="Service type" value={serviceTypes} />
+              <OverviewStat label="Service 类型" value={serviceTypes} />
               <OverviewStat label="Services" value={serviceCount} />
             </div>
             <ServingPortRows
@@ -3430,9 +3430,9 @@ function ServingConfigurationCard({
             <ServingRefChips label="Services" refs={services} onNavigate={navigateRef} />
           </div>
           <div className="min-w-0 space-y-3 border-t border-theme-border pt-3 lg:border-l lg:border-t-0 lg:pl-4 lg:pt-0">
-            <OverviewStat label="Entry points" value={entrypointCount || '-'} />
-            <ServingFactChips label="Addresses & hosts" values={externalLabels} empty={entrypointCount > 0 ? 'Route details unavailable.' : 'Internal cluster traffic only.'} />
-            {entrypoints.length > 0 && <ServingRefChips label="Entry point resources" refs={entrypoints} onNavigate={navigateRef} />}
+            <OverviewStat label="入口" value={entrypointCount || '-'} />
+            <ServingFactChips label="地址与主机名" values={externalLabels} empty={entrypointCount > 0 ? 'Route 详情不可用。' : '仅限集群内部流量。'} />
+            {entrypoints.length > 0 && <ServingRefChips label="入口资源" refs={entrypoints} onNavigate={navigateRef} />}
           </div>
         </div>
       </div>
@@ -3456,7 +3456,7 @@ function ServingPortRows({
   const hidden = Math.max(0, servicesWithPorts.length - visible.length)
   return (
     <div className="min-w-0">
-      <div className="mb-1 text-xs font-medium text-theme-text-tertiary">Ports</div>
+      <div className="mb-1 text-xs font-medium text-theme-text-tertiary">端口</div>
       {visible.length > 0 ? (
         <div className="space-y-2">
           {visible.map((service) => {
@@ -3472,10 +3472,10 @@ function ServingPortRows({
               </div>
             )
           })}
-          {hidden > 0 && <Badge tone="structural" size="sm">+{hidden} services</Badge>}
+          {hidden > 0 && <Badge tone="structural" size="sm">+{hidden} 个 Services</Badge>}
         </div>
       ) : (
-        <div className="text-xs text-theme-text-tertiary">{loading ? 'Loading service ports...' : 'No service ports loaded.'}</div>
+        <div className="text-xs text-theme-text-tertiary">{loading ? '正在加载 Service 端口…' : '未加载 Service 端口。'}</div>
       )}
     </div>
   )
@@ -3536,25 +3536,25 @@ function CronJobRunsCard({
   const visibleJobs = activeJobs.slice(0, POD_VISIBLE_LIMIT)
   const hiddenJobCount = Math.max(0, activeJobs.length - visibleJobs.length)
   const emptyMessage = spec.suspend
-    ? 'No active Jobs. This CronJob is suspended, so new runs will not be scheduled until it is resumed.'
-    : 'No active Jobs. The CronJob is waiting for the next scheduled run.'
+    ? '没有正在运行的 Job。此 CronJob 已暂停，恢复后才会安排新的运行。'
+    : '没有正在运行的 Job。等待下一次计划运行。'
 
   return (
     <OverviewCard
-      title="Runs"
+      title="运行记录"
       icon={Activity}
       action={onSwitchToTopology && (
         <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-skyhook-500 hover:underline">
           <GitBranch className="h-3.5 w-3.5" />
-          Topology
+          拓扑
         </button>
       )}
     >
       <div className="mb-3 grid gap-x-8 gap-y-3 sm:grid-cols-2">
-        <OverviewStat label="Active jobs" value={activeJobs.length} tone={activeJobs.length > 0 ? 'warn' : 'default'} />
-        <OverviewStat label="Last schedule" value={status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : 'Never'} />
-        <OverviewStat label="Last success" value={status.lastSuccessfulTime ? formatRelativeAgeTime(status.lastSuccessfulTime) : 'Never'} />
-        <OverviewStat label="Retained history" value={`${spec.successfulJobsHistoryLimit ?? 3} ok / ${spec.failedJobsHistoryLimit ?? 1} failed`} />
+        <OverviewStat label="运行中的 Job" value={activeJobs.length} tone={activeJobs.length > 0 ? 'warn' : 'default'} />
+        <OverviewStat label="最近调度" value={status.lastScheduleTime ? formatRelativeAgeTime(status.lastScheduleTime) : '从未'} />
+        <OverviewStat label="最近成功" value={status.lastSuccessfulTime ? formatRelativeAgeTime(status.lastSuccessfulTime) : '从未'} />
+        <OverviewStat label="保留历史" value={`成功 ${spec.successfulJobsHistoryLimit ?? 3} / 失败 ${spec.failedJobsHistoryLimit ?? 1}`} />
       </div>
 
       {visibleJobs.length > 0 ? (
@@ -3578,13 +3578,13 @@ function CronJobRunsCard({
                 <span className="h-2 w-2 shrink-0 rounded-full bg-skyhook-500" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-theme-text-primary">{ref.name}</span>
-                  <span className="block truncate text-xs text-theme-text-tertiary">{ref.namespace || 'default namespace'}</span>
+                  <span className="block truncate text-xs text-theme-text-tertiary">{ref.namespace || '默认命名空间'}</span>
                 </span>
-                <span className="badge-sm status-neutral">Active</span>
+                <span className="badge-sm status-neutral">运行中</span>
               </button>
             )
           })}
-          {hiddenJobCount > 0 && <MoreRows count={hiddenJobCount} label="jobs" />}
+          {hiddenJobCount > 0 && <MoreRows count={hiddenJobCount} label="Job" />}
         </div>
       ) : (
         <div className="rounded-md border border-theme-border bg-theme-base px-3 py-2 text-sm text-theme-text-tertiary">
@@ -3624,7 +3624,7 @@ function ScalingCard({
       </div>
       {scalerRefs.length > 0 ? (
         <div className="space-y-2">
-          <div className="text-xs font-medium text-theme-text-tertiary">Controlled by</div>
+          <div className="text-xs font-medium text-theme-text-tertiary">受控于</div>
           <div className="flex flex-wrap gap-1.5">
             {scalerRefs.slice(0, RELATIONSHIP_REF_LIMIT).map((ref) => (
               <ResourceRefBadge key={`${ref.kind}/${ref.namespace}/${ref.name}`} resourceRef={ref} onClick={navigateRef} wrapAtSeparator />
@@ -3778,6 +3778,28 @@ function rolloutFacts(
   return facts
 }
 
+function rolloutFactDisplayLabel(label: string): string {
+  const labels: Record<string, string> = {
+    'Target nodes': '目标节点数',
+    Scheduled: '已调度',
+    Updated: '已更新',
+    Unavailable: '不可用',
+    Misscheduled: '调度异常',
+    Strategy: '策略',
+    'Controller seen': '控制器已观察到',
+    'Target replicas': '目标副本数',
+    Current: '当前',
+    Revision: '修订版本',
+    Partition: '分区',
+    Desired: '期望值',
+  }
+  return ownDisplayLabel(labels, label)
+}
+
+function ownDisplayLabel(labels: Record<string, string>, label: string): string {
+  return Object.prototype.hasOwnProperty.call(labels, label) ? labels[label] : label
+}
+
 function rolloutProgress(resource: any, apiKind: string, state: ReplicatedWorkloadState): RolloutProgressSummary | null {
   const spec = resource?.spec || {}
   const status = resource?.status || {}
@@ -3842,7 +3864,7 @@ function rolloutHeadline(resource: any, apiKind: string, readiness: ReadinessSum
 }
 
 function ServingDependenciesCard({
-  title = 'Serving and dependencies',
+  title = '服务与依赖项',
   relationships,
   groups,
   onNavigate,
@@ -3868,7 +3890,7 @@ function ServingDependenciesCard({
       action={onSwitchToTopology && (
         <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-skyhook-500 hover:underline">
           <GitBranch className="h-3.5 w-3.5" />
-          Topology
+          拓扑
         </button>
       )}
     >
@@ -3876,7 +3898,7 @@ function ServingDependenciesCard({
         <div className="space-y-3">
           {visibleGroups.map((group) => (
             <div key={group.label}>
-              <div className="mb-1 text-xs font-medium text-theme-text-tertiary">{group.label}</div>
+              <div className="mb-1 text-xs font-medium text-theme-text-tertiary">{relationshipGroupDisplayLabel(group.label)}</div>
               <div className="flex flex-wrap gap-1.5">
                 {group.refs.slice(0, RELATIONSHIP_REF_LIMIT).map((ref) => (
                   <ResourceRefBadge key={`${ref.kind}/${ref.namespace}/${ref.name}`} resourceRef={ref} onClick={navigateRef} wrapAtSeparator />
@@ -3887,10 +3909,10 @@ function ServingDependenciesCard({
               </div>
             </div>
           ))}
-          {hiddenRefs > 0 && <div className="text-xs text-theme-text-tertiary">+{hiddenRefs} more relationships; use Topology for the full graph.</div>}
+          {hiddenRefs > 0 && <div className="text-xs text-theme-text-tertiary">还有 {hiddenRefs} 个关系；可在拓扑中查看完整关系图。</div>}
         </div>
       ) : (
-        <div className="text-sm text-theme-text-tertiary">No serving or dependency relationships found.</div>
+        <div className="text-sm text-theme-text-tertiary">未找到服务或依赖关系。</div>
       )}
     </OverviewCard>
   )
@@ -3927,22 +3949,22 @@ function ConfigurationInputsCard({
 
   return (
     <OverviewCard
-      title="Configuration inputs"
+      title="配置输入"
       icon={Layers}
       action={onSwitchToTopology && (
         <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-skyhook-500 hover:underline">
           <GitBranch className="h-3.5 w-3.5" />
-          Topology
+          拓扑
         </button>
       )}
     >
       <div className="space-y-4">
         <div className="min-w-0">
-          <div className="mb-1 text-xs font-medium text-theme-text-tertiary">Identity</div>
+          <div className="mb-1 text-xs font-medium text-theme-text-tertiary">身份</div>
           <ResourceRefBadge resourceRef={serviceAccountRef} onClick={navigateRef} wrapAtSeparator />
         </div>
         <div className="min-w-0">
-          <div className="mb-1 text-xs font-medium text-theme-text-tertiary">Config</div>
+          <div className="mb-1 text-xs font-medium text-theme-text-tertiary">配置</div>
           {configRefs.length > 0 ? (
             <div className="flex flex-wrap gap-1.5">
               {configRefs.slice(0, RELATIONSHIP_REF_LIMIT).map((ref) => (
@@ -3951,19 +3973,19 @@ function ConfigurationInputsCard({
               {configRefs.length > RELATIONSHIP_REF_LIMIT && <Badge tone="structural" size="sm">+{configRefs.length - RELATIONSHIP_REF_LIMIT}</Badge>}
             </div>
           ) : (
-            <div className="text-xs text-theme-text-tertiary">No ConfigMap or Secret refs found.</div>
+            <div className="text-xs text-theme-text-tertiary">未发现 ConfigMap 或 Secret 引用。</div>
           )}
         </div>
         <div className="min-w-0">
-          <div className="mb-1 text-xs font-medium text-theme-text-tertiary">Policy &amp; storage</div>
+          <div className="mb-1 text-xs font-medium text-theme-text-tertiary">策略与存储</div>
           {policyRefs.length > 0 && onSwitchToTopology ? (
             <button type="button" onClick={onSwitchToTopology} className="text-left text-xs text-theme-text-secondary hover:text-accent-text">
-              {policyRefs.length} related resource{policyRefs.length === 1 ? '' : 's'} in Topology
+              {policyRefs.length} 个相关资源位于拓扑中
             </button>
           ) : policyRefs.length > 0 ? (
-            <div className="text-xs text-theme-text-secondary">{policyRefs.length} related resource{policyRefs.length === 1 ? '' : 's'} found.</div>
+            <div className="text-xs text-theme-text-secondary">找到 {policyRefs.length} 个相关资源。</div>
           ) : (
-            <div className="text-xs text-theme-text-tertiary">No PDB, NetworkPolicy, or storage refs found.</div>
+            <div className="text-xs text-theme-text-tertiary">未发现 PDB、NetworkPolicy 或存储资源引用。</div>
           )}
         </div>
       </div>
@@ -3990,17 +4012,17 @@ function ActivityCard({
 
   return (
     <OverviewCard
-      title="Recent activity"
+      title="近期活动"
       icon={Clock3}
       action={onSwitchToTimeline && (
         <button type="button" onClick={onSwitchToTimeline} className="inline-flex items-center gap-1 text-xs text-skyhook-500 hover:underline">
           <ExternalLink className="h-3.5 w-3.5" />
-          Timeline
+          时间线
         </button>
       )}
     >
       {loading ? (
-        <div className="text-sm text-theme-text-tertiary">Loading activity…</div>
+        <div className="text-sm text-theme-text-tertiary">正在加载活动…</div>
       ) : visibleEvents.length > 0 ? (
         <div className="space-y-2">
           {visibleEvents.map((event, i) => (
@@ -4009,7 +4031,7 @@ function ActivityCard({
                 <span className={clsx('mt-1 h-2 w-2 shrink-0 rounded-full', isProblematicEvent(event) ? 'bg-amber-500' : 'bg-skyhook-500')} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-theme-text-primary">{event.reason || event.eventType || 'update'}</span>
+                    <span className="truncate text-sm font-medium text-theme-text-primary">{event.reason || event.eventType || '更新'}</span>
                     <span className="shrink-0 text-xs text-theme-text-tertiary">{formatRelativeAgeTime(event.timestamp)}</span>
                   </div>
                   <div className="mt-0.5 line-clamp-2 text-xs text-theme-text-secondary">
@@ -4020,14 +4042,14 @@ function ActivityCard({
             </div>
           ))}
           {(events.length + updates.length) > EVENT_VISIBLE_LIMIT && (
-            <div className="text-xs text-theme-text-tertiary">Showing highest-signal recent events. Timeline has the full history.</div>
+            <div className="text-xs text-theme-text-tertiary">此处仅显示最重要的近期事件；完整历史请查看时间线。</div>
           )}
         </div>
       ) : (
-        <div className="text-sm text-theme-text-tertiary">No recent activity captured.</div>
+        <div className="text-sm text-theme-text-tertiary">未捕获到近期活动。</div>
       )}
-      {eventsError && <div className="mt-2 text-xs text-red-500">Failed to load events: {eventsError.message}</div>}
-      {updatesError && <div className="mt-2 text-xs text-red-500">Failed to load changes: {updatesError.message}</div>}
+      {eventsError && <div className="mt-2 text-xs text-red-500">事件加载失败：{eventsError.message}</div>}
+      {updatesError && <div className="mt-2 text-xs text-red-500">变更加载失败：{updatesError.message}</div>}
     </OverviewCard>
   )
 }
@@ -4066,14 +4088,29 @@ function buildDependencyRelationshipGroups(relationships: Relationships | undefi
   ].filter((group) => group.refs.length > 0)
 }
 
+function relationshipGroupDisplayLabel(label: string): string {
+  const labels: Record<string, string> = {
+    Configuration: '配置',
+    Autoscalers: '自动扩缩器',
+    'Disruption budgets': '中断预算',
+    'Network policies': '网络策略',
+    'Staged Policies': '暂存策略',
+    'Monitored By': '监控来源',
+    'Storage claims': '存储声明',
+    Services: 'Services',
+    'Entry points': '入口',
+  }
+  return ownDisplayLabel(labels, label)
+}
+
 function summarizeServiceTypes(serviceResources: any[], serviceCount: number, loading: boolean): string {
-  if (loading && serviceResources.length === 0) return 'Loading'
+  if (loading && serviceResources.length === 0) return '加载中'
   const types = Array.from(new Set(
     serviceResources
       .map((service) => service?.spec?.type || 'ClusterIP')
       .filter(Boolean),
   ))
-  if (types.length === 0) return serviceCount > 0 ? 'Unknown' : '-'
+  if (types.length === 0) return serviceCount > 0 ? '未知' : '-'
   if (types.length <= 2) return types.join(' / ')
   return `${types[0]} +${types.length - 1}`
 }
@@ -4082,7 +4119,7 @@ function summarizeExternalLabels(serviceResources: any[], entrypointResources: a
   const labels: string[] = []
   for (const service of serviceResources) {
     const external = getServiceExternalIP(service)
-    if (external) labels.push(`${service?.metadata?.name || 'service'}: ${external}`)
+    if (external) labels.push(`${service?.metadata?.name || 'Service'}: ${external}`)
   }
   for (const entrypoint of entrypointResources) {
     const label = summarizeEntrypointResource(entrypoint)
@@ -4093,11 +4130,11 @@ function summarizeExternalLabels(serviceResources: any[], entrypointResources: a
 
 function summarizeEntrypointResource(resource: any): string {
   const kind = resource?.kind
-  const name = resource?.metadata?.name || kind || 'entrypoint'
+  const name = resource?.metadata?.name || kind || '入口'
   if (kind === 'Ingress') {
     const hosts = getIngressHosts(resource)
     const address = getIngressAddress(resource)
-    return `${name}: ${hosts}${address ? ` @ ${address}` : ' (address pending)'}`
+    return `${name}: ${hosts}${address ? ` @ ${address}` : '（地址待分配）'}`
   }
   if (kind === 'Gateway') {
     const listeners = getGatewayListeners(resource)
@@ -4110,7 +4147,7 @@ function summarizeEntrypointResource(resource: any): string {
   }
   const parentRefs = resource?.spec?.parentRefs
   if (Array.isArray(parentRefs) && parentRefs.length > 0) {
-    return `${name}: ${parentRefs.length} parent${parentRefs.length === 1 ? '' : 's'}`
+    return `${name}: ${parentRefs.length} 个上级引用`
   }
   return name
 }
@@ -4122,18 +4159,18 @@ function summarizeServingExposure(
   externalLabels: string[],
   loading: boolean,
 ): { label: string; badge: string; severity: BadgeSeverity } {
-  if (loading && serviceResources.length === 0) return { label: 'Checking serving exposure', badge: 'Loading', severity: 'neutral' }
+  if (loading && serviceResources.length === 0) return { label: '正在检查服务暴露情况', badge: '加载中', severity: 'neutral' }
   const pendingLoadBalancer = serviceResources.some((service) =>
     service?.spec?.type === 'LoadBalancer' && getServiceExternalIP(service) === 'Pending',
   )
   const hasExternalService = serviceResources.some((service) =>
     ['LoadBalancer', 'NodePort', 'ExternalName'].includes(service?.spec?.type) || Boolean(getServiceExternalIP(service)),
   )
-  if (entrypointCount > 0) return { label: 'External entrypoint configured', badge: 'External', severity: 'info' }
-  if (pendingLoadBalancer) return { label: 'External service pending', badge: 'Pending', severity: 'warning' }
-  if (hasExternalService || externalLabels.length > 0) return { label: 'External service configured', badge: 'External', severity: 'info' }
-  if (serviceCount > 0) return { label: 'Internal service only', badge: 'Internal', severity: 'neutral' }
-  return { label: 'No serving path detected', badge: 'None', severity: 'neutral' }
+  if (entrypointCount > 0) return { label: '已配置外部入口', badge: '外部', severity: 'info' }
+  if (pendingLoadBalancer) return { label: '外部 Service Pending', badge: 'Pending', severity: 'warning' }
+  if (hasExternalService || externalLabels.length > 0) return { label: '已配置外部 Service', badge: '外部', severity: 'info' }
+  if (serviceCount > 0) return { label: '仅内部 Service', badge: '内部', severity: 'neutral' }
+  return { label: '未检测到服务入口', badge: '无', severity: 'neutral' }
 }
 
 function resourceRefId(ref: ResourceRef): string {

@@ -69,8 +69,8 @@ it('clears stale installation data when a later profile refresh fails', async ()
   expect(JSON.parse(host.querySelector('output')!.textContent!).installAvailable).toBe(true)
   refreshFails = true
   await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === 'Refresh profile')!.click())
-  expect(JSON.parse(host.querySelector('output')!.textContent!)).toMatchObject({ origin: '', installAvailable: false, loading: false, error: 'connection settings unavailable' })
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain('connection settings unavailable')
+  expect(JSON.parse(host.querySelector('output')!.textContent!)).toMatchObject({ origin: '', installAvailable: false, loading: false, error: '网络请求失败，请检查网络连接后重试。' })
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain('网络请求失败，请检查网络连接后重试。')
   expect(host.querySelector<HTMLInputElement>('input[placeholder="http://192.0.2.10"]')?.disabled).toBe(true)
 })
 

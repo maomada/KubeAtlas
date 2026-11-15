@@ -42,7 +42,7 @@ it('still opens the original Spec & status in a drawer when a page replacement i
   const host = document.createElement('div')
   const root = createRoot(host)
   act(() => root.render(<WorkloadView {...props} expanded={false} specTab={{ label: 'Configuration', render: replacement }} />))
-  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((b) => b.textContent === 'Spec & status')!
+  const tab = [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')].find((b) => b.textContent === '规格与状态')!
   act(() => tab.click())
   expect(tab.getAttribute('aria-selected')).toBe('true')
   expect(host.textContent).toContain('Generic renderer and Conditions')
@@ -146,4 +146,43 @@ it.each(['Deployment', 'Pod', 'Pooler', 'ScheduledBackup'])('groups %s drawer ac
   if (kind === 'Deployment') expect(object.textContent).toContain('重启')
   if (kind === 'ScheduledBackup') { expect(object.querySelectorAll('button')).toHaveLength(3); expect(object.textContent).toContain('Run blocked: no backup destination') }
   act(() => root.unmount())
+})
+
+it('localizes serving exposure labels and address fallback while preserving Kubernetes values', () => {
+  const deployment = { apiVersion: 'apps/v1', kind: 'Deployment', metadata: { name: 'web', namespace: 'demo' }, spec: { replicas: 1, selector: { matchLabels: { app: 'web' } }, template: { metadata: { labels: { app: 'web' } }, spec: { containers: [] } } }, status: { replicas: 1, readyReplicas: 1, availableReplicas: 1, updatedReplicas: 1 } }
+  const serviceRef = { kind: 'Service', namespace: 'demo', name: 'web' }
+  const ingressRef = { kind: 'Ingress', namespace: 'demo', name: 'web-entry' }
+  const render = (relationships: Parameters<typeof WorkloadView>[0]['relationships'], servingResources: Parameters<typeof WorkloadView>[0]['servingResources']) => renderToStaticMarkup(<WorkloadView kind="deployments" namespace="demo" name="web" onBack={() => {}} resource={deployment} relationships={relationships} servingResources={servingResources} />)
+  const internal = render({ services: [serviceRef] }, [{ ref: serviceRef, resource: { kind: 'Service', spec: { type: 'ClusterIP' } } }])
+  expect(internal).toContain('内部')
+  expect(internal).toContain('ClusterIP')
+  const loading = render({ services: [serviceRef] }, [{ ref: serviceRef, loading: true }])
+  expect(loading).toContain('加载中')
+  expect(loading).not.toContain('Loading')
+  const external = render({ services: [serviceRef], ingresses: [ingressRef] }, [
+    { ref: serviceRef, resource: { kind: 'Service', spec: { type: 'LoadBalancer' }, status: { loadBalancer: { ingress: [{ ip: '203.0.113.20' }] } } } },
+    { ref: ingressRef, resource: { kind: 'Ingress', metadata: { name: 'web-entry' }, spec: { rules: [{ host: 'shop.example.test' }] }, status: {} } },
+  ])
+  expect(external).toContain('外部')
+  expect(external).toContain('LoadBalancer')
+  expect(external).toContain('shop.example.test')
+  expect(external).toContain('地址待分配')
+})
+
+it('localizes CronJob and Job chrome while preserving names, phases, and backend messages', () => {
+  const cronJob = { apiVersion: 'batch/v1', kind: 'CronJob', metadata: { name: 'nightly', namespace: 'batch' }, spec: { schedule: '0 * * * *', suspend: false, successfulJobsHistoryLimit: 2, failedJobsHistoryLimit: 1 }, status: { active: [{ kind: 'Job', namespace: 'batch', name: 'nightly-20260421' }], lastScheduleTime: '2026-04-21T00:00:00Z' } }
+  const relationships = { scalers: [{ kind: 'HorizontalPodAutoscaler', group: 'autoscaling', namespace: 'batch', name: 'nightly-scale' }], monitors: [{ kind: 'PodMonitor', group: 'monitoring.coreos.com', namespace: 'batch', name: 'nightly-monitor' }] }
+  const renderCron = (resource: Parameters<typeof WorkloadView>[0]['resource']) => renderToStaticMarkup(<WorkloadView kind="cronjobs" namespace="batch" name="nightly" onBack={() => {}} resource={resource} relationships={relationships} activeTab="overview" />)
+  const active = renderCron(cronJob)
+  for (const label of ['运行记录', '运行中的 Job', '最近调度', '最近成功', '保留历史', '受控于', '监控来源']) expect(active).toContain(label)
+  for (const value of ['CronJob', 'Job', 'nightly-20260421', '0 * * * *']) expect(active).toContain(value)
+  for (const english of ['Runs', 'Active jobs', 'Last schedule', 'Retained history', 'Controlled by', 'Monitored By']) expect(active).not.toContain(english)
+  const suspended = renderCron({ ...cronJob, spec: { ...cronJob.spec, suspend: true }, status: {} })
+  expect(suspended).toContain('没有正在运行的 Job。此 CronJob 已暂停，恢复后才会安排新的运行。')
+  expect(suspended).toContain('从未')
+  const job = { apiVersion: 'batch/v1', kind: 'Job', metadata: { name: 'batch-run', namespace: 'batch' }, spec: { completions: 1 }, status: { failed: 1, conditions: [{ type: 'Failed', status: 'True', reason: 'BackoffLimitExceeded', message: 'raw job failure message' }] } }
+  const failed = renderToStaticMarkup(<WorkloadView kind="jobs" namespace="batch" name="batch-run" onBack={() => {}} resource={job} workloadPods={[]} activeTab="overview" />)
+  expect(failed).toContain('当前没有为此 Job 保留的 Pod。')
+  expect(failed).toContain('Failed')
+  expect(failed).toContain('raw job failure message')
 })
