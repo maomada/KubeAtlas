@@ -68,6 +68,30 @@ describe('Omnibar note', () => {
     expect(document.body.textContent).toContain('2 个问题')
   })
 
+  it('localizes filter-pill controls while preserving search keys and values', () => {
+    const ref = createRef<OmnibarHandle>()
+    act(() => {
+      root.render(<Omnibar ref={ref} onOpenResource={vi.fn()} commandItems={[]} searchData={{ hits: [] }} />)
+    })
+    for (const [key, value] of [
+      ['ns', 'prod'],
+      ['kind', 'Deployment'],
+      ['cluster', 'cluster-west'],
+      ['label', 'app.kubernetes.io/name=checkout'],
+      ['image', 'registry.example.io/api:v1'],
+    ]) {
+      act(() => ref.current?.addModifier({ key, value }))
+    }
+    expect(host.textContent).toContain('ns:prod')
+    expect(host.textContent).toContain('kind:Deployment')
+    expect(host.querySelector('button[aria-label="移除 kind:Deployment 筛选条件"]')).not.toBeNull()
+    const expand = host.querySelector<HTMLButtonElement>('button[title="显示全部筛选条件"]')
+    expect(expand?.textContent).toContain('项')
+    expect(host.textContent).not.toContain(' more')
+    act(() => expand?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(host.textContent).toContain('收起')
+  })
+
   it.each([
     ['alone', [], []],
     ['before a namespace note', [], [namespace]],

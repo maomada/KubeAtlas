@@ -67,7 +67,7 @@ function ApplicationRuntimeCell({ apps, workloadClass, ready, desired }: { apps:
   const worst = runtimes.reduce((current, runtime) => (HEALTH_RANK[runtime.health] ?? 0) > (HEALTH_RANK[current.health] ?? 0) ? runtime : current, runtimes[0])
   if (!worst) return <span className="text-xs text-theme-text-tertiary">未运行</span>
   const same = runtimes.every((runtime) => runtime.label === worst.label)
-  const label = same ? worst.label : `${runtimes.length} states`
+  const label = same ? worst.label : `${runtimes.length} 个状态`
   return (
     <Tooltip content={runtimes.map((runtime, index) => `${apps[index]?.name ?? 'app'}: ${runtime.label} — ${runtime.detail}`).join('\n')} delay={150}>
       <span className="inline-flex items-center gap-1.5 text-xs text-theme-text-secondary"><StatusDot tone={mapHealthToTone(worst.health)} />{label}</span>
@@ -78,7 +78,7 @@ function ApplicationRuntimeCell({ apps, workloadClass, ready, desired }: { apps:
 function applicationRuntimeLabel(apps: AppRow[], workloadClass: AppWorkloadClass, health: AppHealth): string {
   if (workloadClass !== 'job') return rolloutSummaryForApps(apps)?.detail || HEALTH_META[health].label
   const labels = Array.from(new Set(apps.map((app) => batchRuntimeForApp(app).label)))
-  return labels.length === 1 ? labels[0] : 'Multiple batch states'
+  return labels.length === 1 ? labels[0] : '多个批处理状态'
 }
 
 // ApplicationsView — the shared, variant-agnostic core behind the Applications
@@ -159,7 +159,7 @@ const APPS_FILTER_SCHEMA = defineFilterSchema({
   system: { param: 'system', type: 'boolean' },
 })
 
-export function ApplicationsView({ entries: allEntries, variant, onSelect, title = 'Applications', description, emptySlot, headerActions, loading }: ApplicationsViewProps) {
+export function ApplicationsView({ entries: allEntries, variant, onSelect, title = '应用', description, emptySlot, headerActions, loading }: ApplicationsViewProps) {
   // Facets + search + show-system live in the URL (shareable, bookmarkable) via
   // the shared filter-state contract. Sort stays local: it's a compound
   // {key, dir} view-preference, not a result-narrowing filter, so it isn't
@@ -267,14 +267,14 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
   const moveHighlight = (delta: number) =>
     setHighlightedIndex((i) => Math.min(Math.max(i + delta, 0), rowsRef.current.length - 1))
   useRegisterShortcuts([
-    { id: 'applications-nav-down', keys: 'j', description: 'Next row', category: 'Table', scope: 'applications', handler: () => moveHighlight(1) },
-    { id: 'applications-nav-down-arrow', keys: 'ArrowDown', description: 'Next row', category: 'Table', scope: 'applications', handler: () => moveHighlight(1) },
-    { id: 'applications-nav-up', keys: 'k', description: 'Previous row', category: 'Table', scope: 'applications', handler: () => moveHighlight(-1) },
-    { id: 'applications-nav-up-arrow', keys: 'ArrowUp', description: 'Previous row', category: 'Table', scope: 'applications', handler: () => moveHighlight(-1) },
-    { id: 'applications-nav-top', keys: 'g g', description: 'Jump to first row', category: 'Table', scope: 'applications', handler: () => setHighlightedIndex(rowsRef.current.length > 0 ? 0 : -1) },
-    { id: 'applications-nav-bottom', keys: 'G', description: 'Jump to last row', category: 'Table', scope: 'applications', handler: () => setHighlightedIndex(rowsRef.current.length - 1) },
+    { id: 'applications-nav-down', keys: 'j', description: '下一行', category: 'Table', scope: 'applications', handler: () => moveHighlight(1) },
+    { id: 'applications-nav-down-arrow', keys: 'ArrowDown', description: '下一行', category: 'Table', scope: 'applications', handler: () => moveHighlight(1) },
+    { id: 'applications-nav-up', keys: 'k', description: '上一行', category: 'Table', scope: 'applications', handler: () => moveHighlight(-1) },
+    { id: 'applications-nav-up-arrow', keys: 'ArrowUp', description: '上一行', category: 'Table', scope: 'applications', handler: () => moveHighlight(-1) },
+    { id: 'applications-nav-top', keys: 'g g', description: '跳到首行', category: 'Table', scope: 'applications', handler: () => setHighlightedIndex(rowsRef.current.length > 0 ? 0 : -1) },
+    { id: 'applications-nav-bottom', keys: 'G', description: '跳到末行', category: 'Table', scope: 'applications', handler: () => setHighlightedIndex(rowsRef.current.length - 1) },
     {
-      id: 'applications-open', keys: 'Enter', description: 'Open application', category: 'Table', scope: 'applications',
+      id: 'applications-open', keys: 'Enter', description: '打开应用', category: 'Table', scope: 'applications',
       handler: () => {
         const r = rowsRef.current[highlightedIndex]
         if (!r) return
@@ -285,7 +285,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
       enabled: highlightedIndex >= 0,
     },
     {
-      id: 'applications-escape', keys: 'Escape', description: 'Clear row highlight', category: 'Table', scope: 'applications',
+      id: 'applications-escape', keys: 'Escape', description: '清除行高亮', category: 'Table', scope: 'applications',
       handler: () => setHighlightedIndex(-1),
       enabled: highlightedIndex >= 0,
     },
@@ -506,13 +506,13 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                             delay={150}
                           >
                             <span className={`${CHIP} ${r.confidence === 'high' ? CHIP_TONE.emerald : CHIP_TONE.neutral}`}>
-                              <Layers className="mr-1 h-3 w-3" aria-hidden />{r.cells.length} envs
+                              <Layers className="mr-1 h-3 w-3" aria-hidden />{r.cells.length} 个环境
                             </span>
                           </Tooltip>
                         </span>
                       </td>
                       <td className="px-2 py-2.5">
-                        <span className="text-xs text-theme-text-tertiary">{pluralize(r.members.length, 'instance')}</span>
+                        <span className="text-xs text-theme-text-tertiary">{r.members.length} 个实例</span>
                       </td>
                       <td className="px-2 py-2.5">
                         {/* The ladder: env-ordered cells; click drills into that env's instance. */}
@@ -520,7 +520,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                           {/* Ladder cells scale-capped: a handful inline, the
                               rest behind "+N" (expand shows every instance). */}
                           {r.cells.slice(0, 4).map((c) => (
-                            <Tooltip key={c.env} content={`${c.env}${c.version ? ` · ${c.version}` : ''}${c.count > 1 ? ` · ${c.count} instances — expand to choose` : ' — open'}`} delay={150}>
+                            <Tooltip key={c.env} content={`${c.env}${c.version ? ` · ${c.version}` : ''}${c.count > 1 ? ` · ${c.count} 个实例，展开选择` : ' · 点击打开'}`} delay={150}>
                               <button
                                 type="button"
                                 onClick={(ev) => {
@@ -535,7 +535,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                             </Tooltip>
                           ))}
                           {r.cells.length > 4 && (
-                            <Tooltip content={`${r.cells.length - 4} more environments — expand to see all instances`} delay={150}>
+                            <Tooltip content={`${r.cells.length - 4} 个环境，展开查看全部实例`} delay={150}>
                               <button
                                 type="button"
                                 onClick={(ev) => { ev.stopPropagation(); toggleGroup(r.key) }}
@@ -551,7 +551,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                       <td className="px-2 py-2.5"><ApplicationRuntimeCell apps={r.members.map((member) => member.row)} workloadClass={r.workloadClass} ready={r.ready} desired={r.desired} /></td>
                       <td className="px-2 py-2.5">
                         {r.lag ? (
-                          <Tooltip content={`Promotion lag: ${r.lag} (${r.cells.filter((c) => c.version).map((c) => `${c.env}=${c.version}`).join(', ')})`} delay={150}>
+                          <Tooltip content={`晋级延迟：${r.lag}（${r.cells.filter((c) => c.version).map((c) => `${c.env}=${c.version}`).join(', ')}）`} delay={150}>
                             <span className={`${CHIP} ${CHIP_TONE.amber}`}>{r.lag}</span>
                           </Tooltip>
                         ) : (
@@ -620,7 +620,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                               <span className="truncate text-xs text-theme-text-secondary">{e.clusters[0].name}</span>
                             ) : e.clusters.length > 1 ? (
                               <Tooltip content={e.clusters.map((c) => c.name).join(', ')} delay={150}>
-                                <span className="text-xs text-theme-text-secondary">{e.clusters.length} clusters</span>
+                                <span className="text-xs text-theme-text-secondary">{e.clusters.length} 个集群</span>
                               </Tooltip>
                             ) : (
                               <span className="text-theme-text-tertiary">—</span>

@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { createElement } from 'react'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import { compareIssues, issueSortAnchor, subjectRef, memberRef, normalizeImagePullMessage, issueMessageParts, type Issue } from './types'
 import { categoryLabel, groupBadgeClass, groupLabel, issueTitle } from './severity'
@@ -109,6 +111,37 @@ it('localizes the healthy and unavailable issue-queue empty states', () => {
   const unavailable = renderToString(createElement(IssuesView, { issues: [], anyData: false }))
   expect(unavailable).toContain('暂无问题数据')
   expect(unavailable).toContain('连接集群后即可填充问题队列')
+})
+
+it('localizes the truncated affected-resource message while preserving resource identity', async () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  act(() => {
+    root.render(createElement(IssueRow, {
+      issue: mk({
+        count: 5,
+        members: [
+          { kind: 'Pod', namespace: 'payments-prod', name: 'api-0' },
+          { kind: 'Pod', namespace: 'payments-prod', name: 'api-1' },
+        ],
+        members_truncated: true,
+      }),
+      open: true,
+      onToggle: () => undefined,
+    }))
+  })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  expect(host.textContent).toContain('已显示 2 / 5 个受影响资源；展开对象可查看其余资源。')
+  expect(host.textContent).toContain('Pod')
+  expect(host.textContent).toContain('payments-prod')
+  expect(host.textContent).toContain('api-0')
+  expect(host.textContent).not.toContain('Showing 2 of 5')
+  act(() => root.unmount())
+  host.remove()
+  document.body.innerHTML = ''
 })
 
 describe('IssueRow', () => {

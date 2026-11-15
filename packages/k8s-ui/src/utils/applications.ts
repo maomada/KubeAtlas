@@ -69,15 +69,15 @@ export function rolloutSummaryForApps(apps: AppRow[]): AppRolloutSummary | null 
     ? worst.rollout.label
     : stalled > 0
       ? stalled === entries.length
-        ? `${stalled} stalled`
-        : `${stalled} stalled · ${entries.length - stalled} waiting`
-      : `${entries.length} updating`
+        ? `${stalled} 个停滞`
+        : `${stalled} 个停滞 · ${entries.length - stalled} 个等待中`
+      : `${entries.length} 个正在更新`
   const details = entries.map(({ app, workload, rollout }) => {
     const prefix = apps.length > 1 ? `${app.name} / ` : ''
     return `${prefix}${workload.name}: ${rollout.label}${rollout.detail ? ` — ${rollout.detail}` : ''}`
   })
   const visibleDetails = details.slice(0, 8)
-  const detail = `${visibleDetails.join(' · ')}${details.length > visibleDetails.length ? ` · +${details.length - visibleDetails.length} more` : ''}`
+  const detail = `${visibleDetails.join(' · ')}${details.length > visibleDetails.length ? ` · 另有 ${details.length - visibleDetails.length} 项` : ''}`
   return { count: entries.length, label, detail, details, health }
 }
 
@@ -220,23 +220,23 @@ export function isDeclaredAppSource(source?: string): boolean {
 export function appSourceLabel(source?: string): string {
   switch (source) {
     case "explicit":
-      return `the ${APP_IDENTITY_ANNOTATION} annotation`;
+      return `${APP_IDENTITY_ANNOTATION} 注解`;
     case "argo-path":
-      return "its Argo CD source path";
+      return "Argo CD 来源路径";
     case "argo-appset":
-      return "its ApplicationSet (env fan-out)";
+      return "Argo CD ApplicationSet（环境扩展）";
     case "flux-source":
-      return "its Flux source";
+      return "Flux 来源";
     case "addon":
-      return "a shared add-on name + chart/image";
+      return "共享的附加组件名称与 Helm chart/镜像";
     case "label":
-      return "the app.kubernetes.io/name label";
+      return "app.kubernetes.io/name 标签";
     case "name-stem":
-      return "a shared name + image";
+      return "共享名称与镜像";
     case "namespace":
-      return "a shared namespace + image";
+      return "共享命名空间与镜像";
     default:
-      return "its workload grouping";
+      return "工作负载分组";
   }
 }
 
@@ -251,10 +251,10 @@ export function appGroupingExplainer(identity?: AppIdentity): {
   const folds = isDeclaredAppSource(identity?.source);
   return {
     folds,
-    how: `Grouped by ${appSourceLabel(identity?.source)}.`,
+    how: `按 ${appSourceLabel(identity?.source)} 分组。`,
     fix: folds
       ? undefined
-      : `This app only has a per-cluster name, which can't prove two clusters run the same app. To fold it across clusters, set ${APP_IDENTITY_ANNOTATION} on its workloads in each cluster (same value), or deploy it via Argo CD / Flux with the environment in the source path.`,
+      : `此应用仅有集群内名称，无法据此确认多个集群运行的是同一应用。若要跨集群合并，请在各集群的工作负载上设置相同的 ${APP_IDENTITY_ANNOTATION}，或通过 Argo CD / Flux 部署，并在来源路径中包含环境信息。`,
   };
 }
 
@@ -852,7 +852,7 @@ export function orderEnvs(envs: string[]): string[] {
 
 /** Promotion lag across an app group's env cells: fires only between RANKED envs,
  *  when a strictly-lower env runs a strictly-newer comparable version.
- *  Returns the human message ("staging is behind dev") or null. */
+ *  Returns the localized display message or null. */
 export function appGroupLagMessage(
   cells: { env: string; version?: string }[],
 ): string | null {
@@ -871,7 +871,7 @@ export function appGroupLagMessage(
         ranked[i].rank < ranked[j].rank &&
         compareVersions(ranked[i].version, ranked[j].version) === 1
       ) {
-        return `${ranked[j].env} is behind ${ranked[i].env}`;
+        return `${ranked[j].env} 落后于 ${ranked[i].env}`;
       }
     }
   }
@@ -1298,26 +1298,26 @@ function batchSignalForWorkload(workload: AppWorkload): BatchSignal | null {
   if (latestPhase === "Failed" || latestPhase === "Error") {
     return {
       tone: "rose",
-      label: "batch failed",
+      label: "批处理失败",
       detail:
         batch.message ||
-        `${name} latest run ${batch.latestRunName || ""} ended ${latestPhase}.`,
+        `${name} 的最近运行${batch.latestRunName ? `（${batch.latestRunName}）` : ""}以状态 ${latestPhase} 结束。`,
       workload,
     };
   }
   if (batch.suspended) {
     return {
       tone: "sky",
-      label: "schedule suspended",
-      detail: `${name} will not create new runs until resumed.`,
+      label: "计划已暂停",
+      detail: `${name} 已暂停，恢复后才会创建新的运行实例。`,
       workload,
     };
   }
   if ((batch.activeRuns ?? 0) > 0) {
     return {
       tone: "sky",
-      label: `${batch.activeRuns} running`,
-      detail: `${name} currently has ${batch.activeRuns} active run${batch.activeRuns === 1 ? "" : "s"}.`,
+      label: `运行中 · ${batch.activeRuns}`,
+      detail: `${name} 当前有 ${batch.activeRuns} 个活动运行实例。`,
       workload,
     };
   }
@@ -1339,9 +1339,9 @@ export function batchRuntimeForApp(app: AppRow): AppBatchRuntime {
   ) {
     const active = activity.reduce((sum, item) => sum + item.activeRuns, 0);
     return {
-      label: active > 0 ? `${active} running` : "Running",
+      label: active > 0 ? `运行中 · ${active}` : "Running",
       health: "neutral",
-      detail: "Batch work is executing now.",
+      detail: "批处理任务当前正在运行。",
     };
   }
   const failed = activity.filter(
@@ -1352,8 +1352,8 @@ export function batchRuntimeForApp(app: AppRow): AppBatchRuntime {
     const item = failed[0];
     const detail =
       failed.length === 1
-        ? `${item.workload.kind}/${item.workload.name} latest retained run${item.latestRunName ? ` ${item.latestRunName}` : ""} failed.`
-        : `${failed.length} batch workloads have failed latest runs.`;
+        ? `${item.workload.kind}/${item.workload.name} 最近保留的运行${item.latestRunName ? `（${item.latestRunName}）` : ""}已失败。`
+        : `${failed.length} 个批处理工作负载的最近运行已失败。`;
     return { label: "Failed", health: "unhealthy", detail };
   }
   const latest = [...activity].sort(
@@ -1364,8 +1364,8 @@ export function batchRuntimeForApp(app: AppRow): AppBatchRuntime {
       label: "Succeeded",
       health: "healthy",
       detail: latest.latestRunName
-        ? `Latest retained run: ${latest.latestRunName}`
-        : "The latest retained run succeeded.",
+        ? `最近保留的运行：${latest.latestRunName}`
+        : "最近保留的运行已成功。",
     };
   }
   if (
@@ -1375,20 +1375,20 @@ export function batchRuntimeForApp(app: AppRow): AppBatchRuntime {
     return {
       label: "Suspended",
       health: "neutral",
-      detail: "All batch launchers are suspended.",
+      detail: "所有批处理启动器均已暂停。",
     };
   }
   if (activity.some((item) => item.retainedRuns > 0)) {
     return {
       label: latest?.latestRunPhase || "Idle",
       health: "neutral",
-      detail: "No batch work is currently active.",
+      detail: "当前没有正在运行的批处理任务。",
     };
   }
   return {
     label: "Idle",
     health: "neutral",
-    detail: "No retained runs are present in Kubernetes.",
+    detail: "Kubernetes 中没有保留的运行记录。",
   };
 }
 
@@ -1509,10 +1509,10 @@ function batchActivityForWorkload(
       workload,
       tone: "rose",
       rank: 50,
-      label: "Latest run failed",
+      label: "最近运行失败",
       detail:
         batch.message ||
-        `${name} latest run ${batch.latestRunName || ""} ended ${latestPhase}.`,
+        `${name} 的最近运行${batch.latestRunName ? `（${batch.latestRunName}）` : ""}以状态 ${latestPhase} 结束。`,
       latestRunName: batch.latestRunName,
       latestRunPhase: latestPhase,
       latestStartedAt: batch.latestStartedAt,
@@ -1530,8 +1530,8 @@ function batchActivityForWorkload(
       workload,
       tone: "amber",
       rank: 40,
-      label: `${failedRuns} retained failed ${failedRuns === 1 ? "run" : "runs"}`,
-      detail: `${name} has retained failed executions in Kubernetes.`,
+      label: `已保留 ${failedRuns} 次失败运行`,
+      detail: `${name} 在 Kubernetes 中有已保留的失败运行记录。`,
       latestRunName: batch.latestRunName,
       latestRunPhase: latestPhase,
       latestStartedAt: batch.latestStartedAt,
@@ -1549,8 +1549,8 @@ function batchActivityForWorkload(
       workload,
       tone: "sky",
       rank: 35,
-      label: `${activeRuns} active ${activeRuns === 1 ? "run" : "runs"}`,
-      detail: `${name} is executing now.`,
+      label: `${activeRuns} 个活动运行`,
+      detail: `${name} 正在执行。`,
       latestRunName: batch.latestRunName,
       latestRunPhase: latestPhase,
       latestStartedAt: batch.latestStartedAt,
@@ -1568,8 +1568,8 @@ function batchActivityForWorkload(
       workload,
       tone: "sky",
       rank: 30,
-      label: "Schedule suspended",
-      detail: `${name} will not create new runs until resumed.`,
+      label: "计划已暂停",
+      detail: `${name} 已暂停，恢复后才会创建新的运行实例。`,
       latestRunName: batch.latestRunName,
       latestRunPhase: latestPhase,
       latestStartedAt: batch.latestStartedAt,
@@ -1587,8 +1587,8 @@ function batchActivityForWorkload(
     tone: "muted",
     rank: latestPhase === "Succeeded" ? 20 : 10,
     label:
-      latestPhase === "Succeeded" ? "Latest run succeeded" : "No active runs",
-    detail: `${name} has ${retainedRuns} retained ${retainedRuns === 1 ? "run" : "runs"}.`,
+      latestPhase === "Succeeded" ? "最近运行成功" : "没有活动运行",
+    detail: `${name} 有 ${retainedRuns} 条保留的运行记录。`,
     latestRunName: batch.latestRunName,
     latestRunPhase: latestPhase,
     latestStartedAt: batch.latestStartedAt,

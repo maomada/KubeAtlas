@@ -740,7 +740,7 @@ function AffectedResources({
           </ul>
           {issue.members_truncated && (
             <p className="text-xs text-theme-text-tertiary">
-              Showing {members.length} of {total} — open the subject to see the rest.
+              已显示 {members.length} / {total} 个受影响资源；展开对象可查看其余资源。
             </p>
           )}
         </CardSection>
@@ -785,8 +785,8 @@ function ResourceLine({
         {r.name}
       </span>
       {count && count > 1 ? (
-        <Tooltip content={`${count} affected resources grouped under this issue`} delay={200}>
-          <span className="shrink-0 text-[10px] text-theme-text-tertiary tabular-nums">{count} affected</span>
+        <Tooltip content={`共 ${count} 个受影响资源归入此问题`} delay={200}>
+          <span className="shrink-0 text-[10px] text-theme-text-tertiary tabular-nums">{count} 个受影响资源</span>
         </Tooltip>
       ) : null}
       {linkable && <ResourceLinkIcon className="h-3 w-3 shrink-0 text-theme-text-tertiary opacity-0 transition-opacity group-hover/r:opacity-100" />}
