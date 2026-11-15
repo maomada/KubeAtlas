@@ -8,6 +8,7 @@ import {
   formatTimelineRelativeAgeTime,
   buildLaneMemberSpans,
   selectReadableAxisTickLabels,
+  axisTickLabelOverlapsNow,
   type MemberHealthSpans,
   type AggregateHealthSegment,
 } from './shared'
@@ -42,6 +43,45 @@ describe('timeline display formatting and axis labels', () => {
     expect([...selectReadableAxisTickLabels(tickTimes, span, 1944)]).toEqual(tickTimes)
     expect([...selectReadableAxisTickLabels(tickTimes, span, 2916)]).toEqual(tickTimes)
     expect(tickTimes).toHaveLength(11)
+  })
+
+  it('preserves visible Now labels by suppressing only overlapping endpoint and internal tick labels', () => {
+    const width = 900
+
+    expect(axisTickLabelOverlapsNow('06:00', 96, 100, width)).toBe(true)
+    expect(axisTickLabelOverlapsNow('06:00', 94, 100, width)).toBe(false)
+    expect(axisTickLabelOverlapsNow('06:00', 96, 100, 300)).toBe(true)
+    expect(axisTickLabelOverlapsNow('06:00', 96, 100, 2560)).toBe(false)
+    expect(axisTickLabelOverlapsNow('06:00', 48, 50, width)).toBe(true)
+    expect(axisTickLabelOverlapsNow('06:00', 45, 50, width)).toBe(false)
+    expect(axisTickLabelOverlapsNow('06:00', 1.5, 0, width)).toBe(true)
+    expect(axisTickLabelOverlapsNow('06:00', 5, 0, width)).toBe(false)
+  })
+
+  it('leaves historical tick labels unchanged when Now is outside the window', () => {
+    expect(axisTickLabelOverlapsNow('06:00', 99, null, 900)).toBe(false)
+    expect(axisTickLabelOverlapsNow('06:00', 99, -1, 900)).toBe(false)
+    expect(axisTickLabelOverlapsNow('06:00', 99, 101, 900)).toBe(false)
+  })
+
+  it('leaves tick labels alone when layout geometry is unavailable', () => {
+    expect(axisTickLabelOverlapsNow('06:00', 96, 100, 0)).toBe(false)
+    expect(axisTickLabelOverlapsNow('06:00', Number.NaN, 100, 900)).toBe(false)
+    expect(axisTickLabelOverlapsNow('06:00', 96, Number.NaN, 900)).toBe(false)
+  })
+
+  it('suppresses only selected labels that overlap Now on a dense axis', () => {
+    const tickTimes = Array.from({ length: 11 }, (_, index) => index * 60)
+    const windowMs = 600
+    const width = 1000
+    const selected = selectReadableAxisTickLabels(tickTimes, windowMs, width)
+    const visible = tickTimes.filter((time) => (
+      selected.has(time) &&
+      !axisTickLabelOverlapsNow('06:00', time / windowMs * 100, 100, width)
+    ))
+
+    expect([...selected]).toEqual([0, 120, 240, 360, 480, 600])
+    expect(visible).toEqual([0, 120, 240, 360, 480])
   })
 })
 

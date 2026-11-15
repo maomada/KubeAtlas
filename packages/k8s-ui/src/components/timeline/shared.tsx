@@ -73,6 +73,39 @@ export function selectReadableAxisTickLabels(
   return new Set(tickTimes.filter((_, index) => index % stride === 0))
 }
 
+const AXIS_LABEL_CHARACTER_WIDTH_PX = 7
+const NOW_LABEL_WIDTH_PX = 24
+const AXIS_LABEL_CLEARANCE_PX = 2
+
+export function axisTickLabelOverlapsNow(
+  label: string,
+  tickXPercent: number,
+  nowXPercent: number | null,
+  trackWidthPx: number,
+): boolean {
+  if (
+    nowXPercent === null ||
+    !Number.isFinite(tickXPercent) ||
+    !Number.isFinite(nowXPercent) ||
+    nowXPercent < 0 ||
+    nowXPercent > 100 ||
+    !Number.isFinite(trackWidthPx) ||
+    trackWidthPx <= 0
+  ) return false
+
+  const tickCenterPx = tickXPercent / 100 * trackWidthPx
+  const tickHalfWidthPx = label.length * AXIS_LABEL_CHARACTER_WIDTH_PX / 2
+  const nowCenterPx = nowXPercent / 100 * trackWidthPx
+  const nowRightAligned = nowXPercent > 97
+  const nowLeftPx = nowCenterPx - (nowRightAligned ? NOW_LABEL_WIDTH_PX : NOW_LABEL_WIDTH_PX / 2)
+  const nowRightPx = nowCenterPx + (nowRightAligned ? 0 : NOW_LABEL_WIDTH_PX / 2)
+
+  return (
+    tickCenterPx - tickHalfWidthPx < nowRightPx + AXIS_LABEL_CLEARANCE_PX &&
+    tickCenterPx + tickHalfWidthPx > nowLeftPx - AXIS_LABEL_CLEARANCE_PX
+  )
+}
+
 /**
  * Convert a timestamp to X position (0-100) within a time range.
  */

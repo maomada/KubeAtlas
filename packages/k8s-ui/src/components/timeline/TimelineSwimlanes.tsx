@@ -54,6 +54,7 @@ import {
   formatAxisTime,
   formatFullTime,
   formatTimelineRelativeAgeTime,
+  axisTickLabelOverlapsNow,
   selectReadableAxisTickLabels,
   buildHealthSpans,
   buildLaneMemberSpans,
@@ -1953,12 +1954,11 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                       {axisTicks.map((tick) => {
                         const x = timeToX(tick.time)
                         // Left cull at 1.5% (not 0): a centered label hugging the
-                        // window start would bleed over the Resource column
-                        // header. Also cull the tick whose label would collide
-                        // with the "Now" label at the live edge.
+                        // window start would bleed over the Resource column header.
                         if (x < (atPastEdge ? 3.5 : 1.5)) return null
                         if (x > (atFutureEdge ? 96.5 : 100)) return null
-                        if (nowVisible && Math.abs(x - nowX) < 4) return null
+                        const showLabel = axisLabelTimes.has(tick.time) &&
+                          !axisTickLabelOverlapsNow(tick.label, x, nowVisible ? nowX : null, trackPx)
                         return (
                           <div
                             key={tick.time}
@@ -1971,7 +1971,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                             style={{ left: `${x}%` }}
                           >
                             <div className="h-2 w-px bg-theme-hover" />
-                            {axisLabelTimes.has(tick.time) && (
+                            {showLabel && (
                               <span className="mt-0.5 whitespace-nowrap text-xs text-theme-text-tertiary">{tick.label}</span>
                             )}
                           </div>
