@@ -412,8 +412,8 @@ describe("ApplicationDetail shell", () => {
       historyRangeOptions: [
         { value: 'all', label: 'All observed' },
         { value: '7d', label: 'Custom window' },
-        { value: 'constructor', label: 'constructor' },
-        { value: 'toString', label: 'toString' },
+        { value: '24h', label: 'constructor' },
+        { value: '30d', label: 'toString' },
       ],
       historyItems: [],
       onHistoryRangeChange: () => {},
@@ -423,8 +423,8 @@ describe("ApplicationDetail shell", () => {
     expect(html).toContain('Custom window')
     expect(html).toContain('value="all"')
     expect(html).toContain('value="7d"')
-    expect(html).toMatch(/<option[^>]*value="constructor"[^>]*>constructor<\/option>/)
-    expect(html).toMatch(/<option[^>]*value="toString"[^>]*>toString<\/option>/)
+    expect(html).toMatch(/<option[^>]*value="24h"[^>]*>constructor<\/option>/)
+    expect(html).toMatch(/<option[^>]*value="30d"[^>]*>toString<\/option>/)
   })
 
   it('reports ring truncation with its own copy, only in retained mode', () => {
