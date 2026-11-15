@@ -345,7 +345,7 @@ describe("Secret and ConfigMap change evidence", () => {
     );
     // The key list reads as a key change, not a struck-through old→new pair.
     expect(html).not.toContain("[&quot;password&quot;]");
-    expect(html).toContain("keys changed: ");
+    expect(html).toContain("键已修改： ");
     expect(html).toContain(">password</span>");
     expect(html).not.toMatch(/oldValue|newValue|stringData/);
   });

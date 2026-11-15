@@ -34,8 +34,7 @@ import { ResourceRefBadge } from '../ui/drawer-components'
 import type { NavigateToResource } from '../../utils/navigation'
 import { builtinGroupForKind } from '../../utils/api-resources'
 import { kindToPluralWithGroup, refToSelectedResource, apiVersionToGroup } from '../../utils/navigation'
-import { pluralize } from '../../utils/pluralize'
-import { formatCompactAge } from '../../utils/format'
+import { formatFullTime, formatTimelineRelativeAgeTime } from './shared'
 
 export type { ActivityTypeFilter, ActivityFilterKey }
 
@@ -703,11 +702,11 @@ function ActivityCard({ item, expanded, onToggle, onResourceClick, compact, sele
                 className="flex items-center gap-2 hover:bg-theme-elevated/50 rounded px-1 -ml-1 transition-colors group"
               >
                 <span className="badge-sm bg-theme-elevated text-theme-text-secondary group-hover:bg-theme-hover">
-                  {item.kind || 'Event'}
+                  {item.kind || '事件'}
                 </span>
                 <span className="text-sm font-medium text-theme-text-primary truncate group-hover:text-blue-300">{item.name}</span>
               </button>
-              {item.namespace && <span className="text-xs text-theme-text-tertiary">in {item.namespace}</span>}
+              {item.namespace && <span className="text-xs text-theme-text-tertiary">命名空间 {item.namespace}</span>}
               {item.owner && (
                 <span className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
                   <span className="text-xs text-theme-text-quaternary">←</span>
@@ -725,9 +724,9 @@ function ActivityCard({ item, expanded, onToggle, onResourceClick, compact, sele
                 </span>
               )}
               {item.createdAt && (
-                <Tooltip content={`Created: ${new Date(item.createdAt).toLocaleString()}`}>
+                <Tooltip content={`创建于：${formatFullTime(new Date(item.createdAt))}`}>
                   <span className="text-xs text-theme-text-quaternary">
-                    • {formatCompactAge(item.createdAt)} old
+                    • {formatTimelineRelativeAgeTime(item.createdAt)}
                   </span>
                 </Tooltip>
               )}
@@ -779,7 +778,7 @@ function ActivityCard({ item, expanded, onToggle, onResourceClick, compact, sele
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onToggle() }}
-              aria-label={expanded ? 'Collapse changes' : 'Expand changes'}
+              aria-label={expanded ? '收起变更' : '展开变更'}
               className="shrink-0 rounded p-0.5 text-theme-text-disabled hover:bg-theme-elevated hover:text-theme-text-secondary"
             >
               <CollapseChevron open={expanded} inheritColor className="w-4 h-4" />
@@ -792,7 +791,7 @@ function ActivityCard({ item, expanded, onToggle, onResourceClick, compact, sele
         {hasExpandableContent && item.diff && (
           <Collapse open={expanded} mountLazily>
             <div className="mt-3 pt-3 border-t-subtle">
-              <div className="text-xs text-theme-text-tertiary mb-2">Changes:</div>
+              <div className="text-xs text-theme-text-tertiary mb-2">变更：</div>
               <DiffViewer diff={item.diff} />
             </div>
           </Collapse>
@@ -842,8 +841,8 @@ function describeFolded(others: TimelineEvent[]): string {
     else changes++
   }
   const parts = [...reasons.entries()].sort((a, b) => b[1] - a[1]).map(([r, n]) => (n > 1 ? `${r} ×${n}` : r))
-  if (changes > 0) parts.push(pluralize(changes, 'status change'))
-  return parts.join(', ')
+  if (changes > 0) parts.push(`${changes} 次状态变更`)
+  return parts.join('、')
 }
 
 // The rest of a child resource's problems in one time group, behind one line
@@ -859,7 +858,7 @@ function FoldedProblems({ latest, others, renderCard }: { latest: TimelineEvent;
         className="flex items-center gap-1 rounded px-1 py-0.5 text-xs text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary"
       >
         <CollapseChevron open={open} inheritColor className="h-3.5 w-3.5" />
-        {others.length} more on this {latest.kind}: {describeFolded(others)}
+        另有 {others.length} 条 {latest.kind} 事件：{describeFolded(others)}
       </button>
       <Collapse open={open} unmountOnExit>
         <div className="mt-2 space-y-2 border-l-2 border-theme-border pl-3">{others.map((e) => (
@@ -926,13 +925,13 @@ function AggregatedActivityCard({ first, last, count, reason, expanded, onToggle
           {/* Aggregation visualization: first dot - line - last dot */}
           <div className="flex flex-col items-center shrink-0 mt-0.5">
             {/* First occurrence dot */}
-            <Tooltip content={`First: ${firstTime}`}>
+            <Tooltip content={`首次发生：${firstTime}`}>
               <div className={clsx('w-2.5 h-2.5 rounded-full', dotColor)} />
             </Tooltip>
             {/* Connecting line */}
             <div className={clsx('w-0.5 h-4 my-0.5', lineColor)} />
             {/* Last occurrence dot */}
-            <Tooltip content={`Last: ${lastTime}`}>
+            <Tooltip content={`最后发生：${lastTime}`}>
               <div className={clsx('w-2.5 h-2.5 rounded-full', dotColor)} />
             </Tooltip>
           </div>
@@ -959,11 +958,11 @@ function AggregatedActivityCard({ first, last, count, reason, expanded, onToggle
                 className="flex items-center gap-2 hover:bg-theme-elevated/50 rounded px-1 -ml-1 transition-colors group"
               >
                 <span className="badge-sm bg-theme-elevated text-theme-text-secondary group-hover:bg-theme-hover">
-                  {first.kind || 'Event'}
+                  {first.kind || '事件'}
                 </span>
                 <span className="text-sm font-medium text-theme-text-primary truncate group-hover:text-blue-300">{first.name}</span>
               </button>
-              {first.namespace && <span className="text-xs text-theme-text-tertiary">in {first.namespace}</span>}
+              {first.namespace && <span className="text-xs text-theme-text-tertiary">命名空间 {first.namespace}</span>}
             </div>
 
             {/* Aggregated event details */}
@@ -984,7 +983,7 @@ function AggregatedActivityCard({ first, last, count, reason, expanded, onToggle
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onToggle() }}
-            aria-label={expanded ? 'Collapse occurrences' : 'Expand occurrences'}
+            aria-label={expanded ? '收起发生记录' : '展开发生记录'}
             className="shrink-0 rounded p-0.5 text-theme-text-disabled hover:bg-theme-elevated hover:text-theme-text-secondary"
           >
             <CollapseChevron open={expanded} inheritColor className="w-4 h-4" />
@@ -998,9 +997,9 @@ function AggregatedActivityCard({ first, last, count, reason, expanded, onToggle
             <div className="flex items-start gap-2">
               <div className={clsx('w-2 h-2 rounded-full mt-1.5 shrink-0', dotColor)} />
               <div>
-                <div className="text-xs text-theme-text-tertiary">First occurrence</div>
+                <div className="text-xs text-theme-text-tertiary">首次出现</div>
                 <div className="text-sm text-theme-text-secondary">
-                  {new Date(first.timestamp).toLocaleString()}
+                  {formatFullTime(new Date(first.timestamp))}
                 </div>
                 {first.message && (
                   <p className="text-xs text-theme-text-tertiary mt-1 whitespace-pre-wrap">
@@ -1016,7 +1015,7 @@ function AggregatedActivityCard({ first, last, count, reason, expanded, onToggle
               <div>
                 <div className="text-xs text-theme-text-tertiary">最近一次出现（共 {count} 次）</div>
                 <div className="text-sm text-theme-text-secondary">
-                  {new Date(last.timestamp).toLocaleString()}
+                  {formatFullTime(new Date(last.timestamp))}
                 </div>
                 {last.message && (
                   <p className="text-xs text-theme-text-tertiary mt-1 whitespace-pre-wrap">
@@ -1038,14 +1037,14 @@ function formatTime(timestamp: string, compact = false): string {
   if (isNaN(date.getTime())) return '-'
   // Compact (date-grouped) rows show the clock time — the group header carries
   // the date, and "5m ago" / a bare date is useless for a batch of same-day events.
-  if (compact) return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+  if (compact) return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' })
   const now = new Date()
   const diffMs = now.getTime() - date.getTime()
   const diffMins = Math.floor(diffMs / 60000)
   const diffHours = Math.floor(diffMins / 60)
 
-  if (diffMins < 1) return 'just now'
-  if (diffMins < 60) return `${diffMins}m ago`
-  if (diffHours < 24) return `${diffHours}h ago`
-  return date.toLocaleDateString()
+  if (diffMins < 1) return '刚刚'
+  if (diffMins < 60) return `${diffMins}分钟前`
+  if (diffHours < 24) return `${diffHours}小时前`
+  return date.toLocaleDateString('zh-CN')
 }

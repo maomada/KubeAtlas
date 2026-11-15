@@ -88,10 +88,10 @@ function msToX(ms: number, domain: ScrubberRange, width: number): number {
 
 // Field stamp for the custom-range pickers, e.g. "Jul 8, 12:01 AM".
 function fieldStamp(ms: number): string {
-  return new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return new Date(ms).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 }
 
-const DOW_LABELS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
+const DOW_LABELS = ['日', '一', '二', '三', '四', '五', '六']
 
 // A compact, theme-styled datetime picker: a stamp button opening a month-grid
 // popover with a time field and a "Now" shortcut.
@@ -166,7 +166,7 @@ function DateTimeField({ label, valueMs, onChange, nowMs }: {
               <ChevronLeft className="h-3.5 w-3.5" />
             </button>
             <span className="text-xs font-semibold text-theme-text-primary">
-              {new Date(viewY, viewM).toLocaleDateString([], { month: 'long', year: 'numeric' })}
+              {new Date(viewY, viewM).toLocaleDateString('zh-CN', { month: 'long', year: 'numeric' })}
             </span>
             <button type="button" onClick={nextMonth} aria-label="下个月" className="rounded p-1 text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary">
               <ChevronRight className="h-3.5 w-3.5" />
@@ -220,11 +220,11 @@ function DateTimeField({ label, valueMs, onChange, nowMs }: {
 // Window-edge label parts, kept short + separate so the pill can stack the time
 // over a muted date instead of one long wrapping string.
 function bandTime(ms: number): string {
-  return new Date(ms).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  return new Date(ms).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 }
 // Strip-corner stamp, e.g. "Jul 6, 10:17 PM" — the query range's true bounds.
 function footerStamp(ms: number): string {
-  return new Date(ms).toLocaleString([], { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+  return new Date(ms).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 }
 
 // Round window sizes the − / ＋ stepper snaps to, so the jumps are consistent

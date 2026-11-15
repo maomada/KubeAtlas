@@ -1,14 +1,49 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   isRolloutEvent,
   buildHealthSpans,
   sweepAggregateHealth,
   formatAggregateHealthTooltip,
+  formatAxisTime,
+  formatTimelineRelativeAgeTime,
   buildLaneMemberSpans,
+  selectReadableAxisTickLabels,
   type MemberHealthSpans,
   type AggregateHealthSegment,
 } from './shared'
 import type { ResourceLane } from '../../utils/resource-hierarchy'
+
+describe('timeline display formatting and axis labels', () => {
+  it('uses Chinese date/time and relative-age labels', () => {
+    const now = new Date(2026, 10, 15, 12, 0)
+    vi.useFakeTimers()
+    vi.setSystemTime(now)
+    try {
+      expect(formatAxisTime(new Date(2020, 0, 2, 18, 0))).toBe('1/2 18:00')
+      expect(formatTimelineRelativeAgeTime(new Date(now.getTime() - 18 * 60 * 60 * 1000).toISOString())).toBe('18小时前')
+      expect(formatTimelineRelativeAgeTime()).toBe('-')
+      expect(formatTimelineRelativeAgeTime('not-a-timestamp')).toBe('not-a-timestamp')
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps axis tick times while spacing labels for narrow and wide tracks', () => {
+    const hour = 60 * 60 * 1000
+    const tickTimes = Array.from({ length: 11 }, (_, index) => index * 2 * hour)
+    const span = 24 * hour
+
+    expect([...selectReadableAxisTickLabels([], span, 972)]).toEqual([])
+    const narrow = selectReadableAxisTickLabels(tickTimes, span, 972)
+    expect([...narrow]).toEqual(tickTimes.filter((_, index) => index % 2 === 0))
+    expect([...selectReadableAxisTickLabels(tickTimes, span, 1104)]).toEqual(tickTimes.filter((_, index) => index % 2 === 0))
+    expect([...selectReadableAxisTickLabels(tickTimes, span, 1200)]).toEqual(tickTimes.filter((_, index) => index % 2 === 0))
+    expect([...selectReadableAxisTickLabels(tickTimes, span, 1440)]).toEqual(tickTimes)
+    expect([...selectReadableAxisTickLabels(tickTimes, span, 1944)]).toEqual(tickTimes)
+    expect([...selectReadableAxisTickLabels(tickTimes, span, 2916)]).toEqual(tickTimes)
+    expect(tickTimes).toHaveLength(11)
+  })
+})
 
 describe('buildHealthSpans own-resource existence (child cleanup must not kill the lane)', () => {
   const t = (min: number) => new Date(Date.UTC(2026, 0, 1, 10, min)).toISOString()
@@ -173,12 +208,12 @@ describe('formatAggregateHealthTooltip', () => {
   it('mixed → "mixed · 2/23 unhealthy: <names> · 21 healthy/idle"', () => {
     const healthy = Array.from({ length: 21 }, (_, i) => `h${i}`)
     const s = seg({ health: 'mixed', mixed: true, total: 23, byState: { unhealthy: ['name-a', 'name-b'], healthy } })
-    expect(formatAggregateHealthTooltip(s)).toBe('mixed · 2/23 unhealthy: name-a, name-b · 21 healthy/idle')
+    expect(formatAggregateHealthTooltip(s)).toBe('mixed · 2/23 unhealthy: name-a、name-b · 21 healthy/idle')
   })
 
   it('caps callout names at 3 + "+N more"', () => {
     const s = seg({ health: 'mixed', mixed: true, total: 6, byState: { unhealthy: ['u1', 'u2', 'u3', 'u4', 'u5'], healthy: ['h1'] } })
-    expect(formatAggregateHealthTooltip(s)).toBe('mixed · 5/6 unhealthy: u1, u2, u3, +2 more · 1 healthy/idle')
+    expect(formatAggregateHealthTooltip(s)).toBe('mixed · 5/6 unhealthy: u1、u2、u3、另有2个 · 1 healthy/idle')
   })
 
   it('rolling callout in a mixed slice is labelled rolling', () => {

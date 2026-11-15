@@ -17,7 +17,7 @@ export const DiffViewer = memo(function DiffViewer({ diff, compact = false }: Di
     return (
       <div className="text-xs text-theme-text-secondary flex items-center gap-1">
         <RefreshCw className="w-3 h-3" aria-hidden />
-        <span>{diff.summary || `${diff.fields.length} field(s) changed`}</span>
+        <span>{diff.summary || `${diff.fields.length} 个字段已变更`}</span>
       </div>
     )
   }
@@ -94,9 +94,9 @@ function diffRows(fields: FieldChange[]): DiffRow[] {
 }
 
 const KEY_CHANGE_LABEL: Record<KeyChange, string> = {
-  modified: 'keys changed',
-  added: 'added',
-  removed: 'removed',
+  modified: '键已修改',
+  added: '新增',
+  removed: '移除',
 }
 
 function KeyListRow({ row }: { row: KeyListDiffRow }) {
@@ -108,7 +108,7 @@ function KeyListRow({ row }: { row: KeyListDiffRow }) {
         {parts.map((change, idx) => (
           <span key={change} className="min-w-0 [overflow-wrap:anywhere]">
             {idx > 0 ? <span aria-hidden className="mr-2 text-theme-text-tertiary">·</span> : null}
-            {KEY_CHANGE_LABEL[change]}: <span className="font-mono">{row.keys[change].join(', ')}</span>
+            {KEY_CHANGE_LABEL[change]}： <span className="font-mono">{row.keys[change].join(', ')}</span>
           </span>
         ))}
       </div>
@@ -146,10 +146,10 @@ function FieldChangeRow({ field }: FieldChangeRowProps) {
         <div className="text-xs font-mono text-theme-text-tertiary mb-1 break-words [overflow-wrap:anywhere]">{field.path}</div>
         <div className="flex flex-wrap items-center gap-2 text-sm text-theme-text-secondary">
           <Icon className="w-3.5 h-3.5 shrink-0" aria-hidden />
-          <span>{hidden === 'set' ? 'Set' : hidden === 'removed' ? 'Removed' : 'Changed'}</span>
+          <span>{hidden === 'set' ? '已设置' : hidden === 'removed' ? '已移除' : '已更改'}</span>
           <span className="inline-flex items-center gap-1 rounded-full bg-theme-elevated px-2 py-0.5 text-xs text-theme-text-tertiary">
             <EyeOff className="w-3 h-3" aria-hidden />
-            value hidden
+            值已隐藏
           </span>
         </div>
       </div>
@@ -170,7 +170,7 @@ function FieldChangeRow({ field }: FieldChangeRowProps) {
         {isAdded ? (
           <>
             <Plus className="w-3.5 h-3.5 text-green-400 shrink-0" aria-hidden />
-            <span className="sr-only">Added value: </span>
+            <span className="sr-only">新增值： </span>
             <span className="min-w-0 break-words text-green-400 [overflow-wrap:anywhere]">
               {formatValue(field.newValue)}
             </span>
@@ -178,19 +178,19 @@ function FieldChangeRow({ field }: FieldChangeRowProps) {
         ) : isRemoved ? (
           <>
             <Minus className="w-3.5 h-3.5 text-red-400 shrink-0" aria-hidden />
-            <span className="sr-only">Removed value: </span>
+            <span className="sr-only">移除值： </span>
             <span className="min-w-0 break-words text-red-400 line-through [overflow-wrap:anywhere]">
               {formatValue(field.oldValue)}
             </span>
           </>
         ) : isModified ? (
           <>
-            <span className="sr-only">Old value: </span>
+            <span className="sr-only">旧值： </span>
             <span className="min-w-0 break-words text-red-400 line-through [overflow-wrap:anywhere]">
               {formatValue(field.oldValue)}
             </span>
             <ArrowRight className="w-3.5 h-3.5 text-theme-text-tertiary shrink-0" aria-hidden />
-            <span className="sr-only">New value: </span>
+            <span className="sr-only">新值： </span>
             <span className="min-w-0 break-words text-green-400 [overflow-wrap:anywhere]">
               {formatValue(field.newValue)}
             </span>

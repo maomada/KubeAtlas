@@ -37,7 +37,6 @@ import {
   describeActiveFilters,
   type ActivityFilterKey,
 } from './timeline-filters'
-import { pluralize } from '../../utils/pluralize'
 import { gitOpsRouteForKind } from '../../utils/gitops-route'
 import { isChangeEvent, isHistoricalEvent, isOperation, displayKind } from '../../types'
 import { DiffViewer } from './DiffViewer'
@@ -54,6 +53,8 @@ import { Layers } from 'lucide-react'
 import {
   formatAxisTime,
   formatFullTime,
+  formatTimelineRelativeAgeTime,
+  selectReadableAxisTickLabels,
   buildHealthSpans,
   buildLaneMemberSpans,
   sweepAggregateHealth,
@@ -62,7 +63,6 @@ import {
 } from './shared'
 import { useRegisterShortcut } from '../../hooks/useKeyboardShortcuts'
 import { clampLensToSelection, formatLensDuration, MIN_WINDOW_MS, type ScrubberRange } from './scrubber-math'
-import { formatRelativeAgeTime } from '../../utils/format'
 
 // Predefined zoom levels (window widths in hours): 15m, 30m, 1h, 2h, 4h, 8h,
 // 12h, 1d, 2d, 3d, 7d. Hoisted so the controlled-window adapter can size the
@@ -1288,6 +1288,11 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
     return ticks
   }, [visibleWindow])
 
+  const axisLabelTimes = useMemo(
+    () => selectReadableAxisTickLabels(axisTicks.map((tick) => tick.time), visibleWindow.windowMs, trackPx),
+    [axisTicks, visibleWindow.windowMs, trackPx],
+  )
+
   // Convert timestamp to X position (0-100%)
   const timeToX = useCallback(
     (timestamp: number): number => {
@@ -1957,6 +1962,7 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                         return (
                           <div
                             key={tick.time}
+                            title={formatFullTime(new Date(tick.time))}
                             // -translate-x-1/2 centers the tick+label ON the time
                             // position; positioned by the left edge, every label's
                             // visual center sat half a label to the right of the
@@ -1965,7 +1971,9 @@ export function TimelineSwimlanes({ events, isLoading, onResourceClick, viewMode
                             style={{ left: `${x}%` }}
                           >
                             <div className="h-2 w-px bg-theme-hover" />
-                            <span className="mt-0.5 whitespace-nowrap text-xs text-theme-text-tertiary">{tick.label}</span>
+                            {axisLabelTimes.has(tick.time) && (
+                              <span className="mt-0.5 whitespace-nowrap text-xs text-theme-text-tertiary">{tick.label}</span>
+                            )}
                           </div>
                         )
                       })}
@@ -2194,7 +2202,7 @@ function LaneWarnChip({ events }: { events: TimelineEvent[] }) {
   const issueCount = events.filter((e) => isCriticalIssue(e)).length
   if (issueCount === 0) return null
   return (
-    <Tooltip content={`${pluralize(issueCount, 'problem')} (OOMKilled, CrashLoopBackOff, etc.)`} position="top">
+    <Tooltip content={`有 ${issueCount} 个问题（例如 OOMKilled、CrashLoopBackOff 等）`} position="top">
       <span className="flex items-center gap-0.5 text-[11px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 dark:bg-amber-950/50 dark:text-amber-400">
         <AlertTriangle className="w-3 h-3" />
         {issueCount}
@@ -2214,11 +2222,11 @@ function LaneWarnChip({ events }: { events: TimelineEvent[] }) {
 const TREE_ROOT_RAIL_PX = 22
 const CHILD_INDENT_STEP_PX = 22
 /** Chip label — the real Kind, verbatim (matches the list; no abbreviation,
- *  no ALL-CAPS, no truncation). Kind-less events read as "Event". */
+ *  no ALL-CAPS, no truncation). Kind-less events use the localized event label. */
 export function chipKindLabel(kind: string): { label: string; abbreviated: boolean } {
   // Some cluster components emit events whose involvedObject has NO kind (e.g.
   // GKE's resource-tracker "BigQueryUpload" events) — label those as plain events.
-  if (!kind) return { label: 'Event', abbreviated: false }
+  if (!kind) return { label: '事件', abbreviated: false }
   return { label: kind, abbreviated: false }
 }
 
@@ -2556,7 +2564,7 @@ function HealthBarTrack({ events, startTime, windowMs, now, ownResource, aggrega
         return (
           <Tooltip
             key={i}
-            content={`Health: ${span.health} · ${new Date(span.start).toLocaleTimeString()} - ${new Date(span.end).toLocaleTimeString()}`}
+            content={`健康状态：${span.health} · ${formatFullTime(new Date(span.start))} — ${formatFullTime(new Date(span.end))}`}
             wrapperClassName="absolute top-1/2 -translate-y-1/2 h-[7px]"
             wrapperStyle={{ left: `${clampedLeft}%`, width: `${clampedWidth}%` }}
           >
@@ -2630,9 +2638,9 @@ function AggregateHealthTrack({ lane, startTime, windowMs, now, ghost }: {
 function formatCreatedBefore(date: Date): string {
   const diffHours = (Date.now() - date.getTime()) / (1000 * 60 * 60)
   const diffDays = diffHours / 24
-  if (diffDays < 1) return `${Math.round(diffHours)}h ago`
-  if (diffDays < 7) return `${Math.round(diffDays)}d ago`
-  return date.toLocaleDateString([], { month: 'short', day: 'numeric' })
+  if (diffDays < 1) return `${Math.round(diffHours)}小时前`
+  if (diffDays < 7) return `${Math.round(diffDays)}天前`
+  return date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
 }
 
 // Renders a lane's event markers, collapsing near-overlapping ones into "×N" pills.
@@ -2914,7 +2922,7 @@ function EventMarker({ event, x, selected, onClick, dimmed, small }: EventMarker
     const msg = event.message.length > 110 ? event.message.slice(0, 110) + '…' : event.message
     tooltipLines.push(msg)
   }
-  tooltipLines.push(formatRelativeAgeTime(event.timestamp))
+  tooltipLines.push(formatTimelineRelativeAgeTime(event.timestamp))
   if (isHistoricalEvent(event)) tooltipLines.push('(来自元数据)')
 
   const tooltipText = tooltipLines.join(' · ')
@@ -3217,7 +3225,7 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
               {/* The ONE click target for the resource — the same badge used by
                   every Radar drawer, so it reads as "this navigates". */}
               <ResourceRefBadge
-                resourceRef={{ kind: selected.kind || 'Event', namespace: selected.namespace ?? '', name: selected.name, group }}
+                resourceRef={{ kind: selected.kind || '事件', namespace: selected.namespace ?? '', name: selected.name, group }}
                 onClick={onResourceClick && canOpenResource ? openResource : undefined}
               />
               {selected.namespace && <span className="text-xs text-theme-text-tertiary">位于 {selected.namespace}</span>}
