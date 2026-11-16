@@ -971,6 +971,22 @@
               "col": 58
             }
           }
+        },
+        {
+          "sourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+          "finding": {
+            "check_id": "rules.go.lang.security.filepath-clean-misuse",
+            "path": "internal/portal/handler.go",
+            "start": {
+              "line": 190,
+              "col": 11
+            },
+            "end": {
+              "line": 190,
+              "col": 58
+            }
+          },
+          "reference": "https://github.com/maomada/KubeAtlas/pull/16"
         }
       ],
       "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
@@ -3371,6 +3387,192 @@
       "newFindings": 7,
       "removedFindings": 1,
       "evidence": "Complete pinned scan: 1981 files, zero scanner errors. All current production Git blobs equal the tested merge source. Fourteen identities moved; seven new findings reviewed individually. SAST-038 and two new cookie findings use the maintainer explicit HTTP-IP risk decision. Three prior new proxy/archive findings were fixed and are absent. Legacy SAST-112 is retained as a retired record. No raw findings, targets or rules were removed."
+    }
+  ],
+  "integratedBranchReviews": [
+    {
+      "pullRequest": 16,
+      "headSha": "294f5fabc5a2e088e4b716e47f71833896c92531",
+      "sourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+      "sourceTreeSha256": "8db54c8dc88ab3aaa89427b7900d7aec9c161eb2a4ec180f790f2cdb7d79092d",
+      "rawFindingsSha256": "5dec9a163cf753fabb0444e5b5f89743c190675cea023cf8271398346e30b5cc",
+      "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
+      "reviewMetadata": {
+        "previousReview": {
+          "sourceSha": "7e6bed921fece69b38e8ef6a0f4a26154557ba63",
+          "sourceTreeSha256": "0f2e4407f9baff8deb90f6d5ec4dc903553b0b2f14e254c9d217649bcbf4e90a",
+          "rawFindingsSha256": "6d2b36e7bd5348f67fbe3ecc9d6e1e8e08100b308ca30ba065f2afcc1879a997"
+        },
+        "revalidation": {
+          "actor": "Devin",
+          "sourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+          "branchHeadSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a",
+          "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+          "evidence": "Reviewed all four changed production files at the exact PR16 tree and the two affected findings. 100 existing identities are exact on unchanged source; SAST-003 is exact on changed cmd/explorer/main.go; SAST-037 is the same bounded embedded-FS asset read with its position moved from line 184 to 190. The /mcp-fleet route requires a viewer session, rejects Sec-Fetch-Site same-site and cross-site requests, and is wrapped in CrossOriginProtection; trusted-proxy configuration is separate. The candidate scan has 102 findings and zero scanner errors. Code-review receipts are recorded separately from disposition approval.",
+          "reviewer": "maomada"
+        },
+        "reviewHistory": [
+          {
+            "sourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+            "sourceTreeSha256": "f0d9c3270c3519085e9f2cb0fd40e36b1c525b901b0fb96a144f1be4d373b2d0",
+            "rawFindingsSha256": "f3af6fd39b5e99e4c5a223ad90a6ec9764cf84686d3e32f38dd0f0cdbbf090a1",
+            "revalidation": {
+              "sourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+              "actor": "Devin",
+              "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+              "evidence": "Reviewed complete 8bb96ff..7c2a68f diff and exact raw identities. Existing 97 approved findings and their source files are unchanged; changed production files contain none of those entries. Retained original approval/evidence and added explicit revalidation SHA. No rule or scanner changes. SAST-066 and SAST-106 no longer occur after fixed sanitized warning strings; original raw reports and historical ledger retained."
+            },
+            "previousReview": {
+              "sourceSha": "7e6bed921fece69b38e8ef6a0f4a26154557ba63",
+              "sourceTreeSha256": "0f2e4407f9baff8deb90f6d5ec4dc903553b0b2f14e254c9d217649bcbf4e90a",
+              "rawFindingsSha256": "6d2b36e7bd5348f67fbe3ecc9d6e1e8e08100b308ca30ba065f2afcc1879a997"
+            }
+          },
+          {
+            "previousPolicy": {
+              "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+              "sourceTreeSha256": "b099f2d46052c7a2ddcacd06b7024343e0ece7dd91eaf7cd1f65424060d2cada",
+              "rawFindingsSha256": "1f018dba76fe29d0405bb07b736f26402913adbd0247c8cc24757f18e296ba2f",
+              "engine": "1.180.0",
+              "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
+              "policySha256": "d846f360cbd01b2841248a116675b33061217d90eeb39eaa702a563cc1a97deb",
+              "revalidation": {
+                "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+                "actor": "Devin",
+                "reference": "https://app.devin.ai/sessions/5e0203e7f733486da4dc41482d8b4e1d",
+                "evidence": "Reviewed main-to-Fleet source diff at the existing finding sites. All 101 prior raw findings persist. Their files are byte-identical to main except cmd/explorer/main.go, internal/portal/handler.go and internal/server/server.go: the four existing sinks and their guards are unchanged, with positions relocated. CLI ws:// is an error literal; Portal assets path retains prefix/clean/FS boundary; topology retains JSON content type/marshalling; CAPI kubeconfig remains YAML attachment. Original classifications, approvals and evidence are retained. Reviewed the sole new origin audit using the pinned dependency implementation and reachable token-gated route (SAST-112). Scanner, rules and target selector are unchanged. Exact scanned production-source digest matches this commit."
+              }
+            },
+            "priorDispositionEntries": [
+              {
+                "id": "SAST-003",
+                "finding": {
+                  "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
+                  "path": "cmd/explorer/main.go",
+                  "start": {
+                    "line": 279,
+                    "col": 120
+                  },
+                  "end": {
+                    "line": 279,
+                    "col": 125
+                  }
+                },
+                "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+                "evidence": "命中包含 ws:// 的错误消息字面量，不是创建 WebSocket 的调用；ValidateWebSocketURL 校验逻辑必须另外保留。",
+                "approval": {
+                  "approved": true,
+                  "actor": "maomada",
+                  "date": "2026-11-03",
+                  "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+                  "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+                  "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+                },
+                "disposition": "false-positive",
+                "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+                "previousFinding": {
+                  "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
+                  "path": "cmd/explorer/main.go",
+                  "start": {
+                    "line": 274,
+                    "col": 120
+                  },
+                  "end": {
+                    "line": 274,
+                    "col": 125
+                  }
+                }
+              },
+              {
+                "id": "SAST-037",
+                "finding": {
+                  "check_id": "rules.go.lang.security.filepath-clean-misuse",
+                  "path": "internal/portal/handler.go",
+                  "start": {
+                    "line": 184,
+                    "col": 11
+                  },
+                  "end": {
+                    "line": 184,
+                    "col": 58
+                  }
+                },
+                "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+                "evidence": "URL 分支先限定 /assets/，path.Clean 后再次限定 assets/，serveFile 从 fs.FS 读静态文件而非拼接 OS 路径；路径穿出 assets 后被拒绝。需保持静态 FS 的契约，不支持其指向不可信外部文件。",
+                "approval": {
+                  "approved": true,
+                  "actor": "maomada",
+                  "date": "2026-11-03",
+                  "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+                  "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+                  "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+                },
+                "disposition": "false-positive",
+                "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+                "previousFinding": {
+                  "check_id": "rules.go.lang.security.filepath-clean-misuse",
+                  "path": "internal/portal/handler.go",
+                  "start": {
+                    "line": 135,
+                    "col": 11
+                  },
+                  "end": {
+                    "line": 135,
+                    "col": 58
+                  }
+                }
+              }
+            ],
+            "candidate": {
+              "branchHeadSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a",
+              "testedSourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+              "gitTree": "2d9cc8b4957df617ea20e7c31ac1a934fa029491",
+              "sourceTreeSha256": "8db54c8dc88ab3aaa89427b7900d7aec9c161eb2a4ec180f790f2cdb7d79092d",
+              "engine": "1.180.0",
+              "rulesCommit": "16b9e6d45f10649f6a531ec4838ed9924372c3bc",
+              "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
+              "targetCount": 1953,
+              "findingCount": 102,
+              "scannerErrorCount": 0,
+              "rawFindingsSha256": "5dec9a163cf753fabb0444e5b5f89743c190675cea023cf8271398346e30b5cc",
+              "provenanceSha256": "86245c20ed47f36a382bffe2140217df093ee08174a34b52ff074f9470a47185",
+              "artifact": "security-a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+              "actionsRunId": 43839128360
+            },
+            "reviewReceipts": [
+              {
+                "reviewId": 5917635382,
+                "reviewer": "devin-ai-integration[bot]",
+                "state": "COMMENTED",
+                "commitSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a",
+                "summary": "Devin Review: No Issues Found",
+                "reference": "https://github.com/maomada/KubeAtlas/pull/16#pullrequestreview-5917635382"
+              },
+              {
+                "reviewId": 5918089792,
+                "reviewer": "maomada",
+                "state": "APPROVED",
+                "commitSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a"
+              },
+              {
+                "reviewId": 5918102972,
+                "reviewer": "maomada",
+                "state": "APPROVED",
+                "commitSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a"
+              }
+            ],
+            "revalidation": {
+              "actor": "Devin",
+              "sourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+              "branchHeadSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a",
+              "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+              "evidence": "Reviewed all four changed production files at the exact PR16 tree and the two affected findings. 100 existing identities are exact on unchanged source; SAST-003 is exact on changed cmd/explorer/main.go; SAST-037 is the same bounded embedded-FS asset read with its position moved from line 184 to 190. The /mcp-fleet route requires a viewer session, rejects Sec-Fetch-Site same-site and cross-site requests, and is wrapped in CrossOriginProtection; trusted-proxy configuration is separate. The candidate scan has 102 findings and zero scanner errors. Code-review receipts are recorded separately from disposition approval.",
+              "reviewer": "maomada"
+            }
+          }
+        ]
+      },
+      "scope": "Historical PR16 review is preserved by this merge and its exact commit. Current Hub production bytes and the 108-finding PR17 review remain unchanged; PR16 dispositions are not applied to new Hub findings."
     }
   ]
 }
