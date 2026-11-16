@@ -10,9 +10,9 @@ import sys
 
 REPOSITORY = "maomada/KubeAtlas"
 SCHEMA = "kubeatlas-engineering-evidence/v1"
-SELECTORS = ("pkg", "go", "web", "app", "helm", "containers")
+SELECTORS = ("installers", "pkg", "go", "web", "app", "helm", "containers")
 CI_JOBS = {
-    "installers": None, "changes": None, "release-policy": None,
+    "installers": "installers", "changes": None, "release-policy": None,
     "workflow-lint": None, "engineering-tests": None,
     "pkg": "pkg", "backend": "go", "backend-server": "go",
     "repo-hygiene": "!go", "frontend": "web", "k8s-ui": "web",

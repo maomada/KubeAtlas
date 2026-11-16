@@ -55,6 +55,13 @@ successfully. Missing selectors, jobs, receipts, wrong SHA/run/attempt, failed,
 cancelled, blocked or unexpected skipped results block the gate. Documentation
 changes that are package inputs still require package checks.
 
+The balanced PR plan runs full binary packages and multi-platform images for
+distribution/image tooling and dependency changes, rather than every ordinary
+application edit. Main still selects the full set. Installer regressions are
+selected by their own paths on PRs and always on main. Settings browser journeys
+cover frontend and connection/auth/server inputs. See the path tables and the
+explicit pre-merge/platform coverage tradeoff in [CI compute controls](ci-cd.md#ci-compute-controls).
+
 The receipt records the PR head SHA separately from the tested merge SHA
 (`github.sha`). A base-branch update requires evidence for the new merge
 candidate. Each receipt includes origin, event, run and attempt. Never relabel

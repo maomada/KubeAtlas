@@ -56,6 +56,48 @@ class EngineeringGateTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             ci_results(needs)
 
+    def test_installer_selection_is_required_and_cannot_hide_skips_or_failures(self):
+        self.assertEqual(CI_JOBS["installers"], "installers")
+        self.assertIn("installers", SELECTORS)
+        self.assertEqual(ci_results(self.needs(False))["installers"], "not_required_by_plan")
+        for state in ("skipped", "failure", "cancelled", None, "neutral"):
+            with self.subTest(state=state):
+                needs = self.needs(False)
+                needs["changes"]["outputs"]["installers"] = "true"
+                needs["installers"]["result"] = state
+                self.assertEqual(ci_results(needs)["installers"], "failed")
+        needs = self.needs(False)
+        needs["installers"]["result"] = "failure"
+        self.assertEqual(ci_results(needs)["installers"], "failed")
+        needs = self.needs(False)
+        del needs["changes"]["outputs"]["installers"]
+        with self.assertRaises(ValueError):
+            ci_results(needs)
+
+    def test_ordinary_source_pr_can_exempt_distribution_only_with_a_false_selector(self):
+        for state in ("skipped", "success", "failure", "cancelled", None):
+            with self.subTest(state=state):
+                needs = {"changes": {"result": "success", "outputs": {"packages": "false"}},
+                         "validate": {"result": state}}
+                expected = ("not_required_by_plan" if state == "skipped" else
+                            "passed" if state == "success" else "failed")
+                self.assertEqual(package_results(needs)["validate"], expected)
+                needs["changes"]["outputs"]["packages"] = "true"
+                self.assertEqual(package_results(needs)["validate"],
+                                 "passed" if state == "success" else "failed")
+
+    def test_main_plan_cannot_defer_path_selected_installer_checks(self):
+        plan, receipts = self.bundle()
+        plan["profile"] = "main"
+        plan["tested_sha"] = plan["head_sha"]
+        for evidence in receipts:
+            evidence["event"] = "push"
+            evidence["tested_sha"] = plan["head_sha"]
+        self.assertEqual(aggregate(plan, receipts)["status"], "passed")
+        plan["gates"]["ci"]["required_jobs"]["installers"] = False
+        with self.assertRaisesRegex(ValueError, "main cannot defer validation"):
+            aggregate(plan, receipts)
+
     def test_draft_deferred_package_is_not_pass(self):
         needs = {"changes": {"result": "success", "outputs": {"packages": "true"}},
                  "validate": {"result": "skipped"}}
