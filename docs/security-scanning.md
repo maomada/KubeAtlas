@@ -32,6 +32,11 @@ selector is in `scripts/security_scan.py`; normal tests still run in CI.
 All unreviewed findings block, irrespective of severity. Exact-source reviewed
 false positives and verified mitigations are separately recorded under
 `docs/security-dispositions.md`; the original scan is never filtered.
+Schema v2 can separately record a scoped risk explicitly accepted by the
+maintainer. Such a finding remains visible in both the raw report and the
+decision's `acceptedRisks`; it is not evidence that the risk was fixed. The
+decision, acceptor, conditions and residual risk must be present and bound to
+the reviewed production source and pinned rules.
 Scanner/config/parse errors,
 missing or changed rules, incomplete file coverage, and empty scans also block.
 The job exercises a clean canary and deliberately unsafe Go/JS/TS fixtures;

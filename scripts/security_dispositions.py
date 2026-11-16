@@ -21,7 +21,8 @@ def finding_key(item, root):
 
 
 def evaluate(report, policy, root, targets, engine, lock_hash):
-    if policy["schemaVersion"] != 1:
+    schema = policy["schemaVersion"]
+    if schema not in (1, 2):
         raise ValueError("Unsupported security disposition schema")
     if policy["engine"] != engine or policy["rulesLockSha256"] != lock_hash:
         raise ValueError("Security dispositions require review after scanner/rule changes")
@@ -36,18 +37,33 @@ def evaluate(report, policy, root, targets, engine, lock_hash):
         if entry["id"] in ids:
             raise ValueError("Duplicate disposition ID")
         ids.add(entry["id"])
-        if entry["disposition"] not in ("false-positive", "mitigated", "hold"):
+        if entry["disposition"] not in ("false-positive", "mitigated", "hold", "accepted-risk"):
             raise ValueError("Unknown disposition")
         if not entry["evidence"].strip() or not entry["reviewedSourceSha"].strip():
             raise ValueError("Disposition evidence missing")
         approval = entry["approval"]
         if approval["approved"] is not True or not approval["actor"] or not approval["reference"]:
             raise ValueError("Disposition approval missing")
+        if entry["disposition"] == "accepted-risk":
+            risk = entry.get("riskAcceptance")
+            if (schema != 2 or approval.get("kind") != "maintainer-risk-acceptance"
+                    or not isinstance(risk, dict)
+                    or any(not isinstance(approval.get(key), str) or not approval[key].strip()
+                           for key in ("actor", "reference"))
+                    or not isinstance(risk.get("acceptedBy"), str) or not risk["acceptedBy"].strip()
+                    or risk.get("acceptedBy") != approval["actor"]
+                    or risk.get("decision") != "accept"
+                    or any(not isinstance(risk.get(key), str) or not risk[key].strip()
+                           for key in ("scope", "residualRisk"))
+                    or not isinstance(risk.get("conditions"), list) or not risk["conditions"]
+                    or any(not isinstance(value, str) or not value.strip()
+                           for value in risk["conditions"])):
+                raise ValueError("Risk acceptance requires an explicit maintainer decision and scope")
         key = finding_key(entry["finding"], root)
         if key in by_key:
             raise ValueError("Duplicate disposition finding")
         by_key[key] = entry
-    approved, unresolved, seen = [], [], set()
+    approved, accepted_risks, unresolved, seen = [], [], [], set()
     for item in report["results"]:
         key = finding_key(item, root)
         if key in seen:
@@ -60,9 +76,14 @@ def evaluate(report, policy, root, targets, engine, lock_hash):
             record["disposition"] = entry["disposition"]
         if entry and entry["disposition"] in ("false-positive", "mitigated"):
             approved.append(record)
+        elif entry and entry["disposition"] == "accepted-risk":
+            accepted_risks.append({**record, "riskAcceptance": entry["riskAcceptance"]})
         else:
             unresolved.append(record)
     if set(by_key) - seen:
         raise ValueError("Stale dispositions: a reviewed finding is no longer present")
-    return {"rawFindingCount": len(report["results"]), "approved": approved,
-            "unresolved": unresolved, "passed": not unresolved}
+    decision = {"rawFindingCount": len(report["results"]), "approved": approved,
+                "unresolved": unresolved, "passed": not unresolved}
+    if schema == 2:
+        decision["acceptedRisks"] = accepted_risks
+    return decision

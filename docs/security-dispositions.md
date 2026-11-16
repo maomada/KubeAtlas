@@ -29,6 +29,22 @@ The user delegated subsequent false-positive review to Devin: each future decisi
 must still record its own evidence, reviewer and exact source/rule binding rather
 than automatically importing all new findings as approved.
 
+Schema v2 also supports `accepted-risk` after an explicit maintainer decision.
+This is separate from false positives and verified mitigations: the gate emits
+these findings in `acceptedRisks`, while the raw report remains unchanged. Each
+record requires `approval.kind: maintainer-risk-acceptance`, a matching named
+acceptor, an affirmative decision, its exact scope, residual risk and nonempty
+conditions. Generic prior approval cannot be reused for this category. A new
+finding, stale location, changed production source or changed scanner/rules still
+blocks until reviewed. Schema v1 retains its existing decision output.
+
+For PR #17, the maintainer explicitly chose to retain the configured intranet
+HTTP-IP login mode on 2026-11-16. SAST-038, SAST-117 and SAST-118 record its session
+and OIDC-cookie transport risk. Cookies on this HTTP path can be observed or
+modified on the network; HttpOnly and SameSite do not encrypt them. The decision
+is scoped to the configured authority and does not approve other HTTP endpoints
+or future changes. See [the source review](security-revalidation-pr17.md).
+
 ## Remaining-finding decisions
 
 | ID | Decision and scope |
