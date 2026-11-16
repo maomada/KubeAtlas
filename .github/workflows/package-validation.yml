@@ -24,8 +24,6 @@ jobs:
       packages: ${{ github.event_name == 'push' && 'true' || steps.filter.outputs.packages }}
     steps:
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
       - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
         id: filter
         if: github.event_name == 'pull_request'
@@ -39,10 +37,16 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
+      - name: Check release policy before installing build tools
+        run: python3 -m unittest discover -s scripts -p 'test_release*.py'
       - uses: actions/setup-go@v7
+        id: go
         with:
           go-version: '1.26'
-          cache: false
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            pkg/go.sum
       - uses: actions/setup-node@v4
         with:
           node-version: '24'
@@ -58,9 +62,16 @@ jobs:
             fi
           done
           df -h /
-      - run: go install github.com/goreleaser/goreleaser/v2@v2.13.3
+      - name: Cache pinned GoReleaser binary
+        id: goreleaser
+        uses: actions/cache@v4
+        with:
+          path: ~/go/bin/goreleaser
+          key: goreleaser-${{ runner.os }}-${{ runner.arch }}-go${{ steps.go.outputs.go-version }}-v2.13.3
+      - name: Install pinned GoReleaser on cache miss
+        if: steps.goreleaser.outputs.cache-hit != 'true'
+        run: go install github.com/goreleaser/goreleaser/v2@v2.13.3
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
-      - run: python3 -m unittest discover -s scripts -p 'test_release*.py'
       - name: Build and validate package matrix
         env:
           GOMAXPROCS: '2'
@@ -92,3 +103,4 @@ jobs:
           name: engineering-packages-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/packages.json
           if-no-files-found: error
+          retention-days: 7

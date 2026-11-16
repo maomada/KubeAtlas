@@ -1,15 +1,18 @@
 packages:
-  - 'cmd/**'
-  - 'internal/**'
-  - 'pkg/**'
-  - 'web/**'
-  - 'packages/**'
-  - '**/*.go'
+  # Full cross-platform packages are checked on main for every revision.
+  # PRs select them only when distribution inputs or tooling change; ordinary
+  # application changes retain Go/frontend tests and builds in CI.
   - 'go.mod'
   - 'go.sum'
+  - 'pkg/go.mod'
+  - 'pkg/go.sum'
   - 'go.work*'
   - 'package.json'
   - 'package-lock.json'
+  - 'web/package.json'
+  - 'web/package-lock.json'
+  - 'packages/*/package.json'
+  - 'packages/*/package-lock.json'
   - '.npmrc'
   - '.goreleaser.yaml'
   - 'Makefile'
