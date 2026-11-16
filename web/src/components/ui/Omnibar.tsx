@@ -713,7 +713,7 @@ function ResourceRow({ hit, selected, stale, onSelect, onActivate }: { hit: Sear
         {hit.clusterName ? <> · <span className="text-theme-text-secondary">{hit.clusterName}</span></> : ''}
       </span>
       {contentLabel && <span className="shrink-0 text-[10px] text-theme-text-tertiary italic">{contentLabel}</span>}
-      {issues > 0 && <span className="ml-auto shrink-0 text-[10px] font-medium text-amber-600 dark:text-amber-400">{issues} issue{issues === 1 ? '' : 's'}</span>}
+      {issues > 0 && <span className="ml-auto shrink-0 text-[10px] font-medium text-amber-600 dark:text-amber-400">{issues} 个问题</span>}
     </button>
   )
 }

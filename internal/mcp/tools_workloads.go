@@ -28,18 +28,18 @@ import (
 // Workload tool input types
 
 type manageWorkloadInput struct {
-	Action    string `json:"action" jsonschema:"action to perform: restart, scale, or rollback"`
+	Action    string `json:"action"`
 	Kind      string `json:"kind" jsonschema:"workload kind: deployment, statefulset, daemonset, or rollout"`
-	Namespace string `json:"namespace" jsonschema:"workload namespace"`
-	Name      string `json:"name" jsonschema:"workload name"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 	Replicas  *int32 `json:"replicas,omitempty" jsonschema:"target replica count (required for scale)"`
 	Revision  *int64 `json:"revision,omitempty" jsonschema:"target revision number (required for rollback); enumerate valid values with get_resource include=revisions"`
 }
 
 type manageRolloutInput struct {
 	Action    string `json:"action" jsonschema:"action to perform: abort (revert traffic to stable now), retry (clear an abort), promote (advance one step), promote-full (skip all remaining steps/pauses/analysis), or skip-step (advance exactly one canary step)"`
-	Namespace string `json:"namespace" jsonschema:"rollout namespace"`
-	Name      string `json:"name" jsonschema:"rollout name"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 var rolloutActions = map[string]func(context.Context, dynamic.Interface, string, string) (rollouts.OperationResult, error){
@@ -51,20 +51,20 @@ var rolloutActions = map[string]func(context.Context, dynamic.Interface, string,
 }
 
 type manageCronJobInput struct {
-	Action    string `json:"action" jsonschema:"action to perform: trigger, suspend, or resume"`
-	Namespace string `json:"namespace" jsonschema:"cronjob namespace"`
-	Name      string `json:"name" jsonschema:"cronjob name"`
+	Action    string `json:"action"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 }
 
 type getWorkloadLogsInput struct {
 	Kind      string `json:"kind,omitempty" jsonschema:"workload kind: deployment, statefulset, daemonset, job, or workflow. Defaults to deployment when omitted."`
-	Namespace string `json:"namespace" jsonschema:"workload namespace"`
-	Name      string `json:"name" jsonschema:"workload name"`
+	Namespace string `json:"namespace"`
+	Name      string `json:"name"`
 	Container string `json:"container,omitempty" jsonschema:"specific container name, defaults to all containers"`
 	TailLines int    `json:"tail_lines,omitempty" jsonschema:"lines per pod (default 100)"`
-	Grep      string `json:"grep,omitempty" jsonschema:"optional regex; when set, only matching timestamp-prefixed lines are returned, like kubectl logs --timestamps | grep PATTERN; when omitted, lines are auto-filtered for diagnostic relevance"`
-	Since     string `json:"since,omitempty" jsonschema:"only return logs newer than this duration (e.g. 30s, 10m, 1h), like kubectl logs --since"`
-	Previous  bool   `json:"previous,omitempty" jsonschema:"return logs from the previous terminated container instance (e.g. for CrashLoopBackOff diagnosis), like kubectl logs -p"`
+	Grep      string `json:"grep,omitempty" jsonschema:"regex on timestamp-prefixed lines; omitted: auto-filter for diagnostic relevance"`
+	Since     string `json:"since,omitempty" jsonschema:"logs newer than this duration (e.g. 30s, 10m, 1h)"`
+	Previous  bool   `json:"previous,omitempty" jsonschema:"logs from the previous terminated container instance (kubectl logs -p)"`
 }
 
 // parseLogsSince converts a relative duration string like "30s"/"10m"/"1h"
@@ -725,12 +725,12 @@ func fetchPodLogs(ctx context.Context, pods []*corev1.Pod, namespace, containerF
 // Node tool input and handler
 
 type manageNodeInput struct {
-	Action             string `json:"action" jsonschema:"action to perform: cordon, uncordon, or drain"`
-	Name               string `json:"name" jsonschema:"node name"`
+	Action             string `json:"action"`
+	Name               string `json:"name"`
 	DeleteEmptyDirData *bool  `json:"delete_empty_dir_data,omitempty" jsonschema:"evict pods with emptyDir volumes (default true, set false to skip them)"`
 	Force              bool   `json:"force,omitempty" jsonschema:"force evict pods not managed by a controller (default false)"`
 	WaitForDeletion    *bool  `json:"wait_for_deletion,omitempty" jsonschema:"default true; false returns once evictions are accepted (pods may still be terminating)"`
-	Timeout            int    `json:"timeout,omitempty" jsonschema:"drain deadline in seconds; 0 = server default (2m when waiting)"`
+	Timeout            int    `json:"timeout,omitempty" jsonschema:"drain deadline in seconds, 1-600; omit for the server default (2m when waiting, 60s otherwise)"`
 }
 
 func handleManageNode(ctx context.Context, req *mcp.CallToolRequest, input manageNodeInput) (*mcp.CallToolResult, any, error) {

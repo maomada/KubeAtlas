@@ -14,7 +14,7 @@ export function SearchBox({
   onChange,
   scope,
   shortcutId,
-  placeholder = 'Search... (press /)',
+  placeholder = '搜索…（按 /）',
   className,
   onEnter,
   onArrowDown,
@@ -50,7 +50,7 @@ export function SearchBox({
   useRegisterShortcut({
     id: shortcutId,
     keys: '/',
-    description: 'Focus search',
+    description: '聚焦搜索',
     category: 'Search',
     scope,
     enabled: shortcutEnabled,
@@ -84,7 +84,7 @@ export function SearchBox({
       {value && (
         <button
           type="button"
-          aria-label="Clear search"
+          aria-label="清除搜索"
           onClick={() => {
             onChange('')
             inputRef.current?.focus()

@@ -158,7 +158,9 @@ def main():
             decision["policySha256"] = hashlib.sha256(DISPOSITIONS.read_bytes()).hexdigest()
             decision["rawReportSha256"] = hashlib.sha256((output / "findings.json").read_bytes()).hexdigest()
             (output / "dispositions.json").write_text(json.dumps(decision, indent=2) + "\n")
-            print(f"Reviewed exceptions: {len(decision['approved'])}; unresolved: {len(decision['unresolved'])}")
+            print(f"Reviewed exceptions: {len(decision['approved'])}; "
+                  f"maintainer-accepted risks: {len(decision.get('acceptedRisks', []))}; "
+                  f"unresolved: {len(decision['unresolved'])}")
             return 0 if decision["passed"] else 1
     except (OSError, ValueError, KeyError, TypeError, subprocess.SubprocessError) as error:
         print(f"Security scan blocked: {error}", file=sys.stderr)

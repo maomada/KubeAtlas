@@ -113,17 +113,6 @@ Two things still hold on a shared listener without authentication:
    - connecting the cluster to upstream Cloud, which outlasts the request, needs an
      explicit acknowledgement.
 
-Fleet adds a separate metadata-administration gate. With authentication enabled,
-only an exact username in `--fleet-admin-users` may change Fleet metadata or
-manage local connections; Kubernetes read permission alone is not sufficient.
-The allowlist is empty by default. Without authentication, these operations are
-available only on the loopback-enforced listener. Live Fleet reads still perform
-per-user Kubernetes authorization on each target cluster, and Cloud/user-token
-mode is not forwarded to Fleet targets. Optional Fleet Kubernetes writes are
-separately default-off (`--fleet-writes`) and require the actual caller's
-Kubernetes RBAC on the selected target; the Fleet admin allowlist does not grant
-that access. See [Fleet Manager](fleet.md#http-inventory-and-management-api).
-
 ## Auth Modes
 
 | Mode | Flag | When to Use |
@@ -667,3 +656,9 @@ kubectl auth can-i impersonate users \
 ```
 
 If using `rbac.create: false` in Helm, make sure your custom ClusterRole includes the impersonation rules.
+
+In self-hosted Hub Agent mode, the chart binds `cluster-admin` to the exact
+local Hub owner Kubernetes `User` identity. It does not elevate member groups
+or all Hub users. The Agent ServiceAccount's impersonation grant remains highly
+privileged: a holder of its token can impersonate arbitrary users/groups, so
+protect that token and review the generated RBAC and bound owner identity.

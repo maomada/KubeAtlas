@@ -9,8 +9,8 @@ compatibility; they do not imply that package-manager releases are available.
 
 Deploy KubeAtlas to your Kubernetes cluster for shared team access.
 
-For an optional independent registry of in-cluster and opted-in local
-CLI/Desktop KubeAtlas instances, see the [self-hosted KubeAtlas Portal guide](portal.md).
+For the separate self-hosted Cloud Hub and its live Agent connections, see the
+[Cloud Hub guide](portal.md).
 
 > **Note:** This guide covers deploying KubeAtlas as a pod in your cluster. If you're running KubeAtlas locally but need to understand cluster connection behavior (e.g., using `KUBECONFIG` to override in-cluster detection), see the [Configuration Guide](configuration.md).
 
@@ -40,11 +40,15 @@ open http://localhost:9280
 
 ## Installation settings
 
-For direct multi-cluster management, use the opt-in
-[Fleet Manager chart settings](../deploy/helm/kubeatlas/README.md#fleet-manager).
-Fleet requires authentication, per-target credentials/RBAC and a persistent
-single-writer identity/audit volume. It does not use the independent directory
-portal's login as Kubernetes authorization.
+The in-cluster chart deploys the native KubeAtlas Agent. It does not configure
+or replace the separate self-hosted Cloud Hub; connect an Agent through the
+Hub's enrollment workflow when using Cloud UI or live Hub MCP.
+
+Hub Agent bootstrap requires HTTPS for DNS origins. HTTP literal-IP origins
+carry interception risk for credentials and downloads. Nodes must independently
+reach the Hub OCI endpoint and trust its certificate; an HTTP registry may
+require operator-managed insecure-registry configuration in each node's
+runtime. KubeAtlas installers do not alter node runtime settings.
 
 Shared OSS KubeAtlas is configured by the installation operator, not by visitors to
 its web UI. Settings shows effective configuration and connection status; it does

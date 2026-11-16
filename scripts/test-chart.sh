@@ -41,7 +41,7 @@ render() {
   echo "  Case: $CASE"
 OUT=$(helm template radar "$CHART_DIR" "$@" 2>&1) || {
     fail "helm template failed"
-    echo "$OUT" | sed 's/^/      /'
+    printf '      %s\n' "${OUT//$'\n'/$'\n      '}"
     return
   }
 }
@@ -55,7 +55,7 @@ reject_cloud() {
     pass "deployment surface rejects legacy Cloud"
   else
     fail "Cloud render failed for an unexpected reason"
-    echo "$OUT" | sed 's/^/      /'
+    printf '      %s\n' "${OUT//$'\n'/$'\n      '}"
   fi
 }
 
@@ -66,7 +66,7 @@ render_portal() {
     --set image.repository=example.test/kubeatlas-portal \
     --set existingSecret=portal-auth "$@" 2>&1) || {
     fail "helm template failed"
-    echo "$OUT" | sed 's/^/      /'
+    printf '      %s\n' "${OUT//$'\n'/$'\n      '}"
     return
   }
 }
@@ -287,7 +287,6 @@ reject_cloud "Cloud Helm RBAC render is unavailable" \
 render "defaults — no RBAC reads (viewRBAC=false)"
 # The base radar ClusterRole should NOT include rbac.authorization.k8s.io reads
 # at default settings. This is the single test that pins the secure default.
-HELM_BASE=$(echo "$OUT" | awk '/^kind: ClusterRole$/,/^---$/{ if ($0 ~ /^---$/) exit; print }' | awk '/^  name: radar-kubeatlas$/,EOF')
 if awk '/  name: radar-kubeatlas$/,/^---$/' <<< "$OUT" | grep -E 'apiGroups: \["rbac.authorization.k8s.io"\]' > /dev/null; then
   fail "default ClusterRole still grants rbac.authorization.k8s.io reads — viewRBAC should gate this"
 else
@@ -303,7 +302,6 @@ echo
 render "split content — radar-helm has CRDs but NOT clusterroles" \
   --set rbac.helm=true --set auth.mode=proxy
 # Pull the radar-helm ClusterRole specifically and check its contents
-HELM_RULES=$(echo "$OUT" | awk '/^kind: ClusterRole$/,/^---$/' | awk '/^metadata:$/,/^rules:$/{found=1} /  name: radar-kubeatlas-helm$/{ok=1} END{print ok}')
 # Simpler approach: just confirm the cluster-admin verbs are NOT in radar-helm's rules
 # by checking the file was split (radar-helm-admin exists separately)
 assert_contains 'name: radar-kubeatlas-helm-admin$'                 "helm-admin role exists as separate resource"
@@ -324,78 +322,130 @@ assert_not_contains 'name: radar-kubeatlas-cluster-read$'                 "no cl
 assert_not_contains 'name: radar-kubeatlas-cloud-viewer-cluster-read$'    "no tier bindings outside cloud mode"
 echo
 
-render "Portal registration defaults off"
-assert_not_contains 'name: KUBEATLAS_PORTAL_' "no Portal reporter environment variables"
+for retired in fleet portalRegistration; do
+  if RETIRED_OUTPUT=$(helm template radar "$CHART_DIR" --set "$retired.enabled=true" 2>&1); then
+    fail "$retired configuration must not render"
+  elif grep -Fq "$retired" <<< "$RETIRED_OUTPUT"; then
+    pass "$retired configuration is rejected"
+  else
+    fail "$retired configuration failed for an unexpected reason: $RETIRED_OUTPUT"
+  fi
+done
 echo
 
-render "Portal registration uses a Secret-backed token" \
-  --set portalRegistration.enabled=true \
-  --set portalRegistration.url=https://portal.example.test \
-  --set portalRegistration.clusterId=prod-east \
-  --set portalRegistration.clusterName=Production-east \
-  --set portalRegistration.radarUrl=https://radar.example.test \
-  --set portalRegistration.existingSecret=radar-east-portal \
-  --set portalRegistration.tokenKey=token
-assert_contains 'name: KUBEATLAS_PORTAL_URL' "Portal URL is configured"
-assert_contains 'name: KUBEATLAS_PORTAL_CLUSTER_ID' "Portal instance ID is configured"
-assert_contains 'name: KUBEATLAS_PORTAL_TOKEN' "Portal token environment variable is configured"
-assert_contains 'secretKeyRef:' "Portal registration token comes from a Secret"
-assert_contains 'name: radar-east-portal$' "Portal registration Secret is referenced"
-assert_contains 'key: token$' "Portal registration token key is referenced"
-echo
-
-if helm template radar "$CHART_DIR" --set portalRegistration.enabled=true >/dev/null 2>&1; then
-  fail "Portal registration without required settings should fail"
+if HUB_OUTPUT=$(helm template kubeatlas "$CHART_DIR" \
+  --set hub.enabled=true \
+  --set-string hub.url=https://hub.example.test \
+  --set hub.clusterID=production \
+  --set hub.tokenSecret=kubeatlas-hub-token \
+  --set-string hub.ownerUserID=kubeatlas:portal:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  --set-string image.repository=hub.example.test/kubeatlas/agent \
+  --set-string image.digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+  --set auth.mode=proxy --set mcp.enabled=true 2>&1); then
+  OUT="$HUB_OUTPUT"
+  pass "self-hosted Hub Agent values render"
+  assert_contains 'image: "?hub.example.test/kubeatlas/agent@sha256:0123456789abcdef' "Hub Agent image is digest-pinned to the selected origin"
+  assert_contains 'value: "hub.example.test/kubeatlas/agent@sha256:0123456789abcdef' "reachability fallback uses the exact Hub image digest"
+  assert_contains 'KUBEATLAS_AGENT_HUB_TOKEN_FILE' "Hub Agent token is configured through a file"
+  assert_contains 'secretName: kubeatlas-hub-token' "Hub Agent token Secret is mounted"
+  assert_contains 'defaultMode: 0440' "Hub token volume is group-readable"
+  assert_contains 'fsGroup: 65532' "non-root Agent group can read the mounted token"
+  assert_contains 'name: "?kubeatlas:portal:0123456789abcdef' "owner binding names the exact local-owner User"
+  assert_contains 'name: cluster-admin' "only the exact owner User binding grants cluster-admin"
+  assert_contains '^    name: kubeatlas:hub:owner$' "Hub organization owner group is mapped"
+  assert_contains '^  name: admin$' "Hub organization owner maps to Kubernetes admin"
+  assert_contains '^    name: kubeatlas:hub:member$' "Hub organization member group is mapped"
+  assert_contains '^  name: edit$' "Hub organization member maps to Kubernetes edit"
+  assert_contains '^    name: kubeatlas:hub:viewer$' "Hub organization viewer group is mapped"
+  assert_contains '^  name: view$' "Hub organization viewer maps to Kubernetes view"
+  assert_contains 'name: kubeatlas:hub:owner' "Hub organization owner group is mapped"
+  assert_contains 'name: admin' "Hub organization owner maps to Kubernetes admin"
+  assert_contains 'name: kubeatlas:hub:member' "Hub member group is mapped"
+  assert_contains 'name: edit' "Hub member maps to Kubernetes edit"
+  assert_contains 'name: kubeatlas:hub:viewer' "Hub viewer group is mapped"
+  assert_contains 'name: view' "Hub viewer maps to Kubernetes view"
+  assert_contains 'name: kubeatlas-hub-role-owner' "owner group binding has a unique name"
+  assert_contains 'name: kubeatlas-hub-role-member' "member group binding has a unique name"
+  assert_contains 'name: kubeatlas-hub-role-viewer' "viewer group binding has a unique name"
+  assert_contains 'name: kubeatlas-hub-infra-readonly' "Hub infra read-only role is present"
+  assert_contains 'persistentvolumes' "Hub infra role can read persistent volumes"
+  assert_contains 'storageclasses' "Hub infra role can read storage classes"
+  assert_not_contains 'nodes/proxy' "Hub infra role does not grant node proxy access"
 else
-  pass "Portal registration without required settings fails"
+  fail "self-hosted Hub Agent values should render: $HUB_OUTPUT"
+fi
+PREFLIGHT_RELEASE=kubeatlas-agent-0123456789
+PREFLIGHT_RENDER=$(helm template "$PREFLIGHT_RELEASE" "$CHART_DIR" --set hub.enabled=true --set-string hub.url=https://hub.example.test --set hub.clusterID=production --set hub.tokenSecret=kubeatlas-hub-token --set-string hub.ownerUserID=kubeatlas:portal:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --set-string image.repository=hub.example.test/kubeatlas/agent --set-string image.digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --set auth.mode=proxy --set mcp.enabled=true) || fail "generated release Hub chart render failed"
+if grep -Fq "name: $PREFLIGHT_RELEASE-hub-role-member" <<<"$PREFLIGHT_RENDER" && grep -Fq "name: $PREFLIGHT_RELEASE-hub-infra-readonly" <<<"$PREFLIGHT_RENDER" && ! grep -Fq "name: $PREFLIGHT_RELEASE-kubeatlas-hub-role-member" <<<"$PREFLIGHT_RENDER"; then
+  pass "generated release RBAC names match radar.fullname and bootstrap preflight"
+else
+  fail "generated release RBAC names differ from bootstrap preflight"
+fi
+
+hub_render() {
+  helm template kubeatlas "$CHART_DIR" --set hub.enabled=true --set-string "hub.url=$1" \
+    --set hub.clusterID=production --set hub.tokenSecret=kubeatlas-hub-token \
+    --set-string hub.ownerUserID=kubeatlas:portal:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    --set-string "image.repository=$2" \
+    --set-string image.digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef \
+    --set auth.mode=proxy --set mcp.enabled=true
+}
+for address in \
+  'http://192.0.2.10|192.0.2.10/kubeatlas/agent' \
+  'http://[2001:db8::10]|[2001:db8::10]/kubeatlas/agent' \
+  'https://192.0.2.10|192.0.2.10/kubeatlas/agent' \
+  'https://192.0.2.10:8443|192.0.2.10:8443/kubeatlas/agent' \
+  'https://[2001:db8::10]|[2001:db8::10]/kubeatlas/agent' \
+  'https://[2001:db8::10]:8443|[2001:db8::10]:8443/kubeatlas/agent' \
+  'https://hub.example.test|hub.example.test/kubeatlas/agent'; do
+  IFS='|' read -r origin repository <<< "$address"
+  if hub_render "$origin" "$repository" >/dev/null 2>&1; then
+    pass "Hub origin renders: $origin"
+  else
+    fail "valid Hub origin was rejected: $origin"
+  fi
+done
+for origin in \
+  'https://[2001:db8:::10]' 'https://[1::2::3]' 'https://[1:2:3]' 'https://hub.example.test/path' \
+  'https://user@hub.example.test' 'https://hub.example.test?' \
+  'https://hub.example.test#fragment' 'https://hub.example.test:65536' \
+  'https://bad_host.example.test' 'https://256.0.0.1' 'http://hub.example.test'; do
+  if hub_render "$origin" "${origin#*://}/kubeatlas/agent" >/dev/null 2>&1; then
+    fail "invalid Hub origin rendered: $origin"
+  else
+    pass "invalid Hub origin rejected: $origin"
+  fi
+done
+if hub_render https://hub.example.test other.example.test/kubeatlas/agent >/dev/null 2>&1; then
+  fail "Hub image repository authority mismatch rendered"
+else
+  pass "Hub image repository must match the selected origin authority"
+fi
+if helm template kubeatlas "$CHART_DIR" --set hub.enabled=true --set-string hub.url=https://hub.example.test/path >/dev/null 2>&1; then
+  fail "Hub Agent origin path prefixes must be rejected"
+else
+  pass "Hub Agent origin path prefixes are rejected"
 fi
 echo
 
-if CLOUD_OUTPUT=$(helm template radar "$CHART_DIR" \
-  --set portalRegistration.enabled=true \
-  --set portalRegistration.url=https://portal.example.test \
-  --set portalRegistration.clusterId=prod-east \
-  --set portalRegistration.clusterName=Production-east \
-  --set portalRegistration.radarUrl=https://radar.example.test \
-  --set portalRegistration.existingSecret=radar-east-portal \
-  --set portalRegistration.tokenKey=token \
-  --set cloud.enabled=true 2>&1); then
-  fail "Portal registration with Cloud enabled should fail"
-elif grep -Fq "cloud.enabled is unavailable in KubeAtlas" <<< "$CLOUD_OUTPUT"; then
-  pass "Portal registration rejects unsupported Cloud with the expected error"
-else
-  fail "Portal registration Cloud rejection had an unexpected error: $CLOUD_OUTPUT"
-fi
-echo
-
-if helm template radar "$CHART_DIR" \
-  --set portalRegistration.enabled=true \
-  --set portalRegistration.url=https://portal.example.test/portal \
-  --set portalRegistration.clusterId=prod-east \
-  --set portalRegistration.clusterName=Production-east \
-  --set portalRegistration.radarUrl=https://radar.example.test \
-  --set portalRegistration.existingSecret=radar-east-portal \
-  --set portalRegistration.tokenKey=token >/dev/null 2>&1; then
-  fail "Portal subpath URL should fail"
-else
-  pass "Portal subpath URL is rejected"
-fi
-echo
-
-render_portal "Portal has one writer, Secret credentials, PVC, and root ingress" \
+render_portal "Self-hosted Cloud Hub has required state, owner Secret, PVC, and root ingress" \
   --set ingress.enabled=true \
   --set ingress.tls[0].secretName=portal-tls \
   --set ingress.tls[0].hosts[0]=portal.example.test
 assert_contains 'replicas: 1' "Portal has exactly one replica"
 assert_contains 'type: Recreate' "Portal uses a single-writer Recreate strategy"
 assert_contains 'automountServiceAccountToken: false' "Portal Pod has no ServiceAccount token"
-assert_contains 'kind: PersistentVolumeClaim' "Portal registry has a PVC"
+assert_contains 'kind: PersistentVolumeClaim' "Cloud Hub state has a PVC"
 assert_contains 'name: portal-auth' "Portal credentials use the existing Secret"
-assert_contains 'key: tokens' "Portal token map uses the tokens Secret key"
-assert_contains 'key: username' "Portal viewer username uses the Secret"
-assert_contains 'key: password' "Portal viewer password uses the Secret"
+assert_contains 'hub-state-file=/var/lib/kubeatlas-portal/hub/state.json' "Cloud Hub uses persistent Hub state"
+assert_contains 'key: username' "local owner username uses the Secret"
+assert_contains 'key: password' "local owner password uses the Secret"
+assert_not_contains 'KUBEATLAS_PORTAL_TOKENS' "legacy registration token map is absent"
+assert_not_contains --data-file "legacy registry flag is absent"
+assert_not_contains 'registry.json' "legacy registry path is absent"
 assert_contains 'path: /$' "Portal ingress is rooted at /"
 assert_contains 'pathType: Prefix' "Portal ingress matches root descendants"
+assert_not_contains 'KUBEATLAS_PORTAL_HTTP_IP_ORIGIN' "empty HTTP IP origin is not injected"
 echo
 
 if helm template kubeatlas-portal "$PORTAL_CHART_DIR" \
@@ -414,6 +464,12 @@ render_portal "Portal image tag defaults to chart appVersion"
 assert_contains 'image: "?example.test/kubeatlas-portal:0.0.0-unreleased"?$' "empty image.tag uses Chart.AppVersion"
 render_portal "Portal image tag override is honored" --set image.tag=0.2.0
 assert_contains 'image: "?example.test/kubeatlas-portal:0.2.0"?$' "explicit image.tag overrides Chart.AppVersion"
+render_portal "Portal HTTP IP origin is passed through explicitly" --set-string httpIPOrigin=http://192.0.2.10:9290
+assert_contains 'name: KUBEATLAS_PORTAL_HTTP_IP_ORIGIN' "HTTP IP origin uses its dedicated environment variable"
+assert_contains 'value: "http://192.0.2.10:9290"' "HTTP IP origin is rendered exactly"
+render_portal "Portal can mount a pre-staged read-only Hub artifact bundle" --set hubArtifacts.enabled=true --set hubArtifacts.existingClaim=hub-artifacts
+assert_contains 'name: hub-artifacts' "Portal mounts the configured artifact PVC"
+assert_contains 'readOnly: true' "Portal artifact mount is read-only"
 echo
 
 if [[ $FAIL -eq 0 ]]; then

@@ -1,10 +1,10 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "engine": "1.180.0",
-  "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
-  "sourceTreeSha256": "b099f2d46052c7a2ddcacd06b7024343e0ece7dd91eaf7cd1f65424060d2cada",
+  "sourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+  "sourceTreeSha256": "6b039f4e89c85ccb464ba142214c376b45ee61a0bc84737322d4830c53266c41",
   "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
-  "rawFindingsSha256": "1f018dba76fe29d0405bb07b736f26402913adbd0247c8cc24757f18e296ba2f",
+  "rawFindingsSha256": "d6dc05af77b410de29533f1fc4f1ebd67beb1d2fa17cb7dd03e8b30cfd003c84",
   "entries": [
     {
       "id": "SAST-001",
@@ -31,7 +31,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-002",
@@ -58,7 +58,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-003",
@@ -66,11 +66,11 @@
         "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
         "path": "cmd/explorer/main.go",
         "start": {
-          "line": 279,
+          "line": 309,
           "col": 120
         },
         "end": {
-          "line": 279,
+          "line": 309,
           "col": 125
         }
       },
@@ -85,7 +85,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
       "previousFinding": {
         "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
         "path": "cmd/explorer/main.go",
@@ -97,7 +97,25 @@
           "line": 274,
           "col": 125
         }
-      }
+      },
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
+            "path": "cmd/explorer/main.go",
+            "start": {
+              "line": 279,
+              "col": 120
+            },
+            "end": {
+              "line": 279,
+              "col": 125
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-004",
@@ -124,7 +142,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-005",
@@ -151,7 +169,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-006",
@@ -178,7 +196,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-007",
@@ -205,7 +223,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-008",
@@ -232,7 +250,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-009",
@@ -259,7 +277,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-010",
@@ -286,7 +304,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-011",
@@ -313,7 +331,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-012",
@@ -340,7 +358,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-013",
@@ -367,7 +385,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-014",
@@ -394,7 +412,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-019",
@@ -421,7 +439,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-020",
@@ -448,7 +466,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-021",
@@ -456,11 +474,11 @@
         "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
         "path": "internal/cloud/url.go",
         "start": {
-          "line": 132,
+          "line": 170,
           "col": 51
         },
         "end": {
-          "line": 132,
+          "line": 170,
           "col": 56
         }
       },
@@ -475,7 +493,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
+            "path": "internal/cloud/url.go",
+            "start": {
+              "line": 132,
+              "col": 51
+            },
+            "end": {
+              "line": 132,
+              "col": 56
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-022",
@@ -502,7 +538,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-023",
@@ -529,7 +565,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-024",
@@ -556,7 +592,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-025",
@@ -583,7 +619,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-026",
@@ -610,7 +646,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-027",
@@ -637,7 +673,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-028",
@@ -664,7 +700,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-029",
@@ -691,7 +727,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-030",
@@ -718,7 +754,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-031",
@@ -745,7 +781,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-032",
@@ -772,7 +808,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-033",
@@ -799,7 +835,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-034",
@@ -826,7 +862,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-035",
@@ -853,7 +889,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-036",
@@ -880,7 +916,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-037",
@@ -888,11 +924,11 @@
         "check_id": "rules.go.lang.security.filepath-clean-misuse",
         "path": "internal/portal/handler.go",
         "start": {
-          "line": 184,
+          "line": 171,
           "col": 11
         },
         "end": {
-          "line": 184,
+          "line": 171,
           "col": 58
         }
       },
@@ -907,7 +943,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
       "previousFinding": {
         "check_id": "rules.go.lang.security.filepath-clean-misuse",
         "path": "internal/portal/handler.go",
@@ -919,7 +955,41 @@
           "line": 135,
           "col": 58
         }
-      }
+      },
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.go.lang.security.filepath-clean-misuse",
+            "path": "internal/portal/handler.go",
+            "start": {
+              "line": 184,
+              "col": 11
+            },
+            "end": {
+              "line": 184,
+              "col": 58
+            }
+          }
+        },
+        {
+          "sourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+          "finding": {
+            "check_id": "rules.go.lang.security.filepath-clean-misuse",
+            "path": "internal/portal/handler.go",
+            "start": {
+              "line": 190,
+              "col": 11
+            },
+            "end": {
+              "line": 190,
+              "col": 58
+            }
+          },
+          "reference": "https://github.com/maomada/KubeAtlas/pull/16"
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-038",
@@ -927,26 +997,71 @@
         "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
         "path": "internal/portal/session.go",
         "start": {
-          "line": 76,
+          "line": 375,
           "col": 21
         },
         "end": {
-          "line": 79,
+          "line": 378,
           "col": 3
         }
       },
-      "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
-      "evidence": "Secure=h.secureCookies，默认 true；仅 --insecure-cookie 显式允许关闭，cmd/kubeatlas-portal/main.go 同时拒绝非 loopback 监听。并非漏设 Secure。",
+      "reviewedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "evidence": "cookieSecureForRequest returns Secure=false only for the explicitly configured HTTP-IP authority or the existing explicit loopback mode; TLS requests and matching configured HTTPS authorities stay Secure. The HTTP path has no transport encryption. This is a maintainer-accepted risk, not a false positive or a verified mitigation.",
       "approval": {
         "approved": true,
         "actor": "maomada",
-        "date": "2026-11-03",
-        "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
-        "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
-        "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+        "date": "2026-11-16",
+        "kind": "maintainer-risk-acceptance",
+        "reference": "https://github.com/maomada/KubeAtlas/pull/17",
+        "scope": "Explicit intranet HTTP-IP login mode only; user decision is recorded in the PR verification checkpoint."
       },
-      "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "disposition": "accepted-risk",
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+            "path": "internal/portal/session.go",
+            "start": {
+              "line": 76,
+              "col": 21
+            },
+            "end": {
+              "line": 79,
+              "col": 3
+            }
+          }
+        }
+      ],
+      "decisionHistory": [
+        {
+          "disposition": "false-positive",
+          "evidence": "Secure=h.secureCookies，默认 true；仅 --insecure-cookie 显式允许关闭，cmd/kubeatlas-portal/main.go 同时拒绝非 loopback 监听。并非漏设 Secure。",
+          "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+          "approval": {
+            "approved": true,
+            "actor": "maomada",
+            "date": "2026-11-03",
+            "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+            "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+            "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+          }
+        }
+      ],
+      "riskAcceptance": {
+        "acceptedBy": "maomada",
+        "decision": "accept",
+        "scope": "Session and OIDC cookies for the explicitly configured intranet HTTP-IP authority.",
+        "residualRisk": "Network observers or active attackers can capture or alter HTTP cookie traffic and potentially take over a session; HttpOnly and SameSite do not encrypt transport.",
+        "conditions": [
+          "The operator explicitly configures the HTTP-IP origin and accepts the trusted-network boundary.",
+          "Only the matching configured authority qualifies; arbitrary HTTP hosts and future source changes are not covered.",
+          "HTTPS and TLS requests retain Secure cookies; existing loopback development scope is retained."
+        ],
+        "decisionText": "保留显式配置的内网 HTTP-IP 模式"
+      },
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-039",
@@ -973,7 +1088,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-040",
@@ -1000,7 +1115,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-041",
@@ -1027,7 +1142,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-043",
@@ -1054,7 +1169,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-044",
@@ -1081,7 +1196,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-045",
@@ -1108,7 +1223,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-046",
@@ -1135,7 +1250,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-047",
@@ -1162,7 +1277,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-048",
@@ -1189,7 +1304,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-049",
@@ -1216,7 +1331,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-050",
@@ -1243,7 +1358,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-051",
@@ -1251,11 +1366,11 @@
         "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
         "path": "internal/server/server.go",
         "start": {
-          "line": 2081,
+          "line": 2056,
           "col": 9
         },
         "end": {
-          "line": 2081,
+          "line": 2056,
           "col": 22
         }
       },
@@ -1270,7 +1385,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
       "previousFinding": {
         "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
         "path": "internal/server/server.go",
@@ -1282,7 +1397,25 @@
           "line": 2055,
           "col": 22
         }
-      }
+      },
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+            "path": "internal/server/server.go",
+            "start": {
+              "line": 2081,
+              "col": 9
+            },
+            "end": {
+              "line": 2081,
+              "col": 22
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-052",
@@ -1290,11 +1423,11 @@
         "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
         "path": "internal/server/server.go",
         "start": {
-          "line": 5065,
+          "line": 5040,
           "col": 15
         },
         "end": {
-          "line": 5065,
+          "line": 5040,
           "col": 38
         }
       },
@@ -1309,7 +1442,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
       "previousFinding": {
         "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
         "path": "internal/server/server.go",
@@ -1321,7 +1454,25 @@
           "line": 5039,
           "col": 38
         }
-      }
+      },
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+            "path": "internal/server/server.go",
+            "start": {
+              "line": 5065,
+              "col": 15
+            },
+            "end": {
+              "line": 5065,
+              "col": 38
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-053",
@@ -1348,7 +1499,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-054",
@@ -1375,7 +1526,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-055",
@@ -1402,7 +1553,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-056",
@@ -1429,7 +1580,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-057",
@@ -1437,11 +1588,11 @@
         "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
         "path": "internal/server/traffic_handlers.go",
         "start": {
-          "line": 487,
+          "line": 489,
           "col": 17
         },
         "end": {
-          "line": 487,
+          "line": 489,
           "col": 79
         }
       },
@@ -1456,7 +1607,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.go.lang.security.audit.xss.no-direct-write-to-responsewriter",
+            "path": "internal/server/traffic_handlers.go",
+            "start": {
+              "line": 487,
+              "col": 17
+            },
+            "end": {
+              "line": 487,
+              "col": 79
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-058",
@@ -1483,7 +1652,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-059",
@@ -1510,7 +1679,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-060",
@@ -1539,7 +1708,7 @@
         "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
       },
       "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-061",
@@ -1568,7 +1737,7 @@
         "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
       },
       "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-062",
@@ -1595,7 +1764,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-063",
@@ -1622,7 +1791,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-064",
@@ -1649,7 +1818,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-065",
@@ -1676,7 +1845,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-067",
@@ -1703,7 +1872,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-068",
@@ -1730,7 +1899,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-069",
@@ -1738,11 +1907,11 @@
         "check_id": "rules.javascript.lang.security.html-in-template-string",
         "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
         "start": {
-          "line": 69,
+          "line": 120,
           "col": 26
         },
         "end": {
-          "line": 69,
+          "line": 120,
           "col": 61
         }
       },
@@ -1757,7 +1926,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.lang.security.html-in-template-string",
+            "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+            "start": {
+              "line": 69,
+              "col": 26
+            },
+            "end": {
+              "line": 69,
+              "col": 61
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-070",
@@ -1765,11 +1952,11 @@
         "check_id": "rules.javascript.browser.security.insecure-document-method",
         "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
         "start": {
-          "line": 79,
+          "line": 130,
           "col": 7
         },
         "end": {
-          "line": 79,
+          "line": 130,
           "col": 42
         }
       },
@@ -1784,7 +1971,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.browser.security.insecure-document-method",
+            "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+            "start": {
+              "line": 79,
+              "col": 7
+            },
+            "end": {
+              "line": 79,
+              "col": 42
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-071",
@@ -1792,11 +1997,11 @@
         "check_id": "rules.javascript.browser.security.insecure-innerhtml",
         "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
         "start": {
-          "line": 79,
+          "line": 130,
           "col": 7
         },
         "end": {
-          "line": 79,
+          "line": 130,
           "col": 42
         }
       },
@@ -1811,7 +2016,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.browser.security.insecure-innerhtml",
+            "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+            "start": {
+              "line": 79,
+              "col": 7
+            },
+            "end": {
+              "line": 79,
+              "col": 42
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-072",
@@ -1819,11 +2042,11 @@
         "check_id": "rules.javascript.browser.security.insecure-document-method",
         "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
         "start": {
-          "line": 91,
+          "line": 142,
           "col": 7
         },
         "end": {
-          "line": 91,
+          "line": 142,
           "col": 53
         }
       },
@@ -1838,7 +2061,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.browser.security.insecure-document-method",
+            "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+            "start": {
+              "line": 91,
+              "col": 7
+            },
+            "end": {
+              "line": 91,
+              "col": 53
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-073",
@@ -1846,11 +2087,11 @@
         "check_id": "rules.javascript.browser.security.insecure-innerhtml",
         "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
         "start": {
-          "line": 91,
+          "line": 142,
           "col": 7
         },
         "end": {
-          "line": 91,
+          "line": 142,
           "col": 53
         }
       },
@@ -1865,7 +2106,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.browser.security.insecure-innerhtml",
+            "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+            "start": {
+              "line": 91,
+              "col": 7
+            },
+            "end": {
+              "line": 91,
+              "col": 53
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-074",
@@ -1873,11 +2132,11 @@
         "check_id": "rules.javascript.browser.security.insecure-document-method",
         "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
         "start": {
-          "line": 108,
+          "line": 159,
           "col": 7
         },
         "end": {
-          "line": 108,
+          "line": 159,
           "col": 44
         }
       },
@@ -1892,7 +2151,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.browser.security.insecure-document-method",
+            "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+            "start": {
+              "line": 108,
+              "col": 7
+            },
+            "end": {
+              "line": 108,
+              "col": 44
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-075",
@@ -1900,11 +2177,11 @@
         "check_id": "rules.javascript.browser.security.insecure-innerhtml",
         "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
         "start": {
-          "line": 108,
+          "line": 159,
           "col": 7
         },
         "end": {
-          "line": 108,
+          "line": 159,
           "col": 44
         }
       },
@@ -1919,7 +2196,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "positionHistory": [
+        {
+          "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+          "finding": {
+            "check_id": "rules.javascript.browser.security.insecure-innerhtml",
+            "path": "packages/k8s-ui/src/components/ui/CodeViewer.tsx",
+            "start": {
+              "line": 108,
+              "col": 7
+            },
+            "end": {
+              "line": 108,
+              "col": 44
+            }
+          }
+        }
+      ],
+      "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision."
     },
     {
       "id": "SAST-076",
@@ -1946,7 +2241,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-077",
@@ -1973,7 +2268,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-078",
@@ -2000,7 +2295,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-079",
@@ -2027,7 +2322,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-081",
@@ -2056,7 +2351,7 @@
         "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
       },
       "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-082",
@@ -2083,7 +2378,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-083",
@@ -2110,7 +2405,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-084",
@@ -2137,7 +2432,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-085",
@@ -2164,7 +2459,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-086",
@@ -2191,7 +2486,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-087",
@@ -2218,7 +2513,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-088",
@@ -2245,7 +2540,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-089",
@@ -2272,7 +2567,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-090",
@@ -2299,7 +2594,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-091",
@@ -2326,7 +2621,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-094",
@@ -2353,7 +2648,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-095",
@@ -2380,7 +2675,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-096",
@@ -2407,7 +2702,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-097",
@@ -2434,7 +2729,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-098",
@@ -2461,7 +2756,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-099",
@@ -2488,7 +2783,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-100",
@@ -2515,7 +2810,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-101",
@@ -2542,7 +2837,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-102",
@@ -2569,7 +2864,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-103",
@@ -2596,7 +2891,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-104",
@@ -2623,7 +2918,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-105",
@@ -2650,7 +2945,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-107",
@@ -2677,7 +2972,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-108",
@@ -2704,7 +2999,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-109",
@@ -2731,7 +3026,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
       "id": "SAST-110",
@@ -2760,7 +3055,7 @@
         "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
       },
       "disposition": "mitigated",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
       "previousReview": {
         "holdReason": "Native browser Worker isolation evidence is still missing; user approval is recorded but does not waive the technical verification gap.",
         "disposition": "hold",
@@ -2801,32 +3096,220 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b"
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     },
     {
-      "id": "SAST-112",
+      "id": "SAST-113",
+      "finding": {
+        "check_id": "rules.go.lang.security.shared-url-struct-mutation",
+        "path": "internal/hub/http_client.go",
+        "start": {
+          "line": 162,
+          "col": 2
+        },
+        "end": {
+          "line": 162,
+          "col": 24
+        }
+      },
+      "reviewedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "evidence": "The incoming request is cloned at line 148, and its URL is copied independently at lines 149-150 before mutation. The outbound Host assignment cannot mutate the input URL. Scope: this exact clone/copy path; not approval of other proxy callers.",
+      "disposition": "false-positive",
+      "approval": {
+        "approved": true,
+        "actor": "Codex with independent actions_cost_audit review",
+        "date": "2026-11-16",
+        "kind": "delegated-source-review",
+        "reference": "https://github.com/maomada/KubeAtlas/pull/17",
+        "scope": "Source-to-sink false-positive classification for this exact finding; no human risk acceptance inferred."
+      },
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
+    },
+    {
+      "id": "SAST-114",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.crypto.use-of-sha1",
+        "path": "internal/hub/http_client.go",
+        "start": {
+          "line": 473,
+          "col": 12
+        },
+        "end": {
+          "line": 473,
+          "col": 97
+        }
+      },
+      "reviewedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "evidence": "SHA-1 computes only the RFC WebSocket Accept challenge with its fixed protocol GUID. It is not a password hash, application signature or integrity primitive chosen for a new protocol.",
+      "disposition": "false-positive",
+      "approval": {
+        "approved": true,
+        "actor": "Codex with independent actions_cost_audit review",
+        "date": "2026-11-16",
+        "kind": "delegated-source-review",
+        "reference": "https://github.com/maomada/KubeAtlas/pull/17",
+        "scope": "Source-to-sink false-positive classification for this exact finding; no human risk acceptance inferred."
+      },
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
+    },
+    {
+      "id": "SAST-115",
       "finding": {
         "check_id": "rules.go.gorilla.security.audit.websocket-missing-origin-check",
+        "path": "internal/hub/hub.go",
         "start": {
-          "line": 102,
+          "line": 234,
           "col": 16
         },
         "end": {
-          "line": 102,
-          "col": 96
-        },
-        "path": "internal/portal/agent_hub.go"
+          "line": 237,
+          "col": 23
+        }
       },
-      "reviewedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+      "reviewedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "evidence": "The agent route rejects any browser Origin before upgrading, validates one bearer credential and its cluster, and explicitly supplies a CheckOrigin function allowing only absent Origin. Scope: missing-origin-check audit finding, not general Hub authorization acceptance.",
       "disposition": "false-positive",
-      "evidence": "AgentHub uses the pinned gorilla/websocket Upgrader with nil CheckOrigin. Its documented and inspected implementation substitutes checkSameOrigin: a present Origin must parse and its host (including port) must equal the request Host; otherwise Upgrade returns 403. No Origin is intentionally allowed for the outbound Go client, not anonymous access: Handler.sourceAgentChannel first rejects cross-site/same-site Fetch Metadata and requires the cluster-bound registration bearer token; viewer cookies alone cannot authorize this route. No unconditional CheckOrigin override exists. TestFleetChannelOriginAndBearerBoundary exercises this reachable route with foreign/opaque/malformed origins, allowed same/no-origin clients, cross-site metadata and invalid bearer. This disposition covers the missing-origin-check audit only, not overall channel authorization or production readiness.",
       "approval": {
         "approved": true,
-        "actor": "Devin",
-        "date": "2026-11-06",
-        "reference": "https://app.devin.ai/sessions/5e0203e7f733486da4dc41482d8b4e1d",
-        "scope": "Evidence-based false-positive review delegated to Devin as documented in docs/security-dispositions.md; no waiver of technical safeguards."
-      }
+        "actor": "Codex with independent actions_cost_audit review",
+        "date": "2026-11-16",
+        "kind": "delegated-source-review",
+        "reference": "https://github.com/maomada/KubeAtlas/pull/17",
+        "scope": "Source-to-sink false-positive classification for this exact finding; no human risk acceptance inferred."
+      },
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
+    },
+    {
+      "id": "SAST-116",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.dangerous-exec-command",
+        "path": "internal/hubartifacts/prepare.go",
+        "start": {
+          "line": 85,
+          "col": 9
+        },
+        "end": {
+          "line": 85,
+          "col": 160
+        }
+      },
+      "reviewedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "evidence": "The executable is selected by the local prepare-hub-artifacts CLI operator through HelmBinary/--helm; arguments are separate exec.Command argv without a shell. No HTTP request selects this executable. Scope requires a trusted local operator and environment.",
+      "disposition": "false-positive",
+      "approval": {
+        "approved": true,
+        "actor": "Codex with independent actions_cost_audit review",
+        "date": "2026-11-16",
+        "kind": "delegated-source-review",
+        "reference": "https://github.com/maomada/KubeAtlas/pull/17",
+        "scope": "Source-to-sink false-positive classification for this exact finding; no human risk acceptance inferred."
+      },
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
+    },
+    {
+      "id": "SAST-117",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+        "path": "internal/portal/oidc.go",
+        "start": {
+          "line": 310,
+          "col": 21
+        },
+        "end": {
+          "line": 313,
+          "col": 3
+        }
+      },
+      "reviewedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "evidence": "cookieSecureForRequest returns Secure=false only for the explicitly configured HTTP-IP authority or the existing explicit loopback mode; TLS requests and matching configured HTTPS authorities stay Secure. The HTTP path has no transport encryption. This is a maintainer-accepted risk, not a false positive or a verified mitigation.",
+      "disposition": "accepted-risk",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-16",
+        "kind": "maintainer-risk-acceptance",
+        "reference": "https://github.com/maomada/KubeAtlas/pull/17",
+        "scope": "Explicit intranet HTTP-IP login mode only; user decision is recorded in the PR verification checkpoint."
+      },
+      "riskAcceptance": {
+        "acceptedBy": "maomada",
+        "decision": "accept",
+        "scope": "Session and OIDC cookies for the explicitly configured intranet HTTP-IP authority.",
+        "residualRisk": "Network observers or active attackers can capture or alter HTTP cookie traffic and potentially take over a session; HttpOnly and SameSite do not encrypt transport.",
+        "conditions": [
+          "The operator explicitly configures the HTTP-IP origin and accepts the trusted-network boundary.",
+          "Only the matching configured authority qualifies; arbitrary HTTP hosts and future source changes are not covered.",
+          "HTTPS and TLS requests retain Secure cookies; existing loopback development scope is retained."
+        ],
+        "decisionText": "保留显式配置的内网 HTTP-IP 模式"
+      },
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
+    },
+    {
+      "id": "SAST-118",
+      "finding": {
+        "check_id": "rules.go.lang.security.audit.net.cookie-missing-secure",
+        "path": "internal/portal/oidc.go",
+        "start": {
+          "line": 354,
+          "col": 21
+        },
+        "end": {
+          "line": 357,
+          "col": 3
+        }
+      },
+      "reviewedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "evidence": "cookieSecureForRequest returns Secure=false only for the explicitly configured HTTP-IP authority or the existing explicit loopback mode; TLS requests and matching configured HTTPS authorities stay Secure. The HTTP path has no transport encryption. This is a maintainer-accepted risk, not a false positive or a verified mitigation.",
+      "disposition": "accepted-risk",
+      "approval": {
+        "approved": true,
+        "actor": "maomada",
+        "date": "2026-11-16",
+        "kind": "maintainer-risk-acceptance",
+        "reference": "https://github.com/maomada/KubeAtlas/pull/17",
+        "scope": "Explicit intranet HTTP-IP login mode only; user decision is recorded in the PR verification checkpoint."
+      },
+      "riskAcceptance": {
+        "acceptedBy": "maomada",
+        "decision": "accept",
+        "scope": "Session and OIDC cookies for the explicitly configured intranet HTTP-IP authority.",
+        "residualRisk": "Network observers or active attackers can capture or alter HTTP cookie traffic and potentially take over a session; HttpOnly and SameSite do not encrypt transport.",
+        "conditions": [
+          "The operator explicitly configures the HTTP-IP origin and accepts the trusted-network boundary.",
+          "Only the matching configured authority qualifies; arbitrary HTTP hosts and future source changes are not covered.",
+          "HTTPS and TLS requests retain Secure cookies; existing loopback development scope is retained."
+        ],
+        "decisionText": "保留显式配置的内网 HTTP-IP 模式"
+      },
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
+    },
+    {
+      "id": "SAST-119",
+      "finding": {
+        "check_id": "rules.javascript.browser.security.js-open-redirect-from-function",
+        "path": "web/src/portal/portalNavigation.ts",
+        "start": {
+          "line": 2,
+          "col": 27
+        },
+        "end": {
+          "line": 2,
+          "col": 31
+        }
+      },
+      "reviewedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "evidence": "Current call sites pass local constant routes or an authenticated logout URL constructed from validated IdP metadata. Review traced all current callers; this is not an arbitrary-user-URL API approval. New callers, untrusted metadata or source changes require review.",
+      "disposition": "false-positive",
+      "approval": {
+        "approved": true,
+        "actor": "Codex with independent actions_cost_audit review",
+        "date": "2026-11-16",
+        "kind": "delegated-source-review",
+        "reference": "https://github.com/maomada/KubeAtlas/pull/17",
+        "scope": "Source-to-sink false-positive classification for this exact finding; no human risk acceptance inferred."
+      },
+      "revalidatedSourceSha": "2d7fd52b91cec6244014716838548fe070e48565"
     }
   ],
   "previousReview": {
@@ -2856,6 +3339,240 @@
         "sourceTreeSha256": "0f2e4407f9baff8deb90f6d5ec4dc903553b0b2f14e254c9d217649bcbf4e90a",
         "rawFindingsSha256": "6d2b36e7bd5348f67fbe3ecc9d6e1e8e08100b308ca30ba065f2afcc1879a997"
       }
+    }
+  ],
+  "retiredEntries": [
+    {
+      "entry": {
+        "id": "SAST-112",
+        "finding": {
+          "check_id": "rules.go.gorilla.security.audit.websocket-missing-origin-check",
+          "start": {
+            "line": 102,
+            "col": 16
+          },
+          "end": {
+            "line": 102,
+            "col": 96
+          },
+          "path": "internal/portal/agent_hub.go"
+        },
+        "reviewedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+        "disposition": "false-positive",
+        "evidence": "AgentHub uses the pinned gorilla/websocket Upgrader with nil CheckOrigin. Its documented and inspected implementation substitutes checkSameOrigin: a present Origin must parse and its host (including port) must equal the request Host; otherwise Upgrade returns 403. No Origin is intentionally allowed for the outbound Go client, not anonymous access: Handler.sourceAgentChannel first rejects cross-site/same-site Fetch Metadata and requires the cluster-bound registration bearer token; viewer cookies alone cannot authorize this route. No unconditional CheckOrigin override exists. TestFleetChannelOriginAndBearerBoundary exercises this reachable route with foreign/opaque/malformed origins, allowed same/no-origin clients, cross-site metadata and invalid bearer. This disposition covers the missing-origin-check audit only, not overall channel authorization or production readiness.",
+        "approval": {
+          "approved": true,
+          "actor": "Devin",
+          "date": "2026-11-06",
+          "reference": "https://app.devin.ai/sessions/5e0203e7f733486da4dc41482d8b4e1d",
+          "scope": "Evidence-based false-positive review delegated to Devin as documented in docs/security-dispositions.md; no waiver of technical safeguards."
+        }
+      },
+      "retiredAtSourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "reason": "Legacy internal/portal/agent_hub.go was removed. The fresh complete scan has no finding at this path. Its approval is not transferred to new Hub source."
+    }
+  ],
+  "revalidationHistory": [
+    {
+      "previousBinding": {
+        "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+        "sourceTreeSha256": "b099f2d46052c7a2ddcacd06b7024343e0ece7dd91eaf7cd1f65424060d2cada",
+        "rawFindingsSha256": "1f018dba76fe29d0405bb07b736f26402913adbd0247c8cc24757f18e296ba2f"
+      },
+      "sourceSha": "2d7fd52b91cec6244014716838548fe070e48565",
+      "reviewer": "Codex with independent actions_cost_audit review",
+      "scanSourceSha": "448fcf169a0af7753063fef04a5d77119129d6bd",
+      "scanRunUrl": "https://github.com/maomada/KubeAtlas/actions/runs/43853451778",
+      "findingCount": 108,
+      "newFindings": 7,
+      "removedFindings": 1,
+      "evidence": "Complete pinned scan: 1981 files, zero scanner errors. All current production Git blobs equal the tested merge source. Fourteen identities moved; seven new findings reviewed individually. SAST-038 and two new cookie findings use the maintainer explicit HTTP-IP risk decision. Three prior new proxy/archive findings were fixed and are absent. Legacy SAST-112 is retained as a retired record. No raw findings, targets or rules were removed."
+    }
+  ],
+  "integratedBranchReviews": [
+    {
+      "pullRequest": 16,
+      "headSha": "294f5fabc5a2e088e4b716e47f71833896c92531",
+      "sourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+      "sourceTreeSha256": "8db54c8dc88ab3aaa89427b7900d7aec9c161eb2a4ec180f790f2cdb7d79092d",
+      "rawFindingsSha256": "5dec9a163cf753fabb0444e5b5f89743c190675cea023cf8271398346e30b5cc",
+      "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
+      "reviewMetadata": {
+        "previousReview": {
+          "sourceSha": "7e6bed921fece69b38e8ef6a0f4a26154557ba63",
+          "sourceTreeSha256": "0f2e4407f9baff8deb90f6d5ec4dc903553b0b2f14e254c9d217649bcbf4e90a",
+          "rawFindingsSha256": "6d2b36e7bd5348f67fbe3ecc9d6e1e8e08100b308ca30ba065f2afcc1879a997"
+        },
+        "revalidation": {
+          "actor": "Devin",
+          "sourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+          "branchHeadSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a",
+          "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+          "evidence": "Reviewed all four changed production files at the exact PR16 tree and the two affected findings. 100 existing identities are exact on unchanged source; SAST-003 is exact on changed cmd/explorer/main.go; SAST-037 is the same bounded embedded-FS asset read with its position moved from line 184 to 190. The /mcp-fleet route requires a viewer session, rejects Sec-Fetch-Site same-site and cross-site requests, and is wrapped in CrossOriginProtection; trusted-proxy configuration is separate. The candidate scan has 102 findings and zero scanner errors. Code-review receipts are recorded separately from disposition approval.",
+          "reviewer": "maomada"
+        },
+        "reviewHistory": [
+          {
+            "sourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+            "sourceTreeSha256": "f0d9c3270c3519085e9f2cb0fd40e36b1c525b901b0fb96a144f1be4d373b2d0",
+            "rawFindingsSha256": "f3af6fd39b5e99e4c5a223ad90a6ec9764cf84686d3e32f38dd0f0cdbbf090a1",
+            "revalidation": {
+              "sourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
+              "actor": "Devin",
+              "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+              "evidence": "Reviewed complete 8bb96ff..7c2a68f diff and exact raw identities. Existing 97 approved findings and their source files are unchanged; changed production files contain none of those entries. Retained original approval/evidence and added explicit revalidation SHA. No rule or scanner changes. SAST-066 and SAST-106 no longer occur after fixed sanitized warning strings; original raw reports and historical ledger retained."
+            },
+            "previousReview": {
+              "sourceSha": "7e6bed921fece69b38e8ef6a0f4a26154557ba63",
+              "sourceTreeSha256": "0f2e4407f9baff8deb90f6d5ec4dc903553b0b2f14e254c9d217649bcbf4e90a",
+              "rawFindingsSha256": "6d2b36e7bd5348f67fbe3ecc9d6e1e8e08100b308ca30ba065f2afcc1879a997"
+            }
+          },
+          {
+            "previousPolicy": {
+              "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+              "sourceTreeSha256": "b099f2d46052c7a2ddcacd06b7024343e0ece7dd91eaf7cd1f65424060d2cada",
+              "rawFindingsSha256": "1f018dba76fe29d0405bb07b736f26402913adbd0247c8cc24757f18e296ba2f",
+              "engine": "1.180.0",
+              "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
+              "policySha256": "d846f360cbd01b2841248a116675b33061217d90eeb39eaa702a563cc1a97deb",
+              "revalidation": {
+                "sourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+                "actor": "Devin",
+                "reference": "https://app.devin.ai/sessions/5e0203e7f733486da4dc41482d8b4e1d",
+                "evidence": "Reviewed main-to-Fleet source diff at the existing finding sites. All 101 prior raw findings persist. Their files are byte-identical to main except cmd/explorer/main.go, internal/portal/handler.go and internal/server/server.go: the four existing sinks and their guards are unchanged, with positions relocated. CLI ws:// is an error literal; Portal assets path retains prefix/clean/FS boundary; topology retains JSON content type/marshalling; CAPI kubeconfig remains YAML attachment. Original classifications, approvals and evidence are retained. Reviewed the sole new origin audit using the pinned dependency implementation and reachable token-gated route (SAST-112). Scanner, rules and target selector are unchanged. Exact scanned production-source digest matches this commit."
+              }
+            },
+            "priorDispositionEntries": [
+              {
+                "id": "SAST-003",
+                "finding": {
+                  "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
+                  "path": "cmd/explorer/main.go",
+                  "start": {
+                    "line": 279,
+                    "col": 120
+                  },
+                  "end": {
+                    "line": 279,
+                    "col": 125
+                  }
+                },
+                "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+                "evidence": "命中包含 ws:// 的错误消息字面量，不是创建 WebSocket 的调用；ValidateWebSocketURL 校验逻辑必须另外保留。",
+                "approval": {
+                  "approved": true,
+                  "actor": "maomada",
+                  "date": "2026-11-03",
+                  "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+                  "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+                  "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+                },
+                "disposition": "false-positive",
+                "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+                "previousFinding": {
+                  "check_id": "rules.javascript.lang.security.detect-insecure-websocket",
+                  "path": "cmd/explorer/main.go",
+                  "start": {
+                    "line": 274,
+                    "col": 120
+                  },
+                  "end": {
+                    "line": 274,
+                    "col": 125
+                  }
+                }
+              },
+              {
+                "id": "SAST-037",
+                "finding": {
+                  "check_id": "rules.go.lang.security.filepath-clean-misuse",
+                  "path": "internal/portal/handler.go",
+                  "start": {
+                    "line": 184,
+                    "col": 11
+                  },
+                  "end": {
+                    "line": 184,
+                    "col": 58
+                  }
+                },
+                "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
+                "evidence": "URL 分支先限定 /assets/，path.Clean 后再次限定 assets/，serveFile 从 fs.FS 读静态文件而非拼接 OS 路径；路径穿出 assets 后被拒绝。需保持静态 FS 的契约，不支持其指向不可信外部文件。",
+                "approval": {
+                  "approved": true,
+                  "actor": "maomada",
+                  "date": "2026-11-03",
+                  "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+                  "messageId": "event-01a1a25f387377a78357a1d7a8c306d3",
+                  "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
+                },
+                "disposition": "false-positive",
+                "revalidatedSourceSha": "25828e1f1e87df69726ca76374e4e617e587a64b",
+                "previousFinding": {
+                  "check_id": "rules.go.lang.security.filepath-clean-misuse",
+                  "path": "internal/portal/handler.go",
+                  "start": {
+                    "line": 135,
+                    "col": 11
+                  },
+                  "end": {
+                    "line": 135,
+                    "col": 58
+                  }
+                }
+              }
+            ],
+            "candidate": {
+              "branchHeadSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a",
+              "testedSourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+              "gitTree": "2d9cc8b4957df617ea20e7c31ac1a934fa029491",
+              "sourceTreeSha256": "8db54c8dc88ab3aaa89427b7900d7aec9c161eb2a4ec180f790f2cdb7d79092d",
+              "engine": "1.180.0",
+              "rulesCommit": "16b9e6d45f10649f6a531ec4838ed9924372c3bc",
+              "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
+              "targetCount": 1953,
+              "findingCount": 102,
+              "scannerErrorCount": 0,
+              "rawFindingsSha256": "5dec9a163cf753fabb0444e5b5f89743c190675cea023cf8271398346e30b5cc",
+              "provenanceSha256": "86245c20ed47f36a382bffe2140217df093ee08174a34b52ff074f9470a47185",
+              "artifact": "security-a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+              "actionsRunId": 43839128360
+            },
+            "reviewReceipts": [
+              {
+                "reviewId": 5917635382,
+                "reviewer": "devin-ai-integration[bot]",
+                "state": "COMMENTED",
+                "commitSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a",
+                "summary": "Devin Review: No Issues Found",
+                "reference": "https://github.com/maomada/KubeAtlas/pull/16#pullrequestreview-5917635382"
+              },
+              {
+                "reviewId": 5918089792,
+                "reviewer": "maomada",
+                "state": "APPROVED",
+                "commitSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a"
+              },
+              {
+                "reviewId": 5918102972,
+                "reviewer": "maomada",
+                "state": "APPROVED",
+                "commitSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a"
+              }
+            ],
+            "revalidation": {
+              "actor": "Devin",
+              "sourceSha": "a377fcea3a13b030f53ebe7afc52414bdf3ffc73",
+              "branchHeadSha": "0de3ec82a2913ffd441aaad1bc14a43363d2026a",
+              "reference": "https://app.devin.ai/sessions/a83667070d6a45518af95192c1780a37",
+              "evidence": "Reviewed all four changed production files at the exact PR16 tree and the two affected findings. 100 existing identities are exact on unchanged source; SAST-003 is exact on changed cmd/explorer/main.go; SAST-037 is the same bounded embedded-FS asset read with its position moved from line 184 to 190. The /mcp-fleet route requires a viewer session, rejects Sec-Fetch-Site same-site and cross-site requests, and is wrapped in CrossOriginProtection; trusted-proxy configuration is separate. The candidate scan has 102 findings and zero scanner errors. Code-review receipts are recorded separately from disposition approval.",
+              "reviewer": "maomada"
+            }
+          }
+        ]
+      },
+      "scope": "Historical PR16 review is preserved by this merge and its exact commit. Current Hub production bytes and the 108-finding PR17 review remain unchanged; PR16 dispositions are not applied to new Hub findings."
     }
   ]
 }

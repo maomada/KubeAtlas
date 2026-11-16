@@ -18,10 +18,11 @@ describe("DiffViewer", () => {
       />,
     );
 
-    expect(html).toContain("Added value:");
-    expect(html).toContain("Removed value:");
-    expect(html).toContain("Old value:");
-    expect(html).toContain("New value:");
+    expect(html).toContain("新增值：");
+    expect(html).toContain("移除值：");
+    expect(html).toContain("旧值：");
+    expect(html).toContain("新值：");
+    expect(html).toContain("Three fields changed");
   });
 
   it("renders values kept out of the feed as a badge, not as struck-through text", () => {
@@ -42,9 +43,9 @@ describe("DiffViewer", () => {
     expect(html).not.toContain("line-through");
     expect(html).not.toContain("(value hidden)");
     expect(html).not.toContain("(set)");
-    expect(html.match(/value hidden/g)).toHaveLength(4);
-    expect(html).toContain("Set");
-    expect(html).toContain("Removed");
+    expect(html.match(/值已隐藏/g)).toHaveLength(4);
+    expect(html).toContain("已设置");
+    expect(html).toContain("已移除");
   });
 
   it("names key changes instead of striking through an unchanged key list", () => {
@@ -56,9 +57,9 @@ describe("DiffViewer", () => {
         }}
       />,
     );
-    expect(html).toContain("keys changed: <span class=\"font-mono\">password</span>");
+    expect(html).toContain("键已修改： <span class=\"font-mono\">password</span>");
     expect(html).not.toContain("line-through");
-    expect(html).not.toContain("Old value:");
+    expect(html).not.toContain("旧值：");
   });
 
   it("merges added, removed and modified key lists of one field into one row", () => {
@@ -77,11 +78,11 @@ describe("DiffViewer", () => {
       />,
     );
     expect(html.match(/>data</g)).toHaveLength(1);
-    expect(html).toMatch(/keys changed: <span[^>]*>a, b<\/span>.*added: <span[^>]*>token<\/span>.*removed: <span[^>]*>old<\/span>/);
+    expect(html).toMatch(/键已修改： <span[^>]*>a, b<\/span>.*新增： <span[^>]*>token<\/span>.*移除： <span[^>]*>old<\/span>/);
     expect(html).toContain(">stringData<");
-    expect(html).toContain("added: <span class=\"font-mono\">extra</span>");
+    expect(html).toContain("新增： <span class=\"font-mono\">extra</span>");
     // Ordinary fields keep the old→new rendering.
-    expect(html).toContain("Old value:");
+    expect(html).toContain("旧值：");
     expect(html).toContain("kubernetes.io/tls");
   });
 
@@ -89,7 +90,8 @@ describe("DiffViewer", () => {
     const html = renderToStaticMarkup(
       <DiffViewer diff={{ summary: "", fields: [{ path: "data (modified keys)", oldValue: "x", newValue: "y" }] }} />,
     );
-    expect(html).toContain("Old value:");
-    expect(html).not.toContain("keys changed");
+    expect(html).toContain("旧值：");
+    expect(html).not.toContain("键已修改");
   });
+
 });

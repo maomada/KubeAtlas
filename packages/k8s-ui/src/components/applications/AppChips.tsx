@@ -18,8 +18,8 @@ import { ProvenanceTooltip, CategoryTooltip, VersionTooltip } from './AppTooltip
 export function ProvenanceBadge({ tier, appKey, confidence }: { tier?: number; appKey: string; confidence?: string }) {
   if (!tier) {
     return (
-      <Tooltip content="No GitOps, Helm, or app-label grouping signal — shown as the raw workload." delay={150}>
-        <span className={`${CHIP} ${CHIP_TONE.muted}`}>ungrouped</span>
+      <Tooltip content="未发现 GitOps、Helm 或应用标签分组信号；此处按原始工作负载显示。" delay={150}>
+        <span className={`${CHIP} ${CHIP_TONE.muted}`}>未分组</span>
       </Tooltip>
     )
   }
@@ -46,9 +46,9 @@ export function ClassBadge({
     workloadClass === 'mixed' && composition && composition.length > 0 ? (
       <div className="space-y-1">
         <div className="text-xs text-theme-text-primary">
-          Contains {composition.map((c) => `${c.count} ${CLASS_META[c.cls].label}${c.count > 1 ? 's' : ''}`).join(' · ')}
+          包含：{composition.map((c) => `${CLASS_META[c.cls].label}：${c.count} 个`).join('、')}
         </div>
-        <div className="text-[11px] leading-snug text-theme-text-secondary">Class filters match any of the contained classes.</div>
+        <div className="text-[11px] leading-snug text-theme-text-secondary">类别筛选会匹配其中任意类别。</div>
       </div>
     ) : (
       meta.tooltip
@@ -65,7 +65,7 @@ export function CategoryChip({ category, addonReason }: { category?: string; add
   if (category !== 'addon' && category !== 'mixed') return null
   return (
     <Tooltip content={<CategoryTooltip category={category} addonReason={addonReason} />} delay={150}>
-      <span className={`${CHIP} ${category === 'mixed' ? CHIP_TONE.amber : CHIP_TONE.muted}`}>{category === 'addon' ? 'add-on' : 'mixed'}</span>
+      <span className={`${CHIP} ${category === 'mixed' ? CHIP_TONE.amber : CHIP_TONE.muted}`}>{category === 'addon' ? '附加组件' : '混合'}</span>
     </Tooltip>
   )
 }
@@ -110,9 +110,9 @@ export function VersionInfo({ app, variant }: { app: AppRow; variant: 'cell' | '
   return (
     <Tooltip content={<VersionTooltip workloads={workloads} />} delay={150}>
       {variant === 'cell' ? (
-        <span className={`${CHIP} ${app.versionSkew ? CHIP_TONE.amber : CHIP_TONE.neutral}`}>{versions.length} versions</span>
+        <span className={`${CHIP} ${app.versionSkew ? CHIP_TONE.amber : CHIP_TONE.neutral}`}>{versions.length} 个版本</span>
       ) : (
-        <span className={mono}>{versions.length} versions</span>
+        <span className={mono}>{versions.length} 个版本</span>
       )}
     </Tooltip>
   )

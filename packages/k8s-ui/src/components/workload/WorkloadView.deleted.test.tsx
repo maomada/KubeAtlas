@@ -35,25 +35,27 @@ function render(resourceError: unknown) {
 describe('WorkloadView for an object deleted while open', () => {
   it('says it is gone, names its owner, and offers nothing that acts on it', () => {
     const html = render(Object.assign(new Error('pods "web-1" not found'), { status: 404 }))
-    expect(html).toContain('This Pod no longer exists in the cluster')
-    expect(html).toContain('Go to its Deployment web')
-    expect(html).toContain('>Deleted<')
+    expect(html).toContain('此 Pod 已不在集群中')
+    expect(html).toContain('前往其 Deployment web')
+    expect(html).toContain('已删除')
+    expect(html).toContain('KubeAtlas')
+    expect(html).not.toContain('Radar 加载')
     expect(html).not.toContain('Terminal')
     expect(html).not.toContain('Diagnose')
     expect(html).not.toContain('Host issues panel')
     expect(html).not.toContain('Host reachability panel')
-    expect(html).not.toContain('Reachability')
+    expect(html).not.toContain('可达性')
   })
 
   it('shows the live view when the fetch failed for another reason', () => {
     const html = render(Object.assign(new Error('boom'), { status: 500 }))
-    expect(html).not.toContain('no longer exists')
-    expect(html).not.toContain('>Deleted<')
+    expect(html).not.toContain('已不在集群中')
+    expect(html).not.toContain('已删除')
     expect(html).toContain('Terminal')
     expect(html).toContain('Diagnose')
     expect(html).toContain('Host issues panel')
     expect(html).toContain('Host reachability panel')
-    expect(html).toContain('Reachability')
+    expect(html).toContain('可达性')
   })
 })
 
@@ -85,7 +87,7 @@ describe('a host page for an object deleted while open', () => {
     const gone = Object.assign(new Error('clusters "pg" not found'), { status: 404 })
     for (const tab of ['overview', 'backups', 'spec']) {
       const html = renderHosted(gone, tab)
-      expect(html).toContain('>Deleted<')
+      expect(html).toContain('已删除')
       for (const host of ['Host summary action', 'Host backups', 'Host subheader action', 'Host header action', 'Host phase', 'Host verdict', 'Host spec action']) {
         expect(html, `${tab}: ${host}`).not.toContain(host)
       }

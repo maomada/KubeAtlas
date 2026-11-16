@@ -51,6 +51,47 @@ describe('Omnibar note', () => {
   const namespace = searchCoverageNote(coverageOf([{ kind: '*', group: '', reason: 'radar_namespace_not_collected', namespaces: ['rel-owner'] }]), {})!
   const loading = searchCoverageNote(coverageOf([{ kind: '*', group: '', reason: 'kind_sync_pending' }]), {})!
 
+  it('keeps resource identity values raw and localizes the issue count', () => {
+    const hit = {
+      score: 1,
+      kind: 'Secret',
+      namespace: 'system-ops',
+      name: 'registry-credential',
+      summaryContext: { issueCount: 2 },
+    }
+    act(() => {
+      root.render(<Omnibar onOpenResource={vi.fn()} commandItems={[]} searchData={{ hits: [hit] }} />)
+    })
+    typeQuery('registry-credential')
+    expect(document.body.textContent).toContain('Secret · system-ops')
+    expect(document.body.textContent).toContain('registry-credential')
+    expect(document.body.textContent).toContain('2 个问题')
+  })
+
+  it('localizes filter-pill controls while preserving search keys and values', () => {
+    const ref = createRef<OmnibarHandle>()
+    act(() => {
+      root.render(<Omnibar ref={ref} onOpenResource={vi.fn()} commandItems={[]} searchData={{ hits: [] }} />)
+    })
+    for (const [key, value] of [
+      ['ns', 'prod'],
+      ['kind', 'Deployment'],
+      ['cluster', 'cluster-west'],
+      ['label', 'app.kubernetes.io/name=checkout'],
+      ['image', 'registry.example.io/api:v1'],
+    ]) {
+      act(() => ref.current?.addModifier({ key, value }))
+    }
+    expect(host.textContent).toContain('ns:prod')
+    expect(host.textContent).toContain('kind:Deployment')
+    expect(host.querySelector('button[aria-label="移除 kind:Deployment 筛选条件"]')).not.toBeNull()
+    const expand = host.querySelector<HTMLButtonElement>('button[title="显示全部筛选条件"]')
+    expect(expand?.textContent).toContain('项')
+    expect(host.textContent).not.toContain(' more')
+    act(() => expand?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true })))
+    expect(host.textContent).toContain('收起')
+  })
+
   it.each([
     ['alone', [], []],
     ['before a namespace note', [], [namespace]],

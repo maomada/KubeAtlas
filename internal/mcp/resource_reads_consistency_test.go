@@ -141,7 +141,7 @@ func TestDynamicGetRetryHitStandsDuringPromotion(t *testing.T) {
 			if !promote.Load() {
 				return true, nil, collectorRefusal(gvr.GroupResource(), "list", "")
 			}
-		} else if a.(ktesting.ListActionImpl).GetListOptions().Limit == 0 && !allowNamespace.Load() {
+		} else if a.(ktesting.ListActionImpl).GetListOptions().Limit != 1 && !allowNamespace.Load() {
 			return true, nil, fmt.Errorf("initial list held")
 		}
 		return false, nil, nil

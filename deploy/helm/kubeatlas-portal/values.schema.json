@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Radar Portal Helm chart values",
+  "title": "KubeAtlas Self-Hosted Cloud Hub Helm chart values",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -15,6 +15,15 @@
       }
     },
     "existingSecret": { "type": "string", "minLength": 1 },
+    "httpIPOrigin": { "type": "string" },
+    "hubArtifacts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "existingClaim": { "type": "string" }
+      }
+    },
     "service": {
       "type": "object",
       "additionalProperties": false,

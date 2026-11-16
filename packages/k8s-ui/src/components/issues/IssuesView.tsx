@@ -88,11 +88,11 @@ export function IssuesView({ issues, anyData, resourceHref, onResourceClick, clu
         tone="healthy"
         variant="card"
         icon={CircleCheck}
-        headline="Nothing broken right now"
-        body="No active issues across the selected scope."
+        headline="当前没有问题"
+        body="所选范围内没有活动问题。"
       />
     ) : (
-      <EmptyState headline="No issue data yet" body="Connect a cluster to populate the issue queue." action={emptyAction} />
+      <EmptyState headline="暂无问题数据" body="连接集群后即可填充问题队列。" action={emptyAction} />
     );
   }
 
@@ -245,7 +245,7 @@ export function IssueRow({
       ) : null}
       {nodeCorroboration ? (
         <Tooltip content={nodeCorroboration.message} delay={200}>
-          <span className="badge-sm inline-flex items-center gap-1 border border-theme-border text-[10px] text-theme-text-secondary"><Workflow className="h-3 w-3 shrink-0" aria-hidden />Same-node evidence</span>
+          <span className="badge-sm inline-flex items-center gap-1 border border-theme-border text-[10px] text-theme-text-secondary"><Workflow className="h-3 w-3 shrink-0" aria-hidden />同节点证据</span>
         </Tooltip>
       ) : null}
       {timing ? (
@@ -383,7 +383,7 @@ export function IssueRow({
                   {issue.incident_parent.confidence ? (
                     <Tooltip content={confidenceTitle(issue.incident_parent.confidence)} delay={200}>
                       <span className="ml-2 badge-sm text-[10px] font-normal text-theme-text-tertiary">
-                        {issue.incident_parent.confidence} confidence
+                        {issue.incident_parent.confidence} 置信度
                       </span>
                     </Tooltip>
                   ) : null}
@@ -411,18 +411,27 @@ export function IssueRow({
 // IssueDiagnosisSource). It is a swap of WORDS ONLY: the meta line, the raw
 // error, the reason-code eyebrow and the tones are computed here either way, so
 // an overridden card loses none of the facts an un-overridden one shows.
+function formatIssueAge(value: string): string {
+  const age = formatRelativeAgeTime(value)
+  if (age === 'just now') return '刚刚'
+  const match = /^(\d+)(s|m|h|d) ago$/.exec(age)
+  if (!match) return age
+  const unit: Record<string, string> = { s: '秒', m: '分钟', h: '小时', d: '天' }
+  return `${match[1]} ${unit[match[2]]}前`
+}
+
 function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSource }) {
   const crash =
     issue.restart_count || issue.last_terminated_reason
       ? [
-          issue.restart_count ? `${issue.restart_count} restart${issue.restart_count === 1 ? '' : 's'}` : null,
-          issue.last_terminated_reason ? `last exit: ${issue.last_terminated_reason}` : null,
+          issue.restart_count ? `重启 ${issue.restart_count} 次` : null,
+          issue.last_terminated_reason ? `上次退出原因：${issue.last_terminated_reason}` : null,
           issue.restart_loop?.workload_pods && issue.restart_loop.workload_pods > 1
-            ? `${issue.restart_loop.looping_pods} of ${issue.restart_loop.workload_pods} pods looping`
+            ? `${issue.restart_loop.workload_pods} 个 Pod 中有 ${issue.restart_loop.looping_pods} 个处于重启循环`
             : null,
-          issue.restart_loop?.startup_probe_failure ? 'startup probe failures seen' : null,
-          issue.restart_loop?.liveness_probe_failure ? 'liveness probe failures seen' : null,
-          issue.restart_loop?.readiness_probe_failure ? 'readiness probe failures seen' : null,
+          issue.restart_loop?.startup_probe_failure ? '检测到启动探针失败' : null,
+          issue.restart_loop?.liveness_probe_failure ? '检测到存活探针失败' : null,
+          issue.restart_loop?.readiness_probe_failure ? '检测到就绪探针失败' : null,
         ]
           .filter(Boolean)
           .join(' · ')
@@ -455,29 +464,29 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
   // yet-stuck operation leads with "Retrying"; once it's declared stuck, "Stuck"
   // takes over.
   const meta: string[] = [];
-  if (issue.stuck) meta.push('Stuck');
-  else if (issue.operation_retry_count) meta.push('Retrying');
-  if (issue.operation_retry_count) meta.push(`retried ${issue.operation_retry_count}×`);
+  if (issue.stuck) meta.push('已停滞');
+  else if (issue.operation_retry_count) meta.push('正在重试');
+  if (issue.operation_retry_count) meta.push(`已重试 ${issue.operation_retry_count} 次`);
   if (crash) meta.push(crash);
   if (timing) {
     if (partialOnset && issue.first_seen) {
-      meta.push(`some signals active at least ${formatRelativeAgeTime(issue.first_seen)}`);
+      meta.push(`部分信号至少从 ${formatIssueAge(issue.first_seen)}起持续至今`);
     }
     meta.push(timing.meta);
     if (!partialOnset && timing.kind === 'regression' && issue.first_seen) {
-      meta.push(`active at least ${formatRelativeAgeTime(issue.first_seen)}`);
+      meta.push(`至少从 ${formatIssueAge(issue.first_seen)}起持续至今`);
     }
   } else if (partialOnset && issue.first_seen) {
     const total = (issue.onset_coverage?.known ?? 0) + partialUnknown;
-    meta.push(`some signals active at least ${formatRelativeAgeTime(issue.first_seen)}; timing unknown for ${partialUnknown} of ${total} signals`);
+    meta.push(`部分信号至少从 ${formatIssueAge(issue.first_seen)}起持续至今；其中 ${partialUnknown}/${total} 个信号的时间未知`);
   } else if (issue.first_seen) {
-    meta.push(`active at least ${formatRelativeAgeTime(issue.first_seen)}`);
+    meta.push(`至少从 ${formatIssueAge(issue.first_seen)}起持续至今`);
   }
   if (issue.onset_unknown && !timing && !partialOnset) {
-    meta.push('exact onset unknown');
+    meta.push('确切开始时间未知');
   }
   if (issue.first_seen) {
-    if (issue.last_seen && (timing?.kind !== 'creation' || partialOnset)) meta.push(`last seen ${formatRelativeAgeTime(issue.last_seen)}`);
+    if (issue.last_seen && (timing?.kind !== 'creation' || partialOnset)) meta.push(`最近出现于 ${formatIssueAge(issue.last_seen)}`);
   }
   if (issue.change_context) meta.push(changeContextText(issue.change_context));
 
@@ -520,7 +529,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
           open. The non-cause branch already leads with it in the prose. */}
       <CardSection
         icon={sourceCause && SourceIcon ? SourceIcon : AlertTriangle}
-        label="What's wrong"
+        label="问题描述"
         tone="warn"
         labelExtra={causeLabelExtra}
       >
@@ -543,7 +552,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
       {hasNextStep ? (
         <CardSection
           icon={sourceNextStep && SourceIcon ? SourceIcon : ArrowRight}
-          label="Next step"
+          label="下一步"
           tone="fix"
           labelExtra={nextStepAttribution ?? undefined}
         >
@@ -552,7 +561,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
               apply path, not advice competing with the host's. */}
           {issue.remediation_kind === 'create-namespace' && issue.remediation_target ? (
             <p className="text-xs text-theme-text-tertiary">
-              Suggested fix: create namespace <code className="inline-code">{issue.remediation_target}</code> — apply it from the GitOps detail page.
+              建议的修复方式：创建命名空间 <code className="inline-code">{issue.remediation_target}</code>，并从 GitOps 详情页应用。
             </p>
           ) : null}
         </CardSection>
@@ -561,7 +570,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
       {issue.conditional_cleanup ? <ConditionalCleanup cleanup={issue.conditional_cleanup} /> : null}
 
       {rawError ? (
-        <CardSection icon={Terminal} label="Raw error">
+        <CardSection icon={Terminal} label="原始错误">
           <TerminalBlock>{rawError}</TerminalBlock>
         </CardSection>
       ) : null}
@@ -574,7 +583,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
 // toned as a fix.
 function ConditionalCleanup({ cleanup }: { cleanup: IssueConditionalCleanup }) {
   return (
-    <CardSection icon={Eraser} label="Conditional cleanup">
+    <CardSection icon={Eraser} label="条件式清理">
       <Disclosure
         summary={<span className="text-sm leading-relaxed">{cleanup.condition}</span>}
         summaryClassName="items-baseline text-theme-text-primary hover:text-theme-text-secondary"
@@ -586,8 +595,8 @@ function ConditionalCleanup({ cleanup }: { cleanup: IssueConditionalCleanup }) {
               <p className="text-xs text-theme-text-tertiary">
                 Finalizer <code className="inline-code">{removal.finalizer}</code>
               </p>
-              <TerminalBlock label="patch_resource · dry run">{JSON.stringify(removal.patch_resource)}</TerminalBlock>
-              <TerminalBlock label="kubectl · server dry run">{removal.kubectl}</TerminalBlock>
+              <TerminalBlock label="patch_resource · 模拟执行">{JSON.stringify(removal.patch_resource)}</TerminalBlock>
+              <TerminalBlock label="kubectl · 服务器端模拟执行">{removal.kubectl}</TerminalBlock>
             </div>
           ))}
         </div>
@@ -597,7 +606,7 @@ function ConditionalCleanup({ cleanup }: { cleanup: IssueConditionalCleanup }) {
 }
 
 function changeContextText(change: NonNullable<Issue['change_context']>): string {
-  const parts = [change.when ? `Changed ${change.when} ago` : 'Changed', change.what ? change.what.replace(/_/g, ' ') : null, change.evidence].filter(Boolean);
+  const parts = [change.when ? `${change.when} 前发生变更` : '已变更', change.what ? change.what.replace(/_/g, ' ') : null, change.evidence].filter(Boolean);
   return parts.join(' · ');
 }
 
@@ -619,7 +628,7 @@ function DiagnosticContext({
   return (
     <CardSection
       icon={Workflow}
-      label="Context"
+      label="上下文"
       labelExtra={ctx.role ? diagnosticRoleLabel(ctx.role) : undefined}
     >
       <ul className="flex flex-col gap-2">
@@ -630,7 +639,7 @@ function DiagnosticContext({
               {fact.confidence ? (
                 <Tooltip content={confidenceTitle(fact.confidence)} delay={200}>
                   <span className="shrink-0 badge-sm text-[10px] text-theme-text-tertiary">
-                    {fact.confidence} confidence
+                    {fact.confidence} 置信度
                   </span>
                 </Tooltip>
               ) : null}
@@ -641,7 +650,7 @@ function DiagnosticContext({
                 {fact.related_issues.map((related, relIdx) => (
                   <ResourceLine
                     key={`${related.ref.group ?? ''}/${related.ref.kind}/${related.ref.namespace ?? ''}/${related.ref.name}#${relIdx}`}
-                    label="Related"
+                    label="相关"
                     refForLink={memberRef(issue, related.ref)}
                     count={related.count}
                     resourceHref={resourceHref}
@@ -682,7 +691,7 @@ function ageTitle(issue: Issue): string {
   if (firstSeenTitle) parts.push(firstSeenTitle);
   const resourceContext = issueResourceCreatedTitle(issue);
   if (resourceContext) parts.push(resourceContext);
-  if (issue.last_seen) parts.push(`Last seen ${formatRelativeAgeTime(issue.last_seen)}`);
+  if (issue.last_seen) parts.push(`最近出现于 ${formatIssueAge(issue.last_seen)}`);
   return parts.join('\n');
 }
 
@@ -713,11 +722,11 @@ function AffectedResources({
           an <li>, so it needs a list parent of its own. */}
       {!hideSubject && (
         <ul className="flex flex-col gap-px">
-          <ResourceLine label="Subject" compact refForLink={subjectRef(issue)} resourceHref={resourceHref} onResourceClick={onResourceClick} ResourceLinkIcon={ResourceLinkIcon} />
+          <ResourceLine label="对象" compact refForLink={subjectRef(issue)} resourceHref={resourceHref} onResourceClick={onResourceClick} ResourceLinkIcon={ResourceLinkIcon} />
         </ul>
       )}
       {members.length > 0 && (
-        <CardSection icon={Layers} label="Affected resources" labelExtra={`· ${total}`}>
+        <CardSection icon={Layers} label="受影响的资源" labelExtra={`· ${total}`}>
           <ul className="flex flex-col gap-px">
             {members.map((m, i) => (
               <ResourceLine
@@ -731,7 +740,7 @@ function AffectedResources({
           </ul>
           {issue.members_truncated && (
             <p className="text-xs text-theme-text-tertiary">
-              Showing {members.length} of {total} — open the subject to see the rest.
+              已显示 {members.length} / {total} 个受影响资源；展开对象可查看其余资源。
             </p>
           )}
         </CardSection>
@@ -776,8 +785,8 @@ function ResourceLine({
         {r.name}
       </span>
       {count && count > 1 ? (
-        <Tooltip content={`${count} affected resources grouped under this issue`} delay={200}>
-          <span className="shrink-0 text-[10px] text-theme-text-tertiary tabular-nums">{count} affected</span>
+        <Tooltip content={`共 ${count} 个受影响资源归入此问题`} delay={200}>
+          <span className="shrink-0 text-[10px] text-theme-text-tertiary tabular-nums">{count} 个受影响资源</span>
         </Tooltip>
       ) : null}
       {linkable && <ResourceLinkIcon className="h-3 w-3 shrink-0 text-theme-text-tertiary opacity-0 transition-opacity group-hover/r:opacity-100" />}

@@ -4,6 +4,13 @@ import tailwindcss from '@tailwindcss/vite'
 import path from 'node:path'
 
 export default defineConfig({
+  resolve: {
+    alias: {
+      '@': path.resolve(import.meta.dirname, './src'),
+      '@maomada/k8s-ui': path.resolve(import.meta.dirname, '../packages/k8s-ui/src'),
+      'monaco-editor/esm/vs/editor/editor.worker.js': 'monaco-editor/editor/editor.worker.js',
+    },
+  },
   plugins: [
     tailwindcss(),
     react(),

@@ -53,7 +53,7 @@ it('saves a Secret value against the version on screen, and offers no edit once 
   await act(async () => button('Edit value')!.click())
   expect(element.querySelector('textarea')).not.toBeNull()
   await act(async () => render(Object.assign(new Error('secrets "db" not found'), { status: 404 })))
-  expect(element.textContent).toContain('This Secret no longer exists in the cluster')
+  expect(element.textContent).toContain('此 Secret 已不在集群中')
   expect(element.querySelector('textarea')).toBeNull()
   expect(button('Edit value')).toBeUndefined()
 

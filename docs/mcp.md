@@ -1,21 +1,13 @@
 # AI Integration (MCP)
 
-For Portal-integrated snapshot context and the live source-tool bridge, see
-[Fleet synchronization](fleet.md#portal-integrated-fleet-synchronization).
-Portal `/mcp-fleet` preserves the snapshot tools `list_clusters`,
-`get_agent_context`, and `get_resource_context`, and adds
-`list_cluster_tools` plus `call_cluster_tool`. The latter invokes one explicitly
-selected source tool and may mutate the source cluster, subject to that source's
-configured MCP mode and Kubernetes permissions. It never broadcasts a call.
-If a source disconnects or times out after dispatch, the outcome is unknown;
-reconcile before retrying. Portal viewer authentication gates this endpoint, but
-fine-grained per-viewer/per-cluster permissions are deferred.
-
-The separate direct-connect `/mcp-fleet` endpoint remains part of the normal
-KubeAtlas process and has its own catalog and operation model. It is distinct
-from Portal-synchronized context and the original source-tool bridge.
-
 KubeAtlas includes a built-in [Model Context Protocol](https://modelcontextprotocol.io) (MCP) server that lets AI agents inspect, investigate, and operate your Kubernetes cluster.
+
+The native KubeAtlas Agent serves `/mcp`, `/mcp-readonly`, and the investigation
+endpoints from its own process. The self-hosted Cloud Hub also exposes a
+separate `/mcp` endpoint, but it is a live, member-scoped transport to connected
+Agents—not an alias to the native Agent route. See
+[live Hub MCP](hub-live-mcp.md) for the Cloud Hub authentication and transport
+contract.
 
 ## Node drain timeouts
 
@@ -842,6 +834,15 @@ a miss needs a complete read.
 | `connection_changed` | KubeAtlas's cluster connection changed during the read. | Confirm which cluster KubeAtlas is on, then retry |
 | `read_error` | An unexpected failure; the explanation says what. | Retry, or investigate |
 
+Outside these specific read errors, a typed Kubernetes Forbidden response
+(including a wrapped write failure) returns `error_code: permission_denied`
+and `retryable: false` in both text JSON and structured content. The original
+error and corrective guidance are retained. Check the operation's Kubernetes
+identity and applicable RBAC or admission policy before retrying; this code
+does not assert that user RBAC was the only possible cause. Plain error text
+containing "forbidden" is not reclassified. Existing specific read codes keep
+their meaning and coverage.
+
 The same table, as the action each code calls for, is
 `pkg/readreason/testdata/actions.json`.
 
@@ -1272,6 +1273,20 @@ the warning's `correlated_changes` show recent edits to the Service, such as a
 selector change.
 
 ### Write Tools
+
+The published input schemas include enums for management `action`, apply `mode`
+and `patch_type`. Replica counts must be non-negative. Explicit `limit` values
+must be positive and no larger than the per-tool maximum described in the
+schema; omit the parameter to use its existing default. Zero is not an alias
+for omission in MCP requests.
+
+Explicit timeout values are positive seconds: `manage_node` accepts up to 600,
+`query_prometheus` up to 180, and `wait_for`/`exec_pod` up to 45. Omission retains
+each tool's documented default. Out-of-range MCP inputs are rejected before
+the handler runs, not silently clamped; argument-name correction and accepted
+parameter hints still apply. Conditional limits such as cost trend versus row
+views retain their per-view rules, so schema defaults do not inject a limit
+where that parameter is prohibited.
 
 | Tool | Description | Parameters |
 |------|-------------|------------|

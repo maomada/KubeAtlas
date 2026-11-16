@@ -36,7 +36,6 @@ import { NamespaceSwitcher, type NamespaceSwitcherHandle } from './components/Na
 import { useNavCustomization } from './context/NavCustomization'
 import type { FleetTakeoverTarget } from './context/NavCustomization'
 import { PrimaryNavRail } from './components/nav/PrimaryNavRail'
-import { useFleetCapabilities } from './api/fleet'
 import { resourceExpandedPath, resourceKindListTitle } from './integrations/resourceHosts'
 import { workspaceContextSwitchSearch, workspaceForPath, workspaceForView, workspaceLabels } from './integrations/workspaceRoutes'
 import { WorkspaceScreen } from './integrations/workspaceScreens'
@@ -74,6 +73,7 @@ import type { APIResource, TopologyNode, GroupingMode, MainView, SelectedResourc
 import { createViewMemory } from './utils/viewMemory'
 import { createKindFilterStore } from './utils/kindFilterStore'
 import { kindToPluralWithGroup, pluralToKind, apiVersionToGroup, relatedResourcePath, searchHitToSelectedResource, withCrossViewParams, writeViewParams, CROSS_VIEW_PARAMS, namespacesFromSearch } from './utils/navigation'
+import { namespaceFilterDisabled } from './utils/namespaceFilter'
 import { findSelectedTopologyNode } from './utils/topology-selection'
 import { type OmnibarHandle } from './components/ui/Omnibar'
 import { RadarOmnibar } from './components/ui/RadarOmnibar'
@@ -166,63 +166,6 @@ const CRASH_LABELS = {
   investigations: 'Investigations',
   ...workspaceLabels,
 } satisfies Record<ExtendedMainView, string>
-
-// The namespace scope filter is meaningful only on namespaced surfaces. On
-// cluster-scoped views it does nothing, so we disable it with an explanation
-// rather than leaving a dead control that silently ignores the pick:
-//   - Cost is reported per-namespace across the whole cluster (the view IS the
-//     breakdown; a filter would only hide rows).
-//   - A GitOps detail tree spans namespaces — its controller lives in one
-//     namespace but manages workloads across many.
-//   - Upgrade impact evaluates the full readable cluster scope rather than a
-//     browsing filter.
-//   - A cluster-scoped resource kind (Nodes, PVs, ClusterRoles…) has no
-//     namespace at all.
-// The pick itself is preserved so it re-applies when the user returns to a
-// namespaced view.
-function namespaceFilterDisabled(
-  view: ExtendedMainView,
-  pathname: string,
-  search = '',
-  apiResources?: APIResource[],
-): { disabled: boolean; tooltip?: string } {
-  if (
-    view === 'cost' &&
-    !pathname.startsWith('/cost/rightsizing')
-  ) {
-    return {
-      disabled: true,
-      tooltip: 'Cost is reported per namespace across the whole cluster — the namespace filter doesn’t apply here.',
-    }
-  }
-  const workspace = workspaceForView(view)
-  if (workspace?.namespaceScope === 'cluster') return { disabled: true, tooltip: workspace.namespaceFilterTooltip }
-  if (view === 'checks' && pathname.startsWith('/checks/upgrade')) {
-    return {
-      disabled: true,
-      tooltip: 'Upgrade impact scans every namespace you can access — the namespace filter doesn’t apply.',
-    }
-  }
-  const segments = pathname.replace(/^\//, '').split('/')
-  if (view === 'gitops' && segments[1] === 'detail') {
-    return {
-      disabled: true,
-      tooltip: 'This resource manages workloads across namespaces — the namespace filter doesn’t apply to its tree.',
-    }
-  }
-  if (view === 'resources') {
-    const kindSlug = segments[1]
-    const group = new URLSearchParams(search).get('apiGroup') || ''
-    const match = kindSlug ? findAPIResourceForRoute(apiResources, kindSlug, group) : undefined
-    if (match && !match.namespaced) {
-      return {
-        disabled: true,
-        tooltip: `${match.kind} is a cluster-scoped resource — namespaces don’t apply.`,
-      }
-    }
-  }
-  return { disabled: false }
-}
 
 // Browser tab label for every KubeAtlas view, derived from the route URL so it's
 // correct regardless of which component renders it. A detail drawer that opens
@@ -392,7 +335,6 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
 
   // Auth check — detect if auth is enabled but user is not authenticated
   const { data: authMe, isPending: authMePending } = useAuthMe()
-  const fleetCapabilities = useFleetCapabilities(!embedded && !!authMe, JSON.stringify([authMe?.username, authMe?.groups]))
 
   // Restore navigation path after session-expiry re-auth redirect.
   // The stored value is basename-relative, but strip defensively anyway:
@@ -1820,7 +1762,6 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
       {showNavRail && (
         <PrimaryNavRail
           activeView={navActiveView}
-          onOpenFleet={fleetCapabilities.data?.enabled ? () => navigate('/fleet') : undefined}
           onNavigate={handlePrimaryNavigate}
           pinned={navRailEffectivePinned}
           onTogglePinned={toggleNavRailPinned}

@@ -69,6 +69,7 @@ export interface WorkloadRolloutActivity {
   manual: boolean
   label: string
   detail?: string
+  detailSource?: 'generated' | 'raw'
   desired: number
   updated: number
   ready: number
@@ -140,7 +141,7 @@ function deploymentActivity(resource: any): WorkloadRolloutActivity {
     return merge(base, 'applying', true, 'Applying change', 'Waiting for the Deployment controller to observe generation')
   }
   if (progress?.status === 'False' || progress?.reason === 'ProgressDeadlineExceeded') {
-    return merge(base, 'stalled', false, 'Rollout stalled', progress.message || 'Progress deadline exceeded')
+    return merge(base, 'stalled', false, 'Rollout stalled', progress.message || 'Progress deadline exceeded', progress.message ? 'raw' : 'generated')
   }
   const old = Math.max(0, (status.replicas ?? 0) - updated)
   const pending = updated < desired || old > 0
@@ -236,14 +237,15 @@ function argoRolloutActivity(resource: any): WorkloadRolloutActivity {
     (condition.type === 'Progressing' && (condition.status === 'False' || condition.reason === 'ProgressDeadlineExceeded')),
   )
   if (failedCondition || status.abort) {
-    return merge(base, 'stalled', false, 'Rollout stalled', failedCondition?.message || failedCondition?.reason || status.message || (status.abort ? 'The Rollout was aborted' : '') || 'The Rollout controller reported a failed revision')
+    const backendDetail = failedCondition?.message || failedCondition?.reason || status.message
+    return merge(base, 'stalled', false, 'Rollout stalled', backendDetail || (status.abort ? 'The Rollout was aborted' : '') || 'The Rollout controller reported a failed revision', backendDetail ? 'raw' : 'generated')
   }
   switch (String(status.phase || '').toLowerCase()) {
     case 'degraded':
     case 'error':
     case 'failed':
     case 'aborted':
-      return merge(base, 'stalled', false, 'Rollout stalled', status.message || 'The Rollout controller reported a failed revision')
+      return merge(base, 'stalled', false, 'Rollout stalled', status.message || 'The Rollout controller reported a failed revision', status.message ? 'raw' : 'generated')
     case 'paused':
       return merge(base, 'paused', true, 'Rollout paused', detail)
     case 'progressing':
@@ -255,7 +257,7 @@ function argoRolloutActivity(resource: any): WorkloadRolloutActivity {
     default:
       return desired > 0 && (updated < desired || available < desired)
         ? merge(base, 'applying', true, 'Applying change', detail)
-        : merge(base, 'idle', false, 'Stable', status.message || '')
+        : merge(base, 'idle', false, 'Stable', status.message || '', status.message ? 'raw' : 'generated')
   }
 }
 
@@ -269,7 +271,7 @@ function withUpdatedRevisionFailure(
     .sort((a, b) => a.name.localeCompare(b.name))[0]
   if (!failed) return rollout
   const reason = failed.reason || failed.lastTerminationReason || failed.phase || 'Pod failed'
-  return merge(rollout, 'stalled', false, 'New revision cannot start', `${reason} · Pod ${failed.name}`)
+  return merge(rollout, 'stalled', false, 'New revision cannot start', `${reason} · Pod ${failed.name}`, 'raw')
 }
 
 export function getArgoRolloutStepNumber(resource: any): number | null {
@@ -312,7 +314,7 @@ function activity(
   ready: number,
   available: number,
 ): WorkloadRolloutActivity {
-  return { phase, active, manual, label, detail, desired, updated, ready, available }
+  return { phase, active, manual, label, detail, detailSource: 'generated', desired, updated, ready, available }
 }
 
 function merge(
@@ -321,8 +323,9 @@ function merge(
   active: boolean,
   label: string,
   detail: string,
+  detailSource: 'generated' | 'raw' = 'generated',
 ): WorkloadRolloutActivity {
-  return { ...base, phase, active, manual: false, label, detail }
+  return { ...base, phase, active, manual: false, label, detail, detailSource }
 }
 
 function mergeManual(
@@ -332,7 +335,7 @@ function mergeManual(
   label: string,
   detail: string,
 ): WorkloadRolloutActivity {
-  return { ...base, phase, active, manual: true, label, detail }
+  return { ...base, phase, active, manual: true, label, detail, detailSource: 'generated' }
 }
 
 export function rolloutActivityLevel(activity: WorkloadRolloutActivity): 'healthy' | 'neutral' | 'degraded' | 'unhealthy' {

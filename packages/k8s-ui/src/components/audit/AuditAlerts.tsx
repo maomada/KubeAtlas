@@ -52,13 +52,13 @@ export function AuditAlerts({ findings, onViewAll }: AuditAlertsProps) {
       >
         <CollapseChevron open={expanded} className="w-4 h-4" />
         <ClipboardCheck className="w-4 h-4 text-theme-text-secondary" />
-        <span className="text-sm font-semibold text-theme-text-primary">Audit Findings</span>
+        <span className="text-sm font-semibold text-theme-text-primary">审计发现</span>
         <div className="flex items-center gap-2 ml-1">
           {highCount > 0 && (
-            <span className={clsx('text-xs font-medium tabular-nums', SEVERITY_TEXT_CLASS.high)}>{highCount} high</span>
+            <span className={clsx('text-xs font-medium tabular-nums', SEVERITY_TEXT_CLASS.high)}>{highCount} 高风险</span>
           )}
           {mediumCount > 0 && (
-            <span className={clsx('text-xs font-medium tabular-nums', SEVERITY_TEXT_CLASS.medium)}>{mediumCount} medium</span>
+            <span className={clsx('text-xs font-medium tabular-nums', SEVERITY_TEXT_CLASS.medium)}>{mediumCount} 中风险</span>
           )}
         </div>
       </button>
@@ -89,7 +89,7 @@ export function AuditAlerts({ findings, onViewAll }: AuditAlertsProps) {
               onClick={(e) => { e.stopPropagation(); onViewAll() }}
               className="mt-1 flex items-center gap-1 py-1 text-xs text-accent-text transition-colors hover:text-accent"
             >
-              View all findings
+              查看全部发现
               <ArrowRight className="w-3 h-3" />
             </button>
           )}

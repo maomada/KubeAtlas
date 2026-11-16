@@ -5,6 +5,7 @@ import (
 	"encoding/base32"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/internal/bundledcharts"
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
 	"log"
 	"net"
@@ -318,6 +319,9 @@ func (c *Client) ensureClassicRepository(rawURL, preferredName string) (string, 
 	name := normalizedRepositoryName(preferredName)
 	if name == "" {
 		name = stableRepositoryName("", repoURL)
+	}
+	if name == bundledcharts.Repository {
+		return "", fmt.Errorf("%w: repository name %q is reserved for bundled charts", errRepositoryConflict, name)
 	}
 	// Reuse the current machine's alias when the same canonical URL is already
 	// configured. This snapshot is local I/O only; no network call occurs while

@@ -2,9 +2,26 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { YamlEditorProps } from '../ui/YamlEditor'
 
 vi.mock('../ui/YamlEditor', () => ({
-  YamlEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => <textarea value={value} onChange={(event) => onChange(event.target.value)} />,
+  YamlEditor: ({
+    value,
+    onChange,
+    schemaLoader,
+  }: Pick<YamlEditorProps, 'value' | 'onChange' | 'schemaLoader'>) => (
+    <>
+      <textarea value={value} onChange={(event) => onChange?.(event.target.value)} />
+      {schemaLoader && (
+        <button type="button" onClick={async () => {
+          const result = await schemaLoader([])
+          document.body.dataset.schemaResult = JSON.stringify(result)
+        }}>
+          Load schemas
+        </button>
+      )}
+    </>
+  ),
 }))
 vi.mock('../ui/YamlReview', () => ({
   reviewedResourceVersionsForPreview: () => ({}),
@@ -14,6 +31,7 @@ vi.mock('../ui/YamlReview', () => ({
 }))
 
 const { CreateResourceDialog } = await import('./CreateResourceDialog')
+const { YamlDraftPolicyProvider } = await import('./YamlDraftPolicy')
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -22,6 +40,281 @@ const submitButton = (text: string) => [...document.querySelectorAll('button')].
 
 afterEach(() => {
   document.body.innerHTML = ''
+  delete document.body.dataset.schemaResult
+})
+
+it('keeps schema, preview, and apply callbacks for an Owner but fails closed on direct Viewer opens', async () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const ownerSchemaLoader = vi.fn(async () => ({ schemas: [] }))
+  const ownerPreview = vi.fn(async () => ({ documents: [], nonAtomic: false }))
+  const ownerApply = vi.fn(async () => [{ kind: 'ConfigMap', name: 'settings', namespace: 'app', created: true }])
+  const viewerSchemaLoader = vi.fn(async () => ({ schemas: [] }))
+  const viewerPreview = vi.fn(async () => ({ documents: [], nonAtomic: false }))
+  const viewerApply = vi.fn(async () => [])
+  const viewerClose = vi.fn()
+  try {
+    await act(async () => root.render(
+      <YamlDraftPolicyProvider scope="org-a:owner:logical-cluster-a">
+        <CreateResourceDialog
+          open
+          onClose={() => {}}
+          initialYaml="kind: ConfigMap"
+          initialMode="create"
+          lockMode
+          onApply={ownerApply}
+          isApplying={false}
+          onPreview={ownerPreview}
+          schemaLoader={ownerSchemaLoader}
+        />
+      </YamlDraftPolicyProvider>,
+    ))
+    await act(async () => {
+      button('Load schemas')!.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(ownerSchemaLoader).toHaveBeenCalledTimes(1)
+    expect(document.body.dataset.schemaResult).toBe('{"schemas":[]}')
+    await act(async () => button('审阅')!.click())
+    expect(ownerPreview).toHaveBeenCalledTimes(1)
+    await act(async () => button('创建已审阅的资源')!.click())
+    expect(ownerApply).toHaveBeenCalledWith(expect.objectContaining({ mode: 'create', dryRun: false }))
+
+    await act(async () => root.render(
+      <YamlDraftPolicyProvider scope="org-b:viewer:logical-cluster-b" readOnly>
+        <CreateResourceDialog
+          open
+          onClose={viewerClose}
+          initialYaml="kind: ConfigMap"
+          onApply={viewerApply}
+          isApplying={false}
+          onPreview={viewerPreview}
+          schemaLoader={viewerSchemaLoader}
+        />
+      </YamlDraftPolicyProvider>,
+    ))
+    expect(document.querySelector('textarea')).toBeNull()
+    expect(button('审阅')).toBeUndefined()
+    expect(viewerSchemaLoader).not.toHaveBeenCalled()
+    expect(viewerPreview).not.toHaveBeenCalled()
+    expect(viewerApply).not.toHaveBeenCalled()
+    expect(viewerClose).toHaveBeenCalledTimes(1)
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})
+
+it('only opens fresh Owner content after a read-only Viewer closes and reopens', async () => {
+  const onClose = vi.fn()
+  const ownerSchemaLoader = vi.fn(async () => ({ schemas: [] }))
+  const ownerPreview = vi.fn(async () => ({ documents: [], nonAtomic: false }))
+  const ownerApply = vi.fn(async () => [{ kind: 'ConfigMap', name: 'settings', namespace: 'app', created: true }])
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const oldYaml = 'kind: ConfigMap\nmetadata:\n  name: old-scope\n'
+  const newYaml = 'kind: Service\nmetadata:\n  name: new-scope\n'
+  const renderPolicy = (readOnly: boolean, open: boolean, initialYaml: string) => act(() => root.render(
+    <YamlDraftPolicyProvider scope="org-a" readOnly={readOnly}>
+      <CreateResourceDialog
+        open={open}
+        onClose={onClose}
+        initialYaml={initialYaml}
+        initialMode="create"
+        lockMode
+        onApply={ownerApply}
+        isApplying={false}
+        onPreview={ownerPreview}
+        schemaLoader={ownerSchemaLoader}
+      />
+    </YamlDraftPolicyProvider>,
+  ))
+  try {
+    renderPolicy(true, true, oldYaml)
+    expect(document.querySelector('textarea')).toBeNull()
+    expect(onClose).toHaveBeenCalledTimes(1)
+
+    renderPolicy(false, true, oldYaml)
+    expect(document.querySelector('textarea')).toBeNull()
+    renderPolicy(false, false, newYaml)
+    renderPolicy(false, true, newYaml)
+
+    expect(document.querySelector('textarea')?.value).toBe(newYaml)
+    await act(async () => {
+      button('Load schemas')!.click()
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    await act(async () => button('审阅')!.click())
+    await act(async () => button('创建已审阅的资源')!.click())
+    expect(ownerSchemaLoader).toHaveBeenCalledTimes(1)
+    expect(ownerPreview).toHaveBeenCalledTimes(1)
+    expect(ownerApply).toHaveBeenCalledWith(expect.objectContaining({ mode: 'create', dryRun: false }))
+    expect(onClose).toHaveBeenCalledTimes(1)
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})
+
+it.each([
+  ['scope switch', 'org-b:owner:logical-cluster-b', false],
+  ['Viewer demotion', 'org-a:viewer:logical-cluster-a', true],
+] as const)('invalidates pending schema and preview work on a mounted %s', async (_transition, nextScope, readOnly) => {
+  let finishSchema: (result: { schemas: Array<Record<string, unknown> | null> }) => void = () => {}
+  let finishPreview: (result: { documents: []; nonAtomic: boolean }) => void = () => {}
+  const schemaLoader = vi.fn(() => new Promise<{ schemas: Array<Record<string, unknown> | null> }>(resolve => { finishSchema = resolve }))
+  const onPreview = vi.fn(() => new Promise<{ documents: []; nonAtomic: boolean }>(resolve => { finishPreview = resolve }))
+  const onApply = vi.fn(async () => [])
+  const onClose = vi.fn()
+  const oldYaml = 'kind: ConfigMap\nmetadata:\n  name: old-scope\n'
+  const newYaml = 'kind: Service\nmetadata:\n  name: new-scope\n'
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const renderPolicy = (scope: string, viewer = false, open = true, initialYaml = oldYaml) => act(() => root.render(
+    <YamlDraftPolicyProvider scope={scope} readOnly={viewer}>
+      <CreateResourceDialog
+        open={open}
+        onClose={onClose}
+        initialYaml={initialYaml}
+        onApply={onApply}
+        isApplying={false}
+        onPreview={onPreview}
+        schemaLoader={schemaLoader}
+      />
+    </YamlDraftPolicyProvider>,
+  ))
+  try {
+    renderPolicy('org-a:owner:logical-cluster-a', false, true, oldYaml)
+    await act(async () => button('Load schemas')!.click())
+    await act(async () => button('审阅')!.click())
+    expect(schemaLoader).toHaveBeenCalledTimes(1)
+    expect(onPreview).toHaveBeenCalledTimes(1)
+
+    renderPolicy(nextScope, readOnly)
+    expect(document.querySelector('textarea')).toBeNull()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    renderPolicy(nextScope, readOnly, false, newYaml)
+    renderPolicy(nextScope, readOnly, true, newYaml)
+    if (readOnly) {
+      expect(document.querySelector('textarea')).toBeNull()
+      expect(onClose).toHaveBeenCalledTimes(2)
+    } else {
+      expect(document.querySelector('textarea')?.value).toBe(newYaml)
+      expect(document.body.textContent).not.toContain('创建已审阅的资源')
+      expect(onClose).toHaveBeenCalledTimes(1)
+    }
+    await act(async () => {
+      finishSchema({ schemas: [{ type: 'stale' }] })
+      finishPreview({ documents: [], nonAtomic: false })
+      await Promise.resolve()
+      await Promise.resolve()
+    })
+    expect(document.body.dataset.schemaResult).toBe('{"schemas":[]}')
+    expect(document.body.textContent).not.toContain('创建已审阅的资源')
+    expect(onApply).not.toHaveBeenCalled()
+    expect(onPreview).toHaveBeenCalledTimes(1)
+    if (!readOnly) expect(document.querySelector('textarea')?.value).toBe(newYaml)
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})
+
+it('does not surface or refresh after a reviewed apply fails late across a policy change', async () => {
+  let failApply: (error: Error) => void = () => {}
+  const onApply = vi.fn(() => new Promise<never[]>((_resolve, reject) => { failApply = reject }))
+  const onPreview = vi.fn(async () => ({ documents: [], nonAtomic: false }))
+  const onClose = vi.fn()
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const renderPolicy = (scope: string, readOnly: boolean) => act(() => root.render(
+    <YamlDraftPolicyProvider scope={scope} readOnly={readOnly}>
+      <CreateResourceDialog
+        open
+        onClose={onClose}
+        initialYaml="kind: ConfigMap"
+        onApply={onApply}
+        isApplying={false}
+        onPreview={onPreview}
+      />
+    </YamlDraftPolicyProvider>,
+  ))
+  try {
+    renderPolicy('org-a:owner:logical-cluster-a', false)
+    await act(async () => button('审阅')!.click())
+    await act(async () => button('应用已审阅的更改')!.click())
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(onPreview).toHaveBeenCalledTimes(1)
+
+    renderPolicy('org-a:viewer:logical-cluster-a', true)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    await act(async () => {
+      failApply(new Error('late apply failure'))
+      await Promise.resolve()
+    })
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(onPreview).toHaveBeenCalledTimes(1)
+    expect(document.body.textContent).not.toContain('late apply failure')
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})
+
+it('does not continue after a reviewed apply succeeds late across a policy change', async () => {
+  let finishApply: (results: Array<{ kind: string; name: string; namespace: string; created: boolean }>) => void = () => {}
+  const onApply = vi.fn(() => new Promise<Array<{ kind: string; name: string; namespace: string; created: boolean }>>(resolve => { finishApply = resolve }))
+  const onPreview = vi.fn(async () => ({ documents: [], nonAtomic: false }))
+  const onClose = vi.fn()
+  const onCreated = vi.fn()
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  const oldYaml = 'kind: ConfigMap\nmetadata:\n  name: old-scope\n'
+  const newYaml = 'kind: Service\nmetadata:\n  name: new-scope\n'
+  const renderPolicy = (scope: string, readOnly: boolean, open = true, initialYaml = oldYaml) => act(() => root.render(
+    <YamlDraftPolicyProvider scope={scope} readOnly={readOnly}>
+      <CreateResourceDialog
+        open={open}
+        onClose={onClose}
+        initialYaml={initialYaml}
+        onApply={onApply}
+        onCreated={onCreated}
+        isApplying={false}
+        onPreview={onPreview}
+      />
+    </YamlDraftPolicyProvider>,
+  ))
+  try {
+    renderPolicy('org-a:owner:logical-cluster-a', false)
+    await act(async () => button('审阅')!.click())
+    await act(async () => button('应用已审阅的更改')!.click())
+    expect(onApply).toHaveBeenCalledTimes(1)
+
+    renderPolicy('org-a:viewer:logical-cluster-a', true)
+    expect(onClose).toHaveBeenCalledTimes(1)
+    renderPolicy('org-b:owner:logical-cluster-b', false, false, newYaml)
+    renderPolicy('org-b:owner:logical-cluster-b', false, true, newYaml)
+    expect(document.querySelector('textarea')?.value).toBe(newYaml)
+    expect(button('应用已审阅的更改')).toBeUndefined()
+    await act(async () => {
+      finishApply([{ kind: 'ConfigMap', name: 'settings', namespace: 'app', created: true }])
+      await Promise.resolve()
+    })
+    expect(onApply).toHaveBeenCalledTimes(1)
+    expect(onCreated).not.toHaveBeenCalled()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(document.querySelector('textarea')?.value).toBe(newYaml)
+  } finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
 })
 
 describe('CreateResourceDialog lockMode', () => {

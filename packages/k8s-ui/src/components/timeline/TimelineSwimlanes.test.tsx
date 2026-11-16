@@ -263,8 +263,8 @@ describe('chipKindLabel — the real Kind, verbatim', () => {
     expect(chipKindLabel('VerticalPodAutoscalerCheckpoint')).toEqual({ label: 'VerticalPodAutoscalerCheckpoint', abbreviated: false })
     expect(chipKindLabel('ClusterSecretStore')).toEqual({ label: 'ClusterSecretStore', abbreviated: false })
   })
-  it('labels kind-less events as Event', () => {
-    expect(chipKindLabel('')).toEqual({ label: 'Event', abbreviated: false })
+  it('labels kind-less events in Chinese', () => {
+    expect(chipKindLabel('')).toEqual({ label: '事件', abbreviated: false })
   })
 })
 

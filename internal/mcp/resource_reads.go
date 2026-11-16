@@ -110,14 +110,24 @@ type listEnvelope struct {
 	Next     string               `json:"next,omitempty"`
 	Coverage resourceapi.Coverage `json:"coverage"`
 	Items    []any                `json:"items"`
+	Page     *resourcePage        `json:"page,omitempty"`
 }
 
 // listResult renders a list of resource (its plural, as the summary names it).
-func listResult(ctx context.Context, resource string, items []any, coverage resourceapi.Coverage) (*mcp.CallToolResult, any, error) {
+func listResult(ctx context.Context, resource string, items []any, coverage resourceapi.Coverage, pages ...*resourcePage) (*mcp.CallToolResult, any, error) {
 	if items == nil {
 		items = []any{}
 	}
-	body, err := json.Marshal(listEnvelope{Summary: listSummary(ctx, resource, len(items), onlyRowKind(items), coverage), Next: listNext(coverage), Coverage: coverage, Items: items})
+	envelope := listEnvelope{Summary: listSummary(ctx, resource, len(items), onlyRowKind(items), coverage), Next: listNext(coverage), Coverage: coverage, Items: items}
+	if len(pages) > 0 && pages[0] != nil {
+		envelope.Page = pages[0]
+		page := envelope.Page
+		envelope.Summary = fmt.Sprintf("PAGE: returning %d of %d matching rows read this request; not a complete inventory. Collection coverage: %s", page.Returned, page.MatchingAtRead, listSummary(ctx, resource, page.MatchingAtRead, onlyRowKind(items), coverage))
+		if page.NextCursor != "" {
+			envelope.Next = strings.TrimSpace("Continue with page.nextCursor and the same query and limit. " + envelope.Next)
+		}
+	}
+	body, err := json.Marshal(envelope)
 	if err != nil {
 		log.Printf("[mcp] Failed to marshal result: %v", err)
 		return nil, nil, fmt.Errorf("failed to marshal result: %w", err)

@@ -61,6 +61,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
 
   // Listen for system theme changes
   useEffect(() => {
+    const syncStoredTheme = (event: StorageEvent) => {
+      if (event.key === THEME_STORAGE_KEY && (event.newValue === 'dark' || event.newValue === 'light')) setThemeState(event.newValue)
+    }
+    window.addEventListener('storage', syncStoredTheme)
     const mediaQuery = window.matchMedia('(prefers-color-scheme: light)')
     const handleChange = (e: MediaQueryListEvent) => {
       // Only auto-switch if user hasn't explicitly set a preference
@@ -70,7 +74,10 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       }
     }
     mediaQuery.addEventListener('change', handleChange)
-    return () => mediaQuery.removeEventListener('change', handleChange)
+    return () => {
+      mediaQuery.removeEventListener('change', handleChange)
+      window.removeEventListener('storage', syncStoredTheme)
+    }
   }, [])
 
   return (

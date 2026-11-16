@@ -1,271 +1,153 @@
-# Self-hosted KubeAtlas Portal
+# Self-Hosted KubeAtlas Cloud Hub
 
-This repository's OCI images and charts are available only for versions
-actually published by the manual workflow described in [`ci-cd.md`](ci-cd.md).
-CLI installer scripts and direct update checks use this repository's GitHub
-releases, while historical Go module and npm package identities remain
-compatibility names rather than a source of CLI release artifacts.
+Public registrations create pending accounts with no organization membership or
+active session. The platform owner approves pending accounts and grants initial
+membership; organization owners manage roles and scope for existing approved
+members in their organization. The configured recovery identity is the only
+platform owner; only its exact local `User` identity receives `cluster-admin`.
+The chart maps organization role groups to `admin`, `edit`, or `view`, plus
+limited infrastructure-read access. Existing Agent deployments need an
+operator-controlled chart rollout to apply those bindings; the Hub does not
+change remote RBAC or Agent token Secrets.
+Requests bind the authenticated account, active organization, and cancellation
+context at entry. Role groups are derived server-side, never accepted from
+client headers, and MCP credentials remain pinned to their issuance
+organization.
 
-KubeAtlas Portal is an optional, independent registry and viewer for multiple
-KubeAtlas instances, including in-cluster installations and explicitly configured
-local CLI or Desktop processes. In addition to registration metadata, opted-in
-sources can upload canonical context snapshots and maintain an outbound MCP
-channel so viewers and Portal MCP clients can inspect or explicitly invoke the
-source's original tools. The Portal does not dial a source KubeAtlas.
+The Hub persists a per-account authorization revision and returns it as a
+canonical decimal string in both active and pending/no-organization
+`GET /api/hub` responses. It advances only when account authorization fields
+or organization membership semantics change; timestamps and display-name-only
+updates do not advance it. The revision is invalidation metadata, not a
+permission grant or session ID. Portal YAML draft scopes include the revision:
+same-revision login, reload, and ordinary session recovery retain the narrow
+draft scope, while a changed revision invalidates drafts from the prior
+authority. Missing or malformed revision metadata fails closed in the UI.
 
-The Portal and its reporter are not present in older KubeAtlas binaries. Build and
-deploy a KubeAtlas binary/image that includes this feature; configuring Helm alone
-cannot add it to an older image. The Portal is a separate executable and can
-be deployed independently from the KubeAtlas workloads.
+The `kubeatlas-portal` binary name is retained for a self-hosted Cloud Hub that
+serves the Cloud UI, member identity, browser proxy, and live MCP transport.
+It is separate from the native KubeAtlas Agent. This repository does not
+provide a hosted Radar Cloud service.
 
-## How registration works
+The Hub uses connected Agents for live cluster access. It does not read remote
+kubeconfigs or make Kubernetes API requests itself, and it does not collect or
+upload context snapshots.
 
-The reporter is inert by default. Local and in-cluster KubeAtlas processes opt in
-through configuration; upstream Cloud is excluded. Cloud is checked before Portal
-environment variables are parsed. MCP catalog-only and stdio modes do not
-register. An opted-in process registers immediately and sends an update every
-30 seconds. Requests have bounded timeouts and do not follow redirects. Portal
-downtime is retried in the background and does not prevent KubeAtlas startup.
+## Required Hub state
 
-The Portal's `online`/`stale` state is based only on its server-side last-seen
-timestamp, with a 90-second stale threshold. It indicates whether the reporter
-has recently reached the Portal; it is not a health signal for the Kubernetes
-cluster or KubeAtlas UI. A KubeAtlas can be healthy while stale if the Portal is
-unreachable, and a recent registration does not prove KubeAtlas health.
+The Hub cannot start without a persistent state file. Pass
+`--hub-state-file=/path/to/hub-state.json` or set
+`KUBEATLAS_PORTAL_HUB_STATE_FILE`. There is no default path or legacy mode.
+The state file holds the self-hosted organization, memberships, cluster
+assignments, and MCP credential records; protect and back it up as sensitive
+identity data. Back up the state file before the first start of a version-2
+build: version-1 state migrates to version 2 in place. Do not downgrade using a
+migrated file; restore the pre-upgrade backup first. Unknown or corrupt state
+fails closed and is not reset. Migration preserves directory entries,
+credential hashes, scopes, groups, and legacy Kubernetes restrictions;
+unrelated older Portal data is not imported or removed.
 
-The stable configured ID and display name identify one KubeAtlas process/instance,
-not every Kubernetes context it can select. Each heartbeat also reports its
-runtime mode (`local` or `in-cluster`), current kube context, and current
-Kubernetes cluster name. A context switch updates that instance's existing
-record; it does not change its ID, token, or configured display name. Portal
-links and MCP endpoints address the KubeAtlas's currently selected context and are
-not pinned to the last heartbeat snapshot.
+The local owner account is configured with
+`KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD`. The username must
+be 1–256 bytes without a colon or control characters, and the password must be
+16–4096 bytes; these existing recovery-login limits are unchanged. Public
+registration has a separate rule: passwords must contain at least 12 Unicode
+scalar values, be valid UTF-8, and contain at most 72 UTF-8 bytes because
+passwords are hashed with bcrypt. The owner can configure the organization,
+manage members and cluster assignments, and issue or revoke scoped MCP
+credentials.
 
-Registration metadata includes description, environment, region, public
-KubeAtlas URL, version, effective connection/auth/MCP modes, and configured MCP
-endpoints. Those metadata fields do not include kubeconfig, Kubernetes
-credentials, errors, progress messages, health-check results, or node counts.
-Metadata is derived from operator configuration and KubeAtlas's effective
-runtime settings, not from browser input. Fleet synchronization is separate:
-when explicitly enabled it stores bounded canonical snapshots and exposes the
-source's original MCP catalog through a live outbound channel. See
-[Fleet synchronization](fleet.md#portal-integrated-fleet-synchronization) for
-its data, freshness, and trust limitations.
+## Optional OIDC
 
-## Build the Portal image
+An independent self-hosted OIDC provider such as Keycloak can provide
+authorization-code login with PKCE, state, and nonce validation. Configure
+`--oidc-issuer`, `--oidc-client-id`, `--oidc-redirect-url`, and
+`KUBEATLAS_PORTAL_OIDC_CLIENT_SECRET` together. An optional issuer CA bundle is
+provided with `--oidc-ca-cert`. The redirect URL must be fixed to the Portal's
+callback URL.
 
-From the repository root:
+OIDC accounts are provisioned through the login flow as pending accounts with
+no organization memberships. A platform owner approves account status and
+grants initial organization memberships. Organization owners can change roles
+or remove existing memberships in their organization; they cannot approve
+accounts or set per-user cluster scopes or Kubernetes groups. New memberships
+cover all clusters in their organization; migrated legacy-restricted
+memberships retain their existing scope. The Hub derives the fixed
+`kubeatlas:hub:owner`, `kubeatlas:hub:member`, and `kubeatlas:hub:viewer` groups
+from the current organization role. Pending or disabled accounts cannot use
+live cluster access. Every proxied Kubernetes request is still evaluated by
+the target cluster's Kubernetes RBAC using that member's identity.
 
-```bash
-docker build -f Dockerfile.portal --target full -t kubeatlas-portal:local .
-```
+Directory synchronization and OIDC backchannel logout are not implemented.
+Disabling an identity-provider account alone does not immediately revoke an
+existing Hub session. Sessions are owner-bound and re-check current membership
+and scope on Hub requests; they expire or can be revoked by member changes.
+Local owner login remains available.
 
-For an owned fork image, use a version actually published by the manual
-Release GHCR workflow. No image is claimed to have been published by this
-documentation change.
+## Live endpoints
 
-## Deploy the Portal
+- The self-hosted Cloud UI and identity API are served by the Hub.
+- `GET /agent` upgrades to the Agent's outbound WebSocket connection to the Hub.
+- `/mcp` is the canonical Cloud Hub MCP endpoint. It requires an independent
+  bearer credential and current active membership, explicit cluster scope,
+  and read-only enforcement for viewer credentials.
+- Native Agent MCP endpoints `/mcp` and `/mcp-readonly` are separate from the
+  Hub's `/mcp`; they are served by the Agent process, not aliases or fallback
+  routes on the Hub.
 
-Provision an existing Secret through an approved secret manager or GitOps
-Secret mechanism. It must contain:
+Hub bearer credentials are never taken from browser cookies. They expire and
+can be revoked or refreshed through the authenticated Hub API. The live path
+uses the member's principal and tunneled Kubernetes identity; it does not
+fall back to cached snapshots or direct Fleet tools.
 
-- `tokens`: a JSON object mapping each authorized cluster ID to a unique,
-  randomly generated token of at least 32 characters. Example shape only:
-  `{"prod-east":"<random-token>","staging-west":"<random-token>"}`
-- `username`: a non-empty Portal login username without a colon or control
-  characters (at most 256 bytes)
-- `password`: the separate Portal viewer password (16–4096 bytes)
+See [Hub state](hub-state.md) for persistence and validation,
+[self-hosted identity](self-hosted-hub-identity.md) for login and membership,
+[live Hub MCP](hub-live-mcp.md) for transport and authorization, and
+[Hub API](hub-portal-api.md) for route and payload contracts. The separate
+[Hub Helm chart](../deploy/helm/kubeatlas-portal/README.md) requires an
+existing credentials Secret and persistent storage.
 
-Use different, high-entropy registration tokens per cluster. Do not use these
-placeholders as credentials. Do not store actual credentials in Helm values,
-chart files, command history, or this document. The Portal rejects duplicate
-tokens. The viewer username/password protect the UI and read API; registration
-tokens are accepted only by the ID-scoped registration, snapshot-upload, and
-agent-channel routes, never for viewer reads.
+## Deployment and security
 
-After a version is published by the manual workflow, install the owned OCI
-chart and reference your existing Secret:
+Build the container from `Dockerfile.portal` or install a published chart
+version through the documented release process. The chart persists the
+required state file, runs one Hub replica, and mounts an existing Secret for
+the local owner credentials. Optional Secret keys configure Hub groups, OIDC,
+and trusted MCP host authorities.
 
-```bash
-helm upgrade --install kubeatlas-portal oci://ghcr.io/maomada/charts/kubeatlas-portal \
-  --namespace kubeatlas-portal --create-namespace \
-  --version "$VERSION" \
-  --set existingSecret=kubeatlas-portal-auth
-```
+Use TLS at a trusted reverse proxy before exposing the login page, callback,
+Hub API, Agent transport, or MCP endpoint. Cookies are secure by default;
+`--insecure-cookie` remains restricted to loopback development. A fresh install
+served on a trusted private network over HTTP at a literal IP can explicitly set
+`--http-ip-origin=http://192.0.2.10:9290` or
+`KUBEATLAS_PORTAL_HTTP_IP_ORIGIN=http://192.0.2.10:9290` (the Portal chart uses
+`httpIPOrigin`). This exact root origin enables login with host-scoped,
+HttpOnly, SameSite cookies without `Secure` before any LAN profile exists; it
+does not create or overwrite a connection profile. Only literal IPv4 or
+bracketed IPv6 authorities are accepted; DNS names, other hosts and ports,
+paths, queries, and fragments are not. HTTP exposes credentials and bearer
+traffic to interception, so use this only on a trusted network. Forwarded
+headers do not change the decision, and this option does not allow an HTTP OIDC
+provider. If a saved HTTPS profile uses the same external authority, HTTPS wins
+and cookies remain Secure; do not multiplex HTTP and HTTPS on one authority
+behind a proxy. Connection-profile writes are platform-owner-only; active
+members may read them. If a trusted proxy
+uses a public hostname, configure exact allowed host authorities with
+`--mcp-allowed-hosts` or `KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS`; wildcards are
+not accepted. The Hub also validates browser origin and same-origin requests.
 
-The chart requires exactly one replica, uses a `Recreate` strategy, and always
-creates a PVC for the local JSON registry. It has no RBAC or Kubernetes API
-access and does not mount a ServiceAccount token. The JSON registry is
-single-writer, not a distributed database; use storage-level backup and restore
-procedures for the PVC. Losing the PVC loses the registry. There is no built-in
-replication or backup service.
+The Hub container does not need a Kubernetes ServiceAccount token. Agents
+connect outbound and retain the native KubeAtlas Agent's live read, write,
+audit, and MCP behavior under the current user's Kubernetes RBAC.
 
-The container listener is HTTP and defaults to `127.0.0.1:9290` outside the
-chart. For a cluster Deployment, the chart binds it to `0.0.0.0:9290` inside
-the Pod and creates a ClusterIP Service. Configure TLS termination at an
-Ingress or trusted reverse proxy before exposing it beyond a protected
-network. Do not send login credentials or bearer tokens over untrusted
-plaintext connections.
+Hub-hosted onboarding artifacts are optional and operator-staged. Configure
+`--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR` with a validated
+private bundle; see [Hub-hosted Agent onboarding](hub-agent-onboarding.md).
+The Portal serves version-pinned downloads and read-only OCI GET/HEAD content
+from that local directory only.
 
-The Portal UI, API, and embedded assets are served at the host root. Use a
-dedicated hostname with ingress path `/` and `pathType: Prefix`; the Portal
-chart rejects subpath ingress. Do not configure a reverse-proxy prefix for the
-Portal. Public KubeAtlas and MCP target URLs may still include path prefixes.
-
-## Configure KubeAtlas registration
-
-The KubeAtlas Helm chart defaults `portalRegistration.enabled` to `false`. For
-each in-cluster KubeAtlas instance, set a unique stable ID and the matching
-token-map entry in the Portal Secret. Configure the KubeAtlas's token in an
-existing Secret; never put the token itself in Helm values:
-
-```yaml
-portalRegistration:
-  enabled: true
-  url: https://portal.example.com
-  clusterId: prod-east
-  clusterName: Production east
-  description: Main production cluster
-  environment: production
-  region: us-east
-  radarUrl: https://radar-east.example.com
-  # Optional when MCP is exposed at a different public base URL.
-  # mcpBaseUrl: https://radar-east.example.com/radar
-  existingSecret: radar-east-portal-registration
-  tokenKey: token
-```
-
-The Secret named above must have a `token` key whose value matches the
-`prod-east` entry in the Portal's `tokens` map. The Portal URL must be
-root-hosted and use HTTPS unless `portalRegistration.allowHTTP: true` is set
-for an isolated development or trusted internal network. This exception does
-not disable TLS verification; production should use a certificate trusted by the system CA
-roots. The Portal URL must not contain credentials, query parameters, or
-fragments. Public `radarUrl` and `mcpBaseUrl` may include a path prefix, but
-must not contain credentials, query parameters, or fragments.
-
-The reporter derives MCP mode from the effective KubeAtlas configuration:
-
-- `full`: reports both the public MCP endpoint ending in `/mcp` and the
-  read-only endpoint ending in `/mcp-readonly`.
-- `read-only`: reports the public read-only endpoint ending in `/mcp-readonly`.
-- `disabled`: reports no MCP endpoint.
-
-`mcpBaseUrl` is the public base prefix used for constructing these endpoints;
-when unset, it defaults to `radarUrl`. Ensure the public ingress routes those
-paths to KubeAtlas. Portal registration does not relay or store credentials used
-to authenticate to KubeAtlas, its MCP endpoint, or the Kubernetes API. KubeAtlas's
-normal authentication configuration remains independent of the Portal's
-viewer login.
-
-### Local CLI and Desktop
-
-Set the following environment variables in the local KubeAtlas process to opt in.
-The token must match the Portal token-map entry for the stable instance ID:
-
-```text
-KUBEATLAS_PORTAL_URL=https://portal.example.com
-KUBEATLAS_PORTAL_TOKEN=<instance-token>
-KUBEATLAS_PORTAL_CLUSTER_ID=dev-laptop
-KUBEATLAS_PORTAL_CLUSTER_NAME=Developer laptop
-KUBEATLAS_PORTAL_RADAR_URL=https://radar.example.com:9280
-```
-
-These are the required Portal settings:
-
-- `KUBEATLAS_PORTAL_URL`: root-hosted Portal URL.
-- `KUBEATLAS_PORTAL_TOKEN`: the instance's bearer token.
-- `KUBEATLAS_PORTAL_CLUSTER_ID`: stable ID matching the Portal token map.
-- `KUBEATLAS_PORTAL_CLUSTER_NAME`: stable operator-chosen display name.
-- `KUBEATLAS_PORTAL_RADAR_URL`: URL viewers' browsers can reach for this KubeAtlas.
-
-Optional metadata and endpoint settings are `KUBEATLAS_PORTAL_DESCRIPTION`,
-`KUBEATLAS_PORTAL_ENVIRONMENT`, `KUBEATLAS_PORTAL_REGION`,
-`KUBEATLAS_PORTAL_MCP_BASE_URL`, and `KUBEATLAS_PORTAL_ALLOW_HTTP=true`. Use a Secret
-manager or process environment injection for tokens; do not commit real tokens
-or passwords to configuration files.
-
-The Portal reporter is outbound-only and does not change the local listener.
-The Portal user must be able to reach `KUBEATLAS_PORTAL_RADAR_URL` directly from
-their browser. A `localhost` or `127.0.0.1` target refers to each viewer's own
-machine, not necessarily the machine running KubeAtlas. KubeAtlas's CLI can use a
-configured port; Desktop may fall back to a different port if its configured
-or remembered port is busy. For Portal links, choose a stable configured
-Desktop port and keep it available, or update the public URL when the port
-changes.
-
-Do not expose an unauthenticated local KubeAtlas on an untrusted network. If a
-local instance must be reachable by remote Portal viewers, configure an
-appropriate trusted network path, TLS termination, and KubeAtlas authentication
-(for example, proxy or OIDC) independently of Portal viewer authentication.
-The Portal does not relay KubeAtlas credentials or proxy browser requests to the
-public KubeAtlas/MCP URLs. Fleet tool calls use a separate source-initiated
-channel under that source's configured MCP mode and Kubernetes identity.
-
-Fleet synchronization is opt-in with `KUBEATLAS_FLEET_SYNC_ENABLED=true` and
-uses the same Portal URL, cluster ID/name, registration token, HTTP allowance,
-and `KUBEATLAS_FLEET_SYNC_INTERVAL`. Snapshots are posted to a token-scoped
-Portal route; the original MCP catalog and calls use a source-initiated
-WebSocket to the same Portal origin. Use only a trusted isolated development
-network; do not expose this mode publicly or deploy it in production. Portal
-viewer sessions currently share Fleet context, and per-viewer, per-cluster
-permissions are deferred. Source-tool calls run under the source KubeAtlas MCP
-mode and Kubernetes identity. See [Fleet synchronization](fleet.md).
-
-`portalRegistration.enabled` cannot be combined with `cloud.enabled`. The
-Portal reporter is intentionally disabled for upstream Cloud mode.
-
-## Access, rotation, and revocation
-
-The Portal provides `GET /healthz`, `/login`, and its static assets without
-authentication. Unauthenticated visits to `/` or `/fleet` redirect to the
-login page; neither embeds cluster data. After login, the browser opens the
-overview at `/`; Fleet deep links stay on the same Portal shell. The overview,
-Fleet viewer APIs, and `/mcp-fleet` require a viewer session, not HTTP Basic
-Authentication. Source uploads and agent channels use the existing scoped
-registration bearer token. Existing viewer username/password environment
-variables and Secret keys are unchanged.
-
-`POST /api/auth/login` accepts a JSON `username` and `password` and returns a
-host-only, `HttpOnly`, `Secure`, `SameSite=Strict` session cookie. Passwords are
-not stored in browser storage or the registry. Sessions expire after eight
-hours (not sliding), are held only in process memory, and are invalidated by
-server restart. `GET /api/auth/session` checks the session; the overview returns
-to the login page when its directory request receives 401. `POST /api/auth/logout`
-revokes the current session server-side and clears its cookie. Login and logout
-require JSON and reject cross-origin browser requests. Login attempts are
-limited to 20 per minute across the Portal, and active sessions are capped at
-1024. Use ingress/network controls for additional abuse protection.
-
-Secure cookies are enabled by default, including behind a TLS-terminating
-proxy; the server does not trust forwarded headers to disable this protection.
-For local HTTP development only, after securely provisioning the existing
-`KUBEATLAS_PORTAL_USERNAME`, `KUBEATLAS_PORTAL_PASSWORD`, and `KUBEATLAS_PORTAL_TOKENS`
-environment variables, run:
-
-```bash
-make portal
-./kubeatlas-portal --listen 127.0.0.1:9290 --insecure-cookie
-```
-
-The `--insecure-cookie` option is rejected for non-loopback listen addresses.
-Do not use it behind an externally accessible proxy or in production; the
-Helm chart keeps the secure default and needs HTTPS at the ingress.
-
-Registrations use `PUT /api/registrations/{id}` and require a
-Bearer token bound to that same ID. The list is restricted to IDs currently
-present in the Portal token map, and is sorted by ID. No delete API is
-provided.
-
-When rotating a registration token, update both the KubeAtlas-side Secret and
-Portal token-map Secret through the secret manager, then roll out/restart the
-affected KubeAtlas and Portal. The Portal rejects duplicate token values. To
-revoke visibility, remove the ID from the Portal token map and restart the
-Portal; this hides that record from viewer reads but does not delete the
-persisted record. Re-adding the ID makes it visible again. Viewer credentials
-can be rotated by updating the Secret and restarting the Portal.
-
-Use HTTPS for viewer access and registration traffic. The Portal itself does
-not terminate TLS. Keep it behind a trusted TLS
-terminator, restrict network access as appropriate, and do not disable
-certificate verification in the KubeAtlas reporter.
+The TLS reverse proxy must preserve the selected Host authority and route
+`/api/`, `/agent`, `/mcp`, `/downloads/agent/`, and `/v2/` to the Portal without
+path rewriting or redirects. Nodes pulling the Agent image must reach this same
+origin and trust its certificate; the Agent's optional CA file does not
+configure node container-runtime trust.

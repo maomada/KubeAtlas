@@ -19,7 +19,7 @@ export function ProvenanceTooltip({
   return (
     <div className="space-y-1">
       <div className="text-xs text-theme-text-primary">
-        Grouped by {src.lead}
+        按{src.lead}
         {src.code && (
           <>
             {' '}
@@ -31,7 +31,7 @@ export function ProvenanceTooltip({
       {/* Only flag the case the user should act on — weak evidence. Medium/high
           confidence is resolver detail, not actionable. */}
       {conf === 'low' && (
-        <div className={`text-[10px] uppercase tracking-wide ${HEALTH_META.degraded.text}`}>low confidence</div>
+        <div className={`text-[10px] uppercase tracking-wide ${HEALTH_META.degraded.text}`}>低置信度</div>
       )}
     </div>
   )
@@ -46,7 +46,7 @@ export function VersionTooltip({ workloads }: { workloads: Pick<AppWorkload, 'na
     <div className="max-w-xs space-y-1">
       {/* These are the running image tags — they can legitimately differ from
           the headline appVersion (a label), so the title says what it shows. */}
-      <div className="text-[10px] font-medium uppercase tracking-wide text-theme-text-tertiary">Image tag by workload</div>
+      <div className="text-[10px] font-medium uppercase tracking-wide text-theme-text-tertiary">各工作负载的镜像标签</div>
       <ul className="space-y-0.5">
         {rows.map((w, i) => (
           <li key={i} className="flex items-baseline justify-between gap-3">
@@ -65,7 +65,7 @@ export function RolloutSummaryTooltip({ summary }: { summary: AppRolloutSummary 
     <div className="max-w-xs space-y-1">
       {details.map((detail, index) => <div key={index}>{detail}</div>)}
       {summary.details.length > details.length && (
-        <div className="text-theme-text-tertiary">+{summary.details.length - details.length} more</div>
+        <div className="text-theme-text-tertiary">另有 {summary.details.length - details.length} 项</div>
       )}
     </div>
   )
@@ -79,10 +79,10 @@ export function CategoryTooltip({
   addonReason?: string
 }) {
   const mixed = category === 'mixed'
-  const title = mixed ? 'Mixed app / add-on' : 'Platform add-on'
+  const title = mixed ? '混合应用 / 附加组件' : '平台附加组件'
   const lead = mixed
-    ? 'Has both application and add-on evidence. Kept visible — classification is informational, not identity.'
-    : 'Classified as a platform add-on, shown here for completeness.'
+    ? '同时具有应用和附加组件的依据。此分类仅供参考，不代表应用身份。'
+    : '依据平台附加组件特征分类；为便于完整查看而显示。'
   // addonReason is a "; "-separated list of signals, e.g.
   //   "app.kubernetes.io/name=argocd-redis (argocd); chart=argo-cd".
   // Render each as its own line; the selector goes in code, the trailing
@@ -97,7 +97,7 @@ export function CategoryTooltip({
       <div className="text-[11px] leading-snug text-theme-text-secondary">{lead}</div>
       {items.length > 0 && (
         <div className="space-y-1 border-t border-theme-border pt-1.5">
-          <div className="text-[10px] font-medium uppercase tracking-wide text-theme-text-tertiary">Evidence</div>
+          <div className="text-[10px] font-medium uppercase tracking-wide text-theme-text-tertiary">依据</div>
           <ul className="max-h-52 space-y-1 overflow-y-auto">
             {items.map((it, i) => {
               const parsed = splitTrailingParen(it)
@@ -146,25 +146,25 @@ export function AppIdentityTooltip({
   const folds = portable ?? isDeclaredAppSource(source)
   return (
     <div className="max-w-xs space-y-1.5">
-      {source && <div className="text-xs font-medium text-theme-text-primary">Grouped by {appSourceLabel(source)}.</div>}
+      {source && <div className="text-xs font-medium text-theme-text-primary">分组依据：{appSourceLabel(source)}。</div>}
       {evidences.map((e, i) => (
         <div key={i} className="text-xs text-theme-text-secondary">
           <EvidenceLine evidence={e} />
         </div>
       ))}
       {fleet && folds && (
-        <div className="text-[10px] uppercase tracking-wide text-theme-text-tertiary">folds across clusters</div>
+        <div className="text-[10px] uppercase tracking-wide text-theme-text-tertiary">跨集群合并显示</div>
       )}
       {fleet && source !== undefined && !folds && (
         <div className="space-y-1 border-t border-theme-border pt-1.5">
           <div className="text-[11px] leading-snug text-theme-text-secondary">
-            Shown per-cluster — a name can't prove two clusters run the same app. To fold it across clusters, set the same{' '}
-            <code className="inline-code">{APP_IDENTITY_ANNOTATION}</code> on its workloads in each cluster, or deploy it via Argo CD / Flux with the environment in the source path.
+            按集群分别显示——名称相同并不能证明多个集群运行的是同一个应用。若要跨集群合并，请在各集群的工作负载上设置相同的{' '}
+            <code className="inline-code">{APP_IDENTITY_ANNOTATION}</code>，或通过 Argo CD / Flux 部署，并在来源路径中包含环境信息。
           </div>
         </div>
       )}
       {!fleet && heuristicOnly && !source && (
-        <div className={`text-[10px] uppercase tracking-wide ${HEALTH_META.degraded.text}`}>heuristic · medium confidence</div>
+        <div className={`text-[10px] uppercase tracking-wide ${HEALTH_META.degraded.text}`}>启发式推断 · 中等置信度</div>
       )}
     </div>
   )
@@ -177,7 +177,7 @@ function EvidenceLine({ evidence }: { evidence: string }) {
   if (nameStem) {
     return (
       <>
-        Same name <code className="inline-code">{nameStem.value}</code> + image <code className="inline-code">{midTruncate(nameStem.rest, 32)}</code>
+        名称相同：<code className="inline-code">{nameStem.value}</code>；镜像：<code className="inline-code">{midTruncate(nameStem.rest, 32)}</code>
       </>
     )
   }
@@ -185,7 +185,7 @@ function EvidenceLine({ evidence }: { evidence: string }) {
   if (envLabel) {
     return (
       <>
-        Environment label <code className="inline-code">{envLabel.value}</code> + name/repo evidence
+        环境标签：<code className="inline-code">{envLabel.value}</code>，以及名称/仓库依据
       </>
     )
   }
@@ -193,7 +193,7 @@ function EvidenceLine({ evidence }: { evidence: string }) {
   if (argo && argo.lead.startsWith('Argo CD source path ') && argo.paren.startsWith('env overlay ')) {
     return (
       <>
-        Argo CD source path <code className="inline-code">{argo.lead.slice('Argo CD source path '.length)}</code>
+        Argo CD 来源路径：<code className="inline-code">{argo.lead.slice('Argo CD source path '.length)}</code>
       </>
     )
   }
@@ -222,16 +222,16 @@ export function EnvHint({ unlabeled }: { unlabeled?: boolean }) {
   return (
     <div className="max-w-xs space-y-1">
       {unlabeled ? (
-        <div className="text-xs text-theme-text-primary">No environment detected for this app.</div>
+        <div className="text-xs text-theme-text-primary">未检测到此应用的环境信息。</div>
       ) : (
-        <div className="text-xs text-theme-text-primary">Detected from labels, GitOps overlay paths, or name patterns (shown <span className="italic">~inferred</span>).</div>
+        <div className="text-xs text-theme-text-primary">根据标签、GitOps 覆盖路径或名称模式推断（显示为 <span className="italic">~推断</span>）。</div>
       )}
       <div className="text-[11px] leading-snug text-theme-text-secondary">
-        Set it explicitly — label the namespace or workload:
+        可通过命名空间或工作负载标签显式设置：
       </div>
       <code className="inline-code">environment=staging</code>
       <div className="text-[10px] text-theme-text-tertiary">
-        also recognized: <code className="inline-code">app.kubernetes.io/environment</code> · <code className="inline-code">env</code> · <code className="inline-code">tags.datadoghq.com/env</code>
+        也识别以下键：<code className="inline-code">app.kubernetes.io/environment</code> · <code className="inline-code">env</code> · <code className="inline-code">tags.datadoghq.com/env</code>
       </div>
     </div>
   )

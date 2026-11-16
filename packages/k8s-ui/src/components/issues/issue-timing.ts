@@ -14,20 +14,20 @@ export function issueFirstSeenTitle(issue: Issue): string | null {
   if (!issue.first_seen) return null;
   const coverage = issue.onset_coverage;
   const unknown = coverage?.unknown ?? 0;
-  const base = `Active at least since ${new Date(issue.first_seen).toLocaleString()}`;
+  const base = `至少从 ${new Date(issue.first_seen).toLocaleString()} 起处于活动状态`;
   if (unknown === 0) return `${base}.`;
   const total = (coverage?.known ?? 0) + unknown;
-  return `${base}; timing unknown for ${unknown} of ${total} signals.`;
+  return `${base}；其中 ${unknown}/${total} 个信号的时间未知。`;
 }
 
 export function issueResourceCreatedTitle(issue: Issue): string | null {
   if (!issue.resource_created_at) return null;
   const affectedCount = Math.max(issue.count ?? 0, issue.members?.length ?? 0);
   const label = affectedCount > 1
-    ? 'Oldest affected resource created'
+    ? '最早受影响资源的创建时间'
     : affectedCount === 1
-      ? 'Affected resource created'
-      : 'Resource created';
+      ? '受影响资源的创建时间'
+      : '资源创建时间';
   return `${label} ${new Date(issue.resource_created_at).toLocaleString()}`;
 }
 
@@ -50,18 +50,18 @@ function onsetUncertaintyMeta(issue: Issue): string {
   const coverage = issue.onset_coverage;
   const unknown = coverage?.unknown ?? 0;
   if (issue.first_seen && (coverage?.known ?? 0) > 0 && unknown > 0) {
-    return `exact onset unknown for ${unknown} of ${(coverage?.known ?? 0) + unknown} signals`;
+    return `确切开始时间未知（${unknown}/${(coverage?.known ?? 0) + unknown} 个信号）`;
   }
-  return 'exact onset unknown';
+  return '确切开始时间未知';
 }
 
 function onsetUncertaintyTooltip(issue: Issue): string {
   const coverage = issue.onset_coverage;
   const unknown = coverage?.unknown ?? 0;
   if (issue.first_seen && (coverage?.known ?? 0) > 0 && unknown > 0) {
-    return `Exact onset is unavailable for ${unknown} of ${(coverage?.known ?? 0) + unknown} signals.`;
+    return `无法确定 ${unknown}/${(coverage?.known ?? 0) + unknown} 个信号的确切开始时间。`;
   }
-  return 'Exact onset of this issue is unavailable.';
+  return '无法确定此问题的确切开始时间。';
 }
 
 export function issueTimingForDisplay(issue: Issue): IssueTimingDisplay | null {
@@ -83,9 +83,9 @@ export function issueTiming(issue: Issue): IssueTimingDisplay | null {
   if (issue.issue_timing_basis === 'deletion' && issue.issue_timing) {
     return {
       kind: 'deletion',
-      chip: 'since deletion',
-      meta: 'pending since deletion was requested',
-      tooltip: 'Timed from when deletion was requested; the object is still present.',
+      chip: '自删除起',
+      meta: '自请求删除后持续待删除',
+      tooltip: '从请求删除时开始计时；对象仍然存在。',
     };
   }
   switch (issue.issue_timing) {
@@ -94,72 +94,72 @@ export function issueTiming(issue: Issue): IssueTimingDisplay | null {
         if (onsetUnknown) {
           return {
             kind: 'regression',
-            chip: mixedOnset ? 'health regressed' : 'workload regressed · onset unknown',
-            meta: `${uncertaintyMeta}; owner workload was healthy before its current health regression`,
-            tooltip: `The owner workload had a healthy period before its current failing condition. ${uncertaintyTooltip}`,
+            chip: mixedOnset ? '健康状态回退' : '工作负载健康状态回退 · 开始时间未知',
+            meta: `${uncertaintyMeta}；工作负载在当前健康状态回退前曾处于健康状态`,
+            tooltip: `所属工作负载在当前故障状态前曾处于健康状态。 ${uncertaintyTooltip}`,
           };
         }
         return {
           kind: 'regression',
-          chip: 'health regressed',
-          meta: 'workload health regressed',
-          tooltip: 'The owner workload had a healthy period before its current failing condition. This does not date or attribute this specific issue.',
+          chip: '健康状态回退',
+          meta: '工作负载健康状态回退',
+          tooltip: '所属工作负载在当前故障状态前曾处于健康状态。这并不能确定此问题的发生时间或归因。',
         };
       }
       if (onsetUnknown && issue.issue_timing_basis === 'pod_creation') {
         if (grouped) {
           return {
             kind: 'regression',
-            chip: 'new pods failed after healthy',
-            meta: `${uncertaintyMeta}; failing pods were created after an earlier healthy period`,
-            tooltip: `Failing pods were created after an earlier healthy period. ${uncertaintyTooltip}`,
+            chip: '健康期后新建的 Pod 发生故障',
+            meta: `${uncertaintyMeta}；故障 Pod 在此前健康期后创建`,
+            tooltip: `故障 Pod 在此前健康期后创建。 ${uncertaintyTooltip}`,
           };
         }
         return {
           kind: 'regression',
-          chip: 'later rollout regressed',
-          meta: `${uncertaintyMeta}; affected pod belongs to a later rollout after an earlier healthy period`,
-          tooltip: `The affected pod belongs to a later workload revision after an earlier healthy period. ${uncertaintyTooltip}`,
+          chip: '后续发布出现故障',
+          meta: `${uncertaintyMeta}；受影响的 Pod 属于此前健康期之后的后续发布`,
+          tooltip: `受影响的 Pod 属于此前健康期之后的工作负载修订版本。 ${uncertaintyTooltip}`,
         };
       }
       return {
         kind: 'regression',
-        chip: issue.kind === 'Node' && issue.reason === 'NotReady' ? 'NotReady' : 'after healthy',
-        meta: 'failing evidence followed a healthy period',
-        tooltip: issue.kind === 'Node' && issue.reason === 'NotReady' ? 'The Ready condition stopped reporting healthy at this time.' : 'A healthy period preceded this failing evidence.',
+        chip: issue.kind === 'Node' && issue.reason === 'NotReady' ? 'NotReady' : '健康期后发生故障',
+        meta: '故障信号出现在健康期之后',
+        tooltip: issue.kind === 'Node' && issue.reason === 'NotReady' ? 'Ready 条件从此时起不再报告健康状态。' : '此故障信号出现前曾有一段健康期。',
       };
     }
     case 'started_at_resource_creation': {
       if (onsetUnknown && issue.issue_timing_basis === 'owner_condition') {
         return {
           kind: 'creation',
-          chip: 'workload never healthy',
-          meta: `${uncertaintyMeta}; owner workload never became healthy after deployment`,
-          tooltip: `The owner workload never became healthy after deployment. ${uncertaintyTooltip}`,
+          chip: '工作负载从未健康',
+          meta: `${uncertaintyMeta}；工作负载部署后始终未达到健康状态`,
+          tooltip: `所属工作负载部署后始终未达到健康状态。 ${uncertaintyTooltip}`,
         };
       }
       if (onsetUnknown && issue.issue_timing_basis === 'pod_creation') {
         if (grouped) {
           return {
             kind: 'creation',
-            chip: 'startup pod failures',
-            meta: `${uncertaintyMeta}; failures occurred in pods created during workload startup`,
-            tooltip: `Failures occurred in pods created during workload startup. ${uncertaintyTooltip}`,
+            chip: '启动阶段 Pod 故障',
+            meta: `${uncertaintyMeta}；故障发生在工作负载启动期间创建的 Pod 中`,
+            tooltip: `故障发生在工作负载启动期间创建的 Pod 中。 ${uncertaintyTooltip}`,
           };
         }
         return {
           kind: 'creation',
-          chip: 'pod failed at startup',
-          meta: `${uncertaintyMeta}; affected pod failed during workload startup`,
-          tooltip: `The affected pod failed during startup of its workload revision. ${uncertaintyTooltip}`,
+          chip: 'Pod 在启动阶段失败',
+          meta: `${uncertaintyMeta}；受影响的 Pod 在工作负载启动期间失败`,
+          tooltip: `受影响的 Pod 在其工作负载修订版本启动期间失败。 ${uncertaintyTooltip}`,
         };
       }
       if (onsetUnknown && issue.issue_timing_basis === 'spec') {
         return {
           kind: 'creation',
-          chip: 'invalid at first reconcile',
-          meta: `${uncertaintyMeta}; initial spec was failing from first reconciliation`,
-          tooltip: `The initial specification establishes that the resource was failing from its first reconciliation. ${uncertaintyTooltip}`,
+          chip: '首次协调时即无效',
+          meta: `${uncertaintyMeta}；初始 spec 从首次协调起就处于故障状态`,
+          tooltip: `初始 spec 表明该资源从首次协调起就处于故障状态。 ${uncertaintyTooltip}`,
         };
       }
       if (isDeploymentLikeCreation(issue)) {

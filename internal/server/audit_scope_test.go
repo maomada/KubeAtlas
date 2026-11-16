@@ -17,10 +17,20 @@ import (
 	"github.com/maomada/KubeAtlas/internal/audit"
 	"github.com/maomada/KubeAtlas/internal/auth"
 	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/settings"
 	bp "github.com/maomada/KubeAtlas/pkg/audit"
 )
 
 func TestAuditSecretAuthorizationAcrossSurfacesAndCachedScopes(t *testing.T) {
+	// Exercise authorization independently of the default *-system exclusions.
+	t.Setenv("HOME", t.TempDir())
+	if _, err := settings.Update(func(s *settings.Settings) {
+		cfg := settings.DefaultAuditConfig()
+		cfg.IgnoredNamespaces = []string{}
+		s.Audit = &cfg
+	}); err != nil {
+		t.Fatal(err)
+	}
 	env := newAuthTestServer(t)
 	if err := k8s.InitTestDynamicResourceCache(dynamicfake.NewSimpleDynamicClient(runtime.NewScheme()), []k8s.APIResource{{Version: "v1", Name: "pods", Kind: "Pod", Namespaced: true}}); err != nil {
 		t.Fatal(err)

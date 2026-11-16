@@ -7,10 +7,12 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/maomada/KubeAtlas/internal/audit"
+	"github.com/maomada/KubeAtlas/internal/auditcontext"
 	"github.com/maomada/KubeAtlas/internal/k8s"
 	"github.com/maomada/KubeAtlas/internal/settings"
 	bp "github.com/maomada/KubeAtlas/pkg/audit"
 	"github.com/maomada/KubeAtlas/pkg/checks"
+	"github.com/maomada/KubeAtlas/pkg/resourcecontext"
 )
 
 type auditInput struct {
@@ -21,12 +23,13 @@ type auditInput struct {
 }
 
 type auditToolResult struct {
-	MissingInputs []string       `json:"missingInputs,omitempty"`
-	Summary       auditSummary   `json:"summary"`
-	Findings      []auditFinding `json:"findings"`
-	TotalCount    int            `json:"totalCount"`
-	Truncated     bool           `json:"truncated,omitempty"`
-	NarrowHint    string         `json:"narrowHint,omitempty"`
+	Scope         *resourcecontext.AuditScope `json:"scope,omitempty"`
+	MissingInputs []string                    `json:"missingInputs,omitempty"`
+	Summary       auditSummary                `json:"summary"`
+	Findings      []auditFinding              `json:"findings"`
+	TotalCount    int                         `json:"totalCount"`
+	Truncated     bool                        `json:"truncated,omitempty"`
+	NarrowHint    string                      `json:"narrowHint,omitempty"`
 }
 
 type auditSummary struct {
@@ -64,7 +67,7 @@ func handleGetAudit(ctx context.Context, req *mcp.CallToolRequest, input auditIn
 	}
 	allowed := filterNamespacesForUser(ctx, requested)
 	if allowed != nil && len(allowed) == 0 {
-		return toJSONResult(auditToolResult{})
+		return toJSONResult(auditToolResult{Scope: &resourcecontext.AuditScope{Status: "skipped", Reasons: []string{"no_visible_namespaces"}}})
 	}
 
 	// For namespace-restricted users, narrow the audit scope to their allowed
@@ -82,6 +85,16 @@ func handleGetAudit(ctx context.Context, req *mcp.CallToolRequest, input auditIn
 
 	// Apply user settings (namespace ignore + disabled checks)
 	cfg := loadAuditConfig()
+	visibleNamespaces := append([]string{}, namespaces...)
+	for _, finding := range results.Findings {
+		visibleNamespaces = append(visibleNamespaces, finding.Namespace)
+	}
+	for _, byNamespace := range results.EvaluatedByNamespace {
+		for namespace := range byNamespace {
+			visibleNamespaces = append(visibleNamespaces, namespace)
+		}
+	}
+	scope := auditcontext.SettingsScope(cfg, visibleNamespaces)
 	results = bp.ApplySettings(results, cfg.IgnoredNamespaces, cfg.DisabledChecks)
 
 	// Build the check registry lookup for remediation
@@ -112,6 +125,7 @@ func handleGetAudit(ctx context.Context, req *mcp.CallToolRequest, input auditIn
 	}
 
 	return toJSONResult(auditToolResult{
+		Scope:         scope,
 		MissingInputs: results.MissingInputs,
 		Summary:       summary,
 		Findings:      filtered,

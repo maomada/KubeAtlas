@@ -44,13 +44,13 @@ describe('audit coverage presentation', () => {
   it('keeps a coverage warning alongside real findings', () => {
     const html = renderToString(<AuditCard data={{ passing: 1, missingInputs: ['secrets'], warning: 1, danger: 0, categories: { Security: { passing: 1, warning: 0, danger: 0 } } }} onNavigate={() => {}} />)
     expect(html).toContain('部分检查无法运行')
-    expect(html).not.toContain('All passing')
+    expect(html).not.toContain('全部检查通过')
   })
   for (const [evaluated, missingInputs, expected] of [
-    [0, [], 'No resources evaluated'],
-    [0, ['secrets'], 'No findings in the available data'],
-    [4, ['secrets'], 'No findings in the available data'],
-    [4, [], 'Every audited resource passed'],
+    [0, [], '没有评估资源'],
+    [0, ['secrets'], '可用数据中没有发现项'],
+    [4, ['secrets'], '可用数据中没有发现项'],
+    [4, [], '所有已审计资源均通过检查。'],
   ] as const) {
     it(`Checks: ${expected}`, () => {
       const html = renderToString(
@@ -60,9 +60,9 @@ describe('audit coverage presentation', () => {
       )
       expect(html).toContain(expected)
       if (missingInputs.length) {
-        expect(html).toContain('Unavailable inputs (')
+        expect(html).toContain('不可用的输入（')
         expect(html).toContain('Secret')
-        expect(html).not.toContain('Every audited resource passed')
+        expect(html).not.toContain('所有已审计资源均通过检查。')
       }
     })
   }
@@ -76,13 +76,13 @@ describe('replica placement coverage explanation', () => {
           <ChecksView checks={[]} catalog={{}} anyData evaluated={0} missingInputs={inputs} />
         </FilterLocationProvider>,
       )
-      expect(html).toContain('Running replicas on same node')
-      expect(html).toContain('could not be fully evaluated')
-      expect(html).toContain('affected Deployments were skipped, not passed')
-      expect(html).toContain('No findings in the available data')
+      expect(html).toContain('同一节点上的副本')
+      expect(html).toContain('无法完整评估')
+      expect(html).toContain('跳过了受影响的 Deployment，而非判定为通过')
+      expect(html).toContain('可用数据中没有发现项')
       expect(html).not.toContain('replicaset-ownership')
       if (inputs.includes('replicasets')) expect(html).toContain('ReplicaSet')
-      if (inputs.includes('replicaset-ownership')) expect(html).toContain('ReplicaSet ownership')
+      if (inputs.includes('replicaset-ownership')) expect(html).toContain('ReplicaSet 所有权')
     })
   }
   it('does not imply missing replica evidence for unrelated unavailable inputs', () => {
@@ -91,10 +91,10 @@ describe('replica placement coverage explanation', () => {
         <ChecksView checks={[]} catalog={{}} anyData evaluated={4} missingInputs={['secrets']} />
       </FilterLocationProvider>,
     )
-    expect(html).toContain('Unavailable inputs (')
+    expect(html).toContain('不可用的输入（')
     expect(html).toContain('Secret')
-    expect(html).not.toContain('Running replicas on same node')
-    expect(html).not.toContain('skipped, not passed')
+    expect(html).not.toContain('同一节点上的副本')
+    expect(html).not.toContain('跳过了受影响的 Deployment，而非判定为通过')
   })
 })
 
@@ -107,9 +107,9 @@ describe('unavailable input details', () => {
           missingInputs={['serviceaccounts', 'horizontalpodautoscalers', 'limitranges', 'poddisruptionbudgets', 'configmap-references', 'secret-references', 'unrecognized-input']} />
       </FilterLocationProvider>,
     )
-    expect(html).toContain('Unavailable inputs (7)')
+    expect(html).toContain('不可用的输入（7）')
     expect(html).toContain('aria-expanded="false"')
-    expect(html).toContain('ServiceAccount, HorizontalPodAutoscaler, LimitRange, PodDisruptionBudget, ConfigMap references, Secret references, unrecognized-input')
-    expect(html).not.toContain('Every audited resource passed')
+    expect(html).toContain('ServiceAccount, HorizontalPodAutoscaler, LimitRange, PodDisruptionBudget, ConfigMap 引用, Secret 引用, unrecognized-input')
+    expect(html).not.toContain('所有已审计资源均通过检查。')
   })
 })

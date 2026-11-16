@@ -30,10 +30,10 @@ const byTone = <T,>(toneMap: Record<SeverityTone, T>): Record<CheckSeverity, T> 
 })
 
 export const SEVERITY_LABEL: Record<CheckSeverity, string> = {
-  critical: 'Critical',
-  high: 'High',
-  medium: 'Medium',
-  low: 'Low',
+  critical: '严重',
+  high: '高',
+  medium: '中',
+  low: '低',
 }
 
 // Soft pill badge — the loud, explicit severity signal on rows + drawer header.

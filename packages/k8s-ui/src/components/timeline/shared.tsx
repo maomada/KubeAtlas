@@ -21,21 +21,89 @@ import { isProblematicEvent, type ResourceLane } from '../../utils/resource-hier
 export function formatAxisTime(date: Date): string {
   const now = new Date()
   const isToday = date.toDateString() === now.toDateString()
-  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const time = date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
 
   if (isToday) {
     return time
   }
 
-  const month = date.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  return `${month} ${time}`
+  const day = date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+  return `${day} ${time}`
 }
 
 /**
  * Format a timestamp for full display (tooltips, detail panels).
  */
 export function formatFullTime(date: Date): string {
-  return date.toLocaleString()
+  return date.toLocaleString('zh-CN')
+}
+
+export function formatTimelineRelativeAgeTime(value?: string, fallback = '-'): string {
+  if (!value) return fallback
+  const time = Date.parse(value)
+  if (!Number.isFinite(time)) return value
+  const diff = Date.now() - time
+  if (diff < 0) return diff > -60_000 ? '刚刚' : formatFullTime(new Date(time))
+
+  const seconds = Math.floor(diff / 1000)
+  if (seconds < 60) return seconds === 0 ? '刚刚' : `${seconds}秒前`
+  const minutes = Math.floor(seconds / 60)
+  if (minutes < 60) return `${minutes}分钟前`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}小时前`
+  return `${Math.floor(hours / 24)}天前`
+}
+
+export function selectReadableAxisTickLabels(
+  tickTimes: number[],
+  windowMs: number,
+  trackWidthPx: number,
+): Set<number> {
+  if (tickTimes.length <= 1) return new Set(tickTimes)
+
+  const gaps = tickTimes.slice(1)
+    .map((time, index) => time - tickTimes[index])
+    .filter((gap) => gap > 0)
+  if (gaps.length === 0) return new Set(tickTimes.slice(0, 1))
+
+  const minGapPx = windowMs > 0 && trackWidthPx > 0
+    ? Math.min(...gaps) / windowMs * trackWidthPx
+    : 0
+  const stride = minGapPx > 0 ? Math.max(1, Math.ceil(120 / minGapPx)) : 2
+  return new Set(tickTimes.filter((_, index) => index % stride === 0))
+}
+
+const AXIS_LABEL_CHARACTER_WIDTH_PX = 7
+const NOW_LABEL_WIDTH_PX = 24
+const AXIS_LABEL_CLEARANCE_PX = 2
+
+export function axisTickLabelOverlapsNow(
+  label: string,
+  tickXPercent: number,
+  nowXPercent: number | null,
+  trackWidthPx: number,
+): boolean {
+  if (
+    nowXPercent === null ||
+    !Number.isFinite(tickXPercent) ||
+    !Number.isFinite(nowXPercent) ||
+    nowXPercent < 0 ||
+    nowXPercent > 100 ||
+    !Number.isFinite(trackWidthPx) ||
+    trackWidthPx <= 0
+  ) return false
+
+  const tickCenterPx = tickXPercent / 100 * trackWidthPx
+  const tickHalfWidthPx = label.length * AXIS_LABEL_CHARACTER_WIDTH_PX / 2
+  const nowCenterPx = nowXPercent / 100 * trackWidthPx
+  const nowRightAligned = nowXPercent > 97
+  const nowLeftPx = nowCenterPx - (nowRightAligned ? NOW_LABEL_WIDTH_PX : NOW_LABEL_WIDTH_PX / 2)
+  const nowRightPx = nowCenterPx + (nowRightAligned ? 0 : NOW_LABEL_WIDTH_PX / 2)
+
+  return (
+    tickCenterPx - tickHalfWidthPx < nowRightPx + AXIS_LABEL_CLEARANCE_PX &&
+    tickCenterPx + tickHalfWidthPx > nowLeftPx - AXIS_LABEL_CLEARANCE_PX
+  )
 }
 
 /**
@@ -360,8 +428,8 @@ export function sweepAggregateHealth(
 
 /** Cap a name list at 3 + "+N more" for tooltip density. */
 function capNames(list: string[]): string {
-  if (list.length <= 3) return list.join(', ')
-  return `${list.slice(0, 3).join(', ')}, +${list.length - 3} more`
+  if (list.length <= 3) return list.join('、')
+  return `${list.slice(0, 3).join('、')}、另有${list.length - 3}个`
 }
 
 function collectFamilyNames(

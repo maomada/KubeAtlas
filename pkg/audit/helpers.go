@@ -69,14 +69,9 @@ func GroupByResource(findings []Finding) []ResourceGroup {
 	return groups
 }
 
-// ApplySettings filters audit results based on ignored namespaces (with wildcard
-// patterns like *-system) and disabled checks. This is the shared implementation
-// used by all consumers (HTTP handlers, MCP, skyhook-connector).
-func ApplySettings(results *ScanResults, ignoredNamespaces, disabledChecks []string) *ScanResults {
-	if results == nil || (len(ignoredNamespaces) == 0 && len(disabledChecks) == 0) {
-		return results
-	}
-
+// IgnoredNamespaceMatcher preserves the settings' exact, prefix and suffix matching.
+// Only an edge asterisk is special; this is not a general glob matcher.
+func IgnoredNamespaceMatcher(ignoredNamespaces []string) func(string) bool {
 	ignoreNS := make(map[string]bool, len(ignoredNamespaces))
 	var ignorePatterns []string
 	for _, ns := range ignoredNamespaces {
@@ -86,12 +81,7 @@ func ApplySettings(results *ScanResults, ignoredNamespaces, disabledChecks []str
 			ignoreNS[ns] = true
 		}
 	}
-	disabled := make(map[string]bool, len(disabledChecks))
-	for _, c := range disabledChecks {
-		disabled[c] = true
-	}
-
-	matchesIgnoredNS := func(ns string) bool {
+	return func(ns string) bool {
 		if ignoreNS[ns] {
 			return true
 		}
@@ -104,6 +94,18 @@ func ApplySettings(results *ScanResults, ignoredNamespaces, disabledChecks []str
 			}
 		}
 		return false
+	}
+}
+
+// ApplySettings filters findings and evaluation counts without mutating the scan.
+func ApplySettings(results *ScanResults, ignoredNamespaces, disabledChecks []string) *ScanResults {
+	if results == nil || (len(ignoredNamespaces) == 0 && len(disabledChecks) == 0) {
+		return results
+	}
+	matchesIgnoredNS := IgnoredNamespaceMatcher(ignoredNamespaces)
+	disabled := make(map[string]bool, len(disabledChecks))
+	for _, c := range disabledChecks {
+		disabled[c] = true
 	}
 
 	var filtered []Finding

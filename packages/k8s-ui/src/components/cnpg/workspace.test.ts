@@ -343,7 +343,7 @@ describe('buildCNPGFleet', () => {
       ],
     })
     const row = buildCNPGFleet({ ...base, jobPods: [joinPod] }).rows[0]
-    expect(row.problems[0].title).toBe("New standby pg-a-2: Can't be scheduled")
+    expect(row.problems[0].title).toBe('New standby pg-a-2: 无法调度')
     expect(row.problems[0].severity).toBe('warning')
     expect(row.problems[0].detail).toBe('both nodes have reached their Pod limit')
     expect(row.problems[0].rawDetail).toBe('2 node(s) insufficient pods (0/2 nodes available)')

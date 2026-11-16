@@ -243,7 +243,7 @@ export function barHeight(total: number, maxTotal: number, trackHeight: number):
 /** Compact pill label, e.g. "Jul 1 14:30". */
 export function formatScrubberPill(ms: number): string {
   const d = new Date(ms)
-  const date = d.toLocaleDateString([], { month: 'short', day: 'numeric' })
-  const time = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+  const date = d.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })
+  const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
   return `${date} ${time}`
 }

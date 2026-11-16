@@ -52,6 +52,67 @@ class DispositionTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.evaluate()
 
+    def accepted_risk_policy(self):
+        policy = copy.deepcopy(self.policy)
+        policy["schemaVersion"] = 2
+        entry = policy["entries"][0]
+        entry["disposition"] = "accepted-risk"
+        entry["approval"]["kind"] = "maintainer-risk-acceptance"
+        entry["riskAcceptance"] = {
+            "acceptedBy": entry["approval"]["actor"], "decision": "accept",
+            "scope": "Explicitly configured test-only HTTP origin",
+            "residualRisk": "The test session is sent without TLS encryption",
+            "conditions": ["Exact configured authority only"],
+        }
+        return policy
+
+    def test_accepted_risk_is_visible_separately_and_never_relabels_raw_findings(self):
+        original = copy.deepcopy(self.report)
+        result = self.evaluate(policy=self.accepted_risk_policy())
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["approved"], [])
+        self.assertEqual(len(result["acceptedRisks"]), 1)
+        self.assertEqual(result["acceptedRisks"][0]["disposition"], "accepted-risk")
+        self.assertIn("without TLS", result["acceptedRisks"][0]["riskAcceptance"]["residualRisk"])
+        self.assertEqual(self.report, original)
+        self.assertNotIn("acceptedRisks", self.evaluate())  # v1 receipts stay compatible.
+
+    def test_risk_acceptance_cannot_reuse_a_generic_approval_or_empty_scope(self):
+        edits = (
+            lambda p: p.update(schemaVersion=1),
+            lambda p: p["entries"][0]["approval"].pop("kind"),
+            lambda p: p["entries"][0]["approval"].update(approved=False),
+            lambda p: p["entries"][0]["approval"].update(reference="   "),
+            lambda p: p["entries"][0]["approval"].update(reference={"url": "test"}),
+            lambda p: (p["entries"][0]["approval"].update(actor=["reviewer"]),
+                       p["entries"][0]["riskAcceptance"].update(acceptedBy=["reviewer"])),
+            lambda p: (p["entries"][0]["approval"].update(actor="   "),
+                       p["entries"][0]["riskAcceptance"].update(acceptedBy="   ")),
+            lambda p: p["entries"][0].pop("riskAcceptance"),
+            lambda p: p["entries"][0]["riskAcceptance"].update(acceptedBy="someone-else"),
+            lambda p: p["entries"][0]["riskAcceptance"].update(decision="pending"),
+            lambda p: p["entries"][0]["riskAcceptance"].update(scope=""),
+            lambda p: p["entries"][0]["riskAcceptance"].update(residualRisk=""),
+            lambda p: p["entries"][0]["riskAcceptance"].update(conditions=[]),
+        )
+        for edit in edits:
+            with self.subTest(edit=edit):
+                policy = self.accepted_risk_policy()
+                edit(policy)
+                with self.assertRaises(ValueError):
+                    self.evaluate(policy=policy)
+
+    def test_risk_acceptance_does_not_cover_new_findings_or_changed_source(self):
+        policy = self.accepted_risk_policy()
+        extra = {**self.finding, "check_id": "new.rule"}
+        result = self.evaluate({"results": [self.finding, extra]}, policy)
+        self.assertFalse(result["passed"])
+        self.assertEqual(len(result["acceptedRisks"]), 1)
+        self.assertEqual(len(result["unresolved"]), 1)
+        self.file.write_text("package changed\n")
+        with self.assertRaisesRegex(ValueError, "production source changes"):
+            self.evaluate(policy=policy)
+
     def test_source_and_rule_changes_require_new_review(self):
         for field in ("engine", "rulesLockSha256", "sourceTreeSha256"):
             with self.subTest(field=field):

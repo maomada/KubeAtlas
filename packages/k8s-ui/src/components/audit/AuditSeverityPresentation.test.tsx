@@ -1,8 +1,13 @@
-import { describe, expect, it } from 'vitest'
+// @vitest-environment jsdom
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
+import { describe, expect, it, vi } from 'vitest'
 import { renderToString } from 'react-dom/server'
 import { AuditAlerts, type AuditFinding } from './AuditAlerts'
 import { AuditCard } from './AuditCard'
 import { AuditFindingsTable } from './AuditFindingsTable'
+
+Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
 const findings: AuditFinding[] = [
   {
@@ -47,11 +52,35 @@ describe('legacy audit severity presentation', () => {
     expect(html).not.toContain('critical')
   })
 
-  it('uses High and Medium in resource audit summaries', () => {
+  it('uses localized severity labels in resource audit summaries', () => {
     const html = renderToString(<AuditAlerts findings={findings} />)
-    expect(html).toMatch(/1(?:<!-- -->)? high/)
-    expect(html).toMatch(/1(?:<!-- -->)? medium/)
+    expect(html).toMatch(/1(?:<!-- -->)? 高风险/)
+    expect(html).toMatch(/1(?:<!-- -->)? 中风险/)
     expect(html).not.toContain('critical')
+  })
+
+  it('renders localized audit chrome while preserving finding data', async () => {
+    const host = document.createElement('div')
+    const root = createRoot(host)
+    const onViewAll = vi.fn()
+    try {
+      await act(async () => root.render(<AuditAlerts findings={findings} onViewAll={onViewAll} />))
+      expect(host.textContent).toContain('审计发现')
+      expect(host.textContent).toContain('1 高风险')
+      expect(host.textContent).toContain('1 中风险')
+
+      const disclosure = host.querySelector<HTMLButtonElement>('[aria-expanded]')!
+      await act(async () => disclosure.click())
+      expect(host.textContent).toContain('查看全部发现')
+      expect(host.textContent).toContain('Container is privileged')
+      expect(host.textContent).toContain('Security')
+
+      const viewAll = [...host.querySelectorAll<HTMLButtonElement>('button')].find((button) => button.textContent?.includes('查看全部发现'))!
+      await act(async () => viewAll.click())
+      expect(onViewAll).toHaveBeenCalledTimes(1)
+    } finally {
+      await act(async () => root.unmount())
+    }
   })
 
   it('uses High and Medium in audit totals and filters', () => {

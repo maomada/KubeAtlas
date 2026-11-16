@@ -78,7 +78,7 @@ export function TrafficWizard({
       repo={helmChart.repo}
       chartName={helmChart.chartName}
       version={helmChart.version || 'latest'}
-      source="artifacthub"
+      source={helmChart.repo === 'kubeatlas-bundled' ? 'local' : 'artifacthub'}
       repoUrl={helmChart.repoUrl}  // Pass direct repo URL for non-ArtifactHub charts
       defaultValues={helmChart.defaultValues}
       onClose={() => setShowHelmInstall(false)}
@@ -228,6 +228,12 @@ export function TrafficWizard({
                     <span className="font-medium capitalize text-theme-text-primary">{recommendation.name}</span>
                   </div>
                   <p className="text-sm text-theme-text-secondary">{recommendation.reason}</p>
+
+                  {helmChart?.repo === 'kubeatlas-bundled' && (
+                    <p className="text-sm text-theme-text-secondary">
+                      Bundled chart {helmChart.version}: no external chart download. Container images must be preloaded on cluster nodes or available from a reachable registry.
+                    </p>
+                  )}
 
                   {/* Helm install button if chart info available */}
                   {recommendation.helmChart ? (

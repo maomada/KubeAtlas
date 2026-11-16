@@ -208,7 +208,7 @@ export function SearchPillInput({
           <button
             type="button"
             tabIndex={-1}
-            aria-label={`Remove ${p.key}:${p.value} filter`}
+            aria-label={`移除 ${p.key}:${p.value} 筛选条件`}
             onMouseDown={(e) => { e.preventDefault(); removePill(i) }}
             className="text-theme-text-tertiary hover:text-theme-text-primary rounded"
           >
@@ -222,9 +222,9 @@ export function SearchPillInput({
           tabIndex={-1}
           onMouseDown={(e) => { e.preventDefault(); setPillsExpanded(true) }}
           className="shrink-0 rounded-md bg-theme-elevated border border-theme-border-light px-1.5 py-0.5 text-xs font-medium text-theme-text-secondary hover:text-theme-text-primary whitespace-nowrap"
-          title="Show all filters"
+          title="显示全部筛选条件"
         >
-          +{hiddenPillCount} more
+          +{hiddenPillCount} 项
         </button>
       )}
       {pillsExpanded && pills.length > MAX_VISIBLE_PILLS + 1 && (
@@ -234,7 +234,7 @@ export function SearchPillInput({
           onMouseDown={(e) => { e.preventDefault(); setPillsExpanded(false) }}
           className="shrink-0 rounded-md px-1.5 py-0.5 text-xs text-theme-text-tertiary hover:text-theme-text-primary whitespace-nowrap"
         >
-          less
+          收起
         </button>
       )}
       <Input

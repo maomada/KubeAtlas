@@ -161,11 +161,11 @@ describe('TimelineList routine activity toggle', () => {
       crash('u1', 3, { eventType: 'update', healthState: 'degraded' }),
     ]
     const folded = renderToString(<TimelineList events={rows} isLoading={false} foldPerResource={(e) => e.kind === 'Pod'} />)
-    expect(folded).toContain('3<!-- --> more on this <!-- -->Pod<!-- -->: <!-- -->BackOff ×2, 1 status change')
+    expect(folded).toContain('另有 <!-- -->3<!-- --> 条 <!-- -->Pod<!-- --> 事件：<!-- -->BackOff ×2、1 次状态变更')
     expect(folded).toContain('deploy<!-- -->/</span>api')
     expect(folded).toContain('data-event-id="newest"')
     const plain = renderToString(<TimelineList events={rows} isLoading={false} />)
-    expect(plain).not.toContain('more on this')
+    expect(plain).not.toContain('另有')
   })
 
   it('counts each event\'s occurrences in the fold summary', () => {

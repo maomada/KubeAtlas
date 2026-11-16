@@ -53,8 +53,8 @@ describe('WorkloadRenderer', () => {
       />,
     )
 
-    expect(html).toContain('Rolling out')
-    expect(html).toContain('2/3 updated · 4 available')
+    expect(html).toContain('正在发布')
+    expect(html).toContain('2/3 已更新 · 4 个可用')
     expect(html).not.toContain('检测到问题')
   })
 
@@ -86,11 +86,11 @@ describe('WorkloadRenderer', () => {
       />,
     )
 
-    expect(html).toContain('New revision cannot start')
+    expect(html).toContain('新版本无法启动')
     expect(html).toContain('ImagePullBackOff · Pod api-new-revision')
     expect(html).toContain('检测到问题')
     expect(html).toContain('Progressing: Progress deadline exceeded')
-    expect(html).not.toContain('Rolling out')
+    expect(html).not.toContain('正在发布')
   })
 
   it('explains that OnDelete needs a manual Pod restart', () => {
@@ -105,8 +105,8 @@ describe('WorkloadRenderer', () => {
       />,
     )
 
-    expect(html).toContain('Waiting for Pod restart')
-    expect(html).toContain('OnDelete strategy · 0/3 updated')
+    expect(html).toContain('等待 Pod 重启')
+    expect(html).toContain('OnDelete 策略 · 0/3 已更新')
   })
 
   it('keeps outage problems visible when an OnDelete workload has no update pending', () => {

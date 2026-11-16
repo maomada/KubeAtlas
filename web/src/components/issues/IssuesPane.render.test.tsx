@@ -128,7 +128,7 @@ describe('Issues page when KubeAtlas could not read Helm releases', () => {
   it('keeps the all-clear for a KubeAtlas that read Helm or predates the field', () => {
     state.fleet.data = { issues: [], total: 0, total_matched: 0 }
     const html = text(render('/issues'))
-    expect(html).toContain('Nothing broken right now')
+    expect(html).toContain('当前没有问题')
     expect(html).not.toContain('couldn')
   })
 })

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { compareVersions, appGroupingExplainer, APP_IDENTITY_ANNOTATION, appGroupLagMessage, matchWorkloadAcrossInstances, foldAppGroups, identityEnvInferred, worstHealth, buildAppMembershipIndex, batchActivityForApp, batchRuntimeForApp, servingReadiness, resolveAppWorkloadSelection, type AppGroupFoldEntry, type AppRow, type AppWorkload } from './applications'
+import { compareVersions, appGroupingExplainer, APP_IDENTITY_ANNOTATION, appGroupLagMessage, appSourceLabel, matchWorkloadAcrossInstances, foldAppGroups, identityEnvInferred, worstHealth, buildAppMembershipIndex, batchActivityForApp, batchRuntimeForApp, batchSignalForApp, servingReadiness, resolveAppWorkloadSelection, type AppGroupFoldEntry, type AppRow, type AppWorkload } from './applications'
 
 describe('application workload scope resolution', () => {
   const sole = ['Deployment/prod/api']
@@ -64,6 +64,24 @@ describe('application workload scope resolution', () => {
 })
 
 describe('batch application runtime', () => {
+  it('localizes active-run counts while preserving the raw Running phase', () => {
+    const app: AppRow = {
+      key: 'batch', name: 'batch', health: 'neutral', workload_class: 'job',
+      workloads: [{
+        kind: 'CronJob', namespace: 'demo', name: 'nightly', workload_class: 'job', health: 'neutral', ready: 0, desired: 0, restarts: 0,
+        batch: { activeRuns: 2, latestRunPhase: 'Running' },
+      }],
+    }
+    expect(batchRuntimeForApp(app).label).toBe('运行中 · 2')
+    expect(batchActivityForApp(app)[0]?.latestRunPhase).toBe('Running')
+
+    const phaseOnlyApp: AppRow = {
+      ...app,
+      workloads: [{ ...app.workloads[0], batch: { latestRunPhase: 'Running' } }],
+    }
+    expect(batchRuntimeForApp(phaseOnlyApp).label).toBe('Running')
+  })
+
   it('uses the latest retained outcome instead of historical failure count', () => {
     const app: AppRow = {
       key: 'batch', name: 'batch', health: 'unhealthy', workload_class: 'job',
@@ -93,7 +111,7 @@ describe('batch application runtime', () => {
     expect(batchRuntimeForApp(app)).toEqual({
       label: 'Failed',
       health: 'unhealthy',
-      detail: 'CronWorkflow/sync latest retained run sync-old failed.',
+      detail: 'CronWorkflow/sync 最近保留的运行（sync-old）已失败。',
     })
   })
 
@@ -103,6 +121,23 @@ describe('batch application runtime', () => {
       { kind: 'Job', namespace: 'demo', name: 'run', workload_class: 'job', health: 'healthy', ready: 1, desired: 1, restarts: 0, batch: { retainedRuns: 1 } },
     ])).toEqual({ ready: 2, desired: 3 })
   })
+})
+
+it('localizes batch interface copy without altering resource, run, or phase values', () => {
+  const app: AppRow = {
+    key: 'batch', name: 'batch', health: 'unhealthy', workload_class: 'job',
+    workloads: [{
+      kind: 'CronJob', namespace: 'payments-prod', name: 'nightly', workload_class: 'job', health: 'unhealthy', ready: 0, desired: 0, restarts: 0,
+      batch: { retainedRuns: 1, failedRuns: 1, latestRunName: 'nightly-2026-06-30', latestRunPhase: 'Failed' },
+    }],
+  }
+  const signal = batchSignalForApp(app)
+  expect(signal).toMatchObject({
+    label: '批处理失败',
+    detail: 'CronJob/nightly 的最近运行（nightly-2026-06-30）以状态 Failed 结束。',
+  })
+  expect(signal?.workload.kind).toBe('CronJob')
+  expect(signal?.workload.namespace).toBe('payments-prod')
 })
 
 describe('compareVersions', () => {
@@ -142,7 +177,7 @@ describe('appGroupLagMessage', () => {
     expect(appGroupLagMessage([
       { env: 'dev', version: '2.0.0' },
       { env: 'staging', version: '1.0.0' },
-    ])).toBe('staging is behind dev')
+    ])).toBe('staging 落后于 dev')
   })
 
   it('does not fire when the higher env is newer (healthy promotion)', () => {
@@ -178,7 +213,7 @@ describe('appGroupLagMessage', () => {
     expect(appGroupLagMessage([
       { env: 'dev', version: 'main_2026-06-07_02' },
       { env: 'staging', version: 'main_2026-03-26_05' },
-    ])).toBe('staging is behind dev')
+    ])).toBe('staging 落后于 dev')
   })
 })
 
@@ -225,9 +260,9 @@ describe('batchActivityForApp', () => {
       'hourly-suspended',
       'nightly-success',
     ])
-    expect(activity[0]).toMatchObject({ tone: 'rose', label: 'Latest run failed', failedRuns: 1, detail: 'pod crashed' })
-    expect(activity[1]).toMatchObject({ tone: 'sky', label: '1 active run', activeRuns: 1 })
-    expect(activity[3]).toMatchObject({ tone: 'muted', label: 'Latest run succeeded', retainedRuns: 2 })
+    expect(activity[0]).toMatchObject({ tone: 'rose', label: '最近运行失败', failedRuns: 1, detail: 'pod crashed' })
+    expect(activity[1]).toMatchObject({ tone: 'sky', label: '1 个活动运行', activeRuns: 1 })
+    expect(activity[3]).toMatchObject({ tone: 'muted', label: '最近运行成功', retainedRuns: 2 })
   })
 })
 
@@ -414,6 +449,13 @@ describe('foldAppGroups health rollup', () => {
 })
 
 describe('appGroupingExplainer', () => {
+  it('localizes source explanations while preserving technical identifiers', () => {
+    expect(appSourceLabel('argo-path')).toBe('Argo CD 来源路径')
+    expect(appSourceLabel('argo-appset')).toBe('Argo CD ApplicationSet（环境扩展）')
+    expect(appSourceLabel('label')).toBe('app.kubernetes.io/name 标签')
+    expect(appSourceLabel('explicit')).toBe(`${APP_IDENTITY_ANNOTATION} 注解`)
+  })
+
   it('declared origins fold across clusters with no fix needed', () => {
     for (const source of ['explicit', 'argo-path', 'argo-appset', 'flux-source']) {
       const e = appGroupingExplainer({ key: 'k', env: 'prod', confidence: 'high', evidence: '', source })

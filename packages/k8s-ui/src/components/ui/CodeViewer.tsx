@@ -1,12 +1,12 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { Copy, Check, ChevronUp, ChevronDown, X, Search } from 'lucide-react'
-import { codeToHtml } from 'shiki'
+import type { Highlighter } from 'shiki'
 import { Input } from './Input'
 
 interface CodeViewerProps {
   code: string
   language?: 'yaml' | 'json' | 'bash' | 'text'
-  /** Theme for syntax highlighting. Defaults to 'dark'. */
+  /** Theme for syntax highlighting. Defaults to the active document theme. */
   theme?: 'dark' | 'light'
   showLineNumbers?: boolean
   maxHeight?: string
@@ -15,16 +15,70 @@ interface CodeViewerProps {
   copied?: boolean
 }
 
+let highlighterPromise: Promise<Highlighter> | undefined
+
+function getCodeHighlighter(): Promise<Highlighter> {
+  if (!highlighterPromise) {
+    highlighterPromise = Promise.all([
+      import('shiki'),
+      import('shiki/engine/javascript'),
+    ]).then(([{ createHighlighter }, { createJavaScriptRegexEngine }]) =>
+      createHighlighter({
+        langs: [],
+        themes: [],
+        engine: createJavaScriptRegexEngine(),
+      })
+    )
+  }
+
+  return highlighterPromise
+}
+
+async function highlightCode(
+  code: string,
+  language: 'yaml' | 'json' | 'bash' | 'text',
+  theme: 'github-light' | 'github-dark',
+): Promise<string> {
+  const highlighter = await getCodeHighlighter()
+  await Promise.all([
+    highlighter.loadLanguage(language),
+    highlighter.loadTheme(theme),
+  ])
+  return highlighter.codeToHtml(code, { lang: language, theme })
+}
+
+function useDocumentCodeTheme(): 'dark' | 'light' {
+  const readTheme = (): 'dark' | 'light' =>
+    typeof document !== 'undefined' && document.documentElement.classList.contains('dark')
+      ? 'dark'
+      : 'light'
+  const [theme, setTheme] = useState(readTheme)
+
+  useEffect(() => {
+    if (typeof document === 'undefined') return
+    const observer = new MutationObserver(() => setTheme(readTheme()))
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ['class'],
+    })
+    return () => observer.disconnect()
+  }, [])
+
+  return theme
+}
+
 export function CodeViewer({
   code,
   language = 'yaml',
-  theme = 'dark',
+  theme: themeOverride,
   showLineNumbers = true,
   maxHeight = 'calc(100vh - 300px)',
   showCopyButton = false,
   onCopy,
   copied = false,
 }: CodeViewerProps) {
+  const documentTheme = useDocumentCodeTheme()
+  const theme = themeOverride ?? documentTheme
   const [html, setHtml] = useState<string>('')
   const [highlighting, setHighlighting] = useState(true)
 
@@ -54,10 +108,7 @@ export function CodeViewer({
 
     const shikiLang = language === 'text' ? 'text' : language
 
-    codeToHtml(code, {
-      lang: shikiLang,
-      theme: theme === 'light' ? 'github-light' : 'github-dark',
-    })
+    highlightCode(code, shikiLang, theme === 'light' ? 'github-light' : 'github-dark')
       .then((highlighted) => {
         setHtml(highlighted)
         htmlRef.current = highlighted
@@ -327,12 +378,12 @@ export function CodeViewer({
   return (
     <div
       ref={wrapperRef}
-      className={`relative rounded-lg overflow-hidden ${theme === 'light' ? 'bg-[#ffffff]' : 'bg-[#0d1117]'}`}
+      className="relative rounded-lg overflow-hidden bg-theme-surface text-theme-text-primary"
       tabIndex={0}
       onKeyDown={handleWrapperKeyDown}
       onMouseEnter={() => { isMouseInsideRef.current = true }}
       onMouseLeave={() => { isMouseInsideRef.current = false }}
-      style={{ outline: 'none' }}
+      style={{ outline: 'none', colorScheme: theme }}
     >
       {showCopyButton && !searchOpen && (
         <button
@@ -395,7 +446,7 @@ export function CodeViewer({
         style={{ maxHeight }}
       >
         {highlighting ? (
-          <div className="p-4 text-theme-text-tertiary text-sm font-mono">Loading…</div>
+          <div className="p-4 text-theme-text-secondary text-sm font-mono">Loading…</div>
         ) : (
           <div
             ref={contentRef}
@@ -405,11 +456,9 @@ export function CodeViewer({
       </div>
 
       <style>{`
-        :root { --code-line-number: light-dark(#8b949e, #484f58); }
         .shiki-viewer pre {
           margin: 0;
           padding: 12px;
-          background: transparent !important;
           font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
           font-size: 12px;
           line-height: 1.5;
@@ -431,7 +480,7 @@ export function CodeViewer({
           width: 3ch;
           margin-right: 1.5ch;
           text-align: right;
-          color: var(--code-line-number, #484f58);
+          color: var(--text-tertiary);
           user-select: none;
         }
         .shiki-viewer .line:hover {

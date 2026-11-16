@@ -161,9 +161,9 @@ const APPLICATION_VIEWS: Array<{
   id: CanonicalApplicationView;
   label: string;
 }> = [
-  { id: "overview", label: "Overview" },
-  { id: "topology", label: "Topology" },
-  { id: "history", label: "History" },
+  { id: "overview", label: "概览" },
+  { id: "topology", label: "拓扑" },
+  { id: "history", label: "历史记录" },
 ];
 
 function canonicalApplicationView(
@@ -264,14 +264,16 @@ export type ApplicationDetailProps = {
 
 function ContextFact({
   label,
+  labelClassName,
   children,
 }: {
   label: string;
+  labelClassName?: string;
   children: ReactNode;
 }) {
   return (
     <div className="flex min-w-0 items-baseline gap-1.5">
-      <span className="text-[10px] uppercase tracking-wide text-theme-text-tertiary">
+      <span className={`text-[10px] uppercase tracking-wide text-theme-text-tertiary ${labelClassName ?? ''}`}>
         {label}
       </span>
       <span className="min-w-0 truncate text-xs text-theme-text-secondary">
@@ -601,7 +603,7 @@ export function ApplicationDetail({
           onClick={onBack}
           className="flex shrink-0 items-center gap-1.5 text-xs text-theme-text-tertiary hover:text-theme-text-primary"
         >
-          <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> Applications
+          <ArrowLeft className="h-3.5 w-3.5" aria-hidden /> 应用
         </button>
         <span
           className="hidden h-6 w-px bg-theme-border sm:block"
@@ -637,14 +639,13 @@ export function ApplicationDetail({
           </span>
           {restartSignal && (
             <Tooltip
-              content={`${restartSignal.workload} · ${pluralize(restartSignal.restarts, "restart")}`}
+              content={`${restartSignal.workload} · ${restartSignal.restarts} 次重启`}
               delay={150}
             >
               <span
                 className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-semibold ring-1 ring-inset ${CHIP_TONE.amber}`}
               >
-                Pod warning: {restartSignal.reason || "Restarts"} ·{" "}
-                {pluralize(restartSignal.restarts, "restart")}
+                Pod 警告：{restartSignal.reason || "重启"} · {restartSignal.restarts} 次重启
               </span>
             </Tooltip>
           )}
@@ -658,7 +659,7 @@ export function ApplicationDetail({
               <span
                 className={`inline-flex items-center rounded-md px-2 py-1 font-mono text-xs ring-1 ring-inset ${CHIP_TONE.amber}`}
               >
-                {versions.length} versions
+                {versions.length} 个版本
               </span>
             </Tooltip>
           )}
@@ -679,7 +680,7 @@ export function ApplicationDetail({
         />
         <BatchSignalChip signal={batchSignal} />
         {singleWorkloadScope && selectedWorkload.name !== app.name && (
-          <ContextFact label="Workload">
+          <ContextFact label="工作负载">
             <span className="font-mono">
               {selectedWorkload.kind}/{selectedWorkload.name}
             </span>
@@ -690,8 +691,8 @@ export function ApplicationDetail({
           // envs — prominent, in existing header space, no extra row. Inline
           // pills for a handful; a picker beyond that (scales to ~any count).
           <div className="flex min-w-0 items-center gap-1.5">
-            <span className="text-[10px] uppercase tracking-wide text-theme-text-tertiary">
-              Environment
+            <span className="shrink-0 whitespace-nowrap text-[10px] uppercase tracking-wide text-theme-text-tertiary">
+              环境
             </span>
             <EnvSwitcher
               identityKey={app.identity?.key ?? ""}
@@ -701,10 +702,10 @@ export function ApplicationDetail({
             />
           </div>
         ) : env ? (
-          <ContextFact label="Environment">
+          <ContextFact label="环境" labelClassName="shrink-0 whitespace-nowrap">
             {inferred ? (
               <Tooltip
-                content={`Inferred from namespace "${namespace || env}" — confirm with an environment label.`}
+                content={`根据命名空间 "${namespace || env}" 推断，请通过环境标签确认。`}
                 delay={150}
               >
                 <span className="italic">~{env}</span>
@@ -715,23 +716,23 @@ export function ApplicationDetail({
           </ContextFact>
         ) : null}
         {namespace ? (
-          <ContextFact label="Namespace">
+          <ContextFact label="命名空间">
             <span className="font-mono">{namespace}</span>
           </ContextFact>
         ) : namespaces.length > 1 ? (
-          <ContextFact label="Namespaces">
+          <ContextFact label="命名空间">
             <Tooltip content={namespaces.join(", ")} delay={150}>
-              <span>{namespaces.length} namespaces</span>
+              <span>{namespaces.length} 个命名空间</span>
             </Tooltip>
           </ContextFact>
         ) : null}
         {workloadClass === "job" ? (
-          <ContextFact label="Runtime">{batchRuntime.label}</ContextFact>
+          <ContextFact label="运行时">{batchRuntime.label}</ContextFact>
         ) : desired > 0 ? (
-          <ContextFact label="Ready"><ReadyBar ready={ready} desired={desired} width="w-16" /></ContextFact>
+          <ContextFact label="就绪"><ReadyBar ready={ready} desired={desired} width="w-16" /></ContextFact>
         ) : null}
         {workloadClass !== "job" && rolloutSummary ? (
-          <ContextFact label="Runtime">
+          <ContextFact label="运行时">
             <Tooltip content={<RolloutSummaryTooltip summary={rolloutSummary} />} delay={150}>
               <span className="inline-flex items-center gap-1.5">
                 <StatusDot tone={mapHealthToTone(rolloutSummary.health)} />
@@ -741,7 +742,7 @@ export function ApplicationDetail({
           </ContextFact>
         ) : null}
         {(app.appVersion || versions.length > 0) && (
-          <ContextFact label="Version">
+          <ContextFact label="版本">
             <VersionInfo app={app} variant="fact" />
           </ContextFact>
         )}
@@ -992,7 +993,7 @@ function ApplicationViewTabs({
     <div
       className="flex shrink-0 items-center border-b border-theme-border px-4 sm:px-6"
       role="tablist"
-      aria-label="Application views"
+      aria-label="应用视图"
     >
       <div className="flex min-w-0 gap-1 overflow-x-auto">
         {APPLICATION_VIEWS.map((view) => {
@@ -1029,7 +1030,7 @@ function ApplicationViewTabs({
             )}
           >
             <Coins className="h-4 w-4" />
-            Cost
+            成本
           </button>
         )}
       </div>
@@ -1156,7 +1157,7 @@ function ApplicationOverview({
           />
           <div className={clsx("grid gap-3 md:grid-cols-2", factGrid)}>
             <ApplicationFact
-              label="Runtime"
+              label="运行时"
               value={
                 pureBatch
                   ? batchRuntimeForApp(app).label
@@ -1170,15 +1171,15 @@ function ApplicationOverview({
                 pureBatch
                   ? batchStats.activeDetail
                   : rolloutSummary
-                    ? `${rolloutSummary.count} workload${rolloutSummary.count === 1 ? "" : "s"} affected · ${ready}/${desired} ready`
+                    ? `${rolloutSummary.count} 个工作负载受影响 · ${ready}/${desired} 就绪`
                   : desired > 0
-                    ? `${ready}/${desired} ready`
-                    : "No desired replicas"
+                    ? `${ready}/${desired} 就绪`
+                    : "没有期望副本"
               }
             />
             {hasDeliveryStatus && (
               <ApplicationFact
-                label="Delivery"
+                label="交付"
                 value={<SourceDeliveryStatus status={app.sourceStatus!} />}
                 detail={
                   app.sourceRef ? sourceObjectLabel(app.sourceRef) : undefined
@@ -1188,37 +1189,37 @@ function ApplicationOverview({
             {pureBatch ? (
               <>
                 <ApplicationFact
-                  label="Batch resources"
+                  label="批处理资源"
                   value={String(workloads.length)}
-                  detail={workloadComposition || "No workloads"}
+                  detail={workloadComposition || "没有工作负载"}
                 />
                 <ApplicationFact
-                  label="Active runs"
+                  label="活动运行"
                   value={batchStats.activeValue}
                   detail={batchStats.activeDetail}
                 />
                 <ApplicationFact
-                  label="Retained runs"
+                  label="保留的运行"
                   value={batchStats.retainedValue}
-                  detail="Kubernetes-retained history"
+                  detail="Kubernetes 保留的历史记录"
                 />
               </>
             ) : (
               <>
                 <ApplicationFact
-                  label="Workloads"
+                  label="工作负载"
                   value={String(workloads.length)}
-                  detail={composition || "No workloads"}
+                  detail={composition || "没有工作负载"}
                 />
                 <ApplicationFact
-                  label="Version"
+                  label="版本"
                   value={
                     app.appVersion ||
                     (versions.length === 1
                       ? versions[0]
                       : versions.length > 1
-                        ? `${versions.length} versions`
-                        : "Unknown")
+                        ? `${versions.length} 个版本`
+                        : "未知")
                   }
                 />
               </>
@@ -1238,7 +1239,7 @@ function ApplicationOverview({
               onNavigateToResource={onNavigateToResource}
             />
           )}
-          <ApplicationPanel title="Workloads">
+          <ApplicationPanel title="工作负载">
             <WorkloadsMatrix
               workloads={workloads}
               onSelectWorkload={onSelectWorkload}
@@ -1290,7 +1291,7 @@ function ApplicationSourceProvenance({
   if (app.sourceRef) {
     const sourceName = `${app.sourceRef.namespace}/${app.sourceRef.name}`;
     return (
-      <ApplicationPanel title="Deployment source">
+      <ApplicationPanel title="部署来源">
         <div className="space-y-3">
           <div>
             <div className="text-xs font-semibold uppercase text-theme-text-tertiary">
@@ -1322,7 +1323,7 @@ function ApplicationSourceProvenance({
 
   if (app.sourceConflict) {
     return (
-      <ApplicationPanel title="Deployment source">
+      <ApplicationPanel title="部署来源">
         <div className="space-y-2">
           <div className="flex items-center gap-2">
             <AlertTriangle
@@ -1330,11 +1331,11 @@ function ApplicationSourceProvenance({
               aria-hidden
             />
             <span className="text-sm font-semibold text-theme-text-primary">
-              Multiple deployment sources detected
+              检测到多个部署来源
             </span>
           </div>
           <p className="text-sm text-theme-text-secondary">
-            Workloads in this application do not share one deployment manager.
+            此应用中的工作负载未共用同一个部署管理器。
           </p>
         </div>
       </ApplicationPanel>
@@ -1348,7 +1349,7 @@ function ApplicationSourceProvenance({
   const tierLabel =
     !app.identity && app.tier ? overlayProvenance(app.tier) : undefined;
   return (
-    <ApplicationPanel title="Application identity">
+    <ApplicationPanel title="应用身份">
       <div className="space-y-2">
         <div className="flex items-center gap-2">
           {inferred && (
@@ -1360,16 +1361,16 @@ function ApplicationSourceProvenance({
           <span className="text-sm font-semibold text-theme-text-primary">
             {identityLabel
               ? inferred
-                ? "Inferred application boundary"
-                : `Identified by ${identityLabel}`
+                ? `根据${identityLabel}推断应用边界`
+                : `应用身份由${identityLabel}标识`
               : tierLabel
-                ? `Grouped by ${tierLabel} metadata`
-                : "Grouped from Kubernetes ownership"}
+                ? `按 ${tierLabel} 元数据分组`
+                : "根据 Kubernetes 所有权分组"}
           </span>
         </div>
         {inferred && identityLabel && (
           <p className="text-sm text-theme-text-secondary">
-            Matched using {identityLabel}.
+            {`匹配依据：${identityLabel}。`}
           </p>
         )}
         {app.identity?.evidence && (
@@ -1406,25 +1407,25 @@ function ApplicationEntrypoints({
   if (serviceCount + ingressCount + routeCount === 0) return null;
 
   return (
-    <ApplicationPanel title="Entrypoints">
+    <ApplicationPanel title="入口">
       <div className="space-y-3">
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <h3 className="text-sm font-semibold text-theme-text-primary">
               {hasExternal
-                ? "External entrypoints configured"
-                : "Internal services configured"}
+                ? "已配置外部入口"
+                : "已配置内部 Service"}
             </h3>
             <span
               className={`${CHIP} ${hasExternal ? CHIP_TONE.blue : CHIP_TONE.muted}`}
             >
-              {hasExternal ? "External" : "Internal"}
+              {hasExternal ? "外部" : "内部"}
             </span>
           </div>
           <p className="mt-1 text-sm text-theme-text-secondary">
             {hasExternal
-              ? "Traffic can enter this application through ingress or route resources."
-              : "Services target this application, but no ingress or route was detected."}
+              ? "流量可通过 Ingress 或 Route 资源进入此应用。"
+              : "Service 指向此应用，但未检测到 Ingress 或 Route。"}
           </p>
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
@@ -1494,41 +1495,41 @@ function ApplicationDependencies({
     return null;
 
   return (
-    <ApplicationPanel title="Dependencies">
+    <ApplicationPanel title="依赖">
       <div className="space-y-3">
         <ApplicationDependencyRow
-          label="Configuration"
+          label="配置"
           refs={configs}
           totalCount={relationships?.configs}
-          detail="ConfigMaps and Secrets referenced by app workloads."
+          detail="应用工作负载引用的 ConfigMap 和 Secret。"
           onNavigateToResource={onNavigateToResource}
         />
         <ApplicationDependencyRow
-          label="Autoscaling"
+          label="自动扩缩容"
           refs={scalers}
           totalCount={relationships?.scalers}
-          detail="Autoscalers controlling app workloads."
+          detail="控制应用工作负载的自动扩缩容资源。"
           onNavigateToResource={onNavigateToResource}
         />
         <ApplicationDependencyRow
-          label="Storage"
+          label="存储"
           refs={storage}
           totalCount={relationships?.storage}
-          detail="PersistentVolumeClaims mounted by app workloads."
+          detail="应用工作负载挂载的 PersistentVolumeClaim。"
           onNavigateToResource={onNavigateToResource}
         />
         <ApplicationDependencyRow
-          label="Availability policy"
+          label="可用性策略"
           refs={pdbs}
           totalCount={relationships?.pdbs}
-          detail="PodDisruptionBudgets protecting app workloads."
+          detail="保护应用工作负载的 PodDisruptionBudget。"
           onNavigateToResource={onNavigateToResource}
         />
         <ApplicationDependencyRow
-          label="Network policy"
+          label="网络策略"
           refs={networkPolicies}
           totalCount={relationships?.networkPolicies}
-          detail="Network policies selecting app workloads."
+          detail="选择应用工作负载的 NetworkPolicy。"
           onNavigateToResource={onNavigateToResource}
         />
       </div>
@@ -1563,7 +1564,7 @@ function ApplicationDependencyRow({
           {label}
         </div>
         <span className={`${CHIP} ${CHIP_TONE.muted}`}>
-          {pluralize(count, "resource")}
+          {count} 个资源
         </span>
       </div>
       <div className="mt-1 text-xs text-theme-text-tertiary">{detail}</div>
@@ -1623,7 +1624,7 @@ function ApplicationRelatedNameGroup({
           />
         ))}
         {overflow > 0 && (
-          <span className={`${CHIP} ${CHIP_TONE.muted}`}>+{overflow} more</span>
+          <span className={`${CHIP} ${CHIP_TONE.muted}`}>+{overflow} 项</span>
         )}
       </div>
     </div>
@@ -1689,7 +1690,7 @@ function ApplicationNow({
               {top.title}
             </h2>
             <span className={`${CHIP} ${issueTone(top.severity)}`}>
-              {top.severity === "error" ? "Needs attention" : "Warning"}
+              {top.severity === "error" ? "需要关注" : "警告"}
             </span>
           </div>
           {top.detail && (
@@ -1704,7 +1705,7 @@ function ApplicationNow({
             onClick={() => onSelectWorkload(top.workload!)}
             className="rounded-md px-2.5 py-1.5 text-sm font-medium text-accent-text hover:bg-theme-hover"
           >
-            Open workload
+            打开工作负载
           </button>
         )}
       </div>
@@ -1738,7 +1739,7 @@ function ApplicationNow({
                   onClick={() => onSelectWorkload(issue.workload!)}
                   className="shrink-0 text-sm font-medium text-accent-text hover:underline"
                 >
-                  Open
+                  打开
                 </button>
               )}
             </div>
@@ -1759,30 +1760,30 @@ function ApplicationBatchOverview({
   const stats = batchOverviewStats(activity);
 
   return (
-    <ApplicationPanel title="Batch activity">
+    <ApplicationPanel title="批处理活动">
       <div className="grid gap-4">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ApplicationFact
             variant="bare"
-            label="Latest run"
+            label="最近运行"
             value={stats.latestValue}
             detail={stats.latestDetail}
           />
           <ApplicationFact
             variant="bare"
-            label="Retained runs"
+            label="保留的运行"
             value={stats.retainedValue}
-            detail="Kubernetes-retained history"
+            detail="Kubernetes 保留的历史记录"
           />
           <ApplicationFact
             variant="bare"
-            label="Active work"
+            label="活动任务"
             value={stats.activeValue}
             detail={stats.activeDetail}
           />
           <ApplicationFact
             variant="bare"
-            label="Schedules"
+            label="计划"
             value={stats.scheduleValue}
             detail={stats.scheduleDetail}
             monoValue={stats.scheduleMono}
@@ -1835,24 +1836,24 @@ function batchOverviewStats(activity: AppBatchActivity[]) {
   const active = activity.reduce((n, item) => n + item.activeRuns, 0);
 
   return {
-    latestValue: latest?.latestRunPhase || latest?.label || "None",
+    latestValue: latest?.latestRunPhase || latest?.label || "无",
     latestDetail: latest
-      ? `${latest.latestRunName || latest.workload.name}${latestRunTimestamp(latest) ? ` · ${formatRelativeAgeTime(latestRunTimestamp(latest)!)} ` : ""}`.trim()
-      : "No retained runs",
+      ? `${latest.latestRunName || latest.workload.name}${latestRunTimestamp(latest) ? ` · ${applicationRelativeAgeTime(latestRunTimestamp(latest)!)} ` : ""}`.trim()
+      : "没有保留的运行",
     retainedValue:
-      retained > 0 ? `${succeeded} succeeded / ${failed} failed` : "0 retained",
-    activeValue: active > 0 ? `${active} running` : "None",
+      retained > 0 ? `${succeeded} 次成功 / ${failed} 次失败` : "保留运行数：0",
+    activeValue: active > 0 ? `运行中 · ${active}` : "无",
     activeDetail:
-      active > 0 ? activeWorkloadNames(activity) : "No active batch work",
+      active > 0 ? activeWorkloadNames(activity) : "当前没有活动批处理任务",
     scheduleValue:
       schedules.length === 0
-        ? "None"
+        ? "无"
         : schedules.length === 1
           ? schedules[0]
-          : `${schedules.length} schedules`,
+          : `${schedules.length} 个计划`,
     scheduleDetail:
       schedules.length === 1 && latest?.lastSuccessfulAt
-        ? `last success ${formatRelativeAgeTime(latest.lastSuccessfulAt)}`
+        ? `最近成功：${applicationRelativeAgeTime(latest.lastSuccessfulAt)}`
         : undefined,
     scheduleMono: schedules.length === 1,
   };
@@ -1863,7 +1864,7 @@ function activeWorkloadNames(activity: AppBatchActivity[]): string {
     .filter((item) => item.activeRuns > 0)
     .map((item) => item.workload.name);
   if (active.length <= 2) return active.join(", ");
-  return `${active.slice(0, 2).join(", ")} +${active.length - 2} more`;
+  return `${active.slice(0, 2).join(", ")} 等 ${active.length} 个工作负载`;
 }
 
 
@@ -1899,7 +1900,7 @@ function ApplicationLatestHistory({
             <h2 className="text-sm font-semibold text-theme-text-primary">
               {summary.title}
             </h2>
-            <span className={`${CHIP} ${tone}`}>Latest incident</span>
+            <span className={`${CHIP} ${tone}`}>最近问题</span>
           </div>
           {summary.detail && (
             <p className="mt-0.5 line-clamp-2 text-sm text-theme-text-secondary">
@@ -1927,7 +1928,7 @@ function ApplicationLatestHistory({
             onClick={onSelectHistory}
             className="rounded-md px-2.5 py-1.5 text-sm font-medium text-accent-text hover:bg-theme-hover"
           >
-            View history
+            查看历史记录
           </button>
         </div>
       </div>
@@ -1950,14 +1951,14 @@ function ApplicationLatestChangeFact({
     <div className="min-w-0 rounded-lg border border-theme-border bg-theme-surface px-4 py-3 shadow-theme-sm md:col-span-2 2xl:col-span-1">
       <div className="flex items-center justify-between gap-2">
         <div className="text-[10px] font-semibold uppercase tracking-wide text-theme-text-tertiary">
-          Latest change
+          最近变更
         </div>
         <button
           type="button"
           onClick={onSelectHistory}
           className="shrink-0 text-xs font-medium text-accent-text hover:underline"
         >
-          History
+          历史记录
         </button>
       </div>
       <div className="mt-1 truncate text-sm font-semibold text-theme-text-primary">
@@ -1989,7 +1990,7 @@ function WorkloadsMatrix({
   onSelectWorkload: (workload: AppWorkload) => void;
 }) {
   if (workloads.length === 0) {
-    return <EmptyState variant="inline" headline="No inspectable workloads." />;
+    return <EmptyState variant="inline" headline="没有可检查的工作负载。" />;
   }
 
   return (
@@ -1997,12 +1998,12 @@ function WorkloadsMatrix({
       <table className="w-full min-w-[760px] table-fixed text-sm">
         <thead>
           <tr className="border-b border-theme-border text-left text-[10px] uppercase tracking-wide text-theme-text-tertiary">
-            <th className="w-[34%] px-2 py-2 font-semibold">Workload</th>
-            <th className="w-[13%] px-2 py-2 font-semibold">Kind</th>
-            <th className="w-[12%] px-2 py-2 font-semibold">Class</th>
-            <th className="w-[14%] px-2 py-2 font-semibold">Status</th>
-            <th className="w-[18%] px-2 py-2 font-semibold">Runtime</th>
-            <th className="w-[16%] px-2 py-2 font-semibold">Version</th>
+            <th className="w-[34%] px-2 py-2 font-semibold">工作负载</th>
+            <th className="w-[13%] px-2 py-2 font-semibold">类型</th>
+            <th className="w-[12%] px-2 py-2 font-semibold">类别</th>
+            <th className="w-[14%] px-2 py-2 font-semibold">状态</th>
+            <th className="w-[18%] px-2 py-2 font-semibold">运行时</th>
+            <th className="w-[16%] px-2 py-2 font-semibold">版本</th>
           </tr>
         </thead>
         <tbody>
@@ -2084,17 +2085,17 @@ function workloadRuntimeStatus(workload: AppWorkload): {
 }
 
 function workloadRuntimeDetail(workload: AppWorkload): string {
-  if (workload.rollout && (workload.rollout.active || workload.rollout.phase === 'stalled')) return workload.rollout.detail || `${workload.ready}/${workload.desired} ready`
+  if (workload.rollout && (workload.rollout.active || workload.rollout.phase === 'stalled')) return workload.rollout.detail || `${workload.ready}/${workload.desired} 就绪`
   const batch = workload.batch;
-  if (!batch) return `${workload.ready}/${workload.desired} ready`;
+  if (!batch) return `${workload.ready}/${workload.desired} 就绪`;
   if ((batch.activeRuns ?? 0) > 0)
-    return pluralize(batch.activeRuns ?? 0, "active run");
+    return `${batch.activeRuns ?? 0} 个活动运行`;
   const at =
     batch.latestStartedAt || batch.latestFinishedAt || batch.lastScheduledAt;
   if (batch.latestRunName)
-    return `${midTruncate(batch.latestRunName, 28)}${at ? ` · ${formatRelativeAgeTime(at)}` : ""}`;
-  if (batch.schedule) return `Schedule ${batch.schedule}`;
-  return "No retained runs";
+    return `${midTruncate(batch.latestRunName, 28)}${at ? ` · ${applicationRelativeAgeTime(at)}` : ""}`;
+  if (batch.schedule) return `计划 ${batch.schedule}`;
+  return "没有保留的运行";
 }
 
 function ApplicationTopology({
@@ -2175,12 +2176,12 @@ function ApplicationTopology({
           />
         </>
       ) : loading ? (
-        <PaneLoader label="Loading topology..." className="absolute inset-0" />
+        <PaneLoader label="正在加载拓扑…" className="absolute inset-0" />
       ) : (
         <div className="flex h-full items-center justify-center p-6">
           <EmptyState
-            headline="No topology available"
-            body="Radar could not build an application topology for this app."
+            headline="暂无拓扑数据"
+            body="KubeAtlas 无法为此应用构建拓扑。"
           />
         </div>
       )}
@@ -2270,18 +2271,17 @@ function ApplicationHistoryView({
               <div className="flex items-center gap-2">
                 <Clock3 className="h-4 w-4 text-theme-text-secondary" />
                 <h2 className="text-sm font-semibold text-theme-text-primary">
-                  Application history
+                  应用历史记录
                 </h2>
                 {loading && items.length > 0 && (
                   <RefreshCw
                     className="h-3.5 w-3.5 animate-spin text-theme-text-tertiary"
-                    aria-label="Refreshing history"
+                    aria-label="正在刷新历史记录"
                   />
                 )}
               </div>
               <p className="mt-1 text-xs text-theme-text-tertiary">
-                Deployments, configuration changes, and problems attributed to
-                this application.
+                此应用的部署、配置变更和问题。
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
@@ -2290,7 +2290,7 @@ function ApplicationHistoryView({
                 rangeOptions.length > 1 &&
                 onRangeChange && (
                   <select
-                    aria-label="Application history range"
+                    aria-label="应用历史记录范围"
                     value={range}
                     onChange={(event) =>
                       onRangeChange(
@@ -2301,7 +2301,7 @@ function ApplicationHistoryView({
                   >
                     {rangeOptions.map((option) => (
                       <option key={option.value} value={option.value}>
-                        {option.label}
+                        {applicationHistoryRangeLabel(option.label)}
                       </option>
                     ))}
                   </select>
@@ -2312,7 +2312,7 @@ function ApplicationHistoryView({
                   onClick={() => onOpenTimeline(visibleItems[0]?.timestamp)}
                   className="inline-flex h-8 items-center gap-1.5 px-2 text-xs font-medium text-accent-text hover:underline"
                 >
-                  Open full Timeline
+                  打开完整时间线
                   <ExternalLink className="h-3.5 w-3.5" />
                 </button>
               )}
@@ -2323,7 +2323,7 @@ function ApplicationHistoryView({
             <div
               className="flex flex-wrap gap-1 border-b border-theme-border px-4 py-2"
               role="group"
-              aria-label="Application history categories"
+              aria-label="应用历史记录类别"
             >
               {(["all", "deployment", "change", "problem"] as const).map(
                 (value) => {
@@ -2360,11 +2360,11 @@ function ApplicationHistoryView({
               {runtimeError && (
                 <div>
                   {hasRuntimeItems
-                    ? "Application changes could not be refreshed. Previously loaded changes may be stale."
-                    : "Application changes could not be loaded."}
+                    ? "无法刷新应用变更；先前加载的变更可能已过时。"
+                    : "无法加载应用变更。"}
                   {!hasRuntimeItems &&
                     items.some((item) => item.category === "deployment") &&
-                    " Deployment-source history is still shown."}
+                    " 仍显示部署来源历史记录。"}
                 </div>
               )}
               {history?.partialSources?.map((message, index) => (
@@ -2376,7 +2376,7 @@ function ApplicationHistoryView({
           {loading && items.length === 0 && (
             <div className="flex items-center gap-2 px-4 py-8 text-sm text-theme-text-tertiary">
               <RefreshCw className="h-4 w-4 animate-spin" />
-              Loading application history...
+              正在加载应用历史记录…
             </div>
           )}
 
@@ -2404,8 +2404,8 @@ function ApplicationHistoryView({
             <div className="px-4 py-8">
               <EmptyState
                 variant="inline"
-                headline="No application history in this range."
-                body="Overview still shows the current application state."
+                headline="此范围内没有应用历史记录。"
+                body="概览仍会显示应用的当前状态。"
               />
             </div>
           )}
@@ -2413,28 +2413,25 @@ function ApplicationHistoryView({
           <div className="space-y-1 border-t border-theme-border px-4 py-2 text-xs text-theme-text-tertiary">
             {mode === "local" && (
               <div>
-                Changes and problems reflect events retained by this Radar
-                instance. Deployment-source history may cover a different
-                period.
+                变更和问题反映此 KubeAtlas 实例保留的事件。部署来源历史记录可能覆盖不同的时间段。
               </div>
             )}
             {mode === "retained" && (coverageRecordCount ?? 0) > 0 && (
               <div>
-                Recording coverage is incomplete for part of this range.
+                此时间范围的部分记录覆盖不完整。
               </div>
             )}
             {mode === "retained" && runtimeLimited && (
               <div>
-                Showing the 10,000 most recent events in these namespaces. Older
-                application activity in this range may not be included.
+                显示这些命名空间中最近的 10,000 条事件。此范围内更早的应用活动可能未包含。
               </div>
             )}
             {retentionNote && <div>{retentionNote}</div>}
             {ringTruncated && (
               <div>
                 {mode === "retained"
-                  ? "Event history may be incomplete: the retained window exceeded its size limit, so the oldest activity is not loaded."
-                  : "Event history may be incomplete: the event store's ring is full, so the oldest activity is not loaded."}
+                  ? "事件历史记录可能不完整：保留窗口超过大小限制，最早的活动未加载。"
+                  : "事件历史记录可能不完整：事件存储的环形缓冲区已满，最早的活动未加载。"}
               </div>
             )}
           </div>
@@ -2484,10 +2481,10 @@ function ApplicationHistoryLine({
           run: () => onOpenSource(item.sourceRef!),
         }
       : workload
-        ? { label: "Open workload", run: () => onSelectWorkload(workload) }
+        ? { label: "打开工作负载", run: () => onSelectWorkload(workload) }
         : item.resource && onNavigateToResource
           ? {
-              label: "Open resource",
+              label: "打开资源",
               run: () => onNavigateToResource(item.resource!),
             }
           : null;
@@ -2575,10 +2572,23 @@ function ApplicationHistoryLine({
 function applicationHistoryCategoryLabel(
   category: ApplicationHistoryCategory | "all",
 ): string {
-  if (category === "all") return "All";
-  if (category === "deployment") return "Deployments";
-  if (category === "problem") return "Problems";
-  return "Changes";
+  if (category === "all") return "全部";
+  if (category === "deployment") return "部署";
+  if (category === "problem") return "问题";
+  return "变更";
+}
+
+function applicationHistoryRangeLabel(label: string): string {
+  const labels: Record<string, string> = {
+    "All observed": "所有已观察记录",
+    "All available": "所有可用记录",
+    "24 hours": "最近 24 小时",
+    "7 days": "最近 7 天",
+    "30 days": "最近 30 天",
+  };
+  return Object.prototype.hasOwnProperty.call(labels, label)
+    ? labels[label]
+    : label;
 }
 
 function applicationHistoryDateLabel(timestamp: string): string {
@@ -2586,9 +2596,9 @@ function applicationHistoryDateLabel(timestamp: string): string {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(today.getDate() - 1);
-  if (date.toDateString() === today.toDateString()) return "Today";
-  if (date.toDateString() === yesterday.toDateString()) return "Yesterday";
-  return new Intl.DateTimeFormat(undefined, {
+  if (date.toDateString() === today.toDateString()) return "今天";
+  if (date.toDateString() === yesterday.toDateString()) return "昨天";
+  return new Intl.DateTimeFormat("zh-CN", {
     month: "short",
     day: "numeric",
     year: date.getFullYear() === today.getFullYear() ? undefined : "numeric",
@@ -2622,8 +2632,8 @@ function buildAppIssues(
         ? "error"
         : "warning";
     const detail = [
-      notReady ? `${workload.ready}/${workload.desired} ready` : undefined,
-      hasRestarts ? pluralize(workload.restarts, "restart") : undefined,
+      notReady ? `${workload.ready}/${workload.desired} 就绪` : undefined,
+      hasRestarts ? `${workload.restarts} 次重启` : undefined,
       workload.reason,
     ]
       .filter(Boolean)
@@ -2631,7 +2641,7 @@ function buildAppIssues(
     const issue: AppIssue = {
       key: `workload:${workloadKey(workload)}`,
       severity,
-      title: `${workload.name} ${health === "unhealthy" ? "is down" : health === "degraded" || notReady ? "is degraded" : "needs attention"}`,
+      title: `${workload.name}${health === "unhealthy" ? "不可用" : health === "degraded" || notReady ? "状态降级" : "需要关注"}`,
       detail,
       workload,
     };
@@ -2716,17 +2726,31 @@ function historyStatusTone(status: string): string {
 }
 
 function sourceLinkLabel(source: AppSourceRef): string {
-  return `View ${sourceObjectLabel(source)}`;
+  return `查看 ${sourceObjectLabel(source)}`;
+}
+
+function applicationRelativeAgeTime(value?: string): string {
+  const formatted = formatRelativeAgeTime(value);
+  if (formatted === "just now") return "刚刚";
+  const match = /^(\d+)([smhd]) ago$/.exec(formatted);
+  if (!match) return formatted;
+  const units: Record<string, string> = {
+    s: "秒",
+    m: "分钟",
+    h: "小时",
+    d: "天",
+  };
+  return `${match[1]}${units[match[2]]}前`;
 }
 
 function sourceObjectLabel(source: AppSourceRef): string {
   if (source.type === "helm") return "Helm release";
   if (source.tool === "argocd" || source.kind.toLowerCase() === "application")
-    return "Argo CD application";
+    return "Argo CD Application";
   if (source.kind.toLowerCase() === "helmrelease") return "Flux HelmRelease";
   if (source.kind.toLowerCase() === "kustomization")
     return "Flux Kustomization";
-  return "GitOps source";
+  return "GitOps 来源";
 }
 
 function sourceInventoryLabel(source: AppSourceRef): string {
@@ -2930,7 +2954,7 @@ function ApplicationScopeSelector({
           aria-hidden
         />
         <span className="min-w-0 truncate font-medium text-theme-text-primary">
-          Application
+          应用
         </span>
       </span>
     );
@@ -2954,7 +2978,7 @@ function ApplicationScopeSelector({
           />
         )}
         <span className="min-w-0 truncate font-medium text-theme-text-primary">
-          {selectedWorkload ? selectedWorkload.name : "Application"}
+          {selectedWorkload ? selectedWorkload.name : "应用"}
         </span>
         {selectedWorkload && (
           <span className="hidden shrink-0 text-xs uppercase tracking-wide text-theme-text-tertiary md:inline">
@@ -2993,8 +3017,8 @@ function ApplicationScopeSelector({
                   aria-hidden
                 />
               }
-              title="Application"
-              subtitle="App scope"
+              title="应用"
+              subtitle="应用范围"
               onClick={() => {
                 setOpen(false);
                 onSelect(null);
@@ -3005,7 +3029,7 @@ function ApplicationScopeSelector({
           <div className="border-b border-theme-border px-2 py-1.5">
             <div className="flex items-center justify-between gap-3">
               <span className="text-[10px] font-semibold uppercase tracking-wide text-theme-text-tertiary">
-                Workloads
+                工作负载
               </span>
               <span className="rounded-full bg-theme-hover px-1.5 text-[10px] font-medium text-theme-text-tertiary">
                 {workloads.length}
@@ -3020,7 +3044,7 @@ function ApplicationScopeSelector({
                 <input
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Filter workloads..."
+                  placeholder="筛选工作负载…"
                   className="min-w-0 flex-1 bg-transparent text-sm text-theme-text-primary outline-none placeholder:text-theme-text-tertiary"
                 />
               </label>
@@ -3029,7 +3053,7 @@ function ApplicationScopeSelector({
           <div className="max-h-80 overflow-y-auto p-1">
             {filteredWorkloads.length === 0 ? (
               <div className="px-2 py-4 text-center text-sm text-theme-text-tertiary">
-                No workloads match.
+                没有匹配的工作负载。
               </div>
             ) : (
               filteredWorkloads.map((w) => {
@@ -3040,7 +3064,7 @@ function ApplicationScopeSelector({
                     active={selectedKey === key}
                     icon={<WorkloadKindIcon workload={w} />}
                     title={w.name}
-                    subtitle={`${w.kind} · ${w.ready}/${w.desired} ready${w.reason ? ` · ${w.reason}` : ""}`}
+                    subtitle={`${w.kind} · ${w.ready}/${w.desired} 就绪${w.reason ? ` · ${w.reason}` : ""}`}
                     onClick={() => {
                       setOpen(false);
                       onSelect(key);
@@ -3090,7 +3114,7 @@ function TopologyWorkloadLegend({
     <div className="absolute left-4 top-4 z-10 w-[min(18.5rem,calc(100%-2rem))] 2xl:w-[min(22rem,calc(100%-2rem))] overflow-hidden rounded-lg border border-theme-border bg-theme-surface/95 shadow-theme-md backdrop-blur">
       <div className="flex items-center justify-between gap-3 border-b border-theme-border bg-theme-base px-3 py-2">
         <span className="text-xs font-semibold text-theme-text-primary">
-          Workloads
+          工作负载
         </span>
         <span className="rounded-full bg-theme-hover px-1.5 text-[10px] font-medium text-theme-text-tertiary">
           {workloads.length}
@@ -3124,7 +3148,7 @@ function TopologyWorkloadLegend({
             muted
             active={focusedOwnerId === NEUTRAL_OWNER}
             icon={<SharedScopeMarker />}
-            title="Shared / unscoped"
+            title="共享 / 未指定归属"
             onMouseEnter={() => onFocus(NEUTRAL_OWNER)}
           />
         )}
@@ -3132,7 +3156,7 @@ function TopologyWorkloadLegend({
       {showSourceDifferences && deploymentSource && (
         <div className="border-t border-theme-border px-3 py-2.5">
           <div className="mb-1.5 text-[10px] font-semibold uppercase tracking-wide text-theme-text-tertiary">
-            Source differences
+            来源差异
           </div>
           <div className="space-y-1">
             {managedOnlyCount > 0 && (
@@ -3140,7 +3164,7 @@ function TopologyWorkloadLegend({
                 <DeploymentSourceLogo source={deploymentSource} />
                 <span className="min-w-0 flex-1">
                   <span className="block">
-                    {managedOnlyCount} only in {sourceLabel}
+                    仅在 {sourceLabel} 中有 {managedOnlyCount} 项
                   </span>
                   {deploymentLayer?.managedOnlySummary && (
                     <span className="mt-0.5 block text-[10px] text-theme-text-tertiary">
@@ -3149,7 +3173,7 @@ function TopologyWorkloadLegend({
                   )}
                 </span>
                 {onOpenSource && (
-                  <Tooltip content={`Open ${sourceLabel} view`} delay={150}>
+                  <Tooltip content={`打开 ${sourceLabel} 视图`} delay={150}>
                     <button
                       type="button"
                       onClick={() => onOpenSource(deploymentSource)}
@@ -3168,7 +3192,7 @@ function TopologyWorkloadLegend({
                   aria-hidden
                 />
                 <span>
-                  {pluralize(runtimeOnlyCount, "runtime-only resource")}
+                  {runtimeOnlyCount} 个仅运行时资源
                 </span>
               </div>
             )}
@@ -3354,7 +3378,7 @@ function renderRuntime(
   if (!workload) {
     return (
       <div className="rounded-md border border-dashed border-theme-border p-8 text-center text-sm text-theme-text-tertiary">
-        This application has no inspectable workloads.
+        此应用没有可检查的工作负载。
       </div>
     );
   }
@@ -3501,7 +3525,7 @@ function EnvSwitcher({
         {active && <StatusDot tone={mapHealthToTone(active.health)} />}
         <span className="font-medium">{active?.env ?? "—"}</span>
         <span className="text-theme-text-tertiary">
-          · {envInstances.length} environments
+          · {envInstances.length} 个环境
         </span>
         <ChevronDown
           className={clsx(

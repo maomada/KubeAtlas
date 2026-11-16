@@ -1,16 +1,18 @@
 import { describe, expect, it } from 'vitest'
 import { renderToString } from 'react-dom/server'
-import { YamlReview } from './YamlReview'
+import { YamlReview, type YamlPreviewResult } from './YamlReview'
 
-const doc = { index: 0, kind: 'ConfigMap', name: 'app', namespace: 'shop', status: 'ok' as const, action: 'update' as const, reviewedResourceVersion: '42' }
+const doc = { index: 0, kind: 'ConfigMap', name: 'app', namespace: 'shop', status: 'accepted' as const, action: 'update' as const, reviewedResourceVersion: '42' }
 
-function review(changedSinceReview?: boolean, applyError?: string) {
+function review(changedSinceReview?: boolean, applyError?: string, force = false, applyLabel?: string) {
   return renderToString(
     <YamlReview
       submittedYaml="kind: ConfigMap"
       documents={[doc]}
       changedSinceReview={changedSinceReview}
       applyError={applyError}
+      force={force}
+      applyLabel={applyLabel}
       onBack={() => {}}
       onApply={() => {}}
     />,
@@ -20,23 +22,69 @@ function review(changedSinceReview?: boolean, applyError?: string) {
 describe('YamlReview after a failed apply', () => {
   it('says the review now shows the latest version when the resource changed under it', () => {
     const html = review(true, 'resource changed after review; review the latest version before applying')
-    expect(html).toContain('This resource changed after your review')
-    expect(html).toContain('apply again')
+    expect(html).toContain('此资源在审查后已发生变化')
+    expect(html).toContain('重新应用')
     // Said once: the raw API message would repeat the notice.
     expect(html).not.toContain('review the latest version before applying')
   })
 
   it('keeps an unrelated apply error beside the notice', () => {
     const html = review(true, 'admission webhook "policy.example" denied the request')
-    expect(html).toContain('This resource changed after your review')
+    expect(html).toContain('此资源在审查后已发生变化')
     expect(html).toContain('denied the request')
   })
 
   it('says nothing extra when the resource did not change', () => {
-    expect(review(false, 'forbidden')).not.toContain('changed after your review')
+    expect(review(false, 'forbidden')).not.toContain('审查后已发生变化')
     expect(review(false, 'forbidden')).toContain('forbidden')
-    expect(review()).not.toContain('changed after your review')
+    expect(review()).not.toContain('审查后已发生变化')
   })
+})
+
+it('localizes review actions and force explanation while preserving raw apply errors', () => {
+  const forceOn = review(false, 'admission webhook "policy.example" denied the request', true)
+  expect(forceOn).toContain('返回编辑')
+  expect(forceOn).toContain('审查集群准入的更改')
+  expect(forceOn).toContain('应用已审查的更改')
+  expect(forceOn).toContain('强制覆盖：')
+  expect(forceOn).toContain('开启')
+  expect(forceOn).toContain('其他管理器拥有的字段可能被覆盖。')
+  expect(forceOn).toContain('admission webhook')
+  expect(forceOn).toContain('denied the request')
+
+  const forceOff = review(false, 'forbidden', false)
+  expect(forceOff).toContain('强制覆盖：')
+  expect(forceOff).toContain('关闭')
+  expect(forceOff).toContain('与其他管理器字段的冲突会阻止保存。')
+  expect(forceOff).toContain('forbidden')
+})
+
+it('passes unknown preview status and action values through and preserves a custom apply label', () => {
+  const futureStatus = 'future-status' as YamlPreviewResult['status']
+  const futureAction = 'scale' as YamlPreviewResult['action']
+  const html = renderToString(
+    <YamlReview
+      submittedYaml="kind: ConfigMap"
+      documents={[{ ...doc, status: futureStatus, action: futureAction }]}
+      applyLabel="Create resources"
+      onBack={() => {}}
+      onApply={() => {}}
+    />,
+  )
+  expect(html).toContain('future-status')
+  expect(html).toContain('将scale')
+  expect(html).toContain('Create resources')
+
+  const hiddenUnknownAction = renderToString(
+    <YamlReview
+      submittedYaml="kind: ConfigMap"
+      documents={[{ ...doc, action: 'unknown' }]}
+      onBack={() => {}}
+      onApply={() => {}}
+    />,
+  )
+  expect(hiddenUnknownAction).not.toContain('将unknown')
+  expect(hiddenUnknownAction).not.toContain('unknown')
 })
 
 

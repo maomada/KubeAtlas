@@ -132,6 +132,35 @@ Use `issues` for currently broken native Helm releases: active failed and stuck 
 
 ## Chart sources and upgrades
 
+### Bundled Caretta installation
+
+The Traffic setup wizard uses `kubeatlas-bundled/caretta` version `0.0.16`.
+The `kubeatlas-bundled` identifier is reserved and cannot be used as an
+external Helm repository alias.
+The native Agent binary embeds the original upstream archive, including Grafana
+`6.48.0` and VictoriaMetrics Single `0.8.48` subcharts. Chart details, values and
+installation load this archive locally and verify its pinned SHA-256; neither
+ArtifactHub nor an external chart repository is contacted on this path.
+Unavailable bundled names or versions fail without network fallback. Other
+repositories retain their existing behavior, including same-named charts.
+
+This is **offline chart installation, not an offline container-image bundle**.
+Nodes still need the images selected by the chart's effective values. For an
+air-gapped cluster, preload those images on every eligible node and set suitable
+`IfNotPresent` policies, or override the image repositories/tags to a reachable
+private registry. The upstream Caretta image defaults to `Always`; preloading
+alone does not eliminate that registry dependency. Review the supplied values,
+including Grafana credentials, before installation. No images are mirrored or
+published by KubeAtlas. The bundled versions are pinned compatibility inputs,
+not a claim that those old components are current or free of vulnerabilities.
+
+Normal Kubernetes impersonation, write authorization, and pending/existing
+release checks still apply. The release records the original chart repository
+as provenance; future upgrades through the standard source picker require a
+configured repository and network access. A remote chart is never silently
+replaced by the bundled copy. Bundle updates are reviewed source changes, not
+runtime downloads. See `internal/bundledcharts/README.md` for origin and licenses.
+
 KubeAtlas identifies a chart by its repository URL and chart name. Local repository aliases can differ between machines. OCI sources use the full registry/chart path. Charts with the same name or version in different repositories are separate choices.
 
 Normal upgrades use the saved source. If no source is confirmed, use **Choose chart source** in the release drawer. The picker shows the last recorded source first, followed by other configured sources. A name match is a suggestion, not proof of where the release was installed from.

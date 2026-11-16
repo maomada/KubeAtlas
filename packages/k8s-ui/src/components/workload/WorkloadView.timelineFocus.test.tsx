@@ -49,14 +49,14 @@ it('scrolls to the exact report even among warnings with the same reason', async
   expect(target?.textContent).toContain('report target')
   expect(target?.querySelector('.ring-2')).not.toBeNull()
   expect(scroll).toHaveBeenCalled()
-  expect(container.textContent).not.toContain('not available')
+  expect(container.textContent).not.toContain('保留的时间线历史记录中没有此错误。')
 })
 
 it('loads older pages until the report appears, without duplicate requests in Strict Mode', async () => {
   const loadOlder = vi.fn()
   await render([row('newest', 1)], { truncated: true, loadOlder })
   expect(loadOlder).toHaveBeenCalledTimes(1)
-  expect(container.textContent).toContain('Finding the reported error')
+  expect(container.textContent).toContain('正在较早的历史记录中查找已报告的错误…')
   await render([row('newest', 1), row('middle', 2)], { truncated: true, loadOlder })
   expect(loadOlder).toHaveBeenCalledTimes(2)
   await render([row('newest', 1), row('target', 5)], { truncated: true, loadOlder })
@@ -68,14 +68,20 @@ it('explains an absent report and stops when history is exhausted', async () => 
   const loadOlder = vi.fn()
   await render([row('newest', 1)], { loadOlder })
   expect(loadOlder).not.toHaveBeenCalled()
-  expect(container.textContent).toContain('not available in the retained timeline history')
+  expect(container.textContent).toContain('保留的时间线历史记录中没有此错误。')
 })
 
 it('does not retry failed paging automatically', async () => {
   const loadOlder = vi.fn()
   await render([row('newest', 1)], { truncated: true, loadOlder, error: new Error('unavailable') })
   expect(loadOlder).not.toHaveBeenCalled()
-  expect(container.textContent).toContain("some history couldn't be loaded")
+  expect(container.textContent).toContain('无法定位已报告的错误，因为部分历史记录未能加载。')
+  expect(container.querySelector('[title="unavailable"]')).not.toBeNull()
+})
+
+it('localizes the workload history explanation', async () => {
+  await render([])
+  expect(container.textContent).toContain('此工作负载、它运行的内容，以及关联的 Service、Ingress、配置和扩缩器。')
 })
 
 it('lets the user select another event without a refresh forcing the original selection back', async () => {

@@ -5,6 +5,7 @@ import (
 
 	"github.com/maomada/KubeAtlas/internal/audit"
 	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/internal/settings"
 	bpaudit "github.com/maomada/KubeAtlas/pkg/audit"
 	"github.com/maomada/KubeAtlas/pkg/checks"
 	"github.com/maomada/KubeAtlas/pkg/resourcecontext"
@@ -20,6 +21,12 @@ func SummarizeResource(cache *k8s.ResourceCache, group, kind, namespace, name st
 	if cache == nil || kind == "" {
 		return nil, nil
 	}
+	cfg := settings.EffectiveAudit()
+	scope := SettingsScope(cfg, []string{namespace})
+	if len(scope.SkippedNamespaces) > 0 {
+		scope.Status = "skipped"
+		return &resourcecontext.AuditSummary{Scope: scope}, nil
+	}
 
 	// Empty means all namespaces; []string{""} filters to namespace="" instead.
 	var namespaces []string
@@ -30,13 +37,13 @@ func SummarizeResource(cache *k8s.ResourceCache, group, kind, namespace, name st
 	if results == nil {
 		return nil, nil
 	}
+	results = bpaudit.ApplySettings(results, cfg.IgnoredNamespaces, cfg.DisabledChecks)
 	summary, findings := summarizeFindings(results.Findings, group, kind, namespace, name)
-	if len(results.MissingInputs) > 0 {
-		if summary == nil {
-			summary = &resourcecontext.AuditSummary{}
-		}
-		summary.MissingInputs = results.MissingInputs
+	if summary == nil {
+		summary = &resourcecontext.AuditSummary{}
 	}
+	summary.Scope = scope
+	summary.MissingInputs = results.MissingInputs
 	return summary, findings
 }
 

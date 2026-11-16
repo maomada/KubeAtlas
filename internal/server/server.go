@@ -49,7 +49,6 @@ import (
 	"github.com/maomada/KubeAtlas/internal/config"
 	"github.com/maomada/KubeAtlas/internal/connectionruntime"
 	"github.com/maomada/KubeAtlas/internal/connections"
-	"github.com/maomada/KubeAtlas/internal/fleet"
 	"github.com/maomada/KubeAtlas/internal/helm"
 	"github.com/maomada/KubeAtlas/internal/images"
 	"github.com/maomada/KubeAtlas/internal/investigationrefs"
@@ -81,9 +80,6 @@ import (
 
 // Server is the Explorer HTTP server
 type Server struct {
-	fleetMCPHandler         http.Handler
-	fleetAPIHandler         http.Handler
-	fleetManager            *fleet.Manager
 	router                  *chi.Mux
 	broadcaster             *SSEBroadcaster
 	vitalsMetrics           vitalsMetricsMemo
@@ -209,9 +205,6 @@ type Server struct {
 
 // Config holds server configuration
 type Config struct {
-	FleetMCPHandler         http.Handler
-	FleetAPIHandler         http.Handler
-	FleetManager            *fleet.Manager
 	Port                    int
 	PortFallback            bool // Port is a preference: when it's taken, bind an OS-assigned port instead of failing
 	ListenAddress           string
@@ -253,9 +246,6 @@ func New(cfg Config) *Server {
 	cfg.CloudConnect.HubAPIURL = ""
 	cfg.CloudConnect.HubAppURL = ""
 	s := &Server{
-		fleetMCPHandler:         cfg.FleetMCPHandler,
-		fleetAPIHandler:         cfg.FleetAPIHandler,
-		fleetManager:            cfg.FleetManager,
 		router:                  chi.NewRouter(),
 		broadcaster:             NewSSEBroadcaster(),
 		port:                    cfg.Port,
@@ -550,11 +540,6 @@ func (s *Server) setupAppRoutes(r chi.Router) {
 	// API routes
 	r.Route("/api", func(r chi.Router) {
 		r.Use(s.requireSameOrigin)
-		if s.fleetAPIHandler != nil {
-			r.Mount("/fleet", http.StripPrefix("/api/fleet", s.fleetAPIHandler))
-		} else {
-			r.Mount("/fleet", http.NotFoundHandler())
-		}
 		// Streaming endpoints (SSE/WebSocket) - no timeout
 		r.Get("/events/stream", s.handleSSE)
 		r.Get("/pods/{namespace}/{name}/logs/stream", s.handlePodLogsStream)
@@ -936,6 +921,7 @@ func (s *Server) setupAppRoutes(r chi.Router) {
 			r.Get("/traffic/source", s.handleGetActiveTrafficSource)
 			r.Post("/traffic/source", s.handleSetTrafficSource)
 			r.Post("/traffic/connect", s.handleTrafficConnect)
+			r.Post("/traffic/connect-managed", s.handleTrafficConnect)
 			r.Get("/traffic/connection", s.handleTrafficConnectionStatus)
 
 			// Context routes
@@ -1026,16 +1012,10 @@ func (s *Server) setupAppRoutes(r chi.Router) {
 	r.Handle("/.well-known/*", http.NotFoundHandler())
 	r.Handle("/mcp/.well-known/*", http.NotFoundHandler())
 	r.Handle("/mcp-readonly/.well-known/*", http.NotFoundHandler())
-	r.Handle("/mcp-fleet/.well-known/*", http.NotFoundHandler())
 	r.Handle("/mcp-apply/.well-known/*", http.NotFoundHandler())
 	r.Handle("/mcp-investigation/.well-known/*", http.NotFoundHandler())
 
 	// MCP server (Model Context Protocol for AI tools)
-	if s.fleetMCPHandler != nil {
-		r.Mount("/mcp-fleet", s.fleetMCPHandler)
-	} else {
-		r.Mount("/mcp-fleet", http.NotFoundHandler())
-	}
 	if s.mcpHandler != nil {
 		r.Mount("/mcp", s.mcpHandler)
 	} else {
@@ -1390,11 +1370,6 @@ func (s *Server) Handler() http.Handler {
 
 // Stop gracefully stops the server and releases the listening port.
 func (s *Server) Stop() {
-	if s.fleetManager != nil {
-		if err := s.fleetManager.Close(); err != nil {
-			log.Printf("[fleet] could not close catalog cleanly")
-		}
-	}
 	prometheuspkg.RightsizingScans().Invalidate()
 	StopAllLocalTermSessions()
 	if runs := s.aiRunManager(); runs != nil {

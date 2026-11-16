@@ -1,11 +1,17 @@
 {{- if ne (int .Values.replicaCount) 1 }}
-{{- fail "kubeatlas-portal is a single-writer registry and requires replicaCount=1" }}
+{{- fail "kubeatlas-portal uses single-writer Hub state and requires replicaCount=1" }}
 {{- end }}
 {{- if empty .Values.image.repository }}
 {{- fail "image.repository is required; build and supply a user-controlled Portal image" }}
 {{- end }}
 {{- if empty .Values.existingSecret }}
-{{- fail "existingSecret is required and must contain keys tokens, username, and password" }}
+{{- fail "existingSecret is required and must contain keys username and password" }}
+{{- end }}
+{{- if and .Values.hubArtifacts.enabled (empty .Values.hubArtifacts.existingClaim) }}
+{{- fail "hubArtifacts.existingClaim is required when hubArtifacts.enabled=true" }}
+{{- end }}
+{{- if and .Values.hubArtifacts.enabled (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" .Values.hubArtifacts.existingClaim)) }}
+{{- fail "hubArtifacts.existingClaim must be a Kubernetes PVC name" }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
@@ -51,17 +57,19 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
             - --listen=0.0.0.0:9290
-            - --data-file=/var/lib/kubeatlas-portal/registry.json
+            - --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json
+            {{- if .Values.hubArtifacts.enabled }}
+            - --hub-artifacts-dir=/var/lib/kubeatlas-portal/artifacts
+            {{- end }}
           ports:
             - name: http
               containerPort: 9290
               protocol: TCP
           env:
-            - name: KUBEATLAS_PORTAL_TOKENS
-              valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.existingSecret }}
-                  key: tokens
+            {{- if .Values.httpIPOrigin }}
+            - name: KUBEATLAS_PORTAL_HTTP_IP_ORIGIN
+              value: {{ .Values.httpIPOrigin | quote }}
+            {{- end }}
             - name: KUBEATLAS_PORTAL_USERNAME
               valueFrom:
                 secretKeyRef:
@@ -72,6 +80,42 @@ spec:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
                   key: password
+            - name: KUBEATLAS_PORTAL_HUB_GROUPS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: hub-groups
+                  optional: true
+            - name: KUBEATLAS_PORTAL_OIDC_ISSUER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: oidc-issuer
+                  optional: true
+            - name: KUBEATLAS_PORTAL_OIDC_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: oidc-client-id
+                  optional: true
+            - name: KUBEATLAS_PORTAL_OIDC_REDIRECT_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: oidc-redirect-url
+                  optional: true
+            - name: KUBEATLAS_PORTAL_OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: oidc-client-secret
+                  optional: true
+            - name: KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.existingSecret }}
+                  key: mcp-allowed-hosts
+                  optional: true
           livenessProbe:
             httpGet:
               path: /healthz
@@ -93,9 +137,19 @@ spec:
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           volumeMounts:
-            - name: registry
+            - name: hub-state
               mountPath: /var/lib/kubeatlas-portal
+            {{- if .Values.hubArtifacts.enabled }}
+            - name: hub-artifacts
+              mountPath: /var/lib/kubeatlas-portal/artifacts
+              readOnly: true
+            {{- end }}
       volumes:
-        - name: registry
+        - name: hub-state
           persistentVolumeClaim:
             claimName: {{ include "kubeatlas-portal.fullname" . }}
+        {{- if .Values.hubArtifacts.enabled }}
+        - name: hub-artifacts
+          persistentVolumeClaim:
+            claimName: {{ .Values.hubArtifacts.existingClaim }}
+        {{- end }}

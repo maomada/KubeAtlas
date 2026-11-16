@@ -39,7 +39,7 @@ type waitForInput struct {
 	LabelSelector  string `json:"label_selector,omitempty" jsonschema:"every matching object must meet the condition; with deleted, none may remain; to wait for replacements, wait on their controller's rollout"`
 	All            bool   `json:"all,omitempty" jsonschema:"every object of the kind in the namespace"`
 	Condition      string `json:"condition,omitempty" jsonschema:"rollout, complete, ready, deleted, a condition type (Type or Type=Status), or jsonpath={.status.path}=value; defaults by kind"`
-	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"seconds this call waits, 1-45 (default 45); larger values wait 45"`
+	TimeoutSeconds int    `json:"timeout_seconds,omitempty" jsonschema:"seconds this call waits, 1-45 (default 45); call again to keep waiting"`
 }
 
 type waitObjectState struct {

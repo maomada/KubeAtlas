@@ -41,9 +41,12 @@ make deps
 make build VERSION=dev
 ./kubeatlas
 
-# Optional: build the standalone Portal binary
+# Optional: build the self-hosted Cloud Hub binary
 make portal VERSION=dev
 ```
+The standalone `kubeatlas-portal` binary runs the self-hosted Cloud Hub and
+requires a persistent Hub state file; see the
+[Cloud Hub guide](docs/portal.md).
 [In-cluster deployment](docs/in-cluster.md) is available from an owned Helm
 chart version only after that version has actually been published. See the
 [distribution and release policy](docs/ci-cd.md).

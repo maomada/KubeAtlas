@@ -1,5 +1,7 @@
 export { ResourceRendererDispatch, getResourceStatus, type RendererOverrides } from './ResourceRendererDispatch'
 export { EditableYamlView, SaveSuccessAnimation } from './EditableYamlView'
+export { YamlDraftPolicyProvider, type YamlDraftPolicy } from './YamlDraftPolicy'
+export { clearYamlDraftNamespace, reconcileHubYamlDraftScope, yamlDraftStorageKey, YAML_DRAFT_NAMESPACE, HUB_YAML_DRAFT_AUTHORITY_MARKER } from './yamlDraftStorage'
 export { ResourceActionsBar, RevisionHistoryDialog, isRolloutKind } from './ResourceActionsBar'
 export {
   DrainPlanDialog, DrainPlanContent, canConfirmDrain, planMatches, emptyDirPodsAtRisk, DEFAULT_DRAIN_DIALOG_OPTIONS,

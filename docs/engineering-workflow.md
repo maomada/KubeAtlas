@@ -14,9 +14,10 @@ kinds, resource ownership, and permissions. The example grants no permissions.
 Do not store credentials, kubeconfig contents, or private keys in it.
 
 Use a separate clone/worktree and one writer per branch. Changes to shared
-contracts belong to the coordinator, not concurrent writers. A temporary remote
-branch is an explicit exception to the maintainer's `main`/`fleet-manager`
-branch policy; record its authorization and eventual retirement decision.
+contracts belong to the coordinator, not concurrent writers. Temporary remote
+branches are allowed for development and fixes; do not request a new exception
+under the retired `main`/`fleet-manager`-only policy. Record the branch's scope
+and eventual retirement decision.
 Do not delete branches or assume `fleet-manager` remains a required long-lived
 track without a maintainer decision. Do not create a stack unless requested.
 
@@ -155,8 +156,9 @@ or HTTP readiness timeout. `--skip-build` reports binary provenance as
 unknown; full isolation for parallel visual servers remains follow-up work.
 
 Per-run Kind leases, parallel frontend build ordering, fully isolated browser
-servers, and real Portal/Fleet two-cluster QA remain follow-up work, not claimed
-as implemented by the P0 safety fixes. See the relevant demo README before use.
+servers, and real self-hosted Hub plus multi-Agent QA remain separate acceptance
+work, not claims established by local unit tests. See the relevant demo README
+before use.
 
 ## Merge and publication
 
@@ -168,5 +170,5 @@ that result. Do not claim final-main acceptance from a PR merge simulation.
 Publishing additionally needs exact artifact/version/action approval, complete
 active release gates, native/real-cluster/browser acceptance and offline signing
 under [the release policy](ci-cd.md). Production private keys remain on the
-user-controlled signing machine. Fleet code on main does not itself authorize
-Fleet distribution or prove multi-cluster readiness.
+user-controlled signing machine. Hub or Agent code on main does not itself
+authorize distribution or prove live multi-cluster readiness.

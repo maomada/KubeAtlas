@@ -843,12 +843,22 @@ type IssueSummary struct {
 // resource. HighestSeverity uses the canonical Checks severity ladder; it is
 // remediation priority, not proof of an active outage.
 type AuditSummary struct {
+	Scope *AuditScope `json:"scope,omitempty"`
 	// MissingInputs describes unavailable inputs in the underlying audit scan,
 	// not additional findings or proof that this resource failed a check.
 	MissingInputs   []string `json:"missingInputs,omitempty"`
 	Count           int      `json:"count"`
 	HighestSeverity string   `json:"highestSeverity,omitempty"`
 	TopFinding      string   `json:"topFinding,omitempty"`
+}
+
+// AuditScope describes settings exclusions, not evidence that every check passed.
+type AuditScope struct {
+	Status                   string   `json:"status"`
+	Reasons                  []string `json:"reasons,omitempty"`
+	IgnoredNamespacePatterns []string `json:"ignoredNamespacePatterns,omitempty"`
+	SkippedNamespaces        []string `json:"skippedNamespaces,omitempty"`
+	DisabledChecks           []string `json:"disabledChecks,omitempty"`
 }
 
 // PolicySummary aggregates external policy-engine signals. Only Kyverno

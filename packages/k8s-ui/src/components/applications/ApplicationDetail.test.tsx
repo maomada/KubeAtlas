@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { renderToString } from 'react-dom/server'
 import { ApplicationDetail, type ApplicationDetailProps } from './ApplicationDetail'
+import { WorkloadView } from '../workload/WorkloadView'
 import type { AppHistory, AppRow, AppSourceRef } from '../../utils/applications'
 import { workloadKey } from '../../utils/topology-neighborhood'
 
@@ -97,62 +98,114 @@ describe("ApplicationDetail shell", () => {
     const html = renderDetail({ app: rolling })
 
     expect(html).toContain('Rolling out')
-    expect(html).toContain('1 workload affected · 4/4 ready')
+    expect(html).toContain('1 个工作负载受影响 · 4/4 就绪')
     expect(html).toContain('2/3 updated · 3 available')
   })
 
   it("preserves the built-in issue surface when the host slot is omitted", () => {
     const html = renderDetail({ renderOverviewIssues: undefined });
 
-    expect(html).toContain('Application views')
-    expect(html).toContain('Overview')
-    expect(html).toContain('Topology')
-    expect(html).toContain('History')
+    expect(html).toContain('应用视图')
+    expect(html).toContain('概览')
+    expect(html).toContain('拓扑')
+    expect(html).toContain('历史记录')
     expect(html).toContain('BackOff on checkout-api')
-    expect(html).toContain('Application identity')
-    expect(html).toContain('Grouped from Kubernetes ownership')
-    expect(html).toContain('Entrypoints')
-    expect(html).toContain('Dependencies')
+    expect(html).toContain('应用身份')
+    expect(html).toContain('根据 Kubernetes 所有权分组')
+    expect(html).toContain('入口')
+    expect(html).toContain('依赖')
     expect(html).toContain('svc<!-- -->/</span>checkout-api')
     expect(html).toContain('ing<!-- -->/</span>checkout')
-    expect(html).toContain('Configuration')
-    expect(html).toContain('Autoscaling')
-    expect(html).toContain('Storage')
-    expect(html).toContain('Network policy')
+    expect(html).toContain('配置')
+    expect(html).toContain('自动扩缩容')
+    expect(html).toContain('存储')
+    expect(html).toContain('网络策略')
     expect(html).not.toContain('Related resources')
-    expect(html).toContain('Workloads')
+    expect(html).toContain('工作负载')
     expect(html).not.toContain('Runtime for')
     expect(html).not.toContain('Components')
-    expect(html).not.toContain('Changes')
+    expect(html).not.toContain('变更')
     expect(html).not.toContain('YAML')
-    expect(html).not.toContain('Cost')
+    expect(html).not.toContain('成本')
     expect(html).not.toContain('>Deploy<')
   })
 
   it("defaults to the application overview scope", () => {
     const html = renderDetail();
 
-    expect(html).toContain("Application views");
-    expect(html).toContain("Overview");
-    expect(html).toContain("Topology");
-    expect(html).toContain("History");
+    expect(html).toContain("应用视图");
+    expect(html).toContain("概览");
+    expect(html).toContain("拓扑");
+    expect(html).toContain("历史记录");
     expect(html).not.toContain("BackOff on checkout-api");
-    expect(html).toContain("Application identity");
-    expect(html).toContain("Entrypoints");
-    expect(html).toContain("Dependencies");
+    expect(html).toContain("应用身份");
+    expect(html).toContain("入口");
+    expect(html).toContain("依赖");
     expect(html).toContain("svc<!-- -->/</span>checkout-api");
     expect(html).toContain("ing<!-- -->/</span>checkout");
-    expect(html).toContain("Configuration");
-    expect(html).toContain("Autoscaling");
-    expect(html).toContain("Storage");
+    expect(html).toContain("配置");
+    expect(html).toContain("自动扩缩容");
+    expect(html).toContain("存储");
     expect(html).not.toContain("Related resources");
-    expect(html).toContain("Workloads");
+    expect(html).toContain("工作负载");
     expect(html).not.toContain("Runtime for");
     expect(html).not.toContain("Components");
-    expect(html).not.toContain("Changes");
+    expect(html).not.toContain("变更");
     expect(html).not.toContain("YAML");
-    expect(html).not.toContain("Cost");
+    expect(html).not.toContain("成本");
     expect(html).not.toContain(">Deploy<");
+  });
+
+  it("renders complete localized overview copy and preserves native resource names and kinds", () => {
+    const overviewApp: AppRow = {
+      ...app,
+      relationships: {
+        ...app.relationships,
+        pdbRefs: [
+          { kind: "PodDisruptionBudget", namespace: "prod", name: "checkout-pdb" },
+        ],
+      },
+    };
+    const html = renderDetail({ app: overviewApp });
+
+    expect(html).toContain('aria-label="应用视图"');
+    expect(html).toContain("流量可通过 Ingress 或 Route 资源进入此应用。");
+    expect(html).toContain("应用工作负载引用的 ConfigMap 和 Secret。");
+    expect(html).toContain("应用工作负载挂载的 PersistentVolumeClaim。");
+    expect(html).toContain("保护应用工作负载的 PodDisruptionBudget。");
+    expect(html).toContain("选择应用工作负载的 NetworkPolicy。");
+    expect(html).toContain("checkout-config");
+    expect(html).toContain("checkout-secret");
+    expect(html).toContain("checkout-pdb");
+    expect(html).toContain("checkout-api");
+    expect(html).toContain(">Deployment</td>");
+    expect(html).toContain("svc<!-- -->/</span>checkout-api");
+    expect(html).not.toContain("Application views");
+  });
+
+  it("renders the localized topology empty state", () => {
+    const html = renderDetail({
+      selectedView: "topology",
+      onSelectView: () => {},
+      topology: undefined,
+    });
+
+    expect(html).toContain("暂无拓扑数据");
+    expect(html).toContain("KubeAtlas 无法为此应用构建拓扑。");
+  });
+
+  it("describes a zero desired replica count without implying it is unset", () => {
+    const zeroDesiredApp: AppRow = {
+      ...app,
+      workloads: app.workloads.map((workload) => ({
+        ...workload,
+        ready: 0,
+        desired: 0,
+      })),
+    };
+    const html = renderDetail({ app: zeroDesiredApp });
+
+    expect(html).toContain("没有期望副本");
   });
 
   it("shows workload scope without application view tabs when the URL names a workload", () => {
@@ -166,11 +219,11 @@ describe("ApplicationDetail shell", () => {
 
     expect(html).toContain('Runtime for')
     expect(html).toContain('checkout-worker')
-    expect(html).not.toContain('Application views')
-    expect(html).not.toContain('Overview')
-    expect(html).not.toContain('Topology')
-    expect(html).not.toContain('History')
-    expect(html).not.toContain('Application identity')
+    expect(html).not.toContain('应用视图')
+    expect(html).not.toContain('概览')
+    expect(html).not.toContain('拓扑')
+    expect(html).not.toContain('历史记录')
+    expect(html).not.toContain('应用身份')
   })
 
   it("renders the optional application cost view only when the host selects it", () => {
@@ -182,7 +235,7 @@ describe("ApplicationDetail shell", () => {
       renderCostView: () => <div>Application cost body</div>,
     });
 
-    expect(withCostTab).toContain("Cost");
+    expect(withCostTab).toContain("成本");
     expect(withCostTab).not.toContain("Application cost body");
 
     const selectedCost = renderDetail({
@@ -195,7 +248,7 @@ describe("ApplicationDetail shell", () => {
       onSelectCostView: () => {},
     });
 
-    expect(selectedCost).toContain("Cost");
+    expect(selectedCost).toContain("成本");
     expect(selectedCost).toContain("Application cost body");
     expect(selectedCost).not.toContain("Source &amp; provenance");
   });
@@ -214,10 +267,10 @@ describe("ApplicationDetail shell", () => {
 
     expect(html).toContain("Runtime for");
     expect(html).toContain("checkout-api");
-    expect(html).toContain("Workload");
+    expect(html).toContain("工作负载");
     expect(html).toContain("Deployment<!-- -->/<!-- -->checkout-api");
     expect(html).not.toContain('aria-haspopup="listbox"');
-    expect(html).not.toContain("Application views");
+    expect(html).not.toContain("应用视图");
   });
 
   it("opens the workload directly for uncontrolled single-workload apps", () => {
@@ -229,8 +282,104 @@ describe("ApplicationDetail shell", () => {
 
     expect(html).toContain("Runtime for");
     expect(html).toContain("checkout-api");
-    expect(html).not.toContain("Application views");
+    expect(html).not.toContain("应用视图");
   });
+
+  it('renders localized single-workload chrome while preserving Kubernetes and event values', () => {
+    const singleApp: AppRow = { ...app, workloads: [app.workloads[0]] }
+    const html = renderDetail({
+      app: singleApp,
+      renderWorkload: (workload) => (
+        <WorkloadView
+          kind="deployments"
+          namespace={workload.namespace}
+          name={workload.name}
+          onBack={() => {}}
+          hideBackButton
+          compactHeader
+          resource={{
+            apiVersion: 'apps/v1',
+            kind: 'Deployment',
+            metadata: { name: 'checkout-api', namespace: 'prod' },
+            spec: { replicas: 1, strategy: { type: 'RollingUpdate' }, template: { spec: { serviceAccountName: 'checkout', containers: [{ name: 'api', image: 'registry.example/checkout:v1' }] } } },
+            status: { replicas: 1, readyReplicas: 1, availableReplicas: 1, updatedReplicas: 1 },
+          }}
+          relationships={{
+            services: [{ kind: 'Service', namespace: 'prod', name: 'checkout-api' }],
+            configRefs: [{ kind: 'ConfigMap', namespace: 'prod', name: 'checkout-config' }],
+            pods: [{ kind: 'Pod', namespace: 'prod', name: 'checkout-api-7f9d8' }],
+            scalers: [{ kind: 'HorizontalPodAutoscaler', group: 'autoscaling', namespace: 'prod', name: 'checkout-api-hpa' }],
+          }}
+          workloadPods={[{
+            name: 'checkout-api-7f9d8',
+            phase: 'Running',
+            ready: true,
+            containers: ['api'],
+            restartCount: 0,
+            healthLevel: 'healthy',
+          }]}
+          allEvents={[{
+            id: 'event-1',
+            timestamp: '2026-02-12T12:00:00Z',
+            source: 'k8s_event',
+            kind: 'Deployment',
+            namespace: 'prod',
+            name: 'checkout-api',
+            eventType: 'Warning',
+            reason: 'BackOff',
+            message: 'Back-off restarting failed container',
+          }]}
+        />
+      ),
+    })
+
+    for (const label of ['概览', '拓扑', '时间线', 'YAML', '运行时实例', '服务配置', '配置输入', '近期活动', '目标副本数', '策略', '仅内部 Service', '受控于']) {
+      expect(html.includes(label)).toBe(true)
+    }
+    expect(html).toMatch(/class="[^"]*shrink-0 whitespace-nowrap[^"]*">环境/)
+    for (const value of ['Deployment', 'Service', 'cm', 'checkout-api', 'checkout-config', 'Running', 'BackOff', 'Back-off restarting failed container', 'RollingUpdate', '内部']) {
+      expect(html.includes(value)).toBe(true)
+    }
+    expect(html.includes('runtime instances')).toBe(false)
+    expect(html.includes('Serving configuration')).toBe(false)
+    expect(html.includes('Configuration inputs')).toBe(false)
+    expect(html.includes('Recent activity')).toBe(false)
+    expect(html.includes('Controlled by')).toBe(false)
+    expect(html.includes('控制对象')).toBe(false)
+  })
+
+  it('localizes workload empty and error copy while preserving backend messages', () => {
+    const singleApp: AppRow = { ...app, workloads: [app.workloads[0]] }
+    const renderWorkload = (workload: { namespace: string; name: string }, failure = false) => (
+      <WorkloadView
+        kind="deployments"
+        namespace={workload.namespace}
+        name={workload.name}
+        onBack={() => {}}
+        resource={{
+          apiVersion: 'apps/v1',
+          kind: 'Deployment',
+          metadata: { name: workload.name, namespace: workload.namespace },
+          spec: { replicas: 1, template: { spec: { serviceAccountName: 'default', containers: [{ name: 'api', image: 'registry.example/checkout:v1' }] } } },
+          status: { replicas: 1, readyReplicas: 1 },
+        }}
+        relationships={{ configRefs: [] }}
+        workloadPods={failure ? undefined : []}
+        workloadPodsError={failure ? new Error('raw pod endpoint message') : undefined}
+        resourceFocusedUpdatesError={failure ? new Error('raw update API message') : undefined}
+      />
+    )
+    const empty = renderDetail({ app: singleApp, renderWorkload: (workload) => renderWorkload(workload) })
+    expect(empty.includes('当前没有与此工作负载匹配的 Pod。')).toBe(true)
+    expect(empty.includes('未捕获到近期活动。')).toBe(true)
+    expect(empty.includes('未发现 ConfigMap 或 Secret 引用。')).toBe(true)
+
+    const failed = renderDetail({ app: singleApp, renderWorkload: (workload) => renderWorkload(workload, true) })
+    expect(failed.includes('Pod 就绪状态不可用。请使用日志或时间线进一步检查。')).toBe(true)
+    expect(failed.includes('变更加载失败：')).toBe(true)
+    expect(failed.includes('raw update API message')).toBe(true)
+    expect(failed.includes('Failed to load events')).toBe(false)
+  })
 
   // A controlled host's only way to say "no workload in the URL" is null, so
   // without this the application scope a single-workload app must not have
@@ -248,7 +397,7 @@ describe("ApplicationDetail shell", () => {
 
     expect(html).toContain("Runtime for");
     expect(html).toContain("checkout-api");
-    expect(html).not.toContain("Application views");
+    expect(html).not.toContain("应用视图");
     expect(html).not.toContain('aria-haspopup="listbox"');
   });
 
@@ -265,7 +414,7 @@ describe("ApplicationDetail shell", () => {
 
     expect(html).toContain("Runtime for");
     expect(html).toContain("checkout-api");
-    expect(html).not.toContain("Application views");
+    expect(html).not.toContain("应用视图");
   });
 
   it("keeps application scope for a controlled multi-workload app with no workload in the URL", () => {
@@ -274,7 +423,7 @@ describe("ApplicationDetail shell", () => {
       onSelectWorkload: () => {},
     });
 
-    expect(html).toContain("Application views");
+    expect(html).toContain("应用视图");
     expect(html).not.toContain("Runtime for");
   });
 
@@ -314,16 +463,16 @@ describe("ApplicationDetail shell", () => {
       onOpenSource: () => {},
     });
 
-    expect(html).toContain("Application history");
-    expect(html).toContain("Deployments");
-    expect(html).toContain("Changes");
-    expect(html).toContain("Problems");
-    expect(html).toContain("Open full Timeline");
+    expect(html).toContain("应用历史记录");
+    expect(html).toContain("部署");
+    expect(html).toContain("变更");
+    expect(html).toContain("问题");
+    expect(html).toContain("打开完整时间线");
     expect(html).toContain("Deployment");
     expect(html).toContain("prod");
     expect(html).toContain("checkout-api");
-    expect(html).toContain("View Argo CD application");
-    expect(html).toContain("events retained by this Radar instance");
+    expect(html).toContain("查看 Argo CD Application");
+    expect(html).toContain("变更和问题反映此 KubeAtlas 实例保留的事件。部署来源历史记录可能覆盖不同的时间段。");
     expect(html).not.toContain("Current incidents");
   });
 
@@ -345,8 +494,34 @@ describe("ApplicationDetail shell", () => {
       }],
     })
 
-    expect(html).toContain('Showing the 10,000 most recent events in these namespaces')
-    expect(html).not.toContain('Recording coverage is incomplete')
+    expect(html).toContain('显示这些命名空间中最近的 10,000 条事件。此范围内更早的应用活动可能未包含。')
+    expect(html).not.toContain('此时间范围的部分记录覆盖不完整。')
+  })
+
+  it('preserves custom history range labels and values', () => {
+    const html = renderDetail({
+      selectedView: 'history',
+      onSelectView: () => {},
+      selectedWorkloadKey: null,
+      onSelectWorkload: () => {},
+      historyMode: 'retained',
+      historyRange: '7d',
+      historyRangeOptions: [
+        { value: 'all', label: 'All observed' },
+        { value: '7d', label: 'Custom window' },
+        { value: '24h', label: 'constructor' },
+        { value: '30d', label: 'toString' },
+      ],
+      historyItems: [],
+      onHistoryRangeChange: () => {},
+    })
+
+    expect(html).toContain('所有已观察记录')
+    expect(html).toContain('Custom window')
+    expect(html).toContain('value="all"')
+    expect(html).toContain('value="7d"')
+    expect(html).toMatch(/<option[^>]*value="24h"[^>]*>constructor<\/option>/)
+    expect(html).toMatch(/<option[^>]*value="30d"[^>]*>toString<\/option>/)
   })
 
   it('reports ring truncation with its own copy, only in retained mode', () => {
@@ -366,15 +541,15 @@ describe("ApplicationDetail shell", () => {
       }],
     }
     const retained = renderDetail({ ...base, historyMode: 'retained' })
-    expect(retained).toContain('the retained window exceeded')
+    expect(retained).toContain('事件历史记录可能不完整：保留窗口超过大小限制，最早的活动未加载。')
     // Distinct cause, distinct copy — not the per-query 10k note.
-    expect(retained).not.toContain('Showing the 10,000 most recent events')
+    expect(retained).not.toContain('显示这些命名空间中最近的 10,000 条事件。')
 
     const local = renderDetail({ ...base, historyMode: 'local' })
-    expect(local).not.toContain('the retained window exceeded')
+    expect(local).not.toContain('保留窗口超过大小限制')
     // Local can be ring-truncated too (the binary's 10k ring) - same warning,
     // source-appropriate copy.
-    expect(local).toContain('ring is full, so the oldest activity is not loaded')
+    expect(local).toContain('事件历史记录可能不完整：事件存储的环形缓冲区已满，最早的活动未加载。')
   })
 
   it('shows the host history-limit note beside the history, and nothing without one', () => {
@@ -402,9 +577,9 @@ describe("ApplicationDetail shell", () => {
       historyItems: [],
     })
 
-    expect(html).toContain('Application changes could not be loaded.')
-    expect(html).not.toContain('Deployment-source history is still shown.')
-    expect(html).not.toContain('No application history in this range.')
+    expect(html).toContain('无法加载应用变更。')
+    expect(html).not.toContain('仍显示部署来源历史记录。')
+    expect(html).not.toContain('此范围内没有应用历史记录。')
   })
 
   it('marks retained runtime rows as stale when a refresh fails', () => {
@@ -422,8 +597,8 @@ describe("ApplicationDetail shell", () => {
       }],
     })
 
-    expect(html).toContain('Application changes could not be refreshed.')
-    expect(html).toContain('Previously loaded changes may be stale.')
+    expect(html).toContain('无法刷新应用变更；先前加载的变更可能已过时。')
+    expect(html).toContain('先前加载的变更可能已过时。')
     expect(html).toContain('Deployment updated')
   })
 
@@ -461,10 +636,10 @@ describe("ApplicationDetail shell", () => {
       onOpenSource: () => {},
     });
 
-    expect(html).toContain('Latest change')
+    expect(html).toContain('最近变更')
     expect(html).toContain('Argo CD sync')
-    expect(html).toContain('History')
-    expect(html).toContain('View Argo CD application')
+    expect(html).toContain('历史记录')
+    expect(html).toContain('查看 Argo CD Application')
     expect(html).not.toContain('No application issues detected')
   })
 
@@ -478,13 +653,30 @@ describe("ApplicationDetail shell", () => {
     }
     const html = renderDetail({ app: sourceApp, history, onOpenSource: () => {} })
 
-    expect(html).toContain('Deployment source')
+    expect(html).toContain('部署来源')
     expect(html).toContain('Flux Kustomization')
     expect(html).toContain('flux-system/checkout')
-    expect(html.match(/View Flux Kustomization/g)).toHaveLength(1)
+    expect(html.match(/查看 Flux Kustomization/g)).toHaveLength(1)
     expect(html).not.toContain('App key')
     expect(html).not.toContain('Confidence')
     expect(html).not.toContain('Source &amp; provenance')
+  })
+
+  it('localizes a generic GitOps source action while preserving its name', () => {
+    const sourceRef: AppSourceRef = {
+      type: 'gitops',
+      tool: 'custom-controller',
+      kind: 'GitRepository',
+      namespace: 'source-system',
+      name: 'checkout',
+    }
+    const html = renderDetail({
+      app: { ...app, sourceRef },
+      onOpenSource: () => {},
+    })
+
+    expect(html).toContain('查看 GitOps 来源')
+    expect(html).toContain('source-system/checkout')
   })
 
   it('separates healthy runtime from degraded delivery and rolls up the application status', () => {
@@ -501,20 +693,21 @@ describe("ApplicationDetail shell", () => {
     })
 
     expect(html).toContain('Degraded')
-    expect(html).toContain('Runtime')
-    expect(html).toContain('Healthy')
-    expect(html).toContain('4/4 ready')
-    expect(html).toContain('Delivery')
+    expect(html).toContain('运行时')
+    expect(html).toContain('健康')
+    expect(html).toContain('4/4 就绪')
+    expect(html).toContain('交付')
     expect(html.match(/Synced/g)).toHaveLength(2)
-    expect((html.match(/Degraded/g) ?? []).length).toBeGreaterThanOrEqual(3)
+    expect(html).toContain('降级')
+    expect(html.match(/Degraded/g)).toHaveLength(2)
   })
 
   it('warns when application workloads resolve to different deployment sources', () => {
     const html = renderDetail({ app: { ...app, sourceConflict: true } })
 
-    expect(html).toContain('Deployment source')
-    expect(html).toContain('Multiple deployment sources detected')
-    expect(html).toContain('do not share one deployment manager')
+    expect(html).toContain('部署来源')
+    expect(html).toContain('检测到多个部署来源')
+    expect(html).toContain('此应用中的工作负载未共用同一个部署管理器。')
   })
 
   it('distinguishes inferred application identity from declared identity', () => {
@@ -524,9 +717,10 @@ describe("ApplicationDetail shell", () => {
         identity: { key: 'checkout', env: 'prod', confidence: 'medium', evidence: 'name stem checkout + shared image repo', source: 'name-stem' },
       },
     })
-    expect(inferred).toContain('Application identity')
-    expect(inferred).toContain('Inferred application boundary')
-    expect(inferred).toContain('a shared name + image')
+    expect(inferred).toContain('应用身份')
+    expect(inferred).toContain('根据共享名称与镜像推断应用边界')
+    expect(inferred).toContain('匹配依据：共享名称与镜像。')
+    expect(inferred).toContain('name stem checkout + shared image repo')
 
     const declared = renderDetail({
       app: {
@@ -534,16 +728,17 @@ describe("ApplicationDetail shell", () => {
         identity: { key: 'checkout', env: 'prod', confidence: 'high', evidence: 'app.skyhook.io/app=checkout', source: 'explicit' },
       },
     })
-    expect(declared).toContain('Identified by the app.skyhook.io/app annotation')
-    expect(declared).not.toContain('Inferred application boundary')
+    expect(declared).toContain('应用身份由app.skyhook.io/app 注解标识')
+    expect(declared).toContain('app.skyhook.io/app=checkout')
+    expect(declared).not.toContain('根据共享名称与镜像推断应用边界')
   })
 
   it('uses tier provenance when a grouped app has no cross-app identity', () => {
     const html = renderDetail({ app: { ...app, tier: 5 } })
 
-    expect(html).toContain('Application identity')
-    expect(html).toContain('Grouped by Helm metadata')
-    expect(html).not.toContain('Grouped from Kubernetes ownership')
+    expect(html).toContain('应用身份')
+    expect(html).toContain('按 Helm 元数据分组')
+    expect(html).not.toContain('根据 Kubernetes 所有权分组')
   })
 
   it('does not present completed init containers as a long-running workload state', () => {
@@ -588,7 +783,7 @@ describe("ApplicationDetail shell", () => {
     expect(html).not.toContain(
       "Current incident: BackOff on Deployment/checkout-api",
     );
-    expect(html).not.toContain("Latest change");
+    expect(html).not.toContain("最近变更");
   });
 
   it('previews retained incidents in Overview when no current issue card exists', () => {
@@ -603,9 +798,9 @@ describe("ApplicationDetail shell", () => {
       history,
     })
 
-    expect(html).toContain('Latest incident')
+    expect(html).toContain('最近问题')
     expect(html).toContain('Current incident: FailedScheduling on Pod/checkout-api-abc')
-    expect(html).toContain('View history')
+    expect(html).toContain('查看历史记录')
   })
 
   it('does not duplicate retained incidents when the host renders current issues', () => {
@@ -622,7 +817,7 @@ describe("ApplicationDetail shell", () => {
     })
 
     expect(html).toContain('Operational Issues (1)')
-    expect(html).not.toContain('Latest incident')
+    expect(html).not.toContain('最近问题')
     expect(html).not.toContain('Current incident: FailedScheduling on Pod/checkout-api-abc')
   })
 
@@ -757,21 +952,87 @@ describe("ApplicationDetail shell", () => {
       renderOverviewIssues: () => <div>Operational Issues (1)</div>,
     });
 
-    expect(html).toContain("Application views");
+    expect(html).toContain("应用视图");
     expect(html).toContain("Operational Issues (1)");
-    expect(html).not.toContain("Batch activity");
-    const workloadsPanel = html.indexOf(">Workloads</h2>");
+    expect(html).not.toContain("批处理活动");
+    const workloadsPanel = html.indexOf(">工作负载</h2>");
     expect(workloadsPanel).toBeGreaterThanOrEqual(0);
-    expect(html).toContain("Batch resources");
-    expect(html).toContain("Active runs");
-    expect(html).toContain("Retained runs");
+    expect(html).toContain("批处理资源");
+    expect(html).toContain("活动运行");
+    expect(html).toContain("保留的运行");
     expect(html).toContain("1 CronJob / 1 Job");
-    expect(html).toContain("3 succeeded / 1 failed");
+    expect(html).toContain("3 次成功 / 1 次失败");
+    expect(html).toContain("Succeeded");
     expect(html).toContain("nightly-29720340");
     expect(html).toContain("ad-hoc-import");
-    expect(html).not.toContain("ad-hoc-import is down");
+    expect(html).not.toContain("ad-hoc-import不可用");
     expect(html).not.toContain("Runtime for");
     expect(html).toContain('2xl:grid-cols-4');
+  });
+
+  it("localizes generated relative time while preserving the run name and phase", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-07-05T10:30:00.000Z"));
+    try {
+      const batchApp: AppRow = {
+        ...app,
+        workloads: [
+          {
+            ...app.workloads[0],
+            kind: "Job",
+            workload_class: "job",
+            batch: {
+              retainedRuns: 1,
+              succeededRuns: 1,
+              failedRuns: 0,
+              activeRuns: 0,
+              latestRunName: "nightly-run-01",
+              latestRunPhase: "Succeeded",
+              latestStartedAt: "2026-07-05T10:25:00.000Z",
+            },
+          },
+          app.workloads[1],
+        ],
+      };
+      const html = renderDetail({ app: batchApp });
+
+      expect(html).toContain("nightly-run-01 · 5分钟前");
+      expect(html).toContain("Succeeded");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("handles missing and unparseable run timestamps without changing raw values", () => {
+    const batchApp = (latestStartedAt?: string): AppRow => ({
+      ...app,
+      workloads: [
+        {
+          ...app.workloads[0],
+          kind: "Job",
+          workload_class: "job",
+          batch: {
+            retainedRuns: 1,
+            succeededRuns: 0,
+            failedRuns: 1,
+            activeRuns: 0,
+            latestRunName: "nightly-run-invalid-time",
+            latestRunPhase: "Failed",
+            ...(latestStartedAt ? { latestStartedAt } : {}),
+          },
+        },
+        app.workloads[1],
+      ],
+    });
+
+    const missing = renderDetail({ app: batchApp() });
+    expect(missing).toContain("nightly-run-invalid-time");
+    expect(missing).not.toContain("nightly-run-invalid-time ·");
+    expect(missing).toContain("Failed");
+
+    const invalid = renderDetail({ app: batchApp("not-a-timestamp") });
+    expect(invalid).toContain("nightly-run-invalid-time · not-a-timestamp");
+    expect(invalid).toContain("Failed");
   });
 
   it("uses the delivery verdict in a successful batch application header", () => {
@@ -805,7 +1066,7 @@ describe("ApplicationDetail shell", () => {
     };
     const html = renderDetail({ app: batchApp });
 
-    expect(html).toMatch(/<span class="text-sm font-semibold">Degraded<\/span>/);
+    expect(html).toMatch(/<span class="text-sm font-semibold">降级<\/span>/);
     expect(html).toContain("Succeeded");
   });
 });

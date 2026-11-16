@@ -58,7 +58,8 @@ func IsRadarVocabularyGroup(group string) bool {
 //   - reserved-principal rejection (every mode): username and every group must
 //     be outside the reserved K8s namespaces (blocks system:masters etc.);
 //   - vocabulary allowlist (Cloud only): username must be a Cloud identity and
-//     every group must be radar:*/cloud:*.
+//     every group must be radar:*/cloud:* or exactly kubeatlas:hub:owner,
+//     kubeatlas:hub:member, or kubeatlas:hub:viewer.
 //
 // Returns false to reject the whole identity — never silently drops values,
 // which would quietly change what the user is authorized to do.
@@ -78,7 +79,8 @@ func ForwardedIdentityAllowed(username string, groups []string, cloudMode bool) 
 		return false
 	}
 	for _, g := range groups {
-		if !IsRadarVocabularyGroup(g) {
+		if !IsRadarVocabularyGroup(g) && g != "kubeatlas:hub:owner" &&
+			g != "kubeatlas:hub:member" && g != "kubeatlas:hub:viewer" {
 			return false
 		}
 	}

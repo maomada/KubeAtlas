@@ -31,7 +31,9 @@ describe('workload rollout golden vectors', () => {
   for (const vector of vectors) {
     it(`${vector.kind}: ${vector.name}`, () => {
       const result = getWorkloadRolloutActivity(vector.object, vector.kind)
-      expect(result).toEqual({
+      const { detailSource, ...behavioralActivity } = result
+      expect(detailSource).toMatch(/^(generated|raw)$/)
+      expect(behavioralActivity).toEqual({
         phase: vector.phase,
         active: vector.active,
         manual: vector.manual,

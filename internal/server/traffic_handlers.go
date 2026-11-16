@@ -9,6 +9,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/maomada/KubeAtlas/internal/auth"
+	"github.com/maomada/KubeAtlas/internal/cloud"
 	"github.com/maomada/KubeAtlas/internal/k8s"
 	"github.com/maomada/KubeAtlas/internal/readscope"
 	"github.com/maomada/KubeAtlas/internal/traffic"
@@ -549,8 +551,11 @@ func (s *Server) handleGetActiveTrafficSource(w http.ResponseWriter, r *http.Req
 
 // handleTrafficConnect establishes connection to the traffic source
 // This may start a port-forward to metrics service if running locally
-// POST /api/traffic/connect
+// POST /api/traffic/connect-managed; /api/traffic/connect remains a local compatibility alias.
 func (s *Server) handleTrafficConnect(w http.ResponseWriter, r *http.Request) {
+	if !s.requireTrafficConnectAuthority(w, r) {
+		return
+	}
 	ctx := r.Context()
 
 	manager := traffic.GetManager()
@@ -567,6 +572,29 @@ func (s *Server) handleTrafficConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.writeJSON(w, connInfo)
+}
+
+func (s *Server) requireTrafficConnectAuthority(w http.ResponseWriter, r *http.Request) bool {
+	if !cloud.IsAuthenticatedTunnelRequest(r.Context()) {
+		return true
+	}
+	user := auth.UserFromContext(r.Context())
+	if user == nil {
+		s.writeError(w, http.StatusForbidden, "authenticated cluster administrator required to connect shared traffic source")
+		return false
+	}
+	// This shared connection uses Agent credentials, not the caller's credentials.
+	// Check current cluster-wide authority before starting any integration work.
+	allowed, authoritative := s.canReadUserSAR(r.Context(), user, "*", "*", "", "*")
+	if !authoritative {
+		s.writeError(w, http.StatusServiceUnavailable, "could not verify traffic connection administrator permission")
+		return false
+	}
+	if !allowed {
+		s.writeError(w, http.StatusForbidden, "cluster-wide administrator permission required to connect shared traffic source")
+		return false
+	}
+	return true
 }
 
 // handleTrafficConnectionStatus returns current connection status

@@ -5,6 +5,7 @@ import {
   clampLensToSelection,
   countEventsAfter,
   formatLensDuration,
+  formatScrubberPill,
   mergeGapRanges,
   pickDisplayBucketSizeMs,
   presetToSelection,
@@ -17,6 +18,12 @@ const HOUR = 60 * 60 * 1000
 const DAY = 24 * HOUR
 const NOW = 1_700_000_000_000
 const DOMAIN: ScrubberRange = { fromMs: NOW - 30 * DAY, toMs: NOW }
+
+describe('formatScrubberPill', () => {
+  it('formats date and time with Chinese locale and a 24-hour clock', () => {
+    expect(formatScrubberPill(new Date(2020, 0, 2, 18, 0).getTime())).toBe('1/2 18:00')
+  })
+})
 
 describe('barHeight (bucket → bar mapping)', () => {
   it('is zero for empty buckets or empty data', () => {

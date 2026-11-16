@@ -61,6 +61,7 @@ import (
 // correct interpretation, not every response field.
 func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramRegistry *toolParamRegistry) {
 	boolPtr := func(b bool) *bool { return &b }
+	registeredExec := includeWrites && includeExec && execToolsEnabled.Load()
 	// Kubernetes API tools have a closed domain; optional container execution
 	// can reach external services and has its own annotations.
 	readOnly := &mcp.ToolAnnotations{
@@ -86,6 +87,12 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 		DestructiveHint: boolPtr(false),
 		OpenWorldHint:   boolPtr(false),
 	}
+
+	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
+		Name:        "get_capabilities",
+		Description: "Cached source facts, not grants.",
+		Annotations: readOnly,
+	}, logToolCall("get_capabilities", sourceCapabilitiesHandler(includeWrites, registeredExec)))
 
 	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
 		Name: "get_dashboard",
@@ -122,11 +129,10 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 
 	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
 		Name: "list_resources",
-		Description: "Use for a jq-like namespace sweep when you know the resource kind " +
-			"(pods/po, deployments/deploy, services/svc, configmaps/cm, CRDs). Returns compact Kubernetes-shaped " +
-			"rows plus summaryContext by default (managedBy, health, issueCount) so you can " +
-			"compare many similar resources and pick suspects before calling get_resource. " +
-			"Returns {summary, next?, coverage, items}: summary says in words what the rows cover and what was not read; " +
+		Description: "Sweep one resource kind to compare compact Kubernetes-shaped rows before get_resource. " +
+			"Includes summaryContext (managedBy, health, issueCount). " +
+			"limit opts into non-atomic pages; page.nextCursor expires 10 minutes after the first page. " +
+			"Returns {summary, next?, coverage, items, page?}: summary says in words what the rows cover and what was not read; " +
 			"next, when present, is what you can do to complete it; coverage holds the same as data. Failures return {error, error_code, next?, coverage?}. " +
 			"For unknown kind/name searches, use search. For broad health triage, use " +
 			"get_dashboard or issues first. " +
@@ -686,7 +692,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 	}, logToolCall("manage_node", handleManageNode))
 
 	// Tools that run commands in the cluster: opt-in (--mcp-exec-tools).
-	if includeExec && execToolsEnabled.Load() {
+	if registeredExec {
 		registerExecTools(server, paramRegistry, &mcp.ToolAnnotations{
 			DestructiveHint: boolPtr(true),
 			OpenWorldHint:   boolPtr(true),
@@ -708,10 +714,12 @@ type topResourcesInput struct {
 }
 
 type listResourcesInput struct {
-	Kind      string `json:"kind" jsonschema:"resource kind to list for a broad sweep, e.g. pods/po, deployments/deploy, services/svc, configmaps/cm. Prefer this before get_resource when comparing many same-kind objects."`
+	Kind      string `json:"kind" jsonschema:"resource kind, e.g. pods/po, deployments/deploy, services/svc, configmaps/cm, CRDs"`
 	Group     string `json:"group,omitempty" jsonschema:"API group when the kind is ambiguous (e.g. serving.knative.dev for Knative Service vs core Service)"`
 	Namespace string `json:"namespace,omitempty" jsonschema:"filter to a specific namespace for app-scoped triage"`
 	Context   string `json:"context,omitempty" jsonschema:"per-row context: default attaches summaryContext (managedBy + health + issueCount + crossplanePause) for suspect ranking; 'none' returns bare rows"`
+	Limit     int    `json:"limit,omitempty" jsonschema:"page size; omitted: unpaged"`
+	Cursor    string `json:"cursor,omitempty" jsonschema:"page.nextCursor; reuse query and limit"`
 }
 
 type getResourceInput struct {
@@ -895,6 +903,9 @@ type topResourcesResponseMCP struct {
 }
 
 func handleListResources(ctx context.Context, req *mcp.CallToolRequest, input listResourcesInput) (*mcp.CallToolResult, any, error) {
+	if err := validateResourcePageInput(input); err != nil {
+		return nil, nil, err
+	}
 	started := currentReadCache()
 	kind := resourceKindName(strings.ToLower(input.Kind), input.Group)
 	group := input.Group
@@ -944,6 +955,11 @@ func handleListResources(ctx context.Context, req *mcp.CallToolRequest, input li
 		return nil, nil, withListCoverage(ctx, err, kind, target, clusterScoped)
 	}
 
+	pageRequest, err := sourceResourcePager.prepare(ctx, input, cache.Generation())
+	if err != nil {
+		return nil, nil, err
+	}
+
 	// When a group is specified, route to the dynamic cache so CRDs whose
 	// plural collides with a core kind (e.g. Knative serving.knative.dev/Service
 	// vs corev1 ""/Service) reach the right resource. FetchResourceList is
@@ -953,7 +969,7 @@ func handleListResources(ctx context.Context, req *mcp.CallToolRequest, input li
 	// informer for built-ins — so only true CRDs / plural collisions go dynamic.
 	// Mirrors the group-aware dispatch in the REST handlers.
 	if plan == nil || (group != "" && !k8s.TypedKindOwnsGroup(kind, group)) {
-		return listDynamicResources(ctx, cache, kind, group, target, readable, gaps, clusterScoped, input.Context)
+		return listDynamicResources(ctx, cache, kind, group, target, readable, gaps, clusterScoped, input.Context, pageRequest)
 	}
 
 	readAll := plan.all
@@ -987,7 +1003,7 @@ func handleListResources(ctx context.Context, req *mcp.CallToolRequest, input li
 		// issue index drops the namespace filter for cluster-scoped
 		// CRDs — those issues live at namespace="" and would otherwise
 		// be filtered out by the user's namespaced-access set.
-		return listDynamicResources(ctx, cache, kind, group, target, readable, gaps, clusterScoped, input.Context)
+		return listDynamicResources(ctx, cache, kind, group, target, readable, gaps, clusterScoped, input.Context, pageRequest)
 	}
 	if err != nil {
 		var re *readError
@@ -999,6 +1015,10 @@ func handleListResources(ctx context.Context, req *mcp.CallToolRequest, input li
 
 	if listScope != nil {
 		objs = retainAllowedObjects(objs, listScope, kind)
+	}
+	objs, page, err := paginateResources(objs, pageRequest)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	results, err := aicontext.MinifyList(objs, aicontext.LevelSummary)
@@ -1024,7 +1044,7 @@ func handleListResources(ctx context.Context, req *mcp.CallToolRequest, input li
 	if !resourceReadCacheIsCurrent(cache) {
 		return nil, nil, errConnectionChanged()
 	}
-	return listResult(ctx, kind, results, listCoverageFor(clusterScoped, target, read, readAll, gaps.gaps(ctx, resourceapi.MCPSetLimit, clusterScoped)))
+	return listResult(ctx, kind, results, listCoverageFor(clusterScoped, target, read, readAll, gaps.gaps(ctx, resourceapi.MCPSetLimit, clusterScoped)), page)
 }
 
 func handleGetResource(ctx context.Context, req *mcp.CallToolRequest, input getResourceInput) (*mcp.CallToolResult, any, error) {

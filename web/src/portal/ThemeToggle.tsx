@@ -1,15 +1,7 @@
-import { useEffect, useState } from 'react'
 import { Moon, Sun } from 'lucide-react'
+import { usePortalTheme } from './usePortalTheme'
 
 export function ThemeToggle() {
-  const [dark, setDark] = useState(() => {
-    try { return localStorage.getItem('kubeatlas-portal-theme') === 'dark' }
-    catch { return false }
-  })
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-    document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
-    try { localStorage.setItem('kubeatlas-portal-theme', dark ? 'dark' : 'light') } catch { /* Storage may be disabled. */ }
-  }, [dark])
+  const [dark, setDark] = usePortalTheme()
   return <button type="button" className="portal-control" onClick={() => setDark(value => !value)} aria-label={dark ? '切换浅色主题' : '切换深色主题'}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button>
 }

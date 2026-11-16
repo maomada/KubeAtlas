@@ -89,6 +89,10 @@ resolve: {
 
 webpack 5 hosts need the same mapping in `resolve.alias`. Without it the build fails to resolve the worker import.
 
+## YAML draft policy
+
+`YamlDraftPolicyProvider` optionally supplies a stable draft `scope` and a host-wide `readOnly` policy to every `EditableYamlView`. Scoped drafts include the complete resource identity; a scoped view never reads legacy unscoped drafts. A host that omits the provider or its scope retains the existing session-recovery behavior. `readOnly` is additive to each editor's own `readOnly` prop.
+
 ## Resource read coverage
 
 `ResourceReadCoverage` describes the scope an answer covers (and `narrowedBy`, when the caller's access, Radar's pin or what Radar collects narrowed it), what Radar read of it, and coded gaps naming what it did not read and why. `READ_ACTIONS` / `readActionFor` say what resolves each code. `ResourceCoverage` additionally permits `unknown` in UI adapters for older Radar instances. It does not describe object freshness or count truncation.

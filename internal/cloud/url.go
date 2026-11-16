@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // IsLoopbackHostname reports whether hostname is an explicit local-only host.
@@ -47,10 +48,19 @@ func NormalizeHubOrigin(raw string) (string, error) {
 	if err := ValidateHubOrigin(raw); err != nil {
 		return "", err
 	}
-	u, _ := url.Parse(raw) // ValidateHubOrigin already parsed and validated it.
-	u.Path = ""
-	u.RawPath = ""
-	return u.String(), nil
+	u, _ := url.Parse(raw)
+	scheme := strings.ToLower(u.Scheme)
+	host := strings.ToLower(strings.TrimSuffix(u.Hostname(), "."))
+	port := u.Port()
+	if scheme == "https" && port == "443" || scheme == "http" && port == "80" {
+		port = ""
+	}
+	if port != "" {
+		host = net.JoinHostPort(host, port)
+	} else if strings.Contains(host, ":") {
+		host = "[" + host + "]"
+	}
+	return (&url.URL{Scheme: scheme, Host: host}).String(), nil
 }
 
 // enrollmentHubOrigin returns origin, already normalized, with the host
@@ -78,7 +88,7 @@ func enrollmentHubOrigin(origin string) string {
 
 // ValidateHubOrigin validates the API origin used by the device-flow client.
 // The client sends its device secret in an Authorization header, so plaintext
-// is restricted to explicit loopback hosts.
+// is restricted to explicit IP literals and loopback hosts.
 func ValidateHubOrigin(raw string) error {
 	if raw == "" {
 		return errors.New("Hub API origin is required")
@@ -86,11 +96,16 @@ func ValidateHubOrigin(raw string) error {
 	if raw != strings.TrimSpace(raw) {
 		return errors.New("Hub API origin must not contain surrounding whitespace")
 	}
+	for _, r := range raw {
+		if unicode.IsControl(r) || r == '\\' {
+			return errors.New("Hub API origin contains an invalid character")
+		}
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return errors.New("Hub API origin is invalid")
 	}
-	if u.Scheme != "http" && u.Scheme != "https" {
+	if !strings.EqualFold(u.Scheme, "http") && !strings.EqualFold(u.Scheme, "https") {
 		return errors.New("Hub API origin must use http:// or https://")
 	}
 	if u.Host == "" || u.Hostname() == "" || strings.HasSuffix(u.Host, ":") {
@@ -98,6 +113,9 @@ func ValidateHubOrigin(raw string) error {
 	}
 	if u.User != nil {
 		return errors.New("Hub API origin must not include credentials")
+	}
+	if u.Opaque != "" || !validHubHostname(u.Hostname()) {
+		return errors.New("Hub API origin must use an IP address or DNS hostname")
 	}
 	if path := u.EscapedPath(); path != "" && path != "/" {
 		return errors.New("Hub API origin must not include a path")
@@ -108,15 +126,35 @@ func ValidateHubOrigin(raw string) error {
 	if err := validateURLPort(u); err != nil {
 		return err
 	}
-	if u.Scheme == "http" && !IsLoopbackHostname(u.Hostname()) {
-		return errors.New("Hub API origin must use https:// unless the host is localhost or a loopback address")
+	if strings.EqualFold(u.Scheme, "http") && !IsLoopbackHostname(u.Hostname()) && net.ParseIP(u.Hostname()) == nil {
+		return errors.New("Hub API origin must use https:// unless the host is localhost, loopback, or a literal IP address")
 	}
 	return nil
 }
 
+func validHubHostname(host string) bool {
+	if net.ParseIP(host) != nil {
+		return true
+	}
+	host = strings.TrimSuffix(host, ".")
+	if host == "" || len(host) > 253 {
+		return false
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return false
+		}
+		for _, r := range label {
+			if !(r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z' || r >= '0' && r <= '9' || r == '-') {
+				return false
+			}
+		}
+	}
+	return true
+}
+
 // ValidateWebSocketURL validates a Cloud agent endpoint. Plaintext WebSockets
-// are useful for local development, but cluster credentials must never cross a
-// non-loopback network without TLS.
+// are useful for explicitly configured IP literals and loopback development.
 func ValidateWebSocketURL(raw string) error {
 	if raw == "" {
 		return errors.New("cloud WebSocket URL is required")
@@ -140,8 +178,8 @@ func ValidateWebSocketURL(raw string) error {
 	if u.Fragment != "" || strings.Contains(raw, "#") {
 		return errors.New("cloud WebSocket URL must not include a fragment")
 	}
-	if u.Scheme == "ws" && !IsLoopbackHostname(u.Hostname()) {
-		return errors.New("cloud WebSocket URL must use wss:// unless the host is localhost or a loopback address")
+	if u.Scheme == "ws" && !IsLoopbackHostname(u.Hostname()) && net.ParseIP(u.Hostname()) == nil {
+		return errors.New("cloud WebSocket URL must use wss:// unless the host is localhost, loopback, or a literal IP address")
 	}
 	if err := validateURLPort(u); err != nil {
 		return err

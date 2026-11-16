@@ -1,9 +1,11 @@
+// @vitest-environment jsdom
 import { afterEach, describe, it, expect, vi } from 'vitest'
-import { createElement } from 'react'
+import { act, createElement } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import { compareIssues, issueSortAnchor, subjectRef, memberRef, normalizeImagePullMessage, issueMessageParts, type Issue } from './types'
 import { categoryLabel, groupBadgeClass, groupLabel, issueTitle } from './severity'
-import { IssueRow } from './IssuesView'
+import { IssueRow, IssuesView } from './IssuesView'
 import { issueFirstSeenTitle, issueResourceCreatedTitle, issueTiming } from './issue-timing'
 
 const base: Issue = {
@@ -81,13 +83,13 @@ describe('compareIssues', () => {
 
 describe('category/group label fallbacks', () => {
   it('returns the mapped label, else humanizes (server-added category needs no frontend deploy)', () => {
-    expect(categoryLabel('crashloop')).toBe('Crash loop')
+    expect(categoryLabel('crashloop')).toBe('崩溃循环')
     expect(categoryLabel('some_new_future_category')).toBe('Some new future category')
     expect(issueTitle({ category: 'backup_failed', reason: 'CNPGWALArchivingFailing' })).toBe('WAL archiving failing')
-    expect(issueTitle({ category: 'backup_failed', reason: 'BackupFailed' })).toBe('Backup failed')
+    expect(issueTitle({ category: 'backup_failed', reason: 'BackupFailed' })).toBe('备份失败')
   })
   it('humanizes an unmapped group', () => {
-    expect(groupLabel('runtime')).toBe('Runtime')
+    expect(groupLabel('runtime')).toBe('运行时')
     expect(groupLabel('some_future_group')).toBe('Some future group')
   })
   it('keeps ordinary group chips neutral and emphasizes control-plane/unknown groups', () => {
@@ -99,6 +101,47 @@ describe('category/group label fallbacks', () => {
     expect(groupBadgeClass('some_future_group')).toContain('text-theme-text-secondary')
     expect(groupBadgeClass('some_future_group')).not.toContain('ring-theme-border-light')
   })
+})
+
+it('localizes the healthy and unavailable issue-queue empty states', () => {
+  const healthy = renderToString(createElement(IssuesView, { issues: [], anyData: true }))
+  expect(healthy).toContain('当前没有问题')
+  expect(healthy).toContain('所选范围内没有活动问题')
+
+  const unavailable = renderToString(createElement(IssuesView, { issues: [], anyData: false }))
+  expect(unavailable).toContain('暂无问题数据')
+  expect(unavailable).toContain('连接集群后即可填充问题队列')
+})
+
+it('localizes the truncated affected-resource message while preserving resource identity', async () => {
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  act(() => {
+    root.render(createElement(IssueRow, {
+      issue: mk({
+        count: 5,
+        members: [
+          { kind: 'Pod', namespace: 'payments-prod', name: 'api-0' },
+          { kind: 'Pod', namespace: 'payments-prod', name: 'api-1' },
+        ],
+        members_truncated: true,
+      }),
+      open: true,
+      onToggle: () => undefined,
+    }))
+  })
+  await act(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0))
+  })
+  expect(host.textContent).toContain('已显示 2 / 5 个受影响资源；展开对象可查看其余资源。')
+  expect(host.textContent).toContain('Pod')
+  expect(host.textContent).toContain('payments-prod')
+  expect(host.textContent).toContain('api-0')
+  expect(host.textContent).not.toContain('Showing 2 of 5')
+  act(() => root.unmount())
+  host.remove()
+  document.body.innerHTML = ''
 })
 
 describe('IssueRow', () => {
@@ -136,7 +179,7 @@ describe('IssueRow', () => {
     }))
 
     expect(html).toContain('2h')
-    expect(html).toContain('after healthy')
+    expect(html).toContain('健康期后发生故障')
   })
 
   it('labels a stuck deletion by how long deletion has been pending', () => {
@@ -160,8 +203,8 @@ describe('IssueRow', () => {
     }))
 
     expect(html).toContain('30m')
-    expect(html).toContain('since deletion')
-    expect(html).toContain('pending since deletion was requested')
+    expect(html).toContain('自删除起')
+    expect(html).toContain('自请求删除后持续待删除')
     expect(html).not.toContain('自创建起')
     expect(html).not.toContain('first reconciliation')
   })
@@ -173,7 +216,7 @@ describe('IssueRow', () => {
       onToggle: () => undefined,
     }))
 
-    expect(html).toContain('Control plane')
+    expect(html).toContain('控制平面')
     expect(html).toContain(groupBadgeClass('control_plane'))
   })
 
@@ -199,8 +242,8 @@ describe('IssueRow', () => {
       onToggle: () => undefined,
     }))
 
-    expect(html).toContain('workload never healthy')
-    expect(html).toContain('exact onset unknown; owner workload never became healthy after deployment')
+    expect(html).toContain('工作负载从未健康')
+    expect(html).toContain('确切开始时间未知；工作负载部署后始终未达到健康状态')
     expect(html).not.toContain('自部署起')
   })
 
@@ -215,9 +258,9 @@ describe('IssueRow', () => {
       onToggle: () => undefined,
     }))
 
-    expect(html).toContain('workload regressed')
-    expect(html).toContain('onset unknown')
-    expect(html).toContain('exact onset unknown; owner workload was healthy before its current health regression')
+    expect(html).toContain('工作负载健康状态回退')
+    expect(html).toContain('开始时间未知')
+    expect(html).toContain('确切开始时间未知；工作负载在当前健康状态回退前曾处于健康状态')
     expect(html).not.toContain('workload health regressed')
   })
 
@@ -236,8 +279,9 @@ describe('IssueRow', () => {
     }))
 
     expect(html).toContain('≥')
-    expect(html).toContain('timing unknown for 1 of 3 signals')
-    expect(html).not.toContain('after healthy')
+    expect(html).toContain('其中 1/3 个信号的时间未知')
+    expect(html).toContain('2 小时前')
+    expect(html).not.toContain('健康期后发生故障')
   })
 
   it('keeps onset-independent workload evidence visible on mixed groups', () => {
@@ -256,11 +300,11 @@ describe('IssueRow', () => {
     }))
 
     expect(html).toContain('≥')
-    expect(html).toContain('health regressed')
-    expect(html).not.toContain('workload regressed')
-    expect(html).not.toContain('workload regressed · onset unknown')
-    expect(html).toContain('exact onset unknown for 1 of 2 signals')
-    expect(html).toContain('some signals active at least 2h ago')
+    expect(html).toContain('健康状态回退')
+    expect(html).not.toContain('工作负载健康状态回退 · 开始时间未知')
+    expect(html).not.toContain('工作负载健康状态回退')
+    expect(html).toContain('确切开始时间未知（1/2 个信号）')
+    expect(html).toContain('部分信号至少从 2 小时前起持续至今')
     expect(html).not.toContain('exact onset unknown;')
   })
 
@@ -280,10 +324,10 @@ describe('IssueRow', () => {
       onToggle: () => undefined,
     }))
 
-    expect(html).toContain('workload never healthy')
-    expect(html).toContain('exact onset unknown for 1 of 2 signals')
-    expect(html).toContain('some signals active at least 2h ago')
-    expect(html).toContain('last seen 30m ago')
+    expect(html).toContain('工作负载从未健康')
+    expect(html).toContain('确切开始时间未知（1/2 个信号）')
+    expect(html).toContain('部分信号至少从 2 小时前起持续至今')
+    expect(html).toContain('最近出现于 30 分钟前')
   })
 
   it('presents ordinary first-seen time as a conservative active lower bound', () => {
@@ -296,8 +340,10 @@ describe('IssueRow', () => {
       onToggle: () => undefined,
     }))
 
-    expect(html).toContain('active at least 2h ago')
-    expect(html).not.toContain('started 2h ago')
+    expect(html).toContain('至少从 2 小时前起持续至今')
+    expect(html).toContain('dateTime="2026-06-30T10:00:00Z"')
+    expect(html).toContain('>2h</time>')
+    expect(html).not.toContain('开始于 2 小时前')
   })
 })
 
@@ -305,7 +351,7 @@ describe('onset provenance copy', () => {
   it('describes a known first-seen value as an active lower bound', () => {
     const title = issueFirstSeenTitle(mk({ first_seen: '2026-06-30T10:00:00Z' }))
 
-    expect(title).toContain('Active at least since')
+    expect(title).toContain('至少从')
     expect(title).not.toContain('started')
   })
 
@@ -317,7 +363,7 @@ describe('onset provenance copy', () => {
       resource_created_at: '2026-06-30T10:00:00Z',
     }))
 
-    expect(title).toContain('Affected resource created')
+    expect(title).toContain('受影响资源的创建时间')
   })
 })
 
@@ -382,8 +428,8 @@ describe('issueTiming', () => {
       issue_timing: 'started_at_resource_creation',
       issue_timing_basis: 'pod_creation',
     }))).toMatchObject({
-      chip: 'pod failed at startup',
-      meta: 'exact onset unknown; affected pod failed during workload startup',
+      chip: 'Pod 在启动阶段失败',
+      meta: '确切开始时间未知；受影响的 Pod 在工作负载启动期间失败',
     })
 
     expect(issueTiming(mk({
@@ -393,8 +439,8 @@ describe('issueTiming', () => {
       issue_timing: 'started_at_resource_creation',
       issue_timing_basis: 'spec',
     }))).toMatchObject({
-      chip: 'invalid at first reconcile',
-      meta: 'exact onset unknown; initial spec was failing from first reconciliation',
+      chip: '首次协调时即无效',
+      meta: '确切开始时间未知；初始 spec 从首次协调起就处于故障状态',
     })
   })
 
@@ -405,8 +451,8 @@ describe('issueTiming', () => {
       issue_timing: 'started_at_resource_creation',
       issue_timing_basis: 'pod_creation',
     }))).toMatchObject({
-      chip: 'startup pod failures',
-      meta: 'exact onset unknown; failures occurred in pods created during workload startup',
+      chip: '启动阶段 Pod 故障',
+      meta: '确切开始时间未知；故障发生在工作负载启动期间创建的 Pod 中',
     })
 
     expect(issueTiming(mk({
@@ -415,8 +461,8 @@ describe('issueTiming', () => {
       issue_timing: 'started_after_resource_was_healthy',
       issue_timing_basis: 'pod_creation',
     }))).toMatchObject({
-      chip: 'new pods failed after healthy',
-      meta: 'exact onset unknown; failing pods were created after an earlier healthy period',
+      chip: '健康期后新建的 Pod 发生故障',
+      meta: '确切开始时间未知；故障 Pod 在此前健康期后创建',
     })
   })
 
@@ -444,8 +490,8 @@ describe('issueTiming', () => {
         }))
         expect(display).toMatchObject({
           kind: 'deletion',
-          chip: 'since deletion',
-          meta: 'pending since deletion was requested',
+          chip: '自删除起',
+          meta: '自请求删除后持续待删除',
         })
         expect(`${display?.chip} ${display?.meta} ${display?.tooltip}`).not.toMatch(/creation|healthy|deploy/i)
       }
@@ -461,8 +507,8 @@ describe('issueTiming', () => {
 
     expect(display).toMatchObject({
       kind: 'regression',
-      chip: 'after healthy',
-      meta: 'failing evidence followed a healthy period',
+      chip: '健康期后发生故障',
+      meta: '故障信号出现在健康期之后',
     })
     expect(`${display?.chip} ${display?.meta} ${display?.tooltip}`).not.toContain('2h')
     expect(`${display?.chip} ${display?.meta} ${display?.tooltip}`).not.toMatch(/baseline|safe|ignore/i)
@@ -477,10 +523,10 @@ describe('issueTiming', () => {
 
     expect(display).toMatchObject({
       kind: 'regression',
-      chip: 'health regressed',
-      meta: 'workload health regressed',
+      chip: '健康状态回退',
+      meta: '工作负载健康状态回退',
     })
-    expect(display?.tooltip).toContain('does not date or attribute this specific issue')
+    expect(display?.tooltip).toContain('并不能确定此问题的发生时间或归因')
     expect(`${display?.chip} ${display?.meta} ${display?.tooltip}`).not.toContain('2h')
   })
 
@@ -565,12 +611,12 @@ describe('IssueRow diagnosis raw messages', () => {
       }),
       open: true, onToggle: () => undefined, as: 'div',
     }))
-    expect(radar).not.toContain('Raw error')
+    expect(radar).not.toContain('原始错误')
     expect(radar).toContain('leaves the 2 pods behind Service recommendation')
-    expect(radar).toContain('Affected resources')
+    expect(radar).toContain('受影响的资源')
 
     // Without the marker the message is still treated as detector output.
     const unmarked = renderToString(createElement(IssueRow, { issue: mk(base), open: true, onToggle: () => undefined, as: 'div' }))
-    expect(unmarked).toContain('Raw error')
+    expect(unmarked).toContain('原始错误')
   })
 })

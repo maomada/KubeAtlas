@@ -32,7 +32,7 @@ describe('ResourceIssuesSection', () => {
   it('uses the Issues row treatment and defaults collapsed', () => {
     const html = renderToString(<ResourceIssuesSection issues={[issue]} />)
 
-    expect(html).toContain('Operational issues')
+    expect(html).toContain('运行问题')
     expect(html).toContain('StorageClassMissing')
     expect(html).not.toContain('What&#x27;s wrong')
     expect(html).not.toContain('Context')
@@ -41,13 +41,13 @@ describe('ResourceIssuesSection', () => {
 
   it('shows the Subject deep-link by default', () => {
     const html = renderToString(<IssueRow issue={issue} open onToggle={() => {}} onResourceClick={() => {}} />)
-    expect(html).toContain('Subject')
+    expect(html).toContain('对象')
   })
 
   it('suppresses the Subject deep-link when the issue subject is the embedding resource', () => {
     // apiKind (plural) must still resolve to the same identity as the wire kind.
     const html = renderToString(<IssueRow issue={issue} open onToggle={() => {}} onResourceClick={() => {}} hideSubject />)
-    expect(html).not.toContain('Subject')
+    expect(html).not.toContain('对象')
   })
 })
 
@@ -78,14 +78,14 @@ it('makes typed node corroboration discoverable without replacing the failure or
     diagnostic_context: { role: 'context', facts: [{ type: 'node_startup_corroboration', message: 'Three visible Pods across two workloads on node-a; including Pod demo/worker.', refs: [{ kind: 'Pod', namespace: 'demo', name: 'peer' }] }] },
   }
   const collapsed = renderToString(<ResourceIssuesSection issues={[correlated]} />)
-  expect(collapsed).toContain('Same-node evidence')
+  expect(collapsed).toContain('同节点证据')
   expect(collapsed).toContain('specific kubelet failure')
   const expanded = renderToString(<IssueRow issue={correlated} open onToggle={() => {}} resourceHref={ref => `/resources/${ref.kind}/${ref.namespace}/${ref.name}`} />)
   expect(expanded).toContain('Three visible Pods across two workloads')
   expect(expanded).toContain('/resources/Pod/demo/peer')
   expect(expanded).not.toContain('confidence')
   expect(expanded).not.toContain('Caused by')
-  expect(renderToString(<IssueRow issue={{ ...correlated, diagnostic_context: undefined }} open onToggle={() => {}} />)).not.toContain('Same-node evidence')
+  expect(renderToString(<IssueRow issue={{ ...correlated, diagnostic_context: undefined }} open onToggle={() => {}} />)).not.toContain('同节点证据')
 })
 
 it('keeps pod/template evidence in expanded neutral context with navigable witnesses', () => {
@@ -100,7 +100,7 @@ it('keeps pod/template evidence in expanded neutral context with navigable witne
   expect(collapsed).toContain('OOMKilled')
   expect(collapsed).not.toContain('Pod/template differences')
   const expanded = renderToString(<IssueRow issue={contextual} open onToggle={() => {}} resourceHref={ref => `/resources/${ref.kind}/${ref.namespace}/${ref.name}`} />)
-  expect(expanded).toContain('Pod/template differences')
+  expect(expanded).toContain('Pod/模板差异')
   expect(expanded).toContain('Writer and timing are unknown')
   expect(expanded).toContain('/resources/ReplicaSet/demo/owner')
   expect(expanded).not.toContain('confidence')

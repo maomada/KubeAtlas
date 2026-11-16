@@ -1,0 +1,50 @@
+{{- if .Values.hub.enabled }}
+{{- range $role := list "owner" "member" "viewer" }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "radar.fullname" $ }}-hub-role-{{ $role }}
+  labels:
+    {{- include "radar.labels" $ | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ if eq $role "owner" }}admin{{ else if eq $role "member" }}edit{{ else }}view{{ end }}
+subjects:
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: kubeatlas:hub:{{ $role }}
+{{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "radar.fullname" . }}-hub-infra-readonly
+  labels:
+    {{- include "radar.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["nodes", "namespaces", "persistentvolumes", "persistentvolumeclaims"]
+    verbs: ["get", "list", "watch"]
+  - apiGroups: ["storage.k8s.io"]
+    resources: ["storageclasses"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "radar.fullname" . }}-hub-infra-readonly
+  labels:
+    {{- include "radar.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "radar.fullname" . }}-hub-infra-readonly
+subjects:
+{{- range $role := list "owner" "member" "viewer" }}
+  - kind: Group
+    apiGroup: rbac.authorization.k8s.io
+    name: kubeatlas:hub:{{ $role }}
+{{- end }}
+{{- end }}

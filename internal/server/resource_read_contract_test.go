@@ -23,6 +23,18 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/resourceapi"
 )
 
+func TestPaginationReadStatuses(t *testing.T) {
+	for code, want := range map[readreason.Code]int{
+		readreason.InvalidParameters: http.StatusBadRequest,
+		readreason.InvalidCursor:     http.StatusBadRequest,
+		readreason.CursorExpired:     http.StatusGone,
+	} {
+		if got := readStatusFor(code); got != want {
+			t.Errorf("%s: status=%d, want %d", code, got, want)
+		}
+	}
+}
+
 // Every code a read can fail with has an HTTP status, so none falls through
 // to a 500 that hides its meaning.
 func TestEveryReadCodeHasAStatus(t *testing.T) {

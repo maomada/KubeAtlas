@@ -16,6 +16,48 @@ import release_local
 SOURCE_SHA = "a" * 40
 
 
+def make_semgrep_source_fixture(root: Path):
+    """Keep synthetic release receipts independent of the real SAST review."""
+    names = ("internal/a.go", "internal/a/b.go")
+    for name in names:
+        target = root / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("package fixture\n", encoding="utf-8")
+    lock = {"commit": "b" * 40, "ruleCount": 1, "files": {"fixture.yaml": "c" * 64}}
+    lock_path = root / ".github/security-rules.lock.json"
+    lock_path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path.write_bytes(release_local._canonical_json(lock))
+    policy = {
+        "schemaVersion": 1,
+        "sourceSha": SOURCE_SHA,
+        "engine": release_local.security_scan.ENGINE_VERSION,
+        "rulesLockSha256": hashlib.sha256(lock_path.read_bytes()).hexdigest(),
+        "sourceTreeSha256": release_local.security_dispositions.source_digest(
+            root, [root / name for name in names]
+        ),
+        "entries": [{
+            "id": "TEST-SAST-001",
+            "finding": {
+                "check_id": "fixture.security.rule", "path": names[0],
+                "start": {"line": 1, "col": 1}, "end": {"line": 1, "col": 8},
+            },
+            "reviewedSourceSha": SOURCE_SHA,
+            "evidence": "Synthetic unit-test finding; not product acceptance.",
+            "disposition": "false-positive",
+            "approval": {"approved": True, "actor": "test-fixture", "reference": "unit-test"},
+        }],
+    }
+    (root / ".github/security-dispositions.json").write_bytes(
+        release_local._canonical_json(policy)
+    )
+    subprocess.run(["git", "init", "-q", str(root)], check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-C", str(root), "add", "--", *names,
+         ".github/security-rules.lock.json", ".github/security-dispositions.json"],
+        check=True, capture_output=True,
+    )
+
+
 def make_keypair(root: Path) -> tuple[Path, Path]:
     private_key = root / "test-private.pem"
     public_key = root / release_approval.PUBLIC_KEY
@@ -38,6 +80,8 @@ def make_bundle(root: Path, include_gates: bool = True):
     repo_root = root / "checkout"
     repo_root.mkdir()
     private_key, _ = make_keypair(repo_root)
+    if include_gates:
+        make_semgrep_source_fixture(repo_root)
     bundle = root / "release-bundle"
     for directory in (
         "binaries",
@@ -232,6 +276,12 @@ def make_bundle(root: Path, include_gates: bool = True):
                     }
                     for spec in specs
                 ]
+                if gate.startswith("semgrep-"):
+                    # The signed command contract uses a POSIX-style $BUNDLE
+                    # output path, including in fixtures created on Windows.
+                    for command in commands:
+                        output_index = command["argv"].index("--output") + 1
+                        command["argv"][output_index] = command["argv"][output_index].replace("\\", "/")
                 required_tools = {
                     "linux-ci": ("go",), "frontend": ("node",), "settings-e2e": ("node",),
                     "helm": ("helm", "helm3", "helmfile"), "release-security": ("go",),
@@ -527,6 +577,9 @@ class LocalReleaseTests(unittest.TestCase):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)
         self.root = Path(self.temporary.name)
+        source_root = patch.object(release_local, "ROOT", self.root / "checkout")
+        source_root.start()
+        self.addCleanup(source_root.stop)
         (
             self.repo_root,
             self.bundle,
@@ -534,6 +587,26 @@ class LocalReleaseTests(unittest.TestCase):
             self.context,
             self.inventories,
         ) = make_bundle(self.root)
+
+    def test_semgrep_receipts_use_an_isolated_source_and_policy(self):
+        self.assertEqual(release_local.ROOT, self.repo_root)
+        policy = release_local._load_json(
+            self.repo_root / ".github/security-dispositions.json", "fixture policy"
+        )
+        self.assertEqual(policy["sourceSha"], SOURCE_SHA)
+        self.assertEqual([entry["id"] for entry in policy["entries"]], ["TEST-SAST-001"])
+
+    def test_semgrep_receipt_rejects_source_changes_after_fixture_review(self):
+        receipt = release_local._load_json(
+            self.bundle / "evidence/receipts/semgrep-full.json", "receipt"
+        )
+        (self.repo_root / "internal/a.go").write_text(
+            "package fixture\n// source changed after review\n", encoding="utf-8"
+        )
+        with self.assertRaisesRegex(release_local.LocalReleaseError, "policy validation"):
+            release_local._validate_semgrep_receipt(
+                self.bundle, receipt, "semgrep-full", self.context
+            )
 
     def test_semgrep_provenance_uses_git_string_order_and_exact_targets(self):
         receipt = release_local._load_json(

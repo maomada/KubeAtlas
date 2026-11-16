@@ -12,6 +12,7 @@ import { RestrictedState } from '../ui/RestrictedState'
 import { FetchResult } from '../ui/FetchResult'
 import { Input } from '../ui/Input'
 import { ColumnPickerList, columnDisplayLabel } from './ColumnPickerList'
+import { useYamlDraftPolicy } from '../shared/YamlDraftPolicy'
 import { applyColumnOrder, sanitizeColumnOrder } from './column-order'
 import type { TopPodMetrics, TopNodeMetrics, ContainerResourceMetrics } from '../../types'
 import {
@@ -3786,6 +3787,7 @@ export function ResourcesView({
   onBulkScale,
   isBulkScaling = false,
 }: ResourcesViewProps) {
+  const { readOnly: yamlReadOnly } = useYamlDraftPolicy()
   const initialFilters = getInitialFiltersFromURL()
   const [selectedKind, setSelectedKind] = useState<SelectedKindInfo>(() => getInitialKindFromURL(basePath, defaultKind, locationPathname, locationSearch))
   // Phones: the 224px kind list would leave the table a sliver, so it lives in
@@ -6571,11 +6573,11 @@ export function ResourcesView({
               </div>
             )}
           </div>
-          {onCreateResource && (
+          {onCreateResource && !yamlReadOnly && (
             <Tooltip content={`创建 ${selectedKind.kind || '资源'}`}>
               <button
                 aria-label={`创建 ${selectedKind.kind || '资源'}`}
-                onClick={() => onCreateResource(selectedKind)}
+                onClick={() => { if (!yamlReadOnly) onCreateResource(selectedKind) }}
                 className="p-2 hover:bg-theme-elevated rounded-lg text-theme-text-secondary hover:text-theme-text-primary transition-colors"
               >
                 <Plus className="w-4 h-4" />

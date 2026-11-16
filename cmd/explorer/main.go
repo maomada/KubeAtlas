@@ -44,7 +44,7 @@ var (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cloud" {
-		log.Fatal("upstream Cloud commands are not available in KubeAtlas; use the independent Portal registration")
+		log.Fatal("upstream Radar Cloud commands are unavailable in this independently maintained build")
 	}
 
 	// Subcommand dispatch (before flag parsing — subcommands own their flags).
@@ -84,11 +84,6 @@ func main() {
 	// Parse flags (defaults come from config file, falling back to hardcoded values)
 	kubeconfig := flag.String("kubeconfig", fileCfg.Kubeconfig, "Path to primary kubeconfig file (default: ~/.kube/config)")
 	kubeconfigDir := flag.String("kubeconfig-dir", fileCfg.KubeconfigDirsFlag(), "Comma-separated directories containing additional kubeconfig files")
-	fleetConfig := flag.String("fleet-config", "", "Opt-in Fleet connection configuration JSON; enables the read-only /mcp-fleet endpoint")
-	fleetState := flag.String("fleet-state", "", "Persistent Fleet identity catalog path (default ~/.kubeatlas/fleet-state.json)")
-	fleetAdminUsers := flag.String("fleet-admin-users", "", "Comma-separated exact usernames allowed to manage Fleet metadata and local connections")
-	fleetLocalConnections := flag.Bool("fleet-local-connections", false, "Allow Fleet administrators to add and remove trusted local kubeconfig connections; unavailable in-cluster")
-	fleetWrites := flag.Bool("fleet-writes", false, "Enable explicitly targeted Fleet prepare/execute Kubernetes operations")
 	namespace := flag.String("namespace", fileCfg.Namespace, "Initial namespace filter (empty = all namespaces)")
 	namespaces := flag.String("namespaces", fileCfg.NamespacesFlag(), "Initial namespace filters as a comma-separated list (e.g. ns1,ns2,ns3). Use this when you can list resources in specific namespaces but cannot list namespaces cluster-wide.")
 	port := flag.Int("port", fileCfg.PortOr(9280), "Server port")
@@ -177,6 +172,11 @@ func main() {
 	authOIDCCACert := flag.String("auth-oidc-ca-cert", "", "Path to CA certificate file for OIDC provider TLS verification")
 	authOIDCBackchannelLogout := flag.Bool("auth-oidc-backchannel-logout", false, "Enable OIDC Back-Channel Logout endpoint (single-replica only)")
 	authOIDCEnablePKCE := flag.Bool("auth-oidc-enable-pkce", false, "Enable PKCE (S256) for the OIDC authorization-code flow (opt-in)")
+	hubEnv := hubStartupEnvironmentDefaults()
+	hubURL := flag.String("hub-url", hubEnv.URL, "Self-hosted Hub Portal origin. Env: KUBEATLAS_AGENT_HUB_URL")
+	hubClusterID := flag.String("hub-cluster-id", hubEnv.ClusterID, "Self-hosted Hub cluster ID. Env: KUBEATLAS_AGENT_HUB_CLUSTER_ID")
+	hubTokenFile := flag.String("hub-token-file", hubEnv.TokenFile, "File containing the self-hosted Hub cluster token. Env: KUBEATLAS_AGENT_HUB_TOKEN_FILE")
+	hubCAFile := flag.String("hub-ca-file", hubEnv.CAFile, "CA bundle for a private self-hosted Hub certificate. Env: KUBEATLAS_AGENT_HUB_CA_FILE")
 	// Legacy Cloud flags remain parseable for clear rejection of old configs.
 	cloudURL := flag.String("cloud-url", os.Getenv("KUBEATLAS_CLOUD_URL"), "Legacy upstream Cloud option; KubeAtlas rejects Cloud configuration. Env: KUBEATLAS_CLOUD_URL")
 	cloudToken := flag.String("cloud-token", os.Getenv("KUBEATLAS_CLOUD_TOKEN"), "Legacy Cloud connection token (unsupported). Env: KUBEATLAS_CLOUD_TOKEN")
@@ -251,7 +251,30 @@ func main() {
 	for _, warning := range cloudStart.warnings {
 		log.Printf("[cloud] WARNING: %s", warning)
 	}
-	cloudTunnelConfigured := cloudStart.mode != cloudOff
+	mcpMode, err := mcpFlags.Resolve()
+	if err != nil {
+		log.Fatal(err)
+	}
+	hubStart, err := resolveHubStartup(hubStartupFlags{
+		URL:                   *hubURL,
+		ClusterID:             *hubClusterID,
+		TokenFile:             *hubTokenFile,
+		CAFile:                *hubCAFile,
+		LegacyCloudConfigured: *cloudURL != "" || *cloudToken != "" || *cloudClusterName != "" || *cloudHubURL != "" || *cloudEnrollmentKeyFile != "" || *cloudCAFile != "" || *clusterNamePrefix != "" || *clusterNameSuffix != "" || *cloudInsecureSkipVerify,
+		AuthMode:              *authMode,
+		CredentialMode:        *k8sCredentials,
+		BasePath:              *basePath,
+		MCPEnabled:            mcpMode.Enabled,
+		MCPCatalogOnly:        *mcpCatalogOnly,
+		MCPCatalogStdio:       *mcpCatalogStdio,
+	})
+	if err != nil {
+		log.Fatalf("invalid self-hosted Hub configuration: %v", err)
+	}
+	if hubStart.Enabled {
+		cloud.SetSelfHostedMode(true)
+	}
+	cloudTunnelConfigured := cloudStart.mode != cloudOff || hubStart.Enabled
 
 	cloudMode := cloud.Mode()
 	if cloudMode {
@@ -261,9 +284,16 @@ func main() {
 		*authMode = "proxy"
 		// Pin the header names to the Cloud's wire contract. Operators don't
 		// get to retarget these; Cloud always sends X-Forwarded-User/Groups.
-		*authUserHeader = "X-Forwarded-User"
-		*authGroupsHeader = "X-Forwarded-Groups"
-		log.Printf("[cloud] KUBEATLAS_CLOUD_MODE=true: auth-mode forced to proxy, trusting tunnel-supplied identity headers")
+		if hubStart.Enabled {
+			*authMode = hubStart.AuthMode
+			*authUserHeader = hubStart.UserHeader
+			*authGroupsHeader = hubStart.GroupsHeader
+			log.Printf("[hub] self-hosted Hub mode: auth-mode forced to proxy, trusting authenticated-tunnel identity headers")
+		} else {
+			*authUserHeader = "X-Forwarded-User"
+			*authGroupsHeader = "X-Forwarded-Groups"
+			log.Printf("[cloud] KUBEATLAS_CLOUD_MODE=true: auth-mode forced to proxy, trusting tunnel-supplied identity headers")
+		}
 	}
 	credentialMode, err := pkgauth.ParseCredentialMode(*k8sCredentials)
 	if err != nil {
@@ -296,6 +326,9 @@ func main() {
 	startupMode := "local"
 	if cloudMode {
 		startupMode = "upstream Cloud"
+		if hubStart.Enabled {
+			startupMode = "self-hosted Hub"
+		}
 	}
 	log.Printf("KubeAtlas %s starting (mode=%s, auth=%s)...", version, startupMode, *authMode)
 	memlimit.Apply()
@@ -328,7 +361,10 @@ func main() {
 	// would 404 both. Fail loudly instead of coming up broken. Both Cloud
 	// signals are checked because the chart sets them together but they are
 	// independent inputs, and either one alone is enough to break the prefix.
-	if normalizedBasePath != "" && (*cloudURL != "" || cloudTunnelConfigured || cloud.Mode()) {
+	if normalizedBasePath != "" && hubStart.Enabled {
+		log.Fatal("--base-path is not supported with the self-hosted Hub agent")
+	}
+	if normalizedBasePath != "" && !hubStart.Enabled && (*cloudURL != "" || cloudTunnelConfigured || cloud.Mode()) {
 		log.Fatalf("--base-path is not supported in upstream Cloud mode (--cloud-url / --cloud-enrollment-key-file / KUBEATLAS_CLOUD_MODE): upstream Cloud owns the URL path")
 	}
 	timelineMaxSizeBytes, err := config.ParseByteSize(*timelineMaxSize)
@@ -362,10 +398,6 @@ func main() {
 		}
 	})
 	enablePprof, err := config.PprofOverrideFromEnv()
-	if err != nil {
-		log.Fatal(err)
-	}
-	mcpMode, err := mcpFlags.Resolve()
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -404,13 +436,14 @@ func main() {
 		mcpEnabled = true
 	}
 
-	// Hub origin overrides for self-hosted control planes. When only the API
-	// origin is set, the frontend origin defaults to the same host — the
-	// self-hosted stack serves web + API from one origin; the hosted pair
-	// remains empty unless an explicit legacy value is supplied.
-	hubAPIURL, hubAppURL, err := cloud.ResolveHubOriginsFromEnv()
-	if err != nil {
-		log.Fatalf("%v", err)
+	var hubAPIURL, hubAppURL string
+	if hubStart.Enabled {
+		hubAPIURL, hubAppURL = hubStart.Origin, hubStart.Origin
+	} else {
+		hubAPIURL, hubAppURL, err = cloud.ResolveHubOriginsFromEnv()
+		if err != nil {
+			log.Fatalf("%v", err)
+		}
 	}
 
 	cfg := app.AppConfig{
@@ -465,9 +498,6 @@ func main() {
 		MCPEnabled:                  mcpEnabled,
 		MCPReadOnly:                 mcpMode.ReadOnly,
 		MCPExecTools:                mcpFlags.ExecToolsEnabled(),
-		FleetAdminUsers:             parseCSV(*fleetAdminUsers),
-		FleetLocalConnections:       *fleetLocalConnections,
-		FleetWrites:                 *fleetWrites,
 		AIHistory:                   *aiHistory,
 		AIHistoryDBPath:             fileCfg.AIHistoryDBPath,
 		Version:                     version,
@@ -502,10 +532,6 @@ func main() {
 			OIDCBackchannelLogout:     *authOIDCBackchannelLogout,
 			OIDCEnablePKCE:            *authOIDCEnablePKCE,
 		},
-	}
-
-	if err := configureFleet(&cfg, *fleetConfig, *fleetState, *mcpCatalogOnly || *mcpCatalogStdio); err != nil {
-		log.Fatalf("Invalid Fleet configuration: %v", err)
 	}
 
 	// Set global flags
@@ -551,12 +577,6 @@ func main() {
 	if err := app.InitializeK8s(cfg); err != nil {
 		log.Fatalf("%v", err)
 	}
-	if cfg.FleetLocalConnections && k8s.IsInCluster() {
-		if cfg.FleetManager != nil {
-			_ = cfg.FleetManager.Close()
-		}
-		log.Fatal("--fleet-local-connections is unavailable in-cluster")
-	}
 	k8s.LogTiming(" K8s client init: %v", time.Since(t))
 
 	// Provision the Argo CD integration from the environment (KUBEATLAS_ARGOCD_TOKEN
@@ -586,17 +606,8 @@ func main() {
 	srv := app.CreateServer(cfg)
 	k8s.LogTiming(" Server created: %v", time.Since(t))
 
-	if cfg.FleetManager != nil {
-		if err := cfg.FleetManager.Start(context.Background()); err != nil {
-			_ = cfg.FleetManager.Close()
-			log.Fatal("Fleet runtime startup failed")
-		}
-	}
-
 	rootCtx, rootCancel := startServer(srv, startupStart)
 	defer rootCancel()
-	app.StartPortalReporter(rootCtx, cfg)
-	app.StartFleetSync(rootCtx, cfg)
 
 	// Open browser — server is confirmed ready to accept connections
 	if !cfg.NoBrowser {
@@ -618,7 +629,22 @@ func main() {
 
 	// With a Hub configured, dial out to it and serve the existing router
 	// over yamux-tunneled streams. No behavior change when none is.
-	if cloudStart.mode != cloudOff {
+	if hubStart.Enabled {
+		go func() {
+			runErr := cloud.Run(rootCtx, cloud.Config{
+				URL:                  hubStart.AgentURL,
+				ClusterID:            hubStart.ClusterID,
+				ClusterName:          hubStart.ClusterID,
+				Token:                hubStart.Token,
+				CA:                   hubStart.CA,
+				SelfUpgradeAvailable: func() bool { return false },
+				Handler:              srv.Handler(),
+			})
+			if runErr != nil && !errors.Is(runErr, context.Canceled) {
+				log.Printf("[hub] self-hosted Hub tunnel stopped")
+			}
+		}()
+	} else if cloudStart.mode != cloudOff {
 		go func() {
 			defer func() {
 				if r := recover(); r != nil {

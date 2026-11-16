@@ -3,13 +3,59 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"testing"
 
+	"github.com/maomada/KubeAtlas/pkg/readreason"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 )
+
+func TestLogToolCallStructuredForbidden(t *testing.T) {
+	forbidden := apierrors.NewForbidden(schema.GroupResource{Resource: "configmaps"}, "cfg", errors.New("denied by policy"))
+	for _, tc := range []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"typed", forbidden, "permission_denied"},
+		{"wrapped", fmt.Errorf("failed to patch resource: %w", forbidden), "permission_denied"},
+		{"existing read reason", &readError{code: readreason.RadarForbidden, err: forbidden}, "radar_forbidden"},
+		{"text is not a status", errors.New("configmaps cfg is forbidden"), ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			call := logToolCall("patch_resource", func(context.Context, *mcp.CallToolRequest, struct{}) (*mcp.CallToolResult, any, error) {
+				return nil, nil, tc.err
+			})
+			result, _, err := call(t.Context(), nil, struct{}{})
+			if tc.code == "" {
+				if err != tc.err || result != nil {
+					t.Fatalf("untyped error reclassified: result=%+v err=%v", result, err)
+				}
+				return
+			}
+			if err != nil || result == nil || !result.IsError || result.StructuredContent == nil {
+				t.Fatalf("missing structured tool error: result=%+v err=%v", result, err)
+			}
+			body := decodeToolResult(t, result)
+			structured, marshalErr := json.Marshal(result.StructuredContent)
+			if marshalErr != nil || string(structured) != result.Content[0].(*mcp.TextContent).Text {
+				t.Fatalf("text and structured errors disagree: %+v", result)
+			}
+			if body["error_code"] != tc.code || body["next"] == "" || result.Meta["kubeatlas/observedAt"] == nil {
+				t.Fatalf("error/provenance lost: %+v", result)
+			}
+			if tc.code == "permission_denied" && (body["error"] != tc.err.Error() || body["retryable"] != false) {
+				t.Fatalf("incorrect permission error: %+v", body)
+			}
+		})
+	}
+}
 
 func TestResultBytesTextContent(t *testing.T) {
 	res := &mcp.CallToolResult{
