@@ -7,27 +7,33 @@ bash -n "$script"
 
 export FAKE_ORIGIN=https://hub.example.test
 export FAKE_ENROLLMENT_ID=0123456789abcdef0123456789abcdef
-export FAKE_DEVICE_SECRET="ka_device_$(printf 'd%.0s' {1..64})"
-export FAKE_AGENT_TOKEN="ka_agent_$(printf 't%.0s' {1..43})"
+FAKE_DEVICE_SECRET="ka_device_$(printf 'd%.0s' {1..64})"
+export FAKE_DEVICE_SECRET
+FAKE_AGENT_TOKEN="ka_agent_$(printf 't%.0s' {1..43})"
+export FAKE_AGENT_TOKEN
 export FAKE_CLUSTER_ID=agent-cluster
 export FAKE_NAMESPACE="kubeatlas-agent-${FAKE_ENROLLMENT_ID:0:10}"
-export FAKE_OWNER_USER_ID="kubeatlas:portal:$(printf 'c%.0s' {1..64})"
-export FAKE_IMAGE_DIGEST="sha256:$(printf 'a%.0s' {1..64})"
+FAKE_OWNER_USER_ID="kubeatlas:portal:$(printf 'c%.0s' {1..64})"
+export FAKE_OWNER_USER_ID
+FAKE_IMAGE_DIGEST="sha256:$(printf 'a%.0s' {1..64})"
+export FAKE_IMAGE_DIGEST
 FAKE_CHART_SHA256="$(printf 'chart fixture' | sha256sum | awk '{print $1}')"
 export FAKE_CHART_SHA256
-FAKE_INSTALLER_BODY="$(printf '%s\n' \
-  '#!/usr/bin/env bash' \
-  'set -Eeuo pipefail' \
-  'printf "%s\n" "$@" >"$FAKE_INSTALLER_ARGV_LOG"' \
-  'context="" token_file=""' \
-  'while (($#)); do case "$1" in --context) context="$2"; shift 2;; --token-file) token_file="$2"; shift 2;; *) shift;; esac; done' \
-  '[[ "$context" == "$FAKE_CONTEXT" ]]' \
-  '[[ -f "$KUBECONFIG" && "$(stat -c %a "$KUBECONFIG")" == 600 ]]' \
-  '[[ "$(kubectl config current-context)" == "$FAKE_CONTEXT" ]]' \
-  '[[ -f "$token_file" && "$(stat -c %a "$token_file")" == 600 ]]' \
-  '[[ "$(<"$token_file")" == "$FAKE_AGENT_TOKEN" ]]' \
-  'printf "%s\n" "600" >>"$FAKE_TOKEN_MODES"' \
-  'printf "%s\n" ran >>"$FAKE_INSTALLER_RUNS"')"
+FAKE_INSTALLER_BODY="$(cat <<'INSTALLER'
+#!/usr/bin/env bash
+set -Eeuo pipefail
+printf "%s\n" "$@" >"$FAKE_INSTALLER_ARGV_LOG"
+context="" token_file=""
+while (($#)); do case "$1" in --context) context="$2"; shift 2;; --token-file) token_file="$2"; shift 2;; *) shift;; esac; done
+[[ "$context" == "$FAKE_CONTEXT" ]]
+[[ -f "$KUBECONFIG" && "$(stat -c %a "$KUBECONFIG")" == 600 ]]
+[[ "$(kubectl config current-context)" == "$FAKE_CONTEXT" ]]
+[[ -f "$token_file" && "$(stat -c %a "$token_file")" == 600 ]]
+[[ "$(<"$token_file")" == "$FAKE_AGENT_TOKEN" ]]
+printf "%s\n" "600" >>"$FAKE_TOKEN_MODES"
+printf "%s\n" ran >>"$FAKE_INSTALLER_RUNS"
+INSTALLER
+)"
 export FAKE_INSTALLER_BODY
 FAKE_INSTALLER_SHA256="$(printf '%s' "$FAKE_INSTALLER_BODY" | sha256sum | awk '{print $1}')"
 export FAKE_INSTALLER_SHA256
@@ -43,9 +49,11 @@ export FAKE_MUTATIONS="$tmp/mutations.log"
 export FAKE_GET_LOG="$tmp/get.log"
 
 curl() {
-  printf 'curl' >>"$FAKE_ARGV_LOG"
-  printf ' %q' "$@" >>"$FAKE_ARGV_LOG"
-  printf '\n' >>"$FAKE_ARGV_LOG"
+  {
+    printf 'curl'
+    printf ' %q' "$@"
+    printf '\n'
+  } >>"$FAKE_ARGV_LOG"
   local output='' config='' url='' status=200
   while (($#)); do
     case "$1" in
@@ -87,9 +95,11 @@ curl() {
 }
 
 kubectl() {
-  printf 'kubectl' >>"$FAKE_ARGV_LOG"
-  printf ' %q' "$@" >>"$FAKE_ARGV_LOG"
-  printf '\n' >>"$FAKE_ARGV_LOG"
+  {
+    printf 'kubectl'
+    printf ' %q' "$@"
+    printf '\n'
+  } >>"$FAKE_ARGV_LOG"
   if [[ "${1:-}" == --context ]]; then shift 2; fi
   case "${1:-}" in
     config)
@@ -139,9 +149,11 @@ kubectl() {
 }
 
 helm() {
-  printf 'helm' >>"$FAKE_ARGV_LOG"
-  printf ' %q' "$@" >>"$FAKE_ARGV_LOG"
-  printf '\n' >>"$FAKE_ARGV_LOG"
+  {
+    printf 'helm'
+    printf ' %q' "$@"
+    printf '\n'
+  } >>"$FAKE_ARGV_LOG"
   case "${1:-}" in
     list)
       if [[ "$FAKE_RELEASE_COLLISION" == 1 ]]; then printf '[{"name":"existing"}]\n'; else printf '[]\n'; fi
@@ -163,7 +175,8 @@ reset_case() {
   export FAKE_CLAIM_NAMESPACE="$FAKE_NAMESPACE" FAKE_CLAIM_RELEASE="$FAKE_NAMESPACE"
   export FAKE_CLAIM_INSTALLER_SHA256="$FAKE_INSTALLER_SHA256"
   export KUBEATLAS_PROFILE=lan KUBEATLAS_ORIGIN="$FAKE_ORIGIN" KUBEATLAS_VERSION=1.2.3
-  export KUBEATLAS_BOOTSTRAP_SHA256="$(printf 'b%.0s' {1..64})"
+  KUBEATLAS_BOOTSTRAP_SHA256="$(printf 'b%.0s' {1..64})"
+  export KUBEATLAS_BOOTSTRAP_SHA256
   : >"$FAKE_ARGV_LOG"
   : >"$FAKE_CURL_URL_LOG"
   : >"$FAKE_CONTEXT_MODES"
@@ -285,7 +298,8 @@ export FAKE_INSTALLER_STATUS=302
 expect_failure 'installer redirect' 'installer endpoint returned non-200'
 
 reset_case
-export FAKE_CLAIM_INSTALLER_SHA256="$(printf '0%.0s' {1..64})"
+FAKE_CLAIM_INSTALLER_SHA256="$(printf '0%.0s' {1..64})"
+export FAKE_CLAIM_INSTALLER_SHA256
 expect_failure 'installer checksum mismatch' 'installer checksum mismatch'
 
 printf 'Hub Agent bootstrap shell tests passed (frozen context, secret files, authorization, collisions, claim binding, redirects, checksums).\n'

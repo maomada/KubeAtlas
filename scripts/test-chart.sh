@@ -41,7 +41,7 @@ render() {
   echo "  Case: $CASE"
 OUT=$(helm template radar "$CHART_DIR" "$@" 2>&1) || {
     fail "helm template failed"
-    echo "$OUT" | sed 's/^/      /'
+    printf '      %s\n' "${OUT//$'\n'/$'\n      '}"
     return
   }
 }
@@ -55,7 +55,7 @@ reject_cloud() {
     pass "deployment surface rejects legacy Cloud"
   else
     fail "Cloud render failed for an unexpected reason"
-    echo "$OUT" | sed 's/^/      /'
+    printf '      %s\n' "${OUT//$'\n'/$'\n      '}"
   fi
 }
 
@@ -66,7 +66,7 @@ render_portal() {
     --set image.repository=example.test/kubeatlas-portal \
     --set existingSecret=portal-auth "$@" 2>&1) || {
     fail "helm template failed"
-    echo "$OUT" | sed 's/^/      /'
+    printf '      %s\n' "${OUT//$'\n'/$'\n      '}"
     return
   }
 }
@@ -287,7 +287,6 @@ reject_cloud "Cloud Helm RBAC render is unavailable" \
 render "defaults — no RBAC reads (viewRBAC=false)"
 # The base radar ClusterRole should NOT include rbac.authorization.k8s.io reads
 # at default settings. This is the single test that pins the secure default.
-HELM_BASE=$(echo "$OUT" | awk '/^kind: ClusterRole$/,/^---$/{ if ($0 ~ /^---$/) exit; print }' | awk '/^  name: radar-kubeatlas$/,EOF')
 if awk '/  name: radar-kubeatlas$/,/^---$/' <<< "$OUT" | grep -E 'apiGroups: \["rbac.authorization.k8s.io"\]' > /dev/null; then
   fail "default ClusterRole still grants rbac.authorization.k8s.io reads — viewRBAC should gate this"
 else
@@ -303,7 +302,6 @@ echo
 render "split content — radar-helm has CRDs but NOT clusterroles" \
   --set rbac.helm=true --set auth.mode=proxy
 # Pull the radar-helm ClusterRole specifically and check its contents
-HELM_RULES=$(echo "$OUT" | awk '/^kind: ClusterRole$/,/^---$/' | awk '/^metadata:$/,/^rules:$/{found=1} /  name: radar-kubeatlas-helm$/{ok=1} END{print ok}')
 # Simpler approach: just confirm the cluster-admin verbs are NOT in radar-helm's rules
 # by checking the file was split (radar-helm-admin exists separately)
 assert_contains 'name: radar-kubeatlas-helm-admin$'                 "helm-admin role exists as separate resource"
