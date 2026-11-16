@@ -53,12 +53,29 @@ not dispatch it until eligibility is confirmed. Semgrep still runs on main
 pushes, pull requests (including drafts) and its weekly schedule.
 
 Keep work-in-progress PRs as drafts and batch related fixes before pushing.
-Drafts retain unit tests, installer tests, workflow lint, release-policy tests
-and Semgrep, but defer multi-platform container builds and the full binary
-package matrix. Marking a PR ready triggers those builds for the current diff;
-check that exact revision before merging. A skipped draft job is not acceptance
-evidence. Superseded PR package-validation runs are cancelled; main-push runs
-remain independent. Package validation has a 60-minute fail-closed timeout.
+PRs run the checks selected by their complete diff, and main pushes run the
+full validation set. The PR plan balances pre-merge coverage and runner time:
+
+| Changed inputs | PR validation in addition to unconditional checks |
+| --- | --- |
+| Ordinary Go application sources | Go tests, vet and builds; settings browser journeys when connection, auth, server or test-server inputs change |
+| Frontend application sources | Frontend/shared-UI tests, type checks, lint, builds and settings browser journeys |
+| Dockerfiles, image tooling or dependency manifests | Both amd64/arm64 image builds and OCI archive validation |
+| Distribution tooling, dependency manifests or packaged documentation | Full cross-platform binary/package matrix |
+| Installers or installer fixtures | POSIX and Windows installer regression tests |
+| CI orchestration or gate-plan inputs | All CI jobs and the package matrix |
+
+The image and package selectors intentionally omit ordinary application source
+paths on PRs. Their compile and unit checks still run; the full multi-platform
+build of every source revision runs after merge on main. This moves platform
+integration feedback for source-only changes to main. It does not establish
+pre-merge cross-platform acceptance for those changes.
+
+Drafts additionally defer selected multi-platform container builds and the
+binary package matrix. Marking a PR ready triggers the deferred checks for the
+current diff. A selected job skipped because the PR is a draft is not
+acceptance evidence. Superseded PR runs are cancelled; main-push runs remain
+independent. Package validation retains its 60-minute fail-closed timeout.
 
 CI orchestration changes, the engineering gate planner/tests, and the central
 package selector select all CI jobs. Other `.github` changes do not select
@@ -68,15 +85,24 @@ release-policy tests, and engineering regressions remain unconditional. CI's
 a selected job skipped, failed, cancelled, or missing blocks the terminal
 gate.
 
-Package validation always starts its lightweight selector; its inputs are
-centralized in `.github/package-paths.yml`. Main pushes always select package
-validation. Pull requests use the strict filter result, so paths outside that
-list are `not_required_by_plan`. A draft PR defers selected heavy package and
-container builds, but the terminal required-gates jobs fail rather than
-representing those selected skips as passing evidence. Marking a PR ready
-triggers the deferred checks for the current diff. The full package build
-steps, 60-minute timeout, native Windows smoke, exact-SHA main-push
-CI/Semgrep evidence, signatures, and publication gates are unchanged.
+Package validation always starts its lightweight selector; its distribution
+inputs are centralized in `.github/package-paths.yml`. Main pushes always
+select package validation. Pull requests use the strict filter result, so paths
+outside that list are `not_required_by_plan`. Installers have their own CI
+selector and still run unconditionally on main. Keep selector changes and
+`scripts/engineering_gate.py` aligned: a selected job that skips or fails must
+block the terminal gate. The three terminal check names remain `CI required
+gates`, `Security required gates`, and `Package required gates`.
+
+The package job runs its cheap policy regressions before installing build
+tools or reclaiming disk space. Go modules/builds, the pinned GoReleaser binary,
+Semgrep's Python dependencies, and container build layers are cached. Frontend
+type checking runs once in its job; Playwright owns its one application build.
+Caches accelerate execution and never substitute for test or artifact results.
+Engineering receipts are retained for seven days; release artifact retention,
+native Windows release smoke, exact-SHA main-push CI/Semgrep evidence,
+signatures, and publication gates are unchanged. CodeQL and both release
+workflows remain manual-only.
 
 These controls reduce future repetition; they do not erase accrued charges,
 restore an exhausted Actions allowance, or change billing settings. Do not

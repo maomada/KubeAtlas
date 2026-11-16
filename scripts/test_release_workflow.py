@@ -1,3 +1,4 @@
+import re
 import unittest
 from pathlib import Path
 
@@ -49,11 +50,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
     def test_ci_changes_select_all_jobs_without_broad_github_match(self):
         ci = (ROOT / ".github/workflows/ci.yml").read_text()
-        orchestration = ci.split("            ci:\n", 1)[1].split("            pkg:\n", 1)[0]
+        orchestration = re.split(r"\n {12}[a-z][a-z0-9-]*:\n", ci.split("            ci:\n", 1)[1], maxsplit=1)[0]
         self.assertIn("'.github/workflows/ci.yml'", orchestration)
         self.assertIn("'.github/actions/**'", orchestration)
         self.assertNotIn("'.github/**'", orchestration)
-        for name in ("pkg", "go", "web", "app", "helm", "containers"):
+        for name in ("pkg", "go", "web", "app", "helm", "containers", "installers"):
             self.assertIn(f"{name}: ${{{{ github.event_name != 'pull_request' || steps.filter.outputs.ci == 'true'", ci)
 
     def test_release_evidence_is_standalone_security_and_approval_is_retained(self):
@@ -155,6 +156,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("linux/amd64,linux/arm64", container_job)
         self.assertIn("push: false", container_job)
         self.assertIn("outputs: type=oci,dest=", container_job)
+        for direction in ("cache-from", "cache-to"):
+            cache = re.search(rf"{direction}: ([^\n]+)", container_job)
+            self.assertIsNotNone(cache, f"Missing {direction} for repeated image builds")
+            self.assertIn("type=gha", cache.group(1))
+            self.assertIn("scope=", cache.group(1))
+            self.assertIn("${{ matrix.component }}", cache.group(1))
         self.assertNotIn("type=cacheonly", container_job)
         self.assertIn("skopeo inspect --raw", container_job)
         self.assertIn("skopeo copy --all --preserve-digests", container_job)

@@ -24,6 +24,8 @@ env:
 jobs:
   installers:
     name: Installer regression tests
+    needs: changes
+    if: needs.changes.outputs.installers == 'true'
     uses: ./.github/workflows/installers.yml
 
   # Decides which jobs a PR needs from every file it changes, not only those in
@@ -35,6 +37,7 @@ jobs:
     permissions:
       pull-requests: read
     outputs:
+      installers: ${{ github.event_name != 'pull_request' || steps.filter.outputs.ci == 'true' || steps.filter.outputs.installers == 'true' }}
       pkg: ${{ github.event_name != 'pull_request' || steps.filter.outputs.ci == 'true' || steps.filter.outputs.pkg == 'true' }}
       go: ${{ github.event_name != 'pull_request' || steps.filter.outputs.ci == 'true' || steps.filter.outputs.go == 'true' }}
       web: ${{ github.event_name != 'pull_request' || steps.filter.outputs.ci == 'true' || steps.filter.outputs.web == 'true' }}
@@ -56,6 +59,12 @@ jobs:
               - '.github/package-paths.yml'
               - 'scripts/engineering_gate.py'
               - 'scripts/test_engineering*.py'
+            installers:
+              - 'install.sh'
+              - 'install.ps1'
+              - 'scripts/test-installers.sh'
+              - 'scripts/test-installers.ps1'
+              - '.github/workflows/installers.yml'
             pkg:
               - 'pkg/**'
               - 'testdata/**'
@@ -97,17 +106,18 @@ jobs:
               - 'scripts/gpu-ecosystem-demo/**'
               - 'scripts/workload-metrics-demo/**'
               - 'scripts/check-whats-new.sh'
-            # What the settings browser journeys build and serve: the frontend
-            # embedded in cmd/testserver. Go tests and their fixtures are not part
-            # of it; web fixtures are, since the build type-checks web tests.
+            # Settings journeys exercise the frontend, connection/auth API and
+            # test server. Unrelated Go analysis packages keep their unit tests;
+            # main still runs the browser journeys for every source revision.
             app:
-              - '**/*.go'
               - 'go.mod'
               - 'go.sum'
+              - 'pkg/go.mod'
+              - 'pkg/go.sum'
               - 'go.work*'
-              - 'cmd/**'
-              - 'internal/**'
-              - 'pkg/**'
+              - 'cmd/testserver/**'
+              - 'internal/{server,auth,config,connections,connectionruntime,settings,k8s,app,static}/**'
+              - 'pkg/{auth,k8score,resourceapi}/**'
               - 'web/**'
               - 'packages/**'
               - 'package.json'
@@ -120,19 +130,24 @@ jobs:
               - 'deploy/helm/**'
               - 'scripts/test-chart.sh'
             containers:
+              # PRs validate image/toolchain changes; ordinary application PRs
+              # use the Go/frontend checks. Main always builds both platforms.
               - 'Dockerfile'
               - 'Dockerfile.portal'
               - '.dockerignore'
               - 'scripts/validate_oci_archive.py'
+              - 'scripts/test_release_oci_archive.py'
               - 'go.mod'
               - 'go.sum'
-              - 'cmd/**'
-              - 'internal/**'
-              - 'pkg/**'
-              - 'web/**'
-              - 'packages/**'
+              - 'pkg/go.mod'
+              - 'pkg/go.sum'
+              - 'go.work*'
               - 'package.json'
               - 'package-lock.json'
+              - 'web/package.json'
+              - 'web/package-lock.json'
+              - 'packages/*/package.json'
+              - 'packages/*/package-lock.json'
               - '.npmrc'
 
   pkg:
@@ -322,7 +337,8 @@ jobs:
         working-directory: web
 
       - name: Build
-        run: npm run build
+        # Type checking already passed above; build the assets directly.
+        run: npx vite build
         working-directory: web
 
       - name: Build standalone portal UI
@@ -351,7 +367,7 @@ jobs:
       - run: npm ci
       - run: npx playwright install --with-deps chromium
         working-directory: web
-      - run: make build
+      # Playwright's webServer command runs make build once before serving.
       - run: npm run test:e2e:settings
         working-directory: web
 
@@ -565,6 +581,8 @@ jobs:
           push: false
           outputs: type=oci,dest=${{ runner.temp }}/${{ matrix.component }}.oci.tar
           provenance: false
+          cache-from: type=gha,scope=ci-${{ matrix.component }}
+          cache-to: type=gha,mode=max,scope=ci-${{ matrix.component }}
           build-args: |
             VERSION=0.0.0-ci
             SOURCE_REVISION=${{ github.sha }}
@@ -667,3 +685,4 @@ jobs:
           name: engineering-ci-${{ github.run_id }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/ci.json
           if-no-files-found: error
+          retention-days: 7
