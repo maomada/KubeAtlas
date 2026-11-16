@@ -28,10 +28,14 @@ func inputRange(minimum, maximum float64) inputConstraint {
 	return inputConstraint{min: &minimum, max: &maximum}
 }
 
+func inputMinimum(minimum float64) inputConstraint {
+	return inputConstraint{min: &minimum}
+}
+
 var toolInputConstraints = map[string]map[string]inputConstraint{
 	"manage_workload": {
 		"action":   inputEnum("restart", "scale", "rollback"),
-		"replicas": {min: new(float64(0))},
+		"replicas": inputMinimum(0),
 	},
 	"manage_rollout": {"action": inputEnum("abort", "retry", "promote", "promote-full", "skip-step")},
 	"manage_cronjob": {"action": inputEnum("trigger", "suspend", "resume")},

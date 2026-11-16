@@ -350,10 +350,10 @@ func chartVersionsReader(reader io.Reader) (string, string, error) {
 			(header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA && header.Typeflag != tar.TypeDir) || header.Size < 0 {
 			return "", "", errors.New("unsafe chart archive entry")
 		}
-		total += header.Size
-		if total > maxChartBytes*4 {
+		if header.Size > maxChartBytes*4-total {
 			return "", "", errors.New("chart archive expands beyond size limit")
 		}
+		total += header.Size
 		if filepath.Base(clean) == "Chart.yaml" {
 			if metadata != nil || header.Size > 1<<20 {
 				return "", "", errors.New("chart metadata is invalid")
@@ -362,7 +362,7 @@ func chartVersionsReader(reader io.Reader) (string, string, error) {
 			if err != nil || int64(len(metadata)) != header.Size {
 				return "", "", errors.New("chart metadata is invalid")
 			}
-		} else if _, err := io.Copy(io.Discard, archive); err != nil {
+		} else if _, err := io.CopyN(io.Discard, archive, header.Size); err != nil {
 			return "", "", err
 		}
 	}

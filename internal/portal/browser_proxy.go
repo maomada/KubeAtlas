@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httputil"
-	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -261,16 +260,10 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 	}
 	stripPortalProxyHeaders(request.Header)
 	request.Header.Set("X-Request-ID", w.Header().Get("X-Request-ID"))
-	target := &url.URL{Scheme: "http", Host: "localhost"}
 	var responseFailure *browserProxyFailure
 	proxy := &httputil.ReverseProxy{
-		Director: func(out *http.Request) {
-			out.URL.Scheme = target.Scheme
-			out.URL.Host = target.Host
-			out.URL.Path = sourcePath
-			out.URL.RawPath = ""
-			out.Host = target.Host
-			out.RequestURI = ""
+		Rewrite: func(request *httputil.ProxyRequest) {
+			rewriteBrowserRequest(request, sourcePath)
 		},
 		Transport:     client.Transport,
 		FlushInterval: -1,
@@ -293,6 +286,23 @@ func (p *portalHub) serveBrowserAPI(handler *Handler, w http.ResponseWriter, r *
 		},
 	}
 	proxy.ServeHTTP(w, request)
+}
+
+func rewriteBrowserRequest(request *httputil.ProxyRequest, sourcePath string) {
+	out := request.Out
+	// Own the outbound URL even if a caller supplied a shared URL object.
+	target := *out.URL
+	target.Scheme = "http"
+	target.Host = "localhost"
+	target.Path = sourcePath
+	target.RawPath = ""
+	// Rewrite normally sanitizes RawQuery before calling us. Keep the same
+	// source API query bytes as the previous proxy; the Agent validates them.
+	target.RawQuery = request.In.URL.RawQuery
+	target.ForceQuery = request.In.URL.ForceQuery
+	out.URL = &target
+	out.Host = target.Host
+	out.RequestURI = ""
 }
 
 func browserClusterPath(r *http.Request) (string, string, bool) {

@@ -140,12 +140,15 @@ func register[In any](s *mcp.Server, name, description string, readonly bool, op
 		panic(err)
 	}
 	if limit := schema.Properties["limit"]; limit != nil {
-		limit.Minimum, limit.Maximum = new(float64(1)), new(float64(100))
+		minimum, maximum := float64(1), float64(100)
+		limit.Minimum, limit.Maximum = &minimum, &maximum
 	}
 	if cursor := schema.Properties["cursor"]; cursor != nil {
-		cursor.MaxLength = new(4096)
+		maxLength := 4096
+		cursor.MaxLength = &maxLength
 	}
-	mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readonly, DestructiveHint: new(!readonly), OpenWorldHint: new(!readonly)}},
+	destructive, openWorld := !readonly, !readonly
+	mcp.AddTool(s, &mcp.Tool{Name: name, Description: description, InputSchema: schema, Annotations: &mcp.ToolAnnotations{ReadOnlyHint: readonly, DestructiveHint: &destructive, OpenWorldHint: &openWorld}},
 		func(ctx context.Context, _ *mcp.CallToolRequest, input In) (*mcp.CallToolResult, any, error) {
 			started := time.Now()
 			e := &envelope{Tool: name, Source: "hub", RequestID: rand.Text()}
