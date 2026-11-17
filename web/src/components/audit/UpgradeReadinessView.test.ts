@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ApiError } from '../../api/client'
-import { RadarFeatureUnsupportedError } from '../../api/radarFeatures'
+import { KubeAtlasFeatureUnsupportedError } from '../../api/kubeatlasFeatures'
 import { UPGRADE_IMPACT_DOCS_URL, UpgradeReadinessError, groupFindings, incompleteUpgradeCheckCount, issueSpecificReferences, summaryMeta, upgradeEvaluationSummary, upgradeEvidenceCoverageLabel, upgradeUnavailableKindsMessage } from './UpgradeReadinessView'
 
 describe('UpgradeReadinessError', () => {
   it('maps an unsupported-feature error to the v1.9 upgrade message', () => {
-    const html = renderToStaticMarkup(UpgradeReadinessError({ error: new RadarFeatureUnsupportedError('upgradeReadiness', {}) }))
+    const html = renderToStaticMarkup(UpgradeReadinessError({ error: new KubeAtlasFeatureUnsupportedError('upgradeReadiness', {}) }))
 
     expect(html).toContain('此集群需要更新版本的 KubeAtlas 才能使用Upgrade impact')
     expect(html).toContain('KubeAtlas v1.9 起提供此功能。')
@@ -14,7 +14,7 @@ describe('UpgradeReadinessError', () => {
   })
 
   it('keeps a non-JSON 404 that is not the router signature on the generic error state', () => {
-    // e.g. Radar Hub's plain-text "not found" for a cluster it can't resolve.
+    // e.g. KubeAtlas Hub's plain-text "not found" for a cluster it can't resolve.
     const html = renderToStaticMarkup(UpgradeReadinessError({ error: new ApiError('HTTP 404 (Not Found)', 404) }))
 
     expect(html).toContain('Unable to analyze upgrade impact')

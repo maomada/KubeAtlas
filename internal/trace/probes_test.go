@@ -1776,7 +1776,7 @@ func TestNonHTTPSkipReason_TCPClaimGatedOnTCPRan(t *testing.T) {
 	if strings.Contains(got, tcpClaim) {
 		t.Errorf("laptop gRPC: %q overclaims TCP check", got)
 	}
-	if !strings.Contains(got, "Run Radar from in-cluster") {
+	if !strings.Contains(got, "Run KubeAtlas from in-cluster") {
 		t.Errorf("laptop gRPC: %q missing run-in-cluster hint", got)
 	}
 }

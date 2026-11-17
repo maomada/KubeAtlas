@@ -45,7 +45,7 @@ const (
 	cnpgReloadAnnotation    = "cnpg.io/reloadedAt"
 	cnpgHibernateAnnotation = "cnpg.io/hibernation"
 	cnpgFencedAnnotation    = "cnpg.io/fencedInstances"
-	cnpgRequestedFromAnno   = "radar.skyhook.io/requested-from"
+	cnpgRequestedFromAnno   = "kubeatlas.io/requested-from"
 	cnpgAllInstances        = "*"
 
 	cnpgPhaseHealthy        = "Cluster in healthy state"
@@ -119,7 +119,7 @@ type CNPGClusterFacts struct {
 	// ColdSnapshotBackup names a running offline volume-snapshot Backup of
 	// the cluster: the operator fenced its instance and lifts the fence itself.
 	ColdSnapshotBackup string `json:"coldSnapshotBackup,omitempty"`
-	// ColdSnapshotUnchecked says why Radar could not tell whether such a
+	// ColdSnapshotUnchecked says why KubeAtlas could not tell whether such a
 	// Backup is running, for a cluster that declares volume snapshots.
 	ColdSnapshotUnchecked string `json:"coldSnapshotUnchecked,omitempty"`
 }
@@ -702,7 +702,7 @@ func cnpgGuardUnfence(f CNPGClusterFacts) string {
 		return fmt.Sprintf("Backup %s is a cold snapshot: the operator fenced the instance for it and lifts the fence itself once the snapshot is taken. Lifting it now would start PostgreSQL under the snapshot", f.ColdSnapshotBackup)
 	}
 	if f.ColdSnapshotUnchecked != "" {
-		return fmt.Sprintf("Radar cannot tell whether a cold snapshot Backup is running: %s. The operator fences the instance for a cold snapshot and lifts the fence itself; lifting it first would start PostgreSQL under the snapshot", f.ColdSnapshotUnchecked)
+		return fmt.Sprintf("KubeAtlas cannot tell whether a cold snapshot Backup is running: %s. The operator fences the instance for a cold snapshot and lifts the fence itself; lifting it first would start PostgreSQL under the snapshot", f.ColdSnapshotUnchecked)
 	}
 	return ""
 }

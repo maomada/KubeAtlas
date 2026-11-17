@@ -12,7 +12,7 @@ func EffectiveFindings(findings []Finding, clusterID string) []checks.EffectiveF
 	out := make([]checks.EffectiveFinding, 0, len(findings))
 	for _, f := range findings {
 		out = append(out, checks.EffectiveFinding{
-			Source: checks.SourceRadarBuiltin,
+			Source: checks.SourceKubeAtlasBuiltin,
 			Resource: checks.ResourceRef{
 				ClusterID: clusterID,
 				Group:     f.Group,

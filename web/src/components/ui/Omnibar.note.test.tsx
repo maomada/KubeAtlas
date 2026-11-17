@@ -48,7 +48,7 @@ const findButton = (label: string) => [...document.body.querySelectorAll('button
 
 describe('Omnibar note', () => {
   const recoveryText = "Couldn't read Certificate; matches of that kind may be missing. Search kind:Certificate to re-check."
-  const namespace = searchCoverageNote(coverageOf([{ kind: '*', group: '', reason: 'radar_namespace_not_collected', namespaces: ['rel-owner'] }]), {})!
+  const namespace = searchCoverageNote(coverageOf([{ kind: '*', group: '', reason: 'kubeatlas_namespace_not_collected', namespaces: ['rel-owner'] }]), {})!
   const loading = searchCoverageNote(coverageOf([{ kind: '*', group: '', reason: 'kind_sync_pending' }]), {})!
 
   it('keeps resource identity values raw and localizes the issue count', () => {

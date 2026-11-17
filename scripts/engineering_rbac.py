@@ -36,9 +36,9 @@ RESOURCES = {
         False, "customresourcedefinitions.apiextensions.k8s.io",
         "/apis/apiextensions.k8s.io/v1/customresourcedefinitions"
     ),
-    ("test.skyhook.io/v1", "RadarTest"): (
-        False, "radartests.test.skyhook.io",
-        "/apis/test.skyhook.io/v1/radartests"
+    ("test.skyhook.io/v1", "KubeAtlasTest"): (
+        False, "kubeatlastests.test.skyhook.io",
+        "/apis/test.skyhook.io/v1/kubeatlastests"
     ),
 }
 

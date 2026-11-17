@@ -133,13 +133,13 @@ func TestBroadCoverageOmitsColdAndUnsupportedBeforeSAR(t *testing.T) {
 }
 
 // The caller's own access is checked first: a named kind both the caller and
-// Radar can't read is the caller's to fix, and a kind the caller can't read is
-// never "still loading" or "Radar can't read it" for them. Radar's denial is
+// KubeAtlas can't read is the caller's to fix, and a kind the caller can't read is
+// never "still loading" or "KubeAtlas can't read it" for them. KubeAtlas's denial is
 // reported only when the caller could read the kind.
 func TestCallerAccessPrecedesTransientCoverage(t *testing.T) {
 	gadget := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "gadgets"}
 	collectorDenied := &fakeProvider{
-		typedReasons: map[string]string{"Node": "radar_forbidden", "Secret": "radar_forbidden"},
+		typedReasons: map[string]string{"Node": "kubeatlas_forbidden", "Secret": "kubeatlas_forbidden"},
 		kinds:        map[schema.GroupVersionResource]string{gadget: "Gadget"},
 		namespaced:   map[schema.GroupVersionResource]bool{gadget: false},
 		observations: map[schema.GroupVersionResource]k8score.DynamicResourceObservation{gadget: {State: k8score.DynamicObservationDenied}},
@@ -147,7 +147,7 @@ func TestCallerAccessPrecedesTransientCoverage(t *testing.T) {
 	for _, tc := range []struct {
 		allowed bool
 		reason  string
-	}{{false, "user_forbidden"}, {true, "radar_forbidden"}} {
+	}{{false, "user_forbidden"}, {true, "kubeatlas_forbidden"}} {
 		res, _ := Search(context.Background(), collectorDenied, Parse("kind:Node kind:Secret kind:Gadget"), Options{
 			TypedKindAccess: func([]string, string, string) ([]string, []string, []string) {
 				if tc.allowed {
@@ -169,12 +169,12 @@ func TestCallerAccessPrecedesTransientCoverage(t *testing.T) {
 	if res, _ := Search(context.Background(), collectorDenied, Parse("robusta"), Options{
 		CanReadClusterScoped: func(kind, _, _ string) (bool, bool) {
 			if kind == "Node" || kind == "Gadget" {
-				t.Fatalf("a broad search checked the caller for %s, which Radar can't collect", kind)
+				t.Fatalf("a broad search checked the caller for %s, which KubeAtlas can't collect", kind)
 			}
 			return true, true
 		},
 	}); partial(res) {
-		t.Fatalf("broad search reported Radar's setup: %+v", unsearched(res))
+		t.Fatalf("broad search reported KubeAtlas's setup: %+v", unsearched(res))
 	}
 
 	loading := &fakeProvider{typedReasons: map[string]string{"Secret": "kind_sync_pending", "Node": "kind_sync_timed_out"}}
@@ -237,8 +237,8 @@ func TestDynamicObservationReasonsAndRequestedScope(t *testing.T) {
 	}
 }
 
-// Warming an uncovered namespace of a kind Radar already watches elsewhere
-// talks to the API server as Radar; a refusal there is the collector's
+// Warming an uncovered namespace of a kind KubeAtlas already watches elsewhere
+// talks to the API server as KubeAtlas; a refusal there is the collector's
 // namespace scope, reported only for a namespace the query names.
 func TestWarmingRefusedNamespaceIsCollectorScope(t *testing.T) {
 	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
@@ -255,7 +255,7 @@ func TestWarmingRefusedNamespaceIsCollectorScope(t *testing.T) {
 	var opts Options
 	opts.Selection = SelectNamespaces(p, q, readscope.NamespaceAccess{Namespaces: nil, Checked: true}, nil)
 	res, _ := Search(context.Background(), p, q, opts)
-	want := []UnsearchedKind{{Kind: "*", Reason: "radar_namespace_not_collected", Namespaces: []string{"b"}}}
+	want := []UnsearchedKind{{Kind: "*", Reason: "kubeatlas_namespace_not_collected", Namespaces: []string{"b"}}}
 	if !partial(res) || !reflect.DeepEqual(unsearched(res), want) {
 		t.Fatalf("refused named namespace = %+v, want %+v", unsearched(res), want)
 	}

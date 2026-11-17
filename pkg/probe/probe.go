@@ -55,7 +55,7 @@ var dialControl = denyInternalControl
 // connections to loopback, unspecified (0.0.0.0/::), multicast, and link-local
 // addresses - most importantly the cloud metadata endpoint 169.254.169.254. A user who can set an Ingress host
 // or Gateway address could otherwise point it at an internal target and have
-// Radar's probe reach it on their behalf (SSRF). Legitimate probe targets are
+// KubeAtlas's probe reach it on their behalf (SSRF). Legitimate probe targets are
 // declared external hosts and cluster Service/Pod IPs (private ranges like
 // 10.0.0.0/8 stay allowed - those are normal cluster networking); loopback and
 // link-local are never a legitimate target. Applied to TCP/TLS/HTTP; the
@@ -131,13 +131,13 @@ const (
 
 // Source names WHO issued a probe. Vantage says where on the network the
 // request started; Source says which process started it. They are independent:
-// when Radar runs as a Pod, its own dials and a throwaway probe Job are both
-// in-cluster over the data path, but they carry different identities (Radar's
+// when KubeAtlas runs as a Pod, its own dials and a throwaway probe Job are both
+// in-cluster over the data path, but they carry different identities (KubeAtlas's
 // ServiceAccount vs the target namespace's default), different sidecar
 // exposure, and are separate observations that must not overwrite each other.
 const (
-	SourceRadar    = "radar"     // Radar's own process, inline with the trace
-	SourceProbeJob = "probe-job" // a throwaway Job Radar created in the cluster
+	SourceKubeAtlas = "kubeatlas" // KubeAtlas's own process, inline with the trace
+	SourceProbeJob  = "probe-job" // a throwaway Job KubeAtlas created in the cluster
 
 	// SkipClassInformational marks a probe that RAN and was deliberately kept
 	// informational (a throwaway identity's failure or degraded answer must not
@@ -253,10 +253,10 @@ type Result struct {
 	// Empty means TCP (the Kubernetes default).
 	Protocol string `json:"protocol,omitempty"`
 	// Source is WHO issued this probe, which (Vantage, Path) cannot express:
-	// Radar's own process and a throwaway probe Job are both in-cluster/data.
-	// Without it the two collide - a Job result silently replaces Radar's own
-	// in-cluster observation on merge - and the UI credits Radar's direct dials
-	// to a Job that was never created. Empty means SourceRadar.
+	// KubeAtlas's own process and a throwaway probe Job are both in-cluster/data.
+	// Without it the two collide - a Job result silently replaces KubeAtlas's own
+	// in-cluster observation on merge - and the UI credits KubeAtlas's direct dials
+	// to a Job that was never created. Empty means SourceKubeAtlas.
 	Source string `json:"source,omitempty"`
 	// Mesh names the service mesh whose sidecar proxy ran in the pod that
 	// issued this probe (a probe Job in an injected namespace). The proxy
@@ -490,7 +490,7 @@ func HTTP(ctx context.Context, url, host string, vantage Vantage) Result {
 	if host != "" {
 		req.Host = host
 	}
-	req.Header.Set("User-Agent", "radar-trace-probe/1 (https://github.com/maomada/KubeAtlas)")
+	req.Header.Set("User-Agent", "kubeatlas-trace-probe/1 (https://github.com/maomada/KubeAtlas)")
 	tlsCfg := &tls.Config{MinVersion: tls.VersionTLS12}
 	if host != "" {
 		tlsCfg.ServerName = host
@@ -694,11 +694,11 @@ func proxyResult(ctx context.Context, req *rest.Request, r Result) Result {
 		// Result.StatusCode stays 0 - the real HTTP status is on the error.
 		code = httpStatusFromError(err)
 	}
-	// The apiserver ITSELF was unreachable (radar→apiserver dial failed - the
+	// The apiserver ITSELF was unreachable (kubeatlas→apiserver dial failed - the
 	// cluster is down / the kubeconfig is stale), as opposed to the apiserver
 	// RELAYING a backend failure. Nothing about the workload can be tested from
 	// here, so this must SKIP - never condemn a healthy workload as "unreachable"
-	// because Radar lost its cluster connection. (A relayed backend failure
+	// because KubeAtlas lost its cluster connection. (A relayed backend failure
 	// arrives as a typed StatusError with a real status code and is handled below.)
 	// A context deadline means the apiserver proxy didn't get a response within our
 	// probe budget - almost always a SLOW backend (cold start), not a lost cluster
@@ -801,10 +801,10 @@ func SkippedCmd(layer Layer, target string, vantage Vantage, reason, command str
 }
 
 // isClusterUnreachable reports whether the error is a transport-level failure
-// reaching the APISERVER itself (radar→apiserver), as opposed to the apiserver
+// reaching the APISERVER itself (kubeatlas→apiserver), as opposed to the apiserver
 // relaying a backend failure. A k8s StatusError (or any typed apierror) means
 // the apiserver RESPONDED - that's about the backend, never apiserver
-// connectivity. A bare net/dial error reaching the apiserver host means Radar
+// connectivity. A bare net/dial error reaching the apiserver host means KubeAtlas
 // can't reach the cluster at all: nothing about the workload can be concluded.
 // isBackendTimeout reports whether the error is a context deadline - the apiserver
 // proxy didn't return within our probe budget. That's a slow/starting BACKEND, not

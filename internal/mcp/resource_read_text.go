@@ -21,7 +21,7 @@ func errorNext(code readreason.Code) string {
 	case readreason.ClusterConnecting:
 		return "" // its message already says to retry shortly
 	case readreason.ReadError:
-		return "Retry in a few seconds; if it keeps failing, report the error to whoever runs Radar."
+		return "Retry in a few seconds; if it keeps failing, report the error to whoever runs KubeAtlas."
 	case readreason.KindUnknown:
 		return "Check the spelling, or pass group for a custom resource; list_resources with kind=customresourcedefinitions lists the custom kinds installed here."
 	}
@@ -31,13 +31,13 @@ func errorNext(code readreason.Code) string {
 	case readreason.ActionWait:
 		return "Retry in a minute."
 	case readreason.ActionCheckTarget:
-		return "Confirm which cluster Radar is connected to, then retry."
+		return "Confirm which cluster KubeAtlas is connected to, then retry."
 	}
 	return ""
 }
 
 // beyondCallerAccess reports a narrowing the caller's own access doesn't
-// explain: what Radar collects, or its namespace pin. A
+// explain: what KubeAtlas collects, or its namespace pin. A
 // denial already names the caller's namespaces.
 func beyondCallerAccess(by []resourceapi.Narrowing) bool {
 	for _, n := range by {
@@ -70,7 +70,7 @@ func listSummary(ctx context.Context, resource string, rows int, rowKind string,
 			return fmt.Sprintf("Complete: %s across every namespace.", count)
 		}
 	}
-	where := "the part of the scope Radar could read"
+	where := "the part of the scope KubeAtlas could read"
 	if cov.Read != nil && cov.Read.Namespaces != nil {
 		where = namespacePhrase(cov.Read.Namespaces)
 	}
@@ -133,9 +133,9 @@ func narrowingScopeName(by []resourceapi.Narrowing) string {
 		case resourceapi.NarrowedByUserAccess:
 			names = append(names, "your access")
 		case resourceapi.NarrowedByNamespacePin:
-			names = append(names, "Radar's --namespace-scope setting")
+			names = append(names, "KubeAtlas's --namespace-scope setting")
 		case resourceapi.NarrowedByNamespaceCollection:
-			names = append(names, "Radar's collection")
+			names = append(names, "KubeAtlas's collection")
 		}
 	}
 	if len(names) > 1 {
@@ -153,9 +153,9 @@ func narrowingCause(resource string, by []resourceapi.Narrowing, these string) s
 		case resourceapi.NarrowedByUserAccess:
 			return "your access covers only " + these
 		case resourceapi.NarrowedByNamespacePin:
-			return "Radar is set to read only " + these + " (--namespace-scope)"
+			return "KubeAtlas is set to read only " + these + " (--namespace-scope)"
 		case resourceapi.NarrowedByNamespaceCollection:
-			return fmt.Sprintf("Radar collects %s only in %s", resource, these)
+			return fmt.Sprintf("KubeAtlas collects %s only in %s", resource, these)
 		}
 	}
 	var causes []string
@@ -164,9 +164,9 @@ func narrowingCause(resource string, by []resourceapi.Narrowing, these string) s
 		case resourceapi.NarrowedByUserAccess:
 			causes = append(causes, "your access")
 		case resourceapi.NarrowedByNamespacePin:
-			causes = append(causes, "Radar's --namespace-scope setting")
+			causes = append(causes, "KubeAtlas's --namespace-scope setting")
 		case resourceapi.NarrowedByNamespaceCollection:
-			causes = append(causes, "what Radar collects")
+			causes = append(causes, "what KubeAtlas collects")
 		}
 	}
 	if len(causes) > 1 {
@@ -175,20 +175,20 @@ func narrowingCause(resource string, by []resourceapi.Narrowing, these string) s
 	return fmt.Sprintf("the scope is where %s overlap", strings.Join(causes, ""))
 }
 
-// narrowingRemedy says, as sentences, who widens a narrowing. A Radar
+// narrowingRemedy says, as sentences, who widens a narrowing. A KubeAtlas
 // Cloud role is named only for an actual denial, not for routine narrowing. It is short on
-// purpose: narrowing is routine, and the full remedy for what Radar collects
-// comes with a namespace the caller named that Radar doesn't collect.
+// purpose: narrowing is routine, and the full remedy for what KubeAtlas collects
+// comes with a namespace the caller named that KubeAtlas doesn't collect.
 func narrowingRemedy(by []resourceapi.Narrowing) string {
 	var out string
 	if slices.Contains(by, resourceapi.NarrowedByUserAccess) {
 		out += " A cluster admin can widen your access."
 	}
 	if slices.Contains(by, resourceapi.NarrowedByNamespacePin) {
-		out += " Whoever runs Radar sets --namespace-scope."
+		out += " Whoever runs KubeAtlas sets --namespace-scope."
 	}
 	if slices.Contains(by, resourceapi.NarrowedByNamespaceCollection) {
-		out += " Whoever runs Radar can widen its collection."
+		out += " Whoever runs KubeAtlas can widen its collection."
 	}
 	return out
 }
@@ -212,29 +212,29 @@ func gapSentence(ctx context.Context, resource string, gap resourceapi.Gap) stri
 // agent can change that ("" when retrying is enough), as clauses.
 func gapReason(ctx context.Context, resource string, code readreason.Code) (why, who string) {
 	switch code {
-	case readreason.RadarNamespaceNotCollected:
-		return fmt.Sprintf("Radar doesn't collect %s there", resource), collectionRemedy(resource) + notYourAccessClause(ctx)
-	case readreason.RadarForbidden:
-		return "Kubernetes refuses Radar's own identity there", identityRemedy(resource, " there", "list/watch") + notYourAccessClause(ctx)
-	case readreason.RadarCredentialsRejected:
-		// Recorded when Radar connected or met on this read: a reconnect
-		// re-checks Radar's access either way.
-		return "Kubernetes rejected Radar's own credentials there", "whoever runs Radar must check them; reconnecting Radar with POST /api/connection/retry makes it check its access again" + notYourAccessClause(ctx)
+	case readreason.KubeAtlasNamespaceNotCollected:
+		return fmt.Sprintf("KubeAtlas doesn't collect %s there", resource), collectionRemedy(resource) + notYourAccessClause(ctx)
+	case readreason.KubeAtlasForbidden:
+		return "Kubernetes refuses KubeAtlas's own identity there", identityRemedy(resource, " there", "list/watch") + notYourAccessClause(ctx)
+	case readreason.KubeAtlasCredentialsRejected:
+		// Recorded when KubeAtlas connected or met on this read: a reconnect
+		// re-checks KubeAtlas's access either way.
+		return "Kubernetes rejected KubeAtlas's own credentials there", "whoever runs KubeAtlas must check them; reconnecting KubeAtlas with POST /api/connection/retry makes it check its access again" + notYourAccessClause(ctx)
 	case readreason.KindSyncPending:
-		return fmt.Sprintf("Radar is still loading %s there", resource), ""
+		return fmt.Sprintf("KubeAtlas is still loading %s there", resource), ""
 	case readreason.KindSyncTimedOut:
-		return fmt.Sprintf("Radar's load of %s there didn't finish in time", resource), "if it keeps failing, whoever runs Radar should check its cluster connection and list/watch permissions"
+		return fmt.Sprintf("KubeAtlas's load of %s there didn't finish in time", resource), "if it keeps failing, whoever runs KubeAtlas should check its cluster connection and list/watch permissions"
 	case readreason.UserForbidden:
 		return fmt.Sprintf("your Kubernetes access doesn't allow listing %s there", resource), withCloudRole(ctx, "a cluster admin can grant it")
 	case readreason.UserPermissionCheckFailed:
-		return "Radar couldn't check your access there", ""
+		return "KubeAtlas couldn't check your access there", ""
 	}
-	why = fmt.Sprintf("Radar couldn't read %s there (%s)", resource, code)
+	why = fmt.Sprintf("KubeAtlas couldn't read %s there (%s)", resource, code)
 	switch action, _ := readreason.ActionFor(code); action {
 	case readreason.ActionUserAccess:
 		return why, withCloudRole(ctx, "a cluster admin can grant you access")
-	case readreason.ActionRadarConfig:
-		return why, "whoever runs Radar must change its access or configuration"
+	case readreason.ActionKubeAtlasConfig:
+		return why, "whoever runs KubeAtlas must change its access or configuration"
 	}
 	return why, ""
 }
@@ -313,7 +313,7 @@ func namespacePhrase(set *resourceapi.NameSet) string {
 	case resourceapi.ExtentAll:
 		return "every namespace asked about"
 	case resourceapi.ExtentUnknown:
-		return "some namespaces Radar can't name"
+		return "some namespaces KubeAtlas can't name"
 	}
 	if set.Names == nil {
 		return fmt.Sprintf("%d namespaces", set.Count)
@@ -335,27 +335,27 @@ func upperFirst(s string) string {
 	return strings.ToUpper(s[:1]) + s[1:]
 }
 
-// collectionRemedy says, as a clause, who widens the namespaces Radar collects
-// resource in. Naming them is the fix whether Radar could not discover them or
+// collectionRemedy says, as a clause, who widens the namespaces KubeAtlas collects
+// resource in. Naming them is the fix whether KubeAtlas could not discover them or
 // stopped at its candidate cap, as long as its identity can list there.
 func collectionRemedy(resource string) string {
 	if k8s.IsInCluster() {
-		return fmt.Sprintf("whoever installed Radar can add namespaces with --namespaces through the chart's extraArgs, if its service account can list %s there", resource)
+		return fmt.Sprintf("whoever installed KubeAtlas can add namespaces with --namespaces through the chart's extraArgs, if its service account can list %s there", resource)
 	}
-	return fmt.Sprintf("whoever runs Radar can add namespaces with --namespaces, if its kubeconfig identity can list %s there", resource)
+	return fmt.Sprintf("whoever runs KubeAtlas can add namespaces with --namespaces, if its kubeconfig identity can list %s there", resource)
 }
 
-// identityRemedy says, as a clause, who lets Radar's own identity perform
+// identityRemedy says, as a clause, who lets KubeAtlas's own identity perform
 // action on resource. where is "" or a place such as " there".
 func identityRemedy(resource, where, action string) string {
 	if k8s.IsInCluster() {
-		return fmt.Sprintf("whoever installed Radar must grant its service account %s on %s%s", action, resource, where)
+		return fmt.Sprintf("whoever installed KubeAtlas must grant its service account %s on %s%s", action, resource, where)
 	}
-	return fmt.Sprintf("whoever runs Radar must use a kubeconfig identity that can %s %s%s", action, resource, where)
+	return fmt.Sprintf("whoever runs KubeAtlas must use a kubeconfig identity that can %s %s%s", action, resource, where)
 }
 
 // notYourAccess says, with auth on, that the caller's own access is not the
-// fix for a limit of Radar's identity. With auth off the caller runs Radar with
+// fix for a limit of KubeAtlas's identity. With auth off the caller runs KubeAtlas with
 // that identity, and the sentence would be wrong.
 func notYourAccess(ctx context.Context) string {
 	if pkgauth.UserFromContext(ctx) != nil {
@@ -371,18 +371,18 @@ func notYourAccessClause(ctx context.Context) string {
 	return ""
 }
 
-// withCloudRole adds the other way a Radar Cloud viewer or member may get
-// access to remedy: the chart binds each Radar Cloud role to Kubernetes
-// permissions, so an organization owner can raise the role. Radar doesn't know
+// withCloudRole adds the other way a KubeAtlas Cloud viewer or member may get
+// access to remedy: the chart binds each KubeAtlas Cloud role to Kubernetes
+// permissions, so an organization owner can raise the role. KubeAtlas doesn't know
 // the cluster's bindings, so a higher role only may grant it. An owner has no
-// higher role, and outside Radar Cloud there are none.
+// higher role, and outside KubeAtlas Cloud there are none.
 func withCloudRole(ctx context.Context, remedy string) string {
 	if !cloud.Mode() {
 		return remedy
 	}
 	switch role := pkgauth.CloudRoleFromContext(ctx); role {
 	case pkgauth.RoleViewer, pkgauth.RoleMember:
-		return fmt.Sprintf("%s, or an owner of your Radar Cloud organization can raise your %s role, which may grant it", remedy, role)
+		return fmt.Sprintf("%s, or an owner of your KubeAtlas Cloud organization can raise your %s role, which may grant it", remedy, role)
 	}
 	return remedy
 }

@@ -23,16 +23,16 @@ const (
 
 // EnrollRequest is the body of POST /api/agent/enroll.
 type EnrollRequest struct {
-	AgentUID     string `json:"agent_uid"`
-	Namespace    string `json:"namespace"`
-	Release      string `json:"release"`
-	Name         string `json:"name"`
-	NameSource   string `json:"name_source"`
-	RadarVersion string `json:"radar_version,omitempty"`
-	K8sVersion   string `json:"k8s_version,omitempty"`
-	Distro       string `json:"distro,omitempty"`
-	NodeCount    *int   `json:"node_count,omitempty"`
-	APIServerURL string `json:"api_server_url,omitempty"`
+	AgentUID         string `json:"agent_uid"`
+	Namespace        string `json:"namespace"`
+	Release          string `json:"release"`
+	Name             string `json:"name"`
+	NameSource       string `json:"name_source"`
+	KubeAtlasVersion string `json:"kubeatlas_version,omitempty"`
+	K8sVersion       string `json:"k8s_version,omitempty"`
+	Distro           string `json:"distro,omitempty"`
+	NodeCount        *int   `json:"node_count,omitempty"`
+	APIServerURL     string `json:"api_server_url,omitempty"`
 }
 
 // EnrollResult is a successful join: the cluster's token for this run and

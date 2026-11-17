@@ -3,8 +3,8 @@
 ```bash
 make velero-demo                                  # create + populate (fixtures)
 ./scripts/velero-demo.sh live                     # same cluster, real backups
-kubectl config use-context kind-radar-velero-demo
-make restart                                      # point Radar at it
+kubectl config use-context kind-kubeatlas-velero-demo
+make restart                                      # point KubeAtlas at it
 make velero-demo-status                           # inventory
 make velero-demo-down                             # tear down
 ```
@@ -116,7 +116,7 @@ being derived from the status: it is rejected for a *missing storage location*
 while its cron is perfectly valid. Anything that reddens its cron cell is
 pointing at the wrong field. Both halves of it are shapes v1.18 does not
 produce — it validates only the cron, and always writes the phase alongside the
-errors — so treat this row as a test of Radar's rendering, not as a record of
+errors — so treat this row as a test of KubeAtlas's rendering, not as a record of
 Velero behaviour.
 
 ### Storage and repositories
@@ -153,7 +153,7 @@ BackupStorageLocations at it, deletes the frozen fixtures, and then makes Velero
 do the work. Each state below is produced by an action, not written down, and
 the script asserts each one before it reports success.
 
-| State | How it is caused | What it exercises in Radar |
+| State | How it is caused | What it exercises in KubeAtlas |
 |---|---|---|
 | `live-completed` — `Completed` | a real backup of the `demo-app` namespace into MinIO | item counts on the Backup renderer come from Velero's own `status.progress`, not a typed-in number |
 | `live-restore` — `Completed` | `demo-app` is **deleted**, then restored from that backup | the Restore renderer, and the restore path end to end — the script checks the ConfigMap exists again afterwards |
@@ -184,7 +184,7 @@ Three details in there are load-bearing, and each one breaks the run if changed:
 one the host can actually reach, and fetches and parses the file. That is the
 chain behind the "Show the messages" button on a Backup or Restore — Velero
 controller, pre-signed URL, MinIO — and it is checked from outside the cluster,
-where Radar runs.
+where KubeAtlas runs.
 
 **The two states are mutually exclusive, and that is not a bug.** A stalled run
 needs the controller stopped; serving a `DownloadRequest` needs it running. The

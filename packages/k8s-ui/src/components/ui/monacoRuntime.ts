@@ -34,7 +34,7 @@ export async function ensureMonaco() {
         return new Worker(
           new URL('monaco-editor/editor/editor.worker.js', import.meta.url),
           {
-            name: 'radar-monaco-editor',
+            name: 'kubeatlas-monaco-editor',
             type: 'module',
           },
         )

@@ -143,8 +143,8 @@ type RouteResult struct {
 type VantageResult struct {
 	Vantage string `json:"vantage"` // in-cluster | local
 	Path    string `json:"path"`    // data | apiserver
-	// Source is WHO dialled - radar | probe-job. Empty means radar. Kept apart
-	// from Vantage because a throwaway Job and Radar-as-a-Pod share a vantage
+	// Source is WHO dialled - kubeatlas | probe-job. Empty means kubeatlas. Kept apart
+	// from Vantage because a throwaway Job and KubeAtlas-as-a-Pod share a vantage
 	// and a path but are different observers with different identities.
 	Source  string `json:"source,omitempty"`
 	Outcome string `json:"outcome"`
@@ -390,14 +390,14 @@ func reachedPodOrigins(pods *Hop, port int32) map[string]bool {
 }
 
 // originIdentity is the full identity of WHO observed something: vantage, path,
-// and issuer. Source matters exactly as much here as in mergeVantages - Radar's
+// and issuer. Source matters exactly as much here as in mergeVantages - KubeAtlas's
 // own in-cluster process and a throwaway probe Job are both in-cluster/data, but
 // a source-scoped NetworkPolicy or mesh policy can admit one and refuse the
 // other, so one identity's direct-pod reach must never localize a boundary for
-// the other's Service failure. An empty source is Radar's own process.
+// the other's Service failure. An empty source is KubeAtlas's own process.
 func originIdentity(vantage, path, source string) string {
 	if source == "" {
-		source = probe.SourceRadar
+		source = probe.SourceKubeAtlas
 	}
 	return vantage + "\x00" + path + "\x00" + source
 }
@@ -587,9 +587,9 @@ func mergeVantages(prior, fresh []VantageResult) []VantageResult {
 	if len(fresh) == 0 {
 		return prior
 	}
-	// Source is part of the key: Radar's own in-cluster dial and a throwaway
+	// Source is part of the key: KubeAtlas's own in-cluster dial and a throwaway
 	// Job's are both (in-cluster, data), so keying without it let a Job run
-	// silently replace Radar's own observation instead of adding to it.
+	// silently replace KubeAtlas's own observation instead of adding to it.
 	key := func(v VantageResult) string { return v.Vantage + "\x00" + v.Path + "\x00" + vantageSource(v) }
 	byKey := make(map[string]VantageResult, len(fresh))
 	for _, v := range fresh {
@@ -677,7 +677,7 @@ func ApplyInClusterResults(t *Trace, byTarget map[string][]probe.Result) {
 		return
 	}
 	// A route that was only DNS-resolvable from the laptop/proxy vantage carries a
-	// SkipClassVantage "run radar in-cluster" row in NotTested. When the live pass
+	// SkipClassVantage "run kubeatlas in-cluster" row in NotTested. When the live pass
 	// just upgraded that same route to a real reach/verify, that advice is stale and
 	// contradictory (the user already ran in-cluster and it passed), and recountCoverage
 	// would count the route as Passed AND its same-host skip row as Skipped. Drop the
@@ -1568,7 +1568,7 @@ func buildRoutes(t *Trace) ([]RouteResult, []RouteSkip) {
 		// empty; the route's outcome IS the external host's reachability.
 		if ext := externalNameHop(t.Downstream); ext != nil && len(ext.Probes) > 0 {
 			if r, ok := routeFromProbes(subjectRouteLabel(t.Subject, entry), ext.Resource.Name, ext.Probes, false); ok {
-				// A laptop dials the external host from Radar's OWN network - that is
+				// A laptop dials the external host from KubeAtlas's OWN network - that is
 				// NOT proof of real in-cluster reachability (split-horizon DNS, egress
 				// rules, and routing can all differ inside the cluster). Only an
 				// in-cluster vantage earns ConfidenceReal; otherwise it's indirect, so
@@ -2453,8 +2453,8 @@ func classifySkip(reason string) string {
 	case strings.Contains(low, "from your machine"),
 		strings.Contains(low, "from here"),
 		strings.Contains(low, "internal address"),
-		strings.Contains(low, "run radar in-cluster"),
-		strings.Contains(low, "run radar from in-cluster"):
+		strings.Contains(low, "run kubeatlas in-cluster"),
+		strings.Contains(low, "run kubeatlas from in-cluster"):
 		return SkipClassVantage
 	default:
 		return SkipClassCoverage
@@ -3133,11 +3133,11 @@ func singleRouteHeadline(r RouteResult, skipped int, noun string) string {
 	}
 }
 
-// probeSource normalises a probe's issuer; an unset Source means Radar itself,
+// probeSource normalises a probe's issuer; an unset Source means KubeAtlas itself,
 // which is what every inline probe is.
 func probeSource(p probe.Result) string {
 	if p.Source == "" {
-		return probe.SourceRadar
+		return probe.SourceKubeAtlas
 	}
 	return p.Source
 }
@@ -3145,7 +3145,7 @@ func probeSource(p probe.Result) string {
 // vantageSource mirrors probeSource for an already-projected vantage row.
 func vantageSource(v VantageResult) string {
 	if v.Source == "" {
-		return probe.SourceRadar
+		return probe.SourceKubeAtlas
 	}
 	return v.Source
 }

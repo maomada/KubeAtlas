@@ -86,7 +86,7 @@ func readCachedDynamicList(cache *k8s.DynamicResourceCache, gvr schema.GroupVers
 }
 
 // dynamicList is what a dynamic kind's list read: its rows, the namespaces
-// read (nil: all of the target), and the gaps. When Radar's collection
+// read (nil: all of the target), and the gaps. When KubeAtlas's collection
 // narrowed a request that named no namespaces, narrowed is set, with collected
 // the namespaces it collects the kind in for an every-namespace target, and
 // uncovered what it left out of a finite one.
@@ -102,7 +102,7 @@ type dynamicList struct {
 // namespace). Each namespace is a separate read: one that fails is a gap, and
 // the list fails only when none succeeds — or when the list is over its size
 // budget, or the read handles changed, which invalidate the whole answer. A
-// namespace Radar doesn't collect, or is refused in, narrows a request that
+// namespace KubeAtlas doesn't collect, or is refused in, narrows a request that
 // named no namespaces (explicit false) instead of leaving a gap in it.
 func readDynamicResourceList(r *http.Request, cache *k8s.ResourceCache, kind, group string, namespaces []string, explicit bool, limit int) (dynamicList, error) {
 	dynamicCache, gvr, err := dynamicReadHandles(cache, kind, group)
@@ -215,7 +215,7 @@ func readDynamicResourceList(r *http.Request, cache *k8s.ResourceCache, kind, gr
 			var readErr error
 			if ctx.Err() != nil {
 				// The budget ran out before this namespace was tried: that
-				// says nothing about whether Radar collects it.
+				// says nothing about whether KubeAtlas collects it.
 				readErr = collectionFailure(gvr.Resource, ctx.Err())
 			} else if direct {
 				items, readErr = dynamicCache.ListDirectBounded(ctx, gvr, namespace, limit)
@@ -264,11 +264,11 @@ func readDynamicResourceList(r *http.Request, cache *k8s.ResourceCache, kind, gr
 	if !current() {
 		return dynamicList{}, errReadHandlesChanged
 	}
-	// Radar not collecting, or being refused, a namespace the request didn't
+	// KubeAtlas not collecting, or being refused, a namespace the request didn't
 	// name narrows it, once something was read.
 	var uncovered []string
 	if count <= limit && !explicit && !clusterScoped && len(read) > 0 {
-		for _, code := range []readreason.Code{readreason.RadarNamespaceNotCollected, readreason.RadarForbidden} {
+		for _, code := range []readreason.Code{readreason.KubeAtlasNamespaceNotCollected, readreason.KubeAtlasForbidden} {
 			uncovered = append(uncovered, failures[code]...)
 			delete(failures, code)
 		}
@@ -285,7 +285,7 @@ func readDynamicResourceList(r *http.Request, cache *k8s.ResourceCache, kind, gr
 		}
 		failures[unansweredCode] = append(failures[unansweredCode], unanswered...)
 		if failureByCode[unansweredCode] == nil {
-			failureByCode[unansweredCode] = readFailuref(unansweredCode, "Radar has not established whether it can collect %s in some namespaces", gvr.Resource)
+			failureByCode[unansweredCode] = readFailuref(unansweredCode, "KubeAtlas has not established whether it can collect %s in some namespaces", gvr.Resource)
 		}
 	}
 	gaps := unknownGaps
@@ -302,7 +302,7 @@ func readDynamicResourceList(r *http.Request, cache *k8s.ResourceCache, kind, gr
 		code := readreason.Primary(codes)
 		failure := failureByCode[code]
 		if failure == nil {
-			failure = readFailuref(readreason.RadarNamespaceNotCollected, "Radar has no readable scope for %s", kind)
+			failure = readFailuref(readreason.KubeAtlasNamespaceNotCollected, "KubeAtlas has no readable scope for %s", kind)
 		}
 		return dynamicList{}, &resourceReadFailure{code: failure.code, message: failure.message, gaps: gaps}
 	}
@@ -372,8 +372,8 @@ func readDynamicResourceGet(ctx context.Context, cache *k8s.ResourceCache, kind,
 }
 
 // probeRetryFailure reads a failure no other code explains as still loading
-// while Radar is still retrying its access check for the kind: until the
-// check answers, Radar can't say where it collects the kind.
+// while KubeAtlas is still retrying its access check for the kind: until the
+// check answers, KubeAtlas can't say where it collects the kind.
 func probeRetryFailure(dynamicCache *k8s.DynamicResourceCache, gvr schema.GroupVersionResource, err error) error {
 	var failure *resourceReadFailure
 	if err == nil || errors.As(err, &failure) || apierrors.IsNotFound(err) || errors.Is(err, k8score.ErrResourceNotFound) || collectionFailure(gvr.Resource, err).code != readreason.ReadError {
@@ -382,5 +382,5 @@ func probeRetryFailure(dynamicCache *k8s.DynamicResourceCache, gvr schema.GroupV
 	if !dynamicCache.Observation(gvr).ProbeRetrying {
 		return err
 	}
-	return readFailuref(readreason.KindSyncPending, "Radar is still checking its access to %s, please retry shortly", gvr.Resource)
+	return readFailuref(readreason.KindSyncPending, "KubeAtlas is still checking its access to %s, please retry shortly", gvr.Resource)
 }

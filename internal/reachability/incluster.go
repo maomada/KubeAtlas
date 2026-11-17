@@ -67,8 +67,8 @@ func RunInClusterTests(ctx context.Context, tr *trace.Trace, namespace string) (
 // REST handler passes the operator's custom probe path through here).
 func RunInClusterTestsWithOptions(ctx context.Context, tr *trace.Trace, namespace string, testOpts InClusterTestOptions) ([]InClusterTestResult, map[string][]probe.Result) {
 	typed := k8s.ClientFromContext(ctx)
-	// Self-read uses radar's OWN service-account client (k8s.GetClient), not the
-	// caller's impersonated one - the deployed image is radar's knowledge. Guard
+	// Self-read uses kubeatlas's OWN service-account client (k8s.GetClient), not the
+	// caller's impersonated one - the deployed image is kubeatlas's knowledge. Guard
 	// the typed-nil interface so a nil base client falls through to KUBEATLAS_IMAGE.
 	var selfClient kubernetes.Interface
 	if base := k8s.GetClient(); base != nil {
@@ -194,7 +194,7 @@ func runInClusterTests(ctx context.Context, typed kubernetes.Interface, image st
 		cancel()
 		// Stamp the issuer HERE, not at the hop-stamping step downstream: these
 		// same results are folded into the route via ApplyInClusterResults, and
-		// an unstamped result is read as Radar's own. That put a successful
+		// an unstamped result is read as KubeAtlas's own. That put a successful
 		// in-cluster run into a vantage the reader never sees, so the test
 		// appeared to do nothing.
 		for i := range results {

@@ -2,7 +2,7 @@
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
-import { RadarUpgradeContext, RadarUpgradeNote } from './RadarUpgradeNote'
+import { KubeAtlasUpgradeContext, KubeAtlasUpgradeNote } from './KubeAtlasUpgradeNote'
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
@@ -13,9 +13,9 @@ it('hands the whole requirement to the host when the user asks to upgrade', asyn
   const root = createRoot(element)
   await act(async () => {
     root.render(
-      <RadarUpgradeContext.Provider value={{ onRequestUpgrade }}>
-        <RadarUpgradeNote requirement={requirement} />
-      </RadarUpgradeContext.Provider>,
+      <KubeAtlasUpgradeContext.Provider value={{ onRequestUpgrade }}>
+        <KubeAtlasUpgradeNote requirement={requirement} />
+      </KubeAtlasUpgradeContext.Provider>,
     )
   })
   await act(async () => { element.querySelector('button')!.click() })

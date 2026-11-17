@@ -5,7 +5,7 @@
 //
 // - Entry = the main barrel plus charts/ and resources/renderers/, which are
 //   reachable only through package.json subpath exports, plus WEB_COMPONENTS:
-//   the prop-driven feature components in web/ (radar-app). Most of web/ fetches
+//   the prop-driven feature components in web/ (kubeatlas-app). Most of web/ fetches
 //   its own data and can't render without a backend, so it is opt-in per export.
 // - Minified because monaco alone is ~9MB unminified and the upload caps a
 //   file at 12MB; the converter re-bundles without minifying.

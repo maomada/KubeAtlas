@@ -87,7 +87,7 @@ jobs:
               - 'README.md'
               - 'docs/mcp.md'
               - 'docs/reachability.md'
-              - 'web/src/api/radarFeatures.ts'
+              - 'web/src/api/kubeatlasFeatures.ts'
               - 'web/src/components/home/mcpToolCatalog.ts'
               - 'web/src/components/resources/renderers/**'
               - 'packages/k8s-ui/src/components/workload/WorkloadView.tsx'
@@ -195,9 +195,9 @@ jobs:
       postgres:
         image: postgres:17-alpine
         env:
-          POSTGRES_USER: radar
-          POSTGRES_PASSWORD: radar
-          POSTGRES_DB: radar
+          POSTGRES_USER: kubeatlas
+          POSTGRES_PASSWORD: kubeatlas
+          POSTGRES_DB: kubeatlas
         options: >-
           --health-cmd pg_isready
           --health-interval 10s
@@ -239,7 +239,7 @@ jobs:
       # against the service above.
       - name: Run tests
         env:
-          KUBEATLAS_TEST_POSTGRES_DSN: postgres://radar:radar@localhost:5432/radar?sslmode=disable
+          KUBEATLAS_TEST_POSTGRES_DSN: postgres://kubeatlas:kubeatlas@localhost:5432/kubeatlas?sslmode=disable
           # Turns a missing DSN into a failure instead of a silent skip: without
           # it, losing the service or the env block above would leave the whole
           # PostgreSQL backend untested while this job still reported green.
@@ -422,11 +422,11 @@ jobs:
         run: helm lint deploy/helm/kubeatlas-portal --set image.repository=example.test/kubeatlas-portal --set existingSecret=portal-auth
 
       - name: Render default values
-        run: helm template radar deploy/helm/kubeatlas > /dev/null
+        run: helm template kubeatlas deploy/helm/kubeatlas > /dev/null
 
       - name: Reject cloud.enabled with inline token
         run: |
-          if output=$(helm template radar deploy/helm/kubeatlas \
+          if output=$(helm template kubeatlas deploy/helm/kubeatlas \
             --set cloud.enabled=true \
             --set cloud.url=wss://cloud.example/agent \
             --set cloud.clusterName=test \
@@ -438,7 +438,7 @@ jobs:
 
       - name: Reject cloud.enabled with existingSecret
         run: |
-          if output=$(helm template radar deploy/helm/kubeatlas \
+          if output=$(helm template kubeatlas deploy/helm/kubeatlas \
             --set cloud.enabled=true \
             --set cloud.url=wss://cloud.example/agent \
             --set cloud.clusterName=test \
@@ -450,7 +450,7 @@ jobs:
 
       - name: Reject cloud.enabled without token or existingSecret
         run: |
-          if output=$(helm template radar deploy/helm/kubeatlas \
+          if output=$(helm template kubeatlas deploy/helm/kubeatlas \
             --set cloud.enabled=true \
             --set cloud.url=wss://cloud.example/agent \
             --set cloud.clusterName=test 2>&1); then
@@ -461,18 +461,18 @@ jobs:
 
       - name: Render Argo CD integration with inline token
         run: |
-          helm template radar deploy/helm/kubeatlas \
+          helm template kubeatlas deploy/helm/kubeatlas \
             --set argocd.token=argo_deadbeef \
             --set argocd.url=https://argocd.example.com > /dev/null
 
       - name: Render Argo CD integration with existingSecret
         run: |
-          helm template radar deploy/helm/kubeatlas \
+          helm template kubeatlas deploy/helm/kubeatlas \
             --set argocd.existingSecret=my-argo-token > /dev/null
 
       - name: Reject Argo CD token and existingSecret together
         run: |
-          if helm template radar deploy/helm/kubeatlas \
+          if helm template kubeatlas deploy/helm/kubeatlas \
             --set argocd.token=argo_deadbeef \
             --set argocd.existingSecret=my-argo-token 2>/dev/null; then
             echo "ERROR: helm template should have failed with both token and existingSecret set"
@@ -481,14 +481,14 @@ jobs:
 
       - name: Render PostgreSQL timeline storage with existingSecret
         run: |
-          helm template radar deploy/helm/kubeatlas \
+          helm template kubeatlas deploy/helm/kubeatlas \
             --set timeline.storage=postgres \
-            --set timeline.postgres.existingSecret=radar-postgres \
+            --set timeline.postgres.existingSecret=kubeatlas-postgres \
             --set timeline.retention=720h > /dev/null
 
       - name: Reject PostgreSQL storage without existingSecret
         run: |
-          if helm template radar deploy/helm/kubeatlas \
+          if helm template kubeatlas deploy/helm/kubeatlas \
             --set timeline.storage=postgres 2>/dev/null; then
             echo "ERROR: helm template should have failed with no existingSecret set"
             exit 1

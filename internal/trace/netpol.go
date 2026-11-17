@@ -18,7 +18,7 @@ import (
 // actually flows (kindnet creates NetworkPolicy objects but enforces nothing),
 // so a wouldDeny is a strong warning the live in-cluster probe must confirm
 // before any verdict goes red. Everything caller-dependent stays advisory by
-// construction - Radar tests from its own vantage, not the real client pod, so
+// construction - KubeAtlas tests from its own vantage, not the real client pod, so
 // it can never assert allow/deny for a rule scoped to specific sources.
 type policyVerdict int
 
@@ -33,7 +33,7 @@ const (
 	policyWouldDeny
 	// policyAdvisory: a rule allows the port only from specific sources, or pods
 	// disagree, or a named port couldn't be resolved, or a hostNetwork pod is in
-	// play. Radar can't assert - stays advisory.
+	// play. KubeAtlas can't assert - stays advisory.
 	policyAdvisory
 	// policyEgressNote: the only policies selecting the pods isolate Egress, not
 	// Ingress - the inbound route is unrestricted, but the pod's OUTBOUND calls
@@ -254,7 +254,7 @@ type podPortVerdict struct {
 // evaluatePodPort applies the additive NetworkPolicy semantics for one pod and
 // one resolved pod port. A pod is allowed if ANY ingress-isolating policy that
 // selects it allows the port; allow-from-anywhere (empty from) beats a
-// caller-dependent allow because it's the only thing Radar can assert.
+// caller-dependent allow because it's the only thing KubeAtlas can assert.
 func evaluatePodPort(pod *corev1.Pod, podPort int32, proto corev1.Protocol, policies []*networkingv1.NetworkPolicy) podPortVerdict {
 	callerDependent := false
 	otherPortsAllowed := false

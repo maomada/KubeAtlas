@@ -138,7 +138,7 @@ func TestLocalTerminalContextGuardBeforeShell(t *testing.T) {
 		if resp.StatusCode != http.StatusBadRequest {
 			t.Fatalf("plain GET status = %d", resp.StatusCode)
 		}
-		files, err := filepath.Glob(filepath.Join(dir, "radar-kubeconfig-*.yaml"))
+		files, err := filepath.Glob(filepath.Join(dir, "kubeatlas-kubeconfig-*.yaml"))
 		if err != nil || len(files) != 0 {
 			t.Fatalf("kubeconfigs after failed upgrade = %v, error = %v", files, err)
 		}

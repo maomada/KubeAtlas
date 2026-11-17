@@ -1,3 +1,4 @@
+import { readProductStorage } from '../../utils/legacy-brand'
 import { useRef, useCallback, useState, useMemo, useEffect, useLayoutEffect, type ReactNode } from 'react'
 import { Virtuoso, type VirtuosoHandle } from 'react-virtuoso'
 import { Play, Square, Download, FileDown, Search, X, Terminal, RotateCcw, ChevronUp, ChevronDown, ChevronRight, CaseSensitive, Regex, WrapText, Clock, Copy, Trash2, Filter, EyeOff, Highlighter, Braces, Palette, ListCollapse, Sun, Moon } from 'lucide-react'
@@ -196,14 +197,14 @@ export function LogCore({
     return () => document.removeEventListener('selectionchange', handleSelectionChange)
   }, [pauseFollowing])
   const themeLocked = typeof forceDark === 'boolean'
-  // Seed isDark: forceDark prop wins; else localStorage['radar-logs-dark'];
+  // Seed isDark: forceDark prop wins; else localStorage['kubeatlas-logs-dark'];
   // else defaultDark (the host app's theme, dark if not given). See
   // log-palette.ts for why the viewer is palette-driven
   // instead of theme-token-driven.
   const [isDark, setIsDark] = useState<boolean>(() => {
     if (typeof forceDark === 'boolean') return forceDark
     try {
-      const v = localStorage.getItem('radar-logs-dark')
+      const v = readProductStorage(localStorage, 'kubeatlas-logs-dark')
       if (v === 'false') return false
       if (v === 'true') return true
     } catch {}
@@ -219,7 +220,7 @@ export function LogCore({
   useEffect(() => {
     if (typeof forceDark === 'boolean') return
     try {
-      const v = localStorage.getItem('radar-logs-dark')
+      const v = readProductStorage(localStorage, 'kubeatlas-logs-dark')
       if (v === 'true' || v === 'false') {
         setIsDark(v === 'true')
         return
@@ -232,27 +233,27 @@ export function LogCore({
     if (themeLocked) return
     setIsDark(prev => {
       const next = !prev
-      try { localStorage.setItem('radar-logs-dark', String(next)) } catch {}
+      try { localStorage.setItem('kubeatlas-logs-dark', String(next)) } catch {}
       return next
     })
   }, [themeLocked])
   const [wordWrap, setWordWrap] = useState(() => {
-    try { return localStorage.getItem('radar-logs-wrap') !== 'false' } catch { return true }
+    try { return readProductStorage(localStorage, 'kubeatlas-logs-wrap') !== 'false' } catch { return true }
   })
   const [showTimestamps, setShowTimestamps] = useState(() => {
-    try { return localStorage.getItem('radar-logs-timestamps') !== 'false' } catch { return true }
+    try { return readProductStorage(localStorage, 'kubeatlas-logs-timestamps') !== 'false' } catch { return true }
   })
   const [tsFormat, setTsFormat] = useState<TimestampFormat>(() => {
     try {
-      const v = localStorage.getItem('radar-logs-ts-format') as TimestampFormat | null
+      const v = readProductStorage(localStorage, 'kubeatlas-logs-ts-format') as TimestampFormat | null
       return v && TIMESTAMP_FORMAT_ORDER.includes(v) ? v : 'time-local'
     } catch { return 'time-local' }
   })
   const [ansiEnabled, setAnsiEnabled] = useState(() => {
-    try { return localStorage.getItem('radar-logs-ansi') !== 'false' } catch { return true }
+    try { return readProductStorage(localStorage, 'kubeatlas-logs-ansi') !== 'false' } catch { return true }
   })
   const [collapseStacks, setCollapseStacks] = useState(() => {
-    try { return localStorage.getItem('radar-logs-collapse-stacks') !== 'false' } catch { return true }
+    try { return readProductStorage(localStorage, 'kubeatlas-logs-collapse-stacks') !== 'false' } catch { return true }
   })
   const [enabledLevels, setEnabledLevels] = useState<Set<LogLevel>>(
     new Set(['error', 'warn', 'info', 'debug', 'unknown'])
@@ -262,7 +263,7 @@ export function LogCore({
   const [exportScope, setExportScope] = useState<'visible' | 'all'>('visible')
   const [exportFormat, setExportFormat] = useState<LogExportFormat>(() => {
     try {
-      const v = localStorage.getItem('radar-logs-export-format') as LogExportFormat | null
+      const v = readProductStorage(localStorage, 'kubeatlas-logs-export-format') as LogExportFormat | null
       return v === 'txt' || v === 'json' || v === 'csv' ? v : 'txt'
     } catch { return 'txt' }
   })
@@ -272,7 +273,7 @@ export function LogCore({
   const structuredMenu = useAnimatedUnmount(showStructuredMenu, overlayExitMs('menu'))
   const [structuredMode, setStructuredMode] = useState<StructuredMode>(() => {
     try {
-      const v = localStorage.getItem('radar-logs-structured-mode') as StructuredMode | null
+      const v = readProductStorage(localStorage, 'kubeatlas-logs-structured-mode') as StructuredMode | null
       return v && STRUCTURED_MODE_ORDER.includes(v) ? v : 'compact'
     } catch { return 'compact' }
   })
@@ -450,12 +451,12 @@ export function LogCore({
 
   const pickExportFormat = useCallback((fmt: LogExportFormat) => {
     setExportFormat(fmt)
-    try { localStorage.setItem('radar-logs-export-format', fmt) } catch {}
+    try { localStorage.setItem('kubeatlas-logs-export-format', fmt) } catch {}
   }, [])
 
   const pickStructuredMode = useCallback((mode: StructuredMode) => {
     setStructuredMode(mode)
-    try { localStorage.setItem('radar-logs-structured-mode', mode) } catch {}
+    try { localStorage.setItem('kubeatlas-logs-structured-mode', mode) } catch {}
     setShowStructuredMenu(false)
   }, [])
 
@@ -464,7 +465,7 @@ export function LogCore({
     setStructuredMode(prev => {
       const idx = STRUCTURED_MODE_ORDER.indexOf(prev)
       const next = STRUCTURED_MODE_ORDER[(idx + 1) % STRUCTURED_MODE_ORDER.length]
-      try { localStorage.setItem('radar-logs-structured-mode', next) } catch {}
+      try { localStorage.setItem('kubeatlas-logs-structured-mode', next) } catch {}
       return next
     })
   }, [])
@@ -498,7 +499,7 @@ export function LogCore({
   const toggleWrap = useCallback(() => {
     setWordWrap(prev => {
       const next = !prev
-      try { localStorage.setItem('radar-logs-wrap', String(next)) } catch {}
+      try { localStorage.setItem('kubeatlas-logs-wrap', String(next)) } catch {}
       return next
     })
   }, [])
@@ -506,24 +507,24 @@ export function LogCore({
   const toggleTimestamps = useCallback(() => {
     setShowTimestamps(prev => {
       const next = !prev
-      try { localStorage.setItem('radar-logs-timestamps', String(next)) } catch {}
+      try { localStorage.setItem('kubeatlas-logs-timestamps', String(next)) } catch {}
       return next
     })
   }, [])
 
   const pickTsFormat = useCallback((fmt: TimestampFormat) => {
     setTsFormat(fmt)
-    try { localStorage.setItem('radar-logs-ts-format', fmt) } catch {}
+    try { localStorage.setItem('kubeatlas-logs-ts-format', fmt) } catch {}
     // Auto-show timestamps when user picks a format — otherwise the change isn't visible.
     setShowTimestamps(true)
-    try { localStorage.setItem('radar-logs-timestamps', 'true') } catch {}
+    try { localStorage.setItem('kubeatlas-logs-timestamps', 'true') } catch {}
     setShowTsMenu(false)
   }, [])
 
   const toggleAnsi = useCallback(() => {
     setAnsiEnabled(prev => {
       const next = !prev
-      try { localStorage.setItem('radar-logs-ansi', String(next)) } catch {}
+      try { localStorage.setItem('kubeatlas-logs-ansi', String(next)) } catch {}
       return next
     })
   }, [])
@@ -531,7 +532,7 @@ export function LogCore({
   const toggleCollapseStacks = useCallback(() => {
     setCollapseStacks(prev => {
       const next = !prev
-      try { localStorage.setItem('radar-logs-collapse-stacks', String(next)) } catch {}
+      try { localStorage.setItem('kubeatlas-logs-collapse-stacks', String(next)) } catch {}
       return next
     })
   }, [])

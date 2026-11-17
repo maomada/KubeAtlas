@@ -90,9 +90,9 @@ func TestDynamicFailureInEveryNamedNamespaceReachesAll(t *testing.T) {
 func TestNamespaceGapNamesAllKindsOnlyWhenAllWereMissed(t *testing.T) {
 	for _, all := range []bool{false, true} {
 		t.Run(fmt.Sprint(all), func(t *testing.T) {
-			reasons := map[string]map[string]string{"ConfigMap": {"alpha": string(readreason.RadarNamespaceNotCollected)}}
+			reasons := map[string]map[string]string{"ConfigMap": {"alpha": string(readreason.KubeAtlasNamespaceNotCollected)}}
 			if all {
-				reasons["Pod"] = map[string]string{"alpha": string(readreason.RadarNamespaceNotCollected)}
+				reasons["Pod"] = map[string]string{"alpha": string(readreason.KubeAtlasNamespaceNotCollected)}
 			}
 			p := &fakeProvider{typedNamespaceReasons: reasons, typed: map[string][]runtime.Object{"pods": {newPod("alpha", "db", "image", nil)}}}
 			res, err := Search(t.Context(), p, Parse("kind:Pod kind:ConfigMap ns:alpha"), Options{Selection: readscope.Selection{Namespaces: []string{"alpha"}}})
@@ -142,7 +142,7 @@ func TestTypedSearchKeepsReadyNamespaceBesideUncollectedOne(t *testing.T) {
 	if res.Total != 1 || res.Hits[0].Namespace != "alpha" {
 		t.Error("ready alpha hit lost because beta is outside collection and unrelated gamma still loads")
 	}
-	if hasKindGap(res, readreason.RadarForbidden, "ConfigMap") || len(res.Coverage.Gaps) != 1 || !slices.Equal(res.Coverage.Gaps[0].Namespaces.Names, []string{"beta"}) {
+	if hasKindGap(res, readreason.KubeAtlasForbidden, "ConfigMap") || len(res.Coverage.Gaps) != 1 || !slices.Equal(res.Coverage.Gaps[0].Namespaces.Names, []string{"beta"}) {
 		t.Errorf("coverage must only exclude beta: %+v", res.Coverage)
 	}
 }

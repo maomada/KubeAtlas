@@ -33,7 +33,7 @@ func TestWorkloadPromQL(t *testing.T) {
 		add("http_server_request_duration_seconds_count", base, "0+60x10")
 		foreign := strings.Replace(base, pod.UID, "ffffffff-ffff-ffff-ffff-ffffffffffff", 1)
 		add("http_server_request_duration_seconds_count", foreign, "0+6000x10")
-		mismatched := strings.Replace(base, pod.Name, identityPods[1-i].Name, 1) + `,__radar_keep="1",__radar_pair="forged"`
+		mismatched := strings.Replace(base, pod.Name, identityPods[1-i].Name, 1) + `,__kubeatlas_keep="1",__kubeatlas_pair="forged"`
 		add("http_server_request_duration_seconds_count", mismatched, "0+6000x10")
 		id := "/kubepods/burstable/pod" + pod.UID + "/container"
 		if i == 1 {
@@ -42,7 +42,7 @@ func TestWorkloadPromQL(t *testing.T) {
 		resource := fmt.Sprintf(`namespace="shop",pod=%q,container="app",id=%q`, pod.Name, id)
 		add("container_cpu_usage_seconds_total", resource, "0+60x10")
 		add("container_cpu_usage_seconds_total", strings.ReplaceAll(resource, pod.Name, identityPods[1-i].Name), "0+6000x10")
-		add("container_cpu_usage_seconds_total", fmt.Sprintf(`namespace="shop",pod=%q,container="app",id="/not-a-pod",__radar_uid=%q,__radar_keep="1"`, pod.Name, pod.UID), "0+6000x10")
+		add("container_cpu_usage_seconds_total", fmt.Sprintf(`namespace="shop",pod=%q,container="app",id="/not-a-pod",__kubeatlas_uid=%q,__kubeatlas_keep="1"`, pod.Name, pod.UID), "0+6000x10")
 	}
 	identitySelection := SelectPods("shop", []string{"identity-0", "identity-1"})
 	identityRequests, err := BuildIdentityRequestQueries(time.Minute, identitySelection, identityPods, RequestSourceBeyla, `job="custom-http"`)

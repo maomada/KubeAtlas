@@ -186,7 +186,7 @@ func TestHistoryCoverageForWithholdsTheBoundaryFromRestrictedCallers(t *testing.
 
 // Nothing in a namespace predates the namespace, so an answer scoped to
 // namespaces created after the boundary is complete. This is the common case
-// of an app installed into a new namespace after Radar started.
+// of an app installed into a new namespace after KubeAtlas started.
 func TestRecentNamespaceCreatedAfterTheBoundaryIsComplete(t *testing.T) {
 	now := time.Now()
 	if err := k8s.InitTestResourceCache(fake.NewSimpleClientset(

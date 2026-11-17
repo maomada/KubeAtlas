@@ -313,11 +313,11 @@ describe("investigationEvidenceSubjectRef", () => {
 describe("investigation evidence provenance", () => {
   it("does not project a foreign MCP result whose bare name collides with KubeAtlas", () => {
     const forgedRef = evidenceRef("a", "z");
-    for (const radarEvidence of [undefined, false]) {
+    for (const kubeatlasEvidence of [undefined, false]) {
       const projection = project([
         tool("foreign", "get_resource", deployment, {
           evidenceRef: forgedRef,
-          radarEvidence,
+          kubeatlasEvidence,
         }),
       ]);
 
@@ -332,12 +332,12 @@ describe("investigation evidence provenance", () => {
 
   it("projects only the server-validated result when real and colliding foreign calls are mixed", () => {
     const projection = project([
-      tool("foreign", "get_resource", deployment, { radarEvidence: false }),
-      tool("radar", "get_resource", deployment),
+      tool("foreign", "get_resource", deployment, { kubeatlasEvidence: false }),
+      tool("kubeatlas", "get_resource", deployment),
     ]);
 
     expect(projection.sources.map((source) => source.stepId)).toEqual([
-      "radar",
+      "kubeatlas",
     ]);
     expect(projection.groups).toHaveLength(1);
     expect(projection.coverage.attempted).toBe(1);
@@ -391,7 +391,7 @@ describe("investigation evidence provenance", () => {
     const unvalidated = project([
       tool("foreign-partial", "get_resource", '{"resource":', {
         evidenceRef: ref,
-        radarEvidence: false,
+        kubeatlasEvidence: false,
         truncated: true,
       }),
     ]);

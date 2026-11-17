@@ -3,8 +3,8 @@ import {
   ActionConfirmDialog,
   FactGrid,
   FactRow,
-  RadarUpgradeNote,
-  getRadarUpgradeRequirement,
+  KubeAtlasUpgradeNote,
+  getKubeAtlasUpgradeRequirement,
 } from '@maomada/k8s-ui'
 import { useCNPGProtectionAction, useCNPGScheduleMethodPreview } from '../../../api/cnpg-protection'
 import { useConnection } from '../../../context/ConnectionContext'
@@ -46,7 +46,7 @@ export function CNPGScheduleRepairDialog({
   })
   const data = preview.data
   const changed = connection.context !== context || (data && data.context !== context)
-  const upgrade = getRadarUpgradeRequirement(preview.error)
+  const upgrade = getKubeAtlasUpgradeRequirement(preview.error)
   return (
     <ActionConfirmDialog
       open
@@ -98,7 +98,7 @@ export function CNPGScheduleRepairDialog({
       }
     >
       {upgrade ? (
-        <RadarUpgradeNote requirement={upgrade} />
+        <KubeAtlasUpgradeNote requirement={upgrade} />
       ) : data ? (
         <FactGrid>
           <FactRow label="Cluster">{data.cluster}</FactRow>

@@ -44,11 +44,11 @@ var (
 
 func main() {
 	if len(os.Args) > 1 && os.Args[1] == "cloud" {
-		log.Fatal("upstream Radar Cloud commands are unavailable in this independently maintained build")
+		log.Fatal("legacy upstream cloud commands are unavailable in this independently maintained build")
 	}
 
 	// Subcommand dispatch (before flag parsing — subcommands own their flags).
-	// `radar diagnose <kind>/<name>` is a thin client for a RUNNING instance.
+	// `kubeatlas diagnose <kind>/<name>` is a thin client for a RUNNING instance.
 	if len(os.Args) > 1 && os.Args[1] == "diagnose" {
 		os.Exit(diagnosecli.Run(os.Args[2:], func(url string) {
 			app.OpenBrowser(url, "")
@@ -57,7 +57,7 @@ func main() {
 
 	startupStart := time.Now()
 
-	// Subcommand dispatch: `radar probe` runs a one-shot reachability probe and
+	// Subcommand dispatch: `kubeatlas probe` runs a one-shot reachability probe and
 	// exits - no server, no cluster client. The in-cluster reachability runner
 	// executes this binary in that mode. Intercept before the server flag
 	// parsing, since "probe" is a positional argument, not a flag.
@@ -88,9 +88,9 @@ func main() {
 	namespaces := flag.String("namespaces", fileCfg.NamespacesFlag(), "Initial namespace filters as a comma-separated list (e.g. ns1,ns2,ns3). Use this when you can list resources in specific namespaces but cannot list namespaces cluster-wide.")
 	port := flag.Int("port", fileCfg.PortOr(9280), "Server port")
 	listenAddress := flag.String("listen-address", server.DefaultListenAddress, "HTTP listen IP address (IPv4 or IPv6), or localhost; loopback is local-only, other addresses (including 0.0.0.0) expose shared access")
-	basePath := flag.String("base-path", "", "URL path prefix to serve KubeAtlas under, e.g. /radar (empty = root). Use when an ingress forwards a subpath without stripping it.")
-	allowedHosts := flag.String("allowed-hosts", os.Getenv("KUBEATLAS_ALLOWED_HOSTS"), "Comma-separated hostnames, besides localhost, IP addresses and Kubernetes Service names, that an unauthenticated non-loopback listener answers (e.g. radar.internal). Requests for other hostnames are refused so DNS rebinding cannot reach KubeAtlas. Exact names or *.example.com for names under a domain; \"*\" turns the check off. Hosts from --trusted-origins are included. Env: KUBEATLAS_ALLOWED_HOSTS")
-	trustedOrigins := flag.String("trusted-origins", os.Getenv("KUBEATLAS_TRUSTED_ORIGINS"), "Comma-separated origins, besides the address KubeAtlas is opened at, that may use KubeAtlas's API, including changes and terminals (e.g. http://radar.internal). Set this when a proxy in front of KubeAtlas rewrites the Host header and changes fail with \"KubeAtlas refused this request\". Exact origins only, no wildcards. Does not apply to /mcp (see KUBEATLAS_MCP_TRUSTED_ORIGINS). Env: KUBEATLAS_TRUSTED_ORIGINS")
+	basePath := flag.String("base-path", "", "URL path prefix to serve KubeAtlas under, e.g. /kubeatlas (empty = root). Use when an ingress forwards a subpath without stripping it.")
+	allowedHosts := flag.String("allowed-hosts", os.Getenv("KUBEATLAS_ALLOWED_HOSTS"), "Comma-separated hostnames, besides localhost, IP addresses and Kubernetes Service names, that an unauthenticated non-loopback listener answers (e.g. kubeatlas.internal). Requests for other hostnames are refused so DNS rebinding cannot reach KubeAtlas. Exact names or *.example.com for names under a domain; \"*\" turns the check off. Hosts from --trusted-origins are included. Env: KUBEATLAS_ALLOWED_HOSTS")
+	trustedOrigins := flag.String("trusted-origins", os.Getenv("KUBEATLAS_TRUSTED_ORIGINS"), "Comma-separated origins, besides the address KubeAtlas is opened at, that may use KubeAtlas's API, including changes and terminals (e.g. http://kubeatlas.internal). Set this when a proxy in front of KubeAtlas rewrites the Host header and changes fail with \"KubeAtlas refused this request\". Exact origins only, no wildcards. Does not apply to /mcp (see KUBEATLAS_MCP_TRUSTED_ORIGINS). Env: KUBEATLAS_TRUSTED_ORIGINS")
 	noBrowser := flag.Bool("no-browser", fileCfg.NoBrowser, "Don't auto-open browser")
 	browser := flag.String("browser", fileCfg.Browser, "Browser to use when opening the UI (default: OS default browser; macOS app names supported)")
 	noVersionCheck := flag.Bool("no-version-check", fileCfg.NoVersionCheck, "Disable automatic checks for newer KubeAtlas versions and releases (also enabled via KUBEATLAS_DISABLE_VERSION_CHECK=1)")
@@ -210,14 +210,14 @@ func main() {
 	// An explicit --reachability-image override applies to BOTH probe paths. It must
 	// win over the in-cluster self-read, so record it as the configured override
 	// (checked ABOVE self-read), not as DefaultImageRef (the last-resort fallback,
-	// below self-read - which would let radar's own pod image beat the operator's
+	// below self-read - which would let kubeatlas's own pod image beat the operator's
 	// explicit choice on the MCP path). REST passes the config as the override arg;
 	// MCP has no server config, so it relies on this. Air-gapped mirrors work on both.
 	if *reachabilityImage != "" {
 		reachability.SetConfiguredImage(*reachabilityImage)
 	}
 
-	// Cloud-mode: KubeAtlas runs inside a customer cluster and connects to Radar Hub.
+	// Cloud-mode: KubeAtlas runs inside a customer cluster and connects to KubeAtlas Hub.
 	// The ordinary TCP listener is health-only; the full handler is served over
 	// the authenticated tunnel, which marks requests in-process before proxy
 	// identity headers are accepted.
@@ -356,7 +356,7 @@ func main() {
 	if err != nil {
 		log.Printf("WARNING: ignoring --trusted-origins (KUBEATLAS_TRUSTED_ORIGINS) entries KubeAtlas cannot use; changes from those addresses will still be refused:\n%v", err)
 	}
-	// Radar Hub forwards root-relative paths over the tunnel and the ordinary
+	// KubeAtlas Hub forwards root-relative paths over the tunnel and the ordinary
 	// listener is health-only at the literal /api/health, so a prefixed router
 	// would 404 both. Fail loudly instead of coming up broken. Both Cloud
 	// signals are checked because the chart sets them together but they are

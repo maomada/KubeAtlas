@@ -21,7 +21,7 @@ var allowedViews = map[string]bool{
 
 var (
 	toolNamePattern = regexp.MustCompile(`^[a-z][a-z0-9_]{0,63}$`)
-	// Route patterns are compiled into Radar ("/api/pods/{namespace}/{name}/exec"),
+	// Route patterns are compiled into KubeAtlas ("/api/pods/{namespace}/{name}/exec"),
 	// so they carry placeholders, never the values that filled them.
 	routePattern = regexp.MustCompile(`^/api/[A-Za-z0-9_{}./-]{1,160}$`)
 )
@@ -80,7 +80,7 @@ func IsAllowedUIEvent(name string) bool {
 	return false
 }
 
-// RecordView counts one opening of a Radar view.
+// RecordView counts one opening of a KubeAtlas view.
 func RecordView(name string) {
 	if !IsAllowedView(name) {
 		return

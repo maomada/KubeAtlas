@@ -1,4 +1,4 @@
-// Package ownershiplive checks Radar's ownership source against a live
+// Package ownershiplive checks KubeAtlas's ownership source against a live
 // cluster: build with the liveparity tag and point it at one (see
 // TestLiveParity). It only lists, watches and gets.
 package ownershiplive
@@ -317,7 +317,7 @@ func (st settle) recheckResolution(want, got ownership.OwnerResolution, dependen
 
 // unread reports whether gaps say ref's kind went unread where ref is. A
 // gap without a kind is about the search itself (an empty namespace entry, or
-// kinds discovery didn't list), not about a kind Radar reads.
+// kinds discovery didn't list), not about a kind KubeAtlas reads.
 func unread(gaps []ownership.Gap, ref resourceid.Ref) bool {
 	return slices.ContainsFunc(gaps, func(g ownership.Gap) bool {
 		return g.Kind == ref.GroupKind() && (g.Namespace == "" || g.Namespace == ref.Namespace)

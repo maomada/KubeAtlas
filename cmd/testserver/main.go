@@ -1,4 +1,4 @@
-// cmd/testserver is a standalone binary that starts a Radar server backed by
+// cmd/testserver is a standalone binary that starts a KubeAtlas server backed by
 // a fake Kubernetes client with seed data.  It serves the embedded frontend
 // and listens on a configurable port (default 9281).
 //
@@ -11,7 +11,7 @@
 // Load-test mode (-pods > 0): instead of the small nginx fixture, the server
 // seeds a topology-realistic synthetic population (Deployments -> ReplicaSets
 // -> Pods with matching Services, spread across nodes and namespaces) so
-// Radar's UI can be driven at high object counts with no real cluster. The
+// KubeAtlas's UI can be driven at high object counts with no real cluster. The
 // count is live-controllable via a small admin listener (default port+1):
 //
 //	curl -XPOST localhost:9282/loadtest/scale -d '{"pods":10000}'
@@ -63,7 +63,7 @@ func main() {
 
 	// Isolate config/settings writes to a temp directory so e2e tests
 	// don't touch the developer's real ~/.kubeatlas/config.json.
-	tmpHome, err := os.MkdirTemp("", "radar-testserver-*")
+	tmpHome, err := os.MkdirTemp("", "kubeatlas-testserver-*")
 	if err != nil {
 		log.Fatalf("Failed to create temp HOME: %v", err)
 	}
@@ -166,7 +166,7 @@ func main() {
 	k8s.ResetTestState()
 }
 
-// informerCount reports the object count Radar's informer cache currently holds
+// informerCount reports the object count KubeAtlas's informer cache currently holds
 // for a Kind ("Pod", "Deployment", …) — the count the UI sees. It is the drain
 // signal the scaler paces every watched kind against, and the source of truth
 // for the post-scale convergence check.

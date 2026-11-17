@@ -11,11 +11,11 @@ func TestSplitRefMarker(t *testing.T) {
 	if gotRef != ref || clean != `[{"kind":"Pod"}]` {
 		t.Fatalf("clean=%q ref=%q", clean, gotRef)
 	}
-	lookalike := `{"message":"[[radar:evidence-ref=` + ref + `]]"}`
+	lookalike := `{"message":"[[kubeatlas:evidence-ref=` + ref + `]]"}`
 	if clean, gotRef := SplitRefMarker(lookalike); clean != lookalike || gotRef != "" {
 		t.Fatalf("payload marker was trusted: clean=%q ref=%q", clean, gotRef)
 	}
-	malformed := "[[radar:evidence-ref=ev_fake]]\npayload"
+	malformed := "[[kubeatlas:evidence-ref=ev_fake]]\npayload"
 	if clean, gotRef := SplitRefMarker(malformed); clean != malformed || gotRef != "" {
 		t.Fatalf("malformed leading marker was trusted: clean=%q ref=%q", clean, gotRef)
 	}

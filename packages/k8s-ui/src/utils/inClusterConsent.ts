@@ -1,22 +1,23 @@
+import { readProductStorage } from './legacy-brand'
 // Consent memory for the mutating in-cluster reachability test (it creates a
 // short-lived Job/pod). Keyed by an opaque source identity so a "don't ask again" on one cluster
 // never silently suppresses the confirm on another - the cluster the pod lands
 // in is the whole point of asking. Switching kube-context re-prompts.
 //
 // No source identity → no memory of ANY kind: the operator is asked on every
-// run. localStorage is per-ORIGIN, and one origin (Radar Hub) can front many
+// run. localStorage is per-ORIGIN, and one origin (KubeAtlas Hub) can front many
 // clusters, so a shared fallback key would let "don't ask again" on one cluster
 // suppress the pod-creating confirm on all of them - and even an in-memory
 // session flag is shared across every identity-less cluster in the session.
 // The dialog hides its "don't ask again" checkbox in that case, so nothing is
 // promised that doesn't stick.
 
-const key = (clusterKey: string) => `radar.inClusterConsent.v2.${clusterKey}`
+const key = (clusterKey: string) => `kubeatlas.inClusterConsent.v2.${clusterKey}`
 
 export function inClusterConsentGiven(clusterKey?: string): boolean {
   if (!clusterKey) return false
   try {
-    return localStorage.getItem(key(clusterKey)) === '1'
+    return readProductStorage(localStorage, key(clusterKey)) === '1'
   } catch {
     // localStorage unavailable (private mode / non-browser) - fail toward asking.
     return false

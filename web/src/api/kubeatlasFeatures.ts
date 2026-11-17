@@ -1,7 +1,7 @@
-import type { FeatureCapabilities, RadarUpgradeRequirement } from '@maomada/k8s-ui'
+import type { FeatureCapabilities, KubeAtlasUpgradeRequirement } from '@maomada/k8s-ui'
 import { compareVersions } from '../utils/version'
 
-// Radar Hub embeds the newest @maomada/kubeatlas-app against whatever KubeAtlas is
+// KubeAtlas Hub embeds the newest @maomada/kubeatlas-app against whatever KubeAtlas is
 // installed in each cluster, so these endpoints can be missing on a connected
 // KubeAtlas. A KubeAtlas that advertises the feature's `features` flag is always
 // trusted; otherwise the release that first served the endpoint decides.
@@ -9,10 +9,10 @@ import { compareVersions } from '../utils/version'
 // Adding an optional endpoint: advertise a flag for it in
 // FeatureCapabilities (internal/k8s/capabilities.go) in the same change, add
 // an entry here with that flag and `flagShippedWithEndpoint: true`, and guard
-// its hook with useRadarFeature. TestFeatureFlagsHaveFrontendGates keeps the
+// its hook with useKubeAtlasFeature. TestFeatureFlagsHaveFrontendGates keeps the
 // two lists in step. `minimumVersion` can wait for the release to be cut:
 // until then the note asks for the latest KubeAtlas.
-export interface RadarFeatureSpec {
+export interface KubeAtlasFeatureSpec {
   /** Plural noun phrase; the upgrade note reads "<label> need KubeAtlas vX or newer." */
   label: string
   /** First release that served the endpoint, once known. */
@@ -26,7 +26,7 @@ export interface RadarFeatureSpec {
   flagShippedWithEndpoint?: boolean
 }
 
-export const RADAR_FEATURES = {
+export const KUBEATLAS_FEATURES = {
   resourceReadCoverage: { label: 'Resource read coverage', flag: 'resourceReadCoverage', flagShippedWithEndpoint: true },
   searchCoverage: { label: 'Search coverage and object filters', flag: 'searchCoverage', flagShippedWithEndpoint: true },
   resourceIssues: { label: 'Operational issues', minimumVersion: 'v1.8.0', flag: 'resourceIssues' },
@@ -44,13 +44,13 @@ export const RADAR_FEATURES = {
   serviceEndpointSlices: { label: 'Service EndpointSlice inventories', flag: 'serviceEndpointSlices', flagShippedWithEndpoint: true },
   trafficRecords: { label: 'Flow records for a graph selection', flag: 'trafficRecords', flagShippedWithEndpoint: true },
   helmSourceIdentity: { label: 'Helm source selection', flag: 'helmSourceIdentity', flagShippedWithEndpoint: true },
-} as const satisfies Record<string, RadarFeatureSpec>
+} as const satisfies Record<string, KubeAtlasFeatureSpec>
 
-export type RadarFeature = keyof typeof RADAR_FEATURES
+export type KubeAtlasFeature = keyof typeof KUBEATLAS_FEATURES
 
-export type RadarFeatureSupport = 'supported' | 'unsupported' | 'unknown'
+export type KubeAtlasFeatureSupport = 'supported' | 'unsupported' | 'unknown'
 
-export interface RadarVersions {
+export interface KubeAtlasVersions {
   currentVersion?: string
   latestVersion?: string
 }
@@ -63,11 +63,11 @@ const RELEASE_VERSION = /^v?\d+\.\d+\.\d+$/
  * `capabilities` is the /api/capabilities answer, or undefined while it is
  * still loading; only a loaded answer can prove a flag is absent.
  */
-export function radarSpecSupport(
-  spec: RadarFeatureSpec,
+export function kubeatlasSpecSupport(
+  spec: KubeAtlasFeatureSpec,
   capabilities: { features?: FeatureCapabilities } | undefined,
   currentVersion: string | undefined,
-): RadarFeatureSupport {
+): KubeAtlasFeatureSupport {
   if (spec.flag && capabilities?.features?.[spec.flag] === true) return 'supported'
   // Unflagged entries all predate the first flag added for this table, so a
   // KubeAtlas that advertises it serves them, whatever version the host reported.
@@ -80,16 +80,16 @@ export function radarSpecSupport(
   return order < 0 ? 'unsupported' : 'supported'
 }
 
-export function radarFeatureSupport(
-  feature: RadarFeature,
+export function kubeatlasFeatureSupport(
+  feature: KubeAtlasFeature,
   capabilities: { features?: FeatureCapabilities } | undefined,
   currentVersion: string | undefined,
-): RadarFeatureSupport {
-  return radarSpecSupport(RADAR_FEATURES[feature], capabilities, currentVersion)
+): KubeAtlasFeatureSupport {
+  return kubeatlasSpecSupport(KUBEATLAS_FEATURES[feature], capabilities, currentVersion)
 }
 
-export function radarUpgradeRequirement(feature: RadarFeature, versions: RadarVersions): RadarUpgradeRequirement {
-  const spec: RadarFeatureSpec = RADAR_FEATURES[feature]
+export function kubeatlasUpgradeRequirement(feature: KubeAtlasFeature, versions: KubeAtlasVersions): KubeAtlasUpgradeRequirement {
+  const spec: KubeAtlasFeatureSpec = KUBEATLAS_FEATURES[feature]
   return {
     feature: spec.label,
     ...(spec.minimumVersion ? { minimumVersion: spec.minimumVersion } : {}),
@@ -99,24 +99,24 @@ export function radarUpgradeRequirement(feature: RadarFeature, versions: RadarVe
 }
 
 /**
- * The connected KubeAtlas predates `feature`. Carries `radarUpgrade` so k8s-ui
+ * The connected KubeAtlas predates `feature`. Carries `kubeatlasUpgrade` so k8s-ui
  * components can render the upgrade note without importing this class.
  */
-export class RadarFeatureUnsupportedError extends Error {
-  readonly feature: RadarFeature
-  readonly radarUpgrade: RadarUpgradeRequirement
+export class KubeAtlasFeatureUnsupportedError extends Error {
+  readonly feature: KubeAtlasFeature
+  readonly kubeatlasUpgrade: KubeAtlasUpgradeRequirement
 
-  constructor(feature: RadarFeature, versions: RadarVersions) {
-    const requirement = radarUpgradeRequirement(feature, versions)
+  constructor(feature: KubeAtlasFeature, versions: KubeAtlasVersions) {
+    const requirement = kubeatlasUpgradeRequirement(feature, versions)
     super(`${requirement.feature} need a newer KubeAtlas`)
-    this.name = 'RadarFeatureUnsupportedError'
+    this.name = 'KubeAtlasFeatureUnsupportedError'
     this.feature = feature
-    this.radarUpgrade = requirement
+    this.kubeatlasUpgrade = requirement
   }
 }
 
-export function isRadarFeatureUnsupported(error: unknown, feature?: RadarFeature): boolean {
-  return error instanceof RadarFeatureUnsupportedError && (feature === undefined || error.feature === feature)
+export function isKubeAtlasFeatureUnsupported(error: unknown, feature?: KubeAtlasFeature): boolean {
+  return error instanceof KubeAtlasFeatureUnsupportedError && (feature === undefined || error.feature === feature)
 }
 
 /**
@@ -125,18 +125,18 @@ export function isRadarFeatureUnsupported(error: unknown, feature?: RadarFeature
  * is read as the same answer; on a KubeAtlas known to serve the feature that 404
  * is a routing failure and stays an error.
  */
-export async function guardRadarFeature<T>(
-  feature: RadarFeature,
-  support: RadarFeatureSupport,
-  versions: RadarVersions,
+export async function guardKubeAtlasFeature<T>(
+  feature: KubeAtlasFeature,
+  support: KubeAtlasFeatureSupport,
+  versions: KubeAtlasVersions,
   request: () => Promise<T>,
 ): Promise<T> {
-  if (support === 'unsupported') throw new RadarFeatureUnsupportedError(feature, versions)
+  if (support === 'unsupported') throw new KubeAtlasFeatureUnsupportedError(feature, versions)
   try {
     return await request()
   } catch (error) {
     if (support === 'unknown' && (error as { unknownRoute?: unknown } | null)?.unknownRoute === true) {
-      throw new RadarFeatureUnsupportedError(feature, versions)
+      throw new KubeAtlasFeatureUnsupportedError(feature, versions)
     }
     throw error
   }
@@ -147,8 +147,8 @@ export async function guardRadarFeature<T>(
  * timeout or rate limit) gives the same answer on every attempt, so retrying
  * only repeats the request against the cluster.
  */
-export function shouldRetryRadarQuery(failureCount: number, error: unknown): boolean {
-  if (error instanceof RadarFeatureUnsupportedError) return false
+export function shouldRetryKubeAtlasQuery(failureCount: number, error: unknown): boolean {
+  if (error instanceof KubeAtlasFeatureUnsupportedError) return false
   const status = (error as { status?: unknown } | null)?.status
   if (typeof status === 'number' && status >= 400 && status < 500 && status !== 408 && status !== 429) {
     return false

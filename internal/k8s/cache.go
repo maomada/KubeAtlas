@@ -62,7 +62,7 @@ func LogTiming(format string, args ...any) {
 var logTiming = LogTiming
 
 // InitialSyncComplete reports whether the current cache has finished its
-// initial sync, after which an add is an object Radar had not seen before.
+// initial sync, after which an add is an object KubeAtlas had not seen before.
 func InitialSyncComplete() bool {
 	return initialSyncComplete.Load()
 }
@@ -122,7 +122,7 @@ type ResourceChange = k8score.ResourceChange
 
 // ResourceCache provides fast, eventually-consistent access to K8s resources
 // using SharedInformers. It embeds *k8score.ResourceCache for the shared
-// informer logic and adds Radar-specific extensions (dynamic cache, resource
+// informer logic and adds KubeAtlas-specific extensions (dynamic cache, resource
 // status, pod workload lookup, timeline integration).
 type ResourceCache struct {
 	*k8score.ResourceCache
@@ -2360,7 +2360,7 @@ func (rc *ResourceCache) PermissionResult() *PermissionCheckResult {
 }
 
 // bootstrapResourcePermissions runs the startup access probes that choose the
-// cache's informer scope. A 401 rejects Radar's identity, not one scope, so a
+// cache's informer scope. A 401 rejects KubeAtlas's identity, not one scope, so a
 // 401 in only some probes is most likely a token refreshed mid-probe: probe
 // once more, within the same budget, rather than leave those kinds switched
 // off for the life of the connection.
@@ -2432,7 +2432,7 @@ func permissionUnauthorized(result *PermissionCheckResult) error {
 	return nil
 }
 
-// KnownMissingNamespaces returns the namespaces among names that Radar knows
+// KnownMissingNamespaces returns the namespaces among names that KubeAtlas knows
 // don't exist: its Namespace informer has synced and holds none by that name.
 // Without a synced informer none is known to be missing. Only a caller who can
 // see every namespace may be told the answer.

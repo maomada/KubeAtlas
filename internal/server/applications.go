@@ -143,7 +143,7 @@ type appSourceStatus struct {
 
 // appSourceRef is the source-of-truth object when the grouping signal names one
 // exactly enough to navigate. Label/name-stem apps intentionally have no source
-// ref: they are apps, but not tied to a GitOps or Helm object Radar can open.
+// ref: they are apps, but not tied to a GitOps or Helm object KubeAtlas can open.
 type appSourceRef struct {
 	Type      string `json:"type"` // gitops | helm
 	Tool      string `json:"tool,omitempty"`

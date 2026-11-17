@@ -14,7 +14,7 @@ import (
 
 // notAnAgent is a name no real install can occupy, so negative cases stay
 // hermetic on a developer machine that has the real CLIs in /usr/local/bin.
-const notAnAgent = "radar-test-not-an-agent"
+const notAnAgent = "kubeatlas-test-not-an-agent"
 
 func writeExecutable(t *testing.T, dir, name string) string {
 	t.Helper()
@@ -113,8 +113,8 @@ func TestLookupAgentReportsNothingWhenNothingIsInstalled(t *testing.T) {
 	}
 }
 
-// A GUI launch (macOS .app, Linux .desktop) hands Radar a PATH that misses the
-// user's install, which is what "Radar doesn't detect Claude Code" looks like.
+// A GUI launch (macOS .app, Linux .desktop) hands KubeAtlas a PATH that misses the
+// user's install, which is what "KubeAtlas doesn't detect Claude Code" looks like.
 func TestDetectAgentsSeesClaudeWhenTheLaunchPATHMissesIt(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -160,7 +160,7 @@ func TestLookupAgentFollowsTheNativeInstallerSymlink(t *testing.T) {
 	}
 }
 
-// A CLI installed while Radar runs must become usable without a restart.
+// A CLI installed while KubeAtlas runs must become usable without a restart.
 func TestRefreshPicksUpACLIInstalledLater(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -255,7 +255,7 @@ func TestAddAgentDirToPathLeavesAnInheritedEnvAloneWhenAlreadyOnPATH(t *testing.
 	cmd := exec.Command(filepath.Join(dir, "cursor-agent"))
 	addAgentDirToPath(cmd)
 	if cmd.Env != nil {
-		t.Errorf("cmd.Env = %v, want nil so the agent inherits Radar's environment", cmd.Env)
+		t.Errorf("cmd.Env = %v, want nil so the agent inherits KubeAtlas's environment", cmd.Env)
 	}
 }
 
@@ -322,7 +322,7 @@ func TestRefreshFollowsACLIThatMoved(t *testing.T) {
 	}
 }
 
-// A CLI uninstalled while Radar runs must stop being offered.
+// A CLI uninstalled while KubeAtlas runs must stop being offered.
 func TestRefreshDropsACLIThatWasRemoved(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("KUBEATLAS_AI_CLI_BIN", "")

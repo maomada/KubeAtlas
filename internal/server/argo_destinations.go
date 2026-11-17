@@ -14,7 +14,7 @@ import (
 
 // GET /api/argo/destinations — the Argo CD cluster-secret registry as plain
 // topology facts: destination name + API server URL, nothing else. Exists so
-// fleet consumers (Radar Cloud's destination mapping) never have to pull full
+// fleet consumers (KubeAtlas Cloud's destination mapping) never have to pull full
 // cluster Secrets — whose .data carries destination-cluster credentials —
 // through an aggregator to read two fields.
 //

@@ -24,7 +24,7 @@ const maxYAMLSchemaCacheBytes = 64 << 20
 const maxYAMLSchemaCacheEntries = 128
 const yamlSchemaPathCacheTTL = 30 * time.Second
 
-const deprecatedSchemaAdvisory = "[radar-advisory:deprecated] This field is deprecated."
+const deprecatedSchemaAdvisory = "[kubeatlas-advisory:deprecated] This field is deprecated."
 
 type yamlSchemaIdentity struct {
 	Index      int    `json:"index"`
@@ -193,7 +193,7 @@ func (s *Server) handleResourceSchemas(w http.ResponseWriter, r *http.Request) {
 		}
 		if responseBytes+cachedBundle.size > maxYAMLSchemaResponseBytes {
 			for _, doc := range group.documents {
-				response.Documents = append(response.Documents, yamlSchemaDocument{Index: doc.Index, Status: "unavailable", Error: "schema exceeds Radar's safe response limit"})
+				response.Documents = append(response.Documents, yamlSchemaDocument{Index: doc.Index, Status: "unavailable", Error: "schema exceeds KubeAtlas's safe response limit"})
 			}
 			continue
 		}
@@ -231,7 +231,7 @@ func (s *Server) yamlSchemaSourceForRequest(gv openapi.GroupVersion, cacheKey st
 			return nil, fmt.Errorf("failed to fetch cluster schema: %w", err)
 		}
 		if len(raw) > maxYAMLSchemaSourceBytes {
-			return nil, fmt.Errorf("cluster OpenAPI schema exceeds Radar's safe source limit")
+			return nil, fmt.Errorf("cluster OpenAPI schema exceeds KubeAtlas's safe source limit")
 		}
 		s.cacheYAMLSchemaSource(cacheKey, raw)
 		return raw, nil

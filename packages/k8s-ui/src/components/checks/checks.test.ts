@@ -1,9 +1,9 @@
 import { describe, it, expect } from 'vitest'
-import { resourceKey, resourceRefKey, checkFindingKey, mapRadarSeverity, SOURCE_KUBEATLAS_BUILTIN, type CheckResourceRef } from './types'
+import { resourceKey, resourceRefKey, checkFindingKey, mapKubeAtlasSeverity, SOURCE_KUBEATLAS_BUILTIN, type CheckResourceRef } from './types'
 
 describe('resourceKey', () => {
   // Same kind/ns/name across two API groups must not collide. Mirrors
-  // radar/pkg/audit helpers_test.go's group-aware key.
+  // kubeatlas/pkg/audit helpers_test.go's group-aware key.
   it('disambiguates the same kind/ns/name across API groups', () => {
     expect(resourceKey('', 'Service', 'prod', 'api')).not.toBe(resourceKey('serving.knative.dev', 'Service', 'prod', 'api'))
   })
@@ -29,12 +29,12 @@ describe('checkFindingKey', () => {
   })
 })
 
-describe('mapRadarSeverity', () => {
+describe('mapKubeAtlasSeverity', () => {
   it('maps danger→high and warning→medium', () => {
-    expect(mapRadarSeverity('danger')).toBe('high')
-    expect(mapRadarSeverity('warning')).toBe('medium')
+    expect(mapKubeAtlasSeverity('danger')).toBe('high')
+    expect(mapKubeAtlasSeverity('warning')).toBe('medium')
   })
   it('falls back to medium for an unrecognized severity', () => {
-    expect(mapRadarSeverity('unknown')).toBe('medium')
+    expect(mapKubeAtlasSeverity('unknown')).toBe('medium')
   })
 })

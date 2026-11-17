@@ -224,7 +224,7 @@ func TestHandleGitOpsDiagnose_PerKindRBAC(t *testing.T) {
 }
 
 // TestHandleGitOpsDiagnose_NamespaceGate pins that the GitOps path honors
-// Radar's namespace allow-list like the workload path: a namespace outside the
+// KubeAtlas's namespace allow-list like the workload path: a namespace outside the
 // user's scope is forbidden even when cluster RBAC would permit the get.
 func TestHandleGitOpsDiagnose_NamespaceGate(t *testing.T) {
 	setupFakeCacheForFilterTests(t)

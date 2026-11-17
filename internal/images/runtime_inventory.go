@@ -64,11 +64,11 @@ type InventoryOptions struct {
 	// Fixes are per runtime, so it needs Runtime.
 	FixedIn []string
 	Limit   int
-	// RadarCredentials lets lookups fall back to Radar's own registry
+	// KubeAtlasCredentials lets lookups fall back to KubeAtlas's own registry
 	// credentials (Docker config, Google application default credentials).
 	// Only for single-user local mode, where they are the user's own: with
 	// auth on, they would read images the Pod's own credentials can't.
-	RadarCredentials bool
+	KubeAtlasCredentials bool
 }
 
 // PodSource supplies what the inventory reads about a Pod's surroundings. The
@@ -140,11 +140,11 @@ type Inventory struct {
 type configLookup func(ctx context.Context, ref name.Reference, platform v1.Platform, keychain authn.Keychain) (cfg *v1.ConfigFile, digest string, err error)
 
 // credential is one way to pull: a single pull secret, no credentials, or
-// Radar's own.
+// KubeAtlas's own.
 type credential struct {
 	namespace string
 	secret    string
-	radar     bool
+	kubeatlas bool
 	// identity pins a pull secret to its exact contents (UID and
 	// resourceVersion): a rotated or recreated Secret, or a same-named one in
 	// another cluster, is a different credential.
@@ -153,8 +153,8 @@ type credential struct {
 
 func (c credential) id() string {
 	switch {
-	case c.radar:
-		return "radar"
+	case c.kubeatlas:
+		return "kubeatlas"
 	case c.secret == "":
 		return "anonymous"
 	}
@@ -228,10 +228,10 @@ func newRuntimeInventory(lookup configLookup, keychain keychainSource) *RuntimeI
 }
 
 // clusterKeychain resolves a credential against the cluster: one pull secret
-// read from Radar's cache, or Radar's own keychains.
+// read from KubeAtlas's cache, or KubeAtlas's own keychains.
 func clusterKeychain(c credential, ref name.Reference) (authn.Keychain, string, bool) {
 	switch {
-	case c.radar:
+	case c.kubeatlas:
 		return GetAuthenticatedKeychain(ref.String(), "", nil), "", true
 	case c.secret == "":
 		return authn.NewMultiKeychain(), "", true
@@ -318,7 +318,7 @@ func (r *RuntimeInventory) Inventory(ctx context.Context, src PodSource, opts In
 	budget.Store(maxLookupsPerCall)
 	var wg sync.WaitGroup
 	for i, w := range items {
-		creds := r.credentials(w, opts.RadarCredentials)
+		creds := r.credentials(w, opts.KubeAtlasCredentials)
 		res, hit, untried := r.fromCache(w, creds)
 		if hit {
 			results[i] = res
@@ -337,10 +337,10 @@ func (r *RuntimeInventory) Inventory(ctx context.Context, src PodSource, opts In
 
 // credentials lists what a lookup may try, in the kubelet's order: each pull
 // secret that has an entry for the image's registry, then no credentials,
-// then (local mode only) Radar's own.
-func (r *RuntimeInventory) credentials(w *work, radar bool) []credential {
+// then (local mode only) KubeAtlas's own.
+func (r *RuntimeInventory) credentials(w *work, kubeatlas bool) []credential {
 	secretSlots := maxAttemptsPerImage - 1
-	if radar {
+	if kubeatlas {
 		secretSlots--
 	}
 	var out []credential
@@ -354,8 +354,8 @@ func (r *RuntimeInventory) credentials(w *work, radar bool) []credential {
 		}
 	}
 	out = append(out, credential{})
-	if radar {
-		out = append(out, credential{radar: true})
+	if kubeatlas {
+		out = append(out, credential{kubeatlas: true})
 	}
 	return out
 }
@@ -546,13 +546,13 @@ func (r *RuntimeInventory) attempt(ctx context.Context, registry string, w *work
 
 func classifyFetchError(err error) configResult {
 	if isBlocked(err) {
-		return configResult{status: StatusBlocked, err: "registry address is not allowed from Radar"}
+		return configResult{status: StatusBlocked, err: "registry address is not allowed from KubeAtlas"}
 	}
 	var terr *transport.Error
 	if errors.As(err, &terr) {
 		switch terr.StatusCode {
 		case http.StatusUnauthorized, http.StatusForbidden:
-			return configResult{status: StatusAuthRequired, err: "registry requires credentials or rejected those available to Radar; node credentials were not used"}
+			return configResult{status: StatusAuthRequired, err: "registry requires credentials or rejected those available to KubeAtlas; node credentials were not used"}
 		case http.StatusNotFound:
 			return configResult{status: StatusNotFound, err: "image not found, or hidden from these credentials"}
 		case http.StatusTooManyRequests:

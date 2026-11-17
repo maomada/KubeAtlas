@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Smoke tests for the radar Helm chart's template rendering.
+# Smoke tests for the kubeatlas Helm chart's template rendering.
 #
 # Exercises the self-upgrade toggle paths: the chart was silently clobbered
 # by release.yml's wholesale-replace sync once (helm-charts@c68795c wiped
@@ -39,7 +39,7 @@ assert_not_contains() {
 render() {
   CASE="$1"; shift
   echo "  Case: $CASE"
-OUT=$(helm template radar "$CHART_DIR" "$@" 2>&1) || {
+OUT=$(helm template kubeatlas "$CHART_DIR" "$@" 2>&1) || {
     fail "helm template failed"
     printf '      %s\n' "${OUT//$'\n'/$'\n      '}"
     return
@@ -74,7 +74,7 @@ render_portal() {
 echo "Running chart template tests against $CHART_DIR"
 echo
 
-# Identity env and self-upgrade RBAC are deliberately decoupled: Radar needs to
+# Identity env and self-upgrade RBAC are deliberately decoupled: KubeAtlas needs to
 # know which object it is for read-only self-description (the Cloud connect
 # handoff), which grants nothing. Whether it may PATCH itself is the Role — so
 # assert on the Role, not on the env vars.
@@ -82,7 +82,7 @@ render "defaults — no self-upgrade RBAC"
 assert_contains '--listen-address=0.0.0.0'          "shared listener explicitly enabled"
 assert_not_contains '^kind: Role$'                  "no namespaced Role"
 assert_not_contains '^kind: RoleBinding$'           "no namespaced RoleBinding"
-assert_not_contains 'radar-kubeatlas-self-upgrade'            "no self-upgrade Role/RoleBinding"
+assert_not_contains 'kubeatlas-kubeatlas-self-upgrade'            "no self-upgrade Role/RoleBinding"
 assert_contains 'MY_POD_NAMESPACE'                  "identity ships for read-only self-description"
 assert_contains 'MY_DEPLOYMENT_NAME'                "identity ships for read-only self-description"
 assert_not_contains '--opencost-currency='          "default OpenCost currency flag omitted"
@@ -107,7 +107,7 @@ assert_contains 'apiGroups: \["\*"\]'               "wildcard includes every API
 assert_contains 'resources: \["\*"\]'               "wildcard includes core Secrets and excluded CRDs"
 echo
 
-# A grant change only reaches Radar through a new pod: it decides what it can
+# A grant change only reaches KubeAtlas through a new pod: it decides what it can
 # watch at startup and keeps serving its cache after a grant is revoked.
 # helm-unittest renders each test in isolation, so comparing renders lives here
 # instead of as pinned hashes that every rbac default change would break.
@@ -124,20 +124,20 @@ assert_differs() {
 
 rbac_checksum "checksum/rbac — defaults"
 DEFAULT_CHECKSUM=$CHECKSUM
-DEFAULT_RULES=$(yq -o=json -I=0 'select(.kind == "ClusterRole" and .metadata.name == "radar-kubeatlas") | .rules' <<< "$OUT")
+DEFAULT_RULES=$(yq -o=json -I=0 'select(.kind == "ClusterRole" and .metadata.name == "kubeatlas-kubeatlas") | .rules' <<< "$OUT")
 if [[ "$DEFAULT_CHECKSUM" =~ ^[0-9a-f]{64}$ ]]; then pass "pod template carries an RBAC checksum"
 else fail "pod template carries an RBAC checksum — got: $DEFAULT_CHECKSUM"; fi
 rbac_checksum "checksum/rbac — Secrets reads enabled" --set rbac.secrets=true
 SECRETS_CHECKSUM=$CHECKSUM
 assert_differs "$SECRETS_CHECKSUM" "$DEFAULT_CHECKSUM" "enabling Secrets and VictoriaMetrics reads rolls the pod"
-ADDED_RULES=$(yq -o=json -I=0 'select(.kind == "ClusterRole" and .metadata.name == "radar-kubeatlas") | .rules | map(select(.apiGroups[0] == "operator.victoriametrics.com" or (.apiGroups[0] == "" and .resources[0] == "secrets" and .resourceNames == null)))' <<< "$OUT")
+ADDED_RULES=$(yq -o=json -I=0 'select(.kind == "ClusterRole" and .metadata.name == "kubeatlas-kubeatlas") | .rules | map(select(.apiGroups[0] == "operator.victoriametrics.com" or (.apiGroups[0] == "" and .resources[0] == "secrets" and .resourceNames == null)))' <<< "$OUT")
 assert_same "$ADDED_RULES" '[{"apiGroups":[""],"resources":["secrets"],"verbs":["get","list","watch"]},{"apiGroups":["operator.victoriametrics.com"],"resources":["vmagents","vmclusters","vmsingles"],"verbs":["get","list","watch"]}]' "enabling Secrets adds exactly the Secrets and VictoriaMetrics read rules"
-REMAINING_RULES=$(yq -o=json -I=0 'select(.kind == "ClusterRole" and .metadata.name == "radar-kubeatlas") | .rules | map(select(.apiGroups[0] != "operator.victoriametrics.com" and (.apiGroups[0] != "" or .resources[0] != "secrets" or .resourceNames != null)))' <<< "$OUT")
+REMAINING_RULES=$(yq -o=json -I=0 'select(.kind == "ClusterRole" and .metadata.name == "kubeatlas-kubeatlas") | .rules | map(select(.apiGroups[0] != "operator.victoriametrics.com" and (.apiGroups[0] != "" or .resources[0] != "secrets" or .resourceNames != null)))' <<< "$OUT")
 assert_same "$REMAINING_RULES" "$DEFAULT_RULES" "enabling Secrets leaves every other collector rule unchanged"
 rbac_checksum "checksum/rbac — Secrets reads turned back off" --set rbac.secrets=false
 assert_differs "$CHECKSUM" "$SECRETS_CHECKSUM"         "disabling Secrets and VictoriaMetrics reads rolls the pod"
 assert_same "$CHECKSUM" "$DEFAULT_CHECKSUM"           "explicit false matches the default checksum"
-DISABLED_RULES=$(yq -o=json -I=0 'select(.kind == "ClusterRole" and .metadata.name == "radar-kubeatlas") | .rules' <<< "$OUT")
+DISABLED_RULES=$(yq -o=json -I=0 'select(.kind == "ClusterRole" and .metadata.name == "kubeatlas-kubeatlas") | .rules' <<< "$OUT")
 assert_same "$DISABLED_RULES" "$DEFAULT_RULES"         "explicit false matches all default collector rules"
 rbac_checksum "checksum/rbac — unrelated values" \
   --set image.tag=v0.0.0-test \
@@ -163,7 +163,7 @@ assert_contains 'name: KUBEATLAS_TIMELINE_POSTGRES_DSN' "DSN env injected"
 assert_contains 'name: app-db-credentials'          "DSN secret name"
 assert_contains 'key: uri'                          "DSN secret key"
 assert_not_contains 'mountPath: /data'              "no SQLite PVC mount"
-assert_not_contains 'claimName: radar'              "no SQLite PVC volume"
+assert_not_contains 'claimName: kubeatlas'              "no SQLite PVC volume"
 assert_not_contains '--timeline-db='                "no sqlite db path arg"
 assert_not_contains '--timeline-max-size='            "no sqlite max-size arg"
 echo
@@ -187,8 +187,8 @@ echo
 render "OIDC prefixes ending in colon stay string args" \
   --set auth.mode=oidc \
   --set auth.oidc.issuerURL=https://issuer.example \
-  --set auth.oidc.clientID=radar \
-  --set auth.oidc.redirectURL=https://radar.example/auth/callback \
+  --set auth.oidc.clientID=kubeatlas \
+  --set auth.oidc.redirectURL=https://kubeatlas.example/auth/callback \
   --set auth.oidc.clientSecret=secret \
   --set auth.oidc.usernamePrefix=oidc-user: \
   --set auth.oidc.groupsPrefix=oidc-groups:
@@ -204,12 +204,12 @@ echo
 render "rbac.selfUpgrade=true — full feature wiring" --set rbac.selfUpgrade=true
 assert_contains '^kind: Role$'                      "namespaced Role emitted"
 assert_contains '^kind: RoleBinding$'               "namespaced RoleBinding emitted"
-assert_contains 'name: radar-kubeatlas-self-upgrade$'         "names match fullname-self-upgrade convention"
-assert_contains 'resourceNames: \["radar-kubeatlas"\]'        "Role restricted via resourceNames to the Deployment"
+assert_contains 'name: kubeatlas-kubeatlas-self-upgrade$'         "names match fullname-self-upgrade convention"
+assert_contains 'resourceNames: \["kubeatlas-kubeatlas"\]'        "Role restricted via resourceNames to the Deployment"
 assert_contains 'verbs: \["get", "patch"\]'         "verbs scoped to get+patch"
 assert_contains 'apiGroups: \["apps"\]'             "apiGroup scoped to apps"
 assert_contains 'resources: \["deployments"\]'      "resource scoped to deployments"
-assert_contains 'name: radar-kubeatlas$'                      "RoleBinding subject is radar SA"
+assert_contains 'name: kubeatlas-kubeatlas$'                      "RoleBinding subject is kubeatlas SA"
 assert_contains 'MY_POD_NAMESPACE'                  "downward-API namespace env var injected"
 assert_contains 'fieldPath: metadata.namespace'     "namespace sourced from downward API"
 assert_contains 'MY_DEPLOYMENT_NAME'                "deployment-name env var injected"
@@ -244,24 +244,24 @@ assert_contains 'MY_POD_NAMESPACE'                  "env vars injected — featu
 echo
 
 render "defaults — no helm-write footprint"
-assert_not_contains 'name: radar-kubeatlas-helm$'                  "no helm add-on ClusterRole"
-assert_not_contains 'name: radar-kubeatlas-helm-admin$'            "no helm-admin ClusterRole"
-assert_not_contains 'name: radar-kubeatlas-cloud-owner-helm$'      "no cloud helm bindings"
-assert_not_contains 'name: radar-kubeatlas-cloud-member-helm$'     "no cloud helm bindings"
-assert_not_contains 'name: radar-kubeatlas-cloud-owner-helm-admin' "no cloud helm-admin bindings"
+assert_not_contains 'name: kubeatlas-kubeatlas-helm$'                  "no helm add-on ClusterRole"
+assert_not_contains 'name: kubeatlas-kubeatlas-helm-admin$'            "no helm-admin ClusterRole"
+assert_not_contains 'name: kubeatlas-kubeatlas-cloud-owner-helm$'      "no cloud helm bindings"
+assert_not_contains 'name: kubeatlas-kubeatlas-cloud-member-helm$'     "no cloud helm bindings"
+assert_not_contains 'name: kubeatlas-kubeatlas-cloud-owner-helm-admin' "no cloud helm-admin bindings"
 echo
 
 render "rbac.helm=true alone — gated off without auth or cloud" --set rbac.helm=true
-assert_not_contains 'name: radar-kubeatlas-helm$'                  "no helm add-on ClusterRole without auth/cloud"
-assert_not_contains 'name: radar-kubeatlas-helm-admin$'            "no helm-admin ClusterRole without auth/cloud"
+assert_not_contains 'name: kubeatlas-kubeatlas-helm$'                  "no helm add-on ClusterRole without auth/cloud"
+assert_not_contains 'name: kubeatlas-kubeatlas-helm-admin$'            "no helm-admin ClusterRole without auth/cloud"
 echo
 
 render "rbac.helm=true + auth.mode=proxy — both CRs emitted, no cloud bindings" \
   --set rbac.helm=true --set auth.mode=proxy
-assert_contains 'name: radar-kubeatlas-helm$'                  "helm add-on ClusterRole emitted"
-assert_contains 'name: radar-kubeatlas-helm-admin$'            "helm-admin ClusterRole emitted"
-assert_not_contains 'name: radar-kubeatlas-cloud-owner-helm$'  "no cloud-owner-helm binding without cloud"
-assert_not_contains 'name: radar-kubeatlas-cloud-member-helm$' "no cloud-member-helm binding without cloud"
+assert_contains 'name: kubeatlas-kubeatlas-helm$'                  "helm add-on ClusterRole emitted"
+assert_contains 'name: kubeatlas-kubeatlas-helm-admin$'            "helm-admin ClusterRole emitted"
+assert_not_contains 'name: kubeatlas-kubeatlas-cloud-owner-helm$'  "no cloud-owner-helm binding without cloud"
+assert_not_contains 'name: kubeatlas-kubeatlas-cloud-member-helm$' "no cloud-member-helm binding without cloud"
 echo
 
 reject_cloud "Cloud chart render is rejected even with proxy auth and Helm RBAC" \
@@ -285,9 +285,9 @@ reject_cloud "Cloud Helm RBAC render is unavailable" \
   --set rbac.helm=true --set cloud.enabled=true --set auth.mode=proxy
 
 render "defaults — no RBAC reads (viewRBAC=false)"
-# The base radar ClusterRole should NOT include rbac.authorization.k8s.io reads
+# The base kubeatlas ClusterRole should NOT include rbac.authorization.k8s.io reads
 # at default settings. This is the single test that pins the secure default.
-if awk '/  name: radar-kubeatlas$/,/^---$/' <<< "$OUT" | grep -E 'apiGroups: \["rbac.authorization.k8s.io"\]' > /dev/null; then
+if awk '/  name: kubeatlas-kubeatlas$/,/^---$/' <<< "$OUT" | grep -E 'apiGroups: \["rbac.authorization.k8s.io"\]' > /dev/null; then
   fail "default ClusterRole still grants rbac.authorization.k8s.io reads — viewRBAC should gate this"
 else
   pass "no rbac.authorization.k8s.io reads in default ClusterRole"
@@ -299,15 +299,15 @@ assert_contains 'apiGroups: \["rbac.authorization.k8s.io"\]' "RBAC reads granted
 assert_contains 'clusterrolebindings'                        "clusterrolebindings present"
 echo
 
-render "split content — radar-helm has CRDs but NOT clusterroles" \
+render "split content — kubeatlas-helm has CRDs but NOT clusterroles" \
   --set rbac.helm=true --set auth.mode=proxy
-# Pull the radar-helm ClusterRole specifically and check its contents
-# Simpler approach: just confirm the cluster-admin verbs are NOT in radar-helm's rules
-# by checking the file was split (radar-helm-admin exists separately)
-assert_contains 'name: radar-kubeatlas-helm-admin$'                 "helm-admin role exists as separate resource"
+# Pull the kubeatlas-helm ClusterRole specifically and check its contents
+# Simpler approach: just confirm the cluster-admin verbs are NOT in kubeatlas-helm's rules
+# by checking the file was split (kubeatlas-helm-admin exists separately)
+assert_contains 'name: kubeatlas-kubeatlas-helm-admin$'                 "helm-admin role exists as separate resource"
 # Member-safe role grants CRDs (operator charts)
 assert_contains 'customresourcedefinitions'               "CRDs writable in member-safe role"
-# Cluster-admin-equivalent verbs are present somewhere in the manifest (in radar-helm-admin)
+# Cluster-admin-equivalent verbs are present somewhere in the manifest (in kubeatlas-helm-admin)
 assert_contains 'clusterrolebindings'                     "RBAC writes present (in admin role)"
 assert_contains 'validatingwebhookconfigurations'         "webhook writes present (in admin role)"
 assert_contains 'apiservices'                             "apiservices writes present (in admin role)"
@@ -318,12 +318,12 @@ reject_cloud "Cloud chart values are rejected on the deployment surface" \
   --set cloud.url=wss://x.example --set cloud.clusterName=c1
 
 render "OSS mode (cloud disabled): no cloud RBAC at all"
-assert_not_contains 'name: radar-kubeatlas-cluster-read$'                 "no cluster-read outside cloud mode"
-assert_not_contains 'name: radar-kubeatlas-cloud-viewer-cluster-read$'    "no tier bindings outside cloud mode"
+assert_not_contains 'name: kubeatlas-kubeatlas-cluster-read$'                 "no cluster-read outside cloud mode"
+assert_not_contains 'name: kubeatlas-kubeatlas-cloud-viewer-cluster-read$'    "no tier bindings outside cloud mode"
 echo
 
 for retired in fleet portalRegistration; do
-  if RETIRED_OUTPUT=$(helm template radar "$CHART_DIR" --set "$retired.enabled=true" 2>&1); then
+  if RETIRED_OUTPUT=$(helm template kubeatlas "$CHART_DIR" --set "$retired.enabled=true" 2>&1); then
     fail "$retired configuration must not render"
   elif grep -Fq "$retired" <<< "$RETIRED_OUTPUT"; then
     pass "$retired configuration is rejected"
@@ -377,7 +377,7 @@ fi
 PREFLIGHT_RELEASE=kubeatlas-agent-0123456789
 PREFLIGHT_RENDER=$(helm template "$PREFLIGHT_RELEASE" "$CHART_DIR" --set hub.enabled=true --set-string hub.url=https://hub.example.test --set hub.clusterID=production --set hub.tokenSecret=kubeatlas-hub-token --set-string hub.ownerUserID=kubeatlas:portal:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --set-string image.repository=hub.example.test/kubeatlas/agent --set-string image.digest=sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef --set auth.mode=proxy --set mcp.enabled=true) || fail "generated release Hub chart render failed"
 if grep -Fq "name: $PREFLIGHT_RELEASE-hub-role-member" <<<"$PREFLIGHT_RENDER" && grep -Fq "name: $PREFLIGHT_RELEASE-hub-infra-readonly" <<<"$PREFLIGHT_RENDER" && ! grep -Fq "name: $PREFLIGHT_RELEASE-kubeatlas-hub-role-member" <<<"$PREFLIGHT_RENDER"; then
-  pass "generated release RBAC names match radar.fullname and bootstrap preflight"
+  pass "generated release RBAC names match kubeatlas.fullname and bootstrap preflight"
 else
   fail "generated release RBAC names differ from bootstrap preflight"
 fi

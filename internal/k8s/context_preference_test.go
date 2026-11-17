@@ -76,7 +76,7 @@ func TestPickInitialContextPrefersTheRecordedSourceFileOverTheName(t *testing.T)
 }
 
 // Once the recorded file is gone, a same-named context in another file is not
-// evidence that it is the same cluster. Radar opens current-context instead of
+// evidence that it is the same cluster. KubeAtlas opens current-context instead of
 // guessing — losing the convenience beats landing somewhere the user didn't pick.
 func TestPickInitialContextDoesNotAdoptASameNamedContextFromAnotherFile(t *testing.T) {
 	dir := t.TempDir()

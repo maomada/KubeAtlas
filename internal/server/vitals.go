@@ -20,7 +20,7 @@ import (
 // snapshot (node/pod phase counts, CPU/memory capacity vs requests vs live
 // usage) meant to be polled cheaply, distinct from /api/dashboard's full
 // home payload. Purpose-built for
-// Radar Cloud's fleet fan-out (the hub previously projected this corner out
+// KubeAtlas Cloud's fleet fan-out (the hub previously projected this corner out
 // of the full /api/dashboard payload and discarded the rest); equally usable
 // by any consumer that wants counts + capacity without the home-page
 // kitchen sink.
@@ -195,7 +195,7 @@ func (s *Server) handleVitals(w http.ResponseWriter, r *http.Request) {
 		// numbers as the caller's whole world.
 		podsPartial = len(podNamespaces) < len(namespaces)
 	}
-	// Which namespaces Radar collects is known from its configuration while
+	// Which namespaces KubeAtlas collects is known from its configuration while
 	// Pods still load, so a namespace-scoped cache marks Pods partial either way.
 	podAssessment := cache.AssessKindRead("pods", podNamespaces)
 	podsPartial = podsPartial || len(podAssessment.Uncovered) > 0 ||

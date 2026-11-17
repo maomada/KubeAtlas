@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// mainCookie returns the primary radar_session cookie from a returned set,
+// mainCookie returns the primary kubeatlas_session cookie from a returned set,
 // ignoring housekeeping cookies (e.g. a chunk meta-cookie cleared on the
 // single-cookie path).
 func mainCookie(t *testing.T, cookies []*http.Cookie) *http.Cookie {

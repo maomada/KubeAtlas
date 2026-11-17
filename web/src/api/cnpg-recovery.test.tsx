@@ -11,7 +11,7 @@ import { useRecordCNPGRestoreValidation, type CNPGRestoreValidationRequest } fro
 vi.mock('./client', async (importOriginal) => ({
   ...await importOriginal<typeof import('./client')>(),
   fetchJSON: vi.fn(),
-  useRadarFeature: () => ({ guard: <T,>(read: () => T) => read() }),
+  useKubeAtlasFeature: () => ({ guard: <T,>(read: () => T) => read() }),
 }))
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true

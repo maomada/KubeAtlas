@@ -391,7 +391,7 @@ func TestOtherPolicyViewMayApply(t *testing.T) {
 		{"Cilium policy in another namespace", served, fakePolicyLister{objects: objects(cnp, "other", cilium(matchRec, "ingress"))}, shopNS, false},
 		{"Cilium cluster-wide policy selecting the pods", served, fakePolicyLister{objects: objects(ccnp, "", cilium(map[string]any{"matchLabels": map[string]any{"k8s:io.kubernetes.pod.namespace": "shop"}}, "ingress"))}, shopNS, true},
 		{"Cilium cluster-wide policy for another namespace", served, fakePolicyLister{objects: objects(ccnp, "", cilium(map[string]any{"matchLabels": map[string]any{"k8s:io.kubernetes.pod.namespace": "other"}}, "ingress"))}, shopNS, false},
-		{"Cilium selector on namespace labels Radar couldn't read", served, fakePolicyLister{objects: objects(ccnp, "", cilium(map[string]any{"matchLabels": map[string]any{"io.cilium.k8s.namespace.labels.team": "shop"}}, "ingress"))}, nil, true},
+		{"Cilium selector on namespace labels KubeAtlas couldn't read", served, fakePolicyLister{objects: objects(ccnp, "", cilium(map[string]any{"matchLabels": map[string]any{"io.cilium.k8s.namespace.labels.team": "shop"}}, "ingress"))}, nil, true},
 		{"Cilium selector on the cluster name", served, fakePolicyLister{objects: objects(ccnp, "", cilium(map[string]any{"matchLabels": map[string]any{"io.cilium.k8s.policy.cluster": "a"}}, "ingress"))}, shopNS, true},
 		{"admin-tier cluster policy", served, fakePolicyLister{objects: objects(clusterNP, "", policyObject(map[string]any{"tier": "Admin"}))}, shopNS, true},
 		{"baseline-tier cluster policy can't override", served, fakePolicyLister{objects: objects(clusterNP, "", policyObject(map[string]any{"tier": "Baseline"}))}, shopNS, false},
@@ -411,7 +411,7 @@ func TestOtherPolicyViewMayApply(t *testing.T) {
 		{"Calico ingress Pass rule may fall through to an allow", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{
 			"selector": "app == 'rec'", "ingress": []any{map[string]any{"action": "Pass"}},
 		}))}, shopNS, true},
-		{"Calico ingress rule with an action Radar can't read", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{
+		{"Calico ingress rule with an action KubeAtlas can't read", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{
 			"selector": "app == 'rec'", "ingress": []any{map[string]any{"action": "Reroute"}},
 		}))}, shopNS, true},
 		{"Calico global policy selecting other pods", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{"selector": "app == 'web'", "ingress": allowIn}))}, shopNS, false},
@@ -423,7 +423,7 @@ func TestOtherPolicyViewMayApply(t *testing.T) {
 		{"Calico selector on another service account's endpoint label", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{"selector": "projectcalico.org/serviceaccount == 'payments-api'", "ingress": allowIn}))}, shopNS, false},
 		{"Calico selector on the endpoint service-account label", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{"selector": "projectcalico.org/serviceaccount == 'default'", "ingress": allowIn}))}, shopNS, true},
 		{"Calico service-account selector plus an excluding namespace selector", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{"namespaceSelector": "team == 'other'", "serviceAccountSelector": "role == 'x'", "ingress": allowIn}))}, shopNS, false},
-		{"Calico selector Radar can't parse", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{"selector": "app ===", "ingress": allowIn}))}, shopNS, true},
+		{"Calico selector KubeAtlas can't parse", served, fakePolicyLister{objects: objects(gnp, "", policyObject(map[string]any{"selector": "app ===", "ingress": allowIn}))}, shopNS, true},
 		{"unsynced is unknown", served, fakePolicyLister{unsynced: true}, shopNS, true},
 		{"list error is unknown", served, fakePolicyLister{err: errors.New("forbidden")}, shopNS, true},
 		{"served without a dynamic cache is unknown", served, nil, shopNS, true},
@@ -442,7 +442,7 @@ func TestOtherPolicyViewMayApply(t *testing.T) {
 	}
 }
 
-// A policy Radar doesn't evaluate silences only the Services whose backends it
+// A policy KubeAtlas doesn't evaluate silences only the Services whose backends it
 // may select, not the whole namespace.
 func TestDenyAllIngressSkipsOnlyServicesOtherPoliciesSelect(t *testing.T) {
 	pods := []*corev1.Pod{
@@ -573,8 +573,8 @@ func TestDenyAllIngressCauseStandsAlone(t *testing.T) {
 			t.Errorf("cause %q missing %q", got[0].Cause, want)
 		}
 	}
-	if got[0].MessageSource != issuesapi.MessageSourceRadar {
-		t.Errorf("MessageSource = %q, want radar", got[0].MessageSource)
+	if got[0].MessageSource != issuesapi.MessageSourceKubeAtlas {
+		t.Errorf("MessageSource = %q, want kubeatlas", got[0].MessageSource)
 	}
 }
 

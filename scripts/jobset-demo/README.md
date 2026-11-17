@@ -18,15 +18,15 @@ make jobset-demo              # normally 2-4 minutes on the first run
 make jobset-demo-status
 
 # `up` restores the current-context value it observed, including an unset value.
-# Use an isolated kubeconfig so running Radar does not change shared kube state.
+# Use an isolated kubeconfig so running KubeAtlas does not change shared kube state.
 make build
-kind get kubeconfig --name radar-jobset-demo > /tmp/radar-jobset-demo.kubeconfig
-./radar --kubeconfig /tmp/radar-jobset-demo.kubeconfig --port 9332 --no-browser
+kind get kubeconfig --name kubeatlas-jobset-demo > /tmp/kubeatlas-jobset-demo.kubeconfig
+./kubeatlas --kubeconfig /tmp/kubeatlas-jobset-demo.kubeconfig --port 9332 --no-browser
 # In a second terminal
-KUBEATLAS_URL=http://127.0.0.1:9332 ./scripts/jobset-demo.sh verify-radar
+KUBEATLAS_URL=http://127.0.0.1:9332 ./scripts/jobset-demo.sh verify-kubeatlas
 
-# When done, stop Radar with Ctrl-C in its terminal, then:
-rm /tmp/radar-jobset-demo.kubeconfig
+# When done, stop KubeAtlas with Ctrl-C in its terminal, then:
+rm /tmp/kubeatlas-jobset-demo.kubeconfig
 make jobset-demo-down
 ```
 
@@ -56,15 +56,15 @@ Re-running `up` preserves all three JobSets once they exist. Use
 edited scenario. `make jobset-demo-verify` rechecks the live states without
 installing or applying anything.
 
-## Radar testing
+## KubeAtlas testing
 
-`verify-radar` expects an already-running Radar and checks:
+`verify-kubeatlas` expects an already-running KubeAtlas and checks:
 
 - health and CRD discovery readiness, and the expected demo context/cluster;
 - exactly three group-pure `jobset.x-k8s.io/v1alpha2` JobSets;
-- the running, dependency-held, and terminal-failure states returned by Radar;
-- the controller-created Jobs and Pods returned by Radar's core resource APIs;
-- matching Kubernetes and Radar resource inventories, including exact UIDs,
+- the running, dependency-held, and terminal-failure states returned by KubeAtlas;
+- the controller-created Jobs and Pods returned by KubeAtlas's core resource APIs;
+- matching Kubernetes and KubeAtlas resource inventories, including exact UIDs,
   owner references, labels, and lifecycle evidence, with bounded waits for cache
   synchronization;
 - exact basic-tier execution summaries through REST AI detail and MCP
@@ -73,13 +73,13 @@ installing or applying anything.
   counters with explicit observed zeros.
 
 Every namespaced API request explicitly selects `jobset-demo`, independently of
-Radar's saved namespace view filter.
+KubeAtlas's saved namespace view filter.
 
 For visual testing, select the dedicated context before starting the normal
 visual workflow and restore the previous context afterward:
 
 ```bash
-kubectl config use-context kind-radar-jobset-demo
+kubectl config use-context kind-kubeatlas-jobset-demo
 ./scripts/visual-test-start.sh
 ```
 
@@ -108,12 +108,12 @@ and its inventory assertions remain unchanged. No status is patched.
 ```bash
 ./scripts/jobset-demo.sh up-admission
 ./scripts/jobset-demo.sh verify-admission
-KUBEATLAS_URL=http://127.0.0.1:9332 ./scripts/jobset-demo.sh verify-admission-radar
+KUBEATLAS_URL=http://127.0.0.1:9332 ./scripts/jobset-demo.sh verify-admission-kubeatlas
 ```
 
 The combined verifier checks exact JobSet controller ownership on every
 Workload, real admission/blocker/completion conditions, and suspended child Jobs with zero
-Pods for the two pre-admission blockers. The Radar check runs the original lane
+Pods for the two pre-admission blockers. The KubeAtlas check runs the original lane
 first (including context/cluster provenance), then checks that each JobSet's
 admission endpoint returns that exact Workload UID, generation, condition,
 decision, and phase. UI clicks, layout, and partial RBAC still need their own
@@ -131,7 +131,7 @@ lane concurrently; stop this cluster after verification.
 Passing this lane proves that JobSet `v0.12.0` on kind Kubernetes `v1.36.1`
 can create and identify role-, group-, and index-labelled Jobs and Pods,
 withhold a dependent role, produce one explicit terminal failure, and expose
-those objects through Radar's group-aware APIs with the expected basic-tier
+those objects through KubeAtlas's group-aware APIs with the expected basic-tier
 execution summary wired through both REST and MCP.
 
 It does **not** prove:
@@ -145,7 +145,7 @@ It does **not** prove:
 - partial-RBAC behavior or compatibility beyond the pinned releases.
 
 The omitted lifecycle branches belong in focused parser fixtures or later live
-lanes when Radar ships fields that depend on them. The terminal-failure fixture
+lanes when KubeAtlas ships fields that depend on them. The terminal-failure fixture
 deliberately omits `ttlSecondsAfterFinished` so its failed Job and Pod remain
 inspectable; the lane does not generalize that retention to cleanup behavior in
 other JobSet configurations.

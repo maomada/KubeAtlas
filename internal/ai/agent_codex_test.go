@@ -19,8 +19,8 @@ func TestCodexParseStream_FormatPin(t *testing.T) {
 		`{"type":"thread.started","thread_id":"019eef06-e99b-70f1-a25f-aba70f3ea57e"}`,
 		`{"type":"turn.started"}`,
 		`{"type":"item.completed","item":{"id":"r0","type":"reasoning","text":"checking pods"}}`,
-		`{"type":"item.started","item":{"id":"item_0","type":"mcp_tool_call","server":"radar","tool":"diagnose","arguments":{"name":"x"},"status":"in_progress"}}`,
-		`{"type":"item.completed","item":{"id":"item_0","type":"mcp_tool_call","server":"radar","tool":"diagnose","arguments":{"name":"x"},"result":{"content":[{"type":"text","text":"[[radar:evidence-ref=` + ref + `]]\n"},{"type":"text","text":"crashloop detail"}]},"status":"completed"}}`,
+		`{"type":"item.started","item":{"id":"item_0","type":"mcp_tool_call","server":"kubeatlas","tool":"diagnose","arguments":{"name":"x"},"status":"in_progress"}}`,
+		`{"type":"item.completed","item":{"id":"item_0","type":"mcp_tool_call","server":"kubeatlas","tool":"diagnose","arguments":{"name":"x"},"result":{"content":[{"type":"text","text":"[[kubeatlas:evidence-ref=` + ref + `]]\n"},{"type":"text","text":"crashloop detail"}]},"status":"completed"}}`,
 		"{\"type\":\"item.completed\",\"item\":{\"id\":\"item_1\",\"type\":\"agent_message\",\"text\":\"bad tag.\\n\\n```json\\n{\\\"root_cause\\\":\\\"bad tag\\\"}\\n```\"}}",
 		`{"type":"turn.completed","usage":{"input_tokens":41789,"output_tokens":23}}`,
 	}, "\n")
@@ -65,7 +65,7 @@ func TestCodexParseStream_FormatPin(t *testing.T) {
 	if !strings.Contains(doneResult, "crashloop detail") {
 		t.Errorf("expected tool result preview on done step, got %q", doneResult)
 	}
-	if doneEvidenceRef != ref || strings.Contains(doneResult, "radar:evidence-ref") {
+	if doneEvidenceRef != ref || strings.Contains(doneResult, "kubeatlas:evidence-ref") {
 		t.Errorf("marker extraction result=%q ref=%q", doneResult, doneEvidenceRef)
 	}
 	if doneIsError == nil || *doneIsError {
@@ -113,7 +113,7 @@ func TestCodexToolResultErrorState(t *testing.T) {
 	stream := strings.Join([]string{
 		`{"type":"item.completed","item":{"id":"ok","type":"mcp_tool_call","tool":"get_resource","status":"completed","result":{"content":[{"type":"text","text":"ready"}]}}}`,
 		`{"type":"item.completed","item":{"id":"bad","type":"mcp_tool_call","tool":"get_resource","status":"failed","error":{"message":"permission denied"}}}`,
-		`{"type":"item.completed","item":{"id":"marked-bad","type":"mcp_tool_call","tool":"get_resource","status":"failed","result":{"content":[{"type":"text","text":"[[radar:evidence-ref=` + testEvidenceRef('a', 'b') + `]]\n"},{"type":"text","text":"producer denied"}]},"error":{"message":"host repeated producer denied"}}}`,
+		`{"type":"item.completed","item":{"id":"marked-bad","type":"mcp_tool_call","tool":"get_resource","status":"failed","result":{"content":[{"type":"text","text":"[[kubeatlas:evidence-ref=` + testEvidenceRef('a', 'b') + `]]\n"},{"type":"text","text":"producer denied"}]},"error":{"message":"host repeated producer denied"}}}`,
 		`{"type":"item.completed","item":{"id":"unknown","type":"mcp_tool_call","tool":"get_resource","status":"in_progress"}}`,
 	}, "\n")
 
@@ -184,7 +184,7 @@ func TestCodexExecutionProfiles(t *testing.T) {
 		t.Errorf("full-local mode must still keep --sandbox read-only; got %q", myArgs)
 	}
 	if my.Dir != "" {
-		t.Error("full-local mode should inherit radar's cwd (no override)")
+		t.Error("full-local mode should inherit kubeatlas's cwd (no override)")
 	}
 	if _, _, err := a.command(ctx, turnSpec{profile: ""}); err == nil {
 		t.Fatal("Codex must reject an empty profile rather than fail open")

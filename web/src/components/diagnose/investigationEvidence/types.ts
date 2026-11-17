@@ -44,7 +44,7 @@ export type InvestigationEvidenceTimelineItem =
       summary?: string;
       result?: string;
       evidenceRef?: string;
-      radarEvidence?: boolean;
+      kubeatlasEvidence?: boolean;
       truncated?: boolean;
       isError?: boolean;
     };

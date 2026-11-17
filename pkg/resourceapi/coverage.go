@@ -1,5 +1,5 @@
-// Package resourceapi defines the coverage metadata Radar's resource reads
-// share across REST, MCP and search: what an answer is about, what Radar read
+// Package resourceapi defines the coverage metadata KubeAtlas's resource reads
+// share across REST, MCP and search: what an answer is about, what KubeAtlas read
 // of it, and why anything in it is missing. Coverage qualifies a read of one
 // kind, SearchCoverage a search across kinds; both report gaps with the same
 // Gap and narrowing with the same Narrowing.
@@ -18,14 +18,14 @@ import (
 type CoverageStatus string
 
 const (
-	// CoverageComplete: Radar read all of the answer's scope.
+	// CoverageComplete: KubeAtlas read all of the answer's scope.
 	CoverageComplete CoverageStatus = "complete"
 	// CoveragePartial: at least one gap; rows prove nothing about the gaps.
 	CoveragePartial CoverageStatus = "partial"
 )
 
 // The sets below list their members only when there are at most a
-// response's cap of them: a REST response is rendered by Radar's UI, an MCP
+// response's cap of them: a REST response is rendered by KubeAtlas's UI, an MCP
 // response is read by a model. Above the cap a set carries only its count.
 const (
 	RESTSetLimit = 64
@@ -42,7 +42,7 @@ const (
 
 // Narrowing says why an implicitly broad request covers less than everything.
 // Narrowing applies per dimension: namespaces the request names are never
-// narrowed, nor are kinds a search names, and what of them Radar could not
+// narrowed, nor are kinds a search names, and what of them KubeAtlas could not
 // read is a gap. The values are a separate enum from
 // readreason.Action even where the spelling matches: narrowedBy user_access
 // says the answer covers only what the user may read, the action user_access
@@ -52,15 +52,15 @@ type Narrowing string
 const (
 	// NarrowedByUserAccess: the kinds or namespaces the caller may read.
 	NarrowedByUserAccess Narrowing = "user_access"
-	// NarrowedByNamespacePin: Radar's --namespace-scope pin.
+	// NarrowedByNamespacePin: KubeAtlas's --namespace-scope pin.
 	NarrowedByNamespacePin Narrowing = "namespace_pin"
-	// NarrowedByNamespaceCollection: the namespaces Radar collects a kind in,
-	// when its identity can't list the kind cluster-wide. Whoever runs Radar
+	// NarrowedByNamespaceCollection: the namespaces KubeAtlas collects a kind in,
+	// when its identity can't list the kind cluster-wide. Whoever runs KubeAtlas
 	// widens it.
 	NarrowedByNamespaceCollection Narrowing = "namespace_collection"
-	// NarrowedByKindCollection: the kinds Radar collects. A search that names
-	// no kind skips the kinds Radar isn't watching without listing each one;
-	// naming a kind Radar can watch but hasn't started watching searches it.
+	// NarrowedByKindCollection: the kinds KubeAtlas collects. A search that names
+	// no kind skips the kinds KubeAtlas isn't watching without listing each one;
+	// naming a kind KubeAtlas can watch but hasn't started watching searches it.
 	NarrowedByKindCollection Narrowing = "kind_collection"
 )
 
@@ -71,7 +71,7 @@ type Extent string
 const (
 	// ExtentAll: every member of the scope along that axis.
 	ExtentAll Extent = "all"
-	// ExtentUnknown: some members, and Radar can't say which.
+	// ExtentUnknown: some members, and KubeAtlas can't say which.
 	ExtentUnknown Extent = "unknown"
 )
 
@@ -89,7 +89,7 @@ type NameSet struct {
 // AllNames is a gap's namespaces when it reaches every namespace in scope.
 func AllNames() *NameSet { return &NameSet{Extent: ExtentAll} }
 
-// UnknownNames is a gap's namespaces when it reaches some, Radar can't say
+// UnknownNames is a gap's namespaces when it reaches some, KubeAtlas can't say
 // which.
 func UnknownNames() *NameSet { return &NameSet{Extent: ExtentUnknown} }
 
@@ -259,17 +259,17 @@ func (g Gap) MarshalJSON() ([]byte, error) {
 }
 
 // Coverage qualifies a single-kind read: a list, or the per-kind entries of a
-// count. Status is relative to Scope: complete means Radar's initial read of
+// count. Status is relative to Scope: complete means KubeAtlas's initial read of
 // all of it has loaded, and will keep meaning that; freshness or paging, if
 // added, come as separate fields. An explicit target (namespaces the request
 // named) stays the scope, and what of it could not be read is a gap; an
 // implicitly broad request's scope is what remained after NarrowedBy, so
 // "complete" there means complete within that narrowed scope only.
 //
-// Read is what Radar read within Scope, on every successful answer. Read and
+// Read is what KubeAtlas read within Scope, on every successful answer. Read and
 // the gaps don't overlap and together make up Scope, so a complete answer's
 // Read equals its Scope. An error body never has Read: it returns no rows,
-// though Radar may have read some and discarded them (its connection changed
+// though KubeAtlas may have read some and discarded them (its connection changed
 // mid-read, or the answer was over its size budget).
 //
 // A client meeting a value it doesn't know treats it conservatively: an
@@ -422,7 +422,7 @@ func (c Coverage) MarshalJSON() ([]byte, error) {
 // ReadError is the body of a failed resource read: REST responses send it as
 // is, and MCP results (structuredContent and the text block) add `next` after
 // error_code. A read fails when it returns no usable
-// inventory: Radar read nothing in its scope, the answer would be too large,
+// inventory: KubeAtlas read nothing in its scope, the answer would be too large,
 // or its connection changed mid-read. A failed list's Coverage keeps every
 // reason and where it applies, including the ones ErrorCode does not name, and
 // never has Read; Error names the same causes in words.
@@ -435,7 +435,7 @@ type ReadError struct {
 // SearchCoverage qualifies a search. A search reads many kinds across
 // namespaces and cluster scope, so it has no single scope or read set: Status
 // says whether everything the query named was searched with nothing failing,
-// and Gaps what was not. A broad query searches what the user and Radar can
+// and Gaps what was not. A broad query searches what the user and KubeAtlas can
 // read without listing each kind or namespace it skipped for access or
 // collection; NarrowedBy says that happened, so "complete" never stands for
 // an exhaustive negative.

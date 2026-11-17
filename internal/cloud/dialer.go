@@ -3,6 +3,7 @@ package cloud
 import (
 	"context"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -15,14 +16,14 @@ import (
 )
 
 const (
-	selfUpgradeAvailableHeader = "X-Radar-Self-Upgrade-Available"
-	// kubernetesCredentialsHeader tells Radar Cloud how this agent
+	selfUpgradeAvailableHeader = "X-KubeAtlas-Self-Upgrade-Available"
+	// kubernetesCredentialsHeader tells KubeAtlas Cloud how this agent
 	// authenticates user calls, so a control plane that relays user tokens
 	// never sends them to an agent that would ignore them and impersonate.
-	kubernetesCredentialsHeader = "X-Radar-Kubernetes-Credentials"
+	kubernetesCredentialsHeader = "X-KubeAtlas-Kubernetes-Credentials"
 )
 
-// dial establishes a WebSocket to Radar Cloud, authenticates with the
+// dial establishes a WebSocket to KubeAtlas Cloud, authenticates with the
 // cluster bearer token, and returns a yamux session with this side as the
 // *server*. Cloud opens streams (one per browser request); we accept them.
 func dial(ctx context.Context, cfg Config, selfUpgrade bool) (*yamux.Session, error) {
@@ -62,28 +63,34 @@ func dial(ctx context.Context, cfg Config, selfUpgrade bool) (*yamux.Session, er
 	return mux, nil
 }
 
-// cloudHandshakeHeaders builds the metadata Radar advertises when opening a
+// cloudHandshakeHeaders builds the metadata KubeAtlas advertises when opening a
 // Cloud tunnel. The self-upgrade capability is deliberately always present:
 // false is meaningful for GitOps and --no-self-upgrade installations and must
 // not be confused with an older agent that predates the capability contract.
 func cloudHandshakeHeaders(cfg Config, selfUpgrade bool) http.Header {
 	headers := http.Header{}
 	headers.Set("Authorization", "Bearer "+cfg.Token)
-	headers.Set("X-Radar-Version", Version)
+	headers.Set(compat.AgentVersionHeader, Version)
+	headers.Set(compat.LegacyAgentVersionHeader, Version)
 	headers.Set(selfUpgradeAvailableHeader, strconv.FormatBool(selfUpgrade))
+	headers.Set(compat.LegacyAgentSelfUpgradeHeader, strconv.FormatBool(selfUpgrade))
 	headers.Set(kubernetesCredentialsHeader, string(pkgauth.CurrentCredentialMode()))
+	headers.Set(compat.LegacyAgentCredentialsHeader, string(pkgauth.CurrentCredentialMode()))
 	if cfg.Namespace != "" {
-		headers.Set("X-Radar-Namespace", cfg.Namespace)
+		headers.Set("X-KubeAtlas-Namespace", cfg.Namespace)
+		headers.Set(compat.LegacyAgentNamespaceHeader, cfg.Namespace)
 	}
 	if cfg.Release != "" {
-		headers.Set("X-Radar-Release", cfg.Release)
+		headers.Set("X-KubeAtlas-Release", cfg.Release)
+		headers.Set(compat.LegacyAgentReleaseHeader, cfg.Release)
 	}
 	// Validate before send — the value comes from a ConfigMap on the
 	// cluster, and a corrupted ConfigMap shouldn't be able to inject
 	// header smuggling. Reject silently on bad shape; hub falls back
 	// to name-based correlation.
 	if apiURL, err := validateAPIServerURL(cfg.APIServerURL); err == nil && apiURL != "" {
-		headers.Set("X-Radar-API-Server-URL", apiURL)
+		headers.Set("X-KubeAtlas-API-Server-URL", apiURL)
+		headers.Set(compat.LegacyAgentAPIServerHeader, apiURL)
 	}
 	return headers
 }
@@ -100,7 +107,7 @@ func cloudHandshakeHeaders(cfg Config, selfUpgrade bool) http.Header {
 // This is our *receive* window — it governs the hub→agent direction (request
 // bodies, exec stdin, apply payloads), which is small, so the value is not
 // load-bearing here. The bulk path is responses (agent→hub), gated by the hub's
-// own window (radar-hub tunnelYamuxConfig). We keep this side aligned at 4MB for
+// own window (kubeatlas-hub tunnelYamuxConfig). We keep this side aligned at 4MB for
 // symmetry; the customer binary is single-tenant, so the per-stream buffer cost
 // is negligible.
 func tunnelYamuxConfig() *yamux.Config {
@@ -130,7 +137,7 @@ func handshakeRejectionError(statusCode int, dialErr error) error {
 	var explained error
 	switch {
 	case statusCode == http.StatusUnauthorized:
-		explained = fmt.Errorf("Radar Cloud rejected the cluster token (401). Check --cloud-token: it may have been rotated or revoked")
+		explained = fmt.Errorf("KubeAtlas Cloud rejected the cluster token (401). Check --cloud-token: it may have been rotated or revoked")
 	case statusCode == http.StatusForbidden:
 		explained = fmt.Errorf("Cloud tunnel refused with 403. A bad cluster token answers 401, so look at the proxy or gateway in front and any credentials it requires")
 	case statusCode == http.StatusNotFound:

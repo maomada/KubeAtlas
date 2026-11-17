@@ -210,7 +210,7 @@ describe('verdict band', () => {
     expect(s.path.body).toMatch(/not that the normal path works/i)
   })
 
-  it('points the next step at something Radar can actually do', () => {
+  it('points the next step at something KubeAtlas can actually do', () => {
     // The real caller is the strongest missing origin AND permanently
     // unavailable. Offering it would give every resource the same
     // un-actionable next step.
@@ -392,7 +392,7 @@ describe('the verdict band follows the selected origin', () => {
       confidence: 'real',
       byVantage: [{ vantage: 'in-cluster', path: 'data', outcome: 'verified', confidence: 'real' }],
     })
-    const v = buildVerdict(t, only, { originId: 'local', originName: 'Radar on your machine' })
+    const v = buildVerdict(t, only, { originId: 'local', originName: 'KubeAtlas on your machine' })
     expect(v.chipText).toBe('not tested')
   })
 })
@@ -493,7 +493,7 @@ describe("'testing' is scoped to the vantage that is testing", () => {
     const t = mk([pod('a', true, '10.0.0.1')], [p({})])
     // The view computes running && origin.id === 'incluster'; for the laptop
     // that is false even mid-run.
-    const v = buildVerdict(t, route(), { running: false, originId: 'local', originName: 'Radar on your machine' })
+    const v = buildVerdict(t, route(), { running: false, originId: 'local', originName: 'KubeAtlas on your machine' })
     expect(v.chipText).not.toBe('testing')
   })
 
@@ -761,7 +761,7 @@ describe('an answer is interpretable', () => {
   })
   it('auth, redirect and app-error answers are each read correctly', () => {
     expect(body('HTTP 401 · reached').body).toContain('credentials')
-    expect(body('HTTP 308 · reached, redirect').body).toMatch(/redirect .*Radar does not follow/)
+    expect(body('HTTP 308 · reached, redirect').body).toMatch(/redirect .*KubeAtlas does not follow/)
     expect(body('HTTP 503 · reached, server error').body).toContain('application health')
   })
   it('a transport-only reach never claims something was asked', () => {

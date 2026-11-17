@@ -36,7 +36,7 @@ export function tool(
     summary: JSON.stringify({ namespace: "shop", name: "api" }),
     result: typeof result === "string" ? result : JSON.stringify(result),
     isError: false,
-    radarEvidence: true,
+    kubeatlasEvidence: true,
     ...patch,
   };
 }

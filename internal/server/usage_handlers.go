@@ -26,7 +26,7 @@ func (s *Server) startUsageData() {
 	ctx, cancel := context.WithCancel(context.Background())
 	s.stopUsageData = cancel
 	opts := usagedata.Options{
-		// Radar Cloud runs its own usage program; the OSS switch stays off.
+		// KubeAtlas Cloud runs its own usage program; the OSS switch stays off.
 		Hosted: func() bool {
 			return cloudMode() || s.cloudConnectCfg.CloudTunnelConfigured
 		},
@@ -49,13 +49,13 @@ func (s *Server) startUsageData() {
 		SendOnShutdown: deploymentMode() == k8s.DeploymentModeInCluster,
 		Setup:          s.usageSetup,
 		Contexts:       func() int { return k8s.GetKubeconfigSummary().ContextCount },
-		// Only a local Radar is ever asked, so only its install time matters.
+		// Only a local KubeAtlas is ever asked, so only its install time matters.
 		InstalledAt: version.LocalInstalledAt,
 	}
 	usagedata.Start(ctx, opts)
 }
 
-// usageShared reports whether several people use this Radar: in-cluster,
+// usageShared reports whether several people use this KubeAtlas: in-cluster,
 // behind sign-in, or on a listener others can reach. Its configuration then
 // decides for everyone, and nobody is asked.
 func (s *Server) usageShared() bool {

@@ -203,7 +203,7 @@ func (s *Server) handleRBACSubject(w http.ResponseWriter, r *http.Request) {
 
 	idx := s.buildRBACIndex()
 	if idx == nil {
-		s.writeError(w, http.StatusServiceUnavailable, "RBAC cache not available (informers not synced or RBAC reads disabled for the Radar SA)")
+		s.writeError(w, http.StatusServiceUnavailable, "RBAC cache not available (informers not synced or RBAC reads disabled for the KubeAtlas SA)")
 		return
 	}
 

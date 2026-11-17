@@ -60,7 +60,7 @@ func stubDiscovery(t *testing.T, kind string, gvr schema.GroupVersionResource) *
 }
 
 // TestUpdateResource_UsesServerSideApply pins the SSA wire shape: PATCH with
-// ApplyPatchType, FieldManager=radar, Force=true, and server-managed metadata
+// ApplyPatchType, FieldManager=kubeatlas, Force=true, and server-managed metadata
 // stripped from the body. Editor flows submit YAML without a resourceVersion,
 // which PUT rejects — SSA is the contract.
 func TestUpdateResource_UsesServerSideApply(t *testing.T) {
@@ -96,8 +96,8 @@ func TestUpdateResource_UsesServerSideApply(t *testing.T) {
 	if !ok {
 		t.Fatalf("captured action is %T, want clienttesting.PatchActionImpl", captured)
 	}
-	if impl.PatchOptions.FieldManager != "radar" {
-		t.Errorf("FieldManager = %q, want %q", impl.PatchOptions.FieldManager, "radar")
+	if impl.PatchOptions.FieldManager != "kubeatlas" {
+		t.Errorf("FieldManager = %q, want %q", impl.PatchOptions.FieldManager, "kubeatlas")
 	}
 	if impl.PatchOptions.FieldValidation != metav1.FieldValidationStrict {
 		t.Errorf("FieldValidation = %q, want %q", impl.PatchOptions.FieldValidation, metav1.FieldValidationStrict)
@@ -370,8 +370,8 @@ func TestApplyResource_ReviewedCreateIsAtomic(t *testing.T) {
 	})
 	dyn.PrependReactor("create", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
 		create := action.(clienttesting.CreateActionImpl)
-		if create.GetCreateOptions().FieldManager != "radar" {
-			t.Fatalf("field manager = %q, want radar", create.GetCreateOptions().FieldManager)
+		if create.GetCreateOptions().FieldManager != "kubeatlas" {
+			t.Fatalf("field manager = %q, want kubeatlas", create.GetCreateOptions().FieldManager)
 		}
 		if create.GetCreateOptions().FieldValidation != metav1.FieldValidationStrict {
 			t.Fatalf("field validation = %q, want %q", create.GetCreateOptions().FieldValidation, metav1.FieldValidationStrict)
@@ -490,8 +490,8 @@ metadata:
 	if len(captured.CreateOptions.DryRun) != 1 || captured.CreateOptions.DryRun[0] != metav1.DryRunAll {
 		t.Fatalf("DryRun = %v, want [%q]", captured.CreateOptions.DryRun, metav1.DryRunAll)
 	}
-	if captured.CreateOptions.FieldManager != "radar" {
-		t.Fatalf("FieldManager = %q, want radar", captured.CreateOptions.FieldManager)
+	if captured.CreateOptions.FieldManager != "kubeatlas" {
+		t.Fatalf("FieldManager = %q, want kubeatlas", captured.CreateOptions.FieldManager)
 	}
 	if captured.CreateOptions.FieldValidation != metav1.FieldValidationStrict {
 		t.Fatalf("FieldValidation = %q, want %q", captured.CreateOptions.FieldValidation, metav1.FieldValidationStrict)
@@ -501,7 +501,7 @@ metadata:
 	}
 }
 
-func TestApplyResource_RetriesOnlyRadarOwnershipConflictWithForce(t *testing.T) {
+func TestApplyResource_RetriesOnlyKubeAtlasOwnershipConflictWithForce(t *testing.T) {
 	gvr := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 	existing := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "apps/v1",
@@ -529,7 +529,7 @@ func TestApplyResource_RetriesOnlyRadarOwnershipConflictWithForce(t *testing.T) 
 				Details: &metav1.StatusDetails{Causes: []metav1.StatusCause{{
 					Type:    metav1.CauseTypeFieldManagerConflict,
 					Field:   ".spec.replicas",
-					Message: `conflict with "radar" using apps/v1`,
+					Message: `conflict with "kubeatlas" using apps/v1`,
 				}}},
 			}}
 		}
@@ -576,8 +576,8 @@ metadata:
 			t.Fatalf("patch %d resourceVersion = %q, want 1", index+1, body.GetResourceVersion())
 		}
 	}
-	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "Radar reclaimed field ownership") {
-		t.Fatalf("warnings = %v, want Radar ownership warning", result.Warnings)
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "KubeAtlas reclaimed field ownership") {
+		t.Fatalf("warnings = %v, want KubeAtlas ownership warning", result.Warnings)
 	}
 }
 
@@ -604,7 +604,7 @@ func TestApplyResource_DoesNotReclaimWhenExternalConflictAppears(t *testing.T) {
 		if patch.PatchOptions.Force != nil && *patch.PatchOptions.Force {
 			t.Fatal("external conflict reached forced retry")
 		}
-		manager := "radar"
+		manager := "kubeatlas"
 		if patchCount == 2 {
 			manager = "argocd"
 		}
@@ -644,7 +644,7 @@ metadata:
 	}
 }
 
-func TestPreviewUpdateResource_ReclaimsRadarOwnershipWithWarning(t *testing.T) {
+func TestPreviewUpdateResource_ReclaimsKubeAtlasOwnershipWithWarning(t *testing.T) {
 	gvr := schema.GroupVersionResource{Group: "apps", Version: "v1", Resource: "deployments"}
 	existing := &unstructured.Unstructured{Object: map[string]any{
 		"apiVersion": "apps/v1",
@@ -672,7 +672,7 @@ func TestPreviewUpdateResource_ReclaimsRadarOwnershipWithWarning(t *testing.T) {
 				Details: &metav1.StatusDetails{Causes: []metav1.StatusCause{{
 					Type:    metav1.CauseTypeFieldManagerConflict,
 					Field:   ".spec.replicas",
-					Message: `conflict with "radar" using apps/v1`,
+					Message: `conflict with "kubeatlas" using apps/v1`,
 				}}},
 			}}
 		}
@@ -704,12 +704,12 @@ metadata:
 	if patchCount != 2 {
 		t.Fatalf("patch count = %d, want 2", patchCount)
 	}
-	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "Radar reclaimed field ownership") {
-		t.Fatalf("warnings = %v, want Radar ownership warning", result.Warnings)
+	if len(result.Warnings) == 0 || !strings.Contains(result.Warnings[0], "KubeAtlas reclaimed field ownership") {
+		t.Fatalf("warnings = %v, want KubeAtlas ownership warning", result.Warnings)
 	}
 }
 
-func TestIsOnlyRadarFieldManagerConflict(t *testing.T) {
+func TestIsOnlyKubeAtlasFieldManagerConflict(t *testing.T) {
 	statusConflict := func(messages ...string) error {
 		causes := make([]metav1.StatusCause, 0, len(messages))
 		for _, message := range messages {
@@ -724,24 +724,24 @@ func TestIsOnlyRadarFieldManagerConflict(t *testing.T) {
 		}}
 	}
 
-	if !isOnlyRadarFieldManagerConflict(statusConflict(`conflict with "radar" using apps/v1`)) {
-		t.Fatal("Radar-only conflict was not recognized")
+	if !isOnlyKubeAtlasFieldManagerConflict(statusConflict(`conflict with "kubeatlas" using apps/v1`)) {
+		t.Fatal("KubeAtlas-only conflict was not recognized")
 	}
-	if isOnlyRadarFieldManagerConflict(statusConflict(`conflict with "helm" using apps/v1`)) {
-		t.Fatal("external-manager conflict was recognized as Radar-only")
+	if isOnlyKubeAtlasFieldManagerConflict(statusConflict(`conflict with "helm" using apps/v1`)) {
+		t.Fatal("external-manager conflict was recognized as KubeAtlas-only")
 	}
-	if isOnlyRadarFieldManagerConflict(statusConflict(
-		`conflict with "radar" using apps/v1`,
+	if isOnlyKubeAtlasFieldManagerConflict(statusConflict(
+		`conflict with "kubeatlas" using apps/v1`,
 		`conflict with "argocd" using apps/v1`,
 	)) {
-		t.Fatal("mixed-manager conflict was recognized as Radar-only")
+		t.Fatal("mixed-manager conflict was recognized as KubeAtlas-only")
 	}
-	if isOnlyRadarFieldManagerConflict(apierrors.NewConflict(
+	if isOnlyKubeAtlasFieldManagerConflict(apierrors.NewConflict(
 		schema.GroupResource{Group: "apps", Resource: "deployments"},
 		"w",
 		fmt.Errorf("resource version changed"),
 	)) {
-		t.Fatal("generic conflict was recognized as Radar field ownership")
+		t.Fatal("generic conflict was recognized as KubeAtlas field ownership")
 	}
 }
 

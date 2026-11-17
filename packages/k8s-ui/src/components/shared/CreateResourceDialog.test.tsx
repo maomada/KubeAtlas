@@ -366,7 +366,7 @@ describe('CreateResourceDialog lockMode', () => {
     expect(document.body.textContent).toContain('ConfigMap settings')
     expect(document.querySelector('[aria-label="应用模式"]')).toBeNull()
     expect(document.body.textContent).not.toContain('强制应用')
-    expect(document.body.textContent).not.toContain('Radar 已切换到“应用”模式')
+    expect(document.body.textContent).not.toContain('KubeAtlas 已切换到“应用”模式')
     const recovery = [...document.querySelectorAll('p')].find(p => p.textContent?.includes('停止前已创建'))!
     expect(recovery.closest('[inert]')).toBeNull()
 
@@ -411,7 +411,7 @@ it('keeps ordinary Apply, Force and unlocked partial-create recovery', async () 
   await act(async () => button('审阅')!.click())
   await act(async () => button('创建已审阅的资源')!.click())
   expect(document.querySelector('[role="radio"][aria-checked="true"]')?.textContent).toBe('应用')
-  expect(document.body.textContent).toContain('Radar 已切换到“应用”模式，以便你审阅并根据当前集群状态继续。')
+  expect(document.body.textContent).toContain('KubeAtlas 已切换到“应用”模式，以便你审阅并根据当前集群状态继续。')
   expect(document.body.textContent).not.toContain('Change the name to create a new resource')
   expect(document.body.textContent).not.toContain('remove this document if it was already created')
   expect(document.body.textContent).not.toContain('Switch to Apply mode')
@@ -498,7 +498,7 @@ it.each([false, true])('shows real partial-create recovery without a preview (lo
     expect(document.body.textContent).toContain('停止前已创建：ConfigMap app/first。')
     expect(onCreated).not.toHaveBeenCalled()
     expect(document.body.textContent).not.toContain('Switch to Apply mode')
-    expect(document.body.textContent).not.toContain('Radar 已切换到“应用”模式')
+    expect(document.body.textContent).not.toContain('KubeAtlas 已切换到“应用”模式')
     expect(document.body.textContent).toContain('请从清单中移除已创建的对象，然后重试创建。')
     expect(document.body.textContent).toContain('Change the name to create a new resource')
     if (lockMode) {

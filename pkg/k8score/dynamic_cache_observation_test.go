@@ -615,7 +615,7 @@ func TestServedEntriesFollowAClusterWideInformerReplacingNamespaceOnes(t *testin
 	}
 }
 
-// A 401 rejects Radar's credentials, not one scope, so every probe stops on it
+// A 401 rejects KubeAtlas's credentials, not one scope, so every probe stops on it
 // instead of narrowing the kind to the namespaces that answered, and each path
 // that records a failed probe says credentials were rejected, not access denied.
 func TestProbesStopOnRejectedCredentials(t *testing.T) {

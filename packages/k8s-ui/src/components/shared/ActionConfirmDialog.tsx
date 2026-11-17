@@ -206,7 +206,7 @@ export function ActionConfirmDialog({
         {result && (
           <AlertBanner
             variant={outcomeLocked ? 'warning' : 'error'}
-            title={result.title ?? (result.state === 'partial' ? '部分更改已完成' : result.state === 'unknown' ? 'Radar 无法确定此操作是否已生效' : '无法完成此操作')}
+            title={result.title ?? (result.state === 'partial' ? '部分更改已完成' : result.state === 'unknown' ? 'KubeAtlas 无法确定此操作是否已生效' : '无法完成此操作')}
             message={result.message || (outcomeLocked ? '请先检查对象的当前状态，再尝试其他操作。' : undefined)}
           />
         )}

@@ -126,7 +126,7 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
 
   const mcpServersUrlConfig = (key: 'url' | 'serverUrl') => JSON.stringify({
     mcpServers: {
-      radar: {
+      kubeatlas: {
         [key]: mcpUrl,
       }
     }
@@ -134,7 +134,7 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
 
   const vsCodeConfig = JSON.stringify({
     servers: {
-      radar: {
+      kubeatlas: {
         type: "http",
         url: mcpUrl,
       }
@@ -143,7 +143,7 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
 
   const opencodeConfig = JSON.stringify({
     mcp: {
-      radar: {
+      kubeatlas: {
         type: "remote",
         url: mcpUrl,
         enabled: true,
@@ -153,7 +153,7 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
 
   const clineConfig = JSON.stringify({
     mcpServers: {
-      radar: {
+      kubeatlas: {
         type: "streamableHttp",
         url: mcpUrl,
       }
@@ -166,7 +166,7 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
   const mcpRemoteArgs = ['-y', 'mcp-remote', mcpUrl, ...(mcpRemoteNeedsAllowHttp ? ['--allow-http'] : [])]
   const claudeDesktopConfig = JSON.stringify({
     mcpServers: {
-      radar: {
+      kubeatlas: {
         command: "npx",
         args: mcpRemoteArgs,
       }
@@ -175,7 +175,7 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
 
   const zedConfig = JSON.stringify({
     context_servers: {
-      radar: {
+      kubeatlas: {
         url: mcpUrl,
       }
     }
@@ -183,7 +183,7 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
 
   const geminiConfig = JSON.stringify({
     mcpServers: {
-      radar: {
+      kubeatlas: {
         httpUrl: mcpUrl,
       }
     }
@@ -273,7 +273,7 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
               <p className="text-xs text-theme-text-tertiary px-0.5">
                 你可以在{' '}
                 <button
-                  onClick={() => { onClose(); window.dispatchEvent(new Event('radar:open-settings')) }}
+                  onClick={() => { onClose(); window.dispatchEvent(new Event('kubeatlas:open-settings')) }}
                   className="text-purple-500 dark:text-purple-400 hover:underline underline-offset-2"
                 >
                   设置
@@ -287,11 +287,11 @@ export function MCPSetupDialog({ open, onClose, mcpUrl, readOnly = false, execTo
             <h4 className="text-sm font-semibold text-theme-text-primary">连接你的 AI 工具</h4>
 
             {[
-              { icon: Terminal, name: 'Claude Code', path: '', config: `claude mcp add --transport http radar ${mcpUrl}` },
-              { icon: Terminal, name: 'Codex', path: '', config: `codex mcp add radar --url ${mcpUrl}` },
+              { icon: Terminal, name: 'Claude Code', path: '', config: `claude mcp add --transport http kubeatlas ${mcpUrl}` },
+              { icon: Terminal, name: 'Codex', path: '', config: `codex mcp add kubeatlas --url ${mcpUrl}` },
               { icon: Code2, name: 'Cursor', path: '~/.cursor/mcp.json', config: mcpServersUrlConfig('url') },
               { icon: Code2, name: 'VS Code (GitHub Copilot)', path: '.vscode/mcp.json', config: vsCodeConfig },
-              { icon: Terminal, name: 'GitHub Copilot CLI', path: '', config: `copilot mcp add --transport http radar ${mcpUrl}` },
+              { icon: Terminal, name: 'GitHub Copilot CLI', path: '', config: `copilot mcp add --transport http kubeatlas ${mcpUrl}` },
               { icon: Terminal, name: 'OpenCode', path: '~/.config/opencode/opencode.json', config: opencodeConfig },
               { icon: Code2, name: 'Google Antigravity', path: '~/.gemini/config/mcp_config.json', config: mcpServersUrlConfig('serverUrl') },
               { icon: Code2, name: 'Kiro', path: '~/.kiro/settings/mcp.json', config: mcpServersUrlConfig('url') },

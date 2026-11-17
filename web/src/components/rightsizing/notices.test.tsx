@@ -8,7 +8,7 @@ const scan: RightsizingScanResponse = {
     state: 'complete',
   scannedAt: '2026-09-19T06:52:54Z',
   window: '7d',
-  source: 'radar',
+  source: 'kubeatlas',
   coverage: {
     workloadsDiscovered: 120,
     workloadsEvaluated: 120,

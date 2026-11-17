@@ -3,14 +3,14 @@ kind: ResourceFlavor
 metadata:
   name: kind-worker
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo
 ---
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ClusterQueue
 metadata:
   name: admission-ready
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo
 spec:
   namespaceSelector:
     matchLabels:
@@ -29,7 +29,7 @@ kind: ClusterQueue
 metadata:
   name: admission-held
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo
 spec:
   namespaceSelector:
     matchLabels:
@@ -50,7 +50,7 @@ metadata:
   name: ready
   namespace: kueue-demo
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo
 spec:
   clusterQueue: admission-ready
 ---
@@ -60,6 +60,6 @@ metadata:
   name: held
   namespace: kueue-demo
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo
 spec:
   clusterQueue: admission-held

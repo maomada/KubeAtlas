@@ -1,6 +1,6 @@
-// Package auth provides radar-specific authentication middleware and OIDC support.
+// Package auth provides kubeatlas-specific authentication middleware and OIDC support.
 // Reusable auth primitives (cookie management, RBAC namespace discovery, impersonation)
-// live in pkg/auth. This package wraps them with radar-specific HTTP routing and audit logging.
+// live in pkg/auth. This package wraps them with kubeatlas-specific HTTP routing and audit logging.
 package auth
 
 import pkgauth "github.com/maomada/KubeAtlas/pkg/auth"

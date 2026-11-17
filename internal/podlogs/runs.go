@@ -41,7 +41,7 @@ func IsContainerNotStarted(err error) bool {
 }
 
 // NotStartedMessage says why a container that has not started has no logs.
-// The reason comes from the pod's status when Radar has it, since that carries
+// The reason comes from the pod's status when KubeAtlas has it, since that carries
 // the kubelet's detail (the image it could not pull, the ConfigMap it could not
 // find), and otherwise from the apiserver's answer.
 func NotStartedMessage(pod *corev1.Pod, container string, err error) string {
@@ -68,7 +68,7 @@ func NotStartedMessage(pod *corev1.Pod, container string, err error) string {
 
 // ContainerNotStartedYet reports whether the pod's status shows the container
 // waiting and never having run, so it has no logs. A container waiting to
-// restart after a crash has logs. False when Radar has no status for it.
+// restart after a crash has logs. False when KubeAtlas has no status for it.
 func ContainerNotStartedYet(pod *corev1.Pod, container string) bool {
 	status, ok := containerStatus(pod, container)
 	return ok && status.State.Waiting != nil && status.RestartCount == 0 && status.LastTerminationState.Terminated == nil

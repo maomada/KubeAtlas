@@ -60,7 +60,7 @@ func capacityAutoscalerStatus(allowed bool, cache capacityConfigMapSource) (*aut
 	}
 	obj, found, ok := cache.ReadableObject("configmaps", autoscalerStatusNamespace, autoscalerStatusConfigMapName)
 	if !ok {
-		// Outside what Radar collects is a scope verdict; still loading or
+		// Outside what KubeAtlas collects is a scope verdict; still loading or
 		// past its load deadline is an unreadable cache, not a scope limit.
 		assessment := cache.AssessKindRead("configmaps", []string{autoscalerStatusNamespace})
 		if len(assessment.Uncovered) > 0 || assessment.Readiness == k8s.KindUnavailable {

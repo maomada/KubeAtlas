@@ -7,7 +7,7 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: renders default route to Radar Service and omits empty hostnames
+  - it: renders default route to KubeAtlas Service and omits empty hostnames
     set:
       httpRoute:
         enabled: true
@@ -88,7 +88,7 @@ tests:
         parentRefs:
           - name: public-gateway
         hostnames:
-          - radar.example.com
+          - kubeatlas.example.com
         rules:
           - matches:
               - path:
@@ -98,7 +98,7 @@ tests:
               request: 30s
               backendRequest: 20s
             backendRefs:
-              - name: radar-api
+              - name: kubeatlas-api
                 port: 9000
           - matches:
               - path:
@@ -107,13 +107,13 @@ tests:
             timeouts:
               request: 2m
             backendRefs:
-              - name: radar-admin
+              - name: kubeatlas-admin
                 port: 9001
     asserts:
       - equal:
           path: spec.hostnames
           value:
-            - radar.example.com
+            - kubeatlas.example.com
       - lengthEqual:
           path: spec.rules
           count: 2
@@ -130,7 +130,7 @@ tests:
           value: 2m
       - equal:
           path: spec.rules[1].backendRefs[0].name
-          value: radar-admin
+          value: kubeatlas-admin
 
   - it: fails when enabled without parentRefs
     set:

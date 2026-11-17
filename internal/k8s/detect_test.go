@@ -431,7 +431,7 @@ func TestDetectProblems_ConfigSignals(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: "kind-node-1"},
 				Status: corev1.NodeStatus{Addresses: []corev1.NodeAddress{
 					{Type: corev1.NodeHostName, Address: "kind-node-1"},
-					{Type: corev1.NodeInternalDNS, Address: "radar-gitops-demo-control-plane"},
+					{Type: corev1.NodeInternalDNS, Address: "kubeatlas-gitops-demo-control-plane"},
 				}},
 			},
 			&appsv1.DaemonSet{
@@ -441,7 +441,7 @@ func TestDetectProblems_ConfigSignals(t *testing.T) {
 						Name: "kindnet",
 						Env: []corev1.EnvVar{{
 							Name:  "CONTROL_PLANE_ENDPOINT",
-							Value: "radar-gitops-demo-control-plane:6443",
+							Value: "kubeatlas-gitops-demo-control-plane:6443",
 						}},
 					}}}},
 				},

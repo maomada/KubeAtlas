@@ -192,7 +192,7 @@ func reasonIDs(d *Diagnosis) []ReasonID {
 	return out
 }
 
-func TestConditionReasonsLeadWithRadarPhrasing(t *testing.T) {
+func TestConditionReasonsLeadWithKubeAtlasPhrasing(t *testing.T) {
 	minReplicas := int32(2)
 	hpa := &autoscalingv2.HorizontalPodAutoscaler{
 		Spec: autoscalingv2.HorizontalPodAutoscalerSpec{
@@ -222,7 +222,7 @@ func TestConditionReasonsLeadWithRadarPhrasing(t *testing.T) {
 		t.Fatalf("no limited_min reason: %+v", got.Reasons)
 	}
 	if reason.Message != "HPA is held at minReplicas=2" {
-		t.Errorf("Message = %q, want Radar's phrasing", reason.Message)
+		t.Errorf("Message = %q, want KubeAtlas's phrasing", reason.Message)
 	}
 	if reason.Detail != "the desired replica count is less than the minimum replica count" {
 		t.Errorf("Detail = %q, want the controller's sentence", reason.Detail)

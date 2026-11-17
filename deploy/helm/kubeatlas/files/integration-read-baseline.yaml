@@ -1,4 +1,4 @@
-# Explicit Radar Cloud caller policy, NOT the connector service account's collection rules.
+# Explicit KubeAtlas Cloud caller policy, NOT the connector service account's collection rules.
 # Additions require review. Catalog coverage tests never generate authorization.
 # All grant rows mean get/list/watch on full objects, not redacted projections.
 # Existing grants are preserved; withhold does not revoke rights from other roles.

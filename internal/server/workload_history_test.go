@@ -212,7 +212,7 @@ func scopedHistoryIDs(t *testing.T, store timeline.EventStore, key resourceid.Re
 	return fmt.Sprint(historyIDs(events))
 }
 
-// K8s Events about a CronJob's runs that were deleted before Radar started
+// K8s Events about a CronJob's runs that were deleted before KubeAtlas started
 // record no owner. They come back by the names the CronJob gives its Jobs and
 // their Pods; a sibling CronJob's runs and rows owned by something else don't.
 func TestWorkloadHistoryScope_RecoversPastRunsWithNoRecordedOwner(t *testing.T) {

@@ -30,7 +30,7 @@ func TestWorkloadLogsStream_RepeatedWatcherFailureKeepsNotice(t *testing.T) {
 				}
 				_, _ = fmt.Fprintf(w, "2026-10-20T10:00:%02dZ application record %d\n", ordinal, ordinal)
 				w.(http.Flusher).Flush()
-				// Allow Radar to process the replay before the node fails its follow.
+				// Allow KubeAtlas to process the replay before the node fails its follow.
 				select {
 				case <-time.After(150 * time.Millisecond):
 				case <-r.Context().Done():

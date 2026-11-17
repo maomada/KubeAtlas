@@ -1,19 +1,19 @@
 // Shared Issues identity contract + data shapes for the live-issues queue.
 //
 // k8s-ui owns these because the Issues queue presentation (IssuesView) is
-// host-agnostic: Radar Hub feeds it fleet-resolved grouped issues, and OSS
-// Radar feeds a single-cluster ("fleet of one") set. Hosts map their wire
+// host-agnostic: KubeAtlas Hub feeds it fleet-resolved grouped issues, and OSS
+// KubeAtlas feeds a single-cluster ("fleet of one") set. Hosts map their wire
 // payloads onto these types; the component renders against them.
 //
-// Mirrors the grouped Issue model radar emits (internal/issues.GroupIssues →
+// Mirrors the grouped Issue model kubeatlas emits (internal/issues.GroupIssues →
 // /api/issues, and the hub's /api/fleet/issues). IssueResourceRef intentionally
 // matches the Checks queue's contract (components/checks/types.ts) and
-// radar/pkg/audit.ResourceKey — so Issues and Checks share deep-links rather
+// kubeatlas/pkg/audit.ResourceKey — so Issues and Checks share deep-links rather
 // than forking a second convention.
 
 /** Operational severity for live issues — distinct from the Checks 4-tier
  *  posture ladder on purpose (operational urgency vs compliance risk are
- *  separate axes). Matches radar's issues.Severity. */
+ *  separate axes). Matches kubeatlas's issues.Severity. */
 export type IssueSeverity = 'critical' | 'warning';
 
 /** Ordered worst→least. */
@@ -211,7 +211,7 @@ export interface Issue {
 
   // Subject identity (the grouped thing). group is omitted for the core API
   // group, namespace for cluster-scoped subjects — both optional to match the
-  // wire (radar emits them omitempty).
+  // wire (kubeatlas emits them omitempty).
   cluster_id?: string;
   cluster_name?: string;
   group?: string;
@@ -222,10 +222,10 @@ export interface Issue {
   reason: string;
   message?: string;
   raw_message?: string;
-  /** 'radar' when `message` is Radar's own summary rather than text from
+  /** 'kubeatlas' when `message` is KubeAtlas's own summary rather than text from
    *  Kubernetes or a controller. Such a message is never shown as raw output;
    *  the server writes a `cause` that stands without it. */
-  message_source?: 'radar';
+  message_source?: 'kubeatlas';
   /** Parsed domain diagnosis: plain-English cause, suggested next step, and
    *  an optional structured one-click fix.
    *  Server-emitted (omitempty); empty for issues without a parser. */
@@ -247,11 +247,11 @@ export interface Issue {
    *  message. The Issues view uses it to link these — and only these — to the
    *  Capacity / Demand view, so a generic scheduling failure never links. */
   capacity_relevant?: boolean;
-  /** Earliest evidence-backed time the issue was active. This may be when Radar
+  /** Earliest evidence-backed time the issue was active. This may be when KubeAtlas
    *  first observed the state rather than exact onset: read as "active at least
    *  since", never as proof of a healthy-duration boundary. */
   first_seen?: string;
-  /** Radar can confirm the issue is active, but current cluster evidence does
+  /** KubeAtlas can confirm the issue is active, but current cluster evidence does
    *  not establish when the failing state began. */
   onset_unknown?: boolean;
   onset_coverage?: {
@@ -283,7 +283,7 @@ export interface Issue {
   restart_loop?: IssueRestartLoop;
 
   /**
-   * Best-effort timing evidence from K8s-native signals. Absent when Radar has
+   * Best-effort timing evidence from K8s-native signals. Absent when KubeAtlas has
    * no confident signal. This is not a root-cause verdict.
    *
    * "started_at_resource_creation"        — failing state began during resource
@@ -308,7 +308,7 @@ export interface Issue {
    *  NEITHER correlation field was not checked — absence must not be read as
    *  "no changes". MCP-only, like correlated_changes. */
   no_recent_changes?: IssueNoRecentChanges;
-  /** The subject's change history in the window was larger than Radar reads,
+  /** The subject's change history in the window was larger than KubeAtlas reads,
    *  so correlated_changes are leads, not its full history. MCP-only. */
   correlated_changes_incomplete?: boolean;
 }

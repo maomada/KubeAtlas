@@ -25,12 +25,12 @@ describe('manager answer chip', () => {
   })
   it.each([
     ['omitted', "This resource's label names Application argocd/a, but its status doesn't list it."],
-    ['unreadable', "This resource's label names Application argocd/a, but Radar can't read its status."],
-    ['remote', "This resource's label names Application argocd/a, but Radar can't confirm it deploys to this cluster."],
+    ['unreadable', "This resource's label names Application argocd/a, but KubeAtlas can't read its status."],
+    ['remote', "This resource's label names Application argocd/a, but KubeAtlas can't confirm it deploys to this cluster."],
     ['missing', "This resource's label names Application argocd/a, but there's no such Application here."],
     ['withheld', "This resource's label names Application argocd/a, but you can't view it."],
-    ['unresolved', "This resource's label names Application argocd/a, but Radar found no Application of that name listing it; it may be managed from another cluster."],
-    ['unchecked', "This resource's label names Application argocd/a, but Radar couldn't check its status."],
+    ['unresolved', "This resource's label names Application argocd/a, but KubeAtlas found no Application of that name listing it; it may be managed from another cluster."],
+    ['unchecked', "This resource's label names Application argocd/a, but KubeAtlas couldn't check its status."],
   ] as const)('claimed explains %s', (check, reason) => {
     const html = render({ state: 'claimed', lead: a, direct: { object, claims: [{ ...claim, check }] } })
     expect(html).toContain('Tracked by')
@@ -98,7 +98,7 @@ describe('manager answer chip wording', () => {
   })
   it("says up front that several claims aren't confirmed, then why each", () => {
     const html = render({ state: 'claimed', direct: { object, claims: [claim, { ...claim, manager: b, source: 'argo-tracking-id' }] } })
-    expect(html).toContain("labels or annotations name Application argocd/a and Application argocd/b; Radar hasn't confirmed they manage it")
+    expect(html).toContain("labels or annotations name Application argocd/a and Application argocd/b; KubeAtlas hasn't confirmed they manage it")
     expect(html).toContain("Application argocd/b: its status doesn't list this resource.")
   })
   // A claim the walk passed shows even when no ancestor answered.

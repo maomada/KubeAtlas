@@ -132,7 +132,7 @@ func TestStampInClusterProbes_CrossNSResultSkipsSubjectNSTwin(t *testing.T) {
 // RBAC decides who may run the test. A Cloud-role refusal here would block a
 // viewer whose IdP group grants pod create in the namespace.
 func TestTraceInClusterNotGatedOnCloudRole(t *testing.T) {
-	for _, tier := range []string{"cloud:viewer", "radar:viewer"} {
+	for _, tier := range []string{"cloud:viewer", "kubeatlas:viewer"} {
 		t.Run(tier, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/trace/Service/prod/web/in-cluster", strings.NewReader(`{}`))
 			rctx := chi.NewRouteContext()
@@ -158,7 +158,7 @@ func TestTraceInClusterNotGatedOnCloudRole(t *testing.T) {
 func TestTraceInClusterDoesNotLeakExistenceAcrossNamespaces(t *testing.T) {
 	s := newTestServer(t)
 	s.permCache = auth.NewPermissionCache()
-	s.permCache.Set("u@example.com", []string{"radar:member"}, &auth.UserPermissions{AllowedNamespaces: []string{"ns-a"}})
+	s.permCache.Set("u@example.com", []string{"kubeatlas:member"}, &auth.UserPermissions{AllowedNamespaces: []string{"ns-a"}})
 
 	req := httptest.NewRequest(http.MethodPost, "/api/trace/Service/ns-b/secret-svc/in-cluster", strings.NewReader(`{}`))
 	rctx := chi.NewRouteContext()
@@ -166,7 +166,7 @@ func TestTraceInClusterDoesNotLeakExistenceAcrossNamespaces(t *testing.T) {
 	rctx.URLParams.Add("namespace", "ns-b")
 	rctx.URLParams.Add("name", "secret-svc")
 	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
-	req = req.WithContext(auth.ContextWithUser(req.Context(), userWithGroups("radar:member")))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), userWithGroups("kubeatlas:member")))
 	rec := httptest.NewRecorder()
 
 	s.handleTraceInCluster(rec, req)

@@ -4,12 +4,12 @@
 # detail page (separate from individual Applications).
 #
 # Generated Applications take the name pattern "set-{{name}}" and land
-# in the demo-set namespace, sharing the radar-demo AppProject for
+# in the demo-set namespace, sharing the kubeatlas-demo AppProject for
 # scoping consistency.
 apiVersion: argoproj.io/v1alpha1
 kind: ApplicationSet
 metadata:
-  name: radar-demo-set
+  name: kubeatlas-demo-set
   namespace: argocd
 spec:
   generators:
@@ -27,7 +27,7 @@ spec:
       finalizers:
         - resources-finalizer.argocd.argoproj.io
     spec:
-      project: radar-demo
+      project: kubeatlas-demo
       source:
         repoURL: https://github.com/argoproj/argocd-example-apps
         targetRevision: HEAD

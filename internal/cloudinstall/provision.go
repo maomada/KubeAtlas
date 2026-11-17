@@ -18,11 +18,11 @@ import (
 	"github.com/maomada/KubeAtlas/internal/helm"
 )
 
-// Provision installs the Radar chart into a cluster with Cloud mode enabled, so
-// the in-cluster Radar comes up already connected to the hub with full per-user
+// Provision installs the KubeAtlas chart into a cluster with Cloud mode enabled, so
+// the in-cluster KubeAtlas comes up already connected to the hub with full per-user
 // RBAC (impersonation). It runs as the caller's own kube identity — the only
 // credential that can legitimately provision the impersonation RBAC (see
-// preflight.go). This backs the local `radar cloud install` driver.
+// preflight.go). This backs the local `kubeatlas cloud install` driver.
 //
 // The Cloud token is delivered via a pre-created Secret (referenced through
 // cloud.existingSecret), NOT inlined into the Deployment manifest — matching the
@@ -30,22 +30,22 @@ import (
 
 const (
 	// DefaultInstallNamespace / DefaultReleaseName match the install wizard's
-	// `-n radar` + release `radar` so a driver install and a wizard install are
+	// `-n kubeatlas` + release `kubeatlas` so a driver install and a wizard install are
 	// the same object.
-	DefaultInstallNamespace = "radar"
-	DefaultReleaseName      = "radar"
+	DefaultInstallNamespace = "kubeatlas"
+	DefaultReleaseName      = "kubeatlas"
 	// CloudTokenSecretName is the Secret the chart reads the token from via
 	// cloud.existingSecret; cloudTokenSecretKey is its data key.
-	CloudTokenSecretName = "radar-cloud-config"
+	CloudTokenSecretName = "kubeatlas-cloud-config"
 	cloudTokenSecretKey  = "token"
-	chartName            = "radar"
+	chartName            = "kubeatlas"
 	// MinimumCloudChartVersion is the first chart that turns Cloud's forwarded
 	// identity into enforced Kubernetes impersonation RBAC.
 	MinimumCloudChartVersion = "1.5.4"
 
 	preflightCloudURL  = "wss://preflight.invalid/agent"
 	preflightClusterID = "preflight-cluster-id"
-	secretAttemptKey   = "radarhq.io/cloud-install-attempt"
+	secretAttemptKey   = "kubeatlas.io/cloud-install-attempt"
 	secretCleanupLimit = 10 * time.Second
 )
 
@@ -276,7 +276,7 @@ type TokenSecretExistsError struct {
 	ResourceVersion string
 }
 
-// ExistingReleaseIncompatibleError reports an existing Radar configuration
+// ExistingReleaseIncompatibleError reports an existing KubeAtlas configuration
 // that Cloud adoption cannot safely reinterpret automatically.
 type ExistingReleaseIncompatibleError struct {
 	Namespace string
@@ -367,7 +367,7 @@ func Prepare(ctx context.Context, hc *helm.Client, kc kubernetes.Interface, cfg 
 		Version:     cfg.ChartVersion,
 		Repository:  repository,
 		// ProvisionPrepared creates the namespace first because the token
-		// Secret must exist before Helm creates the Radar Deployment. Leaving
+		// Secret must exist before Helm creates the KubeAtlas Deployment. Leaving
 		// Helm's duplicate CreateNamespace mutation disabled keeps the prepared
 		// permission plan identical to the real install.
 		CreateNamespace: false,
@@ -503,7 +503,7 @@ func cloudInstallValues(cloudURL, clusterID string, disableSelfUpgrade bool) map
 // cloudAdoptionValues preserves an existing release's values and overlays only
 // the Cloud connection plus explicitly consented capability changes. image.tag
 // is cleared inside helm.PreparedUpgrade so the selected chart's AppVersion is
-// always the resulting Radar version.
+// always the resulting KubeAtlas version.
 func cloudAdoptionValues(cloudURL, clusterID string, enableCloudFeatures, disableSelfUpgrade bool) map[string]any {
 	rbac := map[string]any{"selfUpgrade": !disableSelfUpgrade}
 	if enableCloudFeatures {

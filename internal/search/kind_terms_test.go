@@ -110,7 +110,7 @@ func TestSearch_IngressClassIsGatedAsClusterScoped(t *testing.T) {
 }
 
 func TestSearch_ReportsKindsItCouldNotAnswerFor(t *testing.T) {
-	t.Run("a kind Radar reads directly", func(t *testing.T) {
+	t.Run("a kind KubeAtlas reads directly", func(t *testing.T) {
 		// Endpoints, EndpointSlices and Leases are read straight from the API,
 		// never watched, so search can't cover them; list_resources can.
 		gvr := schema.GroupVersionResource{Group: "coordination.k8s.io", Version: "v1", Resource: "leases"}

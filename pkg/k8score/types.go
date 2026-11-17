@@ -1,5 +1,5 @@
 // Package k8score provides a shared Kubernetes resource caching layer built on
-// SharedInformers. It is designed to be imported by both Radar (the Explorer
+// SharedInformers. It is designed to be imported by both KubeAtlas (the Explorer
 // desktop app) and skyhook-connector (the in-cluster agent), extracting the
 // common informer setup, transform, lister, and change-notification logic.
 //
@@ -196,7 +196,7 @@ type CacheConfig struct {
 	// SuppressInitialAdds, when true, suppresses all "add" operations
 	// during the initial sync phase. The OnChange callback will not be
 	// called for adds until IsSyncComplete() returns true.
-	// In Radar mode this is false (Radar's callback decides per-add).
+	// In KubeAtlas mode this is false (KubeAtlas's callback decides per-add).
 	// In connector mode this is true.
 	SuppressInitialAdds bool
 
@@ -320,11 +320,11 @@ type DynamicResourceObservation struct {
 	Namespaces []string                `json:"namespaces,omitempty"`
 	Truncated  bool                    `json:"truncated,omitempty"`  // Incomplete namespace probing, beyond intentional scope limits.
 	ObservedAt *time.Time              `json:"observedAt,omitempty"` // Age of a retained probe decision, not resource freshness.
-	// The two fields below are for Radar's own readers and are not serialized.
-	// UnansweredNamespaces are namespaces where Radar's access check (a
+	// The two fields below are for KubeAtlas's own readers and are not serialized.
+	// UnansweredNamespaces are namespaces where KubeAtlas's access check (a
 	// one-item list it makes before watching a kind there) got no answer:
 	// it timed out, or the client-side rate limiter held it back. They are
-	// neither watched nor known to be outside Radar's access.
+	// neither watched nor known to be outside KubeAtlas's access.
 	UnansweredNamespaces []string `json:"-"`
 	// ProbeRetrying is true while the cache re-checks unanswered access
 	// checks (UnansweredNamespaces, or the whole kind when that is empty)

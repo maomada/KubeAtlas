@@ -30,27 +30,27 @@ Deploy KubeAtlas to your Kubernetes cluster for web-based cluster visualization 
 ### Quick Start
 
 ```bash
-helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas \
-  --version "$VERSION" -n radar --create-namespace
+helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas \
+  --version "$VERSION" -n kubeatlas --create-namespace
 ```
 
 Access via port-forward:
 ```bash
-kubectl port-forward svc/radar 9280:9280 -n radar
+kubectl port-forward svc/kubeatlas 9280:9280 -n kubeatlas
 open http://localhost:9280
 ```
 
 Each install or upgrade prints how to open KubeAtlas for the values you set. To see
-it again, run `helm get notes radar -n radar`.
+it again, run `helm get notes kubeatlas -n kubeatlas`.
 
 ### With Ingress
 
 ```bash
-helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas \
-  --version "$VERSION" -n radar --create-namespace \
+helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas \
+  --version "$VERSION" -n kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
-  --set ingress.hosts[0].host=radar.example.com \
+  --set ingress.hosts[0].host=kubeatlas.example.com \
   --set ingress.hosts[0].paths[0].path=/ \
   --set ingress.hosts[0].paths[0].pathType=Prefix
 ```
@@ -58,15 +58,15 @@ helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas \
 ### With TLS
 
 ```bash
-helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas \
-  --version "$VERSION" -n radar --create-namespace \
+helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas \
+  --version "$VERSION" -n kubeatlas --create-namespace \
   --set ingress.enabled=true \
   --set ingress.className=nginx \
-  --set ingress.hosts[0].host=radar.example.com \
+  --set ingress.hosts[0].host=kubeatlas.example.com \
   --set ingress.hosts[0].paths[0].path=/ \
   --set ingress.hosts[0].paths[0].pathType=Prefix \
-  --set ingress.tls[0].secretName=radar-tls \
-  --set ingress.tls[0].hosts[0]=radar.example.com
+  --set ingress.tls[0].secretName=kubeatlas-tls \
+  --set ingress.tls[0].hosts[0]=kubeatlas.example.com
 ```
 
 ### With Gateway API HTTPRoute
@@ -96,7 +96,7 @@ httpRoute:
         request: 30s
         backendRequest: 20s
       backendRefs:
-        - name: radar
+        - name: kubeatlas
           port: 9280
     - matches:
         - path:
@@ -105,7 +105,7 @@ httpRoute:
       timeouts:
         request: 2m
       backendRefs:
-        - name: radar
+        - name: kubeatlas
           port: 9280
 ```
 
@@ -120,15 +120,15 @@ bound to no Gateway.
 
 ### Cloud (unsupported)
 
-Legacy hosted Radar Cloud connection and installation are unsupported in
+Legacy hosted KubeAtlas Cloud connection and installation are unsupported in
 KubeAtlas. The self-hosted Cloud Hub is a separate service; see the
 [Cloud Hub guide](../../../docs/portal.md).
 
-### Legacy Radar Hub enrollment (unavailable)
+### Legacy KubeAtlas Hub enrollment (unavailable)
 
-KubeAtlas does not support Radar Hub enrollment. The legacy Cloud chart
+KubeAtlas does not support KubeAtlas Hub enrollment. The legacy Cloud chart
 configuration is not a supported deployment path; do not use historical Cloud
-values or instructions from older Radar documentation.
+values or instructions from older KubeAtlas documentation.
 
 ### Legacy Cloud integration-read RBAC (unsupported)
 
@@ -168,7 +168,7 @@ Helm or GitOps.
 
 ### Legacy Cloud background-service RBAC (unsupported)
 
-upstream Cloud's alerts worker and timeline puller read as `radar:system`.
+upstream Cloud's alerts worker and timeline puller read as `kubeatlas:system`.
 `cloud.systemRbac` (default `true`) creates the chart's default read grant:
 a chart-owned role aggregated to match `view`, the cluster-read and
 integration-read add-ons, and cluster-wide `get/list/watch` on Secrets.
@@ -178,13 +178,13 @@ Helm stores releases as Secrets. The grant includes no writes.
 ### Legacy Cloud Diagnose RBAC (unsupported)
 
 Manual Diagnose turns read as the person who started them. upstream Cloud forwards
-that person's identity and groups; `radar:ai:reader` is not involved. MCP clients
+that person's identity and groups; `kubeatlas:ai:reader` is not involved. MCP clients
 also read with the user's own permissions.
 
-Automatic (alert-triggered) Diagnose runs use username `radar:ai:<org>` and
-group `radar:ai:reader` only, a permanent read-only background diagnostic reader.
+Automatic (alert-triggered) Diagnose runs use username `kubeatlas:ai:<org>` and
+group `kubeatlas:ai:reader` only, a permanent read-only background diagnostic reader.
 Never grant this group write permissions; a future write-capable AI identity
-needs a separate opt-in group (e.g. `radar:ai:operator`).
+needs a separate opt-in group (e.g. `kubeatlas:ai:operator`).
 `cloud.aiRbac` (default `true`) creates the chart's default grant: a chart-owned
 role aggregated to match `view` plus the cluster-read and integration-read
 add-ons. With the standard `view` role this grant includes no Kubernetes Secret
@@ -217,12 +217,12 @@ declaratively so it survives pod restarts and needs no interactive Settings past
 
 ```bash
 # A read-only Argo CD account token is enough:
-#   argocd account generate-token --account radar
-kubectl create secret generic radar-argocd-token -n radar \
+#   argocd account generate-token --account kubeatlas
+kubectl create secret generic kubeatlas-argocd-token -n kubeatlas \
   --from-literal=token=$ARGOCD_TOKEN \
   --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" -n radar \
-  --set argocd.existingSecret=radar-argocd-token
+helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" -n kubeatlas \
+  --set argocd.existingSecret=kubeatlas-argocd-token
 ```
 
 Leave `argocd.url` unset to auto-discover the in-cluster `argocd-server`, or set
@@ -242,14 +242,14 @@ Kubecost. Configuring a key disables that bypass. A federated agent-only cluster
 has no local Aggregator, so configure its central endpoint and cluster ID:
 
 ```bash
-kubectl create secret generic radar-kubecost -n radar \
+kubectl create secret generic kubeatlas-kubecost -n kubeatlas \
   --from-literal=api-key="$KUBECOST_API_KEY" \
   --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" -n radar \
+helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" -n kubeatlas \
   --set cost.source=kubecost \
   --set cost.kubecost.url=https://kubecost.example.com/model \
   --set cost.kubecost.clusterId=production-a \
-  --set cost.kubecost.existingSecret=radar-kubecost
+  --set cost.kubecost.existingSecret=kubeatlas-kubecost
 ```
 
 The API key is optional; omit the Secret for an endpoint that intentionally
@@ -267,9 +267,9 @@ trend charts remain unavailable for Kubecost.
 | `image.tag` | Image tag | Chart appVersion |
 | `service.type` | Service type | `ClusterIP` |
 | `service.port` | Service port | `9280` |
-| `basePath` | URL prefix KubeAtlas serves under, e.g. `/radar` for no-strip-prefix subpath ingress | `""` |
+| `basePath` | URL prefix KubeAtlas serves under, e.g. `/kubeatlas` for no-strip-prefix subpath ingress | `""` |
 | `allowedHosts` | Hostnames KubeAtlas answers when `auth.mode` is `none`, besides `localhost`, IP addresses and Kubernetes Service names. `<service>.<namespace>`, `ingress.hosts`, `httpRoute.hostnames` and the hosts of `trustedOrigins` are added automatically; list others, such as a custom cluster domain. `*` turns the check off | `[]` |
-| `trustedOrigins` | Origins besides KubeAtlas's own address that may use KubeAtlas's API, including changes and pod terminals, e.g. `http://radar.internal`. Set only if changes fail with "KubeAtlas refused this request" because a proxy rewrites `Host` | `[]` |
+| `trustedOrigins` | Origins besides KubeAtlas's own address that may use KubeAtlas's API, including changes and pod terminals, e.g. `http://kubeatlas.internal`. Set only if changes fail with "KubeAtlas refused this request" because a proxy rewrites `Host` | `[]` |
 | `debug.image` | Image for ephemeral debug containers and node debug pods. In built-in restricted PodSecurity namespaces, pod debug containers may retry as the target/pod non-root UID, or UID `65532` by default; point at a compatible mirror for air-gapped / private-registry clusters. | `""` (busybox:latest) |
 | `listPageSize` | Paginate the initial LIST of high-cardinality kinds (Pods, ReplicaSets) on very large clusters; `0` = off, try `2000`. Only used when the apiserver lacks WatchList streaming. | `0` |
 | `ingress.enabled` | Enable ingress | `false` |
@@ -348,12 +348,12 @@ Secret in KubeAtlas's namespace containing a PostgreSQL DSN under the key select
 by `timeline.postgres.secretKey`.
 
 ```bash
-kubectl create secret generic radar-postgres -n radar \
-  --from-literal=dsn='postgres://radar:password@postgres.example:5432/radar?sslmode=require' \
+kubectl create secret generic kubeatlas-postgres -n kubeatlas \
+  --from-literal=dsn='postgres://kubeatlas:password@postgres.example:5432/kubeatlas?sslmode=require' \
   --dry-run=client -o yaml | kubectl apply -f -
-helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" -n radar \
+helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" -n kubeatlas \
   --set timeline.storage=postgres \
-  --set timeline.postgres.existingSecret=radar-postgres \
+  --set timeline.postgres.existingSecret=kubeatlas-postgres \
   --set timeline.retention=720h
 ```
 
@@ -408,7 +408,7 @@ Disabled by default for security:
 | Terminal | `rbac.podExec: true` | Shell access to pods |
 | Port Forward | `rbac.portForward: true` | Port forwarding to pods. Also the fallback for traffic sources (Hubble/Caretta) — KubeAtlas dials the relay/metrics Service directly first, so in-cluster installs only need this when a NetworkPolicy or routing blocks KubeAtlas's namespace from reaching the service |
 | Logs | `rbac.podLogs: true` | View pod logs (**enabled by default**) |
-| Helm Write | `rbac.helm: true` | Install/upgrade/rollback/uninstall Helm releases. No-auth installs: grants KubeAtlas's ServiceAccount create/update/patch/delete on all resource types, since Helm runs as it. Under auth or cloud-mode Helm runs as the signed-in user, so the ServiceAccount gets no write grant; instead a split helm add-on ClusterRole is emitted — `radar-helm` (member-safe: CRDs, storage, namespaces) and `radar-helm-admin` (owner-only: RBAC, webhooks, ApiServices) |
+| Helm Write | `rbac.helm: true` | Install/upgrade/rollback/uninstall Helm releases. No-auth installs: grants KubeAtlas's ServiceAccount create/update/patch/delete on all resource types, since Helm runs as it. Under auth or cloud-mode Helm runs as the signed-in user, so the ServiceAccount gets no write grant; instead a split helm add-on ClusterRole is emitted — `kubeatlas-helm` (member-safe: CRDs, storage, namespaces) and `kubeatlas-helm-admin` (owner-only: RBAC, webhooks, ApiServices) |
 | RBAC view | `rbac.viewRBAC: true` | Show ClusterRoles, ClusterRoleBindings, Roles, RoleBindings in the resource browser. Off by default — cache-served reads bypass per-user RBAC, so this exposes the cluster's authorization graph to every authenticated KubeAtlas user. Auto-enabled under auth or cloud mode (every read is re-checked per user there). |
 | Webhooks view | `rbac.viewWebhooks: true` | Show MutatingWebhookConfigurations and ValidatingWebhookConfigurations in the resource browser. Off by default — the configurations reveal which admission controls are enforced (Gatekeeper / Kyverno policies, image scanners, DLP) and where the gaps are, which is recon value for a low-trust viewer. Auto-enabled under auth or cloud mode. |
 | Node runtime evidence | `rbac.viewNodeRuntime: true` | Let upgrade-impact checks inspect kubelet metrics and effective configuration through `nodes/proxy`. Off by default because this exposes node-level runtime and configuration details to anyone who can reach a no-auth KubeAtlas install. Under auth, grant `get` on `nodes/proxy` to each Kubernetes identity that should inspect this evidence. |
@@ -544,8 +544,8 @@ KubeAtlas uses its ServiceAccount permissions to access the Kubernetes API. The 
 ## Uninstalling
 
 ```bash
-helm uninstall radar -n radar
-kubectl delete namespace radar
+helm uninstall kubeatlas -n kubeatlas
+kubectl delete namespace kubeatlas
 ```
 
 ## Self-hosted Hub Agent

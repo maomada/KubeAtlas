@@ -6,7 +6,7 @@ import { Tooltip } from '../ui/Tooltip'
 
 // =============================================================================
 // RollbackDialog — Argo CD Application rollback confirmation. Shared
-// between per-cluster Radar (OSS web/) and Radar Hub's fleet GitOps
+// between per-cluster KubeAtlas (OSS web/) and KubeAtlas Hub's fleet GitOps
 // detail page. Presentational only; caller mints the historyId/revision
 // from the clicked GitOpsHistoryItem and handles the POST to
 // /api/argo/applications/{ns}/{name}/rollback in onConfirm.

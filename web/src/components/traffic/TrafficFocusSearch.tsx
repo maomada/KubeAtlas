@@ -47,7 +47,7 @@ export function TrafficFocusSearch({ endpoints, onFocus, isRateBased, overlayCon
   }, [onFocus, close])
 
   // The view renders one of the two variants at a time, so whichever is shown
-  // owns the shortcut. An embedding host (Radar Hub) binds / to its own search.
+  // owns the shortcut. An embedding host (KubeAtlas Hub) binds / to its own search.
   const { embedded } = useNavCustomization()
   useRegisterShortcut({
     id: 'traffic-focus-search',

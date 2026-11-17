@@ -1,6 +1,6 @@
 // Package traffic provides traffic source detection and flow aggregation.
 // Core types and aggregation logic live in pkg/traffic for reuse by Skyhook.
-// This package re-exports those types and adds Radar-specific manager/lifecycle logic.
+// This package re-exports those types and adds KubeAtlas-specific manager/lifecycle logic.
 package traffic
 
 import (

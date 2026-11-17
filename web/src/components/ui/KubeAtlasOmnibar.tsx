@@ -6,16 +6,16 @@ import { loadRecentResources, recordRecentResource } from '../../hooks/useRecent
 import { useCommandItems, type CommandItemCallbacks } from './command-items'
 import { PENDING_RETRY_BUDGET_MS, PENDING_RETRY_MS, searchCoverageNote } from './searchCoverageNote'
 
-interface RadarOmnibarProps extends CommandItemCallbacks {
+interface KubeAtlasOmnibarProps extends CommandItemCallbacks {
   onOpenResource: (hit: SearchHit) => void
 }
 
 const stillLoading = (data: SearchResult | undefined) => !!data?.coverage?.gaps.some((gap) => gap.code === 'kind_sync_pending')
 
 // KubeAtlas standalone's omnibar: wires the injectable Omnibar to KubeAtlas's own hooks
-// (cluster /api/search, kubeconfig contexts, API discovery, recents). Radar Hub
+// (cluster /api/search, kubeconfig contexts, API discovery, recents). KubeAtlas Hub
 // provides a parallel wrapper over fleet search.
-export const RadarOmnibar = forwardRef<OmnibarHandle, RadarOmnibarProps>(function RadarOmnibar(
+export const KubeAtlasOmnibar = forwardRef<OmnibarHandle, KubeAtlasOmnibarProps>(function KubeAtlasOmnibar(
   { onOpenResource, ...callbacks },
   ref,
 ) {

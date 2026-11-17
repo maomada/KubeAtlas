@@ -509,7 +509,7 @@ func TestProbeCandidatesWithReasons_DeadlineMarksLaunchedProbesAsTransportFailur
 func TestUnreachableErrorsAreOneSentenceAndKeepTheirSentinels(t *testing.T) {
 	for _, err := range []error{
 		errPrometheusUnreachable,
-		unreachableBecause(nil, "Radar found %d services that may be Prometheus but may not port-forward to them (needs create pods/portforward)", 2),
+		unreachableBecause(nil, "KubeAtlas found %d services that may be Prometheus but may not port-forward to them (needs create pods/portforward)", 2),
 	} {
 		if !errors.Is(err, errPrometheusUnreachable) || errors.Is(err, ErrPrometheusNotFound) {
 			t.Errorf("%v must be unreachable without not-found", err)

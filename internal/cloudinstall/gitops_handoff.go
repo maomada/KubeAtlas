@@ -26,7 +26,7 @@ type GitOpsVersionSummary struct {
 }
 
 type GitOpsHandoffConfig struct {
-	Target              RadarTarget
+	Target              KubeAtlasTarget
 	CloudURL            string
 	ClusterID           string
 	Current             GitOpsVersionSummary
@@ -66,7 +66,7 @@ func BuildGitOpsHandoff(cfg GitOpsHandoffConfig) (GitOpsHandoff, error) {
 	if strings.TrimSpace(cfg.TargetVersion.Chart) == "" || strings.TrimSpace(cfg.TargetVersion.App) == "" {
 		return GitOpsHandoff{}, fmt.Errorf("build GitOps handoff: resolved target chart and app are required")
 	}
-	if currentChart := strings.TrimPrefix(strings.TrimSpace(cfg.Current.Chart), "radar-"); currentChart != "" && currentChart != "radar" {
+	if currentChart := strings.TrimPrefix(strings.TrimSpace(cfg.Current.Chart), "kubeatlas-"); currentChart != "" && currentChart != "kubeatlas" {
 		if err := helm.RejectChartDowngrade(currentChart, cfg.TargetVersion.Chart); err != nil {
 			return GitOpsHandoff{}, fmt.Errorf("build GitOps handoff: %w", err)
 		}
@@ -109,7 +109,7 @@ func BuildGitOpsHandoff(cfg GitOpsHandoffConfig) (GitOpsHandoff, error) {
 	return handoff, nil
 }
 
-func verifiedGitOpsController(target RadarTarget) (ControllerCandidate, GitOpsTool, error) {
+func verifiedGitOpsController(target KubeAtlasTarget) (ControllerCandidate, GitOpsTool, error) {
 	if target.Ownership.Classification != OwnershipGitOpsVerified {
 		return ControllerCandidate{}, "", fmt.Errorf(
 			"build GitOps handoff: target ownership is %q, not verified GitOps",
@@ -172,21 +172,21 @@ func renderGitOpsGuidance(handoff GitOpsHandoff) string {
 	switch handoff.Tool {
 	case GitOpsFluxHelmRelease:
 		sourceInstruction = fmt.Sprintf(
-			"Update HelmRelease %s/%s in its source of truth: set the Radar chart target to %s and merge the fragment below under spec.values (or the values source it references).",
+			"Update HelmRelease %s/%s in its source of truth: set the KubeAtlas chart target to %s and merge the fragment below under spec.values (or the values source it references).",
 			handoff.Controller.Namespace,
 			handoff.Controller.Name,
 			handoff.TargetVersion.Chart,
 		)
 	case GitOpsFluxKustomize:
 		sourceInstruction = fmt.Sprintf(
-			"Update the source reconciled by Kustomization %s/%s. Set the Radar chart target to %s and merge the fragment below into its Helm values, or translate it into the rendered manifests if this source commits plain YAML.",
+			"Update the source reconciled by Kustomization %s/%s. Set the KubeAtlas chart target to %s and merge the fragment below into its Helm values, or translate it into the rendered manifests if this source commits plain YAML.",
 			handoff.Controller.Namespace,
 			handoff.Controller.Name,
 			handoff.TargetVersion.Chart,
 		)
 	case GitOpsArgoApplication:
 		sourceInstruction = fmt.Sprintf(
-			"Update the source reconciled by Application %s/%s. Set the Radar chart target to %s and merge the fragment below into its Helm values, or translate it into the Kustomize/plain manifests if this Application does not use Helm.",
+			"Update the source reconciled by Application %s/%s. Set the KubeAtlas chart target to %s and merge the fragment below into its Helm values, or translate it into the Kustomize/plain manifests if this Application does not use Helm.",
 			handoff.Controller.Namespace,
 			handoff.Controller.Name,
 			handoff.TargetVersion.Chart,
@@ -198,18 +198,18 @@ func renderGitOpsGuidance(handoff GitOpsHandoff) string {
 		rbacInstruction = "This fragment explicitly enables the Cloud feature RBAC for Helm, Secrets, terminal, port-forward, and metrics."
 	}
 
-	return fmt.Sprintf(`Radar GitOps handoff
+	return fmt.Sprintf(`KubeAtlas GitOps handoff
 
 Controller: %s %s/%s
-Radar target: %s/%s
+KubeAtlas target: %s/%s
 Chart: %s -> %s
 App: %s -> %s
 
-%s Radar cannot identify the repository file or values path from the live object, so make this change at the controller's actual source of truth rather than editing the live Deployment.
+%s KubeAtlas cannot identify the repository file or values path from the live object, so make this change at the controller's actual source of truth rather than editing the live Deployment.
 
 Merge fragment:
 %s
-image.tag is cleared so the selected chart's stable Radar version runs. If this source commits plain rendered manifests instead of Helm values, preserve the image repository and set the Radar container tag to %s.
+image.tag is cleared so the selected chart's stable KubeAtlas version runs. If this source commits plain rendered manifests instead of Helm values, preserve the image repository and set the KubeAtlas container tag to %s.
 rbac.selfUpgrade is forced off because an in-cluster image patch would drift from Git. %s
 
 Generate the token Secret manifest separately:

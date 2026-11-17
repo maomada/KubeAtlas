@@ -339,19 +339,19 @@ func TestKnownStaticBreakIsMarkedAsConfigDerived(t *testing.T) {
 	}
 }
 
-// Radar-as-a-Pod and a throwaway probe Job are both (in-cluster, data). Keyed
-// on that pair alone, running the Job REPLACED Radar's own observation instead
+// KubeAtlas-as-a-Pod and a throwaway probe Job are both (in-cluster, data). Keyed
+// on that pair alone, running the Job REPLACED KubeAtlas's own observation instead
 // of adding a second one - the stronger, more specific evidence silently
-// overwriting the evidence that came from Radar's real identity.
-func TestMergeVantagesKeepsRadarAndProbeJobApart(t *testing.T) {
-	prior := []VantageResult{{Vantage: "in-cluster", Path: "data", Source: probe.SourceRadar, Outcome: OutcomeVerified}}
+// overwriting the evidence that came from KubeAtlas's real identity.
+func TestMergeVantagesKeepsKubeAtlasAndProbeJobApart(t *testing.T) {
+	prior := []VantageResult{{Vantage: "in-cluster", Path: "data", Source: probe.SourceKubeAtlas, Outcome: OutcomeVerified}}
 	fresh := []VantageResult{{Vantage: "in-cluster", Path: "data", Source: probe.SourceProbeJob, Outcome: OutcomeUnreachable}}
 	got := mergeVantages(prior, fresh)
 	if len(got) != 2 {
-		t.Fatalf("want Radar's own result kept alongside the Job's, got %+v", got)
+		t.Fatalf("want KubeAtlas's own result kept alongside the Job's, got %+v", got)
 	}
-	if got[0].Source != probe.SourceRadar || got[0].Outcome != OutcomeVerified {
-		t.Errorf("Radar's own in-cluster observation was overwritten: %+v", got)
+	if got[0].Source != probe.SourceKubeAtlas || got[0].Outcome != OutcomeVerified {
+		t.Errorf("KubeAtlas's own in-cluster observation was overwritten: %+v", got)
 	}
 }
 
@@ -363,21 +363,21 @@ func TestMergeVantagesStillReplacesTheSameSource(t *testing.T) {
 	}
 }
 
-// An unset Source is Radar's own probe, so a legacy row and a fresh Radar row
+// An unset Source is KubeAtlas's own probe, so a legacy row and a fresh KubeAtlas row
 // must be the same observer rather than accumulating duplicates.
-func TestMergeVantagesTreatsEmptySourceAsRadar(t *testing.T) {
+func TestMergeVantagesTreatsEmptySourceAsKubeAtlas(t *testing.T) {
 	prior := []VantageResult{{Vantage: "local", Path: "data", Outcome: OutcomeUnreachable}}
-	fresh := []VantageResult{{Vantage: "local", Path: "data", Source: probe.SourceRadar, Outcome: OutcomeVerified}}
+	fresh := []VantageResult{{Vantage: "local", Path: "data", Source: probe.SourceKubeAtlas, Outcome: OutcomeVerified}}
 	if got := mergeVantages(prior, fresh); len(got) != 1 || got[0].Outcome != OutcomeVerified {
-		t.Errorf("empty Source must mean radar, not a distinct observer: %+v", got)
+		t.Errorf("empty Source must mean kubeatlas, not a distinct observer: %+v", got)
 	}
 }
 
-func TestPerVantageSplitsRadarFromProbeJob(t *testing.T) {
-	radar := httpProbe(probe.VantageInCluster, probe.PathData, true, "HTTP 200")
+func TestPerVantageSplitsKubeAtlasFromProbeJob(t *testing.T) {
+	kubeatlas := httpProbe(probe.VantageInCluster, probe.PathData, true, "HTTP 200")
 	job := httpProbe(probe.VantageInCluster, probe.PathData, false, "connection refused")
 	job.Source = probe.SourceProbeJob
-	r, _ := routeFromProbes("r", "checkout:80", []probe.Result{radar, job}, false)
+	r, _ := routeFromProbes("r", "checkout:80", []probe.Result{kubeatlas, job}, false)
 	if len(r.ByVantage) != 2 {
 		t.Fatalf("two observers at the same vantage must stay apart: %+v", r.ByVantage)
 	}
@@ -441,8 +441,8 @@ func TestDiagnosisIgnoresBenignRoutesWhenAttributing(t *testing.T) {
 }
 
 // A completed in-cluster run must land in the vantage the reader can actually
-// select. Unstamped results were read as Radar's own, so a successful run put
-// its evidence in an origin the UI filters out when Radar runs on a laptop -
+// select. Unstamped results were read as KubeAtlas's own, so a successful run put
+// its evidence in an origin the UI filters out when KubeAtlas runs on a laptop -
 // and the test appeared to have done nothing at all.
 func TestInClusterResultsLandInTheProbeJobVantage(t *testing.T) {
 	tr := &Trace{
@@ -474,13 +474,13 @@ func TestInClusterResultsLandInTheProbeJobVantage(t *testing.T) {
 	}
 }
 
-// The same borrowing, on the ISSUER axis: Radar's own in-cluster process and a
+// The same borrowing, on the ISSUER axis: KubeAtlas's own in-cluster process and a
 // throwaway probe Job are both in-cluster/data, but a source-scoped
-// NetworkPolicy or mesh policy can admit one and refuse the other - so Radar
+// NetworkPolicy or mesh policy can admit one and refuse the other - so KubeAtlas
 // reaching the Pods directly must never localize a boundary for the JOB's
 // Service failure.
 func TestLocalizeBoundariesWillNotBorrowAnotherSourcesPodEvidence(t *testing.T) {
-	// Radar's own process reached the pods (Source empty = radar).
+	// KubeAtlas's own process reached the pods (Source empty = kubeatlas).
 	tr := serviceTrace("checkout", 80, "8080", podPortProbe(probe.VantageInCluster, probe.PathData, 8080, true))
 	// The probe JOB failed at the Service.
 	tr.Routes = []RouteResult{{
@@ -492,7 +492,7 @@ func TestLocalizeBoundariesWillNotBorrowAnotherSourcesPodEvidence(t *testing.T) 
 	}}
 	localizeBoundaries(tr)
 	if got := tr.Routes[0].ByVantage[0].FailedBoundary; got != "" {
-		t.Errorf("FailedBoundary = %q, want empty - radar's own pod reach must not vouch for the probe Job's journey", got)
+		t.Errorf("FailedBoundary = %q, want empty - kubeatlas's own pod reach must not vouch for the probe Job's journey", got)
 	}
 }
 

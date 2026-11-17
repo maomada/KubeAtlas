@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"io"
 	"net/http"
 	"net/http/httputil"
@@ -350,8 +351,8 @@ func stripPortalProxyHeaders(headers http.Header) {
 			strings.HasPrefix(lower, "x-authenticated-") || strings.HasPrefix(lower, "x-original-") ||
 			lower == "remote-user" || lower == "remote-groups" || lower == "x-user" ||
 			lower == "x-user-id" || lower == "x-groups" || lower == "x-group" ||
-			lower == "x-role" || lower == "x-roles" || lower == "x-radar-user" ||
-			lower == "x-radar-groups" || lower == "x-radar-role" || lower == "x-radar-roles" {
+			compat.IsLegacyIdentityHeader(lower) || lower == "x-role" || lower == "x-roles" || lower == "x-kubeatlas-user" ||
+			lower == "x-kubeatlas-groups" || lower == "x-kubeatlas-role" || lower == "x-kubeatlas-roles" {
 			delete(headers, name)
 		}
 	}

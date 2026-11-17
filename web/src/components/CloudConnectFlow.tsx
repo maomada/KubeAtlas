@@ -699,7 +699,7 @@ function ProgressCard({ status, onStatus }: { status: CloudInstallStatus; onStat
   const cancel = useCancelButton(status, onStatus)
   const steps: Array<{ label: string; state: 'done' | 'active' | 'todo' }> = [
     { label: 'Approved in browser', state: 'done' },
-    { label: `Installing KubeAtlas (namespace ${status.plan?.namespace ?? 'radar'})`, state: provisioning ? 'active' : 'done' },
+    { label: `Installing KubeAtlas (namespace ${status.plan?.namespace ?? 'kubeatlas'})`, state: provisioning ? 'active' : 'done' },
     { label: 'Waiting for KubeAtlas to connect to Cloud', state: provisioning ? 'todo' : 'active' },
   ]
   return (

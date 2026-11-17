@@ -15,7 +15,7 @@ type AgentInfo struct {
 	Path    string `json:"path"`    // resolved executable (PATH, or a well-known install dir)
 	Version string `json:"version"` // best-effort `--version`, "" if it failed
 	Present bool   `json:"present"`
-	// Supported is true when Radar can actually DRIVE this CLI (we parse its
+	// Supported is true when KubeAtlas can actually DRIVE this CLI (we parse its
 	// stream-json). Detected-but-unsupported CLIs are shown so the user knows
 	// they exist, but can't be selected to run an investigation yet.
 	Supported       bool                        `json:"supported"`
@@ -69,7 +69,7 @@ func EffectiveAgent(pick string, agents []AgentInfo) string {
 	return def
 }
 
-// ProfilesFor returns the execution profiles Radar can honestly offer for an
+// ProfilesFor returns the execution profiles KubeAtlas can honestly offer for an
 // agent. Keep this policy beside detection so the API, consent gate, and UI all
 // consume the same source of truth.
 func ProfilesFor(agent string) []ExecutionProfile {
@@ -145,10 +145,10 @@ func isSupportedAgent(name string) bool {
 // install directories.
 //
 // The fallback is what makes detection match what the user sees in their own
-// terminal. Radar is often started where PATH is not the shell's PATH: a systemd
+// terminal. KubeAtlas is often started where PATH is not the shell's PATH: a systemd
 // unit, a Linux .desktop entry, a Windows shortcut. Claude Code's older installer
 // is worse still, leaving the binary in ~/.claude/local behind a shell alias that
-// no PATH can reach at all. Without this, Radar tells a user who has the CLI to go
+// no PATH can reach at all. Without this, KubeAtlas tells a user who has the CLI to go
 // install it. (The desktop app is not in that list on purpose: cmd/desktop/env.go
 // already replaces its PATH with the login shell's before the server boots.)
 func lookupAgent(name string) string {

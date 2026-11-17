@@ -44,7 +44,7 @@ func (t listTarget) scope() resourceapi.Scope {
 }
 
 // coverage is a successful list's coverage: read is the namespaces read, or
-// nil when Radar read the whole scope.
+// nil when KubeAtlas read the whole scope.
 func (t listTarget) coverage(read []string, gaps []resourceapi.Gap) resourceapi.Coverage {
 	gaps = t.placeGaps(append(slices.Clone(t.gaps), gaps...), read)
 	cov := resourceapi.Coverage{Status: resourceapi.CoverageComplete, Scope: t.scope(), NarrowedBy: t.narrowedBy, Gaps: gaps}
@@ -136,13 +136,13 @@ type typedRead struct {
 	// kind still loading elsewhere is read from its namespaces' own stores.
 	wholeKindReady bool
 	gaps           []resourceapi.Gap
-	// collected, when non-nil, is the part of an implicit target Radar
+	// collected, when non-nil, is the part of an implicit target KubeAtlas
 	// collects the kind in: the read was narrowed to it. uncovered is what it
 	// left out of a finite target.
 	collected, uncovered []string
 }
 
-// narrowedByCollection narrows t to what Radar collects of it: collected when
+// narrowedByCollection narrows t to what KubeAtlas collects of it: collected when
 // t is every namespace, else t without uncovered.
 func (t listTarget) narrowedByCollection(collected, uncovered []string) listTarget {
 	t.namespaces = (readplan.CollectionScope{Namespaces: collected, Outside: uncovered}).Narrow(t.namespaces)
@@ -154,7 +154,7 @@ func (t listTarget) narrowedByCollection(collected, uncovered []string) listTarg
 
 // typedReadCoverage assesses what of namespaces (nil: every namespace) a typed
 // kind can be read in now, and why the rest can't. It fails only when nothing
-// can be read. Namespaces Radar doesn't collect are gaps when the request
+// can be read. Namespaces KubeAtlas doesn't collect are gaps when the request
 // named them (explicit); otherwise they narrow the read.
 func typedReadCoverage(cache *k8s.ResourceCache, resource string, namespaces []string, clusterScoped, explicit bool) (typedRead, error) {
 	return typedReadCoverageFrom(cache, cache.PermissionResult(), resource, namespaces, clusterScoped, explicit)
@@ -174,7 +174,7 @@ func typedReadCoverageFrom(cache *k8s.ResourceCache, permissions *k8s.Permission
 		gap := partitionGap(part)
 		if part.Verdict.State == readplan.OutsideCollection {
 			at := 0
-			for at < len(plan.gaps) && plan.gaps[at].Code == readreason.RadarCredentialsRejected {
+			for at < len(plan.gaps) && plan.gaps[at].Code == readreason.KubeAtlasCredentialsRejected {
 				at++
 			}
 			plan.gaps = slices.Insert(plan.gaps, at, gap)
@@ -183,7 +183,7 @@ func typedReadCoverageFrom(cache *k8s.ResourceCache, permissions *k8s.Permission
 		}
 	}
 	if inventory.Collection != nil && len(plan.collected) == 0 {
-		plan.gaps = append(plan.gaps, gapOf(readreason.RadarNamespaceNotCollected, plan.uncovered))
+		plan.gaps = append(plan.gaps, gapOf(readreason.KubeAtlasNamespaceNotCollected, plan.uncovered))
 	}
 	if inventory.CanReadTarget {
 		return plan, nil
@@ -193,21 +193,21 @@ func typedReadCoverageFrom(cache *k8s.ResourceCache, permissions *k8s.Permission
 		codes = append(codes, gap.Code)
 	}
 	code := readreason.Primary(codes)
-	message := fmt.Sprintf("Radar's collector does not cover the requested scope for %s", resource)
+	message := fmt.Sprintf("KubeAtlas's collector does not cover the requested scope for %s", resource)
 	switch code {
-	case readreason.RadarForbidden:
-		message = fmt.Sprintf("Radar's collector cannot list/watch %s", resource)
-	case readreason.RadarKindNotCollected:
-		message = fmt.Sprintf("Radar is not watching %s", resource)
-	case readreason.RadarCredentialsRejected:
-		message = fmt.Sprintf("Kubernetes rejected Radar's collector credentials when it checked its access to %s", resource)
+	case readreason.KubeAtlasForbidden:
+		message = fmt.Sprintf("KubeAtlas's collector cannot list/watch %s", resource)
+	case readreason.KubeAtlasKindNotCollected:
+		message = fmt.Sprintf("KubeAtlas is not watching %s", resource)
+	case readreason.KubeAtlasCredentialsRejected:
+		message = fmt.Sprintf("Kubernetes rejected KubeAtlas's collector credentials when it checked its access to %s", resource)
 		if cache.KindReadinessFor(resource) == k8s.KindUnavailable {
-			message = "Kubernetes rejected Radar's collector credentials"
+			message = "Kubernetes rejected KubeAtlas's collector credentials"
 		}
 	case readreason.KindSyncPending:
 		message = fmt.Sprintf("%s are still loading, please retry shortly", resource)
 	case readreason.KindSyncTimedOut:
-		message = fmt.Sprintf("%s did not finish loading within the sync deadline; Radar keeps trying, so retry later", resource)
+		message = fmt.Sprintf("%s did not finish loading within the sync deadline; KubeAtlas keeps trying, so retry later", resource)
 	}
 	if cache.KindReadinessFor(resource) == k8s.KindUnavailable {
 		plan.gaps = nil
@@ -304,7 +304,7 @@ func inventoryGaps(inventory readplan.Inventory) []resourceapi.Gap {
 		gaps = append(gaps, partitionGap(part))
 	}
 	if c := inventory.Collection; c != nil && len(c.Namespaces) == 0 && len(c.Outside) > 0 {
-		gaps = append(gaps, gapOf(readreason.RadarNamespaceNotCollected, c.Outside))
+		gaps = append(gaps, gapOf(readreason.KubeAtlasNamespaceNotCollected, c.Outside))
 	}
 	return gaps
 }

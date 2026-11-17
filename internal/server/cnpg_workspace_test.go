@@ -529,7 +529,7 @@ func TestCNPGWorkspace_PodEvidenceFollowsPodAccess(t *testing.T) {
 }
 
 // Denied namespaces are named only when the caller supplied the candidate set.
-// For a caller whose scope is "all", the candidates are every namespace Radar
+// For a caller whose scope is "all", the candidates are every namespace KubeAtlas
 // holds, and listing the denied ones would disclose them.
 func TestCNPGWorkspace_DeniedNamespacesNeverComeFromTheServerInventory(t *testing.T) {
 	seedCNPGWorkspace(t, cnpgWorkspaceTestKinds,
@@ -550,7 +550,7 @@ func TestCNPGWorkspace_DeniedNamespacesNeverComeFromTheServerInventory(t *testin
 		t.Errorf("unfiltered: clusters coverage = %+v, want partial", cov)
 	}
 	if len(cov.DeniedNamespaces) != 0 {
-		t.Errorf("unfiltered: deniedNamespaces = %v, want omitted — they came from Radar's namespace inventory", cov.DeniedNamespaces)
+		t.Errorf("unfiltered: deniedNamespaces = %v, want omitted — they came from KubeAtlas's namespace inventory", cov.DeniedNamespaces)
 	}
 	if len(cov.AllowedNamespaces) != 1 || cov.AllowedNamespaces[0] != "default" {
 		t.Errorf("unfiltered: allowedNamespaces = %v, want [default] — without it the reader cannot tell which namespaces were read", cov.AllowedNamespaces)

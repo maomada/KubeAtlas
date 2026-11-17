@@ -2,14 +2,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { MemoryRouter } from 'react-router-dom'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { CNPGClusterLogs } from './CNPGClusterLogs'
-import { guardRadarFeature, radarFeatureSupport } from '../../api/radarFeatures'
+import { guardKubeAtlasFeature, kubeatlasFeatureSupport } from '../../api/kubeatlasFeatures'
 import { fetchJSON } from '../../api/client'
 
 const state = vi.hoisted(() => ({ props: undefined as any, capabilities: { features: { resourceIssues: true } } as any, capabilitiesPending: false, fetchStatus: 'idle' as 'idle' | 'fetching' | 'paused', interval: null as null | { since: string; until: string; clear: () => void } }))
 vi.mock('@maomada/k8s-ui', async (original) => ({ ...await original<typeof import('@maomada/k8s-ui')>(), WorkloadLogsViewer: (props: any) => { state.props = props; return <div>logs</div> } }))
-vi.mock('../../api/client', () => ({ fetchJSON: vi.fn(async () => ({ pods: [], logs: [] })), useCapabilities: () => ({ isPending: state.capabilitiesPending, isFetching: state.fetchStatus === 'fetching', fetchStatus: state.fetchStatus, refetch: vi.fn() }), useRadarFeature: () => {
-  const support = radarFeatureSupport('cnpgWorkspace', state.capabilities, 'v1.16.0')
-  return { support, guard: (fn: () => Promise<unknown>) => guardRadarFeature('cnpgWorkspace', support, {}, fn) }
+vi.mock('../../api/client', () => ({ fetchJSON: vi.fn(async () => ({ pods: [], logs: [] })), useCapabilities: () => ({ isPending: state.capabilitiesPending, isFetching: state.fetchStatus === 'fetching', fetchStatus: state.fetchStatus, refetch: vi.fn() }), useKubeAtlasFeature: () => {
+  const support = kubeatlasFeatureSupport('cnpgWorkspace', state.capabilities, 'v1.16.0')
+  return { support, guard: (fn: () => Promise<unknown>) => guardKubeAtlasFeature('cnpgWorkspace', support, {}, fn) }
 } }))
 vi.mock('../../hooks/useDesktopDownload', () => ({ useDesktopDownload: () => undefined }))
 vi.mock('../../context/ThemeContext', () => ({ useTheme: () => ({ theme: 'light' }) }))
@@ -40,10 +40,10 @@ it('uses the old postgres default for empty and all selectors in both snapshot a
   for (const container of [undefined, 'all']) {
     await state.props.fetchAll({ container, tailLines: 40, sinceSeconds: 60 })
     const path = vi.mocked(fetchJSON).mock.lastCall![0]
-    expect(Object.fromEntries(new URL(path, 'http://radar.test').searchParams)).toEqual({ tailLines: '40', sinceSeconds: '60' })
+    expect(Object.fromEntries(new URL(path, 'http://kubeatlas.test').searchParams)).toEqual({ tailLines: '40', sinceSeconds: '60' })
     state.props.createStream({ container, sinceSeconds: 60 })
     const streamPath = eventSource.mock.lastCall![0]
-    expect(Object.fromEntries(new URL(streamPath, 'http://radar.test').searchParams)).toEqual({ tailLines: '50', sinceSeconds: '60' })
+    expect(Object.fromEntries(new URL(streamPath, 'http://kubeatlas.test').searchParams)).toEqual({ tailLines: '50', sinceSeconds: '60' })
   }
 })
 it('retains exact plugin-container selection supported by the old producer', async () => {
@@ -91,7 +91,7 @@ it('uses the advertised interval contract without tailing or streaming', async (
   mount()
   await state.props.fetchAll({ tailLines: 40, sinceSeconds: 60 })
   const path = vi.mocked(fetchJSON).mock.calls[0][0]
-  const params = new URL(path, 'http://radar.test').searchParams
+  const params = new URL(path, 'http://kubeatlas.test').searchParams
   expect(Object.fromEntries(params)).toEqual({ sinceTime: state.interval.since, untilTime: state.interval.until, container: 'all' })
   expect(state.props.createStream).toBeUndefined()
 })

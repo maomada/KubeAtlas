@@ -16,7 +16,7 @@ import (
 )
 
 // TestRunWorkDirUnderPrivateRoot pins that per-run scratch dirs live UNDER the
-// manager's private root (so they can't collide across Radar restarts / co-running
+// manager's private root (so they can't collide across KubeAtlas restarts / co-running
 // processes or sit at a predictable /tmp path), and that a missing root degrades to
 // "" rather than a guessable path.
 func TestRunWorkDirUnderPrivateRoot(t *testing.T) {
@@ -767,7 +767,7 @@ func TestApplyDoesNotVerifyAgainstDifferentClusterContext(t *testing.T) {
 
 func TestApplyMutationTrackerTreatsMixedOrUnresolvedWritesAsUnknown(t *testing.T) {
 	var mixed applyMutationTracker
-	mixed.observe(StreamEvent{Type: "step", Step: &StepInfo{ID: "ok", Tool: "radar.manage_workload", Status: "running"}})
+	mixed.observe(StreamEvent{Type: "step", Step: &StepInfo{ID: "ok", Tool: "kubeatlas.manage_workload", Status: "running"}})
 	mixed.observe(StreamEvent{Type: "step", Step: &StepInfo{ID: "ok", Status: "done", IsError: boolPointer(false), Result: `{"status":"ok"}`}})
 	mixed.observe(StreamEvent{Type: "step", Step: &StepInfo{ID: "bad", Tool: "manage_workload", Status: "running"}})
 	mixed.observe(StreamEvent{Type: "step", Step: &StepInfo{ID: "bad", Status: "done", IsError: boolPointer(true), Result: "write failed after starting"}})
@@ -946,7 +946,7 @@ func TestWriteProducerEvidenceClassification(t *testing.T) {
 }
 
 func TestManageRolloutIsTrackedAsAWriteAcrossAgentNameShapes(t *testing.T) {
-	for _, tool := range []string{"manage_rollout", "radar.manage_rollout", "mcp__radar__manage_rollout"} {
+	for _, tool := range []string{"manage_rollout", "kubeatlas.manage_rollout", "mcp__kubeatlas__manage_rollout"} {
 		t.Run(tool, func(t *testing.T) {
 			var tracker applyMutationTracker
 			tracker.observe(StreamEvent{Type: "step", Step: &StepInfo{

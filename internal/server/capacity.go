@@ -380,7 +380,7 @@ func (s *Server) requireNodeVisibility(w http.ResponseWriter, r *http.Request) b
 // the wrong place.
 func capacityNodePoolDenialMessage(reasonCode string) string {
 	if reasonCode == "nodepools_watch_denied" {
-		return "NodePools could not be watched (the CRD exists, but starting its watch failed — check the Radar service account's watch permission on nodepools)"
+		return "NodePools could not be watched (the CRD exists, but starting its watch failed — check the KubeAtlas service account's watch permission on nodepools)"
 	}
 	return "no access to NodePools (cluster-scoped resource requires explicit RBAC)"
 }
@@ -761,9 +761,9 @@ func (s *Server) loadCapacityPods(r *http.Request, meta *capacityapi.ResponseMet
 			if len(assessment.Uncovered) > 0 {
 				coverage.Namespaces = readscope.SelectNamespaces(cache.KindNamespaces("pods"), namespaces)
 				coverage.ReasonCode = "pod_cache_scope_partial"
-				coverage.Reason = "Pods are still loading; Radar does not cover every requested namespace"
+				coverage.Reason = "Pods are still loading; KubeAtlas does not cover every requested namespace"
 				if assessment.Readiness == k8s.KindFailed {
-					coverage.Reason = "Pods failed to load; Radar does not cover every requested namespace"
+					coverage.Reason = "Pods failed to load; KubeAtlas does not cover every requested namespace"
 				}
 			}
 		} else if !assessment.AllNamespaces && assessment.Readiness != k8s.KindUnavailable {

@@ -14,7 +14,7 @@ import (
 // Per-user authorization on /api/policy/policies/{policy}.
 //
 // The gate this exercises is invisible without auth: canRead returns true for
-// every tuple when there is no authenticated user, so a local Radar — and every
+// every tuple when there is no authenticated user, so a local KubeAtlas — and every
 // manual check against one — runs the endpoint with authorization switched off
 // entirely. These tests are the only place the withholding logic executes with
 // a real user, which is how a customer runs it.

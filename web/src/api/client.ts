@@ -1,3 +1,5 @@
+import { readProductStorage, removeProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
+import { readProductHeader } from '@maomada/k8s-ui/utils/legacy-brand'
 import { createListRefetchInterval, normalizeResourceList, type ResourceListBody, type ResourceListResult } from './resourceLists'
 import type { CascadeDetail } from '@maomada/k8s-ui/components/ui/ForceDeleteConfirmDialog'
 import { canonicalResourceGroup } from '@maomada/k8s-ui/utils/api-resources'
@@ -70,13 +72,13 @@ import type { GitOpsOperationResponse } from '../types/gitops'
 import { apiUrl, getApiBase, getAuthHeaders, getCredentialsMode, getBasename, routePath, stripBasename } from './config'
 import { httpStatusMessage, markShownInline, readErrorBody, readErrorResponse } from './httpErrors'
 import {
-  RadarFeatureUnsupportedError,
-  guardRadarFeature,
-  radarFeatureSupport,
-  shouldRetryRadarQuery,
-  type RadarFeature,
-} from './radarFeatures'
-import { useRadarUpgradeHost } from '../context/RadarUpgradeHost'
+  KubeAtlasFeatureUnsupportedError,
+  guardKubeAtlasFeature,
+  kubeatlasFeatureSupport,
+  shouldRetryKubeAtlasQuery,
+  type KubeAtlasFeature,
+} from './kubeatlasFeatures'
+import { useKubeAtlasUpgradeHost } from '../context/KubeAtlasUpgradeHost'
 import { apiVersionToGroup } from '../utils/navigation'
 import type { DeploymentMode } from '../types'
 
@@ -96,7 +98,7 @@ const APPLICATIONS_REFRESH_INTERVAL_MS = 60_000;
 // Throttle window for the OIDC login redirect. On first paint (and again on
 // mid-session session expiry) many protected /api/* requests can 401 in the same
 // tick; without a guard each 401 independently navigates to /auth/login, and each
-// /auth/login regenerates the single radar_oidc_state cookie — so callbacks from
+// /auth/login regenerates the single kubeatlas_oidc_state cookie — so callbacks from
 // earlier redirects fail state validation (or get their token exchange canceled)
 // and the login loops until one happens to win. A short time gate collapses the
 // burst to one navigation while still self-recovering if that navigation is
@@ -104,7 +106,7 @@ const APPLICATIONS_REFRESH_INTERVAL_MS = 60_000;
 // bfcache, so a plain latch would stick). Mirrors the proxy branch's reload
 // throttle below.
 const OIDC_LOGIN_REDIRECT_THROTTLE_MS = 5000;
-const OIDC_LOGIN_REDIRECT_KEY = "radar_oidc_login_redirect";
+const OIDC_LOGIN_REDIRECT_KEY = "kubeatlas_oidc_login_redirect";
 
 // In-memory fallback for when sessionStorage is unavailable (private mode,
 // sandboxed/blocked storage). A timestamp, not a boolean latch, so it still
@@ -116,7 +118,7 @@ let lastOidcLoginRedirectAt = 0;
 // redirecting and strand the user on a "not signed in" screen.
 function lastOidcLoginRedirect(): number {
   try {
-    const stored = sessionStorage.getItem(OIDC_LOGIN_REDIRECT_KEY);
+    const stored = readProductStorage(sessionStorage, OIDC_LOGIN_REDIRECT_KEY);
     if (stored) {
       const parsed = parseInt(stored);
       if (!Number.isNaN(parsed)) return parsed;
@@ -138,7 +140,7 @@ function markOidcLoginRedirect(now: number): void {
 
 // Wrapper around fetch that always includes credentials (for session cookies)
 // and handles 401 responses globally. Merges caller-provided headers with
-// auth headers from the config module so library consumers (Radar Hub) can
+// auth headers from the config module so library consumers (KubeAtlas Hub) can
 // inject Authorization bearer tokens without each call site knowing.
 export function apiFetch(
   input: RequestInfo | URL,
@@ -164,7 +166,7 @@ export function apiFetch(
       // Editor draft is auto-saved by EditableYamlView via sessionStorage.
       try {
         sessionStorage.setItem(
-          'radar_return_path',
+          'kubeatlas_return_path',
           stripBasename(window.location.pathname) + window.location.search,
         );
       } catch {
@@ -181,7 +183,7 @@ export function apiFetch(
 
       if (authMode === "oidc") {
         // Only the first 401 in a burst navigates; concurrent 401s within the
-        // window are suppressed so they don't rotate radar_oidc_state. The gate
+        // window are suppressed so they don't rotate kubeatlas_oidc_state. The gate
         // is time-based, so a canceled navigation or bfcache Back re-auths on the
         // next 401 instead of stalling until a hard reload.
         const now = Date.now();
@@ -193,11 +195,11 @@ export function apiFetch(
         // Proxy mode or unknown — reload is safe for both (proxy re-injects headers,
         // unknown avoids redirecting to /auth/login which doesn't exist in proxy mode).
         // Guard against infinite reload if proxy is misconfigured and keeps returning 401.
-        const lastReload = sessionStorage.getItem("radar_proxy_reload");
+        const lastReload = readProductStorage(sessionStorage, "kubeatlas_proxy_reload");
         const now = Date.now();
         if (!lastReload || now - parseInt(lastReload) > 5000) {
           try {
-            sessionStorage.setItem("radar_proxy_reload", String(now));
+            sessionStorage.setItem("kubeatlas_proxy_reload", String(now));
           } catch {
             /* best-effort */
           }
@@ -224,7 +226,7 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
     this.status = status;
-    this.data = data;
+    this.data = data && typeof data.error_code === 'string' ? { ...data, error_code: canonicalReadCode(data.error_code) } : data;
     this.unknownRoute = options?.unknownRoute ?? false;
   }
 }
@@ -258,7 +260,7 @@ export function shouldRetryCapacityQuery(
   failureCount: number,
   error: unknown,
 ): boolean {
-  if (error instanceof RadarFeatureUnsupportedError) return false;
+  if (error instanceof KubeAtlasFeatureUnsupportedError) return false;
   if (
     error instanceof ApiError &&
     (error.status === 400 || error.status === 403 || error.status === 404)
@@ -297,7 +299,7 @@ export function isStillLoadingError(error: unknown): boolean {
 
 // isKindSyncFailed matches a kind that missed its sync deadline. KubeAtlas keeps
 // loading it, so a later reload may succeed, but retrying at once won't —
-// show the error. Older Radars spelled the code kind_sync_failed.
+// show the error. Older KubeAtlas instances spelled the code kind_sync_failed.
 export function isKindSyncFailed(error: unknown): boolean {
   return (
     error instanceof ApiError &&
@@ -724,7 +726,7 @@ export function useUpgradeReadiness(target?: string) {
   // refetches read that memo; only the explicit manual refresh passes
   // refresh=true to force a fresh live scan (e.g. after fixing a finding).
   const forceRefresh = useRef(false)
-  const { guard, gatedKey } = useRadarFeature('upgradeReadiness')
+  const { guard, gatedKey } = useKubeAtlasFeature('upgradeReadiness')
   const query = useQuery<UpgradeReadinessResponse>({
     queryKey: ['upgrade-readiness', target ?? 'next', ...gatedKey],
     queryFn: ({ signal }) => {
@@ -735,7 +737,7 @@ export function useUpgradeReadiness(target?: string) {
       const qs = params.toString()
       return guard(() => fetchJSON<UpgradeReadinessResponse>(`/upgrade-readiness${qs ? `?${qs}` : ''}`, signal))
     },
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
     staleTime: 30000,
     placeholderData: (previous) => previous,
   })
@@ -746,7 +748,7 @@ export function useUpgradeReadiness(target?: string) {
   return { ...query, refreshScan }
 }
 
-// Live cluster Issues — the grouped triage queue (radar's /api/issues =
+// Live cluster Issues — the grouped triage queue (kubeatlas's /api/issues =
 // internal/issues.Compose+Classify+Group). Single-cluster here; the Hub fleet
 // view fans the same shape across clusters. Do not carry old data across query
 // keys: issues are scope-sensitive, so namespace changes must not show the
@@ -776,7 +778,7 @@ export interface IssuesResponse {
   // Issue sources KubeAtlas couldn't check, so their issues may be missing: an
   // empty list is not an all-clear. A newer KubeAtlas may send sources and
   // reasons this version doesn't know. Absent when every source was checked,
-  // and from older Radars.
+  // and from older KubeAtlas instances.
   unchecked_sources?: UncheckedSource[];
 }
 
@@ -843,11 +845,11 @@ export function useResourceIssues(
   const qs = params.toString();
   // An older KubeAtlas without the endpoint settles as unsupported, so the
   // renderers fall back to their own status-derived problem banners.
-  const { guard, gatedKey } = useRadarFeature("resourceIssues");
+  const { guard, gatedKey } = useKubeAtlasFeature("resourceIssues");
   return useQuery<Issue[]>({
     queryKey: ["issues", "resource", kind, group ?? "", namespace, name, ...gatedKey],
     queryFn: () => guard(() => fetchJSON<Issue[]>(`${path}${qs ? `?${qs}` : ""}`)),
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
     // No refetchInterval: a drawer doesn't need to poll; staleTime keeps it fresh
     // on reopen without re-running an uncapped Compose every 30s.
     staleTime: 30000,
@@ -882,7 +884,7 @@ export function useSubjectIssues(
   enabled: boolean,
 ) {
   const capabilities = useCapabilities();
-  const { support, gatedKey, guard } = useRadarFeature('resourceIssueCoverage');
+  const { support, gatedKey, guard } = useKubeAtlasFeature('resourceIssueCoverage');
   const pathNs = subject?.namespace ? encodeURIComponent(subject.namespace) : "_";
   const params = new URLSearchParams({ coverage: "1" });
   if (subject?.group) params.set("group", subject.group);
@@ -1525,7 +1527,7 @@ export function capacityRefetchInterval(
     // polling there races membership changes and yanks them back to page 1.
     if (cursor) return false;
     if (!enabled) return false;
-    if (query.state.error instanceof RadarFeatureUnsupportedError) return false;
+    if (query.state.error instanceof KubeAtlasFeatureUnsupportedError) return false;
     // Syncing is a transient bootstrap state (context switch, informer
     // startup). At the normal cadence the syncing screen can sit for a full
     // interval looking stuck — poll fast until the server settles.
@@ -1537,7 +1539,7 @@ export function capacityRefetchInterval(
 
 export function useCapacityOverview(options?: CapacityQueryOptions) {
   const enabled = options?.enabled ?? true;
-  const { guard, gatedKey } = useRadarFeature("capacity");
+  const { guard, gatedKey } = useKubeAtlasFeature("capacity");
   return useQuery<CapacityOverviewResponse>({
     queryKey: ["capacity", "overview", ...gatedKey],
     queryFn: ({ signal }) =>
@@ -1559,7 +1561,7 @@ export function useCapacityPools(options?: CapacityPageQueryOptions) {
   const limit = options?.limit;
   const cursor = options?.cursor;
   const queryKey = ["capacity", "pools", limit, cursor];
-  const { guard, gatedKey } = useRadarFeature("capacity");
+  const { guard, gatedKey } = useKubeAtlasFeature("capacity");
   return useQuery<CapacityPoolListResponse>({
     queryKey: [...queryKey, ...gatedKey],
     queryFn: ({ signal }) =>
@@ -1585,7 +1587,7 @@ export function useCapacityPoolDetail(
   options?: CapacityQueryOptions,
 ) {
   const enabled = Boolean(name) && (options?.enabled ?? true);
-  const { guard, gatedKey } = useRadarFeature("capacity");
+  const { guard, gatedKey } = useKubeAtlasFeature("capacity");
   return useQuery<CapacityPoolDetailResponse>({
     queryKey: ["capacity", "pool", name, ...gatedKey],
     queryFn: ({ signal }) =>
@@ -1617,7 +1619,7 @@ export function useCapacityPoolMembers(
   const pageQuery = capacityPageQuery(options);
   const separator = pageQuery ? "&" : "?";
   const queryKey = ["capacity", "pool", name, "members", type, limit, cursor];
-  const { guard, gatedKey } = useRadarFeature("capacity");
+  const { guard, gatedKey } = useKubeAtlasFeature("capacity");
   return useQuery<CapacityMemberListResponse>({
     queryKey: [...queryKey, ...gatedKey],
     queryFn: ({ signal }) =>
@@ -1675,7 +1677,7 @@ export function useCapacityDemand(options?: CapacityDemandQueryOptions) {
     options?.owner,
     options?.pod,
   ];
-  const { guard, gatedKey } = useRadarFeature("capacity");
+  const { guard, gatedKey } = useKubeAtlasFeature("capacity");
   return useQuery<CapacityDemandResponse>({
     queryKey: [...queryKey, ...gatedKey],
     queryFn: ({ signal }) =>
@@ -1723,7 +1725,7 @@ export function useCapacityActivity(options?: CapacityActivityQueryOptions) {
     options?.node,
     options?.type,
   ];
-  const { guard, gatedKey } = useRadarFeature("capacity");
+  const { guard, gatedKey } = useKubeAtlasFeature("capacity");
   return useQuery<CapacityActivityResponse>({
     queryKey: [...queryKey, ...gatedKey],
     queryFn: ({ signal }) =>
@@ -1803,7 +1805,7 @@ export interface VersionInfo {
   error?: string;
 }
 
-const UPDATE_CHECK_STORAGE_KEY_PREFIX = 'radar-update-check';
+const UPDATE_CHECK_STORAGE_KEY_PREFIX = 'kubeatlas-update-check';
 
 export function utcDay(now: Date): string {
   return now.toISOString().slice(0, 10)
@@ -1873,9 +1875,9 @@ export function useVersionCheck() {
 
 /**
  * Guards a fetch for an endpoint the connected KubeAtlas may predate (see
- * radarFeatures.ts). A KubeAtlas known to be too old is never asked; one whose
+ * kubeatlasFeatures.ts). A KubeAtlas known to be too old is never asked; one whose
  * version is unknown is asked, and chi's unknown-route 404 is read as the same
- * answer. Either way the caller gets a RadarFeatureUnsupportedError, which the
+ * answer. Either way the caller gets a KubeAtlasFeatureUnsupportedError, which the
  * sections render as an upgrade note instead of an error.
  *
  * Nothing waits on /version-check: an agent that advertises the feature flag
@@ -1886,19 +1888,19 @@ export function useVersionCheck() {
  * the key change is what makes the query fetch for real; ungated keys are
  * unchanged.
  */
-export function useRadarFeature(feature: RadarFeature) {
+export function useKubeAtlasFeature(feature: KubeAtlasFeature) {
   const { data: capabilities } = useCapabilities()
   const { data: versionInfo } = useQuery<VersionInfo>(versionCheckQueryOptions(getApiBase()))
-  const { radarVersion } = useRadarUpgradeHost()
-  const currentVersion = versionInfo?.currentVersion || radarVersion
+  const { kubeatlasVersion } = useKubeAtlasUpgradeHost()
+  const currentVersion = versionInfo?.currentVersion || kubeatlasVersion
   const latestVersion = versionInfo?.latestVersion
-  const support = radarFeatureSupport(feature, capabilities, currentVersion)
+  const support = kubeatlasFeatureSupport(feature, capabilities, currentVersion)
   // Stable across renders, so a callback built on guard keeps its identity.
   const guard = useCallback(
-    <T,>(request: () => Promise<T>): Promise<T> => guardRadarFeature(feature, support, { currentVersion, latestVersion }, request),
+    <T,>(request: () => Promise<T>): Promise<T> => guardKubeAtlasFeature(feature, support, { currentVersion, latestVersion }, request),
     [feature, support, currentVersion, latestVersion],
   )
-  const gatedKey = useMemo(() => (support === 'unsupported' ? ['radar-feature-unsupported'] : []), [support])
+  const gatedKey = useMemo(() => (support === 'unsupported' ? ['kubeatlas-feature-unsupported'] : []), [support])
 
   return { support, gatedKey, guard }
 }
@@ -2000,7 +2002,7 @@ export interface SearchHit {
   name: string;
   matched?: SearchMatchedField[];
   summaryContext?: SearchSummaryContext;
-  /** Embedder (Radar Hub) only: the cluster this hit belongs to, for
+  /** Embedder (KubeAtlas Hub) only: the cluster this hit belongs to, for
    *  cross-cluster fleet search. Standalone KubeAtlas (single-cluster) leaves these
    *  unset — the omnibar keys + displays the cluster only when present. */
   cluster?: string;
@@ -2012,11 +2014,11 @@ export interface SearchResult {
   total: number;
   searched: number;
   total_matched: number;
-  /** From Radars that predate search coverage: "time_limit" when scan report findings were only partly searched. */
+  /** From KubeAtlas instances that predate search coverage: "time_limit" when scan report findings were only partly searched. */
   incomplete_findings?: string;
-  /** From Radars that predate search coverage: some namespaces' scan reports were left out, access not confirmed yet. */
+  /** From KubeAtlas instances that predate search coverage: some namespaces' scan reports were left out, access not confirmed yet. */
   access_incomplete?: boolean;
-  /** Absent from Radars that predate search coverage, which say nothing about it. */
+  /** Absent from KubeAtlas instances that predate search coverage, which say nothing about it. */
   coverage?: SearchCoverage;
 }
 
@@ -2286,7 +2288,7 @@ export function useCloudConnectSelf(enabled: boolean) {
 // What the driver-lane dialog learns about the cluster when it opens: the
 // chart's Deployments already carrying Cloud connection settings, so a
 // cluster that is already connected is pointed at rather than re-offered.
-export interface CloudInstallConnectedRadar {
+export interface CloudInstallConnectedKubeAtlas {
   namespace: string
   deployment: string
   release?: string
@@ -2297,7 +2299,7 @@ export interface CloudInstallConnectedRadar {
 }
 
 export interface CloudInstallDiscovered {
-  connected: CloudInstallConnectedRadar[]
+  connected: CloudInstallConnectedKubeAtlas[]
   partialScan: boolean
 }
 
@@ -2409,7 +2411,7 @@ export function useNamespaceAccess(enabled: boolean) {
   });
 }
 
-// Tier ordering for Cloud-role gates. Mirrors radar OSS pkg/auth
+// Tier ordering for Cloud-role gates. Mirrors kubeatlas OSS pkg/auth
 // CloudRole.AtLeast — the frontend must agree with the backend on what
 // "member-or-higher" means; otherwise we'd hide a button the
 // backend would happily honor (or vice versa).
@@ -2527,7 +2529,7 @@ export function useApplications(
   const queryString = params.toString();
 
   const enabled = options?.enabled !== false;
-  const { guard, gatedKey } = useRadarFeature("applications");
+  const { guard, gatedKey } = useKubeAtlasFeature("applications");
   return useQuery<{ applications: AppRow[] }>({
     queryKey: ["applications", namespaces, ...gatedKey],
     queryFn: () =>
@@ -2537,12 +2539,12 @@ export function useApplications(
         ),
       ),
     staleTime: 30_000,
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
     // Only poll while a consumer needs the index; gated off it must not keep the
     // background refetch alive. A KubeAtlas that predates the endpoint never will.
     enabled,
     refetchInterval: (query) =>
-      enabled && !(query.state.error instanceof RadarFeatureUnsupportedError)
+      enabled && !(query.state.error instanceof KubeAtlasFeatureUnsupportedError)
         ? APPLICATIONS_REFRESH_INTERVAL_MS
         : false,
   });
@@ -2887,7 +2889,7 @@ export async function fetchResourceAvailability(
   name: string,
 ): Promise<"present" | "missing" | "unchecked"> {
   const response = await apiFetch(`${getApiBase()}/resources/${encodeURIComponent(kind)}/${encodeURIComponent(namespace || "_")}/${encodeURIComponent(name)}`, { method: "HEAD" });
-  const resourceLookup = response.headers.get("X-KubeAtlas-Resource-Read") === "true";
+  const resourceLookup = readProductHeader(response.headers, "X-KubeAtlas-Resource-Read") === "true";
   if (resourceLookup && response.ok) return "present";
   if (resourceLookup && response.status === 404) return "missing";
   // Older KubeAtlas versions do not serve HEAD lookups. Keep their existing
@@ -3066,10 +3068,10 @@ async function fetchChangesPage(
   // (Rows dropped by content filters inside the store query do not; see the
   // known limitation on the server's handleChanges.)
   const maxSeq =
-    Number(response.headers.get("X-KubeAtlas-Timeline-Max-Seq") ?? "0") || 0;
+    Number(readProductHeader(response.headers, "X-KubeAtlas-Timeline-Max-Seq") ?? "0") || 0;
   return {
     events,
-    epoch: response.headers.get("X-KubeAtlas-Timeline-Epoch") ?? "",
+    epoch: readProductHeader(response.headers, "X-KubeAtlas-Timeline-Epoch") ?? "",
     maxSeq,
   };
 }
@@ -3267,15 +3269,15 @@ function workloadHistoryPath(kind: string, namespace: string, name: string, grou
 // A KubeAtlas that predates the scoped history endpoint settles as unsupported;
 // WorkloadView then falls back to the namespace's changes.
 export function useWorkloadHistory(kind: string, namespace: string, name: string, group?: string, enabled = true) {
-  const { guard, gatedKey, support } = useRadarFeature("workloadHistory");
+  const { guard, gatedKey, support } = useKubeAtlasFeature("workloadHistory");
   const query = useQuery<WorkloadHistoryPage>({
     queryKey: ["changes", "workload-history", kind, namespace, name, group ?? "", ...gatedKey],
     queryFn: ({ signal }) =>
       guard(() => fetchJSON<WorkloadHistoryPage>(workloadHistoryPath(kind, namespace, name, group), signal)),
     staleTime: 5000,
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
     refetchInterval: (query) =>
-      query.state.error instanceof RadarFeatureUnsupportedError ? false : CHANGES_REFRESH_INTERVAL_MS,
+      query.state.error instanceof KubeAtlasFeatureUnsupportedError ? false : CHANGES_REFRESH_INTERVAL_MS,
     enabled,
   });
   // A probe answered by an older KubeAtlas settles as unsupported and stops
@@ -3283,7 +3285,7 @@ export function useWorkloadHistory(kind: string, namespace: string, name: string
   // ask again rather than staying on the fallback.
   const { error, refetch } = query;
   useEffect(() => {
-    if (support === "supported" && error instanceof RadarFeatureUnsupportedError) void refetch();
+    if (support === "supported" && error instanceof KubeAtlasFeatureUnsupportedError) void refetch();
   }, [support, error, refetch]);
   return query;
 }
@@ -3298,7 +3300,7 @@ export interface ServiceEndpointSlicesResult {
 // kubernetes.io/service-name label. A KubeAtlas that predates the endpoint settles
 // as unsupported; ServiceRenderer then falls back to the namespace list.
 export function useServiceEndpointSlices(namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey, support } = useRadarFeature("serviceEndpointSlices");
+  const { guard, gatedKey, support } = useKubeAtlasFeature("serviceEndpointSlices");
   const query = useQuery<ServiceEndpointSlicesResult>({
     queryKey: ["service-endpointslices", namespace, name, ...gatedKey],
     queryFn: ({ signal }) =>
@@ -3308,14 +3310,14 @@ export function useServiceEndpointSlices(namespace: string, name: string, enable
           signal,
         ),
       ),
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
     refetchInterval: (query) =>
-      query.state.error instanceof RadarFeatureUnsupportedError ? false : 30000,
+      query.state.error instanceof KubeAtlasFeatureUnsupportedError ? false : 30000,
     enabled,
   });
   const { error, refetch } = query;
   useEffect(() => {
-    if (support === "supported" && error instanceof RadarFeatureUnsupportedError) void refetch();
+    if (support === "supported" && error instanceof KubeAtlasFeatureUnsupportedError) void refetch();
   }, [support, error, refetch]);
   return query;
 }
@@ -3481,13 +3483,13 @@ export function usePodMetrics(
 }
 
 export function usePodEnvironment(namespace: string, podName: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('podEnvironment')
+  const { guard, gatedKey } = useKubeAtlasFeature('podEnvironment')
   return useQuery<PodEnvironmentResponse>({
     queryKey: ['pod-environment', namespace, podName, ...gatedKey],
     queryFn: () => guard(() => fetchJSON<PodEnvironmentResponse>(
       `/pods/${encodeURIComponent(namespace)}/${encodeURIComponent(podName)}/environment`,
     )),
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
     enabled: enabled && Boolean(namespace && podName),
     staleTime: 10000,
   })
@@ -3740,7 +3742,7 @@ export interface PrometheusStatus {
 }
 
 // Time-series sample types live in @maomada/k8s-ui (shared with library
-// consumers). Re-export here so radar-app callers keep their existing import
+// consumers). Re-export here so kubeatlas-app callers keep their existing import
 // paths; the Prom-prefixed names are deprecated aliases.
 export type {
   TimeSeriesPoint,
@@ -3845,7 +3847,7 @@ export interface PrometheusRightsizing {
   namespace: string;
   name: string;
   window: string;
-  source: "radar";
+  source: "kubeatlas";
   ownerCoverage: RightsizingOwnerCoverage;
   scaledToZero: boolean;
   sampleAvailable: boolean;
@@ -3886,7 +3888,7 @@ export interface RightsizingScanResponse {
   state: RightsizingScanState;
   scannedAt: string;
   window: string;
-  source: "radar";
+  source: "kubeatlas";
   coverage: RightsizingScanCoverage;
   workloads: RightsizingScanWorkload[];
   warnings?: { code: string; message: string }[];
@@ -3976,7 +3978,7 @@ export function usePrometheusConnect() {
 }
 
 // Auto-discover Prometheus on first mount of any Prom-backed view, and
-// auto-reconnect across radar restarts on subsequent mounts.
+// auto-reconnect across kubeatlas restarts on subsequent mounts.
 //
 // Two paths through this hook, both running once per cluster context per
 // component-instance:
@@ -3994,9 +3996,9 @@ export function usePrometheusConnect() {
 // once status refreshes. Manual interaction stays available as the fallback.
 //
 // localStorage is the right surface: connection intent is browser-local,
-// not a server-side preference, and we want it to persist across radar
+// not a server-side preference, and we want it to persist across kubeatlas
 // restarts on the same port.
-const PROM_AUTOCONNECT_PREFIX = "radar.prometheus.autoConnect:";
+const PROM_AUTOCONNECT_PREFIX = "kubeatlas.prometheus.autoConnect:";
 // First-mount delay before probing the cluster. Chosen short enough that the
 // CTA → charts transition feels prompt, long enough that the probe doesn't
 // race the initial workload-view render.
@@ -4030,7 +4032,7 @@ export function useAutoPromConnect(): void {
     if (attemptedRef.current === context) return;
     let cached: string | null = null;
     try {
-      cached = window.localStorage.getItem(promAutoConnectKey(context));
+      cached = readProductStorage(window.localStorage, promAutoConnectKey(context));
     } catch {
       // keep the null fallback
     }
@@ -4070,7 +4072,7 @@ export function useAutoPromConnect(): void {
           );
           queryClient.invalidateQueries({ queryKey: ["prometheus-status"] });
           try {
-            window.localStorage.removeItem(promAutoConnectKey(context));
+            removeProductStorage(window.localStorage, promAutoConnectKey(context));
           } catch {
             // ignore — manual CTA will render once status refreshes
           }
@@ -5737,11 +5739,11 @@ export function drainPlanBody(options: DrainPlanRequestOptions): string {
 // Read-only drain plan: what a drain with these options would do to each pod on the node.
 // Modelled as a mutation because it is a POST with a body and is fetched on demand
 // while the drain dialog is open; it performs no cluster mutation.
-// An older KubeAtlas without the endpoint fails with RadarFeatureUnsupportedError,
-// which hosts (Radar Hub) use to fall back to the plan-less drain dialog
+// An older KubeAtlas without the endpoint fails with KubeAtlasFeatureUnsupportedError,
+// which hosts (KubeAtlas Hub) use to fall back to the plan-less drain dialog
 // instead of leaving Drain permanently disabled.
 export function useDrainPlan() {
-  const { guard } = useRadarFeature("drainPlan");
+  const { guard } = useKubeAtlasFeature("drainPlan");
   return useMutation<
     DrainPlan,
     Error,
@@ -5762,7 +5764,7 @@ export function useDrainPlan() {
 }
 
 export function useNodeRemovalPlan(name: string | undefined, enabled: boolean) {
-  const { guard, gatedKey } = useRadarFeature('drainPlan')
+  const { guard, gatedKey } = useKubeAtlasFeature('drainPlan')
   return useQuery<DrainPlan>({
     queryKey: ['resources', 'node-removal-plan', name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<DrainPlan>(drainPlanPath(name!), {
@@ -5773,8 +5775,8 @@ export function useNodeRemovalPlan(name: string | undefined, enabled: boolean) {
     })),
     enabled: enabled && Boolean(name),
     staleTime: ISSUES_REFRESH_INTERVAL_MS,
-    refetchInterval: (query) => query.state.error instanceof RadarFeatureUnsupportedError ? false : ISSUES_REFRESH_INTERVAL_MS,
-    retry: shouldRetryRadarQuery,
+    refetchInterval: (query) => query.state.error instanceof KubeAtlasFeatureUnsupportedError ? false : ISSUES_REFRESH_INTERVAL_MS,
+    retry: shouldRetryKubeAtlasQuery,
   })
 }
 
@@ -6623,7 +6625,7 @@ export function useHelmSourceStatus(namespace: string, releaseName: string, enab
 }
 
 export function useHelmSourceVersions(namespace: string, releaseName: string, selection: SourceUpgradeSelection | null, enabled: boolean) {
- const { support, gatedKey, guard } = useRadarFeature('helmSourceIdentity')
+ const { support, gatedKey, guard } = useKubeAtlasFeature('helmSourceIdentity')
  return useQuery<string[]>({
   queryKey: ['helm-source-versions', namespace, releaseName, selection, gatedKey],
   enabled: enabled && selection !== null && support === 'supported',
@@ -7379,7 +7381,7 @@ export function debugNamespaceLog(
   payload?: Record<string, unknown>,
 ) {
   if (typeof window === "undefined") return;
-  const enabled = window.localStorage.getItem("radar:debug:namespaces");
+  const enabled = readProductStorage(window.localStorage, "kubeatlas:debug:namespaces");
   if (enabled !== "1" && enabled !== "true") return;
   console.log(`[namespace-debug] ${label}`, {
     t: Math.round(performance.now()),
@@ -7887,7 +7889,7 @@ export interface DiagPerfSnapshot {
 
 export interface DiagnosticsSnapshot {
   timestamp: string;
-  radarVersion: string;
+  kubeatlasVersion: string;
   goVersion: string;
   goos: string;
   goarch: string;

@@ -5,7 +5,7 @@ import { DURATION_DISCLOSURE, TRANSITION_CHEVRON, TRANSITION_DISCLOSURE, prefers
 
 // Animated show/hide using the grid-template-rows 0fr→1fr technique — the
 // app-wide standard for expand/collapse (drawer sections, checks, audit,
-// resources sidebar, issue rows, and every disclosure in Radar Cloud). The
+// resources sidebar, issue rows, and every disclosure in KubeAtlas Cloud). The
 // inner overflow-hidden wrapper is load-bearing: it clips the content while
 // the grid row animates between 0 and its natural height, so nothing spills
 // before the row is fully open.

@@ -9,7 +9,7 @@ const c = (type: string, status: string, extra: Partial<FluxCondition> = {}): Fl
 describe('fluxConditionsToGitOpsStatus truth table', () => {
   it('a stale Reconciling does not outvote an applied Ready', () => {
     // The reported bug: kubectl and k9s read the printer columns and show
-    // READY=True while Radar showed the row as syncing.
+    // READY=True while KubeAtlas showed the row as syncing.
     const got = fluxConditionsToGitOpsStatus(
       [c('Ready', 'True'), c('Healthy', 'True'), c('Reconciling', 'True')],
       false,

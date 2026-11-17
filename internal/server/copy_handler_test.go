@@ -176,7 +176,7 @@ func fetchWithin(t *testing.T, rawurl string, within time.Duration) (*http.Respo
 }
 
 func TestPodFileDownloadServesTheWholeFile(t *testing.T) {
-	payload := bytes.Repeat([]byte("radar"), 4096)
+	payload := bytes.Repeat([]byte("kubeatlas"), 4096)
 	ts := downloadServer(t, &Server{}, func(t *testing.T, req execRequest, opts remotecommand.StreamOptions) error {
 		if !req.isTar() {
 			t.Errorf("expected the tar attempt, got %q", req.script())
@@ -208,7 +208,7 @@ func TestPodFileDownloadServesTheWholeFile(t *testing.T) {
 // answer a cleanly terminated body that happens to be short, and the client
 // would store it believing the download succeeded.
 func TestPodFileDownloadTruncatedArchiveDoesNotLookComplete(t *testing.T) {
-	payload := bytes.Repeat([]byte("radar"), 4096)
+	payload := bytes.Repeat([]byte("kubeatlas"), 4096)
 	var full bytes.Buffer
 	writeArchive(t, &full, "app.log", payload, -1)
 
@@ -235,7 +235,7 @@ func TestPodFileDownloadTruncatedArchiveDoesNotLookComplete(t *testing.T) {
 // already on the user's disk, and without the size check they are renamed into
 // place and reported as a finished download.
 func TestPodFileSaveRefusesToFinishATruncatedTransfer(t *testing.T) {
-	payload := bytes.Repeat([]byte("radar"), 4096)
+	payload := bytes.Repeat([]byte("kubeatlas"), 4096)
 	var full bytes.Buffer
 	writeArchive(t, &full, "app.log", payload, -1)
 
@@ -336,7 +336,7 @@ func TestPodFileSaveRefusesToFinishAShortCatTransfer(t *testing.T) {
 // The transfer must not release the remote process until it holds every byte.
 // Releasing early is what let Kubernetes drop the tail.
 func TestPodFileDownloadReleasesTheDrainGuardOnlyAfterTheFullRead(t *testing.T) {
-	payload := bytes.Repeat([]byte("radar"), 8192)
+	payload := bytes.Repeat([]byte("kubeatlas"), 8192)
 	var full bytes.Buffer
 	writeArchive(t, &full, "app.log", payload, -1)
 	archive := full.Bytes()

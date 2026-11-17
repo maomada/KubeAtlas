@@ -16,7 +16,7 @@ func TestConfigDoesNotPersistTimelinePostgresDSN(t *testing.T) {
 		t.Fatal("Config must not expose a persisted TimelinePostgresDSN field")
 	}
 
-	const dsn = "postgres://radar:secret@example.test/radar"
+	const dsn = "postgres://kubeatlas:secret@example.test/kubeatlas"
 	var cfg Config
 	if err := json.Unmarshal([]byte(`{"timelinePostgresDSN":"`+dsn+`"}`), &cfg); err != nil {
 		t.Fatalf("Unmarshal: %v", err)

@@ -148,7 +148,7 @@ func TestReleaseTargetNamespaceAndLiveRollbackEffects(t *testing.T) {
 			target, _ := cfg.Releases.Get("demo", 1)
 			target.Namespace = "app"
 			target.Manifest = targetNamespaceManifest("update", "create", "explicit")
-			target.Chart = &chart.Chart{Metadata: &chart.Metadata{Name: "radar", Version: "1.0.0"}}
+			target.Chart = &chart.Chart{Metadata: &chart.Metadata{Name: "kubeatlas", Version: "1.0.0"}}
 			for _, hook := range []string{"hook", "explicit-hook"} {
 				manifest := fmt.Sprintf("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: %s\ndata:\n  message: hook\n", hook)
 				if hook == "explicit-hook" {
@@ -219,7 +219,7 @@ func TestUpgradeAndValuesUseTargetNamespace(t *testing.T) {
 			rel.Config = map[string]any{"message": "old"}
 			rel.Manifest = targetNamespaceManifest("update", "explicit")
 			template := strings.ReplaceAll(rel.Manifest, "message: old", "message: {{ .Values.message }}\n  releaseNamespace: {{ .Release.Namespace }}")
-			rel.Chart = &chart.Chart{Metadata: &chart.Metadata{Name: "radar", Version: "1.0.0", APIVersion: "v2"}, Templates: []*chart.File{{Name: "templates/configmap.yaml", Data: []byte(template)}}}
+			rel.Chart = &chart.Chart{Metadata: &chart.Metadata{Name: "kubeatlas", Version: "1.0.0", APIVersion: "v2"}, Templates: []*chart.File{{Name: "templates/configmap.yaml", Data: []byte(template)}}}
 			if operation == "install recovery" {
 				rel.Info.Status = release.StatusFailed
 			}

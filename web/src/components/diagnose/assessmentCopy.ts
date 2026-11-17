@@ -7,7 +7,7 @@ import { storyPlainText } from "./investigationStory";
  * the headline would ship the persuasive half without its caveats.
  */
 /** What KubeAtlas adds to the agent's verdict when the assessment is copied for a channel. */
-export interface AssessmentCopyRadar {
+export interface AssessmentCopyKubeAtlas {
   /** Reads KubeAtlas could not complete, as shown in Still open. */
   limits?: readonly string[];
   /** Adverse KubeAtlas cards the agent explained, as shown in Still open. */
@@ -38,22 +38,22 @@ export interface AssessmentCopyRadar {
  */
 export function assessmentCopyText(
   diagnosis: Diagnosis,
-  radar: AssessmentCopyRadar = {},
+  kubeatlas: AssessmentCopyKubeAtlas = {},
 ): string {
   const parts: string[] = [];
-  if (radar.context) {
-    const when = radar.context.startedAt
-      ? new Date(radar.context.startedAt).toLocaleString(undefined, {
+  if (kubeatlas.context) {
+    const when = kubeatlas.context.startedAt
+      ? new Date(kubeatlas.context.startedAt).toLocaleString(undefined, {
           dateStyle: "medium",
           timeStyle: "short",
         })
       : undefined;
     parts.push(
       [
-        `**${radar.context.target}**`,
-        radar.context.cluster,
+        `**${kubeatlas.context.target}**`,
+        kubeatlas.context.cluster,
         when,
-        radar.context.agent ? `via ${radar.context.agent}` : undefined,
+        kubeatlas.context.agent ? `via ${kubeatlas.context.agent}` : undefined,
       ]
         .filter(Boolean)
         .join(" · "),
@@ -73,7 +73,7 @@ export function assessmentCopyText(
   }
   // The pasted text must not read more confident than the screen: KubeAtlas's
   // own qualifications travel with the agent's.
-  const flags = (radar.flags ?? []).filter((item) => item.trim());
+  const flags = (kubeatlas.flags ?? []).filter((item) => item.trim());
   if (flags.length > 0)
     parts.push(
       [
@@ -84,15 +84,15 @@ export function assessmentCopyText(
     );
   const unresolved = [
     ...(diagnosis.unresolved ?? []),
-    ...(radar.limits ?? []),
-    ...(radar.signals ?? []),
+    ...(kubeatlas.limits ?? []),
+    ...(kubeatlas.signals ?? []),
   ].filter((item) => item.trim());
   if (unresolved.length > 0)
     parts.push(
       ["Still open:", ...unresolved.map((item) => `- ${item}`)].join("\n"),
     );
   if (diagnosis.rootCause) parts.push(storyPlainText(diagnosis.rootCause));
-  const receipts = (radar.receipts ?? []).filter((receipt) => receipt.title);
+  const receipts = (kubeatlas.receipts ?? []).filter((receipt) => receipt.title);
   if (receipts.length > 0) {
     parts.push(
       [
@@ -108,7 +108,7 @@ export function assessmentCopyText(
         ),
       ].join("\n"),
     );
-  } else if (!radar.context) {
+  } else if (!kubeatlas.context) {
     const story = storyPlainText(diagnosis.report ?? "");
     if (story) parts.push(story);
   }
@@ -121,7 +121,7 @@ export function assessmentCopyText(
         (text, index) => `${index + 1}. ${text}`,
       );
   if (steps.length > 0) {
-    if (radar.context) {
+    if (kubeatlas.context) {
       // A channel gets the recommended step; the rest wait in KubeAtlas.
       const lead = diagnosis.recommendedIndex
         ? diagnosis.recommendedIndex - 1
@@ -143,7 +143,7 @@ export function assessmentCopyText(
       );
     } else parts.push(["Next steps:", ...steps].join("\n"));
   }
-  if (radar.context)
+  if (kubeatlas.context)
     parts.push(
       "Full analysis and every captured result: open the investigation in KubeAtlas.",
     );

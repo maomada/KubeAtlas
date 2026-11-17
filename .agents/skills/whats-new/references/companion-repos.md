@@ -2,13 +2,13 @@
 
 Use only for the companion work the user selected. The scope questions in
 `../SKILL.md` distinguish checking coverage from editing it. Paths below are
-relative to the Radar repo root unless noted otherwise.
+relative to the KubeAtlas repo root unless noted otherwise.
 
 ## Prepare clean repositories before working
 
-1. Check for sibling checkouts at `../radar-docs` and `../marketing` before
+1. Check for sibling checkouts at `../kubeatlas-docs` and `../marketing` before
    searching elsewhere. Resolve their real paths and verify Git roots/remotes:
-   `skyhook-dev/radar-docs` and `skyhook-dev/marketing`. Do not confuse another
+   `skyhook-dev/kubeatlas-docs` and `skyhook-dev/marketing`. Do not confuse another
    worktree or similarly named repo with the intended checkout. Read its agent
    guidance before changing Git state. If a sibling is
    absent, look for an existing local clone; otherwise clone the selected repo
@@ -42,7 +42,7 @@ relative to the Radar repo root unless noted otherwise.
    branch. Use a new real directory, not a symlink into an existing checkout.
 
 This refresh and isolation procedure applies to selected companion repos, not
-to rebasing or cleaning the user's active Radar work as a side effect.
+to rebasing or cleaning the user's active KubeAtlas work as a side effect.
 
 ## Documentation ownership
 
@@ -51,23 +51,23 @@ new capabilities, changed defaults/actions, configuration, prerequisites, and
 important limits. Report concrete missing or stale coverage with source
 locations. A request to check docs is audit-only unless updates were included.
 
-- `skyhook-io/radar`: `docs/` is authoritative for the synced OSS docs.
-- `skyhook-dev/radar-docs`: public Mintlify docs, including curated pages and
+- `skyhook-io/kubeatlas`: `docs/` is authoritative for the synced OSS docs.
+- `skyhook-dev/kubeatlas-docs`: public Mintlify docs, including curated pages and
   one-way-synced OSS pages. Read its `CLAUDE.md` and the current
   `scripts/sync-oss-docs.mjs` mapping before proposing edits.
 - Do not hand-edit generated/synced MDX or images. Fix the OSS source and follow
-  the docs repo's sync procedure; edit curated public pages in `radar-docs`.
+  the docs repo's sync procedure; edit curated public pages in `kubeatlas-docs`.
   Check navigation when adding a public page.
 
 ## Marketing changelog: use its own skill
 
-Before any changelog audit or update, locate and read the **Radar** changelog
+Before any changelog audit or update, locate and read the **KubeAtlas** changelog
 skill in the prepared marketing checkout. The current entrypoint is
-`../marketing/.claude/commands/changelog-radar.md` (`/changelog-radar`). If the
+`../marketing/.claude/commands/changelog-kubeatlas.md` (`/changelog-kubeatlas`). If the
 checkout moves that workflow, follow its repo guidance to the current source.
 Do not substitute `changelog-skyhook` or recreate its rules from memory.
 
-Read `content/radar-changelog.ts`'s header and recent entries as that workflow
+Read `content/kubeatlas-changelog.ts`'s header and recent entries as that workflow
 requires. It owns curation, event dates/first-ship verification, OSS/cloud
 surface tags, drafts/review, validation and PR preparation. Follow its draft
 review requirements before writing. An audit-only answer does not authorize
@@ -75,7 +75,7 @@ updates, and an OSS What's New run does not authorize airing Cloud milestones.
 
 In-app minor-release notes and the public changelog have different models: do
 not paste one into the other, date an old capability to a recent polish PR,
-claim unshipped work is live, or make a changelog entry for every PR. Radar's
+claim unshipped work is live, or make a changelog entry for every PR. KubeAtlas's
 marketing changelog has no docs-repo mirror; the docs coverage task is separate.
 Prepare the chosen content without publishing or merging it as a side effect.
 

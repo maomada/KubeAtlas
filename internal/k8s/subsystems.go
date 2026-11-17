@@ -144,7 +144,7 @@ func InitAllSubsystems(ctx context.Context, progress func(string)) error {
 						// Conditional Kyverno warmup runs after discovery so the
 						// IsKyvernoInstalled() signal sees every CRD that landed
 						// during WarmupCommonCRDs or DiscoverAllCRDs (admin may
-						// have installed Kyverno after Radar started).
+						// have installed Kyverno after KubeAtlas started).
 						pt := time.Now()
 						WarmupKyvernoPolicyReports()
 						logTiming("   Kyverno PolicyReport warmup: %v (background)", time.Since(pt))

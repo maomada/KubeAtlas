@@ -34,7 +34,7 @@ import { uncheckedSourceLines } from '../issues/uncheckedSources'
 import { UncheckedSourceHelp } from '../issues/UncheckedSourceHelp'
 import { clsx } from 'clsx'
 import { getVersionUpdateStatus } from '../../utils/version'
-import { RadarVersionLine } from './RadarVersionLine'
+import { KubeAtlasVersionLine } from './KubeAtlasVersionLine'
 
 interface HomeViewProps {
   namespaces: string[]
@@ -142,8 +142,8 @@ export function HomeView({ namespaces, topology, fallbackClusterLoadState, onNav
         )}
         {/* Row 1: Cluster Health Card (combined health + resource counts) */}
         <ClusterHealthCard
-          radarVersion={versionInfo && deploymentMode !== 'cloud' ? (
-            <RadarVersionLine
+          kubeatlasVersion={versionInfo && deploymentMode !== 'cloud' ? (
+            <KubeAtlasVersionLine
               version={versionInfo}
               showUpgrade={deploymentMode === 'in-cluster'}
               onShowWhatsNew={onShowWhatsNew}
@@ -361,7 +361,7 @@ export function ProblemsPanel({
         <div className="flex items-center gap-2">
           <button
             type="button"
-            className="rounded-md px-2 py-1 text-xs font-medium text-accent-text transition-colors hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-radar-accent,var(--accent))]/40"
+            className="rounded-md px-2 py-1 text-xs font-medium text-accent-text transition-colors hover:bg-accent-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-kubeatlas-accent,var(--accent))]/40"
             onClick={onNavigateToIssues}
           >
             查看全部

@@ -28,17 +28,17 @@ func TestDynamicVerdicts(t *testing.T) {
 		{"ready empty", k8score.DynamicResourceObservation{State: k8score.DynamicObservationSynced}, false, Readable, ""},
 		{"pending", k8score.DynamicResourceObservation{State: k8score.DynamicObservationSyncing}, false, Gap, readreason.KindSyncPending},
 		{"stalled", k8score.DynamicResourceObservation{State: k8score.DynamicObservationSyncing, ReasonCode: "sync_stalled"}, false, Gap, readreason.KindSyncTimedOut},
-		{"rejection beats retry", k8score.DynamicResourceObservation{ReasonCode: "credentials_rejected", ProbeRetrying: true}, true, Gap, readreason.RadarCredentialsRejected},
+		{"rejection beats retry", k8score.DynamicResourceObservation{ReasonCode: "credentials_rejected", ProbeRetrying: true}, true, Gap, readreason.KubeAtlasCredentialsRejected},
 		{"retry beats outside", k8score.DynamicResourceObservation{ProbeRetrying: true}, true, Gap, readreason.KindSyncPending},
 		{"exhausted beats outside", k8score.DynamicResourceObservation{UnansweredNamespaces: []string{"b"}}, true, Gap, readreason.ReadError},
 		{"unknown whole", k8score.DynamicResourceObservation{ReasonCode: "scope_probe_incomplete"}, false, Gap, readreason.ReadError},
-		{"outside", k8score.DynamicResourceObservation{State: k8score.DynamicObservationUnwatched}, true, OutsideCollection, readreason.RadarNamespaceNotCollected},
-		{"forbidden", k8score.DynamicResourceObservation{State: k8score.DynamicObservationDenied}, false, Gap, readreason.RadarForbidden},
+		{"outside", k8score.DynamicResourceObservation{State: k8score.DynamicObservationUnwatched}, true, OutsideCollection, readreason.KubeAtlasNamespaceNotCollected},
+		{"forbidden", k8score.DynamicResourceObservation{State: k8score.DynamicObservationDenied}, false, Gap, readreason.KubeAtlasForbidden},
 		{"unsupported", k8score.DynamicResourceObservation{State: k8score.DynamicObservationUnsupported}, false, Gap, readreason.KindNotWatchable},
 		{"stopped beats ready", k8score.DynamicResourceObservation{State: k8score.DynamicObservationSynced, ReasonCode: "cache_stopped"}, false, Gap, readreason.ConnectionChanged},
 		{"eager", k8score.DynamicResourceObservation{State: k8score.DynamicObservationDeferred, ReasonCode: "eager_watch_pending"}, false, Gap, readreason.KindSyncPending},
 		{"failed probe", k8score.DynamicResourceObservation{State: k8score.DynamicObservationDeferred, ReasonCode: "scope_probe_failed"}, false, Gap, readreason.ReadError},
-		{"unwatched", k8score.DynamicResourceObservation{}, false, Gap, readreason.RadarKindNotCollected},
+		{"unwatched", k8score.DynamicResourceObservation{}, false, Gap, readreason.KubeAtlasKindNotCollected},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			state, code := dynamicVerdict(tc.o, tc.outside)
@@ -79,8 +79,8 @@ func TestTypedPartitionsRetainCredentialGaps(t *testing.T) {
 	permissions := &k8s.PermissionCheckResult{NamespaceProbeErrors: map[string]map[string]error{"configmaps": {"b": apierrors.NewUnauthorized("rejected")}}}
 	p := Typed(cache, permissions, "configmaps", []string{"c", "b", "a", "b"}, false)
 	want := []Partition{
-		{Extent: NamespaceSet, Namespaces: []string{"b"}, Verdict: Verdict{Gap, readreason.RadarCredentialsRejected}},
-		{Extent: NamespaceSet, Namespaces: []string{"c"}, Verdict: Verdict{OutsideCollection, readreason.RadarNamespaceNotCollected}},
+		{Extent: NamespaceSet, Namespaces: []string{"b"}, Verdict: Verdict{Gap, readreason.KubeAtlasCredentialsRejected}},
+		{Extent: NamespaceSet, Namespaces: []string{"c"}, Verdict: Verdict{OutsideCollection, readreason.KubeAtlasNamespaceNotCollected}},
 		{Extent: NamespaceSet, Namespaces: []string{"a"}, Verdict: Verdict{Gap, readreason.KindSyncPending}},
 	}
 	if !reflect.DeepEqual(p.Partitions, want) {
@@ -96,7 +96,7 @@ func TestTypedPartitionsRetainCredentialGaps(t *testing.T) {
 	for _, tc := range []struct {
 		resource string
 		code     readreason.Code
-	}{{"missing", readreason.RadarKindNotCollected}, {"pods", readreason.RadarForbidden}} {
+	}{{"missing", readreason.KubeAtlasKindNotCollected}, {"pods", readreason.KubeAtlasForbidden}} {
 		permissions.Scopes = map[string]k8score.ResourceScope{"pods": {Enabled: false}}
 		p := Typed(cache, permissions, tc.resource, nil, false)
 		if len(p.Partitions) != 1 || p.Partitions[0].Verdict.Code != tc.code {

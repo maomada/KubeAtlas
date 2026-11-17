@@ -87,7 +87,7 @@ func (s *Server) handleTrace(w http.ResponseWriter, r *http.Request) {
 		// Probes call services/proxy + pods/proxy on this client. Use the
 		// per-request impersonated identity (or the SA when auth is disabled)
 		// so the apiserver enforces the caller's RBAC on the proxy verbs -
-		// not radar's broader SA permissions. ClientFromContext returns nil
+		// not kubeatlas's broader SA permissions. ClientFromContext returns nil
 		// on impersonation failure; the probe layer treats nil as "skip the
 		// apiserver path," which is the correct fail-closed behavior.
 		Client: k8s.ClientFromContext(r.Context()),

@@ -8,13 +8,13 @@ import (
 )
 
 // agentBinDirs lists the install locations probed after PATH. Fixed literals,
-// so the fallback widens where Radar looks without widening what it will run.
+// so the fallback widens where KubeAtlas looks without widening what it will run.
 // Per-user installs come first, matching the precedence a shell PATH gives them.
 //
 // Deliberately does NOT try to cover an npm global prefix under nvm, fnm or
 // asdf: that directory embeds the active Node version and moves with `nvm use`,
 // so no fixed list can reach it. Fixed npm prefixes (pnpm, bun, ~/.npm-global)
-// are left out too: their scripts need a node that isn't beside them, so Radar
+// are left out too: their scripts need a node that isn't beside them, so KubeAtlas
 // would offer an agent that can't start. Asking the
 // login shell is the only thing that can, which is what cmd/desktop/env.go does
 // for the desktop app.

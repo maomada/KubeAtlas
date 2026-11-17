@@ -161,7 +161,7 @@ type ScanResults struct {
 	// that still lets a finding fire is stated in that finding's message.
 	MissingInputs []string `json:"missingInputs,omitempty"`
 	// IgnoreChecksAnnotation names the per-resource opt-out annotation this
-	// Radar honors. Its presence is what tells a newer UI the opt-out exists.
+	// KubeAtlas honors. Its presence is what tells a newer UI the opt-out exists.
 	IgnoreChecksAnnotation string `json:"ignoreChecksAnnotation,omitempty"`
 	// AnnotationIgnoredByNamespace maps checkID → namespace → distinct subjects
 	// whose findings were dropped by IgnoreChecksAnnotation, shaped like
@@ -240,7 +240,7 @@ const (
 
 // Raw detector severities are retained as scan provenance and in existing
 // audit transport/public-property compatibility contracts, especially the
-// mixed-version /api/audit?raw=true Radar Hub boundary. Checks and agent
+// mixed-version /api/audit?raw=true KubeAtlas Hub boundary. Checks and agent
 // surfaces map them to pkg/checks.Severity; visible audit presentation uses
 // the mapped High/Medium labels.
 const (

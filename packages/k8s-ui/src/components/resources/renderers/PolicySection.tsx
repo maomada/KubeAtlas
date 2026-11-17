@@ -2,8 +2,8 @@ import { ShieldCheck, ShieldAlert, ShieldQuestion } from 'lucide-react'
 import { clsx } from 'clsx'
 import { Section } from '../../ui/drawer-components'
 import { SEVERITY_BADGE } from '../../../utils/badge-colors'
-import { RadarUpgradeNote } from '../../ui/RadarUpgradeNote'
-import { getRadarUpgradeRequirement, isForbiddenError } from '../../../types/fetch-error'
+import { KubeAtlasUpgradeNote } from '../../ui/KubeAtlasUpgradeNote'
+import { getKubeAtlasUpgradeRequirement, isForbiddenError } from '../../../types/fetch-error'
 import type { PolicyResourceResponse, PolicyResourceFinding } from '../../../types/policy'
 
 interface PolicySectionProps {
@@ -62,11 +62,11 @@ export function PolicySection({ data, loading, error }: PolicySectionProps) {
         </Section>
       )
     }
-    const upgrade = getRadarUpgradeRequirement(error)
+    const upgrade = getKubeAtlasUpgradeRequirement(error)
     if (upgrade) {
       return (
         <Section title={TITLE} icon={ShieldQuestion}>
-          <RadarUpgradeNote requirement={upgrade} />
+          <KubeAtlasUpgradeNote requirement={upgrade} />
         </Section>
       )
     }
@@ -167,7 +167,7 @@ function PolicyFindingRow({ finding }: { finding: PolicyResourceFinding }) {
 
 /**
  * Whether findings are missing from this answer. Two different gaps reach here:
- * `deniedGroups` is a family radar's own probe could not read, `withheldByFamily`
+ * `deniedGroups` is a family kubeatlas's own probe could not read, `withheldByFamily`
  * one THIS caller may not — and the counts exclude both, so a resource whose only
  * failure came from either reads as passing everything.
  *

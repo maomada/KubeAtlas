@@ -21,13 +21,13 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/prom"
 )
 
-// Background rediscovery. Prewarm runs discovery when Radar connects to a
+// Background rediscovery. Prewarm runs discovery when KubeAtlas connects to a
 // cluster; after that, these cluster events start it again so the next caller
 // finds a working connection instead of paying for discovery itself:
 //
 //   - a Service matching discovery's candidate rules is created or changes
-//     shape while Radar has no connection (Prometheus installed later);
-//   - a Pod behind a candidate Service turns Ready while Radar has no
+//     shape while KubeAtlas has no connection (Prometheus installed later);
+//   - a Pod behind a candidate Service turns Ready while KubeAtlas has no
 //     connection (the Service usually exists before its Pod can answer), or
 //     behind the connected Service (its backend was replaced);
 //   - the port-forward serving the connection ends on its own (the Pod it
@@ -77,7 +77,7 @@ type rediscoveryState struct {
 
 // requestRediscovery queues a background run. verifyAddr names the connected
 // address the signal is about (a failed query, a lost forward, a replaced
-// backend); leave it empty for signals that only matter while Radar has no
+// backend); leave it empty for signals that only matter while KubeAtlas has no
 // connection.
 func (c *Client) requestRediscovery(verifyAddr, reason string) {
 	r := &c.rediscovery
@@ -308,7 +308,7 @@ func observeResourceChange(source kubernetes.Interface, change k8s.ResourceChang
 	}
 	if change.Operation == "add" && !k8s.InitialSyncComplete() {
 		// The initial listing: Prewarm's discovery covers what already exists.
-		// Adds after it are objects Radar had not seen, whatever their age —
+		// Adds after it are objects KubeAtlas had not seen, whatever their age —
 		// a relist after a watch outage included.
 		return
 	}

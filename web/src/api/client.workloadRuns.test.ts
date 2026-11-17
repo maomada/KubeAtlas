@@ -23,7 +23,7 @@ afterEach(() => vi.unstubAllGlobals())
 describe('cluster-scoped workload runs follow the view selection', () => {
   it('sends the selection and keys the query on it', async () => {
     const options = useRunsQueryOptions('clusterworkflowtemplates', '', 'build', true, { clusterScoped: true, namespaces: ['team-a', 'team-b'] })
-    const params = new URL(await requestedPath(options), 'http://radar.invalid').searchParams
+    const params = new URL(await requestedPath(options), 'http://kubeatlas.invalid').searchParams
     expect(params.get('clusterScoped')).toBe('true')
     expect(params.get('namespaces')).toBe('team-a,team-b')
 
@@ -33,12 +33,12 @@ describe('cluster-scoped workload runs follow the view selection', () => {
 
   it('sends no filter when the view covers all namespaces', async () => {
     const options = useRunsQueryOptions('clusterworkflowtemplates', '', 'build', true, { clusterScoped: true, namespaces: [] })
-    expect(new URL(await requestedPath(options), 'http://radar.invalid').searchParams.has('namespaces')).toBe(false)
+    expect(new URL(await requestedPath(options), 'http://kubeatlas.invalid').searchParams.has('namespaces')).toBe(false)
   })
 
   it('leaves a namespaced workload alone: its path already names the namespace', async () => {
     const options = useRunsQueryOptions('cronjobs', 'team-a', 'nightly', true, { namespaces: ['team-a', 'team-b'] })
-    expect(new URL(await requestedPath(options), 'http://radar.invalid').searchParams.has('namespaces')).toBe(false)
+    expect(new URL(await requestedPath(options), 'http://kubeatlas.invalid').searchParams.has('namespaces')).toBe(false)
     expect(options.queryKey).toEqual(useRunsQueryOptions('cronjobs', 'team-a', 'nightly', true, {}).queryKey)
   })
 

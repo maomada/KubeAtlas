@@ -1,4 +1,5 @@
 import { englishPlural, isEnglishPlural } from '@maomada/k8s-ui'
+import { canonicalReadCode } from '@maomada/k8s-ui/utils/read-actions'
 import type { SearchCoverage } from '@maomada/k8s-ui/types/read-coverage'
 import type { OmnibarNote, OmnibarNotePart } from './Omnibar'
 
@@ -10,7 +11,7 @@ import type { OmnibarNote, OmnibarNotePart } from './Omnibar'
 export const PENDING_RETRY_MS = 5000
 export const PENDING_RETRY_BUDGET_MS = 60000
 
-const FAILURE_REASONS = new Set(['kind_sync_timed_out', 'read_error', 'radar_credentials_rejected'])
+const FAILURE_REASONS = new Set(['kind_sync_timed_out', 'read_error', 'kubeatlas_credentials_rejected'])
 const MAX_SENTENCES = 2
 const MAX_NAMES = 3
 const MAX_TARGET_NAMES = 5
@@ -46,18 +47,19 @@ export function searchCoverageEntries(coverage: SearchCoverage | undefined): Sea
   const out: SearchCoverageEntry[] = []
   for (const gap of coverage?.gaps ?? []) {
     if (gap.objects) continue
+    const reason = String(canonicalReadCode(gap.code))
     // A gap lists one axis and gives the other as an extent.
     const kinds = gap.kinds && gap.kinds.extent === undefined ? gap.kinds : undefined
     const namespaces = gap.namespaces && gap.namespaces.extent === undefined ? gap.namespaces : undefined
     if (kinds?.names) {
-      for (const k of kinds.names) out.push({ kind: k.kind, group: k.group ?? '', reason: gap.code, wholeNamespaceScope: gap.namespaces?.extent === 'all' })
+      for (const k of kinds.names) out.push({ kind: k.kind, group: k.group ?? '', reason, wholeNamespaceScope: gap.namespaces?.extent === 'all' })
     } else if (kinds) {
-      out.push({ kind: '*', group: '', reason: gap.code, count: kinds.count })
+      out.push({ kind: '*', group: '', reason, count: kinds.count })
     } else if (namespaces) {
       // A search names every namespace its query asked for.
-      out.push({ kind: '*', group: '', reason: gap.code, namespaces: namespaces.names ?? [], someKinds: gap.kinds?.extent !== 'all' })
+      out.push({ kind: '*', group: '', reason, namespaces: namespaces.names ?? [], someKinds: gap.kinds?.extent !== 'all' })
     } else {
-      out.push({ kind: '*', group: '', reason: gap.code })
+      out.push({ kind: '*', group: '', reason })
     }
   }
   return out
@@ -194,8 +196,8 @@ export function searchCoverageNote(coverage: SearchCoverage | undefined, opts: S
   if (unseen.length) namespaceSentence(unseen, "wasn't found in what you can see", "weren't found in what you can see")
   const pinned = namespaces(['outside_namespace_pin'])
   if (pinned.length) namespaceSentence(pinned, "wasn't searched: KubeAtlas is pinned to another namespace", "weren't searched: KubeAtlas is pinned to another namespace")
-  const uncollected = namespaces(['radar_namespace_not_collected'])
-  const someKindsUncollected = unsearched.some((e) => e.reason === 'radar_namespace_not_collected' && e.someKinds)
+  const uncollected = namespaces(['kubeatlas_namespace_not_collected'])
+  const someKindsUncollected = unsearched.some((e) => e.reason === 'kubeatlas_namespace_not_collected' && e.someKinds)
   if (uncollected.length && someKindsUncollected) say(`Some kinds weren't searched in ${uncollected.length === 1 ? 'namespace' : 'namespaces'} ${quoted(uncollected)}: KubeAtlas here watches only some namespaces.`)
   else if (uncollected.length) namespaceSentence(uncollected, "wasn't searched: KubeAtlas here watches only some namespaces", "weren't searched: KubeAtlas here watches only some namespaces")
   const findings = named('findings_scan_incomplete')
@@ -205,9 +207,9 @@ export function searchCoverageNote(coverage: SearchCoverage | undefined, opts: S
     const suggestion = denied.some((e) => e.wholeNamespaceScope) ? ' Try narrowing with ns:<namespace>.' : ''
     say(`Your access doesn't include all ${names(denied, 'or')}.${suggestion}`)
   }
-  const collector = named('radar_forbidden')
+  const collector = named('kubeatlas_forbidden')
   if (collector.length) say(`KubeAtlas isn't allowed to read ${names(collector, 'or')} on this cluster.`)
-  const unwatched = named('radar_kind_not_collected')
+  const unwatched = named('kubeatlas_kind_not_collected')
   if (unwatched.length) say(`KubeAtlas doesn't watch ${names(unwatched, 'or')} on this cluster, so they weren't searched.`)
 
   if (!sentences.length) return undefined

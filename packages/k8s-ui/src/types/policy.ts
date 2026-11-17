@@ -83,7 +83,7 @@ export interface PolicyCoverageResponse {
    *  how many were left out rather than hedging that some might have been. */
   withheldByFamily?: number
   /** Report families the CALLER cannot read. Distinct from deniedGroups, which
-   *  are the ones radar's own probe could not read. */
+   *  are the ones kubeatlas's own probe could not read. */
   unreadableFamilies?: string[]
   /** How many distinct resources these outcomes describe, and how many of those
    *  have at least one non-passing outcome. One resource matched by two rules
@@ -106,7 +106,7 @@ export interface PolicyResourceResponse {
   evaluated: boolean
   status: string
   reasonCode?: string
-  /** Report families RADAR's own probe could not read, so nobody's answer
+  /** Report families KUBEATLAS's own probe could not read, so nobody's answer
    *  carries them — not the same as `withheldByFamily`, which is what THIS
    *  caller may not see. Present even when evaluated: the answer is real but
    *  incomplete. */

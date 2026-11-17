@@ -52,7 +52,7 @@ func TestOwnershipAccessDecidesAKindInAnyNamespace(t *testing.T) {
 
 // A resource context names only an object's owner, so building one asks no
 // permission question about the kinds the object's children could be: a Node
-// on a cluster serving many kinds Radar doesn't collect, for a user who may
+// on a cluster serving many kinds KubeAtlas doesn't collect, for a user who may
 // read every namespace but none of those kinds.
 func TestResourceContextOwnerAsksNothingAboutChildren(t *testing.T) {
 	defer k8s.ResetTestState()
@@ -134,7 +134,7 @@ func TestOwnershipAccessKeepsAGapOnAnAmbiguousKind(t *testing.T) {
 }
 
 // A recorded member of a kind no served resource names, as when its CRD was
-// removed, is one Radar can't check, not one the user may not see.
+// removed, is one KubeAtlas can't check, not one the user may not see.
 func TestOwnershipAccessCountsAnUnservedMemberAsUnknown(t *testing.T) {
 	t.Cleanup(func() { getPermCache().Invalidate() })
 	perms := &pkgauth.UserPermissions{AllowedNamespaces: []string{"alpha"}}

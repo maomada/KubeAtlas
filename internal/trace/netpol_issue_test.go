@@ -264,7 +264,7 @@ func TestApplyInClusterResultsSettlesDenyAllAcrossPorts(t *testing.T) {
 	}
 }
 
-// On the Radar-process probe path, a data-path pass settles the Service's
+// On the KubeAtlas-process probe path, a data-path pass settles the Service's
 // deny-all issue even when the prediction can't be pinned to one port.
 func TestReconcilePolicySettlesDenyAllWithoutAPinnedPort(t *testing.T) {
 	pods := wouldDenyHop([]probe.Result{
@@ -289,7 +289,7 @@ func TestReconcilePolicySettlesDenyAllWithoutAPinnedPort(t *testing.T) {
 
 // Policies that split a Service's pods each add a deny-all issue to the
 // Service hop. A pass through the Service can't say which pod answered, and
-// Radar's probes reach only a sample of the pods, so neither settles them.
+// KubeAtlas's probes reach only a sample of the pods, so neither settles them.
 func TestDenyAllSplitAcrossPodsKeepsIssues(t *testing.T) {
 	svcHop := func() Hop {
 		return Hop{Resource: ResourceRef{Kind: "Service", Namespace: "shop", Name: "rec"}, Edge: "entry:Service", Findings: []Finding{
@@ -307,7 +307,7 @@ func TestDenyAllSplitAcrossPodsKeepsIssues(t *testing.T) {
 		return n
 	}
 
-	// Radar's own probes: one pod reached and the other dropped, then both
+	// KubeAtlas's own probes: one pod reached and the other dropped, then both
 	// probed pods reached (other pods may be outside the sample).
 	for _, tt := range []struct {
 		name   string
@@ -410,7 +410,7 @@ func TestApplyInClusterResultsIgnoresMeshedProbeForPolicy(t *testing.T) {
 	}
 }
 
-// Pods that declare no containerPort get no per-pod probes. Radar's data probe
+// Pods that declare no containerPort get no per-pod probes. KubeAtlas's data probe
 // through the Service on the prediction's Service port then settles both the
 // prediction and a lone deny-all issue, and the diagnosis doesn't lead with
 // them; a failed probe keeps both.
@@ -423,7 +423,7 @@ func TestReconcilePolicySettlesFromServiceProbeWithoutContainerPort(t *testing.T
 			{Resource: ResourceRef{Kind: "Pods", Namespace: "shop"}, Edge: "Service->Pods",
 				Meta:     map[string]any{"policyVerdict": "would-deny", "policyNames": []string{"deny-all"}, "policyPort": ":80", "policyDenyPort": int32(80), "policyProtocol": "TCP"},
 				Findings: []Finding{{Code: codePolicyWouldDeny, Severity: SeverityWarning, Message: "A network rule here would block this traffic"}}},
-		}, BrokenAt: -1, radarUnmeshed: true}
+		}, BrokenAt: -1, kubeatlasUnmeshed: true}
 	}
 	tr := trace(true)
 	reconcilePolicyFindings(tr)
@@ -444,13 +444,13 @@ func TestReconcilePolicySettlesFromServiceProbeWithoutContainerPort(t *testing.T
 		}
 	}
 
-	// Radar couldn't read its own pod, so a sidecar there can't be ruled out.
+	// KubeAtlas couldn't read its own pod, so a sidecar there can't be ruled out.
 	tr = trace(true)
-	tr.radarUnmeshed = false
+	tr.kubeatlasUnmeshed = false
 	reconcilePolicyFindings(tr)
 	for i, h := range tr.Downstream {
 		if f := h.Findings[0]; f.Severity != SeverityWarning {
-			t.Errorf("hop %d %s = %s, want the warning kept when Radar's own mesh status is unknown", i, f.Code, f.Severity)
+			t.Errorf("hop %d %s = %s, want the warning kept when KubeAtlas's own mesh status is unknown", i, f.Code, f.Severity)
 		}
 	}
 }
@@ -468,9 +468,9 @@ func TestInClusterPassNeedsThePredictionsServicePort(t *testing.T) {
 	}
 }
 
-// Radar's own probes through a sidecar proxy in its pod don't settle policy
+// KubeAtlas's own probes through a sidecar proxy in its pod don't settle policy
 // findings either: the proxy can accept before the backend does.
-func TestReconcilePolicyIgnoresMeshedRadarProbes(t *testing.T) {
+func TestReconcilePolicyIgnoresMeshedKubeAtlasProbes(t *testing.T) {
 	tr := &Trace{Downstream: []Hop{
 		{Resource: ResourceRef{Kind: "Service", Namespace: "shop", Name: "rec"}, Edge: "entry:Service",
 			Findings: []Finding{{Code: k8s.NetworkPolicyDenyAllIngressFingerprint, Severity: SeverityWarning, Message: "NetworkPolicy denies all ingress"}},
@@ -487,24 +487,24 @@ func TestReconcilePolicyIgnoresMeshedRadarProbes(t *testing.T) {
 	}
 }
 
-// selfPodMesh finds Radar's own pod in the cache by the downward-API env.
+// selfPodMesh finds KubeAtlas's own pod in the cache by the downward-API env.
 func TestSelfPodMesh(t *testing.T) {
 	defer k8s.ResetTestState()
 	pod := func(name string, containers ...string) *corev1.Pod {
-		p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "radar"}}
+		p := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: "kubeatlas"}}
 		for _, c := range containers {
 			p.Spec.Containers = append(p.Spec.Containers, corev1.Container{Name: c})
 		}
 		return p
 	}
-	if err := k8s.InitTestResourceCache(fake.NewClientset(pod("radar-meshed", "radar", "istio-proxy"), pod("radar-plain", "radar"))); err != nil {
+	if err := k8s.InitTestResourceCache(fake.NewClientset(pod("kubeatlas-meshed", "kubeatlas", "istio-proxy"), pod("kubeatlas-plain", "kubeatlas"))); err != nil {
 		t.Fatalf("init: %v", err)
 	}
-	t.Setenv("MY_POD_NAMESPACE", "radar")
+	t.Setenv("MY_POD_NAMESPACE", "kubeatlas")
 	for _, tt := range []struct {
 		name, mesh string
 		known      bool
-	}{{"radar-meshed", "Istio", true}, {"radar-plain", "", true}, {"radar-missing", "", false}} {
+	}{{"kubeatlas-meshed", "Istio", true}, {"kubeatlas-plain", "", true}, {"kubeatlas-missing", "", false}} {
 		t.Setenv("MY_POD_NAME", tt.name)
 		if mesh, known := selfPodMesh(); mesh != tt.mesh || known != tt.known {
 			t.Errorf("%s: selfPodMesh = %q, %v; want %q, %v", tt.name, mesh, known, tt.mesh, tt.known)

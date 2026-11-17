@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { capabilityReason, actionErrorCode, actionOutcomeLocked, actionDialogResult } from './actions'
 import { ApiError } from './client'
-import { RadarFeatureUnsupportedError } from './radarFeatures'
+import { KubeAtlasFeatureUnsupportedError } from './kubeatlasFeatures'
 
 describe('capabilityReason', () => {
   it('says nothing for an allowed action, and the server reason when there is one', () => {
@@ -17,7 +17,7 @@ describe('capabilityReason', () => {
 })
 
 it('does not call a pre-request feature refusal an unknown write outcome', () => {
-  const error = new RadarFeatureUnsupportedError('cnpgWorkspace', {})
+  const error = new KubeAtlasFeatureUnsupportedError('cnpgWorkspace', {})
   expect(actionErrorCode(error)).toBeUndefined()
   expect(actionOutcomeLocked(error)).toBe(false)
   expect(actionDialogResult(error)?.state).toBe('error')

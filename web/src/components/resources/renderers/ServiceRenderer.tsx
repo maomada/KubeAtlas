@@ -3,7 +3,7 @@ import { ServiceRenderer as BaseServiceRenderer } from '@maomada/k8s-ui/componen
 import { PortForwardInlineButton } from '../../portforward/PortForwardButton'
 import { CurlButton, CurlPanel, isHttpishPort, defaultScheme, defaultPathForPort } from '../../curl/ServiceCurlButton'
 import { useResources, useServiceEndpointSlices } from '../../../api/client'
-import { isRadarFeatureUnsupported } from '../../../api/radarFeatures'
+import { isKubeAtlasFeatureUnsupported } from '../../../api/kubeatlasFeatures'
 import { useNamespacedCapabilities, useIsLocalDeployment } from '../../../contexts/CapabilitiesContext'
 import type { ResourceRef } from '../../../types'
 import { DURATION_DISCLOSURE } from '@maomada/k8s-ui/utils/animation'
@@ -42,7 +42,7 @@ export function ServiceRenderer({ data, onCopy, copied, onNavigate }: ServiceRen
   const serviceSlices = useServiceEndpointSlices(namespace, serviceName, canListEndpointSlices)
   // A KubeAtlas without the per-Service endpoint keeps its earlier behavior: only
   // selector-less Services list the namespace's slices and filter them here.
-  const legacy = isRadarFeatureUnsupported(serviceSlices.error, 'serviceEndpointSlices')
+  const legacy = isKubeAtlasFeatureUnsupported(serviceSlices.error, 'serviceEndpointSlices')
   const shouldLoadNamespaceSlices = canListEndpointSlices && hasNoSelector && legacy
   const { data: namespaceSlices, isLoading: namespaceSlicesLoading, error: namespaceSlicesError } = useResources<any>(
     'endpointslices',

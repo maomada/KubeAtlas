@@ -41,7 +41,7 @@ export interface LogsViewerProps {
 }
 
 // Kubernetes' answers that there are no logs to show, such as "no earlier run".
-// They describe the pod, not a failure in Radar, so they are shown like an
+// They describe the pod, not a failure in KubeAtlas, so they are shown like an
 // empty pane rather than as an error.
 const CLUSTER_ANSWER_CODES = new Set(['no_previous_run', 'logs_unavailable', 'container_not_started'])
 

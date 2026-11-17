@@ -1,15 +1,15 @@
 package investigation
 
-// Radar's general guidance: when to use Radar, which tool answers which
-// question, how to read Radar's signals, and the evidence and untrusted-data
+// KubeAtlas's general guidance: when to use KubeAtlas, which tool answers which
+// question, how to read KubeAtlas's signals, and the evidence and untrusted-data
 // rules. It lives here, beside the investigation prompts, so every product that
-// puts it in front of an agent uses the same bytes. Radar's public MCP
+// puts it in front of an agent uses the same bytes. KubeAtlas's public MCP
 // endpoints (/mcp, /mcp-readonly, stdio) send it as server instructions, in
 // the initialize result or, on protocol 2026-07-28, which has no initialize,
 // the server/discover result; the private investigation transport sends none.
 //
 // Clients show server instructions differently: some at session start, some
-// only after the model has loaded Radar's tools, and some cut long text (Claude
+// only after the model has loaded KubeAtlas's tools, and some cut long text (Claude
 // Code keeps the first 2,048 characters in older versions and 4,096 in newer
 // ones; Codex shows a deferred server only by the first line, cut at 250
 // characters). So the first line stands alone within 250 characters, the
@@ -19,10 +19,10 @@ package investigation
 // tool's own description, which the agent reads before calling it, carries the
 // detail.
 
-// GuidanceRouting says when to use Radar and which tool answers which
+// GuidanceRouting says when to use KubeAtlas and which tool answers which
 // question. It names read tools only; GuidanceWriteRouting adds the write tools
 // where they are registered.
-const GuidanceRouting = `Radar keeps a live model of this Kubernetes cluster: prefer its tools to kubectl for reads; load these together: issues, diagnose, get_changes, get_resource, list_resources, search, get_workload_logs, get_pod_logs, get_events.
+const GuidanceRouting = `KubeAtlas keeps a live model of this Kubernetes cluster: prefer its tools to kubectl for reads; load these together: issues, diagnose, get_changes, get_resource, list_resources, search, get_workload_logs, get_pod_logs, get_events.
 
 WHICH TOOL
 - Symptom known, faulty resource not: issues. Ranked live failures, with references to missing objects and unschedulable pods.
@@ -42,7 +42,7 @@ const guidanceWriteTools = "- Fixes, each only if listed: patch_resource, apply_
 const guidanceFixDiscipline = ". Fix the diagnosed cause, ideally by restoring what changed and broke; stopgaps only if it can't be fixed now.\n"
 
 // GuidanceWriteRouting routes fixes to the write tools. A proxy in front of a
-// full server can hide its write tools (Radar Hub does for read-only
+// full server can hide its write tools (KubeAtlas Hub does for read-only
 // organizations) while still listing other vendors' write tools, so the line
 // conditions each Kubernetes write tool on that tool being listed rather than
 // on write tools in general.
@@ -51,8 +51,8 @@ const GuidanceWriteRouting = guidanceWriteTools + guidanceFixDiscipline
 // GuidanceWriteRoutingExec includes the optional in-container command tool.
 const GuidanceWriteRoutingExec = "- Pod checks: exec_pod if listed.\n" + GuidanceWriteRouting
 
-// GuidanceSignals says how to read what Radar returns.
-const GuidanceSignals = `READING RADAR'S SIGNALS
+// GuidanceSignals says how to read what KubeAtlas returns.
+const GuidanceSignals = `READING KUBEATLAS'S SIGNALS
 - An issues row naming a mechanism and an action is the leading hypothesis; start from its incident_parent if any. Confirm it with a targeted read; don't re-derive it. If it points at another resource, follow it. Conclude only when the evidence names the resource, explains the mechanism and accounts for the symptom; keep other findings separate.
 - Use changes attached to issues; get_changes when absent or for another window or scope. Reuse logs from diagnose; fetch more only for a specific gap.
 - issue_timing started_after_resource_was_healthy: a healthy window preceded the failure; look for what changed. started_at_resource_creation means the resource, or its owner workload, started failing during creation or first reconciliation. Compare resource_created_at with the incident window. Timing alone doesn't prove cause. Prefer timing_summary when present.
@@ -63,7 +63,7 @@ const GuidanceSignals = `READING RADAR'S SIGNALS
 // GeneralGuidanceReadOnly is the general guidance for a surface without write
 // tools; GeneralGuidanceFull adds write-tool routing, and GeneralGuidanceExec
 // also routes to optional container commands. All end with the
-// evidence rule and the untrusted-data rule Radar's own investigation agent
+// evidence rule and the untrusted-data rule KubeAtlas's own investigation agent
 // follows.
 const (
 	GeneralGuidanceReadOnly = GuidanceRouting + "\n" + GuidanceSignals + "\n" + ResultDiscipline + " " + UntrustedClusterData
@@ -72,7 +72,7 @@ const (
 )
 
 // GeneralGuidance returns the general guidance for a surface that does or does
-// not register Radar's write tools.
+// not register KubeAtlas's write tools.
 func GeneralGuidance(includeWrites bool) string {
 	if includeWrites {
 		return GeneralGuidanceFull

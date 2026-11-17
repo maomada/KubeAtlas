@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"io/fs"
 	"net"
 	"net/url"
@@ -41,7 +42,7 @@ func testPostgresDSN(t *testing.T) string {
 	}
 
 	schema := fmt.Sprintf(
-		"radar_test_%d_%d",
+		"kubeatlas_test_%d_%d",
 		time.Now().UnixNano(),
 		postgresTestSchemaCounter.Add(1),
 	)
@@ -96,7 +97,7 @@ func TestNewPostgresStoreRunsMigrations(t *testing.T) {
 	var versions int
 	if err := store.db.QueryRowContext(
 		t.Context(),
-		"SELECT COUNT(*) FROM radar_timeline_schema_migrations",
+		compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_schema_migrations"),
 	).Scan(&versions); err != nil {
 		t.Fatalf("query migration versions: %v", err)
 	}
@@ -105,15 +106,15 @@ func TestNewPostgresStoreRunsMigrations(t *testing.T) {
 	}
 
 	for _, relation := range []string{
-		"radar_timeline_events",
-		"radar_timeline_event_seq",
-		"radar_timeline_seen_resources",
+		"kubeatlas_timeline_events",
+		"kubeatlas_timeline_event_seq",
+		"kubeatlas_timeline_seen_resources",
 	} {
 		var exists bool
 		if err := store.db.QueryRowContext(
 			t.Context(),
-			"SELECT to_regclass($1) IS NOT NULL",
-			relation,
+			compat.PhysicalTimelineSQL("SELECT to_regclass($1) IS NOT NULL"),
+			compat.PhysicalTimelineSQL(relation),
 		).Scan(&exists); err != nil {
 			t.Fatalf("query relation %s: %v", relation, err)
 		}
@@ -147,7 +148,7 @@ func TestNewPostgresStoreMigrationsAreIdempotent(t *testing.T) {
 	var versions int
 	if err := second.db.QueryRowContext(
 		t.Context(),
-		"SELECT COUNT(*) FROM radar_timeline_schema_migrations",
+		compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_schema_migrations"),
 	).Scan(&versions); err != nil {
 		t.Fatalf("query migration versions: %v", err)
 	}
@@ -163,7 +164,7 @@ func TestNewPostgresStoreFailsWhenRequiredTableIsMissing(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPostgresStore: %v", err)
 	}
-	if _, err := store.db.ExecContext(t.Context(), "DROP TABLE radar_timeline_events"); err != nil {
+	if _, err := store.db.ExecContext(t.Context(), compat.PhysicalTimelineSQL("DROP TABLE kubeatlas_timeline_events")); err != nil {
 		_ = store.Close()
 		t.Fatalf("drop timeline events table: %v", err)
 	}
@@ -222,7 +223,7 @@ func TestNewPostgresStoreConcurrentMigrations(t *testing.T) {
 	var versions int
 	if err := stores[0].db.QueryRowContext(
 		t.Context(),
-		"SELECT COUNT(*) FROM radar_timeline_schema_migrations",
+		compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_schema_migrations"),
 	).Scan(&versions); err != nil {
 		t.Fatalf("query migration versions: %v", err)
 	}
@@ -244,7 +245,7 @@ func TestNewPostgresStoreHydratesNULSeenResourceKey(t *testing.T) {
 	}
 	if _, err := first.db.ExecContext(
 		t.Context(),
-		`INSERT INTO radar_timeline_seen_resources (resource_key) VALUES ($1)`,
+		compat.PhysicalTimelineSQL(`INSERT INTO kubeatlas_timeline_seen_resources (resource_key) VALUES ($1)`),
 		[]byte(key),
 	); err != nil {
 		t.Fatalf("insert seen-resource key: %v", err)
@@ -273,8 +274,8 @@ func TestNewPostgresStoreHydratesNULSeenResourceKey(t *testing.T) {
 
 func TestNewPostgresStoreConnectionErrorRedactsPassword(t *testing.T) {
 	const (
-		password = "radar-super-secret"
-		dsn      = "postgres://radar:" + password + "@127.0.0.1:1/radar?sslmode=disable&connect_timeout=1"
+		password = "kubeatlas-super-secret"
+		dsn      = "postgres://kubeatlas:" + password + "@127.0.0.1:1/kubeatlas?sslmode=disable&connect_timeout=1"
 	)
 
 	_, err := NewPostgresStore(dsn)
@@ -287,8 +288,8 @@ func TestNewPostgresStoreConnectionErrorRedactsPassword(t *testing.T) {
 }
 
 func TestPostgresConnectionErrorRedactsKeywordPassword(t *testing.T) {
-	const password = "radar-keyword-secret"
-	dsn := "host=127.0.0.1 port=1 user=radar password=" + password + " dbname=radar"
+	const password = "kubeatlas-keyword-secret"
+	dsn := "host=127.0.0.1 port=1 user=kubeatlas password=" + password + " dbname=kubeatlas"
 	driverErr := errors.New("driver exposed password " + password)
 
 	err := postgresConnectionError("connect", driverErr, dsn)
@@ -326,7 +327,7 @@ func TestNewPostgresStorePingIsBounded(t *testing.T) {
 	})
 
 	dsn := fmt.Sprintf(
-		"postgres://radar:secret@%s/radar?sslmode=disable",
+		"postgres://kubeatlas:secret@%s/kubeatlas?sslmode=disable",
 		listener.Addr().String(),
 	)
 	started := time.Now()
@@ -358,7 +359,7 @@ func TestPostgresStore_AppendBatch(t *testing.T) {
 	}
 
 	var count int
-	if err := store.db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM radar_timeline_events").Scan(&count); err != nil {
+	if err := store.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_events")).Scan(&count); err != nil {
 		t.Fatalf("count events: %v", err)
 	}
 	if count != 2 {
@@ -384,7 +385,7 @@ func TestPostgresStore_AppendBatchRollsBackOnContextCancellation(t *testing.T) {
 	}
 
 	var count int
-	if err := store.db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM radar_timeline_events").Scan(&count); err != nil {
+	if err := store.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_events")).Scan(&count); err != nil {
 		t.Fatalf("count events: %v", err)
 	}
 	if count != 0 {
@@ -411,7 +412,7 @@ func TestPostgresStore_AppendDuplicateInformerNoOp(t *testing.T) {
 	var count int
 	if err := store.db.QueryRowContext(
 		t.Context(),
-		"SELECT reason, event_type, COUNT(*) FROM radar_timeline_events WHERE id = $1 GROUP BY reason, event_type",
+		compat.PhysicalTimelineSQL("SELECT reason, event_type, COUNT(*) FROM kubeatlas_timeline_events WHERE id = $1 GROUP BY reason, event_type"),
 		"dup-1",
 	).Scan(&reason, &eventType, &count); err != nil {
 		t.Fatalf("query row: %v", err)
@@ -450,7 +451,7 @@ func TestPostgresStore_AppendK8sEventUpsert(t *testing.T) {
 		t.Fatalf("append first: %v", err)
 	}
 	var firstSeq int64
-	if err := store.db.QueryRowContext(t.Context(), "SELECT seq FROM radar_timeline_events WHERE id = $1", "evt-upsert-1").Scan(&firstSeq); err != nil {
+	if err := store.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT seq FROM kubeatlas_timeline_events WHERE id = $1"), "evt-upsert-1").Scan(&firstSeq); err != nil {
 		t.Fatalf("query first seq: %v", err)
 	}
 
@@ -466,8 +467,8 @@ func TestPostgresStore_AppendK8sEventUpsert(t *testing.T) {
 	var labels []byte
 	if err := store.db.QueryRowContext(
 		t.Context(),
-		`SELECT count, message, seq, resource_created_at, owner_kind, owner_name, labels_json
-		 FROM radar_timeline_events WHERE id = $1`,
+		compat.PhysicalTimelineSQL(`SELECT count, message, seq, resource_created_at, owner_kind, owner_name, labels_json
+		 FROM kubeatlas_timeline_events WHERE id = $1`),
 		"evt-upsert-1",
 	).Scan(&count, &message, &seq, &createdAtNanos, &ownerKind, &ownerName, &labels); err != nil {
 		t.Fatalf("query row: %v", err)
@@ -512,7 +513,7 @@ func TestPostgresStore_AppendK8sEventStalenessGuard(t *testing.T) {
 
 	var count int32
 	var message string
-	if err := store.db.QueryRowContext(t.Context(), "SELECT count, message FROM radar_timeline_events WHERE id = $1", "evt-stale-1").Scan(&count, &message); err != nil {
+	if err := store.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT count, message FROM kubeatlas_timeline_events WHERE id = $1"), "evt-stale-1").Scan(&count, &message); err != nil {
 		t.Fatalf("query row: %v", err)
 	}
 	if count != 5 || message != "newer" {
@@ -530,7 +531,7 @@ func TestPostgresStore_AppendRestartSequenceContinuity(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 	var seq1 int64
-	if err := store1.db.QueryRowContext(t.Context(), "SELECT seq FROM radar_timeline_events WHERE id = $1", "seq-a").Scan(&seq1); err != nil {
+	if err := store1.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT seq FROM kubeatlas_timeline_events WHERE id = $1"), "seq-a").Scan(&seq1); err != nil {
 		t.Fatalf("query seq1: %v", err)
 	}
 	if err := store1.Close(); err != nil {
@@ -546,7 +547,7 @@ func TestPostgresStore_AppendRestartSequenceContinuity(t *testing.T) {
 		t.Fatalf("append: %v", err)
 	}
 	var seq2 int64
-	if err := store2.db.QueryRowContext(t.Context(), "SELECT seq FROM radar_timeline_events WHERE id = $1", "seq-b").Scan(&seq2); err != nil {
+	if err := store2.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT seq FROM kubeatlas_timeline_events WHERE id = $1"), "seq-b").Scan(&seq2); err != nil {
 		t.Fatalf("query seq2: %v", err)
 	}
 	if seq2 <= seq1 {
@@ -589,7 +590,7 @@ func TestPostgresStore_AppendConcurrentStores(t *testing.T) {
 	wg.Wait()
 
 	var count int
-	if err := store1.db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM radar_timeline_events").Scan(&count); err != nil {
+	if err := store1.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_events")).Scan(&count); err != nil {
 		t.Fatalf("count events: %v", err)
 	}
 	if count != n {
@@ -620,7 +621,7 @@ func TestPostgresStore_AppendSerializationBlocksConcurrentWriter(t *testing.T) {
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(
 		t.Context(),
-		"SELECT pg_advisory_xact_lock($1, $2)",
+		compat.PhysicalTimelineSQL("SELECT pg_advisory_xact_lock($1, $2)"),
 		postgresAppendLockNamespace,
 		postgresAppendLockID,
 	); err != nil {
@@ -980,7 +981,7 @@ func TestPostgresStore_Cleanup(t *testing.T) {
 	}
 
 	var count int
-	if err := store.db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM radar_timeline_events").Scan(&count); err != nil {
+	if err := store.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_events")).Scan(&count); err != nil {
 		t.Fatalf("count: %v", err)
 	}
 	if count != 1 {
@@ -1035,7 +1036,7 @@ func TestPostgresStore_StartCleanupLoop(t *testing.T) {
 	var count int
 	for range 100 {
 		time.Sleep(20 * time.Millisecond)
-		if err := store.db.QueryRowContext(t.Context(), "SELECT COUNT(*) FROM radar_timeline_events").Scan(&count); err != nil {
+		if err := store.db.QueryRowContext(t.Context(), compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_events")).Scan(&count); err != nil {
 			t.Fatalf("count: %v", err)
 		}
 		if count == 1 {
@@ -1285,7 +1286,7 @@ func TestNewPostgresStoreBuildsUIDIndexesInTheBackground(t *testing.T) {
 		for {
 			var valid bool
 			err := store.db.QueryRowContext(t.Context(),
-				"SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid = to_regclass($1)", index.name).Scan(&valid)
+				compat.PhysicalTimelineSQL("SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid = to_regclass($1)"), compat.PhysicalTimelineSQL(index.name)).Scan(&valid)
 			if err == nil && valid {
 				break
 			}

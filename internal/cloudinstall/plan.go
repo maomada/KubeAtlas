@@ -27,7 +27,7 @@ type InstallPlan struct {
 	Mode                 InstallPlanMode
 	Namespace            string
 	Release              string
-	Target               *RadarTarget
+	Target               *KubeAtlasTarget
 	ClusterWideScanError error
 }
 
@@ -38,7 +38,7 @@ type ReleaseInspector interface {
 
 // ReleaseInspectError is reading the Helm state of the release the plan would
 // act on failing — typically the caller may not list Secrets in that
-// namespace. Existing says whether discovery had already found a Radar
+// namespace. Existing says whether discovery had already found a KubeAtlas
 // Deployment carrying that release, so a presenter can keep pointing at the
 // release to adopt even though the plan itself could not be finished.
 // ScanIncomplete says discovery could only see the default namespace, so
@@ -50,7 +50,7 @@ type ReleaseInspectError struct {
 	Namespace string
 	Release   string
 	// Existing: discovery found a natively Helm-owned release matching the
-	// target — adoptable. Found: discovery found some Radar Deployment there,
+	// target — adoptable. Found: discovery found some KubeAtlas Deployment there,
 	// adoptable or not; when Found and not Existing, neither a fresh install
 	// nor an adoption is safe to offer.
 	Existing       bool
@@ -64,15 +64,15 @@ func (e *ReleaseInspectError) Error() string {
 }
 func (e *ReleaseInspectError) Unwrap() error { return e.Err }
 
-// MultipleTargetsError is returned when discovery finds more than one Radar
+// MultipleTargetsError is returned when discovery finds more than one KubeAtlas
 // installation and no explicit target selects between them. Presenters render
 // their own resolution hint (CLI: pass --namespace/--release; UI: use the CLI).
 type MultipleTargetsError struct {
-	Targets []RadarTarget
+	Targets []KubeAtlasTarget
 }
 
 func (e *MultipleTargetsError) Error() string {
-	return fmt.Sprintf("found multiple Radar installations:\n%s", FormatTargets(e.Targets))
+	return fmt.Sprintf("found multiple KubeAtlas installations:\n%s", FormatTargets(e.Targets))
 }
 
 // InspectInstallPlan combines workload discovery with Helm storage. It never
@@ -86,7 +86,7 @@ func InspectInstallPlan(
 	namespace, release string,
 	explicitTarget bool,
 ) (InstallPlan, error) {
-	result, err := DiscoverRadarTargets(ctx, kc, dc, DiscoveryOptions{
+	result, err := DiscoverKubeAtlasTargets(ctx, kc, dc, DiscoveryOptions{
 		Namespace: namespace, ReleaseName: release, ClusterWide: !explicitTarget,
 	})
 	if err != nil {
@@ -116,7 +116,7 @@ func ClassifyInstallPlan(
 		target := candidates[0]
 		if strings.TrimSpace(target.ReleaseName) == "" {
 			return InstallPlan{}, fmt.Errorf(
-				"Radar Deployment %q in namespace %q has no Helm release identity; refusing to guess how it is managed",
+				"KubeAtlas Deployment %q in namespace %q has no Helm release identity; refusing to guess how it is managed",
 				target.DeploymentName, target.Namespace,
 			)
 		}
@@ -127,7 +127,7 @@ func ClassifyInstallPlan(
 		}
 		if target.Runtime.AlreadyCloud {
 			return InstallPlan{}, fmt.Errorf(
-				"Radar Deployment %q in namespace %q already has Cloud connection settings; recover that pairing instead of creating another",
+				"KubeAtlas Deployment %q in namespace %q already has Cloud connection settings; recover that pairing instead of creating another",
 				target.DeploymentName, target.Namespace,
 			)
 		}
@@ -140,7 +140,7 @@ func ClassifyInstallPlan(
 			OwnershipGitOpsStale,
 			OwnershipAmbiguous:
 			return InstallPlan{}, fmt.Errorf(
-				"Radar Deployment %q in namespace %q has %s ownership evidence; refusing an imperative upgrade until its GitOps ownership is unambiguous and readable",
+				"KubeAtlas Deployment %q in namespace %q has %s ownership evidence; refusing an imperative upgrade until its GitOps ownership is unambiguous and readable",
 				target.DeploymentName, target.Namespace, target.Ownership.Classification,
 			)
 		}
@@ -168,7 +168,7 @@ func ClassifyInstallPlan(
 	case helm.CloudReleaseNone:
 		if plan.Target != nil {
 			return InstallPlan{}, fmt.Errorf(
-				"Radar Deployment %q already occupies release target %q/%q but no adoptable Helm release exists; refusing to overwrite an unmanaged installation",
+				"KubeAtlas Deployment %q already occupies release target %q/%q but no adoptable Helm release exists; refusing to overwrite an unmanaged installation",
 				plan.Target.DeploymentName, plan.Namespace, plan.Release,
 			)
 		}
@@ -185,12 +185,12 @@ func ClassifyInstallPlan(
 		return plan, nil
 	case helm.CloudReleasePending:
 		return InstallPlan{}, fmt.Errorf(
-			"Helm release %q in namespace %q is %q at revision %d; wait for or resolve that operation before connecting it to Radar",
+			"Helm release %q in namespace %q is %q at revision %d; wait for or resolve that operation before connecting it to KubeAtlas",
 			plan.Release, plan.Namespace, inspection.Status, inspection.Revision,
 		)
 	case helm.CloudReleaseHistory:
 		return InstallPlan{}, fmt.Errorf(
-			"Helm release %q in namespace %q has retained %q history at revision %d but is not deployed; resolve or remove that history before connecting it to Radar",
+			"Helm release %q in namespace %q has retained %q history at revision %d but is not deployed; resolve or remove that history before connecting it to KubeAtlas",
 			plan.Release, plan.Namespace, inspection.Status, inspection.Revision,
 		)
 	default:
@@ -200,17 +200,17 @@ func ClassifyInstallPlan(
 
 // DiscoveredTargets flattens a DiscoveryResult into the candidate list the
 // classifier arbitrates over.
-func DiscoveredTargets(result DiscoveryResult, exactTarget bool) []RadarTarget {
+func DiscoveredTargets(result DiscoveryResult, exactTarget bool) []KubeAtlasTarget {
 	if exactTarget {
 		return result.Selected
 	}
-	targets := append([]RadarTarget{}, result.Namespace...)
+	targets := append([]KubeAtlasTarget{}, result.Namespace...)
 	return append(targets, result.ClusterWide...)
 }
 
 // FormatTargets renders candidate installations one per line for error and
 // selection messages.
-func FormatTargets(targets []RadarTarget) string {
+func FormatTargets(targets []KubeAtlasTarget) string {
 	var out strings.Builder
 	for _, target := range targets {
 		fmt.Fprintf(&out, "  - namespace %q, release %q, Deployment %q, ownership %s\n",

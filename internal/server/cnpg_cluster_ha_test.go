@@ -277,7 +277,7 @@ func TestCNPGClusterHA_ReadsEveryFact(t *testing.T) {
 
 // Reading the Cluster never implies the rest: a caller who can only get the
 // Cluster and list Pods sees every other fact denied, named by its grant, and
-// Radar never asks the apiserver for what the caller cannot read.
+// KubeAtlas never asks the apiserver for what the caller cannot read.
 func TestCNPGClusterHA_EachReadIsAuthorizedOnItsOwn(t *testing.T) {
 	now := time.Now().UTC()
 	seedCNPGHAFixture(t, now)
@@ -345,7 +345,7 @@ func TestCNPGClusterHA_EachReadIsAuthorizedOnItsOwn(t *testing.T) {
 	defer mu.Unlock()
 	for _, c := range calls {
 		if strings.Contains(c, "leases") || strings.Contains(c, "failoverquorums") || strings.Contains(c, "endpointslices") || strings.Contains(c, "secrets") {
-			t.Errorf("Radar asked the apiserver for something the caller cannot read: %s", c)
+			t.Errorf("KubeAtlas asked the apiserver for something the caller cannot read: %s", c)
 		}
 	}
 }

@@ -272,7 +272,7 @@ type ResourceDiff struct {
 	ParseErrorCount int              `json:"parseErrorCount,omitempty"`
 }
 
-// UpgradeSourceIssue identifies why Radar could not resolve the upstream chart
+// UpgradeSourceIssue identifies why KubeAtlas could not resolve the upstream chart
 // source for upgrade checks.
 type UpgradeSourceIssue string
 
@@ -327,7 +327,7 @@ type UpgradeInfo struct {
 	ChartRef    string             `json:"chartRef,omitempty"`
 	Error       string             `json:"error,omitempty"`
 	SourceIssue UpgradeSourceIssue `json:"sourceIssue,omitempty"`
-	// Untracked marks the specific error state where Radar genuinely can't tell
+	// Untracked marks the specific error state where KubeAtlas genuinely can't tell
 	// where the chart comes from — i.e. registering a chart source could fix it.
 	// Kept for compatibility; SourceIssue is the richer reason code.
 	Untracked bool `json:"untracked,omitempty"`

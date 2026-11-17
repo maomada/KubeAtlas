@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: kueue-demo
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo

@@ -21,7 +21,7 @@ import (
 
 // PolicyEvaluation is the response for /api/network-policies/evaluate.
 //
-// Verdict is what the policies Radar can see say about the connection:
+// Verdict is what the policies KubeAtlas can see say about the connection:
 // "admitted" (a core NetworkPolicy admits it), "denied" (core policies isolate
 // the pod and none admit it), "no-policy" (no core policy applies), or
 // "undecidable" — Reason then says what could not be established. It is a
@@ -152,13 +152,13 @@ func (s *Server) handleEvaluateNetworkPolicies(w http.ResponseWriter, r *http.Re
 		synced, known := cache.InformerSynced(string(kind))
 		if !known || !synced || !cache.KindCoversNamespace(string(kind), selNs) {
 			s.writeJSON(w, PolicyEvaluation{Verdict: verdictUndecidable, Evaluated: evaluated,
-				Reason: fmt.Sprintf("Radar can't see %s in namespace %s (not synced yet, or outside the namespaces it watches)", kind, selNs)})
+				Reason: fmt.Sprintf("KubeAtlas can't see %s in namespace %s (not synced yet, or outside the namespaces it watches)", kind, selNs)})
 			return
 		}
 	}
 	pods, netpols := cache.Pods(), cache.NetworkPolicies()
 	if pods == nil || netpols == nil {
-		s.writeJSON(w, PolicyEvaluation{Verdict: verdictUndecidable, Evaluated: evaluated, Reason: "Radar's policy and pod caches are still warming up"})
+		s.writeJSON(w, PolicyEvaluation{Verdict: verdictUndecidable, Evaluated: evaluated, Reason: "KubeAtlas's policy and pod caches are still warming up"})
 		return
 	}
 
@@ -198,7 +198,7 @@ func (s *Server) handleEvaluateNetworkPolicies(w http.ResponseWriter, r *http.Re
 
 	// Cilium unions its own allow rules with core ones and lets its deny rules
 	// override both, so as soon as a Cilium policy governs this pod in this
-	// direction — or Radar cannot tell whether one does — the core reading is
+	// direction — or KubeAtlas cannot tell whether one does — the core reading is
 	// no longer a verdict about the connection, whichever way it went.
 	cil := s.ciliumPolicies(r, cache, selected, s.namespaceObject(r, cache, selected.Namespace), dir)
 	matches = append(matches, cil.rows...)
@@ -255,7 +255,7 @@ func (s *Server) resolvePeer(r *http.Request, cache *k8s.ResourceCache, ep endpo
 		return netpol.Peer{IP: ep.ip}, ep.ns + "/" + ep.name + " (not visible to you)"
 	}
 	if !cache.KindCoversNamespace(string(k8score.Pods), ep.ns) {
-		return netpol.Peer{IP: ep.ip}, ep.ns + "/" + ep.name + " (outside the namespaces Radar watches)"
+		return netpol.Peer{IP: ep.ip}, ep.ns + "/" + ep.name + " (outside the namespaces KubeAtlas watches)"
 	}
 	pods := cache.Pods()
 	if pods == nil {
@@ -362,12 +362,12 @@ type ciliumFindings struct {
 
 // ciliumPolicies finds the CiliumNetworkPolicies and
 // CiliumClusterwideNetworkPolicies whose endpointSelector selects the pod and
-// that carry rules for dir. Radar does not evaluate their rules; they are
+// that carry rules for dir. KubeAtlas does not evaluate their rules; they are
 // listed so the reader knows they are in play.
 func (s *Server) ciliumPolicies(r *http.Request, cache *k8s.ResourceCache, pod *corev1.Pod, ns *corev1.Namespace, dir netpol.Direction) ciliumFindings {
 	discovery := k8s.GetResourceDiscovery()
 	if discovery == nil {
-		return ciliumFindings{state: ciliumUnknown, why: "Radar has not finished discovering this cluster's APIs, so it is not known whether Cilium policies are in play"}
+		return ciliumFindings{state: ciliumUnknown, why: "KubeAtlas has not finished discovering this cluster's APIs, so it is not known whether Cilium policies are in play"}
 	}
 	cnpGVR, hasCNP := discovery.GetGVRWithGroup("CiliumNetworkPolicy", "cilium.io")
 	ccnpGVR, hasCCNP := discovery.GetGVRWithGroup("CiliumClusterwideNetworkPolicy", "cilium.io")
@@ -385,10 +385,10 @@ func (s *Server) ciliumPolicies(r *http.Request, cache *k8s.ResourceCache, pod *
 					out.state, out.why = ciliumUnknown, kind+" "+obj.GetName()+" "+why
 				}
 			case selects:
-				out.state, out.why = ciliumApplies, "a "+kind+" also applies to this pod, and Radar reads only Kubernetes NetworkPolicies"
+				out.state, out.why = ciliumApplies, "a "+kind+" also applies to this pod, and KubeAtlas reads only Kubernetes NetworkPolicies"
 				out.rows = append(out.rows, PolicyMatch{
 					Name: obj.GetName(), Namespace: namespace, Kind: kind, Effect: "undecidable",
-					Reason: "Cilium policy; Radar reads only Kubernetes NetworkPolicies, so what this one did to the flow is known only from the plugin's own report",
+					Reason: "Cilium policy; KubeAtlas reads only Kubernetes NetworkPolicies, so what this one did to the flow is known only from the plugin's own report",
 				})
 			}
 		}
@@ -401,7 +401,7 @@ func (s *Server) ciliumPolicies(r *http.Request, cache *k8s.ResourceCache, pod *
 		items, err := listDynamicSynced(r.Context(), cache, kind, gvr.Group, namespace)
 		if err != nil {
 			log.Printf("[network-policy] Failed to list %s: %v", kind, err)
-			out.state, out.why = ciliumUnknown, "this cluster has "+kind+" objects and Radar could not read them"
+			out.state, out.why = ciliumUnknown, "this cluster has "+kind+" objects and KubeAtlas could not read them"
 			return false
 		}
 		consider(kind, namespace, items)

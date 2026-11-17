@@ -137,7 +137,7 @@ func TestUnavailableReasonRedactsCredentials(t *testing.T) {
 
 	if err := InitStore(StoreConfig{
 		Type: StoreTypePostgres,
-		DSN:  "postgres://radar:hunter2@127.0.0.1:1/radar?sslmode=disable",
+		DSN:  "postgres://kubeatlas:hunter2@127.0.0.1:1/kubeatlas?sslmode=disable",
 	}); err != nil {
 		t.Fatalf("InitStore: %v", err)
 	}

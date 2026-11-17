@@ -23,13 +23,14 @@ import (
 	integration "github.com/maomada/KubeAtlas/internal/integration"
 	"github.com/maomada/KubeAtlas/internal/k8s"
 	"github.com/maomada/KubeAtlas/pkg/cnpg"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"github.com/maomada/KubeAtlas/pkg/k8score"
 )
 
 const (
 	cnpgPVCStatusAnnotation = "cnpg.io/pvcStatus"
 	cnpgPVCStatusDetached   = "detached"
-	cnpgDetachedClusterUID  = "radar.skyhook.io/detached-cluster-uid"
+	cnpgDetachedClusterUID  = "kubeatlas.io/detached-cluster-uid"
 )
 
 var (
@@ -170,7 +171,8 @@ func cnpgInstancePVCs(ctx context.Context, typed kubernetes.Interface, namespace
 	out := []corev1.PersistentVolumeClaim{}
 	for _, p := range list.Items {
 		owned := cnpgOwnedByCluster(p.OwnerReferences, cluster, clusterUID)
-		detached := p.Annotations[cnpgPVCStatusAnnotation] == cnpgPVCStatusDetached && p.Annotations[cnpgDetachedClusterUID] == string(clusterUID) && clusterUID != "" && p.Labels[instanceNameLabel] == instance
+		detachedUID, validNames := compat.OwnedValue(p.Annotations, cnpgDetachedClusterUID, compat.LegacyCNPGDetachedUID)
+		detached := validNames && p.Annotations[cnpgPVCStatusAnnotation] == cnpgPVCStatusDetached && detachedUID == string(clusterUID) && clusterUID != "" && p.Labels[instanceNameLabel] == instance
 		if owned || detached {
 			out = append(out, p)
 		}
@@ -422,6 +424,7 @@ func cnpgRunDestroyInstance(ctx context.Context, x *cnpgClusterRun) (*CNPGAction
 			}
 			pvc.Annotations[cnpgPVCStatusAnnotation] = cnpgPVCStatusDetached
 			pvc.Annotations[cnpgDetachedClusterUID] = string(clusterUID)
+			delete(pvc.Annotations, compat.LegacyCNPGDetachedUID)
 			pvc.Labels[instanceNameLabel] = p.Pod
 			if _, err := x.c.Typed.CoreV1().PersistentVolumeClaims(namespace).Update(ctx, pvc, metav1.UpdateOptions{}); err != nil {
 				return nil, stop(fmt.Errorf("detaching PVC %s: %w", pvc.Name, err))

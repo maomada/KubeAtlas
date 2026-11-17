@@ -39,7 +39,7 @@ describe('searchCoverageNote', () => {
   })
 
   it('explains a partial namespace without claiming its returned kinds were unsearched', () => {
-    const note = noteFor({ status: 'partial', gaps: [{ code: 'radar_namespace_not_collected', kinds: { extent: 'unknown' }, namespaces: { count: 1, names: ['alpha'] } }] }, { hits: [{ kind: 'Pod' }] })
+    const note = noteFor({ status: 'partial', gaps: [{ code: 'kubeatlas_namespace_not_collected', kinds: { extent: 'unknown' }, namespaces: { count: 1, names: ['alpha'] } }] }, { hits: [{ kind: 'Pod' }] })
     expect(note?.text).toBe("Some kinds weren't searched in namespace 'alpha': KubeAtlas here watches only some namespaces.")
   })
 
@@ -69,7 +69,7 @@ describe('searchCoverageNote', () => {
     expect(searchCoverageNote([failed], { query: 'renewal' })?.text).toBe("Couldn't read Certificate; matches of that kind may be missing. Search kind:Certificate to re-check.")
     expect(searchCoverageNote([failed], { query: 'kind:Certificate renewal' })?.text).toBe("Couldn't read Certificate; matches of that kind may be missing.")
     expect(searchCoverageNote([entry('*', 'read_error')], {})?.text).toBe("Couldn't read some kinds; matches of those kinds may be missing.")
-    expect(searchCoverageNote([entry('Certificate', 'radar_credentials_rejected')], {})?.action).toBeUndefined()
+    expect(searchCoverageNote([entry('Certificate', 'kubeatlas_credentials_rejected')], {})?.action).toBeUndefined()
   })
 
   it('uses the first recoverable kind as the example for a folded failure', () => {
@@ -84,8 +84,8 @@ describe('searchCoverageNote', () => {
 
   it('explains a named kind the caller or KubeAtlas cannot read', () => {
     expect(searchCoverageNote([entry('Secret', 'user_forbidden')], {})?.text).toBe("Your access doesn't include all Secrets. Try narrowing with ns:<namespace>.")
-    expect(searchCoverageNote([entry('Secret', 'radar_forbidden')], {})?.text).toBe("KubeAtlas isn't allowed to read Secrets on this cluster.")
-    expect(searchCoverageNote([entry('Role', 'radar_kind_not_collected')], {})?.text).toBe("KubeAtlas doesn't watch Roles on this cluster, so they weren't searched.")
+    expect(searchCoverageNote([entry('Secret', 'kubeatlas_forbidden')], {})?.text).toBe("KubeAtlas isn't allowed to read Secrets on this cluster.")
+    expect(searchCoverageNote([entry('Role', 'kubeatlas_kind_not_collected')], {})?.text).toBe("KubeAtlas doesn't watch Roles on this cluster, so they weren't searched.")
   })
 
   it('treats an unrecognized kind as not installed or misspelled, unless API groups went undiscovered', () => {
@@ -156,8 +156,8 @@ describe('searchCoverageNote', () => {
 
   it('says why a namespace the query named was not searched', () => {
     const ns = (reason: string, namespaces: string[]) => ({ kind: '*', group: '', reason, namespaces })
-    expect(searchCoverageNote([ns('radar_namespace_not_collected', ['rel-owner'])], {})?.text).toBe("Namespace 'rel-owner' wasn't searched: KubeAtlas here watches only some namespaces.")
-    expect(searchCoverageNote([ns('radar_namespace_not_collected', ['audit', 'billing'])], {})?.text).toBe("Namespaces 'audit' and 'billing' weren't searched: KubeAtlas here watches only some namespaces.")
+    expect(searchCoverageNote([ns('kubeatlas_namespace_not_collected', ['rel-owner'])], {})?.text).toBe("Namespace 'rel-owner' wasn't searched: KubeAtlas here watches only some namespaces.")
+    expect(searchCoverageNote([ns('kubeatlas_namespace_not_collected', ['audit', 'billing'])], {})?.text).toBe("Namespaces 'audit' and 'billing' weren't searched: KubeAtlas here watches only some namespaces.")
     expect(searchCoverageNote([ns('outside_namespace_pin', ['billing'])], {})?.text).toBe("Namespace 'billing' wasn't searched: KubeAtlas is pinned to another namespace.")
     expect(searchCoverageNote([ns('namespace_not_found', ['payments-prd'])], {})?.text).toBe("Namespace 'payments-prd' doesn't exist on this cluster.")
     expect(searchCoverageNote([ns('user_namespace_not_visible', ['payments-prd'])], {})?.text).toBe("Namespace 'payments-prd' wasn't found in what you can see.")
@@ -165,14 +165,14 @@ describe('searchCoverageNote', () => {
 
   it('keeps a read failure visible beside namespace notes', () => {
     const ns = (reason: string, namespaces: string[]) => ({ kind: '*', group: '', reason, namespaces })
-    const mixed = [ns('namespace_not_found', ['gone']), ns('radar_namespace_not_collected', ['rel-owner']), entry('SpStall', 'kind_sync_timed_out', 'stall.sp-live.test')]
+    const mixed = [ns('namespace_not_found', ['gone']), ns('kubeatlas_namespace_not_collected', ['rel-owner']), entry('SpStall', 'kind_sync_timed_out', 'stall.sp-live.test')]
     expect(searchCoverageNote(mixed, {})?.text).toBe(
       "Couldn't read SpStall; matches of that kind may be missing. Namespace 'gone' doesn't exist on this cluster.",
     )
   })
 
   it.each([
-    [{ kind: '*', group: '', reason: 'radar_namespace_not_collected', namespaces: ['rel-owner'] }, false],
+    [{ kind: '*', group: '', reason: 'kubeatlas_namespace_not_collected', namespaces: ['rel-owner'] }, false],
     [entry('*', 'kind_sync_pending'), true],
   ])('keeps the recovery action with its sentence beside %j', (other, loadingFirst) => {
     const recheckKind = vi.fn()
@@ -221,7 +221,7 @@ describe('helpers', () => {
 
 describe('large named target lists', () => {
   const names = Array.from({ length: 5000 }, (_, i) => `target-${String(i).padStart(4, '0')}`)
-  it.each(['user_namespace_not_visible', 'namespace_not_found', 'outside_namespace_pin', 'radar_namespace_not_collected'])(
+  it.each(['user_namespace_not_visible', 'namespace_not_found', 'outside_namespace_pin', 'kubeatlas_namespace_not_collected'])(
     'caps %s namespace prose and preserves structured detail', (reason) => {
       const gaps = [{ kind: '*', group: '', reason, namespaces: names }]
       const text = searchCoverageNote(gaps, {})!.text
@@ -231,7 +231,7 @@ describe('large named target lists', () => {
       expect(gaps[0].namespaces).toEqual(names)
     },
   )
-  it.each(['kind_unknown', 'user_forbidden', 'radar_forbidden', 'kind_not_watchable', 'kind_not_searchable', 'radar_kind_not_collected'])(
+  it.each(['kind_unknown', 'user_forbidden', 'kubeatlas_forbidden', 'kind_not_watchable', 'kind_not_searchable', 'kubeatlas_kind_not_collected'])(
     'caps %s kind prose and preserves exact entries', (reason) => {
       const gaps = names.map((kind) => entry(kind, reason))
       const text = searchCoverageNote(gaps, {})!.text

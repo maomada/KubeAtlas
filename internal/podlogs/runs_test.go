@@ -144,7 +144,7 @@ func TestContainerNotStartedYet(t *testing.T) {
 			t.Errorf("%s: has run, so it has logs", name)
 		}
 	}
-	// No status means Radar can't tell, so the caller asks the apiserver.
+	// No status means KubeAtlas can't tell, so the caller asks the apiserver.
 	if ContainerNotStartedYet(pod, "unknown") || ContainerNotStartedYet(nil, "pulling") {
 		t.Error("no status: want false")
 	}

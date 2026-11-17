@@ -280,7 +280,7 @@ func TestAdmissionBlocker_RespectsPerKindRBAC(t *testing.T) {
 }
 
 // Orders that the record can't establish are not claimed: changes in the same
-// second, and a quota kind Radar doesn't collect (an empty history means
+// second, and a quota kind KubeAtlas doesn't collect (an empty history means
 // nothing then). A tightened quota (an update) doesn't withdraw at-creation
 // timing, since an older version may have blocked the workload from the start.
 func TestAdmissionBlocker_OnlyClaimsRecordedOrder(t *testing.T) {
@@ -296,7 +296,7 @@ func TestAdmissionBlocker_OnlyClaimsRecordedOrder(t *testing.T) {
 		resp := issues.ListResponse{Issues: []issuesapi.Issue{admissionIssue(issuesapi.CategoryQuotaExceeded, "Deployment", "web", quotaMsg, at)}}
 		attachIssueChangeCorrelation(context.Background(), &resp)
 		iss := resp.Issues[0]
-		want := "ResourceQuota compute was created at " + utc(at) + " and Deployment web was created at " + utc(at) + ": Radar recorded both in the same second, so it can't tell which changed last."
+		want := "ResourceQuota compute was created at " + utc(at) + " and Deployment web was created at " + utc(at) + ": KubeAtlas recorded both in the same second, so it can't tell which changed last."
 		if len(iss.CorrelatedChanges) != 2 || !strings.HasSuffix(iss.TimingSummary, want) {
 			t.Fatalf("same-second changes:\n got %q\nwant suffix %q", iss.TimingSummary, want)
 		}
@@ -367,7 +367,7 @@ func TestAdmissionBlocker_OnlyClaimsRecordedOrder(t *testing.T) {
 	})
 }
 
-// Radar restarted a few minutes before the rejection (the kind bench restarts
+// KubeAtlas restarted a few minutes before the rejection (the kind bench restarts
 // it per trial): the store holds both sides' changes, so the quota is linked
 // and the order stated, before the five minutes a "no recent changes" claim
 // needs. The message is the client-go aggregated form seen on kind.
@@ -399,7 +399,7 @@ func TestAdmissionBlocker_YoungStore(t *testing.T) {
 	})
 
 	t.Run("one side unrecorded", func(t *testing.T) {
-		// The Deployment predates Radar's start, so it has no record. A young
+		// The Deployment predates KubeAtlas's start, so it has no record. A young
 		// store can't say it didn't change: the quota informer may still have
 		// been filling. The quota is linked; no order is stated.
 		initAdmissionCache(t)
@@ -423,7 +423,7 @@ func TestAdmissionBlocker_YoungStore(t *testing.T) {
 	})
 
 	t.Run("quota recorded when listed", func(t *testing.T) {
-		// The quota existed before the Deployment's update, but Radar's quota
+		// The quota existed before the Deployment's update, but KubeAtlas's quota
 		// informer listed it afterwards and recorded its add then. The recorded
 		// times are inverted, so no order is stated and timing is kept.
 		initAdmissionCache(t)
@@ -483,7 +483,7 @@ func TestAdmissionBlocker_YoungStore(t *testing.T) {
 	})
 
 	t.Run("policy side unrecorded", func(t *testing.T) {
-		// The workload changed after Radar started; the quota has no record,
+		// The workload changed after KubeAtlas started; the quota has no record,
 		// which on a young store doesn't mean it didn't change.
 		initAdmissionCache(t)
 		store := initCorrelationStore(t)

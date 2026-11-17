@@ -10,7 +10,7 @@ import (
 // Tunable deadlines and limits for the k8s layer.
 //
 // These were previously hardcoded constants. They were promoted to package-
-// level variables to allow operators running Radar against high-latency
+// level variables to allow operators running KubeAtlas against high-latency
 // API servers (SSH-tunneled clusters, geographically distant control planes,
 // throttled endpoints) to widen the bounds without recompiling.
 //
@@ -30,11 +30,11 @@ var (
 	ContextSwitchTimeout = 30 * time.Second
 
 	// FirstPaintBackstop is the hard upper bound on the critical-sync wait
-	// during initial cluster connect. Past this, Radar gives up waiting and
+	// during initial cluster connect. Past this, KubeAtlas gives up waiting and
 	// renders with whatever caches are warm instead of pinning on the
 	// connecting screen indefinitely. Picked to be much longer than a
 	// healthy cluster's sync time but short enough that a permanently-
-	// throttled API server doesn't make Radar feel broken.
+	// throttled API server doesn't make KubeAtlas feel broken.
 	FirstPaintBackstop = 5 * time.Minute
 
 	// NamespaceListTimeout caps the cluster-wide LIST of namespaces used by
@@ -67,7 +67,7 @@ type DeadlineOptions struct {
 //
 // Validation: durations must be > 0 (zero leaves the default untouched);
 // MaxScopeCandidates must be > 0 to be applied. Invalid values are logged
-// and ignored — Radar continues to start with defaults rather than aborting.
+// and ignored — KubeAtlas continues to start with defaults rather than aborting.
 func ConfigureDeadlines(opts DeadlineOptions) {
 	if opts.ContextSwitchTimeout < 0 {
 		log.Printf("[k8s] ignoring negative ContextSwitchTimeout %v, keeping default %v", opts.ContextSwitchTimeout, ContextSwitchTimeout)

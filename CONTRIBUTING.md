@@ -70,8 +70,8 @@ For detailed architecture, API reference, and release process, see [DEVELOPMENT.
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/radar.git
-cd radar
+git clone https://github.com/YOUR_USERNAME/KubeAtlas.git
+cd kubeatlas
 
 # Install all dependencies (Go + npm)
 make deps

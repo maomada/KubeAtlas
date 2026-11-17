@@ -240,7 +240,7 @@ crossplane-demo-status:
 	./scripts/crossplane-demo.sh status
 
 # Load-test the UI at high object counts against a synthetic, resource-free fake
-# cluster (no real workloads, no kubelet, no etcd). Radar treats the fakes as a
+# cluster (no real workloads, no kubelet, no etcd). KubeAtlas treats the fakes as a
 # real cluster. Seeds a topology-realistic Deployment->ReplicaSet->Pod population
 # with matching Services/ConfigMaps/Secrets, spread across nodes and namespaces.
 # The pod count is live-controllable via the admin listener (default <port>+1):
@@ -294,7 +294,7 @@ cnpg-demo-live:
 
 # Runtime fixtures on the EXISTING CNPG demo cluster (operator thawed if frozen):
 # MinIO + real plugin WAL archiving and backups, a restored cluster, a Pooler,
-# pgbench load, a blocked lock chain and a Prometheus Radar auto-discovers.
+# pgbench load, a blocked lock chain and a Prometheus KubeAtlas auto-discovers.
 # `./scripts/cnpg-demo.sh runtime-lag on|off` induces replica lag.
 cnpg-demo-runtime:
 	./scripts/cnpg-demo.sh runtime
@@ -338,7 +338,7 @@ cilium-demo-down:
 cilium-demo-status:
 	./scripts/cilium-demo.sh status
 
-# Pinned upstream CRDs + deterministic fixtures for Radar's 37 curated GPU,
+# Pinned upstream CRDs + deterministic fixtures for KubeAtlas's 37 curated GPU,
 # batch, distributed-training, and inference resource identities.
 gpu-ecosystem-demo:
 	./scripts/gpu-ecosystem-demo.sh up
@@ -351,7 +351,7 @@ gpu-ecosystem-demo-status:
 
 # Kubecost 3 on kind with ephemeral storage, deterministic prices, accelerated
 # FinOps Agent exports, and Deployment/StatefulSet/DaemonSet fixtures. Exercises
-# the real allocation/asset API plus Radar's local port-forward and in-cluster
+# the real allocation/asset API plus KubeAtlas's local port-forward and in-cluster
 # Service-DNS lanes. See scripts/kubecost-demo/README.md.
 kubecost-demo:
 	./scripts/kubecost-demo.sh up
@@ -451,7 +451,7 @@ docker:
 # Test Docker image with read-only filesystem (simulates in-cluster with readOnlyRootFilesystem)
 # Requires ~/.kube/config for cluster access; runs on port 9280
 docker-test: docker
-	@echo "Starting Radar with read-only filesystem (simulating in-cluster)..."
+	@echo "Starting KubeAtlas with read-only filesystem (simulating in-cluster)..."
 	@echo "Press Ctrl+C to stop"
 	docker run --rm \
 		--read-only \
@@ -543,7 +543,7 @@ release:
 # ============================================================================
 
 help:
-	@echo "Radar - Kubernetes Cluster Visualization"
+	@echo "KubeAtlas - Kubernetes Cluster Visualization"
 	@echo ""
 	@echo "Development:"
 	@echo "  make build           - Build CLI binary (frontend + embedded)"
@@ -563,9 +563,9 @@ help:
 	@echo "  make velero-demo      - Velero fixtures, all 13 backup phases at once"
 	@echo "  make velero-demo-live - Velero with real object storage; states produced by the controller"
 	@echo "  make beyla-demo       - Grafana Beyla eBPF traffic fixtures"
-	@echo "  make cilium-demo      - Cilium + Hubble Relay, all Radar connection lanes"
+	@echo "  make cilium-demo      - Cilium + Hubble Relay, all KubeAtlas connection lanes"
 	@echo "  make gpu-ecosystem-demo - 37 GPU, batch, and AI/ML resource fixtures"
-	@echo "  make kubecost-demo    - Kubecost 3 current-cost API and Radar connection lanes"
+	@echo "  make kubecost-demo    - Kubecost 3 current-cost API and KubeAtlas connection lanes"
 	@echo "  make kueue-demo      - Live Kueue admission and pre-Pod blocker fixtures"
 	@echo "  make jobset-demo      - Live JobSet role, dependency, and failure fixtures"
 	@echo "  make kuberay-demo     - Real RayService active/pending revision lifecycle"

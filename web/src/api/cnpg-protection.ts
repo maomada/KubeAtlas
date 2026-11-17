@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { apiUrl } from './config'
 import { useReviewedActionMutation } from './reviewedActionMutation'
 import type { CNPGSchedulePreview } from '@maomada/k8s-ui'
-import { fetchJSON, useRadarFeature } from './client'
+import { fetchJSON, useKubeAtlasFeature } from './client'
 import type { ActionRequest } from './actions'
 import { cnpgPath, type CNPGActionResult } from './cnpg'
 
@@ -43,7 +43,7 @@ export interface CNPGScheduleMethodPreview {
 }
 
 export function useCNPGArchivingPreview(namespace: string, name: string) {
-  const { guard } = useRadarFeature('cnpgProtectionSetup')
+  const { guard } = useKubeAtlasFeature('cnpgProtectionSetup')
   return useMutation<CNPGArchivingPreview, Error, { reviewedContext: string; objectStore: string; serverName: string }>(
     {
       mutationFn: (request) =>
@@ -59,7 +59,7 @@ export function useCNPGArchivingPreview(namespace: string, name: string) {
 }
 
 export function useCNPGScheduleMethodPreview(namespace: string, name: string) {
-  const { guard, gatedKey } = useRadarFeature('cnpgProtectionSetup')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgProtectionSetup')
   return useQuery<CNPGScheduleMethodPreview>({
     queryKey: ['cnpg', 'method-preview', namespace, name, ...gatedKey],
     queryFn: ({ signal }) =>
@@ -71,7 +71,7 @@ export function useCNPGScheduleMethodPreview(namespace: string, name: string) {
 }
 
 export function useCNPGDraftSchedulePreview(namespace: string, name: string, schedule: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgProtectionSetup')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgProtectionSetup')
   return useQuery<CNPGSchedulePreview>({
     queryKey: ['cnpg', 'draft-schedule-preview', namespace, name, schedule, ...gatedKey],
     queryFn: ({ signal }) =>
@@ -93,7 +93,7 @@ type ProtectionAction =
   | { kind: 'scheduledbackups'; action: 'repairMethod'; request: ActionRequest<CNPGScheduleMethodFacts> }
 
 export function useCNPGProtectionAction<Kind extends ProtectionAction['kind']>(kind: Kind, namespace: string, name: string, reviewedContext: string | undefined) {
-  const { guard } = useRadarFeature('cnpgProtectionSetup')
+  const { guard } = useKubeAtlasFeature('cnpgProtectionSetup')
   const client = useQueryClient()
   return useReviewedActionMutation<CNPGActionResult, Extract<ProtectionAction, { kind: Kind }>>(apiUrl(cnpgPath(kind, namespace, name)), reviewedContext, {
     mutationFn: ({ kind, action, request }) =>

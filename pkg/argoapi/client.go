@@ -1,6 +1,6 @@
 // Package argoapi is a minimal REST client for the Argo CD API server. It is
 // a pure package with no internal/ imports so it can be consumed both by
-// Radar's wiring and by external hosts with their own credential stores.
+// KubeAtlas's wiring and by external hosts with their own credential stores.
 package argoapi
 
 import (

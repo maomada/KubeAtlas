@@ -36,7 +36,7 @@ func modernValidatingPolicy() APIResource {
 // to (or was installed fresh on) the modern policies.kyverno.io family must
 // still be detected as running Kyverno. Reporting not-installed here makes
 // WarmupKyvernoPolicyReports skip the PolicyReport index entirely, so every
-// policy finding silently disappears from Radar even though the reports are
+// policy finding silently disappears from KubeAtlas even though the reports are
 // sitting in the cluster.
 func TestIsKyvernoInstalledDetectsModernOnlyInstall(t *testing.T) {
 	d := newDiscoveryWith(t, modernValidatingPolicy())

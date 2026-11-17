@@ -19,7 +19,7 @@ func TestCollectorUnauthorizedIsCredentialsRejected(t *testing.T) {
 	for _, err := range []error{apierrors.NewUnauthorized("token expired"), fmt.Errorf("list: %w", apierrors.NewUnauthorized("token expired"))} {
 		for _, query := range []string{"robusta", "kind:Pod robusta"} {
 			res, searchErr := Search(t.Context(), &fakeProvider{listErrors: map[string]error{"pods": err}}, Parse(query), Options{})
-			want := []resourceapi.Gap{{Code: readreason.RadarCredentialsRejected, Kinds: resourceapi.Kinds([]resourceapi.KindRef{{Kind: "Pod"}}, 1), Namespaces: resourceapi.AllNames()}}
+			want := []resourceapi.Gap{{Code: readreason.KubeAtlasCredentialsRejected, Kinds: resourceapi.Kinds([]resourceapi.KindRef{{Kind: "Pod"}}, 1), Namespaces: resourceapi.AllNames()}}
 			if searchErr != nil || !partial(res) || !reflect.DeepEqual(res.Coverage.Gaps, want) {
 				t.Fatalf("%s: %+v %v", query, res.Coverage, searchErr)
 			}
@@ -33,7 +33,7 @@ func TestCollectorUnauthorizedIsCredentialsRejected(t *testing.T) {
 				opts.Selection = SelectNamespaces(p, q, readscope.NamespaceAccess{Checked: true}, nil)
 			}
 			res, searchErr := Search(t.Context(), p, q, opts)
-			want := []resourceapi.Gap{{Code: readreason.RadarCredentialsRejected, Kinds: resourceapi.Kinds([]resourceapi.KindRef{{Kind: "Widget", Group: gvr.Group}}, 1), Namespaces: resourceapi.UnknownNames()}}
+			want := []resourceapi.Gap{{Code: readreason.KubeAtlasCredentialsRejected, Kinds: resourceapi.Kinds([]resourceapi.KindRef{{Kind: "Widget", Group: gvr.Group}}, 1), Namespaces: resourceapi.UnknownNames()}}
 			if searchErr != nil || !partial(res) || !reflect.DeepEqual(res.Coverage.Gaps, want) {
 				t.Fatalf("%s: %+v %v", query, res.Coverage, searchErr)
 			}

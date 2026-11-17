@@ -19,8 +19,8 @@ import (
 
 // stalledHelmStorage is an API server whose Helm release Secret list never
 // answers on its own. It records whether the list request was abandoned by
-// its client, which is the only way to tell "Radar stopped waiting" from
-// "Radar stopped waiting but left the read running".
+// its client, which is the only way to tell "KubeAtlas stopped waiting" from
+// "KubeAtlas stopped waiting but left the read running".
 type stalledHelmStorage struct {
 	server       *httptest.Server
 	listStarted  chan struct{}

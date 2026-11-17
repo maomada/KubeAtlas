@@ -188,8 +188,8 @@ func TestFreshInstallCheck_ClassifiesEveryHistoryState(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(string(tc.status), func(t *testing.T) {
 			cfg := memoryActionConfig(t)
-			seedRelease(t, cfg, "radar", tc.status, 7)
-			err := freshInstallCheck(cfg, "radar", "radar")
+			seedRelease(t, cfg, "kubeatlas", tc.status, 7)
+			err := freshInstallCheck(cfg, "kubeatlas", "kubeatlas")
 			switch tc.kind {
 			case "exists":
 				var target *ReleaseExistsError
@@ -212,12 +212,12 @@ func TestFreshInstallCheck_ClassifiesEveryHistoryState(t *testing.T) {
 }
 
 func TestInspectStoredRelease_NamespaceNotFoundMeansNoHistory(t *testing.T) {
-	missingNamespace := apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, "radar")
+	missingNamespace := apierrors.NewNotFound(schema.GroupResource{Resource: "namespaces"}, "kubeatlas")
 	memory := driver.NewMemory()
 	cfg := memoryActionConfig(t)
 	cfg.Releases = storage.Init(&queryErrorDriver{Driver: memory, err: missingNamespace})
 
-	state, err := inspectStoredRelease(cfg, "radar")
+	state, err := inspectStoredRelease(cfg, "kubeatlas")
 	if err != nil {
 		t.Fatalf("missing namespace should mean no release history: %v", err)
 	}

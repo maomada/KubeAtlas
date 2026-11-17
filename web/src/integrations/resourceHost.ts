@@ -1,13 +1,13 @@
 import { createElement, Fragment, type ComponentProps, type ComponentType, type ReactNode } from 'react'
 import type { RendererOverrides, WorkloadExtraTab, WorkloadView } from '@maomada/k8s-ui'
-import type { RadarFeature, RadarFeatureSupport } from '../api/radarFeatures'
+import type { KubeAtlasFeature, KubeAtlasFeatureSupport } from '../api/kubeatlasFeatures'
 import type { RenderDiagnoseAction } from '../context/DiagnoseCustomization'
 import type { SelectedResource } from '../types'
 import { kindToPluralWithGroup } from '../utils/navigation'
 
 export type HostResource = Pick<SelectedResource, 'kind' | 'group' | 'namespace' | 'name'>
 export type DetailSlots = Pick<ComponentProps<typeof WorkloadView>, 'renderSummary' | 'renderHeaderActions' | 'extraTabs'>
-export type HostFeatures = Partial<Record<RadarFeature, RadarFeatureSupport>>
+export type HostFeatures = Partial<Record<KubeAtlasFeature, KubeAtlasFeatureSupport>>
 export type KindListMode = 'table' | 'wait' | 'view'
 export interface HostKind { name: string; kind: string; group: string }
 export interface KindListProps {
@@ -20,12 +20,12 @@ export interface KindListProps {
 type ExclusiveDetailSlot = 'summary' | 'destination' | 'logs'
 export interface ResourceHost {
   id: string
-  feature?: RadarFeature
+  feature?: KubeAtlasFeature
   diagnoseAction?: (render: RenderDiagnoseAction | undefined) => RenderDiagnoseAction | undefined
   kindLists?: readonly {
     kind: HostKind
     title: string
-    mode: (support: RadarFeatureSupport, pending: boolean) => KindListMode
+    mode: (support: KubeAtlasFeatureSupport, pending: boolean) => KindListMode
     Component: ComponentType<KindListProps>
   }[]
   renderers?: RendererOverrides
@@ -41,7 +41,7 @@ export interface ResourceHost {
   }
 }
 
-export function hostSupport(host: ResourceHost, features: HostFeatures): RadarFeatureSupport {
+export function hostSupport(host: ResourceHost, features: HostFeatures): KubeAtlasFeatureSupport {
   return host.feature ? features[host.feature] ?? 'unknown' : 'supported'
 }
 

@@ -35,7 +35,7 @@ const OWNER_LINK_LABEL = {
 } as const
 
 // managerLinks: the managers a guard naming more than one can open, the lead
-// among them, since a lead isn't a winner. One Radar didn't find (missing,
+// among them, since a lead isn't a winner. One KubeAtlas didn't find (missing,
 // withheld) or a label naming no namespace isn't linked: the label may name
 // either of two Applications of that name.
 function managerLinks(guard: GitOpsWriteGuard, onOpenManager: GitOpsWriteWarningProps['onOpenManager']): { label: string; owner: GitOpsOwnerRef }[] {

@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 // The single controller for the AI assistant surface. One instance app-wide:
 // the per-resource "Investigate" button and the global top-bar entry both dispatch
 // here. Investigations are durable, server-side jobs (see internal/ai RunManager);
@@ -167,16 +168,16 @@ export function useDiagnose(): DiagnoseCtx {
 const MIN_W = 400;
 const MAX_W = 1100;
 const PANEL_BOUNDS = { min: MIN_W, max: MAX_W }; // stable ref for the layout context
-const WIDTH_KEY = "radar-ai-panel-width";
+const WIDTH_KEY = "kubeatlas-ai-panel-width";
 // Consent is machine-scoped and lives server-side (~/.kubeatlas): it gates a
 // machine-scoped action (spawn this machine's agent CLI, persist transcripts to
 // this machine's disk), so one acknowledgment covers this panel AND the
-// `radar diagnose` CLI. The execution profile selects the disclosure because
+// `kubeatlas diagnose` CLI. The execution profile selects the disclosure because
 // it determines the actual access available to the agent process.
-const AGENT_KEY = "radar-ai-agent";
-const PROFILE_KEY = "radar-ai-profile";
-const MODEL_KEY = "radar-ai-model";
-const EFFORT_KEY = "radar-ai-effort";
+const AGENT_KEY = "kubeatlas-ai-agent";
+const PROFILE_KEY = "kubeatlas-ai-profile";
+const MODEL_KEY = "kubeatlas-ai-model";
+const EFFORT_KEY = "kubeatlas-ai-effort";
 // Push (reflow the app left) only while the app keeps at least this much width to
 // the LEFT of the panel (nav rail ~176 + a usable content floor); otherwise overlay.
 // Panel-width-aware on purpose: a static viewport cutoff ignored the (resizable)
@@ -236,13 +237,13 @@ export function agentLabelFor(name: string, fallbackLabel?: string): string {
 // event) — the canonical home for AI investigation config.
 export function openDiagnoseSettings() {
   window.dispatchEvent(
-    new CustomEvent("radar:open-settings", { detail: { section: "ai" } }),
+    new CustomEvent("kubeatlas:open-settings", { detail: { section: "ai" } }),
   );
 }
 
 function readStored(key: string): string | null {
   try {
-    return localStorage.getItem(key);
+    return readProductStorage(localStorage, key);
   } catch {
     return null;
   }
@@ -367,7 +368,7 @@ function workspaceReturnHistorySteps(state: unknown): number | null {
 // Fleet pages host the panel against a cluster-scoped API while remaining on a
 // hub route such as /issues. Writing ?ai-run there would create a non-reloadable
 // pseudo-link. The embedded /c/:id KubeAtlas tree and local KubeAtlas own their route and
-// therefore keep the query as navigation state; Fleet copies run.radarUrl instead.
+// therefore keep the query as navigation state; Fleet copies run.kubeatlasUrl instead.
 function diagnoseURLStateEnabled(browserURLState: boolean): boolean {
   if (!browserURLState) return false;
   const clusterScopedAPI = /\/c\/[^/]+\/api\/?$/.test(getApiBase());
@@ -479,7 +480,7 @@ function RoutedDiagnoseProvider({
   const [consentError, setConsentError] = useState<string | null>(null);
   const [width, setWidth] = useState<number>(() => {
     try {
-      const v = Number(localStorage.getItem(WIDTH_KEY));
+      const v = Number(readProductStorage(localStorage, WIDTH_KEY));
       return v >= MIN_W && v <= MAX_W ? v : 560;
     } catch {
       return 560;
@@ -700,7 +701,7 @@ function RoutedDiagnoseProvider({
     );
   }, []);
 
-  // Hosts may need to bridge the focused run into chrome outside RadarApp's
+  // Hosts may need to bridge the focused run into chrome outside KubeAtlasApp's
   // router. Notify only after the server has returned a real run summary — a
   // URL-shaped id alone is not evidence that the run exists or is readable.
   const lastNotifiedRunIDRef = useRef<string | null>(null);

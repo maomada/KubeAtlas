@@ -12,7 +12,7 @@ import (
 )
 
 // BenchmarkDependentCandidatesWithManyUnwatchedKinds is a search on a cluster
-// serving 300 custom kinds Radar doesn't watch, as most clusters do: each is a
+// serving 300 custom kinds KubeAtlas doesn't watch, as most clusters do: each is a
 // gap, and the session works out why once.
 func BenchmarkDependentCandidatesWithManyUnwatchedKinds(b *testing.B) {
 	f := newFixture(b, k8score.CacheConfig{}, func(f *fixture) {

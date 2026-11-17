@@ -6,36 +6,36 @@ import type { GitOpsChange, GitOpsInsightSummary } from '../../types'
 // health on this page is not the controller's own verdict:
 //
 //  - Argo CD keeps per-resource health outside the Application object (its
-//    3.0+ default). Radar then reads the live resources itself, and every
-//    problem below is Radar's finding — the "Radar" markers say so per row;
+//    3.0+ default). KubeAtlas then reads the live resources itself, and every
+//    problem below is KubeAtlas's finding — the "KubeAtlas" markers say so per row;
 //    this line says so once.
 //  - The Application (or a Flux object with spec.kubeConfig) deploys to
-//    another cluster. Radar can't read its resources from here at all, so
-//    nothing is derived. For Argo, a standalone Radar may add a pointer to
-//    Radar Cloud (the host passes it; embedded hosts pass nothing); Radar
+//    another cluster. KubeAtlas can't read its resources from here at all, so
+//    nothing is derived. For Argo, a standalone KubeAtlas may add a pointer to
+//    KubeAtlas Cloud (the host passes it; embedded hosts pass nothing); KubeAtlas
 //    Cloud doesn't resolve Flux targets, so Flux gets no pointer.
 //
 // Copy stays in plain words; the field names live behind the docs link.
 
 export const APP_TREE_HEALTH_NOTICE =
-  'Argo CD 3 no longer records health for each resource on the application. Rows marked "Found by Radar" are problems Radar detected by looking at the resources itself.'
-// Same situation, but Radar's own look found nothing to mark: the app is
+  'Argo CD 3 no longer records health for each resource on the application. Rows marked "Found by KubeAtlas" are problems KubeAtlas detected by looking at the resources itself.'
+// Same situation, but KubeAtlas's own look found nothing to mark: the app is
 // Degraded by Argo's reckoning and nothing here says which resource. What
 // follows the sentence is the way out — the host's connect hint when it
 // has one, and the Argo knob either way.
 export const APP_TREE_NO_FINDINGS_NOTICE =
-  "Argo CD 3 no longer records health for each resource on the application, and Radar didn't find a problem on its own."
+  "Argo CD 3 no longer records health for each resource on the application, and KubeAtlas didn't find a problem on its own."
 export const APP_TREE_PERSIST_REMEDY =
   'set controller.resource.health.persist to "true" in argocd-cmd-params-cm.'
 // The integration is set up and still didn't deliver: lead with that and
 // why — the user who configured it doesn't need the Argo CD 3 history
 // first — then say what the rows below are meanwhile.
-export const APP_TREE_API_ERROR_NOTICE = "Radar couldn't read Argo's per-resource health from your Argo CD server"
+export const APP_TREE_API_ERROR_NOTICE = "KubeAtlas couldn't read Argo's per-resource health from your Argo CD server"
 // The host is still connecting to argocd-server and will ask again; there
 // is nothing to fix, so no Settings link.
-export const APP_TREE_API_PENDING_NOTICE = "Radar is still connecting to your Argo CD server to read Argo's per-resource health."
-export const APP_TREE_API_ERROR_FINDINGS = 'Meanwhile, rows marked "Found by Radar" are problems Radar detected by looking at the resources itself.'
-export const APP_TREE_API_ERROR_NO_FINDINGS = "Radar didn't find a problem on its own."
+export const APP_TREE_API_PENDING_NOTICE = "KubeAtlas is still connecting to your Argo CD server to read Argo's per-resource health."
+export const APP_TREE_API_ERROR_FINDINGS = 'Meanwhile, rows marked "Found by KubeAtlas" are problems KubeAtlas detected by looking at the resources itself.'
+export const APP_TREE_API_ERROR_NO_FINDINGS = "KubeAtlas didn't find a problem on its own."
 
 export const REMOTE_DESTINATION_NOTICE =
   "This application deploys to a different cluster, so its resources aren't visible from here."
@@ -44,10 +44,10 @@ export const REMOTE_FLUX_TARGET_NOTICE =
 
 export type HealthSourceNoticeSummary = Pick<GitOpsInsightSummary, 'tool' | 'health' | 'resourceHealthMode' | 'remoteDestination' | 'resourceHealthFromApi' | 'resourceHealthApiError' | 'resourceHealthApiPending'>
 
-// The appTree notice explains problems Radar found on its own; on an app
+// The appTree notice explains problems KubeAtlas found on its own; on an app
 // Argo calls Healthy nothing is derived (the host doesn't run the overlay
 // there), and when the host read Argo's verdicts from its API server there
-// is nothing of Radar's to explain either.
+// is nothing of KubeAtlas's to explain either.
 export function healthSourceNoticeKind(summary: HealthSourceNoticeSummary | undefined): 'remote' | 'appTree' | null {
   if (!summary) return null
   if (summary.remoteDestination) return 'remote'
@@ -56,18 +56,18 @@ export function healthSourceNoticeKind(summary: HealthSourceNoticeSummary | unde
   return null
 }
 
-// Reads the same rows the "Found by Radar" markers read, so the sentence
+// Reads the same rows the "Found by KubeAtlas" markers read, so the sentence
 // and the markers can't disagree — an Issue can be suppressed (an operation
-// failure already names the resource) while the row still carries Radar's
+// failure already names the resource) while the row still carries KubeAtlas's
 // health.
-export function hasRadarFinding(changes: GitOpsChange[] | undefined): boolean {
-  return (changes ?? []).some((c) => c.healthSource === 'radar' && (c.health === 'Degraded' || c.health === 'Missing'))
+export function hasKubeAtlasFinding(changes: GitOpsChange[] | undefined): boolean {
+  return (changes ?? []).some((c) => c.healthSource === 'kubeatlas' && (c.health === 'Degraded' || c.health === 'Missing'))
 }
 
 export function hasHealthSettingsHint(summary: HealthSourceNoticeSummary | undefined, changes: GitOpsChange[] | undefined): boolean {
   return healthSourceNoticeKind(summary) === 'appTree'
     && !(summary?.resourceHealthApiPending && summary.resourceHealthApiError)
-    && (!!summary?.resourceHealthApiError || (!hasRadarFinding(changes) && summary?.health === 'Degraded'))
+    && (!!summary?.resourceHealthApiError || (!hasKubeAtlasFinding(changes) && summary?.health === 'Degraded'))
 }
 
 export function GitOpsHealthSourceNotice({
@@ -79,18 +79,18 @@ export function GitOpsHealthSourceNotice({
   settingsNote,
 }: {
   summary: HealthSourceNoticeSummary | undefined
-  // Decides between the two appTree sentences: with a Radar-sourced
+  // Decides between the two appTree sentences: with a KubeAtlas-sourced
   // problem row the notice explains the markers; without one it says so
   // and names the way out.
   changes?: GitOpsChange[]
   // Where "Why?" goes for the appTree case. Omitted → no link.
   docsUrl?: string
   // Rendered after the remote-destination sentence. The host decides
-  // whether there is anything to say (standalone Radar points at Radar
+  // whether there is anything to say (standalone KubeAtlas points at KubeAtlas
   // Cloud; an embedded host passes nothing).
   remoteDestinationHint?: ReactNode
   // Opens the host's Argo CD settings. Only a host that has such a place
-  // passes it; the notice then offers connecting Radar to argocd-server as
+  // passes it; the notice then offers connecting KubeAtlas to argocd-server as
   // the first way out, and "check Settings" when a configured connection
   // didn't deliver. Without it, only the Argo-side knob is named.
   onOpenSettings?: () => void
@@ -102,11 +102,11 @@ export function GitOpsHealthSourceNotice({
   if (!kind) return null
   // With nothing marked, the sentence only earns its place on an app Argo
   // calls Degraded: that is the badge it explains. A Progressing or Missing
-  // app with no Radar finding has nothing here to attribute.
-  const radarFinding = hasRadarFinding(changes)
+  // app with no KubeAtlas finding has nothing here to attribute.
+  const kubeatlasFinding = hasKubeAtlasFinding(changes)
   const apiError = summary?.resourceHealthApiError
   const pending = !!summary?.resourceHealthApiPending && !!apiError
-  if (kind === 'appTree' && !radarFinding && !pending && !hasHealthSettingsHint(summary, changes)) return null
+  if (kind === 'appTree' && !kubeatlasFinding && !pending && !hasHealthSettingsHint(summary, changes)) return null
   const settingsLink = (label: string) =>
     onOpenSettings ? (
       <button type="button" onClick={onOpenSettings} className="underline decoration-theme-border underline-offset-2 hover:text-theme-text-primary">
@@ -131,23 +131,23 @@ export function GitOpsHealthSourceNotice({
             {pending ? (
               <>
                 {APP_TREE_API_PENDING_NOTICE}{' '}
-                {radarFinding ? APP_TREE_API_ERROR_FINDINGS : APP_TREE_API_ERROR_NO_FINDINGS}
+                {kubeatlasFinding ? APP_TREE_API_ERROR_FINDINGS : APP_TREE_API_ERROR_NO_FINDINGS}
               </>
             ) : apiError ? (
               <>
                 {APP_TREE_API_ERROR_NOTICE}: {apiError}.
                 {onOpenSettings && <> {settingsNote} {settingsLink('Check Argo CD in Settings')}.</>}
                 {' '}
-                {radarFinding ? APP_TREE_API_ERROR_FINDINGS : APP_TREE_API_ERROR_NO_FINDINGS}
+                {kubeatlasFinding ? APP_TREE_API_ERROR_FINDINGS : APP_TREE_API_ERROR_NO_FINDINGS}
               </>
             ) : (
               <>
-                {radarFinding ? APP_TREE_HEALTH_NOTICE : APP_TREE_NO_FINDINGS_NOTICE}
-                {!radarFinding && (
+                {kubeatlasFinding ? APP_TREE_HEALTH_NOTICE : APP_TREE_NO_FINDINGS_NOTICE}
+                {!kubeatlasFinding && (
                   <>
                     {' '}
                     {settingsNote && onOpenSettings && <>{settingsNote}{' '}</>}
-                    To see Argo's per-resource health here, {onOpenSettings && <>{settingsLink('connect Radar to your Argo CD server')}, or </>}
+                    To see Argo's per-resource health here, {onOpenSettings && <>{settingsLink('connect KubeAtlas to your Argo CD server')}, or </>}
                     {APP_TREE_PERSIST_REMEDY}
                   </>
                 )}

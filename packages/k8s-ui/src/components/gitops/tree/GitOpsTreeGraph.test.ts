@@ -108,7 +108,7 @@ describe('nodeCause', () => {
   it('hides a failure verdict on a Progressing node, even when an issue matched it', () => {
     // A rollout in flight is not broken; a cause tooltip on it says it is.
     expect(nodeCause(node({ health: 'Progressing', healthSource: 'controller', topologyStatus: 'degraded' }), FAILURE)).toBeUndefined()
-    expect(nodeCause(node({ health: 'Progressing', healthSource: 'radar', topologyStatus: 'degraded' }), FAILURE)).toBeUndefined()
+    expect(nodeCause(node({ health: 'Progressing', healthSource: 'kubeatlas', topologyStatus: 'degraded' }), FAILURE)).toBeUndefined()
   })
 
   it('hides it on a Suspended node, even when an issue matched it', () => {
@@ -118,14 +118,14 @@ describe('nodeCause', () => {
 
   it('never shows it on a healthy node', () => {
     expect(nodeCause(node({ health: 'Healthy', healthSource: 'controller', topologyStatus: 'healthy' }), FAILURE)).toBeUndefined()
-    expect(nodeCause(node({ health: 'Healthy', healthSource: 'radar', topologyStatus: 'healthy' }), LEAD)).toBeUndefined()
+    expect(nodeCause(node({ health: 'Healthy', healthSource: 'kubeatlas', topologyStatus: 'healthy' }), LEAD)).toBeUndefined()
   })
 
   it('shows a lead on a node that is not failing, framed as possible', () => {
     // Argo CD 3 does not persist per-resource health, so an Argo-Degraded app
-    // can have every node read Progressing or unknown by Radar. The events
+    // can have every node read Progressing or unknown by KubeAtlas. The events
     // lead is then the only pointer, and it lands on one of those nodes.
-    expect(nodeCause(node({ health: 'Progressing', healthSource: 'radar', topologyStatus: 'degraded' }), LEAD))
+    expect(nodeCause(node({ health: 'Progressing', healthSource: 'kubeatlas', topologyStatus: 'degraded' }), LEAD))
       .toBe('Possible cause: Elasticsearch cluster health degraded')
     expect(nodeCause(node({ ref: { group: 'elasticsearch.k8s.elastic.co', kind: 'Elasticsearch', name: 'logs', namespace: 'search' }, topologyStatus: 'unknown' }), LEAD))
       .toBe('Possible cause: Elasticsearch cluster health degraded')

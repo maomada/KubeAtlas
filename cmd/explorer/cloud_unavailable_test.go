@@ -35,7 +35,7 @@ func TestCloudEntryPointsRejectBeforeNetwork(t *testing.T) {
 	}{
 		{
 			args: "cloud install --hub-url=" + sentinel.URL,
-			want: "upstream Radar Cloud commands are unavailable in this independently maintained build",
+			want: "legacy upstream cloud commands are unavailable in this independently maintained build",
 		},
 		{
 			args:     "--cloud-url=" + sentinel.URL,

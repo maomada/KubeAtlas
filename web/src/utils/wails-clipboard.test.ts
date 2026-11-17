@@ -31,7 +31,7 @@ function setupDom({ monacoEditor = null as unknown, nativeCopyResult = true, ins
     body: { appendChild: vi.fn() },
     activeElement: null,
   }
-  const win = { __radarMonacoEditor: monacoEditor, getSelection: () => null }
+  const win = { __kubeatlasMonacoEditor: monacoEditor, getSelection: () => null }
   // navigator.clipboard is a secure-context-only API — absent entirely on plain HTTP.
   const writeText = vi.fn(() => Promise.resolve())
   const nav = {

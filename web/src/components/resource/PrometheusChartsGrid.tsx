@@ -142,7 +142,7 @@ export function PrometheusChartsGrid({
           {settingsAvailable && <button
             type="button"
             className="text-sm text-accent hover:underline"
-            onClick={() => window.dispatchEvent(new CustomEvent('radar:open-settings', { detail: { section: 'prometheus' } }))}
+            onClick={() => window.dispatchEvent(new CustomEvent('kubeatlas:open-settings', { detail: { section: 'prometheus' } }))}
           >Configure metrics</button>}
           </div>
           {previousNote && <p className="mt-3 text-xs text-theme-text-secondary">{previousNote}</p>}

@@ -9,7 +9,7 @@ import { X, Copy, Check, RefreshCw, Package, Code, History, Settings, Link2, Anc
 import yaml from 'yaml'
 import { useNavigate } from 'react-router-dom'
 import { clsx } from 'clsx'
-import { useHelmRelease, useHelmManifest, useHelmValues, useHelmUpgradeInfo, useHelmReleaseVersions, useHelmUninstall, upgradeWithProgress, rollbackWithProgress, useHelmPreviewValues, useHelmSourceVersions, useRadarFeature, HelmSourceSelectionError } from '../../api/client'
+import { useHelmRelease, useHelmManifest, useHelmValues, useHelmUpgradeInfo, useHelmReleaseVersions, useHelmUninstall, upgradeWithProgress, rollbackWithProgress, useHelmPreviewValues, useHelmSourceVersions, useKubeAtlasFeature, HelmSourceSelectionError } from '../../api/client'
 import { ValuesDiffPreview } from './ValuesDiffPreview'
 import { useQueryClient } from '@tanstack/react-query'
 import { ConfirmDialog } from '../ui/ConfirmDialog'
@@ -159,7 +159,7 @@ export function HelmReleaseDrawer({ release, onClose, onNavigateToResource, isOp
   const [rollbackRevision, setRollbackRevision] = useState<number | null>(null)
   const [showUninstallConfirm, setShowUninstallConfirm] = useState(false)
   const [showUpgradeConfirm, setShowUpgradeConfirm] = useState(false)
-  const sourceFeature = useRadarFeature('helmSourceIdentity')
+  const sourceFeature = useKubeAtlasFeature('helmSourceIdentity')
   const [showTrackSource, setShowTrackSource] = useState(false)
   const [selectedVersion, setSelectedVersion] = useState<string | null>(null)
   const [sourceRetryMessage, setSourceRetryMessage] = useState<string | null>(null)

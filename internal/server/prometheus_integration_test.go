@@ -237,9 +237,9 @@ func TestApplyPrometheusURL_CredentialDestination(t *testing.T) {
 			if mode != "unauthenticated" {
 				user := &auth.User{Username: "tester"}
 				if mode == "cloud-owner" {
-					user.Groups = []string{"radar:owner"}
+					user.Groups = []string{"kubeatlas:owner"}
 				} else if mode == "cloud-viewer" {
-					user.Groups = []string{"radar:viewer"}
+					user.Groups = []string{"kubeatlas:viewer"}
 					wantStatus = http.StatusForbidden
 				}
 				r = r.WithContext(auth.ContextWithUser(r.Context(), user))

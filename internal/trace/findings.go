@@ -166,32 +166,32 @@ func policyFinding(deps Deps, svc *corev1.Service, pods []*corev1.Pod, backendPo
 		// Don't promise a verification the tool can't perform.
 		action := "Run the in-cluster test to confirm it's enforced, or add an ingress rule that allows this port. Check the rule manually:"
 		if res.proto == corev1.ProtocolUDP || res.proto == corev1.ProtocolSCTP {
-			action = "Radar can't test this protocol in-cluster, so confirm by checking the rule manually, or add an ingress rule that allows this port:"
+			action = "KubeAtlas can't test this protocol in-cluster, so confirm by checking the rule manually, or add an ingress rule that allows this port:"
 		}
 		return res, Finding{
 			Code:     codePolicyWouldDeny,
 			Severity: SeverityWarning,
 			Message:  msg,
-			Cause:    fmt.Sprintf("A NetworkPolicy (%s) selects these pods and no ingress rule permits %s from any source. Whether it's actually enforced depends on the cluster's network plugin, which Radar can't check from here - and the API-proxy check bypasses network rules.", strings.Join(res.policyNames, ", "), res.port),
+			Cause:    fmt.Sprintf("A NetworkPolicy (%s) selects these pods and no ingress rule permits %s from any source. Whether it's actually enforced depends on the cluster's network plugin, which KubeAtlas can't check from here - and the API-proxy check bypasses network rules.", strings.Join(res.policyNames, ", "), res.port),
 			Action:   action,
 			Command:  cmd,
 		}, true
 	case policyAdvisory:
 		names := strings.Join(res.policyNames, ", ")
-		msg := "A cluster network rule limits who can reach these pods; Radar can't tell from here whether your caller is allowed."
+		msg := "A cluster network rule limits who can reach these pods; KubeAtlas can't tell from here whether your caller is allowed."
 		cause := fmt.Sprintf("A NetworkPolicy (%s) allows this port only from specific sources, so the answer depends on which pod is calling.", names)
 		action := "If your client should be allowed, confirm its labels/namespace match the rule's allowed sources. Inspect the rule:"
 		switch res.advisory {
 		case advisoryHostNetwork:
-			msg = "A cluster network rule selects these pods, but they run on the host network - NetworkPolicy is CNI-specific there, so Radar can't tell whether it applies."
-			cause = fmt.Sprintf("A NetworkPolicy (%s) selects these host-network pods. Whether NetworkPolicy governs host-network traffic depends on the CNI plugin, which Radar can't check from here.", names)
+			msg = "A cluster network rule selects these pods, but they run on the host network - NetworkPolicy is CNI-specific there, so KubeAtlas can't tell whether it applies."
+			cause = fmt.Sprintf("A NetworkPolicy (%s) selects these host-network pods. Whether NetworkPolicy governs host-network traffic depends on the CNI plugin, which KubeAtlas can't check from here.", names)
 			action = "Confirm whether your CNI enforces NetworkPolicy for host-network pods. Inspect the rule:"
 		case advisoryUnresolvedPort:
-			msg = "A cluster network rule selects these pods, but Radar couldn't resolve the rule's named port against the pods, so it can't tell whether this port is allowed."
+			msg = "A cluster network rule selects these pods, but KubeAtlas couldn't resolve the rule's named port against the pods, so it can't tell whether this port is allowed."
 			cause = fmt.Sprintf("A NetworkPolicy (%s) references a named port that doesn't resolve against the endpoint pods, so the static read can't decide the outcome.", names)
 			action = "Check that the rule's named port matches a declared container port. Inspect the rule:"
 		case advisoryMixed:
-			msg = "A cluster network rule would block some of these pods but not others; Radar can't tell which pod your traffic lands on."
+			msg = "A cluster network rule would block some of these pods but not others; KubeAtlas can't tell which pod your traffic lands on."
 			cause = fmt.Sprintf("A NetworkPolicy (%s) denies this port on some endpoint pods while others are open, so the outcome depends on which pod serves the request.", names)
 			action = "Reconcile the rule across the pods so they're consistent, or run the in-cluster test. Inspect the rule:"
 		}

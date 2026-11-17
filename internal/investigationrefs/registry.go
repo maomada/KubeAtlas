@@ -1,4 +1,4 @@
-// Package investigationrefs correlates private Radar MCP results with one
+// Package investigationrefs correlates private KubeAtlas MCP results with one
 // active AI investigation turn. It is deliberately independent of both the AI
 // runner and MCP server so neither package has to trust model-visible markers.
 package investigationrefs
@@ -20,7 +20,7 @@ var (
 
 // Records is the immutable-by-convention snapshot returned when a turn scope
 // closes. Keys are server-issued refs; values are the exact clean text payloads
-// produced by Radar before its private marker was prepended.
+// produced by KubeAtlas before its private marker was prepended.
 type Records map[string]string
 
 type scopeState struct {
@@ -122,7 +122,7 @@ func (r *Registry) Issue(scope, payload string) (string, bool) {
 
 // Matches reports whether ref was issued for this exact payload while scope is
 // still active. Agent-stream adapters can expose marker-shaped text from any MCP
-// server in full-local mode; only the private Radar transport can create this
+// server in full-local mode; only the private KubeAtlas transport can create this
 // live ledger entry, so callers must validate before persisting provenance.
 func (r *Registry) Matches(scope, ref, payload string) bool {
 	if r == nil {

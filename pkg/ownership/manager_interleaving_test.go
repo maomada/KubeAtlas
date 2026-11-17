@@ -103,7 +103,7 @@ func TestManagerFallbackKeepsClaimsFartherUp(t *testing.T) {
 }
 
 // A claim naming no namespace, with no listing manager of its name, is
-// unresolved: Radar says nothing of whether such a manager exists.
+// unresolved: KubeAtlas says nothing of whether such a manager exists.
 func TestManagerUnqualifiedClaimWithoutAMatchIsUnresolved(t *testing.T) {
 	b := ownershiptest.NewBuilder()
 	cm := b.Meta(b.Add("", "ConfigMap", "shop", "settings"), map[string]string{instanceLabel: "elsewhere"}, nil)

@@ -13,7 +13,7 @@ Guide for developers contributing to KubeAtlas or building custom versions.
 
 ```bash
 git clone https://github.com/maomada/KubeAtlas.git
-cd radar
+cd kubeatlas
 
 # Install dependencies
 make deps
@@ -49,7 +49,7 @@ make desktop-package-darwin  # Package macOS .app bundle
 ## Project Structure
 
 ```
-radar/
+kubeatlas/
 ├── cmd/
 │   ├── explorer/           # CLI entry point (main.go)
 │   └── desktop/            # Desktop app entry point (Wails v2)

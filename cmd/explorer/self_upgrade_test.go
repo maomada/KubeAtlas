@@ -20,7 +20,7 @@ func TestCanSelfUpgradeProbesEveryOperationTheEndpointPerforms(t *testing.T) {
 		return true, &authv1.SelfSubjectAccessReview{Status: authv1.SubjectAccessReviewStatus{Allowed: true}}, nil
 	})
 
-	if !canSelfUpgrade(context.Background(), kc, "radar", "radar") {
+	if !canSelfUpgrade(context.Background(), kc, "kubeatlas", "kubeatlas") {
 		t.Fatal("all probes allowed but capability reported unavailable")
 	}
 
@@ -29,9 +29,9 @@ func TestCanSelfUpgradeProbesEveryOperationTheEndpointPerforms(t *testing.T) {
 	// configured clusters — and the Secret read must be probed too, because a
 	// BYO-RBAC install can pass a patch-only probe and still fail mid-upgrade.
 	want := []authv1.ResourceAttributes{
-		{Namespace: "radar", Group: "apps", Resource: "deployments", Name: "radar", Verb: "get"},
-		{Namespace: "radar", Group: "apps", Resource: "deployments", Name: "radar", Verb: "patch"},
-		{Namespace: "radar", Resource: "secrets", Verb: "list"},
+		{Namespace: "kubeatlas", Group: "apps", Resource: "deployments", Name: "kubeatlas", Verb: "get"},
+		{Namespace: "kubeatlas", Group: "apps", Resource: "deployments", Name: "kubeatlas", Verb: "patch"},
+		{Namespace: "kubeatlas", Resource: "secrets", Verb: "list"},
 	}
 	if len(seen) != len(want) {
 		t.Fatalf("probes = %+v, want %d probes", seen, len(want))
@@ -51,7 +51,7 @@ func TestCanSelfUpgradeFailsClosed(t *testing.T) {
 			allowed := review.Spec.ResourceAttributes.Verb != "patch"
 			return true, &authv1.SelfSubjectAccessReview{Status: authv1.SubjectAccessReviewStatus{Allowed: allowed}}, nil
 		})
-		if canSelfUpgrade(context.Background(), kc, "radar", "radar") {
+		if canSelfUpgrade(context.Background(), kc, "kubeatlas", "kubeatlas") {
 			t.Fatal("patch denied but capability reported available")
 		}
 	})
@@ -61,16 +61,16 @@ func TestCanSelfUpgradeFailsClosed(t *testing.T) {
 		kc.PrependReactor("create", "selfsubjectaccessreviews", func(k8stesting.Action) (bool, runtime.Object, error) {
 			return true, nil, errors.New("apiserver unavailable")
 		})
-		if canSelfUpgrade(context.Background(), kc, "radar", "radar") {
+		if canSelfUpgrade(context.Background(), kc, "kubeatlas", "kubeatlas") {
 			t.Fatal("probe error but capability reported available")
 		}
 	})
 
 	t.Run("missing identity or client", func(t *testing.T) {
 		ctx := context.Background()
-		if canSelfUpgrade(ctx, fake.NewSimpleClientset(), "", "radar") ||
-			canSelfUpgrade(ctx, fake.NewSimpleClientset(), "radar", "") ||
-			canSelfUpgrade(ctx, nil, "radar", "radar") {
+		if canSelfUpgrade(ctx, fake.NewSimpleClientset(), "", "kubeatlas") ||
+			canSelfUpgrade(ctx, fake.NewSimpleClientset(), "kubeatlas", "") ||
+			canSelfUpgrade(ctx, nil, "kubeatlas", "kubeatlas") {
 			t.Fatal("capability advertised without identity or client")
 		}
 	})

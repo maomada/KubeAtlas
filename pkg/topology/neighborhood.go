@@ -458,7 +458,7 @@ func edgeTypesForAuto(rootKind NodeKind) map[EdgeType]bool {
 // ref.Kind="Service" never matches and the root lookup silently fails.
 func findNodeByRef(nodes []Node, ref ResourceRef, dp DynamicProvider) (*Node, bool) {
 	// Resolve plural API resource names through discovery before comparing the
-	// caller-facing Kubernetes kind and Radar's topology pseudo-kind.
+	// caller-facing Kubernetes kind and KubeAtlas's topology pseudo-kind.
 	resourceKind := normalizeKindWithGroup(ref.Kind, ref.Group, dp)
 	wantKind := pseudoKindFor(resourceKind, ref.Group)
 	builtinGroup, builtin := resourceid.BuiltinGroup(resourceKind)

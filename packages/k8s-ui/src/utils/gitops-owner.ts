@@ -1,4 +1,4 @@
-// Maps server manager evidence to drawer copy and navigation. Older Radars
+// Maps server manager evidence to drawer copy and navigation. Older KubeAtlas instances
 // without the answer retain their managedBy projection.
 
 import type { ManagerAnswer, ManagerClaim, ManagerEvidence, Relationships, ResourceRef } from '../types/core'
@@ -26,7 +26,7 @@ const FLUX_HELM_GROUP = 'helm.toolkit.fluxcd.io'
 // the manager is a native K8s owner (Deployment, ReplicaSet, etc.), a plain
 // Helm release, or when no manager is reported.
 //
-// Old radar binaries (pre-T2) emit no managedBy field; this returns null in
+// Old kubeatlas binaries (pre-T2) emit no managedBy field; this returns null in
 // that case and the drawer silently skips the chip — natural pressure to
 // upgrade rather than carry a label-parsing fallback in the client.
 export function gitOpsOwnerFromRelationships(
@@ -60,7 +60,7 @@ export function gitOpsOwnerFromRef(ref: ResourceRef): GitOpsOwnerRef | null {
  * owner isn't one of them. Undefined when there is nothing to compare, the
  * owner is one of several, the owner isn't verified in this cluster, or the
  * search left managers unsettled (`settled` false): then a listed manager may
- * be a topology link rather than a status list Radar read, and the owner's own
+ * be a topology link rather than a status list KubeAtlas read, and the owner's own
  * list may be the one it couldn't read.
  */
 export type ManagerListing = { state: 'confirmed' } | { state: 'conflict'; listedBy: GitOpsOwnerRef[] }
@@ -121,28 +121,28 @@ export function managerChipPresentation(answer: ManagerAnswer): { prefix: string
   const reasons: Record<ManagerClaim['check'], string> = {
     recorded: 'its status lists this resource',
     omitted: "its status doesn't list this resource",
-    unreadable: "Radar can't read its status",
-    remote: "Radar can't confirm it deploys to this cluster",
+    unreadable: "KubeAtlas can't read its status",
+    remote: "KubeAtlas can't confirm it deploys to this cluster",
     missing: 'no such manager here',
     'not-recording': 'Helm records an installation, rather than continuously reconciling it',
-    unresolved: 'Radar found no manager of that name listing this resource; it may be managed from another cluster',
+    unresolved: 'KubeAtlas found no manager of that name listing this resource; it may be managed from another cluster',
     withheld: "you can't view it",
-    unchecked: "Radar couldn't check its status",
+    unchecked: "KubeAtlas couldn't check its status",
   }
   const subject = answer.via ? managerRefLabel(evidence.object) : 'this resource'
   const details: string[] = []
   const whose = answer.via ? `${managerRefLabel(evidence.object)}'s` : "This resource's"
-  // A newer Radar may send a check this UI doesn't know.
+  // A newer KubeAtlas may send a check this UI doesn't know.
   const why = (c: ManagerClaim, object: string) => c.check === 'missing'
     ? `there's no such ${c.manager.kind} here`
-    : (reasons[c.check] ?? "Radar couldn't confirm its status lists this resource").replace('manager of', `${c.manager.kind} of`).replace('this resource', object)
-  // Tracked by names what metadata says, which Radar hasn't confirmed: one
+    : (reasons[c.check] ?? "KubeAtlas couldn't confirm its status lists this resource").replace('manager of', `${c.manager.kind} of`).replace('this resource', object)
+  // Tracked by names what metadata says, which KubeAtlas hasn't confirmed: one
   // claim says why in the same sentence.
   const single = answer.state === 'claimed' && claims.length === 1 && claims[0].check !== 'recorded' ? claims[0] : null
   if (single) {
     details.push(`${whose} ${single.source.includes('label') ? 'label' : 'annotation'} names ${managerRefLabel(single.manager)}, but ${why(single, answer.via ? subject : 'it')}.`)
   } else if (answer.state === 'claimed') {
-    details.push(`${whose} labels or annotations name ${names(claimed)}; Radar hasn't confirmed ${claimed.length === 1 ? 'it manages' : 'they manage'} it.`)
+    details.push(`${whose} labels or annotations name ${names(claimed)}; KubeAtlas hasn't confirmed ${claimed.length === 1 ? 'it manages' : 'they manage'} it.`)
   }
   for (const c of claims) {
     if (c.check === 'recorded' || c === single) continue
@@ -169,7 +169,7 @@ export function managerChipPresentation(answer: ManagerAnswer): { prefix: string
 
 /**
  * A candidate manager of an answer, with what names it: its list, its
- * metadata, or both. found: Radar read the manager, so a link to it opens it;
+ * metadata, or both. found: KubeAtlas read the manager, so a link to it opens it;
  * a claim of a manager that is missing, withheld or unresolved isn't.
  */
 export type ManagerChoice = { ref: ResourceRef; listed: boolean; claimed: boolean; found: boolean }

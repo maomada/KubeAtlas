@@ -61,6 +61,6 @@ export type {
   FluxActionHandlers,
   GitOpsHelmValuesData,
 } from './GitOpsDetailLayout'
-export { GitOpsHealthSourceNotice, healthSourceNoticeKind, hasRadarFinding, APP_TREE_HEALTH_NOTICE, APP_TREE_NO_FINDINGS_NOTICE, REMOTE_DESTINATION_NOTICE, REMOTE_FLUX_TARGET_NOTICE } from './GitOpsHealthSourceNotice'
+export { GitOpsHealthSourceNotice, healthSourceNoticeKind, hasKubeAtlasFinding, APP_TREE_HEALTH_NOTICE, APP_TREE_NO_FINDINGS_NOTICE, REMOTE_DESTINATION_NOTICE, REMOTE_FLUX_TARGET_NOTICE } from './GitOpsHealthSourceNotice'
 export { hasHealthSettingsHint } from './GitOpsHealthSourceNotice'
-export { radarHealthNote, KUBEATLAS_HEALTH_NOTE } from './health-provenance'
+export { kubeatlasHealthNote, KUBEATLAS_HEALTH_NOTE } from './health-provenance'

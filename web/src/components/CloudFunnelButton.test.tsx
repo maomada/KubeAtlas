@@ -85,7 +85,7 @@ describe('Cloud dialog connection availability', () => {
     await openDialog()
     await until(() => expect(requests).toContain('/api/connect/info?lane=wizard&mode=local'))
     const link = Array.from(document.querySelectorAll('a')).find(element => element.textContent === 'Continue in upstream Cloud')!
-    expect(link.href).toBe('https://cloud.example/signup?utm_source=radar-oss&utm_medium=app&utm_campaign=cloud-modal&utm_content=driver-footer-browser-link')
+    expect(link.href).toBe('https://cloud.example/signup?utm_source=kubeatlas-oss&utm_medium=app&utm_campaign=cloud-modal&utm_content=driver-footer-browser-link')
     expect(button('Connect this cluster…')).toBeUndefined()
     expect(button('Try again')).toBeUndefined()
     expect(requests).not.toContain('/api/cloud/install/discover')
@@ -115,7 +115,7 @@ describe('Cloud dialog connection availability', () => {
 
   it('keeps the existing already-connected destination after discovery', async () => {
     connection.state = 'connected'
-    discovery.connected = [{ namespace: 'radar', deployment: 'radar', clusterUrl: 'https://cloud.example/clusters/one' }]
+    discovery.connected = [{ namespace: 'kubeatlas', deployment: 'kubeatlas', clusterUrl: 'https://cloud.example/clusters/one' }]
     await openDialog()
     await until(() => expect(document.body.textContent).toContain('This cluster is already connected to upstream Cloud.'))
     expect(document.querySelector('a[href="https://cloud.example/clusters/one"]')?.textContent).toBe('Open in upstream Cloud')
@@ -133,7 +133,7 @@ describe('Cloud dialog connection availability', () => {
     await until(() => expect(button('Connect this cluster…')?.disabled).toBe(false))
     await act(async () => { button('Connect this cluster…')!.click() })
     await until(() => expect(button('Try again')).toBeDefined())
-    expect(document.querySelector('a[href*="driver-footer-browser-link"]')?.getAttribute('href')).toContain('radar_outcome=radar_not_connected_to_cluster')
+    expect(document.querySelector('a[href*="driver-footer-browser-link"]')?.getAttribute('href')).toContain('kubeatlas_outcome=kubeatlas_not_connected_to_cluster')
     expect(document.body.textContent).toContain('Not connected to cluster')
   })
 

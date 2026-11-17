@@ -12,7 +12,7 @@ import (
 
 // AuthGate is the per-request resource read check used by handlers that read
 // K8s spec data via the shared informer cache. The cache is populated using
-// Radar's service-account permissions, so without this gate any authenticated
+// KubeAtlas's service-account permissions, so without this gate any authenticated
 // user could fetch any namespace's spec by guessing names. Server.canRead is
 // the concrete implementation; passing it via SetAuthGate avoids an import
 // cycle (server imports prometheus, not the other way around).
@@ -74,7 +74,7 @@ func canReadMetricsResource(r *http.Request, kind, namespace string) bool {
 
 // metricsKindResource maps a chartable kind to the (group, resource) a
 // SubjectAccessReview needs. prom.SupportedKinds is the allowlist, so a kind
-// Radar does not chart is refused here even if it is a perfectly ordinary
+// KubeAtlas does not chart is refused here even if it is a perfectly ordinary
 // builtin; the GVRs themselves come from the shared catalogues rather than a
 // second hand-written copy that could disagree with them.
 func metricsKindResource(kind string) (group, resource string, clusterScoped, ok bool) {

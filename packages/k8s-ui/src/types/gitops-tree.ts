@@ -27,9 +27,9 @@ export interface GitOpsTreeNode {
   // A local lookup confirmed NotFound; independent of controller health.
   missing?: boolean
   // Who assessed `health`. 'controller' is the GitOps controller's own
-  // verdict; 'radar' is Radar's read of the live object (topology status, or
+  // verdict; 'kubeatlas' is KubeAtlas's read of the live object (topology status, or
   // the issues engine's finding when the controller's verdict isn't
-  // available). The UI labels 'radar' values so they never pass as the
+  // available). The UI labels 'kubeatlas' values so they never pass as the
   // controller's. Absent when `health` is absent. Kept open for sources a
   // newer backend may add — unknown values render without a label.
   healthSource?: GitOpsHealthSource
@@ -53,11 +53,11 @@ export interface GitOpsTreeNode {
 // 'controllerApi' is the controller's own verdict read from its API server
 // (argocd-server) because the CR doesn't carry it; same authority as
 // 'controller'.
-export type GitOpsHealthSource = 'controller' | 'controllerApi' | 'radar' | (string & {})
+export type GitOpsHealthSource = 'controller' | 'controllerApi' | 'kubeatlas' | (string & {})
 
 // Where an Argo CD Application keeps per-resource health. 'appTree' is the
 // Argo CD 3 default: the controller's per-resource verdicts are not in the
-// Application object, so any node health present came from Radar.
+// Application object, so any node health present came from KubeAtlas.
 export type GitOpsHealthMode = 'inline' | 'appTree' | (string & {})
 
 export type GitOpsTreeEdgeType = 'owns' | 'source' | 'dependsOn'
@@ -96,6 +96,6 @@ export interface GitOpsResourceTree {
   // ask again now and then.
   healthApiRetrying?: boolean
   // The Application (or Flux object with spec.kubeConfig) deploys to another
-  // cluster; Radar derives nothing about its resources from here.
+  // cluster; KubeAtlas derives nothing about its resources from here.
   remoteDestination?: boolean
 }

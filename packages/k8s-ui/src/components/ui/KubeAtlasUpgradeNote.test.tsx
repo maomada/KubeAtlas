@@ -1,0 +1,67 @@
+import { describe, expect, it } from 'vitest'
+import { renderToString } from 'react-dom/server'
+import { formatKubeAtlasVersion, kubeatlasUpgradeDetail, kubeatlasUpgradeHeadline, KubeAtlasUpgradeNote } from './KubeAtlasUpgradeNote'
+import { getKubeAtlasUpgradeRequirement } from '../../types/fetch-error'
+
+describe('kubeatlasUpgradeHeadline', () => {
+  it('says the cluster is behind, not the UI', () => {
+    expect(kubeatlasUpgradeHeadline('Capacity')).toBe('此集群需要更新版本的 KubeAtlas 才能使用容量')
+  })
+})
+
+describe('kubeatlasUpgradeDetail', () => {
+  it('quotes the minimum and a real current version', () => {
+    expect(kubeatlasUpgradeDetail({ feature: 'Policy results', minimumVersion: 'v1.10.0', currentVersion: '1.7.2' }))
+      .toBe('KubeAtlas v1.10 起提供此功能。此集群当前运行 v1.7.2。')
+  })
+
+  it('leaves out a current version that is not a version', () => {
+    expect(kubeatlasUpgradeDetail({ feature: 'Policy results', minimumVersion: 'v1.10.0', currentVersion: 'dev' }))
+      .toBe('KubeAtlas v1.10 起提供此功能。')
+    expect(kubeatlasUpgradeDetail({ feature: 'Policy results', minimumVersion: 'v1.10.0' }))
+      .toBe('KubeAtlas v1.10 起提供此功能。')
+  })
+})
+
+describe('kubeatlasUpgradeDetail without a known first release', () => {
+  const unknownSince = { feature: 'Drift alerts', currentVersion: 'v1.7.2' }
+
+  it('asks for the latest release when it is newer than the running one', () => {
+    expect(kubeatlasUpgradeDetail({ ...unknownSince, latestVersion: '1.16.0' }))
+      .toBe('最新版本 KubeAtlas（v1.16）已提供此功能。此集群当前运行 v1.7.2。')
+  })
+
+  it('only names the running version when no target release is known', () => {
+    expect(kubeatlasUpgradeDetail(unknownSince)).toBe('此集群当前运行 v1.7.2。')
+    expect(kubeatlasUpgradeDetail({ ...unknownSince, currentVersion: 'v1.16.0', latestVersion: 'v1.16.0' }))
+      .toBe('此集群当前运行 v1.16。')
+  })
+
+  it('reads the same way inline', () => {
+    const html = renderToString(<KubeAtlasUpgradeNote requirement={{ ...unknownSince, latestVersion: 'v1.16.0' }} />)
+    expect(html).toContain('漂移告警')
+    expect(html).toContain('需要最新版本的 KubeAtlas（v1.16）。此集群当前运行 v1.7.2。')
+  })
+})
+
+describe('formatKubeAtlasVersion', () => {
+  it('drops a zero patch and adds the v', () => {
+    expect(formatKubeAtlasVersion('v1.14.0')).toBe('v1.14')
+    expect(formatKubeAtlasVersion('1.7.2')).toBe('v1.7.2')
+    expect(formatKubeAtlasVersion('v1.7.2-dirty')).toBe('v1.7.2-dirty')
+  })
+})
+
+describe('getKubeAtlasUpgradeRequirement', () => {
+  it('reads the requirement off any error that carries one', () => {
+    const error = Object.assign(new Error('x'), { kubeatlasUpgrade: { feature: 'Drain plans', minimumVersion: 'v1.14.0' } })
+    expect(getKubeAtlasUpgradeRequirement(error)).toEqual({ feature: 'Drain plans', minimumVersion: 'v1.14.0' })
+  })
+
+  it('ignores plain errors and malformed requirements', () => {
+    expect(getKubeAtlasUpgradeRequirement(new Error('HTTP 404 (Not Found)'))).toBeNull()
+    expect(getKubeAtlasUpgradeRequirement({ kubeatlasUpgrade: { minimumVersion: 'v1.9.0' } })).toBeNull()
+    expect(getKubeAtlasUpgradeRequirement({ kubeatlasUpgrade: { feature: 'x', minimumVersion: 9 } })).toBeNull()
+    expect(getKubeAtlasUpgradeRequirement(null)).toBeNull()
+  })
+})

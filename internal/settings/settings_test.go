@@ -153,7 +153,7 @@ func TestSaveCreatesDirectory(t *testing.T) {
 	t.Setenv("HOME", dir)
 	t.Setenv("USERPROFILE", dir)
 
-	// .radar/ doesn't exist yet
+	// .kubeatlas/ doesn't exist yet
 	if err := Save(Settings{Theme: "light"}); err != nil {
 		t.Fatalf("Save should create directory: %v", err)
 	}

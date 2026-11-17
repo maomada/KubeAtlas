@@ -1,7 +1,7 @@
 // Package portforward provides low-level K8s port-forwarding primitives.
 // These are the pure K8s API building blocks: finding pods, finding ports,
 // and running tunnels. Lifecycle management and singleton state live in each
-// consumer (e.g., Radar's internal/portforward for metrics proxying).
+// consumer (e.g., KubeAtlas's internal/portforward for metrics proxying).
 package portforward
 
 import (

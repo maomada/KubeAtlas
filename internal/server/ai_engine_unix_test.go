@@ -69,7 +69,7 @@ func listAgentsEnabled(t *testing.T, s *Server) bool {
 	return resp.Enabled
 }
 
-// Installing an agent CLI while Radar runs must turn investigations on the next
+// Installing an agent CLI while KubeAtlas runs must turn investigations on the next
 // time a client asks for the agent list, with no restart.
 func TestListAgentsTurnsInvestigationsOnForACLIInstalledLater(t *testing.T) {
 	home := t.TempDir()
@@ -139,7 +139,7 @@ func TestRefreshAIEngineLeavesUnsupportedDeploymentsOff(t *testing.T) {
 }
 
 // The run manager outlives its CLIs (it keeps history); once the last CLI is
-// gone, investigations must read as off, or radar diagnose skips its guidance.
+// gone, investigations must read as off, or kubeatlas diagnose skips its guidance.
 func TestListAgentsReportsOffOnceTheLastCLIIsRemoved(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)

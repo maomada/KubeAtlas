@@ -90,7 +90,7 @@ func handleWorkloadMetrics(w http.ResponseWriter, r *http.Request) {
 		message := "Could not resolve current workload Pods. Retry after checking the Kubernetes connection."
 		if errors.Is(err, k8s.ErrWorkloadAccessDenied) {
 			status = http.StatusForbidden
-			message = "Radar does not have workload and Pod data for this namespace. Ask the operator to check Radar's Kubernetes permissions and configured namespace scope."
+			message = "KubeAtlas does not have workload and Pod data for this namespace. Ask the operator to check KubeAtlas's Kubernetes permissions and configured namespace scope."
 		} else if errors.Is(err, k8s.ErrWorkloadCacheWarming) {
 			status = http.StatusServiceUnavailable
 			message = "Workload data is still loading from Kubernetes. Retry shortly."
@@ -520,7 +520,7 @@ func queryWorkloadPanel(ctx context.Context, client RangeQuerier, query string, 
 	}
 	if len(query) > prom.MaxWorkloadQueryBytes {
 		panel.State = "error"
-		panel.Reason = "This Pod population requires a query larger than Radar's safe metrics query limit; no Pods were silently dropped."
+		panel.Reason = "This Pod population requires a query larger than KubeAtlas's safe metrics query limit; no Pods were silently dropped."
 		return panel
 	}
 	result, err := client.QueryRange(ctx, query, start, end, step)

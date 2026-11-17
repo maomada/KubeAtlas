@@ -1,9 +1,10 @@
+import { readProductStorage, removeProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { kindFiltersFromSearch, kindFiltersToSearch } from '../components/resources/resource-utils'
 import { RESOURCE_LIST_PATH } from './navigation'
 import { createTabStorage } from './tabStorage'
 
-const FILTERS_PREFIX = 'radar-filters:'
-const LAST_KIND_PREFIX = 'radar-last-kind:'
+const FILTERS_PREFIX = 'kubeatlas-filters:'
+const LAST_KIND_PREFIX = 'kubeatlas-last-kind:'
 
 /**
  * Per-cluster Resources filters (one query string per kind) and the last
@@ -28,7 +29,7 @@ export function createKindFilterStore(cluster: string) {
       if (own !== undefined) return own || undefined
       let saved: string | undefined
       try {
-        saved = localStorage.getItem(key) ?? undefined
+        saved = readProductStorage(localStorage, key) ?? undefined
       } catch { /* unavailable: nothing saved */ }
       // What the tab was given is now the tab's own, whatever other tabs save later.
       tab.set(key, saved ?? '')
@@ -39,7 +40,7 @@ export function createKindFilterStore(cluster: string) {
       tab.set(filtersKey(plural, group), search)
       try {
         if (search) localStorage.setItem(filtersKey(plural, group), search)
-        else localStorage.removeItem(filtersKey(plural, group))
+        else removeProductStorage(localStorage, filtersKey(plural, group))
       } catch { /* ignore */ }
     },
     /** Removes one column's filter from every kind of this cluster, in the tab and in localStorage. */
@@ -61,16 +62,16 @@ export function createKindFilterStore(cluster: string) {
           if (ofCluster(key)) keys.push(key)
         }
         for (const key of keys) {
-          const next = withoutColumn(localStorage.getItem(key) ?? '')
+          const next = withoutColumn(readProductStorage(localStorage, key) ?? '')
           if (next) localStorage.setItem(key, next)
-          else localStorage.removeItem(key)
+          else removeProductStorage(localStorage, key)
         }
       } catch { /* ignore */ }
     },
     /** The last Resources list path (`/resources/<plural>[?apiGroup=…]`). */
     lastKind(): string | undefined {
       try {
-        return localStorage.getItem(lastKindKey) ?? undefined
+        return readProductStorage(localStorage, lastKindKey) ?? undefined
       } catch {
         return undefined
       }

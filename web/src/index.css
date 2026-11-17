@@ -54,7 +54,7 @@
 
 /*
  * Tailwind v4 theme tokens live in CSS so library consumers (e.g.
- * radar-hub-web) get the same theme when they import this package's styles.
+ * kubeatlas-hub-web) get the same theme when they import this package's styles.
  */
 @theme {
   --color-investigation-assessment: light-dark(#edf3fc, #182237);
@@ -136,11 +136,11 @@ body {
   color: var(--text-primary);
 }
 
-/* App-shell layout for standalone KubeAtlas (mounts into #radar — see index.html).
-   Keyed off #radar, NOT #root: this file ships as the published library
+/* App-shell layout for standalone KubeAtlas (mounts into #kubeatlas — see index.html).
+   Keyed off #kubeatlas, NOT #root: this file ships as the published library
    stylesheet, so a #root rule here would match a host app's own #root and
-   reshape its document. A unique id can't collide — host apps have no #radar. */
-#radar {
+   reshape its document. A unique id can't collide — host apps have no #kubeatlas. */
+#kubeatlas {
   height: 100vh;
   display: flex;
   flex-direction: column;

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Stage and package version-aligned owned Radar OCI charts."""
+"""Stage and package version-aligned owned KubeAtlas OCI charts."""
 
 import argparse
 import hashlib

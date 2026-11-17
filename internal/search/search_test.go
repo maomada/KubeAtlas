@@ -119,7 +119,7 @@ func (f *fakeProvider) PlanTyped(kind string, namespaces []string) readplan.Plan
 			reason = readreason.Code(f.typedReasons[kind])
 		}
 		state := readplan.Readable
-		if reason == readreason.RadarNamespaceNotCollected {
+		if reason == readreason.KubeAtlasNamespaceNotCollected {
 			state = readplan.OutsideCollection
 		} else if reason != "" {
 			state = readplan.Gap
@@ -128,7 +128,7 @@ func (f *fakeProvider) PlanTyped(kind string, namespaces []string) readplan.Plan
 		if extent == readplan.NamespaceSet {
 			part.Namespaces = []string{ns}
 		}
-		if reason == readreason.RadarNamespaceNotCollected && namespaces == nil {
+		if reason == readreason.KubeAtlasNamespaceNotCollected && namespaces == nil {
 			plan.CollectionLimited = true
 		}
 		plan.Partitions = append(plan.Partitions, part)

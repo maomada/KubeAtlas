@@ -523,7 +523,7 @@ func TestParseNamespacesForUser_DoesNotSeedInitialSelection(t *testing.T) {
 		s := newTestServer(t)
 		k8s.SetFallbackNamespaces([]string{"broken"})
 		t.Cleanup(func() { k8s.SetFallbackNamespace("") })
-		system := reqAs("radar:system:alerts:test")
+		system := reqAs("kubeatlas:system:alerts:test")
 
 		if got := s.parseNamespacesForUser(system); got != nil {
 			t.Fatalf("system read = %v, want nil (all namespaces), not the configured list", got)

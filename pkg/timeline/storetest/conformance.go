@@ -885,7 +885,7 @@ func RunConformance(t *testing.T, newStore func(t *testing.T) timeline.EventStor
 
 	// Time-range narrowing is separate from arrival-order narrowing: Since/Until
 	// bound the event's own timestamp, which for a k8s Event is when the cluster
-	// says it happened, not when Radar saw it.
+	// says it happened, not when KubeAtlas saw it.
 	t.Run("since and until bound the event time", func(t *testing.T) {
 		store := newStore(t)
 		for i := 0; i < 5; i++ {

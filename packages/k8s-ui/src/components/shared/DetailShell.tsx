@@ -20,7 +20,7 @@ export interface DetailShellProps<TId extends string = string> {
    * names the entity). Hosted surfaces use this instead of `nav`.
    */
   breadcrumb?: ReactNode
-  /** Inline leading control on the identity row — a back button in standalone Radar. */
+  /** Inline leading control on the identity row — a back button in standalone KubeAtlas. */
   nav?: ReactNode
   identity: ReactNode
   headerActions?: ReactNode

@@ -2881,7 +2881,7 @@
         }
       },
       "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
-      "evidence": "removeInlineMarker 的 index 实际来自固定 /#radar-evidence-(-?\\d+)/ 捕获，再 Number(match[2])，只在 target(index) 解析并 place 成功后调用；不是仅依赖 TS number 声明。不可能带入任意 regex 元字符结构。",
+      "evidence": "removeInlineMarker 的 index 实际来自固定 /#kubeatlas-evidence-(-?\\d+)/ 捕获，再 Number(match[2])，只在 target(index) 解析并 place 成功后调用；不是仅依赖 TS number 声明。不可能带入任意 regex 元字符结构。",
       "approval": {
         "approved": true,
         "actor": "maomada",

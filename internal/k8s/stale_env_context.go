@@ -22,8 +22,8 @@ import (
 // AffectedPods Pods, Pods lists their names, and the times are that Pod's.
 //
 // Secret rows reuse the stale-Secret-env check diagnose runs, including its
-// managedFields fallback for writes made before Radar started (Key and Env are
-// empty on those rows). ConfigMap rows come only from changes Radar observed.
+// managedFields fallback for writes made before KubeAtlas started (Key and Env are
+// empty on those rows). ConfigMap rows come only from changes KubeAtlas observed.
 type StaleEnvFact struct {
 	Pod                string
 	Pods               []string
@@ -121,7 +121,7 @@ func findStaleEnv(ctx context.Context, cache *ResourceCache, pods []*corev1.Pod,
 
 // findStaleConfigMapEnv is the ConfigMap counterpart of
 // findStaleSecretEnvChecks: a running container that reads a ConfigMap key as
-// env and started before Radar observed that key modified or removed. Added
+// env and started before KubeAtlas observed that key modified or removed. Added
 // keys are skipped, as for Secrets: an env var can't hold a value that didn't
 // exist when the container started.
 func findStaleConfigMapEnv(ctx context.Context, cache *ResourceCache, namespace string, pods []*corev1.Pod, now time.Time) []StaleEnvFact {
@@ -358,7 +358,7 @@ func staleEnvFactMessage(fact StaleEnvFact) string {
 	if fact.ReferenceKind == "envFrom" {
 		via = " through envFrom"
 	}
-	return fmt.Sprintf("%s container %s reads %s/%s key %s%s as env %s and started at %s, before Radar observed a write to that key at %s. Env values don't refresh, so it likely still holds the earlier value until it restarts.",
+	return fmt.Sprintf("%s container %s reads %s/%s key %s%s as env %s and started at %s, before KubeAtlas observed a write to that key at %s. Env values don't refresh, so it likely still holds the earlier value until it restarts.",
 		pod, fact.Container, fact.SourceKind, fact.SourceName, fact.Key, via, fact.Env,
 		fact.ContainerStartedAt.UTC().Format(time.RFC3339), fact.ChangedAt.UTC().Format(time.RFC3339))
 }

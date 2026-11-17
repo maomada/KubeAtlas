@@ -653,11 +653,11 @@ func listRegisteredToolsWith(t *testing.T, includeWrites bool) []*mcpsdk.Tool {
 func listRegisteredToolsWithRegistry(t *testing.T, includeWrites bool) ([]*mcpsdk.Tool, *toolParamRegistry) {
 	t.Helper()
 
-	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "radar-test", Version: "test"}, nil)
+	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kubeatlas-test", Version: "test"}, nil)
 	registry := newToolParamRegistry()
 	registerTools(server, includeWrites, true, registry)
 
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "radar-test-client", Version: "test"}, nil)
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "kubeatlas-test-client", Version: "test"}, nil)
 	ctx := context.Background()
 	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
@@ -686,7 +686,7 @@ func listRegisteredToolsWithRegistry(t *testing.T, includeWrites bool) ([]*mcpsd
 // TestDiagnoserAllowlistCoversAllReadTools fails when a read tool is registered
 // for MCP but never added to the agent's allowlist. Every registered read tool
 // must appear there: one that does not reaches every external client but not
-// Radar's own Diagnose agent, which is silent rather than an error.
+// KubeAtlas's own Diagnose agent, which is silent rather than an error.
 func TestDiagnoserAllowlistCoversAllReadTools(t *testing.T) {
 	writes := map[string]bool{}
 	for _, w := range writeToolNames {
@@ -715,7 +715,7 @@ func TestDiagnoserAllowlistCoversAllReadTools(t *testing.T) {
 	sort.Strings(missing)
 	sort.Strings(stale)
 	if len(missing) > 0 {
-		t.Errorf("read tools registered for MCP but not callable by Radar's own agent: %v — add them to investigation.ReadOnlyTools", missing)
+		t.Errorf("read tools registered for MCP but not callable by KubeAtlas's own agent: %v — add them to investigation.ReadOnlyTools", missing)
 	}
 	if len(stale) > 0 {
 		t.Errorf("investigation.ReadOnlyTools names tools that are not registered: %v", stale)

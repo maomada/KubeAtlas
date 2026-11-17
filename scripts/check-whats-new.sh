@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Refuses a minor or major Radar release (vX.Y.0) that has no What's New entry.
+# Refuses a minor or major KubeAtlas release (vX.Y.0) that has no What's New entry.
 # Patch releases and prereleases pass: a patch shows the newest earlier entry.
 #
 # Usage: scripts/check-whats-new.sh <version> [git-ref]

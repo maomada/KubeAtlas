@@ -54,7 +54,7 @@ const (
 	// A pin and an RBAC limit produce the same namespace list. Reporting the
 	// pin as a permission problem would have an agent tell a cluster-admin
 	// their access is restricted.
-	costPinnedViewFmt               = "Totals cover only namespace %s, which radar is pinned to with --namespace-scope — not the whole cluster, and not a limit on this identity's permissions."
+	costPinnedViewFmt               = "Totals cover only namespace %s, which kubeatlas is pinned to with --namespace-scope — not the whole cluster, and not a limit on this identity's permissions."
 	costWasteExplainer              = "unallocatedHourlyCost is node compute capacity no workload requested or used; unusedRequestHourlyCost is capacity requested but not used. The two do not overlap, and neither is money saved until nodes are actually removed. unusedRequestHourlyCost covers CPU and memory requests only, so idle GPUs are not in it."
 	costWorkloadNotFoundRemediation = "The cost source answered for this namespace but reported no allocation for the requested workload. Check the kind and name, or call view=workloads without kind/name to see what the namespace does have."
 	costTrendSeriesExplainer        = "Series values are hourly rates at each point, not cumulative spend. Each series and trendTotal carry startHourlyCost, endHourlyCost and changePercent for net change, plus minHourlyCost, peakHourlyCost and peakAt for observed excursions. A small net change does not mean the interval was flat; use include_points=true to inspect its shape. These extrema describe returned samples, not spikes between samples. changePercent spans the trendTotal's from..to, which is shorter than range when the source retains less history."
@@ -63,7 +63,7 @@ const (
 	costTrendCappedFmt = "Of %d namespaces in scope, %d have named series; the remaining %d are grouped into the type=remainder series. trendTotal covers every namespace, so it is a whole-scope figure even though the series are not."
 )
 
-// reasonWorkloadNotFound is Radar's own reason: the cost source was healthy and
+// reasonWorkloadNotFound is KubeAtlas's own reason: the cost source was healthy and
 // the namespace had rows, but none matched the requested workload.
 const reasonWorkloadNotFound = "workload_not_found"
 
@@ -1033,7 +1033,7 @@ func costRemediation(reason string) string {
 	case ReasonOutsideNamespacePin:
 		// The pinned namespace is not named: this caller was denied, and may have
 		// no access to it either.
-		return "radar is pinned to a single namespace with --namespace-scope, so it cannot report on the requested scope. This is a startup flag, not a permissions problem — restart radar without --namespace-scope for cluster-wide cost."
+		return "kubeatlas is pinned to a single namespace with --namespace-scope, so it cannot report on the requested scope. This is a startup flag, not a permissions problem — restart kubeatlas without --namespace-scope for cluster-wide cost."
 	case "node_not_found":
 		return "Check the node name, or call view=nodes without name to list nodes reported by the cost source."
 	case reasonWorkloadNotFound:
@@ -1041,32 +1041,32 @@ func costRemediation(reason string) string {
 	case reasonCostDeadlineExceeded:
 		return fmt.Sprintf("The cost request exceeded its %s budget before answering. The budget also covers permission discovery and source selection, so this does not establish that the cost source was reached — retry, and for view=trend use a shorter range. A namespace does not shorten the query: summary and trend read every namespace and filter afterwards.", costCallBudget)
 	case pkgopencost.ReasonNoPrometheus:
-		return "No Prometheus found. Radar auto-discovers it, or start radar with --prometheus-url. Cost data additionally needs OpenCost or Kubecost installed."
+		return "No Prometheus found. KubeAtlas auto-discovers it, or start kubeatlas with --prometheus-url. Cost data additionally needs OpenCost or Kubecost installed."
 	case pkgopencost.ReasonNoCostSource:
-		return "Neither OpenCost metrics nor Kubecost was found. Install one of them in the cluster; OpenCost also needs a Prometheus for Radar to read it through."
+		return "Neither OpenCost metrics nor Kubecost was found. Install one of them in the cluster; OpenCost also needs a Prometheus for KubeAtlas to read it through."
 	case pkgopencost.ReasonNoMetrics:
 		// Kubecost answers with this reason too, so the text cannot name
 		// Prometheus as the thing that is reachable. The source field says
 		// which one answered.
-		return "The cost source answered but reported no cost data. If OpenCost or Kubecost was just installed, let it scrape for a few minutes; if neither is installed, install one — the source field says which one Radar asked."
+		return "The cost source answered but reported no cost data. If OpenCost or Kubecost was just installed, let it scrape for a few minutes; if neither is installed, install one — the source field says which one KubeAtlas asked."
 	case pkgopencost.ReasonAccessDenied:
 		return "This identity cannot read the requested scope. Costs are reported only for namespaces (or nodes) its RBAC allows."
 	case pkgopencost.ReasonAuthentication:
-		return "The cost source rejected Radar's credentials — check the Kubecost API key in Radar's settings, or the Prometheus credentials if cost comes from OpenCost. The source field says which one answered."
+		return "The cost source rejected KubeAtlas's credentials — check the Kubecost API key in KubeAtlas's settings, or the Prometheus credentials if cost comes from OpenCost. The source field says which one answered."
 	case pkgopencost.ReasonConfigMismatch:
-		return "The configured cost source does not match the connected cluster. Check Radar's cost settings against the current kubeconfig context."
+		return "The configured cost source does not match the connected cluster. Check KubeAtlas's cost settings against the current kubeconfig context."
 	case pkgopencost.ReasonDeploymentConfig:
-		return "Radar's operator-supplied cost or metrics configuration is invalid. Check local launch flags or the deployment environment variables and Helm values."
+		return "KubeAtlas's operator-supplied cost or metrics configuration is invalid. Check local launch flags or the deployment environment variables and Helm values."
 	case pkgopencost.ReasonMetricsSettings:
-		return "This kubeconfig context's saved metrics settings need review in Radar's Settings (for example after the cluster behind the context changed); Radar does not use them until the user reviews them."
+		return "This kubeconfig context's saved metrics settings need review in KubeAtlas's Settings (for example after the cluster behind the context changed); KubeAtlas does not use them until the user reviews them."
 	case pkgopencost.ReasonCostSettings:
-		return "This kubeconfig context's saved cost settings need review in Radar's Settings (for example after the cluster behind the context changed); Radar does not use them until the user reviews them."
+		return "This kubeconfig context's saved cost settings need review in KubeAtlas's Settings (for example after the cluster behind the context changed); KubeAtlas does not use them until the user reviews them."
 	case pkgopencost.ReasonInsufficientHistory, pkgopencost.ReasonHistoryUnsupported:
 		return "The cost source has not retained enough history for this range. Try a shorter range, or wait for it to accumulate."
 	case pkgopencost.ReasonNotFound:
 		return "The requested resource no longer exists."
 	case pkgopencost.ReasonQueryError, pkgopencost.ReasonSourceUnavailable:
-		return "The selected cost source's connection or query failed. For OpenCost metrics, check Radar's Metrics connection status; for Kubecost, check its URL, network path and backend health."
+		return "The selected cost source's connection or query failed. For OpenCost metrics, check KubeAtlas's Metrics connection status; for Kubecost, check its URL, network path and backend health."
 	default:
 		return ""
 	}

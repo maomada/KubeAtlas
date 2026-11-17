@@ -5,7 +5,7 @@
 #
 # Three phases on purpose:
 #   completed              — the healthy row
-#   walArchivingFailing    — Radar's own curated label, not a CNPG phase string
+#   walArchivingFailing    — KubeAtlas's own curated label, not a CNPG phase string
 #   an unmapped phase      — proves an unrecognised phase passes through
 #                            VERBATIM rather than being asserted healthy
 ---
@@ -29,7 +29,7 @@ spec:
   cluster:
     name: pg-wal-failing
 ---
-# The phase patched onto this one is not in Radar's map and never will be. It
+# The phase patched onto this one is not in KubeAtlas's map and never will be. It
 # stands in for a future CNPG minor: the badge must show CNPG's own string
 # rather than inventing a state, and the Status filter must offer that same
 # string rather than a prettified guess.

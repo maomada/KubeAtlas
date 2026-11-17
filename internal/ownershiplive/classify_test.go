@@ -384,7 +384,7 @@ func TestRecheckJudgesTheFreshAnswerAgainstTheAPIServer(t *testing.T) {
 }
 
 // A gap without a kind is about the search, not about a kind it read, so it
-// never excuses leaving out a listed object of a kind Radar reads.
+// never excuses leaving out a listed object of a kind KubeAtlas reads.
 func TestRecheckDoesNotLetAKindlessGapExcuseAnOmission(t *testing.T) {
 	owner := ownershiptest.Object{Ref: resourceid.Ref{Group: "example.io", Kind: "ClusterWidget", Name: "parent"}, APIVersion: "example.io/v1", UID: "uid-parent", ResourceVersion: "1"}
 	a := ownershiptest.Object{Ref: resourceid.Ref{Kind: "Node", Name: "a"}, APIVersion: "v1", UID: "uid-a", ResourceVersion: "10", OwnerReferences: []metav1.OwnerReference{owner.OwnerRef(false)}}

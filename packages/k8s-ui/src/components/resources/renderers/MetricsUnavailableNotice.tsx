@@ -12,7 +12,7 @@ export function MetricsUnavailableNotice({ rawError, diagnosis, noUsageYet }: Me
     <div className="card-inner-lg text-xs text-theme-text-tertiary">
       <div className="flex items-center gap-1.5">
         <span className="min-w-0 leading-5">
-          {noUsageYet ? '暂无用量：此 Pod 尚未运行' : '指标不可用。Radar 无法读取 metrics.k8s.io。'}
+          {noUsageYet ? '暂无用量：此 Pod 尚未运行' : '指标不可用。KubeAtlas 无法读取 metrics.k8s.io。'}
         </span>
         {rawError && (
           <Tooltip

@@ -7,13 +7,13 @@ import { MCP_TOOL_CATALOG } from './mcpToolCatalog'
 
 describe('MCP setup in read-only mode', () => {
   it('generates client configurations for the retained endpoint and hides writes', () => {
-    setBasename('/radar')
+    setBasename('/kubeatlas')
     try {
       const url = mcpEndpointUrl(true)
       const html = renderToStaticMarkup(<MCPSetupDialog open readOnly mcpUrl={url} onClose={() => {}} />)
-      expect(html).toContain(`claude mcp add --transport http radar ${url}`)
-      expect(html).toContain(`codex mcp add radar --url ${url}`)
-      expect(html).toContain('/radar/mcp-readonly')
+      expect(html).toContain(`claude mcp add --transport http kubeatlas ${url}`)
+      expect(html).toContain(`codex mcp add kubeatlas --url ${url}`)
+      expect(html).toContain('/kubeatlas/mcp-readonly')
       expect(html).toContain('list_namespaces')
       expect(html).not.toContain('apply_resource')
       expect(html).not.toContain('exec_pod')

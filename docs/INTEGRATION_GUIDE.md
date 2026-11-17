@@ -30,7 +30,7 @@ don't assume every discoverable resource has a CRD object.
   per-group read-access toggles; don't rely on an opt-in wildcard or request write
   permissions for a read-only integration. The chart coverage test checks groups,
   not every resource/verb or rendered toggle combination.
-- [ ] Make an explicit legacy upstream Radar Cloud caller-permission decision in
+- [ ] Make an explicit legacy upstream cloud caller-permission decision in
   `deploy/helm/kubeatlas/files/integration-read-baseline.yaml`: grant, existing, or
   withhold with a reason. Check exact scope and credential-bearing fields; a
   collection grant or renderer is not permission approval. See
@@ -225,8 +225,8 @@ unknown, partial and denied values first: every piece here exists to keep them.
   - A GitOps or Helm manager comes from `topology.ManagedByFromMeta`, never from
     labels read on the client.
 - [ ] **Version skew.** Give the workspace's endpoints one `FeatureCapabilities`
-  flag and a `radarFeatures.ts` entry with `flagShippedWithEndpoint: true`.
-  - Gate every hook with `useRadarFeature`, including mutations, streams and
+  flag and a `kubeatlasFeatures.ts` entry with `flagShippedWithEndpoint: true`.
+  - Gate every hook with `useKubeAtlasFeature`, including mutations, streams and
     downloads. Never add `retry` to a mutation.
   - Gate new contracts while retaining already-shipped reads whose producer
     contract is unchanged. Hide unsupported new destinations or fall back to
@@ -237,7 +237,7 @@ unknown, partial and denied values first: every piece here exists to keep them.
     with "needs a newer KubeAtlas".
   - A record KubeAtlas writes onto a cluster object (CNPG's restore-validation
     note) carries a format version, and readers skip a version they do not
-    know: Radars of other versions read the same object.
+    know: KubeAtlas instances of other versions read the same object.
   - An action error `code` tells the client the write was refused before it
     took effect. Never put a code on a failure that may follow a write; use
     `outcome_unknown`, or `partial` with what completed.
@@ -350,7 +350,7 @@ own owners.
 - [ ] State remaining scope in the PR. Each slice should work and include its tests;
   you don't need every CRD in an ecosystem before the first slice can land.
 
-**Maintainer docs publishing:** `radar-docs` splits `integrations.md` at `##`
+**Maintainer docs publishing:** `kubeatlas-docs` splits `integrations.md` at `##`
 headings. A new heading needs matching `INTEGRATION_META` and `docs.json` navigation
 in that internal repository before sync. On rename, retain the published slug;
 unmatched headings fail sync and the orphan sweep removes old generated pages.

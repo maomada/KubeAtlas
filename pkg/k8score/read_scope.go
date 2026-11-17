@@ -71,7 +71,7 @@ type KindReadAssessment struct {
 	// complete now; Failed when its load missed the sync deadline. Uncovered
 	// is known from configuration before any sync. An all-namespaces request
 	// on an all-namespaces informer has no partition: Readiness is its state
-	// and Read is nil. So is a kind Radar doesn't watch (Readiness
+	// and Read is nil. So is a kind KubeAtlas doesn't watch (Readiness
 	// Unavailable), which has nothing to assess. Otherwise Read is non-nil
 	// even when empty, because readers take a nil namespace list to mean
 	// every namespace.

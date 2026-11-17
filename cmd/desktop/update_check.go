@@ -11,7 +11,7 @@ func (a *DesktopApp) checkForUpdates() {
 	if !a.updateCheckMu.TryLock() {
 		return
 	}
-	a.execJS(`window.dispatchEvent(new Event('radar:check-for-updates'))`)
+	a.execJS(`window.dispatchEvent(new Event('kubeatlas:check-for-updates'))`)
 	go func() {
 		defer a.updateCheckMu.Unlock()
 		result := a.checkForUpdate(a.ctx)
@@ -19,6 +19,6 @@ func (a *DesktopApp) checkForUpdates() {
 			return
 		}
 		encoded, _ := json.Marshal(result)
-		a.execJS("window.dispatchEvent(new CustomEvent('radar:update-check-result', {detail:" + string(encoded) + "}))")
+		a.execJS("window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', {detail:" + string(encoded) + "}))")
 	}()
 }

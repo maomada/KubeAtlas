@@ -18,7 +18,7 @@ import (
 const GitOpsMembersIndex = "gitopsMembers"
 
 // UnreadableMembersKey is the GitOpsMembersIndex key of the managers whose
-// status lists no members Radar can trust, any of which may name any object.
+// status lists no members KubeAtlas can trust, any of which may name any object.
 // A manager that applies to another cluster is filed under no key when its
 // list can't be read: it can name no object here.
 const UnreadableMembersKey = "\x00unreadable"

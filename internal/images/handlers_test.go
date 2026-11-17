@@ -205,7 +205,7 @@ func TestImageRoutesAuthenticatedPodCredentials(t *testing.T) {
 type rejectingImageKeychain struct{ t *testing.T }
 
 func (k rejectingImageKeychain) Resolve(authn.Resource) (authn.Authenticator, error) {
-	k.t.Fatal("Radar's Google keychain was used")
+	k.t.Fatal("KubeAtlas's Google keychain was used")
 	return authn.Anonymous, nil
 }
 

@@ -733,10 +733,10 @@ function VerdictBand({
 
 // ------------------------------------------------------------------ origins
 
-/** The vantages Radar cannot run, stated rather than offered. These are real
+/** The vantages KubeAtlas cannot run, stated rather than offered. These are real
  *  holes in the evidence, so they must stay on screen - but as ONE limit on the
  *  claim, not a list. A per-origin line charged the rail a row for each thing
- *  Radar can't do, teaching the reader its limitations before its findings. */
+ *  KubeAtlas can't do, teaching the reader its limitations before its findings. */
 function UntestableNote({ origins }: { origins: Origin[] }) {
   const out = origins.filter((o) => o.unsupported)
   if (out.length === 0) return null
@@ -763,13 +763,13 @@ function UntestableNote({ origins }: { origins: Origin[] }) {
   )
 }
 
-/** One phrase for every vantage Radar can't run, named by what it would have
- *  proven rather than by Radar's internal origin names. */
+/** One phrase for every vantage KubeAtlas can't run, named by what it would have
+ *  proven rather than by KubeAtlas's internal origin names. */
 function untestableSummary(out: Origin[]): string {
   const phrase: Partial<Record<OriginId, string>> = {
     caller: 'as your application',
     external: 'from the public internet',
-    'radar-incluster': 'as Radar inside the cluster',
+    'kubeatlas-incluster': 'as KubeAtlas inside the cluster',
   }
   const parts = out.map((o) => phrase[o.id] ?? o.name.toLowerCase())
   if (parts.length === 1) return `Not tested ${parts[0]}.`
@@ -781,7 +781,7 @@ function untestableSummary(out: Origin[]): string {
 /**
  * The panel's one disclosure, on the shared Collapse primitive like
  * drawer-components' Section. Hand-rolled "›"/"⌄" toggles neither looked like
- * the rest of Radar nor animated, so a section appearing was an abrupt jump
+ * the rest of KubeAtlas nor animated, so a section appearing was an abrupt jump
  * with no affordance saying it could be opened at all.
  */
 function Disclosure({
@@ -1135,7 +1135,7 @@ function CoverageFooter({
     <div className="flex flex-wrap items-center gap-2.5 border-t border-theme-border bg-theme-surface px-5 py-2 text-[11px] text-theme-text-tertiary">
       <span className="text-[9.5px] font-bold tracking-[0.07em]">WHAT WAS TESTED</span>
       <span className="font-mono text-theme-text-secondary">{coverageText}</span>
-      {/* The vantages Radar can never run are a COVERAGE fact, so they belong on
+      {/* The vantages KubeAtlas can never run are a COVERAGE fact, so they belong on
           the coverage line - as their own band they were a third row of chrome
           restating what this one is for. */}
       <UntestableNote origins={origins} />

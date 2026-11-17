@@ -199,7 +199,7 @@ func TestDeleteCascadeWithholdsUnreadableDependents(t *testing.T) {
 	obj.SetUID("dep")
 	result := deleteCascadePreview(ctx, obj, metav1.DeletePropagationBackground, k8s.OperationContext())
 	refs := result["dependents"].([]topology.ResourceRef)
-	if len(refs) != 0 || result["withheld"] != nil || result["visibilityNote"] != "Only resources Radar observes and you can read are listed." {
+	if len(refs) != 0 || result["withheld"] != nil || result["visibilityNote"] != "Only resources KubeAtlas observes and you can read are listed." {
 		t.Fatalf("caller visibility: %+v", result)
 	}
 	counts := result["dependentCounts"].(*deleteDependentCounts)
@@ -363,7 +363,7 @@ func TestDeleteCascadeIncludesCallerReadableCertificateSecret(t *testing.T) {
 	if len(refs) != 1 || refs[0].Kind != "Secret" || refs[0].Name != "web-tls" || visible["withheld"] != nil {
 		t.Fatalf("owned Secret missing: %+v", visible)
 	}
-	if hidden["visibilityNote"] != "Only resources Radar observes and you can read are listed." || visible["visibilityNote"] != hidden["visibilityNote"] {
+	if hidden["visibilityNote"] != "Only resources KubeAtlas observes and you can read are listed." || visible["visibilityNote"] != hidden["visibilityNote"] {
 		t.Fatalf("visibility note depends on withheld objects: hidden=%+v visible=%+v", hidden, visible)
 	}
 }

@@ -127,7 +127,7 @@ func TestTruncateLargeConfigMapData(t *testing.T) {
 	if len(v) >= len(big) {
 		t.Fatalf("value not truncated: %d bytes", len(v))
 	}
-	if !strings.Contains(v, "[truncated by radar:") {
+	if !strings.Contains(v, "[truncated by kubeatlas:") {
 		t.Fatalf("truncated value lacks the explicit marker: %q", v[len(v)-100:])
 	}
 	if data["small"] != "v" {
@@ -160,7 +160,7 @@ func TestTruncateLargeConfigMapData_ManyMediumValues(t *testing.T) {
 	for k, v := range got {
 		s := v.(string)
 		totalAfter += len(s)
-		if !strings.Contains(s, "[truncated by radar:") {
+		if !strings.Contains(s, "[truncated by kubeatlas:") {
 			t.Fatalf("value %s not truncated: %d bytes", k, len(s))
 		}
 	}
@@ -239,7 +239,7 @@ func TestTruncateLargeConfigMapData_BinaryData(t *testing.T) {
 	if len(v) >= len(blob) {
 		t.Fatalf("binaryData value not truncated: %d bytes", len(v))
 	}
-	if !strings.Contains(v, "[truncated by radar:") {
+	if !strings.Contains(v, "[truncated by kubeatlas:") {
 		t.Fatal("truncated binaryData value lacks the explicit marker")
 	}
 	if !strings.Contains(note, "bundle.jks") {

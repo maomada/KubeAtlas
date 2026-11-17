@@ -29,7 +29,7 @@ function objectKeys(declName: string): string[] {
 const CURATED = objectKeys('const KNOWN_COLUMNS')
 const OWNED = new Set(objectKeys('const CURATED_COLUMN_GROUPS'))
 
-describe('Radar Cloud integration read baseline coverage', () => {
+describe('KubeAtlas Cloud integration read baseline coverage', () => {
   const root = join(__dirname, '../../../../..')
   const policy = parse(readFileSync(join(root, 'deploy/helm/kubeatlas/files/integration-read-baseline.yaml'), 'utf8')) as {
     entries: { group: string; resources: string[]; scope: string; decision: string }[]
@@ -125,7 +125,7 @@ describe('curated sets are reachable', () => {
     [...objectBody('const GROUP_QUALIFIED_COLUMN_KEYS').matchAll(/'[^']*':\s*'([a-z0-9_]+)'/g)].map(m => m[1]),
   )
 
-  // Keys named after a vendor are Radar's own invention rather than a real API
+  // Keys named after a vendor are KubeAtlas's own invention rather than a real API
   // plural, so something has to route to them explicitly.
   const VENDOR_PREFIXES = /^(cnpg|capi|knative|calico|velero|kyverno|nvidia|crossplane|istio)/
 
@@ -146,7 +146,7 @@ describe('curated sets are reachable', () => {
 
   it('resolves the real plural to the vendor key, not just the key to itself', () => {
     // The inverse of the vacuity trap above: assert the plural a cluster would
-    // actually serve, not Radar's internal name for the column set.
+    // actually serve, not KubeAtlas's internal name for the column set.
     expect(hasCuratedColumns('policies', 'kyverno.io')).toBe(true)
     expect(hasCuratedColumns('gateways', 'networking.istio.io')).toBe(true)
     expect(hasCuratedColumns('backups', 'postgresql.cnpg.io')).toBe(true)
@@ -180,7 +180,7 @@ describe('every declaration resolves', () => {
 })
 
 describe('foreign CRDs do not inherit curated columns', () => {
-  // Each of these ships in the wild under a plural Radar curates for someone
+  // Each of these ships in the wild under a plural KubeAtlas curates for someone
   // else. chaos-mesh Workflows are present on real clusters today.
   it.each([
     ['workflows', 'chaos-mesh.org', 'argoproj.io'],

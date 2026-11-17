@@ -18,11 +18,11 @@
 #   - kind         https://kind.sigs.k8s.io/
 #   - kubectl
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-rollouts-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-rollouts-demo).
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-rollouts-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-rollouts-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/rollouts-demo"
@@ -331,7 +331,7 @@ park_native_visibility() {
   kc -n demo-rollouts patch daemonset ondelete-daemon --type json \
     -p '[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"argoproj/rollouts-demo:yellow"}]' >/dev/null
   kc -n demo-rollouts patch deployment image-failure --type json \
-    -p '[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"registry.invalid/radar/does-not-exist:visual-test"}]' >/dev/null
+    -p '[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"registry.invalid/kubeatlas/does-not-exist:visual-test"}]' >/dev/null
 
   ok "native-paused, OnDelete, and new-revision image failure states parked"
 }
@@ -419,7 +419,7 @@ print_summary() {
                          → rollback must patch the Deployment
     metric-endpoint      Static JSON backing the web metric provider
 
-  Run Radar against this cluster:
+  Run KubeAtlas against this cluster:
     kubectl config use-context ${KUBECTL_CTX}
     ./scripts/visual-test-start.sh
 

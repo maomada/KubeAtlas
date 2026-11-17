@@ -108,7 +108,7 @@ func TestViewSaysNothingOfAnObjectTheCallerMayNotRead(t *testing.T) {
 	}
 }
 
-// An object the caller fetched from the API answers for itself when Radar
+// An object the caller fetched from the API answers for itself when KubeAtlas
 // doesn't collect its kind; its owners are still read from the caches.
 func TestViewSeedsAnObjectTheCachesDoNotHold(t *testing.T) {
 	w := ownershiptest.Fixture()
@@ -149,14 +149,14 @@ func TestViewSeedsAnObjectTheCachesDoNotHold(t *testing.T) {
 		t.Fatalf("a seeded Event reads %v, want excluded", got.Subject.Read.State)
 	}
 
-	// A seeded manager whose kind Radar doesn't collect has no list to read.
+	// A seeded manager whose kind KubeAtlas doesn't collect has no list to read.
 	managers := ownershiptest.Fixture()
 	managers.Collection[ownership.ArgoApplication] = ownershiptest.Collection{State: ownershiptest.NotCollected, OnDemand: true}
 	app := at("argoproj.io", "Application", "argocd", "web")
 	seeded := view(t, managers, ownership.Unrestricted())
 	seeded.Seed(ownership.Observation{Ref: app, UID: "uid-argocd-web"})
-	if got := seeded.Members(app); got.Membership != ownership.MembersUnreadable || len(got.Gaps) != 1 || got.Gaps[0].Reason != readreason.RadarKindNotCollected {
-		t.Fatalf("members of an uncollected manager = %v gaps %+v; want unreadable, as Radar doesn't collect it", got.Membership, got.Gaps)
+	if got := seeded.Members(app); got.Membership != ownership.MembersUnreadable || len(got.Gaps) != 1 || got.Gaps[0].Reason != readreason.KubeAtlasKindNotCollected {
+		t.Fatalf("members of an uncollected manager = %v gaps %+v; want unreadable, as KubeAtlas doesn't collect it", got.Membership, got.Gaps)
 	}
 
 	// Seeding grants no access.
@@ -196,7 +196,7 @@ func TestViewChildrenResolveToTheOwnersCurrentIncarnation(t *testing.T) {
 		owner  resourceid.Ref
 		want   []string
 		narrow bool
-		// gaps are the references to the owner Radar can't resolve.
+		// gaps are the references to the owner KubeAtlas can't resolve.
 		gaps []ownership.Gap
 	}{
 		// The stray Pod in beta names the ReplicaSet's UID but resolves in its
@@ -239,7 +239,7 @@ func TestViewChildrenReportWhatTheSearchCouldNotRead(t *testing.T) {
 	if len(got.Children) != 0 || !slices.Equal(got.Gaps, want) || got.Complete() {
 		t.Fatalf("Children while Pods load = %q gaps %+v; want none and %+v", childRefs(got), got.Gaps, want)
 	}
-	// A caller who may not read Pods hears nothing of Radar's Pod stores.
+	// A caller who may not read Pods hears nothing of KubeAtlas's Pod stores.
 	got = view(t, w, access{denied: []resourceid.GroupKind{pods}}).Children(at("apps", "ReplicaSet", "alpha", "web-1"))
 	if len(got.Gaps) != 0 || !got.Narrowed {
 		t.Fatalf("Children for a caller denied Pods = gaps %+v narrowed=%v", got.Gaps, got.Narrowed)
@@ -360,7 +360,7 @@ func TestViewMembers(t *testing.T) {
 // A reference carrying an owner's UID under other coordinates never resolves
 // to the owner, since UIDs are unique: however the read of those coordinates
 // goes, the object isn't a child and leaves the answer complete. A reference
-// Radar can't map to a kind may still be the owner's, and stays a gap.
+// KubeAtlas can't map to a kind may still be the owner's, and stays a gap.
 func TestViewChildrenIgnoreReferencesThatCantNameTheOwner(t *testing.T) {
 	b := ownershiptest.NewBuilder()
 	rs := b.Add("apps", "ReplicaSet", "alpha", "web")
@@ -542,7 +542,7 @@ func (s managersWithGaps) RecordingManagers(ref resourceid.Ref) ownership.Record
 	return r
 }
 
-// A caller learns which manager kinds Radar couldn't search, and where among
+// A caller learns which manager kinds KubeAtlas couldn't search, and where among
 // the namespaces it may read, but nothing of the namespaces it can't.
 func TestRecordingManagersKeepGapsTheCallerMayRead(t *testing.T) {
 	s, err := ownershiptest.Scan(ownershiptest.Fixture()).Begin()
@@ -551,7 +551,7 @@ func TestRecordingManagersKeepGapsTheCallerMayRead(t *testing.T) {
 	}
 	everywhere := ownership.Gap{Kind: ownership.FluxHelmRelease, Reason: readreason.KindSyncPending}
 	alpha := ownership.Gap{Kind: ownership.ArgoApplication, Namespace: "alpha", Reason: readreason.KindSyncPending}
-	beta := ownership.Gap{Kind: ownership.ArgoApplication, Namespace: "beta", Reason: readreason.RadarForbidden}
+	beta := ownership.Gap{Kind: ownership.ArgoApplication, Namespace: "beta", Reason: readreason.KubeAtlasForbidden}
 	v := ownership.NewView(managersWithGaps{s, []ownership.Gap{everywhere, alpha, beta}}, access{namespaces: []string{"alpha"}})
 	got := v.RecordingManagers(at("", "ConfigMap", "alpha", "cfg"))
 	if !slices.Contains(got.Gaps, everywhere) || !slices.Contains(got.Gaps, alpha) || slices.Contains(got.Gaps, beta) {

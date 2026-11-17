@@ -5,6 +5,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -116,16 +117,17 @@ type Hub struct {
 }
 
 type agentState struct {
-	mu        sync.Mutex
-	epoch     uint64
-	agent     Agent
-	session   *yamux.Session
-	conn      *websocket.Conn
-	active    bool
-	closed    bool
-	done      chan struct{}
-	slots     chan struct{}
-	closeOnce sync.Once
+	mu               sync.Mutex
+	epoch            uint64
+	agent            Agent
+	legacyVocabulary bool
+	session          *yamux.Session
+	conn             *websocket.Conn
+	active           bool
+	closed           bool
+	done             chan struct{}
+	slots            chan struct{}
+	closeOnce        sync.Once
 }
 
 func New(config Config) (*Hub, error) {
@@ -177,8 +179,8 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	claimedID := ids[0]
-	modes := r.Header.Values("X-Radar-Kubernetes-Credentials")
-	if len(modes) != 1 || modes[0] != "impersonate" {
+	mode, hasMode, modeOK := compat.SingleHeader(r.Header, compat.AgentCredentialsHeader, compat.LegacyAgentCredentialsHeader)
+	if !modeOK || !hasMode || mode != "impersonate" {
 		http.Error(w, "unsupported Kubernetes credential mode", http.StatusForbidden)
 		return
 	}
@@ -190,22 +192,20 @@ func (h *Hub) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
 	}
-	versions := r.Header.Values("X-Radar-Version")
-	if len(versions) > 1 || (len(versions) == 1 && versions[0] != "" && !validDisplayName(versions[0], maxVersionBytes)) {
+	version, _, versionOK := compat.SingleHeader(r.Header, compat.AgentVersionHeader, compat.LegacyAgentVersionHeader)
+	if !versionOK || (version != "" && !validDisplayName(version, maxVersionBytes)) {
 		http.Error(w, "invalid agent metadata", http.StatusBadRequest)
 		return
-	}
-	version := ""
-	if len(versions) == 1 {
-		version = versions[0]
 	}
 	connectionID, err := newConnectionID()
 	if err != nil {
 		http.Error(w, "agent connection unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	_, canonicalVocabulary, _ := compat.SingleHeader(r.Header, compat.AgentCredentialsHeader, "")
 	state := &agentState{
-		epoch: epoch,
+		legacyVocabulary: !canonicalVocabulary,
+		epoch:            epoch,
 		agent: Agent{
 			ClusterID: claimedID, Name: identity.Name, Version: version,
 			CredentialMode: "impersonate", ConnectionID: connectionID,

@@ -27,7 +27,7 @@ func TestResourceAvailabilityHead(t *testing.T) {
 			if resp.StatusCode != tc.status {
 				t.Fatalf("status = %d, want %d", resp.StatusCode, tc.status)
 			}
-			if resp.Header.Get("X-Radar-Resource-Read") != "true" {
+			if resp.Header.Get("X-KubeAtlas-Resource-Read") != "true" {
 				t.Fatal("missing authorized resource lookup marker")
 			}
 			body, err := io.ReadAll(resp.Body)
@@ -59,7 +59,7 @@ func TestResourceAvailabilityHeadDenied(t *testing.T) {
 		if resp.StatusCode != http.StatusForbidden {
 			t.Fatalf("%s status = %d, want 403", name, resp.StatusCode)
 		}
-		if resp.Header.Get("X-Radar-Resource-Read") != "" {
+		if resp.Header.Get("X-KubeAtlas-Resource-Read") != "" {
 			t.Fatal("denied lookup disclosed a resource marker")
 		}
 	}
@@ -79,8 +79,8 @@ func TestResourceAvailabilityHeadAllowed(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK || resp.Header.Get("X-Radar-Resource-Read") != "true" {
-		t.Fatalf("authorized HEAD status = %d, marker = %q", resp.StatusCode, resp.Header.Get("X-Radar-Resource-Read"))
+	if resp.StatusCode != http.StatusOK || resp.Header.Get("X-KubeAtlas-Resource-Read") != "true" {
+		t.Fatalf("authorized HEAD status = %d, marker = %q", resp.StatusCode, resp.Header.Get("X-KubeAtlas-Resource-Read"))
 	}
 	body, err := io.ReadAll(resp.Body)
 	if err != nil || len(body) != 0 {

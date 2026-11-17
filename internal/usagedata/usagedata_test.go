@@ -428,7 +428,7 @@ func TestFirstRunPromptSkipsUpgradesAndDecidedInstalls(t *testing.T) {
 	}
 }
 
-// A shared Radar reports how a team uses it, so its configuration decides:
+// A shared KubeAtlas reports how a team uses it, so its configuration decides:
 // nobody is asked, nobody can switch it in the UI, and a stray choice in
 // settings.json is ignored.
 func TestSharedInstallIsDecidedByConfigOnly(t *testing.T) {

@@ -1,16 +1,16 @@
 # KubeRay RayService controller demo
 
 This demo creates a dedicated `kind` cluster and runs one real KubeRay
-`RayService` through the minimum revision lifecycle Radar needs to understand:
+`RayService` through the minimum revision lifecycle KubeAtlas needs to understand:
 
 1. KubeRay creates a head-only RayCluster, Ray starts, the Serve application
-   becomes healthy, and a request returns `radar-kuberay-ready`.
+   becomes healthy, and a request returns `kubeatlas-kuberay-ready`.
 2. The script changes only the head image in the RayService spec. KubeRay's
    `NewCluster` strategy keeps the healthy cluster active while creating a
    distinct pending RayCluster whose head intentionally cannot start.
 
 The pending failure is a fixture, not an installation problem. It makes the
-active-versus-pending revision state durable enough for Radar API and UI work
+active-versus-pending revision state durable enough for KubeAtlas API and UI work
 without patching any status.
 
 ## Quick start
@@ -24,11 +24,11 @@ make kuberay-demo-down
 
 `up` and `reset` restore the kubeconfig current-context they observed, including
 an unset context. Every internal command addresses
-`kind-radar-kuberay-demo` explicitly. To inspect it yourself without changing
+`kind-kubeatlas-kuberay-demo` explicitly. To inspect it yourself without changing
 the shared context:
 
 ```bash
-kubectl --context kind-radar-kuberay-demo -n kuberay-demo get rayservices,rayclusters,pods,services
+kubectl --context kind-kubeatlas-kuberay-demo -n kuberay-demo get rayservices,rayclusters,pods,services
 ```
 
 The first run pulls the Ray image at roughly 824 MB compressed on arm64 (the
@@ -46,7 +46,7 @@ cost.
 
 | Evidence | Assertion |
 |---|---|
-| RayService baseline | During the initial `up`, before the revision, KubeRay reports `Ready=True`, the `radar-demo` application is `RUNNING`, its deployment is `HEALTHY`, and the Serve endpoint answers |
+| RayService baseline | During the initial `up`, before the revision, KubeRay reports `Ready=True`, the `kubeatlas-demo` application is `RUNNING`, its deployment is `HEALTHY`, and the Serve endpoint answers |
 | Revision identity | RayService reports distinct `activeServiceStatus.rayClusterName` and `pendingServiceStatus.rayClusterName` values with `UpgradeInProgress=True/BothActivePendingClustersExist` |
 | Active continuity | During the initial `up`, the active RayCluster name and UID survive the spec update. Every `verify` checks that RayService remains `Ready=True/NonZeroServeEndpoints`; the active RayCluster's authoritative Ready/Provisioned conditions remain true; its Serve endpoint still answers after the pending failure |
 | Pending failure | The directly owned pending RayCluster reports `HeadPodReady=False` with `CrashLoopBackOff` or `RunContainerError`, plus `RayClusterProvisioned=False/RayClusterPodsProvisioning` |
@@ -66,28 +66,28 @@ attempts. Both are controller-earned views of the same pinned pause image
 missing KubeRay's generated `/bin/bash` command, so verification accepts exactly
 those two reasons while requiring the Pod to remain NotReady.
 
-## Radar API smoke test
+## KubeAtlas API smoke test
 
-Build Radar, export this cluster into an isolated kubeconfig, and start Radar in
+Build KubeAtlas, export this cluster into an isolated kubeconfig, and start KubeAtlas in
 another terminal:
 
 ```bash
 make build
 KUBEATLAS_KUBECONFIG="$(mktemp)"
-kind export kubeconfig --name radar-kuberay-demo --kubeconfig "${KUBEATLAS_KUBECONFIG}"
-KUBECONFIG="${KUBEATLAS_KUBECONFIG}" ./radar --port 9333 --no-browser
+kind export kubeconfig --name kubeatlas-kuberay-demo --kubeconfig "${KUBEATLAS_KUBECONFIG}"
+KUBECONFIG="${KUBEATLAS_KUBECONFIG}" ./kubeatlas --port 9333 --no-browser
 ```
 
 Then run:
 
 ```bash
-KUBEATLAS_URL=http://127.0.0.1:9333 ./scripts/kuberay-demo.sh verify-radar
+KUBEATLAS_URL=http://127.0.0.1:9333 ./scripts/kuberay-demo.sh verify-kubeatlas
 ```
 
-The verifier first waits for Radar health and CRD discovery, requires its reported
+The verifier first waits for KubeAtlas health and CRD discovery, requires its reported
 context and cluster to match the owned lane, and waits for exact live-versus-cached
 resource identity, owner references, labels and Service selectors. It then checks
-Radar's real group-aware `rayservices.ray.io` and
+KubeAtlas's real group-aware `rayservices.ray.io` and
 `rayclusters.ray.io` browse paths, native controller status, and the generated
 Pod/Service lineage. It also asserts the exact basic-tier `resourceContext.serving.rayService`
 envelope through REST AI detail and MCP `get_resource`: preserved

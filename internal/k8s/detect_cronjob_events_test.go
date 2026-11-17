@@ -112,7 +112,7 @@ func TestCronJobControllerEventsFallback(t *testing.T) {
 				case "repeated-without-success":
 					observeCronJobEventTestSchedules(cj, tracker, now)
 				}
-				// Radar's inability to resolve this timezone is not controller evidence.
+				// KubeAtlas's inability to resolve this timezone is not controller evidence.
 				tz := "Not/A_Timezone"
 				cj.Spec.TimeZone = &tz
 				want := DetectCronJobProblems([]*batchv1.CronJob{cj}, nil, tracker, now)

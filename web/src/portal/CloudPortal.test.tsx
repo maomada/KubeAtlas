@@ -7,6 +7,7 @@ import { PortalEntry } from './CloudPortal'
 import { navigateCloud } from './cloudNavigation'
 import { logoutPortal, type HubContext } from './CloudOrganization'
 import { HUB_YAML_DRAFT_AUTHORITY_MARKER, yamlDraftStorageKey } from '@maomada/k8s-ui'
+import { LEGACY_YAML_DRAFT_CHANNEL } from '@maomada/k8s-ui/utils/legacy-brand'
 
 const portalNavigation = vi.hoisted(() => ({
   replace: vi.fn(), nativeClient: undefined as unknown, nativeProps: undefined as unknown,
@@ -29,10 +30,10 @@ const portalHub = {
   organizations: [{ id: 'org-1', name: 'Organization One', role: 'owner' as const }],
 }
 
-vi.mock('../RadarApp', async () => {
+vi.mock('../KubeAtlasApp', async () => {
   const { useEffect, useState } = await import('react')
   return {
-    RadarApp: (props: { queryClient: QueryClientType; apiBase?: string; yamlDraftScope?: string; yamlReadOnly?: boolean }) => {
+    KubeAtlasApp: (props: { queryClient: QueryClientType; apiBase?: string; yamlDraftScope?: string; yamlReadOnly?: boolean }) => {
       portalNavigation.beforeNativeRender?.(props)
       portalNavigation.nativeProps = props
       const [reviewOpen, setReviewOpen] = useState(false)
@@ -1245,7 +1246,7 @@ it('keeps Portal gated and reports remote YAML storage failure honestly', async 
       nativeUnmountsWhenClearStarted = portalNavigation.nativeUnmounts
       throw new Error('Storage access denied')
     })
-    remoteSender = new BroadcastChannel('kubeatlas-hub-yaml-draft-purge')
+    remoteSender = new BroadcastChannel(LEGACY_YAML_DRAFT_CHANNEL)
 
     await act(async () => {
       remoteSender?.postMessage({ type: 'purge' })
@@ -1275,7 +1276,7 @@ it('wires scoped read-only YAML policy and purges drafts on a mounted same-org r
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
   sessionStorage.clear()
-  sessionStorage.setItem('radar_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0', 'legacy-owner-draft')
+  sessionStorage.setItem('kubeatlas_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0', 'legacy-owner-draft')
   let hub: HubContext = portalHub
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     const path = String(input)
@@ -1312,7 +1313,7 @@ it('wires scoped read-only YAML policy and purges drafts on a mounted same-org r
     expect(ownerProps.yamlReadOnly).toBe(false)
     expect(ownerProps.yamlDraftScope).toContain('"clusterId":"alpha"')
     expect(ownerProps.yamlDraftScope).toContain('/c/alpha/api')
-    expect(sessionStorage.getItem('radar_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0')).toBeNull()
+    expect(sessionStorage.getItem('kubeatlas_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0')).toBeNull()
     expect(sessionStorage.getItem('activeOrganizationId')).toBeNull()
     const oldDraftKey = yamlDraftStorageKey(ownerProps.yamlDraftScope!, {
       group: '', kind: 'ConfigMap', namespace: 'qa-cdf2599-native', name: 'kubeatlas-agent-88ca3f0',

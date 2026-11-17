@@ -19,19 +19,19 @@ func TestForwardedIdentityAllowed(t *testing.T) {
 		{"non-cloud: serviceaccount username rejected", "system:serviceaccount:kube-system:default", nil, false, false},
 
 		// Cloud: reserved-principal rejection.
-		{"cloud: system:masters group rejected", "user_01ABC", []string{"radar:owner", "system:masters"}, true, false},
-		{"cloud: system username rejected", "system:node:x", []string{"radar:owner"}, true, false},
+		{"cloud: system:masters group rejected", "user_01ABC", []string{"kubeatlas:owner", "system:masters"}, true, false},
+		{"cloud: system username rejected", "system:node:x", []string{"kubeatlas:owner"}, true, false},
 		{"cloud: serviceaccount group rejected", "user_01ABC", []string{"system:serviceaccounts:kube-system"}, true, false},
 
 		// Cloud: vocabulary allowlist.
-		{"cloud: radar tier allowed", "user_01ABC", []string{"radar:owner", "radar:org:o1", "radar:user:u1"}, true, true},
+		{"cloud: kubeatlas tier allowed", "user_01ABC", []string{"kubeatlas:owner", "kubeatlas:org:o1", "kubeatlas:user:u1"}, true, true},
 		{"cloud: legacy cloud tier allowed", "user_01ABC", []string{"cloud:viewer", "cloud:org:o1"}, true, true},
-		{"cloud: radar:idp group allowed", "user_01ABC", []string{"radar:idp:f81d4fae"}, true, true},
-		{"cloud: radar:email allowed", "user_01ABC", []string{"radar:email:a@b.com"}, true, true},
-		{"cloud: non-vocabulary group rejected", "user_01ABC", []string{"radar:owner", "sre-team"}, true, false},
-		{"cloud: empty username rejected", "", []string{"radar:owner"}, true, false},
-		{"cloud mode internal synthetic username allowed", "radar:system:alerts:o1", []string{"radar:owner"}, true, true},
-		{"cloud: AI reader identity allowed", "radar:ai:o1", []string{"radar:ai:reader"}, true, true},
+		{"cloud: kubeatlas:idp group allowed", "user_01ABC", []string{"kubeatlas:idp:f81d4fae"}, true, true},
+		{"cloud: kubeatlas:email allowed", "user_01ABC", []string{"kubeatlas:email:a@b.com"}, true, true},
+		{"cloud: non-vocabulary group rejected", "user_01ABC", []string{"kubeatlas:owner", "sre-team"}, true, false},
+		{"cloud: empty username rejected", "", []string{"kubeatlas:owner"}, true, false},
+		{"cloud mode internal synthetic username allowed", "kubeatlas:system:alerts:o1", []string{"kubeatlas:owner"}, true, true},
+		{"cloud: AI reader identity allowed", "kubeatlas:ai:o1", []string{"kubeatlas:ai:reader"}, true, true},
 		{"cloud: no groups, valid user, allowed", "user_01ABC", nil, true, true},
 		{"cloud: Hub owner group allowed", "user_01ABC", []string{"kubeatlas:hub:owner"}, true, true},
 		{"cloud: Hub member group allowed", "user_01ABC", []string{"kubeatlas:hub:member"}, true, true},
@@ -57,8 +57,8 @@ func TestIsReservedPrincipal(t *testing.T) {
 			t.Errorf("IsReservedPrincipal(%q) = false, want true", p)
 		}
 	}
-	// Radar's own namespaced synthetic principals must NOT be treated as reserved.
-	notReserved := []string{"radar:system:alerts:o1", "radar:system", "radar:owner", "alice@company.com", "sre-team", ""}
+	// KubeAtlas's own namespaced synthetic principals must NOT be treated as reserved.
+	notReserved := []string{"kubeatlas:system:alerts:o1", "kubeatlas:system", "kubeatlas:owner", "alice@company.com", "sre-team", ""}
 	for _, p := range notReserved {
 		if IsReservedPrincipal(p) {
 			t.Errorf("IsReservedPrincipal(%q) = true, want false", p)

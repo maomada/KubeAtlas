@@ -3,17 +3,17 @@ import { act, useEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
-import { getRadarUpgradeRequirement } from '@maomada/k8s-ui'
+import { getKubeAtlasUpgradeRequirement } from '@maomada/k8s-ui'
 import { ApiError, isNotFoundError, useApplications, useCapacityPoolDetail, useDrainPlan, useNodeRemovalPlan, usePodEnvironment, useSubjectIssues, useWorkloadHistory } from './client'
 import { getApiBase } from './config'
 import { usePolicyResource } from './policy'
-import { isRadarFeatureUnsupported } from './radarFeatures'
+import { isKubeAtlasFeatureUnsupported } from './kubeatlasFeatures'
 
 // By default the host knows the agent as v1.7.2 before /capabilities,
 // /version-check and /api-resources answer; the tests settle those by seeding
 // the cache.
-const host = vi.hoisted(() => ({ radarVersion: 'v1.7.2' as string | undefined }))
-vi.mock('../context/RadarUpgradeHost', () => ({ useRadarUpgradeHost: () => host }))
+const host = vi.hoisted(() => ({ kubeatlasVersion: 'v1.7.2' as string | undefined }))
+vi.mock('../context/KubeAtlasUpgradeHost', () => ({ useKubeAtlasUpgradeHost: () => host }))
 
 const CHI_404 = () => new Response('404 page not found\n', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } })
 let chiRoutes: string[] = []
@@ -26,7 +26,7 @@ let client: QueryClient
 
 beforeEach(() => {
   requested.length = 0
-  host.radarVersion = 'v1.7.2'
+  host.kubeatlasVersion = 'v1.7.2'
   chiRoutes = []
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
     const url = String(input)
@@ -64,19 +64,19 @@ const asked = (suffix: string) => requested.some((url) => url.includes(suffix))
 
 function Environment() {
   const { data, error } = usePodEnvironment('shop', 'web')
-  return <span>{data ? 'data' : getRadarUpgradeRequirement(error) ? 'upgrade' : 'pending'}</span>
+  return <span>{data ? 'data' : getKubeAtlasUpgradeRequirement(error) ? 'upgrade' : 'pending'}</span>
 }
 
 function Policy() {
   const { data, error, isLoading, isError } = usePolicyResource('pods', 'shop', 'web')
   if (isLoading) return <span>loading</span>
   if (data && isError) return <span>inconsistent</span>
-  return <span>{data?.status ?? (getRadarUpgradeRequirement(error) ? 'upgrade' : 'pending')}</span>
+  return <span>{data?.status ?? (getKubeAtlasUpgradeRequirement(error) ? 'upgrade' : 'pending')}</span>
 }
 
 function SubjectIssues() {
   const { data, error } = useSubjectIssues({ kind: 'Pod', group: '', namespace: 'shop', name: 'web' }, true)
-  return <span>{data ? 'data' : getRadarUpgradeRequirement(error) ? 'upgrade' : error ? 'unconfirmed' : 'pending'}</span>
+  return <span>{data ? 'data' : getKubeAtlasUpgradeRequirement(error) ? 'upgrade' : error ? 'unconfirmed' : 'pending'}</span>
 }
 
 it('waits for coverage capabilities instead of probing an older array-shaped issues route', async () => {
@@ -162,7 +162,7 @@ function PoolDetail() {
   const { data, error } = useCapacityPoolDetail('default')
   if (data) return <span>data</span>
   if (isNotFoundError(error)) return <span>pool not found</span>
-  return <span>{getRadarUpgradeRequirement(error) ? 'upgrade' : 'pending'}</span>
+  return <span>{getKubeAtlasUpgradeRequirement(error) ? 'upgrade' : 'pending'}</span>
 }
 
 it('never asks an old KubeAtlas for a capacity deep link, and does not call the pool missing', async () => {
@@ -172,7 +172,7 @@ it('never asks an old KubeAtlas for a capacity deep link, and does not call the 
 })
 
 it("reads the router's 404 on a capacity deep link as unsupported when the version is unknown", async () => {
-  host.radarVersion = undefined
+  host.kubeatlasVersion = undefined
   chiRoutes = ['/capacity/pools/']
   await render(<PoolDetail />)
   expect(element.textContent).toBe('upgrade')
@@ -199,11 +199,11 @@ function DrainPlanProbe() {
 
 function RemovalPlanProbe() {
   const { error } = useNodeRemovalPlan('worker-1', true)
-  return <span>{getRadarUpgradeRequirement(error) ? 'upgrade' : 'pending'}</span>
+  return <span>{getKubeAtlasUpgradeRequirement(error) ? 'upgrade' : 'pending'}</span>
 }
 
 it('does not poll an old KubeAtlas for removal details', async () => {
-  host.radarVersion = 'v1.13.1'
+  host.kubeatlasVersion = 'v1.13.1'
   await render(<RemovalPlanProbe />)
   expect(element.textContent).toBe('upgrade')
   expect(asked('/drain-plan')).toBe(false)
@@ -216,33 +216,33 @@ it('requests removal details once the drain-plan feature is supported', async ()
 })
 
 it('never asks a KubeAtlas older than v1.14 for a drain plan', async () => {
-  host.radarVersion = 'v1.13.1'
+  host.kubeatlasVersion = 'v1.13.1'
   await render(<DrainPlanProbe />)
   const error = await probe.drainPlan!.mutateAsync({ name: 'worker-1', options: { deleteEmptyDirData: false, force: false } })
     .catch((e: unknown) => e)
-  expect(isRadarFeatureUnsupported(error, 'drainPlan')).toBe(true)
+  expect(isKubeAtlasFeatureUnsupported(error, 'drainPlan')).toBe(true)
   expect(asked('/drain-plan')).toBe(false)
 })
 
 it("reads the router's 404 on a drain plan as unsupported, and a handler 404 as an error", async () => {
-  host.radarVersion = undefined
+  host.kubeatlasVersion = undefined
   chiRoutes = ['/nodes/worker-1/drain-plan']
   await render(<DrainPlanProbe />)
   const options = { deleteEmptyDirData: false, force: false }
   const unsupported = await probe.drainPlan!.mutateAsync({ name: 'worker-1', options }).catch((e: unknown) => e)
-  expect(isRadarFeatureUnsupported(unsupported, 'drainPlan')).toBe(true)
+  expect(isKubeAtlasFeatureUnsupported(unsupported, 'drainPlan')).toBe(true)
 
   vi.mocked(fetch).mockImplementationOnce(() =>
     Promise.resolve(Response.json({ error: 'nodes "worker-2" not found' }, { status: 404 })),
   )
   const missing = await probe.drainPlan!.mutateAsync({ name: 'worker-2', options }).catch((e: unknown) => e)
   expect(missing).toBeInstanceOf(ApiError)
-  expect(isRadarFeatureUnsupported(missing)).toBe(false)
+  expect(isKubeAtlasFeatureUnsupported(missing)).toBe(false)
 })
 
 function Applications() {
   const { data, error } = useApplications([])
-  return <span>{data ? 'data' : getRadarUpgradeRequirement(error) ? 'upgrade' : 'pending'}</span>
+  return <span>{data ? 'data' : getKubeAtlasUpgradeRequirement(error) ? 'upgrade' : 'pending'}</span>
 }
 
 it('never asks a KubeAtlas older than v1.8 for applications', async () => {
@@ -253,7 +253,7 @@ it('never asks a KubeAtlas older than v1.8 for applications', async () => {
 
 function History() {
   const { data, error } = useWorkloadHistory('deployments', 'shop', 'web', 'apps')
-  return <span>{data ? 'data' : isRadarFeatureUnsupported(error, 'workloadHistory') ? 'fallback' : 'pending'}</span>
+  return <span>{data ? 'data' : isKubeAtlasFeatureUnsupported(error, 'workloadHistory') ? 'fallback' : 'pending'}</span>
 }
 
 it('never asks a KubeAtlas whose capabilities omit workload history', async () => {
@@ -264,7 +264,7 @@ it('never asks a KubeAtlas whose capabilities omit workload history', async () =
 })
 
 it("reads the router's 404 on workload history as unsupported before capabilities answer", async () => {
-  host.radarVersion = undefined
+  host.kubeatlasVersion = undefined
   chiRoutes = ['/workloads/deployments/shop/web/history']
   await render(<History />)
   expect(element.textContent).toBe('fallback')
@@ -272,7 +272,7 @@ it("reads the router's 404 on workload history as unsupported before capabilitie
 })
 
 it('asks again once capabilities confirm workload history after a probe hit an older KubeAtlas', async () => {
-  host.radarVersion = undefined
+  host.kubeatlasVersion = undefined
   chiRoutes = ['/workloads/deployments/shop/web/history']
   await render(<History />)
   expect(element.textContent).toBe('fallback')

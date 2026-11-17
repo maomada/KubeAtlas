@@ -5,7 +5,7 @@ import { ReconcilingIndicator } from './GitOpsStatusBadge'
 const LABEL = 'Reconcile pass in flight'
 
 // A reconcile pass in flight is worth showing only where the sync word cannot
-// already say it. Radar's own precedent for a secondary indicator (the Velero
+// already say it. KubeAtlas's own precedent for a secondary indicator (the Velero
 // schedule cell's paused-and-rejected case) suppresses the icon when the badge
 // carries the same fact, and without that rule one row shows two spinners.
 describe('ReconcilingIndicator', () => {

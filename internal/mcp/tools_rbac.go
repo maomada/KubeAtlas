@@ -206,7 +206,7 @@ func handleGetSubjectPermissions(ctx context.Context, _ *mcp.CallToolRequest, in
 	roleBindingLister := cache.RoleBindings()
 	clusterRoleBindingLister := cache.ClusterRoleBindings()
 	if roleLister == nil || clusterRoleLister == nil || roleBindingLister == nil || clusterRoleBindingLister == nil {
-		return nil, nil, fmt.Errorf("RBAC cache not available (informers not synced or RBAC reads disabled for the Radar SA)")
+		return nil, nil, fmt.Errorf("RBAC cache not available (informers not synced or RBAC reads disabled for the KubeAtlas SA)")
 	}
 	roles, _ := roleLister.List(labels.Everything())
 	clusterRoles, _ := clusterRoleLister.List(labels.Everything())
@@ -238,7 +238,7 @@ func handleGetSubjectPermissions(ctx context.Context, _ *mcp.CallToolRequest, in
 				subj.Name, subj.Namespace)
 		case !verifiable:
 			result.SubjectWarning = fmt.Sprintf(
-				"could not confirm ServiceAccount %q exists in namespace %q (not observable by Radar), so an empty result may mean either no permissions or a subject that does not exist.",
+				"could not confirm ServiceAccount %q exists in namespace %q (not observable by KubeAtlas), so an empty result may mean either no permissions or a subject that does not exist.",
 				subj.Name, subj.Namespace)
 		}
 	}

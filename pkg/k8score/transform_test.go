@@ -155,7 +155,7 @@ func TestDropUnstructuredManagedFields_CRD(t *testing.T) {
 	}
 
 	// Identity fields preserved — these are what fleet aggregation and
-	// Radar's own resource list rely on.
+	// KubeAtlas's own resource list rely on.
 	v0 := versions[0].(map[string]any)
 	if v0["name"] != "v1" {
 		t.Errorf("versions[0].name should be preserved, got %v", v0["name"])

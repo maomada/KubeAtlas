@@ -9,7 +9,7 @@ afterEach(() => {
 })
 
 describe('Cloud portal routing', () => {
-  it('keeps management requests on the Hub while RadarApp changes its API base', async () => {
+  it('keeps management requests on the Hub while KubeAtlasApp changes its API base', async () => {
     const fetch = vi.fn<typeof globalThis.fetch>(() => Promise.resolve(new Response('{"clusters":[]}', { headers: { 'Content-Type': 'application/json' } })))
     vi.stubGlobal('fetch', fetch)
     setApiBase('/c/alpha/api')

@@ -7,7 +7,7 @@ const sidebar = vi.hoisted(() => ({ data: undefined as CNPGWorkspaceResponse | u
 vi.mock('../../api/cnpg', () => ({ useCNPGWorkspace: () => ({ data: sidebar.data }) }))
 vi.mock('../../api/cnpg-storage', () => ({ useCNPGFleetDisk: () => ({}) }))
 vi.mock('../../api/cnpg-history', () => ({ useCNPGFleetMetrics: () => ({}) }))
-vi.mock('../../api/client', () => ({ useRadarFeature: () => ({ support: 'supported' }) }))
+vi.mock('../../api/client', () => ({ useKubeAtlasFeature: () => ({ support: 'supported' }) }))
 
 vi.mock('../../context/ConnectionContext', () => ({ useConnection: () => ({ connection: { context: 'kind-test' } }) }))
 vi.mock('./CNPGOperatorBanner', () => ({ CNPGOperatorBanner: () => null }))

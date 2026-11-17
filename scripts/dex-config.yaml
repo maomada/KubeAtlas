@@ -10,9 +10,9 @@ oauth2:
   skipApprovalScreen: true
 
 staticClients:
-  - id: radar
-    secret: radar-secret
-    name: Radar
+  - id: kubeatlas
+    secret: kubeatlas-secret
+    name: KubeAtlas
     redirectURIs:
       - http://localhost:9280/auth/callback
       - http://localhost:9273/auth/callback

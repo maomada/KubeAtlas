@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-kuberay-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-kuberay-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 KUBERAY_VERSION="v1.7.0"
 KUBERAY_SOURCE_REF="59d663aeec13760646da3db9c1cf8cfe883e30b7"
@@ -17,8 +17,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/kuberay-demo"
 DEMO_NS="kuberay-demo"
 RAYSERVICE_NAME="revision-demo"
-MARKER_NAME="radar-kuberay-demo-owner"
-MARKER_VALUE="skyhook-radar-kuberay-demo-v1"
+MARKER_NAME="kubeatlas-kuberay-demo-owner"
+MARKER_VALUE="skyhook-kubeatlas-kuberay-demo-v1"
 WAIT_SECONDS="${WAIT_SECONDS:-480}"
 KUBEATLAS_URL="${KUBEATLAS_URL:-http://127.0.0.1:9280}"
 PREVIOUS_CONTEXT=''
@@ -196,8 +196,8 @@ healthy_baseline_ready() {
     (.status.activeServiceStatus.rayClusterName // "" | length) > 0 and
     (.status.pendingServiceStatus.rayClusterName // "") == "" and
     .status.numServeEndpoints > 0 and
-    .status.activeServiceStatus.applicationStatuses["radar-demo"].status == "RUNNING" and
-    .status.activeServiceStatus.applicationStatuses["radar-demo"].serveDeploymentStatuses.RadarDemo.status == "HEALTHY" and
+    .status.activeServiceStatus.applicationStatuses["kubeatlas-demo"].status == "RUNNING" and
+    .status.activeServiceStatus.applicationStatuses["kubeatlas-demo"].serveDeploymentStatuses.KubeAtlasDemo.status == "HEALTHY" and
     any(.status.conditions[]?; .type == "Ready" and .status == "True" and .reason == "NonZeroServeEndpoints") and
     any(.status.conditions[]?; .type == "UpgradeInProgress" and .status == "False" and .reason == "NoPendingCluster")
   ' >/dev/null 2>&1
@@ -237,7 +237,7 @@ assert_rayservice_spec() {
     (.spec.rayClusterConfig.headGroupSpec.template.spec.containers[0].image as $image |
       ([ $rayImage, $pendingImage ] | index($image)) != null) and
     (.spec.rayClusterConfig.workerGroupSpecs // [] | length) == 0 and
-    (.spec.serveConfigV2 | contains("import_path: radar_serve:app"))
+    (.spec.serveConfigV2 | contains("import_path: kubeatlas_serve:app"))
   ' >/dev/null || fail "${RAYSERVICE_NAME} does not match the pinned head-only NewCluster fixture"
 }
 
@@ -261,7 +261,7 @@ verify_serve_response() {
   [ -n "${active_pod}" ] || fail "Active RayCluster does not report its head Pod"
   [ -n "${service_name}" ] || fail "RayService-owned Serve Service is missing"
   response="$(kc --request-timeout=20s -n "${DEMO_NS}" exec "${active_pod}" -- python -c 'import sys, urllib.request; print(urllib.request.urlopen("http://" + sys.argv[1] + ":8000/", timeout=5).read().decode())' "${service_name}")"
-  [ "${response}" = "radar-kuberay-ready" ] || fail "Serve endpoint returned '${response}', expected radar-kuberay-ready"
+  [ "${response}" = "kubeatlas-kuberay-ready" ] || fail "Serve endpoint returned '${response}', expected kubeatlas-kuberay-ready"
 }
 
 assert_revision_ownership_and_status() {
@@ -405,7 +405,7 @@ ensure_revision_pair() {
     baseline_active="$(active_cluster_name)"
     baseline_active_uid="$(kc -n "${DEMO_NS}" get rayclusters.ray.io "${baseline_active}" -o jsonpath='{.metadata.uid}')"
     verify_serve_response
-    ok "Active revision ${baseline_active} is Ready and serves radar-kuberay-ready"
+    ok "Active revision ${baseline_active} is Ready and serves kubeatlas-kuberay-ready"
     step "Creating an intentionally non-runnable pending revision"
     kc -n "${DEMO_NS}" patch rayservices.ray.io "${RAYSERVICE_NAME}" --type=json \
       -p="[{\"op\":\"replace\",\"path\":\"/spec/rayClusterConfig/headGroupSpec/template/spec/containers/0/image\",\"value\":\"${PENDING_IMAGE}\"}]" >/dev/null
@@ -440,41 +440,41 @@ cmd_verify() {
   ok "Active Serve response, pending failure, conditions, ownership UIDs, labels, and selectors verified"
 }
 
-radar_health_ready() {
+kubeatlas_health_ready() {
   curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/health" 2>/dev/null | \
     jq -e '.status == "healthy"' >/dev/null 2>&1
 }
 
-radar_crd_discovery_ready() {
+kubeatlas_crd_discovery_ready() {
   curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/cluster-info" 2>/dev/null | \
     jq -e '.crdDiscoveryStatus == "ready"' >/dev/null 2>&1
 }
 
-radar_inventory_ready() {
+kubeatlas_inventory_ready() {
   local kind="$1" group="$2" live cached projection
   projection='map({metadata: (.metadata | {namespace, name, uid, generation, ownerReferences, labels}), selector: .spec.selector} + (if $dynamic then {apiVersion, kind} else {} end)) | sort_by(.metadata.name)'
   local dynamic=false
   [ -z "${group}" ] || dynamic=true
   live="$(kc -n "${DEMO_NS}" get "${kind}${group:+.${group}}" --request-timeout=10s -o json | jq -cS --argjson dynamic "${dynamic}" ".items | ${projection}")" || return 1
-  cached="$(curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/resources/${kind}?group=${group}&namespace=${DEMO_NS}" | jq -cS --argjson dynamic "${dynamic}" 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end |'" ${projection}")" || return 1
+  cached="$(curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/resources/${kind}?group=${group}&namespace=${DEMO_NS}" | jq -cS --argjson dynamic "${dynamic}" 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end |'" ${projection}")" || return 1
   [ "${live}" = "${cached}" ]
 }
 
-radar_revisions_ready() {
+kubeatlas_revisions_ready() {
   local rayservices rayclusters pods services active pending service_uid
-  rayservices="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/rayservices?group=ray.io&namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || return 1
+  rayservices="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/rayservices?group=ray.io&namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || return 1
   jq -e '
     type == "array" and length == 1 and .[0].apiVersion == "ray.io/v1" and
     .[0].status.numServeEndpoints > 0 and
     any(.[0].status.conditions[]?; .type == "Ready" and .status == "True" and .reason == "NonZeroServeEndpoints") and
     any(.[0].status.conditions[]?; .type == "UpgradeInProgress" and .status == "True" and .reason == "BothActivePendingClustersExist") and
     .[0].status.activeServiceStatus.rayClusterName != .[0].status.pendingServiceStatus.rayClusterName
-  ' <<<"${rayservices}" >/dev/null || { warn "Radar did not return the group-pure active/pending RayService status" >&2; return 1; }
+  ' <<<"${rayservices}" >/dev/null || { warn "KubeAtlas did not return the group-pure active/pending RayService status" >&2; return 1; }
   active="$(jq -r '.[0].status.activeServiceStatus.rayClusterName' <<<"${rayservices}")"
   pending="$(jq -r '.[0].status.pendingServiceStatus.rayClusterName' <<<"${rayservices}")"
   service_uid="$(jq -r '.[0].metadata.uid' <<<"${rayservices}")"
 
-  rayclusters="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/rayclusters?group=ray.io&namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || return 1
+  rayclusters="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/rayclusters?group=ray.io&namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || return 1
   jq -e --arg active "${active}" --arg pending "${pending}" --arg uid "${service_uid}" '
     type == "array" and length == 2 and
     ([.[].metadata.name] | sort) == ([$active, $pending] | sort) and
@@ -485,24 +485,24 @@ radar_revisions_ready() {
       any(.status.conditions[]?;
         .type == "HeadPodReady" and .status == "False" and
         (.reason == "CrashLoopBackOff" or .reason == "RunContainerError")))
-  ' <<<"${rayclusters}" >/dev/null || { warn "Radar did not return both owned RayClusters with their native conditions" >&2; return 1; }
+  ' <<<"${rayclusters}" >/dev/null || { warn "KubeAtlas did not return both owned RayClusters with their native conditions" >&2; return 1; }
 
-  pods="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/pods?namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || return 1
+  pods="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/pods?namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || return 1
   jq -e --arg active "${active}" --arg pending "${pending}" '
     type == "array" and
     ([.[] | select(.metadata.labels["ray.io/cluster"] == $active and
       .metadata.labels["ray.io/group"] == "headgroup" and .metadata.labels["ray.io/node-type"] == "head")] | length) == 1 and
     ([.[] | select(.metadata.labels["ray.io/cluster"] == $pending and
       .metadata.labels["ray.io/group"] == "headgroup" and .metadata.labels["ray.io/node-type"] == "head")] | length) == 1
-  ' <<<"${pods}" >/dev/null || { warn "Radar did not expose both controller-created head Pods and their role labels" >&2; return 1; }
+  ' <<<"${pods}" >/dev/null || { warn "KubeAtlas did not expose both controller-created head Pods and their role labels" >&2; return 1; }
 
-  services="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/services?namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || return 1
+  services="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/services?namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || return 1
   jq -e --arg active "${active}" --arg pending "${pending}" '
     type == "array" and
     any(.[]; .spec.selector["ray.io/cluster"] == $active and .metadata.labels["ray.io/serve"] == "revision-demo-serve") and
     any(.[]; .spec.selector["ray.io/cluster"] == $active and .metadata.labels["ray.io/node-type"] == "head") and
     any(.[]; .spec.selector["ray.io/cluster"] == $pending and .metadata.labels["ray.io/node-type"] == "head")
-  ' <<<"${services}" >/dev/null || { warn "Radar did not expose the active Serve and both head Service selectors" >&2; return 1; }
+  ' <<<"${services}" >/dev/null || { warn "KubeAtlas did not expose the active Serve and both head Service selectors" >&2; return 1; }
 }
 
 mcp_get_rayservice() {
@@ -528,7 +528,7 @@ mcp_get_rayservice() {
 }
 
 
-radar_serving_matches() {
+kubeatlas_serving_matches() {
   local native expected rest_response mcp_response actual
   native="$(rayservice_json)" || return 1
   expected="$(jq -ceS '
@@ -575,28 +575,28 @@ radar_serving_matches() {
   ok "REST and MCP agree: Ready while upgrading, exact active/pending names, both application maps unreported"
 }
 
-cmd_verify_radar() {
+cmd_verify_kubeatlas() {
   require_cmd kind "https://kind.sigs.k8s.io/"
   require_cmd kubectl "https://kubernetes.io/docs/tasks/tools/"
   require_cmd curl "https://curl.se/download.html"
   require_cmd jq "https://jqlang.github.io/jq/download/"
   require_owned_cluster
   assert_cluster_contract
-  step "Verifying Radar API at ${KUBEATLAS_URL}"
+  step "Verifying KubeAtlas API at ${KUBEATLAS_URL}"
 
   local response
-  wait_until "Radar health endpoint" radar_health_ready
-  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/cluster-info")" || fail "Radar cluster-info request failed"
+  wait_until "KubeAtlas health endpoint" kubeatlas_health_ready
+  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/cluster-info")" || fail "KubeAtlas cluster-info request failed"
   jq -e --arg context "${KUBECTL_CTX}" '.context == $context and .cluster == $context' <<<"${response}" >/dev/null || \
-    fail "Radar is not connected to the expected context and cluster '${KUBECTL_CTX}'"
-  wait_until "Radar CRD discovery" radar_crd_discovery_ready
-  wait_until "Radar RayService identities" radar_inventory_ready rayservices ray.io
-  wait_until "Radar RayCluster ownership" radar_inventory_ready rayclusters ray.io
-  wait_until "Radar Pod ownership and role labels" radar_inventory_ready pods ""
-  wait_until "Radar Service ownership and selectors" radar_inventory_ready services ""
-  wait_until "Radar active/pending revision status" radar_revisions_ready
-  wait_until "Radar REST/MCP serving evidence" radar_serving_matches
-  ok "Radar returned group-aware RayService/RayCluster status, exact lineage and matching serving context"
+    fail "KubeAtlas is not connected to the expected context and cluster '${KUBECTL_CTX}'"
+  wait_until "KubeAtlas CRD discovery" kubeatlas_crd_discovery_ready
+  wait_until "KubeAtlas RayService identities" kubeatlas_inventory_ready rayservices ray.io
+  wait_until "KubeAtlas RayCluster ownership" kubeatlas_inventory_ready rayclusters ray.io
+  wait_until "KubeAtlas Pod ownership and role labels" kubeatlas_inventory_ready pods ""
+  wait_until "KubeAtlas Service ownership and selectors" kubeatlas_inventory_ready services ""
+  wait_until "KubeAtlas active/pending revision status" kubeatlas_revisions_ready
+  wait_until "KubeAtlas REST/MCP serving evidence" kubeatlas_serving_matches
+  ok "KubeAtlas returned group-aware RayService/RayCluster status, exact lineage and matching serving context"
 }
 
 cmd_up() {
@@ -623,7 +623,7 @@ cmd_up() {
   apply_fixtures
   ensure_revision_pair
   cmd_verify
-  note "See ${FIXTURES_DIR}/README.md for the isolated-kubeconfig Radar smoke test."
+  note "See ${FIXTURES_DIR}/README.md for the isolated-kubeconfig KubeAtlas smoke test."
 }
 
 cmd_down() {
@@ -678,13 +678,13 @@ Commands:
   reset          Safely recreate the owned cluster and both RayService revisions
   status         Show the operator, active/pending revisions, Pods, and Services
   verify         Assert real controller status, ownership, labels, and active Serve response
-  verify-radar   Assert a running Radar exposes both revisions through group-aware APIs
+  verify-kubeatlas   Assert a running KubeAtlas exposes both revisions through group-aware APIs
   help           Show this message
 
 Environment:
-  CLUSTER_NAME   kind cluster name (default: radar-kuberay-demo)
+  CLUSTER_NAME   kind cluster name (default: kubeatlas-kuberay-demo)
   WAIT_SECONDS   maximum wait per state, including image pulls (default: 480)
-  KUBEATLAS_URL      running Radar base URL for verify-radar (default: http://127.0.0.1:9280)
+  KUBEATLAS_URL      running KubeAtlas base URL for verify-kubeatlas (default: http://127.0.0.1:9280)
 
 This validates one head-only CPU RayService on KubeRay ${KUBERAY_VERSION}: a
 healthy active Serve revision and an intentionally non-runnable pending
@@ -699,7 +699,7 @@ case "${1:-help}" in
   reset) cmd_reset ;;
   status) cmd_status ;;
   verify) cmd_verify ;;
-  verify-radar) cmd_verify_radar ;;
+  verify-kubeatlas) cmd_verify_kubeatlas ;;
   help|-h|--help) usage ;;
   *) fail "unknown subcommand: $1 (try '$0 help')" ;;
 esac

@@ -44,7 +44,7 @@ func TestWebKitLibrary(t *testing.T) {
 		},
 		{
 			name: "reports nothing when no webview is loaded",
-			maps: `55a1b2c00000-55a1b2c21000 r--p 00000000 08:01 1000  /usr/bin/radar
+			maps: `55a1b2c00000-55a1b2c21000 r--p 00000000 08:01 1000  /usr/bin/kubeatlas
 7f8c1c000000-7f8c1c021000 rw-p 00000000 00:00 0  [stack]
 `,
 			want: "",
@@ -141,15 +141,15 @@ func TestReadAllDistinguishesEmptyFromAbsent(t *testing.T) {
 
 func TestReadSetDropsUnsetKeys(t *testing.T) {
 	t.Setenv("SNAP", "")
-	t.Setenv("FLATPAK_ID", "io.skyhook.Radar")
+	t.Setenv("FLATPAK_ID", "io.skyhook.KubeAtlas")
 	t.Setenv("container", "")
 
 	got := readSet(SandboxKeys)
 	if len(got) != 1 {
 		t.Fatalf("readSet() = %v, want exactly one entry", got)
 	}
-	if got[0].Key != "FLATPAK_ID" || got[0].Value != "io.skyhook.Radar" || !got[0].Set {
-		t.Errorf("readSet()[0] = %+v, want FLATPAK_ID=io.skyhook.Radar and Set", got[0])
+	if got[0].Key != "FLATPAK_ID" || got[0].Value != "io.skyhook.KubeAtlas" || !got[0].Set {
+		t.Errorf("readSet()[0] = %+v, want FLATPAK_ID=io.skyhook.KubeAtlas and Set", got[0])
 	}
 }
 

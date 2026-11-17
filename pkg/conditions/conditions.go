@@ -139,7 +139,7 @@ func FindFalseConditionWithTime(obj *unstructured.Unstructured, condTypes ...str
 // that mean "still reconciling / not done yet", NOT "failed". A False
 // Ready/Available condition carrying one of these is in-progress, not broken —
 // this is the CRD-condition noise floor. Curated across the controller families
-// Radar integrates with:
+// KubeAtlas integrates with:
 //
 //   - Flux:         Progressing, DependencyNotReady, ReconciliationInProgress,
 //     ChartNotReady, ArtifactFailed

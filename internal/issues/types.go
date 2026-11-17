@@ -1,6 +1,6 @@
 // Package issues unifies cluster health signals into a single
 // normalized envelope. It composes:
-//   - problem    — radar's hardcoded per-kind live-state detection
+//   - problem    — kubeatlas's hardcoded per-kind live-state detection
 //     (failing Deployments, NotReady Nodes, pending PVCs…)
 //   - missing_ref — direct by-name references to objects that do not exist
 //     (missing PVCs, ConfigMaps, Secrets, backend Services, roleRefs…)

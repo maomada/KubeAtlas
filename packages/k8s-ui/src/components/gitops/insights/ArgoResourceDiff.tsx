@@ -32,7 +32,7 @@ export function ArgoResourceDiff({ diff, loading, error, fallbackDrift }: ArgoRe
 
   if (loading) {
     // An inline row expansion, not a full pane — a quiet skeleton of the diff's
-    // own shape reads as "content arriving here" without the page-level radar
+    // own shape reads as "content arriving here" without the page-level kubeatlas
     // loader shouting for attention.
     return (
       <div className="rounded-md border border-theme-border bg-theme-base/50 p-3" aria-busy="true" aria-label="Loading diff">
@@ -62,7 +62,7 @@ export function ArgoResourceDiff({ diff, loading, error, fallbackDrift }: ArgoRe
   if (!diff) return fallbackPanel
 
   const unchanged = !docsDiffer(diff.desired, diff.live)
-  // Older Radars send null for an empty list.
+  // Older KubeAtlas instances send null for an empty list.
   const fieldEntries = diff.fieldEntries ?? []
 
   return (

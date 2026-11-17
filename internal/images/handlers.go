@@ -187,7 +187,7 @@ func (h *Handlers) inspectionRequest(w http.ResponseWriter, r *http.Request, ima
 		return req, true
 	}
 
-	// Without a Pod the caller could name any host and have Radar connect to
+	// Without a Pod the caller could name any host and have KubeAtlas connect to
 	// it from inside the cluster network. Binding every authenticated request
 	// to a Pod they can read limits the registry host to that Pod's image.
 	if req.PodName == "" || req.Namespace == "" {
@@ -236,7 +236,7 @@ func (h *Handlers) inspectionRequest(w http.ResponseWriter, r *http.Request, ima
 		writeError(w, http.StatusForbidden, "image is not used by pod "+req.Namespace+"/"+req.PodName)
 		return req, false
 	}
-	// Exec holders may also use Radar's own registry credentials, but only for
+	// Exec holders may also use KubeAtlas's own registry credentials, but only for
 	// the digest the kubelet already pulled for this container: a tag can move,
 	// and a Pod that never pulled its image proves nothing.
 	useAmbient := false
@@ -329,10 +329,10 @@ func writeAuthError(w http.ResponseWriter, image string) {
 
 func writeBlockedError(w http.ResponseWriter, err error) {
 	if errors.Is(err, errCredentialsOverHTTP) {
-		writeError(w, http.StatusForbidden, "This image's registry uses plain HTTP, and Radar only sends registry credentials over HTTPS, so it can't open this private image.")
+		writeError(w, http.StatusForbidden, "This image's registry uses plain HTTP, and KubeAtlas only sends registry credentials over HTTPS, so it can't open this private image.")
 		return
 	}
-	writeError(w, http.StatusForbidden, "Radar doesn't connect to this registry address (loopback, link-local, or an internal IP the registry pointed it to), so it can't open this image.")
+	writeError(w, http.StatusForbidden, "KubeAtlas doesn't connect to this registry address (loopback, link-local, or an internal IP the registry pointed it to), so it can't open this image.")
 }
 
 func writeError(w http.ResponseWriter, status int, message string) {

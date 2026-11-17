@@ -31,7 +31,7 @@ func TestServerMCPModes(t *testing.T) {
 	}{
 		{"default", true, false}, {"disabled", false, false}, {"read-only", true, true},
 	} {
-		for _, base := range []string{"", "/radar"} {
+		for _, base := range []string{"", "/kubeatlas"} {
 			t.Run(mode.name+base, func(t *testing.T) {
 				srv := CreateServer(AppConfig{MCPEnabled: mode.enabled, MCPReadOnly: mode.readOnly, BasePath: base})
 				host := httptest.NewServer(srv.Handler())

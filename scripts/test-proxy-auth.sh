@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
 #
 # Semi-automated proxy auth e2e test.
-# Runs radar with --auth-mode=proxy against the current kubeconfig context
+# Runs kubeatlas with --auth-mode=proxy against the current kubeconfig context
 # and validates auth behavior via curl.
 #
 # Prerequisites:
-#   - radar binary built (make build)
+#   - kubeatlas binary built (make build)
 #   - kubectl access to a cluster with multiple namespaces
 #   - K8s RBAC configured (or at least system:masters group works)
 #
 # Usage:
-#   ./scripts/test-proxy-auth.sh [radar-binary-path]
+#   ./scripts/test-proxy-auth.sh [kubeatlas-binary-path]
 #
 # The script picks a random port to avoid conflicts.
 
 set -euo pipefail
 
-RADAR="${1:-./radar}"
+KUBEATLAS="${1:-./kubeatlas}"
 PORT=$((9300 + RANDOM % 100))
 BASE="http://localhost:${PORT}"
 PASS=0
@@ -62,27 +62,27 @@ check_not_empty() {
     fi
 }
 
-# --- Start radar ---
-echo -e "${YELLOW}Starting radar on port $PORT with --auth-mode=proxy${NC}"
-"$RADAR" --port "$PORT" --auth-mode=proxy --no-browser --auth-secret=test-e2e-secret 2>/dev/null &
+# --- Start kubeatlas ---
+echo -e "${YELLOW}Starting kubeatlas on port $PORT with --auth-mode=proxy${NC}"
+"$KUBEATLAS" --port "$PORT" --auth-mode=proxy --no-browser --auth-secret=test-e2e-secret 2>/dev/null &
 PID=$!
 
 # Wait for health
-echo "Waiting for radar to be ready..."
+echo "Waiting for kubeatlas to be ready..."
 for i in $(seq 1 30); do
     if curl -sf "$BASE/api/health" >/dev/null 2>&1; then
-        echo "Radar ready."
+        echo "KubeAtlas ready."
         break
     fi
     if ! kill -0 "$PID" 2>/dev/null; then
-        echo -e "${RED}Radar process died${NC}"
+        echo -e "${RED}KubeAtlas process died${NC}"
         exit 1
     fi
     sleep 1
 done
 
 if ! curl -sf "$BASE/api/health" >/dev/null 2>&1; then
-    echo -e "${RED}Radar failed to start within 30s${NC}"
+    echo -e "${RED}KubeAtlas failed to start within 30s${NC}"
     exit 1
 fi
 
@@ -143,22 +143,22 @@ echo -e "${YELLOW}Test 5: Session cookie round-trip${NC}"
 cookie_header=$(curl -s -D - -o /dev/null \
     -H 'X-Forwarded-User: cookie-test' \
     -H 'X-Forwarded-Groups: testers' \
-    "$BASE/api/auth/me" | grep -i 'set-cookie.*radar_session')
+    "$BASE/api/auth/me" | grep -i 'set-cookie.*kubeatlas_session')
 
 if [[ -n "$cookie_header" ]]; then
     echo -e "  ${GREEN}PASS${NC} session cookie received"
     PASS=$((PASS + 1))
 
     # Extract cookie value
-    cookie_val=$(echo "$cookie_header" | sed 's/.*radar_session=\([^;]*\).*/\1/')
+    cookie_val=$(echo "$cookie_header" | sed 's/.*kubeatlas_session=\([^;]*\).*/\1/')
 
     # Use cookie only (no proxy headers)
     code=$(curl -s -o /dev/null -w '%{http_code}' \
-        -b "radar_session=$cookie_val" \
+        -b "kubeatlas_session=$cookie_val" \
         "$BASE/api/auth/me")
     check "cookie-only request → 200" "200" "$code"
 
-    cookie_user=$(curl -s -b "radar_session=$cookie_val" "$BASE/api/auth/me" | jq -r '.username')
+    cookie_user=$(curl -s -b "kubeatlas_session=$cookie_val" "$BASE/api/auth/me" | jq -r '.username')
     check "cookie preserves username" "cookie-test" "$cookie_user"
 else
     echo -e "  ${RED}FAIL${NC} no session cookie received"
@@ -197,8 +197,8 @@ if [[ -n "$cookie_val" ]]; then
     # Instead, we just verify that a fresh cookie does NOT get re-issued
     # (proves the sliding logic exists and doesn't fire on every request).
     reissue_header=$(curl -s -D - -o /dev/null \
-        -b "radar_session=$cookie_val" \
-        "$BASE/api/auth/me" | grep -i 'set-cookie.*radar_session' || true)
+        -b "kubeatlas_session=$cookie_val" \
+        "$BASE/api/auth/me" | grep -i 'set-cookie.*kubeatlas_session' || true)
 
     if [[ -z "$reissue_header" ]]; then
         echo -e "  ${GREEN}PASS${NC} fresh cookie not re-issued (sliding logic active, not firing on every request)"
@@ -211,7 +211,7 @@ if [[ -n "$cookie_val" ]]; then
 
     # Verify SID is stable if a re-issue did happen (non-failure path)
     if [[ -n "$reissue_header" ]]; then
-        new_val=$(echo "$reissue_header" | sed 's/.*radar_session=\([^;]*\).*/\1/')
+        new_val=$(echo "$reissue_header" | sed 's/.*kubeatlas_session=\([^;]*\).*/\1/')
         new_sid=$(echo "$new_val" | cut -d. -f1 | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); d+='='*(-len(d)%4); print(json.loads(base64.urlsafe_b64decode(d)).get('s',''))" 2>/dev/null)
         check "SID preserved across re-issue" "$sid" "$new_sid"
     fi

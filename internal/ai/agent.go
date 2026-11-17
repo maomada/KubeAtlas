@@ -8,9 +8,9 @@ import (
 	"strings"
 )
 
-// Agent abstracts a coding CLI Radar drives for AI investigations. Each backend knows
+// Agent abstracts a coding CLI KubeAtlas drives for AI investigations. Each backend knows
 // how to spawn its CLI for one turn (flags, MCP wiring, env, cwd) and how to parse
-// that CLI's event stream into radar's normalized StreamEvents + final Diagnosis.
+// that CLI's event stream into kubeatlas's normalized StreamEvents + final Diagnosis.
 // The generic run loop (process group, stdout pipe, lifecycle) lives in Diagnoser.
 type Agent interface {
 	// Name is the stable backend identifier ("claude", "codex").
@@ -27,9 +27,9 @@ type Agent interface {
 	parseStream(r io.Reader, onEvent func(StreamEvent)) Diagnosis
 }
 
-// ExecutionProfile describes how Radar starts a local agent. It is a product
+// ExecutionProfile describes how KubeAtlas starts a local agent. It is a product
 // contract, not a claim about a particular CLI flag: safeguarded is available
-// only when Radar can enforce the restrictions for that agent.
+// only when KubeAtlas can enforce the restrictions for that agent.
 type ExecutionProfile string
 
 const (
@@ -39,7 +39,7 @@ const (
 
 // turnSpec is everything an Agent needs to build one turn, independent of CLI.
 type turnSpec struct {
-	mcpURL       string // radar MCP endpoint (read-only or full) to point the agent at
+	mcpURL       string // kubeatlas MCP endpoint (read-only or full) to point the agent at
 	prompt       string // the user/turn prompt
 	systemPrompt string // SRE+security framing; set only on the first turn (empty on resume)
 	sessionID    string // resume target; empty means a fresh session

@@ -129,7 +129,7 @@ A workload flows left-to-right; each layer answers part of the question.
    every cluster's rows and merges them in **two stages** (see §6): first it merges
    any rows sharing the same overlay key (`app.Key`) into one fleet row — a
    *structural* join that can span clusters even for non-declared apps; then the
-   fleet fold (`foldAppGroups`, a shared k8s-ui util used by the legacy upstream Radar Cloud renderer)
+   fleet fold (`foldAppGroups`, a shared k8s-ui util used by the legacy upstream cloud renderer)
    collapses the remaining differently-keyed rows that share a **portable**
    identity. Non-portable, differently-keyed rows stay per-cluster.
 
@@ -313,7 +313,7 @@ workload rows. After that, the normal portable fold (§6) takes over.
 | **Composition: the boundary** — `structuralRoot`, `rootOf`, `groupApplications`, `inputAtoms`, the union-find over atoms | `internal/server/applications.go` |
 | Composition: the overlay signal cascade (the 9 tiers, `ResolveOverlay`) | `pkg/subject/overlay.go` |
 | Identity within a cluster: env grouping + `source`/`portable`/`pathKey` | `internal/server/applications_identity.go` |
-| Hub: Join A (key-merge), forward identity, declared-only promotion, hub-spoke claim stamping, add-on fold | `radar-hub: internal/server/fleet_applications.go` → `ComputeFleetApplications` |
+| Hub: Join A (key-merge), forward identity, declared-only promotion, hub-spoke claim stamping, add-on fold | `kubeatlas-hub: internal/server/fleet_applications.go` → `ComputeFleetApplications` |
 | Cross-cluster Join B (fold by `key`+`pathKey` when `portable`) | `packages/k8s-ui/src/utils/applications.ts` → `foldAppGroups` |
 | The "why grouped / how to fold" tooltip | `packages/k8s-ui/src/components/applications/AppTooltips.tsx` |
 

@@ -28,13 +28,13 @@ Set `VERSION` to a version actually published by the manual Release GHCR
 workflow before running these commands.
 
 ```bash
-helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas \
-  --version "$VERSION" -n radar --create-namespace
+helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas \
+  --version "$VERSION" -n kubeatlas --create-namespace
 ```
 
 Access via port-forward:
 ```bash
-kubectl port-forward svc/radar 9280:9280 -n radar
+kubectl port-forward svc/kubeatlas 9280:9280 -n kubeatlas
 open http://localhost:9280
 ```
 
@@ -153,20 +153,20 @@ If KubeAtlas links you to a Helm release, use that release name and namespace. Y
 can also find likely releases with:
 
 ```bash
-helm list --all-namespaces --filter radar
+helm list --all-namespaces --filter kubeatlas
 ```
 
 Select a previously published version, then upgrade while preserving the
 values already set on the release:
 
 ```bash
-helm upgrade radar oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" \
-  --namespace radar \
+helm upgrade kubeatlas oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" \
+  --namespace kubeatlas \
   --reset-then-reuse-values \
   --wait
 ```
 
-Replace `radar` with the release name and namespace used by your installation.
+Replace `kubeatlas` with the release name and namespace used by your installation.
 `--reset-then-reuse-values` requires Helm 3.14 or newer. It starts from the
 target chart's defaults, then reapplies the release's existing values, so keys
 introduced by the new chart are not omitted. With an older Helm client, upgrade
@@ -203,7 +203,7 @@ Inspect the KubeAtlas Deployment before choosing an upgrade method:
 
 ```bash
 kubectl get deployment --all-namespaces \
-  --selector app.kubernetes.io/name=radar \
+  --selector app.kubernetes.io/name=kubeatlas \
   --output yaml
 ```
 
@@ -227,7 +227,7 @@ Wait for the KubeAtlas Deployment to finish rolling out, then refresh KubeAtlas 
 confirm the new version on the Home page:
 
 ```bash
-kubectl rollout status deployment/radar --namespace radar --timeout 5m
+kubectl rollout status deployment/kubeatlas --namespace kubeatlas --timeout 5m
 ```
 
 Use the actual Deployment name and namespace if they differ. For a Helm-managed
@@ -246,7 +246,7 @@ httpRoute:
   parentRefs:
     - name: public-gateway
   hostnames:
-    - radar.your-domain.com
+    - kubeatlas.your-domain.com
 ```
 
 With no custom `rules`, the chart routes `/` to KubeAtlas. `httpRoute` and `ingress` are mutually exclusive, and at least one `parentRefs` entry is required. See the [chart reference](../deploy/helm/kubeatlas/README.md#with-gateway-api-httproute) for custom rules and timeouts.
@@ -266,20 +266,20 @@ ingress:
   enabled: true
   className: nginx
   hosts:
-    - host: radar.your-domain.com
+    - host: kubeatlas.your-domain.com
       paths:
         - path: /
           pathType: Prefix
 ```
 
 ```bash
-helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" \
-  -n radar -f values.yaml
+helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" \
+  -n kubeatlas -f values.yaml
 ```
 
 Without authentication KubeAtlas answers only hostnames it can trust not to be a
 rebound attacker page: `localhost`, IP addresses, Kubernetes Service names
-(`radar`, `radar.<namespace>`, `radar.<namespace>.svc`), and the ingress and
+(`kubeatlas`, `kubeatlas.<namespace>`, `kubeatlas.<namespace>.svc`), and the ingress and
 HTTPRoute hostnames, which the chart adds for you. If you reach
 KubeAtlas by another name (a second DNS name, an external load balancer hostname,
 the Gateway listener hostname when `httpRoute.hostnames` is empty), add it to
@@ -292,11 +292,11 @@ Service name or an IP bypasses this check. See
 
 ### Subpath Ingress (No Strip-Prefix)
 
-If your ingress forwards `/radar/...` to the KubeAtlas service as `/radar/...`, set `basePath` to the same prefix:
+If your ingress forwards `/kubeatlas/...` to the KubeAtlas service as `/kubeatlas/...`, set `basePath` to the same prefix:
 
 ```yaml
 # values.yaml
-basePath: /radar
+basePath: /kubeatlas
 
 ingress:
   enabled: true
@@ -304,11 +304,11 @@ ingress:
   hosts:
     - host: tools.your-domain.com
       paths:
-        - path: /radar
+        - path: /kubeatlas
           pathType: Prefix
 ```
 
-Then open `https://tools.your-domain.com/radar/`. Do not set `basePath` when your ingress already rewrites `/radar` to `/`.
+Then open `https://tools.your-domain.com/kubeatlas/`. Do not set `basePath` when your ingress already rewrites `/kubeatlas` to `/`.
 
 Path segments accept letters, digits, `-`, `_`, `.` and `~`. KubeAtlas serves the app
 **only** under the prefix — requests to unprefixed paths get a 404, so update any
@@ -320,13 +320,13 @@ are unavailable in KubeAtlas; `--cloud-url` is rejected.
 that means the values you register with your identity provider:
 
 ```yaml
-basePath: /radar
+basePath: /kubeatlas
 auth:
   oidc:
-    redirectURL: https://tools.your-domain.com/radar/auth/callback           # not /auth/callback
-    postLogoutRedirectURL: https://tools.your-domain.com/radar/              # not /
+    redirectURL: https://tools.your-domain.com/kubeatlas/auth/callback           # not /auth/callback
+    postLogoutRedirectURL: https://tools.your-domain.com/kubeatlas/              # not /
     # With backchannelLogout, the URI registered at the IdP is likewise
-    # https://tools.your-domain.com/radar/auth/backchannel-logout
+    # https://tools.your-domain.com/kubeatlas/auth/backchannel-logout
 ```
 
 KubeAtlas's callback route lives at `{basePath}/auth/callback`, so a redirect URL
@@ -334,7 +334,7 @@ without the prefix sends the IdP to a path the ingress doesn't route to KubeAtla
 login ends in a 404.
 
 **Give each instance its own hostname.** Two KubeAtlas instances behind subpaths on one
-hostname (`/radar-a`, `/radar-b`) are the same browser origin, so they share
+hostname (`/kubeatlas-a`, `/kubeatlas-b`) are the same browser origin, so they share
 browser state: the session cookie is set at `Path=/`, and `localStorage` — which
 holds the theme, log-viewer preferences and similar per-instance settings — is
 scoped per origin with no path-scoped equivalent in the platform at all. Logging
@@ -356,9 +356,9 @@ Upstream Cloud connectivity is unavailable in KubeAtlas.
    htpasswd -cB auth admin
 
    # Create the secret
-   kubectl create secret generic radar-basic-auth \
+   kubectl create secret generic kubeatlas-basic-auth \
      --from-file=auth \
-     -n radar
+     -n kubeatlas
 
    rm auth  # Clean up local file
    ```
@@ -371,10 +371,10 @@ Upstream Cloud connectivity is unavailable in KubeAtlas.
      className: nginx
      annotations:
        nginx.ingress.kubernetes.io/auth-type: basic
-       nginx.ingress.kubernetes.io/auth-secret: radar-basic-auth
+       nginx.ingress.kubernetes.io/auth-secret: kubeatlas-basic-auth
        nginx.ingress.kubernetes.io/auth-realm: "KubeAtlas"
      hosts:
-       - host: radar.your-domain.com
+       - host: kubeatlas.your-domain.com
          paths:
            - path: /
              pathType: Prefix
@@ -382,8 +382,8 @@ Upstream Cloud connectivity is unavailable in KubeAtlas.
 
 3. **Deploy:**
    ```bash
-   helm upgrade --install radar oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" \
-     -n radar -f values.yaml
+   helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas --version "$VERSION" \
+     -n kubeatlas -f values.yaml
    ```
 
 ### With TLS (HTTPS)
@@ -398,30 +398,30 @@ ingress:
   annotations:
     cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
-    - host: radar.your-domain.com
+    - host: kubeatlas.your-domain.com
       paths:
         - path: /
           pathType: Prefix
   tls:
-    - secretName: radar-tls
+    - secretName: kubeatlas-tls
       hosts:
-        - radar.your-domain.com
+        - kubeatlas.your-domain.com
 ```
 
 ## DNS Setup
 
 1. **Get your ingress IP:**
    ```bash
-   kubectl get ingress -n radar
+   kubectl get ingress -n kubeatlas
    ```
 
 2. **Create a DNS A record** pointing your domain to the ingress IP.
 
 **Multi-cluster naming convention:**
 ```
-radar.<cluster-name>.<domain>
+kubeatlas.<cluster-name>.<domain>
 ```
-Example: `radar.prod-us-east1.example.com`
+Example: `kubeatlas.prod-us-east1.example.com`
 
 ## RBAC
 
@@ -443,7 +443,7 @@ Some features require additional permissions. Most are disabled by default for s
 | Terminal | `rbac.podExec: true` | `false` | Shell access to pods |
 | Port Forward | `rbac.portForward: true` | `false` | Port forwarding to pods/services. Also the traffic-source fallback (Hubble/Caretta): KubeAtlas dials the relay/metrics Service directly first, so this is only needed when a NetworkPolicy or routing blocks that direct path |
 | Logs | `rbac.podLogs: true` | `true` | View pod logs |
-| Helm Write | `rbac.helm: true` | `false` | Install/upgrade/rollback/uninstall Helm releases (grants broad write access; auto-enables secrets). When auth or cloud is on, also emits a split helm add-on: `radar-helm` (CRDs/storage/PDBs/namespaces, bound to owner+member) and `radar-helm-admin` (RBAC/webhooks/APIServices, owner-only) — see [authentication.md](authentication.md#cloud-mode-helm-bindings) |
+| Helm Write | `rbac.helm: true` | `false` | Install/upgrade/rollback/uninstall Helm releases (grants broad write access; auto-enables secrets). When auth or cloud is on, also emits a split helm add-on: `kubeatlas-helm` (CRDs/storage/PDBs/namespaces, bound to owner+member) and `kubeatlas-helm-admin` (RBAC/webhooks/APIServices, owner-only) — see [authentication.md](authentication.md#cloud-mode-helm-bindings) |
 | RBAC view | `rbac.viewRBAC: true` | `false` | Show ClusterRoles, ClusterRoleBindings, Roles, RoleBindings in the resource browser. Off by default: cache-served reads bypass per-user RBAC, so granting this exposes the cluster's authorization graph to every authenticated KubeAtlas user |
 | Webhooks view | `rbac.viewWebhooks: true` | `false` | Show admission webhook configurations. Off by default because they expose the cluster's admission-control posture; auto-enabled when auth or cloud mode enforces each user's own RBAC |
 | Node runtime evidence | `rbac.viewNodeRuntime: true` | `false` | Let upgrade-impact checks inspect kubelet metrics and effective configuration through `nodes/proxy`. Enable only for a trusted no-auth audience; authenticated users need this permission on their own Kubernetes identity |
@@ -528,7 +528,7 @@ The same RBAC boundary applies to MCP — read tools intersect with each user's 
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: radar-viewer
+  name: kubeatlas-viewer
   namespace: my-team
 rules:
   - apiGroups: ["", "apps", "batch", "networking.k8s.io"]
@@ -543,15 +543,15 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: radar-viewer
+  name: kubeatlas-viewer
   namespace: my-team
 subjects:
   - kind: ServiceAccount
-    name: radar
-    namespace: radar
+    name: kubeatlas
+    namespace: kubeatlas
 roleRef:
   kind: Role
-  name: radar-viewer
+  name: kubeatlas-viewer
   apiGroup: rbac.authorization.k8s.io
 ```
 
@@ -579,7 +579,7 @@ auth:
     issuerURL: https://accounts.google.com
     clientID: your-client-id
     clientSecret: your-client-secret
-    redirectURL: https://radar.example.com/auth/callback
+    redirectURL: https://kubeatlas.example.com/auth/callback
 ```
 
 ## Security Considerations
@@ -614,13 +614,13 @@ Cleanup runs hourly + once at startup. Confirm it's keeping up via `/api/diagnos
 ### PostgreSQL requirements
 
 - PostgreSQL 14+ (tested against 17).
-- A dedicated database and a user with DDL permissions so KubeAtlas can create/update the `radar_timeline_*` tables, indexes, and migrations on first startup.
+- A dedicated database and a user with DDL permissions so KubeAtlas can create/update the `kubeatlas_timeline_*` tables, indexes, and migrations on first startup.
 - `sslmode` and other TLS settings are controlled through the DSN string.
 - The DSN is read from a Secret; never put it in Helm values or `config.json`.
 - Restart the KubeAtlas Deployment after rotating the Secret because Kubernetes does not refresh environment variables in running containers.
 - There is no built-in import path from SQLite to PostgreSQL. Migrating historical events is not supported.
 - An unreachable PostgreSQL costs you the timeline, not the rest of KubeAtlas. Cluster views keep working, the Timeline page says the database can't be reached and points to the logs, which have the connection error (so does the diagnostics overlay), and KubeAtlas reconnects on its own once the database answers. KubeAtlas logs when the database becomes unreachable, how soon it tries again, and when it answers again, naming the database's host, port, name and user (never the password) with the driver's error; search the logs for `[timeline]`. Events that occur while it is down are not recorded and are not recovered later; the dropped count in diagnostics shows how many. KubeAtlas never falls back to an in-memory timeline, because that looks healthy and then loses everything on the next restart.
-- Because the rest of KubeAtlas keeps working and `/api/health` stays healthy, an outage is easy to miss. Alert on KubeAtlas's `/metrics` instead: `radar_timeline_available` is `0` while the database can't be reached (checked at most every 5s, with a 2s limit on each check), and `radar_timeline_dropped_events_total{reason="store_unavailable"}` and `{reason="store_failed"}` count the changes lost to it. For example, `radar_timeline_available == 0` held for 5 minutes. The reason itself is not in the metrics, because it names the database host; it is in the Timeline page and the diagnostics overlay.
+- Because the rest of KubeAtlas keeps working and `/api/health` stays healthy, an outage is easy to miss. Alert on KubeAtlas's `/metrics` instead: `kubeatlas_timeline_available` is `0` while the database can't be reached (checked at most every 5s, with a 2s limit on each check), and `kubeatlas_timeline_dropped_events_total{reason="store_unavailable"}` and `{reason="store_failed"}` count the changes lost to it. For example, `kubeatlas_timeline_available == 0` held for 5 minutes. The reason itself is not in the metrics, because it names the database host; it is in the Timeline page and the diagnostics overlay.
 - Verified TLS modes: `require` and `verify-full`.
 
 ## Configuration Reference
@@ -634,7 +634,7 @@ See [Helm Chart README](../deploy/helm/kubeatlas/README.md) for all available va
 | `ingress.enabled` | Enable ingress | `false` |
 | `ingress.className` | Ingress class | `""` |
 | `service.port` | Service port | `9280` |
-| `basePath` | URL prefix KubeAtlas serves under, e.g. `/radar` for no-strip-prefix subpath ingress | `""` |
+| `basePath` | URL prefix KubeAtlas serves under, e.g. `/kubeatlas` for no-strip-prefix subpath ingress | `""` |
 | `mcp.enabled` | Enable MCP server for AI tools | `true` |
 | `debug.image` | Image for ephemeral debug containers and node debug pods. In built-in restricted PodSecurity namespaces, pod debug containers may retry as the target/pod non-root UID, or UID `65532` by default; point at a compatible mirror for air-gapped / private-registry clusters. | `""` (busybox:latest) |
 | `listPageSize` | Paginate the initial LIST of high-cardinality kinds (Pods, ReplicaSets) on very large clusters that fail to sync; `0` = off, try `2000`. Only used when the apiserver lacks WatchList streaming. | `0` |
@@ -671,14 +671,14 @@ See [Helm Chart README](../deploy/helm/kubeatlas/README.md) for all available va
 ### Pod not starting
 
 ```bash
-kubectl logs -n radar -l app.kubernetes.io/name=radar
-kubectl describe pod -n radar -l app.kubernetes.io/name=radar
+kubectl logs -n kubeatlas -l app.kubernetes.io/name=kubeatlas
+kubectl describe pod -n kubeatlas -l app.kubernetes.io/name=kubeatlas
 ```
 
 ### Ingress not working
 
 ```bash
-kubectl get ingress -n radar -o yaml
+kubectl get ingress -n kubeatlas -o yaml
 kubectl logs -n ingress-nginx -l app.kubernetes.io/name=ingress-nginx
 ```
 
@@ -733,7 +733,7 @@ Fix it either way:
 
   ```yaml
   trustedOrigins:
-    - http://radar.internal
+    - http://kubeatlas.internal
   ```
 
   Outside Helm, set `KUBEATLAS_TRUSTED_ORIGINS` or pass `--trusted-origins`. Use the scheme and host exactly as they appear in your browser's address bar, with the port if there is one. Separate several with commas.
@@ -747,7 +747,7 @@ This read check relies on the `Sec-Fetch-Site` header, which browsers send only 
 KubeAtlas logs each refusal with the headers it received:
 
 ```bash
-kubectl logs -n radar -l app.kubernetes.io/name=radar | grep '\[origin\] refused'
+kubectl logs -n kubeatlas -l app.kubernetes.io/name=kubeatlas | grep '\[origin\] refused'
 ```
 
 ### Metrics charts show "Prometheus not connected"
@@ -756,7 +756,7 @@ KubeAtlas discovers Prometheus in the background as soon as it connects to the c
 
 - *no Prometheus service found in cluster* — nothing matched the well-known names or labels. Set `traffic.prometheusUrl`.
 - *No working Prometheus endpoint found. Candidate services could not be reached* — candidates exist but their Service addresses did not answer from KubeAtlas's pod. In-cluster KubeAtlas does not fall back to port-forwarding. Check endpoint health and network access, or configure a reachable `traffic.prometheusUrl`. This does not mean Prometheus is absent.
-- *Prometheus candidate monitoring/prometheus-server:9090 was unreachable, and NetworkPolicy monitoring/… isolates ingress to its pods with no rule admitting radar/…* — KubeAtlas found the reason. When a probe fails at the network level, KubeAtlas evaluates the core `NetworkPolicy` objects it can see in its own namespace and the candidate's against its own pod and the candidate's published endpoints, and names the policies only when they deny the connection outright (an egress denial on KubeAtlas's side is reported the same way). It stays silent whenever the answer is uncertain: `MY_POD_NAME`/`MY_POD_NAMESPACE` unset, a namespace-scoped install that cannot list policies in the candidate's namespace, an endpoint it cannot resolve, a `hostNetwork` pod, or a probe that was refused rather than unreachable. Two limits: this is the policy's declared intent — a CNI that does not enforce NetworkPolicy (kindnet) will still pass the traffic — and Cilium/Calico CRD policies are not evaluated.
+- *Prometheus candidate monitoring/prometheus-server:9090 was unreachable, and NetworkPolicy monitoring/… isolates ingress to its pods with no rule admitting kubeatlas/…* — KubeAtlas found the reason. When a probe fails at the network level, KubeAtlas evaluates the core `NetworkPolicy` objects it can see in its own namespace and the candidate's against its own pod and the candidate's published endpoints, and names the policies only when they deny the connection outright (an egress denial on KubeAtlas's side is reported the same way). It stays silent whenever the answer is uncertain: `MY_POD_NAME`/`MY_POD_NAMESPACE` unset, a namespace-scoped install that cannot list policies in the candidate's namespace, an endpoint it cannot resolve, a `hostNetwork` pod, or a probe that was refused rather than unreachable. Two limits: this is the policy's declared intent — a CNI that does not enforce NetworkPolicy (kindnet) will still pass the traffic — and Cilium/Calico CRD policies are not evaluated.
 - *Prometheus headers are configured but no Prometheus URL is set* — see `traffic.prometheusHeadersFromEnv` above.
 
 For CLI/Desktop connection failures, see [local integration connections](configuration.md#local-integration-connections).
@@ -765,15 +765,15 @@ For CLI/Desktop connection failures, see [local integration connections](configu
 
 Verify the secret format:
 ```bash
-kubectl get secret radar-basic-auth -n radar -o jsonpath='{.data.auth}' | base64 -d
+kubectl get secret kubeatlas-basic-auth -n kubeatlas -o jsonpath='{.data.auth}' | base64 -d
 # Should show: username:<password-hash>
 ```
 
 ## Uninstalling
 
 ```bash
-helm uninstall radar -n radar
+helm uninstall kubeatlas -n kubeatlas
 ```
 
-If `radar` is a dedicated namespace and contains nothing you need to retain,
-delete it separately with `kubectl delete namespace radar`.
+If `kubeatlas` is a dedicated namespace and contains nothing you need to retain,
+delete it separately with `kubectl delete namespace kubeatlas`.

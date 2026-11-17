@@ -86,7 +86,7 @@ func isStableCrashLoop(cs *corev1.ContainerStatus, now time.Time) bool {
 }
 
 // ActiveCrashLoopContainerStatuses returns main and init container statuses
-// that are still in an active crashloop after applying Radar's recovery guards.
+// that are still in an active crashloop after applying KubeAtlas's recovery guards.
 func ActiveCrashLoopContainerStatuses(pod *corev1.Pod, now time.Time) []corev1.ContainerStatus {
 	if pod == nil {
 		return nil

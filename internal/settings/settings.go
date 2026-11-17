@@ -48,14 +48,14 @@ type Settings struct {
 	// HelmOCISources are registered OCI chart-source prefixes (e.g.
 	// "oci://ghcr.io/myorg/charts") — the OCI analog of `helm repo add`, which
 	// has no native equivalent for OCI registries. Helm doesn't persist the ref
-	// a release was installed from, so these let Radar discover upgrades for the
+	// a release was installed from, so these let KubeAtlas discover upgrades for the
 	// user's own OCI-published charts by probing "<prefix>/<chartName>". Not
 	// cluster-scoped: a registry is where your charts live, independent of which
 	// cluster they're deployed to.
 	HelmOCISources []string `json:"helmOciSources,omitempty"`
 	// LastDesktopContext is the context the Desktop window last used, reopened
 	// on the next launch. Desktop-scoped by name because
-	// `kubectl radar` shares this file and must never follow it: a command
+	// `kubectl kubeatlas` shares this file and must never follow it: a command
 	// typed after `kubectl config use-context` runs where the shell says it
 	// will.
 	LastDesktopContext *LastContext `json:"lastDesktopContext,omitempty"`

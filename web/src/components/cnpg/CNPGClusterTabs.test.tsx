@@ -17,7 +17,7 @@ const cluster = {
   status: { currentPrimary: 'pg-1' } as any,
   spec: {} as any,
 }
-vi.mock('../../api/client', () => ({ useRadarFeature: () => ({ support: 'supported' }) }))
+vi.mock('../../api/client', () => ({ useKubeAtlasFeature: () => ({ support: 'supported' }) }))
 vi.mock('../../api/cnpg', () => ({
   useCNPGRuntime: () => ({ data: { permission: { proxy: 'denied' }, instances: [state.primary] } }),
 }))

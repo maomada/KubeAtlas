@@ -85,7 +85,7 @@ describe('kindToPlural', () => {
     })
 
     // Plurals of `*se` singulars — Flux's HelmRelease and coordination.k8s.io's
-    // Lease are both kinds Radar handles, and both reach this cold path.
+    // Lease are both kinds KubeAtlas handles, and both reach this cold path.
     test('idempotent on plurals of *se singulars', () => {
       expect(kindToPlural('helmreleases')).toBe('helmreleases')
       expect(kindToPlural('leases')).toBe('leases')

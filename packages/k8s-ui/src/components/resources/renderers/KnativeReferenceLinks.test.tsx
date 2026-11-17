@@ -12,7 +12,7 @@ describe('Knative reference links', () => {
     initNavigationMap([
       { group: '', version: 'v1', kind: 'Service', name: 'services', namespaced: true, isCrd: false, verbs: ['get'] },
       { group: 'serving.knative.dev', version: 'v1', kind: 'Service', name: 'services', namespaced: true, isCrd: true, verbs: ['get'] },
-      { group: 'relationships.radar.test', version: 'v1', kind: 'Service', name: 'virtualservices', namespaced: true, isCrd: true, verbs: ['get'] },
+      { group: 'relationships.kubeatlas.test', version: 'v1', kind: 'Service', name: 'virtualservices', namespaced: true, isCrd: true, verbs: ['get'] },
     ])
     const container = document.createElement('div')
     const root = createRoot(container)
@@ -31,8 +31,8 @@ describe('Knative reference links', () => {
       expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'services', group: 'serving.knative.dev', namespace: 'team', name: 'knative-backend' }))
       await clickSink({ group: 'serving.knative.dev', kind: 'Service', name: 'group-only-backend' })
       expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'services', group: 'serving.knative.dev', name: 'group-only-backend' }))
-      await clickSink({ apiVersion: 'relationships.radar.test/v1', kind: 'Service', name: 'custom-backend' })
-      expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'virtualservices', group: 'relationships.radar.test', name: 'custom-backend' }))
+      await clickSink({ apiVersion: 'relationships.kubeatlas.test/v1', kind: 'Service', name: 'custom-backend' })
+      expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'virtualservices', group: 'relationships.kubeatlas.test', name: 'custom-backend' }))
       await clickSink({ apiVersion: 'v1', kind: 'Service', name: 'core-backend' })
       expect(onNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ kind: 'services', name: 'core-backend' }))
       expect(onNavigate.mock.lastCall?.[0].group ?? '').toBe('')

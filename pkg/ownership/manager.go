@@ -33,10 +33,10 @@ const (
 	// ManagerClaimed: only its metadata names a manager, whose list couldn't
 	// confirm it (see each claim's Check).
 	ManagerClaimed ManagerState = "claimed"
-	// ManagerUnknown: no evidence names a manager, and Radar couldn't look
+	// ManagerUnknown: no evidence names a manager, and KubeAtlas couldn't look
 	// everywhere it would be.
 	ManagerUnknown ManagerState = "unknown"
-	// ManagerNone: no evidence names a manager in what Radar collects and
+	// ManagerNone: no evidence names a manager in what KubeAtlas collects and
 	// the caller may read. It is not a statement that nothing manages it.
 	ManagerNone ManagerState = "none"
 )
@@ -52,7 +52,7 @@ const (
 	ClaimOmitted ClaimCheck = "omitted"
 	// ClaimUnreadable: the claimed manager's list can't be read.
 	ClaimUnreadable ClaimCheck = "unreadable"
-	// ClaimRemote: the claimed manager applies to a cluster Radar can't
+	// ClaimRemote: the claimed manager applies to a cluster KubeAtlas can't
 	// confirm is this one.
 	ClaimRemote ClaimCheck = "remote"
 	// ClaimMissing: no such manager exists in this cluster.
@@ -66,7 +66,7 @@ const (
 	// ClaimWithheld: the caller may not read the claimed manager, so nothing
 	// is said of it.
 	ClaimWithheld ClaimCheck = "withheld"
-	// ClaimUnchecked: Radar couldn't establish what the manager's list says:
+	// ClaimUnchecked: KubeAtlas couldn't establish what the manager's list says:
 	// it couldn't read or decide access to the manager, the manager was
 	// replaced since the search, or the search didn't cover it. Unlike
 	// ClaimUnreadable, the list itself may be fine.
@@ -94,11 +94,11 @@ type ManagerEvidence struct {
 	Recorders []resourceid.Ref
 	Claims    []CheckedClaim
 	// Unreadable and Remote count the managers the caller may read that may
-	// name the object without Radar being able to tell; Gaps are the kinds
+	// name the object without KubeAtlas being able to tell; Gaps are the kinds
 	// and places the search couldn't read.
 	Unreadable, Remote int
 	Gaps               []Gap
-	// Undecided: Radar couldn't check whether the caller may read some of
+	// Undecided: KubeAtlas couldn't check whether the caller may read some of
 	// what the search found.
 	Undecided bool
 }
@@ -132,7 +132,7 @@ type ManagerAnswer struct {
 	// agree and listed; for shared, the one recorder a claim names, if exactly
 	// one; for claimed, the manager every claim names, if they agree; none
 	// otherwise. Its namespace is empty when it comes from a claim that
-	// names none, and it may be a manager Radar couldn't read.
+	// names none, and it may be a manager KubeAtlas couldn't read.
 	Lead *resourceid.Ref
 	// Direct is the evidence on the object itself.
 	Direct ManagerEvidence
@@ -142,7 +142,7 @@ type ManagerAnswer struct {
 	// ancestor that does; State and Lead are then derived from it.
 	Via *ManagerEvidence
 	// Between is the evidence of other objects the walk passed, in chain
-	// order, that make claims, or that Radar couldn't search fully where it
+	// order, that make claims, or that KubeAtlas couldn't search fully where it
 	// could the object's: evidence that didn't settle the question, kept so
 	// an answer can say why. When Via is a fallback to the nearest claim,
 	// claims farther up the chain stay here.

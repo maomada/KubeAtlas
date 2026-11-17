@@ -37,7 +37,7 @@ export interface ReferenceLine {
 }
 
 /**
- * Vertical marker on a chart at one instant. `kind` names what Radar recorded
+ * Vertical marker on a chart at one instant. `kind` names what KubeAtlas recorded
  * there; the chart draws the marker and its label and never implies that the
  * marked instant explains the series around it.
  */

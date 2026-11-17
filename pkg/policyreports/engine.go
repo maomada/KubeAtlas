@@ -85,7 +85,7 @@ func EngineForSource(source string) Engine {
 	// Prefix, not equality: the modern family appends the policy type
 	// (KyvernoValidatingPolicy, KyvernoImageValidatingPolicy, ...) and
 	// upstream adds new ones every release. Matching the prefix means a
-	// policy kind Radar has never heard of still attributes correctly.
+	// policy kind KubeAtlas has never heard of still attributes correctly.
 	case strings.HasPrefix(s, "kyverno"):
 		return EngineKyverno
 	// Suffix covers both ValidatingAdmissionPolicy and

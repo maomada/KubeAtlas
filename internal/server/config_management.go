@@ -36,7 +36,7 @@ func (s *Server) requireConfigEditable(w http.ResponseWriter, r *http.Request) b
 		return true
 	}
 	s.writeErrorCode(w, http.StatusForbidden, "operator_managed",
-		"This Radar installation is configured by its operator. Update Helm values or startup configuration and restart Radar.")
+		"This KubeAtlas installation is configured by its operator. Update Helm values or startup configuration and restart KubeAtlas.")
 	return false
 }
 
@@ -78,7 +78,7 @@ func (s *Server) handleGetOperatorConfig(w http.ResponseWriter, r *http.Request)
 	}
 	argoError := ""
 	if argocd.EnvManagedError() != "" {
-		argoError = "Argo CD startup configuration is invalid. Ask the operator to check Radar's logs."
+		argoError = "Argo CD startup configuration is invalid. Ask the operator to check KubeAtlas's logs."
 	}
 	s.writeJSON(w, configResponse{
 		Management:               "operator",

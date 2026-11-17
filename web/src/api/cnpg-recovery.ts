@@ -1,10 +1,10 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Grant } from '@maomada/k8s-ui'
-import { apiFetch, ApiError, fetchJSON, useRadarFeature } from './client'
+import { apiFetch, ApiError, fetchJSON, useKubeAtlasFeature } from './client'
 import { actionErrorCode, type ActionCapability } from './actions'
 import { useReviewedActionMutation } from './reviewedActionMutation'
 import { apiUrl } from './config'
-import { shouldRetryRadarQuery } from './radarFeatures'
+import { shouldRetryKubeAtlasQuery } from './kubeatlasFeatures'
 
 export type CNPGReadState = 'ok' | 'denied' | 'notFound' | 'error' | 'skipped' | 'partial'
 
@@ -113,7 +113,7 @@ const clusterPath = (namespace: string, name: string) => `/cnpg/clusters/${encod
 // phase, the recovery Job's Pods and their init containers, the instances and
 // Warning events about them. Polled every 5s until the Cluster reports healthy.
 export function useCNPGRecovery(namespace: string, name: string, options?: { enabled?: boolean }) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGRecoveryResponse>({
     queryKey: ['cnpg', 'recovery', namespace, name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGRecoveryResponse>(`${clusterPath(namespace, name)}/recovery`, signal)),
@@ -123,7 +123,7 @@ export function useCNPGRecovery(namespace: string, name: string, options?: { ena
       const d = query.state.data
       return d?.recovery && d.cluster.phase !== 'Cluster in healthy state' ? 5_000 : 30_000
     },
-    retry: (count, err) => shouldRetryRadarQuery(count, err) && !(err instanceof ApiError && (err.status === 403 || err.status === 404)) && count < 2,
+    retry: (count, err) => shouldRetryKubeAtlasQuery(count, err) && !(err instanceof ApiError && (err.status === 403 || err.status === 404)) && count < 2,
   })
 }
 
@@ -134,7 +134,7 @@ export interface CNPGRestoreValidationRequest {
 }
 
 export function useRecordCNPGRestoreValidation(namespace: string, name: string, reviewedContext: string | undefined) {
-  const { guard } = useRadarFeature('cnpgWorkspace')
+  const { guard } = useKubeAtlasFeature('cnpgWorkspace')
   const queryClient = useQueryClient()
   // The note does not change operational review facts, so its outcome lock is independent.
   return useReviewedActionMutation<CNPGRestoreValidation, { request: CNPGRestoreValidationRequest }>(apiUrl(`${clusterPath(namespace, name)}/restore-validation`), reviewedContext, {
@@ -251,7 +251,7 @@ export interface CNPGOperatorDiagnosis {
 // Cluster in `namespace` (create clusters, and the operator's webhook admits
 // writes), for every way into the restore dialog.
 export function useCNPGRestoreCapability(namespace: string) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<ActionCapability>({
     queryKey: ['cnpg', 'restore-capability', namespace, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<ActionCapability>(`/cnpg/restore/capability?namespace=${encodeURIComponent(namespace)}`, signal)),

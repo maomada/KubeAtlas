@@ -43,7 +43,7 @@ func TestRepositoryChartChecksum(t *testing.T) {
 				}
 				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					if r.URL.Path == "/index.yaml" {
-						fmt.Fprintf(w, "apiVersion: v1\nentries:\n  radar:\n  - apiVersion: v2\n    name: radar\n    version: 1.0.0\n    urls: [radar.tgz]\n    digest: %q\n", advertised)
+						fmt.Fprintf(w, "apiVersion: v1\nentries:\n  kubeatlas:\n  - apiVersion: v2\n    name: kubeatlas\n    version: 1.0.0\n    urls: [kubeatlas.tgz]\n    digest: %q\n", advertised)
 					} else {
 						w.Write(body)
 					}
@@ -58,19 +58,19 @@ func TestRepositoryChartChecksum(t *testing.T) {
 					t.Fatal(err)
 				}
 				cfg := memoryActionConfig(t)
-				req := &InstallRequest{ReleaseName: "checksum-test", Namespace: "default", Repository: "probe", ChartName: "radar", Version: "1.0.0"}
+				req := &InstallRequest{ReleaseName: "checksum-test", Namespace: "default", Repository: "probe", ChartName: "kubeatlas", Version: "1.0.0"}
 				if strings.HasPrefix(consumer, "direct-") {
 					req.Repository = srv.URL
 				}
 				switch consumer {
 				case "source":
-					_, _, err = c.loadSourceChart(nil, ChartSourceCandidate{Type: "repository", Reference: "probe", URL: srv.URL}, "radar", "1.0.0")
+					_, _, err = c.loadSourceChart(nil, ChartSourceCandidate{Type: "repository", Reference: "probe", URL: srv.URL}, "kubeatlas", "1.0.0")
 				case "install", "direct-install":
 					_, err = c.installWith(cfg, req)
 				case "progress", "direct-progress":
 					_, err = c.installWithProgressUsing(cfg, req, make(chan InstallProgress, 100))
 				case "detail":
-					_, err = c.GetChartDetail("probe", "radar", "1.0.0")
+					_, err = c.GetChartDetail("probe", "kubeatlas", "1.0.0")
 				}
 				if digest == "wrong" || digest == "malformed" || digest == "whitespace" {
 					if err == nil || !strings.Contains(err.Error(), "digest") {
@@ -120,13 +120,13 @@ func TestChecksumFailurePreservesRelease(t *testing.T) {
 			}
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.URL.Path == "/index.yaml" {
-					fmt.Fprint(w, "apiVersion: v1\nentries:\n  radar:\n")
+					fmt.Fprint(w, "apiVersion: v1\nentries:\n  kubeatlas:\n")
 					for _, v := range []string{"2.0.0", "1.0.0"} {
 						digest := fmt.Sprintf("%x", sha256.Sum256(archives[v]))
 						if bad.Load() {
 							digest = strings.Repeat("0", 64)
 						}
-						fmt.Fprintf(w, "  - apiVersion: v2\n    name: radar\n    version: %s\n    urls: [%s]\n    digest: %s\n", v, v, digest)
+						fmt.Fprintf(w, "  - apiVersion: v2\n    name: kubeatlas\n    version: %s\n    urls: [%s]\n    digest: %s\n", v, v, digest)
 					}
 				} else {
 					w.Write(archives[strings.TrimPrefix(r.URL.Path, "/")])
@@ -142,7 +142,7 @@ func TestChecksumFailurePreservesRelease(t *testing.T) {
 				t.Fatal(err)
 			}
 			cfg := memoryActionConfig(t)
-			req := &InstallRequest{ReleaseName: "proof", Namespace: "default", Repository: "probe", ChartName: "radar", Version: "1.0.0"}
+			req := &InstallRequest{ReleaseName: "proof", Namespace: "default", Repository: "probe", ChartName: "kubeatlas", Version: "1.0.0"}
 			if _, err := c.installWith(cfg, req); err != nil {
 				t.Fatal(err)
 			}
@@ -208,7 +208,7 @@ func TestChecksumFailurePreservesRelease(t *testing.T) {
 
 func TestDigestInstallErrorClassification(t *testing.T) {
 	err := verifyChartDigest([]byte("archive"), strings.Repeat("0", 64))
-	got := classifyInstallError(fmt.Errorf("chart radar version 1.0.0: %w", err))
+	got := classifyInstallError(fmt.Errorf("chart kubeatlas version 1.0.0: %w", err))
 	if got.Status != http.StatusBadGateway || got.Code != "chart_digest_failed" {
 		t.Fatalf("classification: %+v", got)
 	}
@@ -224,7 +224,7 @@ func TestHTTPIndexOCIPackageChecksum(t *testing.T) {
 			}
 			c.chartPathLocator = func(*action.Configuration, string, string) (string, error) { return path, nil }
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				fmt.Fprintf(w, "apiVersion: v1\nentries:\n  radar:\n  - apiVersion: v2\n    name: radar\n    version: 1.0.0\n    urls: [oci://registry.example.test/charts/radar]\n    digest: %s\n", strings.Repeat("0", 64))
+				fmt.Fprintf(w, "apiVersion: v1\nentries:\n  kubeatlas:\n  - apiVersion: v2\n    name: kubeatlas\n    version: 1.0.0\n    urls: [oci://registry.example.test/charts/kubeatlas]\n    digest: %s\n", strings.Repeat("0", 64))
 			}))
 			defer srv.Close()
 			f := repo.NewFile()
@@ -235,7 +235,7 @@ func TestHTTPIndexOCIPackageChecksum(t *testing.T) {
 			if err := c.UpdateRepository("probe"); err != nil {
 				t.Fatal(err)
 			}
-			req := &InstallRequest{ReleaseName: "proof", Namespace: "default", Repository: "probe", ChartName: "radar", Version: "1.0.0"}
+			req := &InstallRequest{ReleaseName: "proof", Namespace: "default", Repository: "probe", ChartName: "kubeatlas", Version: "1.0.0"}
 			cfg := memoryActionConfig(t)
 			switch consumer {
 			case "install":
@@ -243,7 +243,7 @@ func TestHTTPIndexOCIPackageChecksum(t *testing.T) {
 			case "progress":
 				_, err = c.installWithProgressUsing(cfg, req, make(chan InstallProgress, 100))
 			case "detail":
-				_, err = c.GetChartDetail("probe", "radar", "1.0.0")
+				_, err = c.GetChartDetail("probe", "kubeatlas", "1.0.0")
 			}
 			if !errors.Is(err, errChartDigest) {
 				t.Fatalf("expected HTTP index checksum rejection: %v", err)

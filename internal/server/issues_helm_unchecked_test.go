@@ -16,7 +16,7 @@ import (
 	"k8s.io/client-go/rest"
 )
 
-// useHelmStorageAnswering points Radar's Helm client at an API server whose
+// useHelmStorageAnswering points KubeAtlas's Helm client at an API server whose
 // Helm release Secret lists all answer with status and body.
 func useHelmStorageAnswering(t *testing.T, status int, body string) {
 	t.Helper()
@@ -98,9 +98,9 @@ func TestIssuesSayWhenHelmReleasesCouldNotBeChecked(t *testing.T) {
 	}
 }
 
-// Radar's own request deadline cutting the read short is a failed check:
+// KubeAtlas's own request deadline cutting the read short is a failed check:
 // the caller is still waiting for the answer.
-func TestIssuesSayHelmUncheckedWhenRadarDeadlineEndsTheRead(t *testing.T) {
+func TestIssuesSayHelmUncheckedWhenKubeAtlasDeadlineEndsTheRead(t *testing.T) {
 	storage := useStalledHelmStorage(t)
 	safety := time.AfterFunc(3*time.Second, func() { close(storage.release) })
 	defer safety.Stop()
@@ -176,8 +176,8 @@ func TestIssuesDoNotSayHelmUncheckedWhenCallerLeft(t *testing.T) {
 	}
 }
 
-// A 401 is Radar's own credentials failing, not the caller's permissions.
-func TestIssuesSayHelmUncheckedWhenRadarCredentialsAreRejected(t *testing.T) {
+// A 401 is KubeAtlas's own credentials failing, not the caller's permissions.
+func TestIssuesSayHelmUncheckedWhenKubeAtlasCredentialsAreRejected(t *testing.T) {
 	useHelmStorageAnswering(t, http.StatusUnauthorized,
 		`{"kind":"Status","apiVersion":"v1","status":"Failure","message":"Unauthorized","reason":"Unauthorized","code":401}`)
 
@@ -189,7 +189,7 @@ func TestIssuesSayHelmUncheckedWhenRadarCredentialsAreRejected(t *testing.T) {
 	}
 }
 
-// useHelmStorageFailingIn points Radar's Helm client at an API server whose
+// useHelmStorageFailingIn points KubeAtlas's Helm client at an API server whose
 // release Secret lists fail with a 500 in the failing namespaces and return
 // an empty list elsewhere.
 func useHelmStorageFailingIn(t *testing.T, failing ...string) {
@@ -259,14 +259,14 @@ func TestDashboardHelmSummarySeparatesDeniedFromFailed(t *testing.T) {
 			wantRestricted: true,
 		},
 		{
-			name:   "API server rejects Radar's credentials",
+			name:   "API server rejects KubeAtlas's credentials",
 			status: http.StatusUnauthorized,
 			body:   `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"Unauthorized","reason":"Unauthorized","code":401}`,
 		},
 		{
-			name:   "Radar may not impersonate the caller",
+			name:   "KubeAtlas may not impersonate the caller",
 			status: http.StatusForbidden,
-			body:   `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"users \"dev\" is forbidden: User \"system:serviceaccount:radar:radar\" cannot impersonate resource \"users\" in API group \"\" at the cluster scope","reason":"Forbidden","code":403}`,
+			body:   `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"users \"dev\" is forbidden: User \"system:serviceaccount:kubeatlas:kubeatlas\" cannot impersonate resource \"users\" in API group \"\" at the cluster scope","reason":"Forbidden","code":403}`,
 		},
 	}
 	for _, tc := range cases {

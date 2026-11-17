@@ -306,7 +306,7 @@ it('a snapshot load replaces an ended stream\'s answer even when it succeeds emp
   expect(element.textContent).not.toContain(unavailable)
 })
 
-it('still shows a Radar failure as an error', async () => {
+it('still shows a KubeAtlas failure as an error', async () => {
   const failure = 'Failed to fetch logs: connection refused'
   await renderViewer(async () => { throw new ApiError(failure, { error: failure }) })
   expect(messageClass(failure)).toMatch(/text-red/)

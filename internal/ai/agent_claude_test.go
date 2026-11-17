@@ -45,7 +45,7 @@ func TestClaudeExecutionProfiles(t *testing.T) {
 	defer cleanupFullLocal()
 	fullLocalArgs := strings.Join(fullLocal.Args, " ")
 	if !strings.Contains(fullLocalArgs, "--mcp-config") {
-		t.Errorf("full-local Claude must still mount Radar MCP: %q", fullLocalArgs)
+		t.Errorf("full-local Claude must still mount KubeAtlas MCP: %q", fullLocalArgs)
 	}
 	for _, excluded := range []string{"--strict-mcp-config", "--tools", "--allowedTools", "--permission-mode"} {
 		if strings.Contains(fullLocalArgs, excluded) {
@@ -72,15 +72,15 @@ func TestClaudeSafeguardedApplyAllowlist(t *testing.T) {
 	}
 	defer cleanup()
 	args := strings.Join(cmd.Args, " ")
-	if strings.Contains(args, "mcp__radar__exec_pod") {
+	if strings.Contains(args, "mcp__kubeatlas__exec_pod") {
 		t.Errorf("exec_pod must not be available on apply turns: %q", args)
 	}
 	for _, tool := range investigation.WriteTools {
-		if !strings.Contains(args, "mcp__radar__"+tool) {
+		if !strings.Contains(args, "mcp__kubeatlas__"+tool) {
 			t.Errorf("safeguarded apply command missing write tool %q: %q", tool, args)
 		}
 	}
-	if !strings.Contains(args, "mcp__radar__manage_rollout") {
+	if !strings.Contains(args, "mcp__kubeatlas__manage_rollout") {
 		t.Errorf("real Rollout mutations must be available on apply turns: %q", args)
 	}
 }

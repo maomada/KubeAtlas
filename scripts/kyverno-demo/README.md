@@ -1,7 +1,7 @@
 # Kyverno Demo Cluster
 
 Bootstraps a `kind` cluster with Kyverno 1.18.2 and a curated set of policy
-fixtures covering the scenarios Radar's policy UI needs to render correctly.
+fixtures covering the scenarios KubeAtlas's policy UI needs to render correctly.
 Use it for visual-testing changes to the Kyverno renderers, the PolicyReport
 pipeline, or the enforcement-posture computation — and for future work on
 attributing an admission denial to the policy and rule that caused it, which
@@ -14,8 +14,8 @@ needs live admission and real policies rather than hand-patched states.
 ./scripts/kyverno-demo.sh up        # ~4 minutes on first run
 ./scripts/kyverno-demo.sh status    # inventory policies, reports and sources
 
-# Run Radar against it
-kubectl config use-context kind-radar-kyverno-demo
+# Run KubeAtlas against it
+kubectl config use-context kind-kubeatlas-kyverno-demo
 ./scripts/visual-test-start.sh
 
 # When done
@@ -38,7 +38,7 @@ installed: customresourcedefinitions.apiextensions.k8s.io
 \"clusterpolicies.kyverno.io\" not found"
 ```
 
-This is **upstream behaviour, not a Radar bug and not a broken cluster.** The
+This is **upstream behaviour, not a KubeAtlas bug and not a broken cluster.** The
 reports controller stays healthy and the existing PolicyReports survive, which
 is exactly what the detection gate needs to be tested against. Kyverno 1.20
 presumably drops the check along with the CRDs; until it ships, this is the
@@ -50,7 +50,7 @@ Run `./scripts/kyverno-demo.sh reset` to get a working cluster back.
 
 ### Enforcement posture — the cases that motivated computing it
 
-Radar computes an **effective** posture rather than echoing
+KubeAtlas computes an **effective** posture rather than echoing
 `spec.validationActions`, because three fields interact. These four policies
 are why:
 
@@ -178,7 +178,7 @@ it has policy types, which is why the taxonomy normalizes it.
 Enables `openreports.enabled`, which leaves the `wgpolicyk8s.io` CRDs **served
 but empty** while every report lands in `openreports.io`. Selection that takes
 the first *served* group picks the empty one and reports zero findings on a
-cluster full of them — indistinguishable from a clean cluster. Radar probes
+cluster full of them — indistinguishable from a clean cluster. KubeAtlas probes
 each group for actual objects instead; check the log for:
 
 ```

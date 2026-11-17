@@ -53,7 +53,7 @@ status:
 # running to collect anything. The phase still reads Completed, and the data is
 # still in the bucket: Velero's restore controller does not check expiration, so
 # a restore from it would work right up until the collector removes it. What
-# Radar says is that Velero intends to delete it, not that it has.
+# KubeAtlas says is that Velero intends to delete it, not that it has.
 apiVersion: velero.io/v1
 kind: Backup
 metadata:

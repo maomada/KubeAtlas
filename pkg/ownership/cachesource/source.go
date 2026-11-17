@@ -1,4 +1,4 @@
-// Package cachesource serves ownership reads from Radar's informer caches.
+// Package cachesource serves ownership reads from KubeAtlas's informer caches.
 package cachesource
 
 import (
@@ -153,7 +153,7 @@ func (s *session) dynamicObject(ref resourceid.Ref, borrow func(*unstructured.Un
 		return unavailable(ref, reason)
 	}
 	if s.caches.Dynamic == nil {
-		return unavailable(ref, readreason.RadarKindNotCollected)
+		return unavailable(ref, readreason.KubeAtlasKindNotCollected)
 	}
 	// A resource watched at two versions answers from the most stable one
 	// that has loaded: every version receives the same objects with the same
@@ -177,7 +177,7 @@ func (s *session) dynamicObject(ref resourceid.Ref, borrow func(*unstructured.Un
 	return unavailable(ref, unansweredReason(s.caches.Dynamic, versions, ref.Namespace))
 }
 
-// observer reports how Radar collects a resource version in a namespace: the
+// observer reports how KubeAtlas collects a resource version in a namespace: the
 // dynamic cache, or a view of it that builds each version's scope once.
 type observer interface {
 	NamespaceObservation(gvr schema.GroupVersionResource, namespace string) k8score.DynamicResourceObservation
@@ -248,13 +248,13 @@ func typedReason(rc *k8score.ResourceCache, resource, namespace string) readreas
 	a := rc.AssessKindRead(resource, []string{namespace})
 	switch {
 	case a.Readiness == k8score.KindUnavailable:
-		// Radar's access probe leaves a kind off when its identity is
+		// KubeAtlas's access probe leaves a kind off when its identity is
 		// refused, when the probe can't tell, and when the kind isn't
 		// installed; the cache knows only that it is off, and the host can
 		// say which.
-		return readreason.RadarKindNotCollected
+		return readreason.KubeAtlasKindNotCollected
 	case len(a.Uncovered) > 0:
-		return readreason.RadarNamespaceNotCollected
+		return readreason.KubeAtlasNamespaceNotCollected
 	case len(a.Failed) > 0:
 		return readreason.KindSyncTimedOut
 	default:
@@ -267,9 +267,9 @@ func dynamicReason(o k8score.DynamicResourceObservation) readreason.Code {
 	switch o.State {
 	case k8score.DynamicObservationDenied:
 		if o.ReasonCode == "credentials_rejected" {
-			return readreason.RadarCredentialsRejected
+			return readreason.KubeAtlasCredentialsRejected
 		}
-		return readreason.RadarForbidden
+		return readreason.KubeAtlasForbidden
 	case k8score.DynamicObservationUnsupported:
 		return readreason.KindNotWatchable
 	case k8score.DynamicObservationDeferred:
@@ -277,10 +277,10 @@ func dynamicReason(o k8score.DynamicResourceObservation) readreason.Code {
 		case "eager_watch_pending":
 			return readreason.KindSyncPending
 		case "scope_probe_incomplete":
-			// The probe for where Radar may watch never finished.
+			// The probe for where KubeAtlas may watch never finished.
 			return readreason.ReadError
 		}
-		return readreason.RadarKindNotCollected
+		return readreason.KubeAtlasKindNotCollected
 	case k8score.DynamicObservationSyncing:
 		if o.ReasonCode == "sync_stalled" {
 			return readreason.KindSyncTimedOut
@@ -294,9 +294,9 @@ func dynamicReason(o k8score.DynamicResourceObservation) readreason.Code {
 			// The connection was switched or closed after the session began.
 			return readreason.ConnectionChanged
 		}
-		return readreason.RadarKindNotCollected
+		return readreason.KubeAtlasKindNotCollected
 	default:
-		return readreason.RadarKindNotCollected
+		return readreason.KubeAtlasKindNotCollected
 	}
 }
 

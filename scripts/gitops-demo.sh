@@ -18,11 +18,11 @@
 #   - kubectl
 #   - (optional) flux CLI for direct CR debugging — fixtures use kubectl apply
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-gitops-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-gitops-demo).
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-gitops-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-gitops-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/gitops-demo"
@@ -30,7 +30,7 @@ FIXTURES_DIR="${SCRIPT_DIR}/gitops-demo"
 # Versions pinned so the demo behaves consistently across runs. Bump
 # when you want a newer release; otherwise leave alone.
 #
-# Argo CD 3.x is the default because it changes what Radar sees: from 3.0
+# Argo CD 3.x is the default because it changes what KubeAtlas sees: from 3.0
 # the controller no longer persists per-resource health into the
 # Application CR (status.resourceHealthSource=appTree). Set
 # ARGOCD_VERSION=v2.13.2 to exercise the older inline shape.
@@ -83,7 +83,7 @@ cmd_up() {
   install_argocd
   install_flux
   apply_fixtures
-  mint_radar_token
+  mint_kubeatlas_token
   print_summary
 }
 
@@ -178,15 +178,15 @@ apply_fixtures() {
 }
 
 # setup_argo_health_customizations merges the demo's Argo health checks
-# (fixture ConfigMap radar-demo-argo-health-customizations) into argocd-cm.
+# (fixture ConfigMap kubeatlas-demo-argo-health-customizations) into argocd-cm.
 # argocd-cm is owned by install.yaml, so the keys are patched in rather
 # than applied as a second manifest. The application controller reloads
 # argocd-cm on its own; the restart just makes the first evaluation prompt.
 setup_argo_health_customizations() {
   step "Installing Argo CD health checks for the argo3-health scenario"
   local lua
-  lua=$(kubectl --context "${KUBECTL_CTX}" -n argocd get configmap radar-demo-argo-health-customizations \
-    -o jsonpath='{.data.resource\.customizations\.health\.radar\.demo_Widget}')
+  lua=$(kubectl --context "${KUBECTL_CTX}" -n argocd get configmap kubeatlas-demo-argo-health-customizations \
+    -o jsonpath='{.data.resource\.customizations\.health\.kubeatlas\.demo_Widget}')
   if [ -z "$lua" ]; then
     warn "customization ConfigMap missing; Widget health will not be evaluated by Argo"
     return
@@ -196,7 +196,7 @@ setup_argo_health_customizations() {
   local patch
   patch=$(mktemp)
   {
-    printf 'data:\n  resource.customizations.health.radar.demo_Widget: |\n'
+    printf 'data:\n  resource.customizations.health.kubeatlas.demo_Widget: |\n'
     printf '%s\n' "$lua" | sed 's/^/    /'
   } > "$patch"
   kubectl --context "${KUBECTL_CTX}" -n argocd patch configmap argocd-cm --type merge \
@@ -301,9 +301,9 @@ setup_zombie() {
     sleep 2
   done
 
-  note "patching in fake finalizer (radar-demo.io/intentional-zombie)"
+  note "patching in fake finalizer (kubeatlas-demo.io/intentional-zombie)"
   kubectl --context "${KUBECTL_CTX}" -n flux-system patch kustomization zombie-kustomization \
-    --type json -p '[{"op":"add","path":"/metadata/finalizers/-","value":"radar-demo.io/intentional-zombie"}]' \
+    --type json -p '[{"op":"add","path":"/metadata/finalizers/-","value":"kubeatlas-demo.io/intentional-zombie"}]' \
     >/dev/null 2>&1 || true
 
   note "deleting zombie-kustomization (will block on fake finalizer)"
@@ -319,7 +319,7 @@ setup_zombie() {
 setup_stale_source() {
   step "Breaking podinfo-stale after its first artifact"
   if kubectl --context "${KUBECTL_CTX}" -n flux-system get gitrepository podinfo-stale \
-       -o jsonpath='{.spec.ref.branch}' 2>/dev/null | grep -q radar-demo-missing-branch; then
+       -o jsonpath='{.spec.ref.branch}' 2>/dev/null | grep -q kubeatlas-demo-missing-branch; then
     ok "podinfo-stale already points at the missing branch"
     return
   fi
@@ -336,7 +336,7 @@ setup_stale_source() {
   # which podinfo-unreachable already covers.
   [ -n "$ready" ] || fail "podinfo-stale-source never became Ready; rerun once the cluster settles"
   kubectl --context "${KUBECTL_CTX}" -n flux-system patch gitrepository podinfo-stale --type merge \
-    -p '{"spec":{"ref":{"branch":"radar-demo-missing-branch"}}}' >/dev/null
+    -p '{"spec":{"ref":{"branch":"kubeatlas-demo-missing-branch"}}}' >/dev/null
   deadline=$((SECONDS + 90))
   while [ $SECONDS -lt $deadline ]; do
     if kubectl --context "${KUBECTL_CTX}" -n flux-system get gitrepository podinfo-stale \
@@ -379,7 +379,7 @@ cmd_drift() {
   # the top-level scalar branch.
   kubectl --context "${KUBECTL_CTX}" -n demo-drift scale deployment guestbook-ui --replicas=3 >/dev/null
   kubectl --context "${KUBECTL_CTX}" -n demo-drift annotate deployment guestbook-ui \
-    radar-demo.io/induced-drift="multi-field" --overwrite >/dev/null
+    kubeatlas-demo.io/induced-drift="multi-field" --overwrite >/dev/null
   # Add a CPU limit (Argo's last-applied won't have one) → "added" drift
   # entry on a nested path. Use a JSON patch so we replace just the
   # resources block without disturbing the rest of the container spec.
@@ -391,7 +391,7 @@ cmd_drift() {
 }
 
 # cmd_rebreak resets guestbook-broken-sync to its broken state after a user
-# has remediated it (clicked "Create namespace" in Radar's failure card).
+# has remediated it (clicked "Create namespace" in KubeAtlas's failure card).
 # Deletes the demo-broken-sync namespace so Argo's next sync attempt fails
 # again with "namespaces \"demo-broken-sync\" not found", which is what the
 # fixture is meant to exercise. Argo's retry counter climbs back to 5
@@ -445,20 +445,20 @@ cmd_status() {
   printf "\n"
 }
 
-# --- Radar Argo CD API token -------------------------------------------------
+# --- KubeAtlas Argo CD API token -------------------------------------------------
 
-# mint_radar_token provisions a get-only Argo CD local account ("radar") and
+# mint_kubeatlas_token provisions a get-only Argo CD local account ("kubeatlas") and
 # mints an API token for it, so the Argo CD integration (Settings -> Argo CD,
 # or PUT /api/integrations/argocd) can be exercised against the demo cluster.
-# The token lands in scripts/gitops-demo/.radar-argocd-token (gitignored).
+# The token lands in scripts/gitops-demo/.kubeatlas-argocd-token (gitignored).
 # Idempotent: re-running replaces the token.
-mint_radar_token() {
-  step "Minting a get-only Argo CD API token for Radar"
+mint_kubeatlas_token() {
+  step "Minting a get-only Argo CD API token for KubeAtlas"
 
   kubectl --context "${KUBECTL_CTX}" -n argocd patch configmap argocd-cm --type merge \
-    -p '{"data":{"accounts.radar":"apiKey"}}' >/dev/null
+    -p '{"data":{"accounts.kubeatlas":"apiKey"}}' >/dev/null
   kubectl --context "${KUBECTL_CTX}" -n argocd patch configmap argocd-rbac-cm --type merge \
-    -p '{"data":{"policy.csv":"p, role:radar, applications, get, */*, allow\ng, radar, role:radar"}}' >/dev/null
+    -p '{"data":{"policy.csv":"p, role:kubeatlas, applications, get, */*, allow\ng, kubeatlas, role:kubeatlas"}}' >/dev/null
 
   local admin_pw pf_pid token session_token
   admin_pw=$(kubectl --context "${KUBECTL_CTX}" -n argocd get secret argocd-initial-admin-secret \
@@ -479,12 +479,12 @@ mint_radar_token() {
   done
   if [ -z "${session_token:-}" ]; then
     kill "$pf_pid" 2>/dev/null || true
-    warn "Could not log in to argocd-server to mint the Radar token (skipping — mint manually with 'argocd account generate-token --account radar')"
+    warn "Could not log in to argocd-server to mint the KubeAtlas token (skipping — mint manually with 'argocd account generate-token --account kubeatlas')"
     return 0
   fi
 
   for attempt in $(seq 1 10); do
-    token=$(curl -ks -X POST https://localhost:18085/api/v1/account/radar/token \
+    token=$(curl -ks -X POST https://localhost:18085/api/v1/account/kubeatlas/token \
       -H "Authorization: Bearer ${session_token}" -H "Content-Type: application/json" -d '{}' \
       | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
     [ -n "$token" ] && break
@@ -493,13 +493,13 @@ mint_radar_token() {
   kill "$pf_pid" 2>/dev/null || true
 
   if [ -z "${token:-}" ]; then
-    warn "Token mint failed (account may still be propagating) — mint manually with 'argocd account generate-token --account radar'"
+    warn "Token mint failed (account may still be propagating) — mint manually with 'argocd account generate-token --account kubeatlas'"
     return 0
   fi
 
-  printf '%s' "$token" > "${SCRIPT_DIR}/gitops-demo/.radar-argocd-token"
-  chmod 600 "${SCRIPT_DIR}/gitops-demo/.radar-argocd-token"
-  ok "Token written to scripts/gitops-demo/.radar-argocd-token"
+  printf '%s' "$token" > "${SCRIPT_DIR}/gitops-demo/.kubeatlas-argocd-token"
+  chmod 600 "${SCRIPT_DIR}/gitops-demo/.kubeatlas-argocd-token"
+  ok "Token written to scripts/gitops-demo/.kubeatlas-argocd-token"
 }
 
 # --- Final summary ---------------------------------------------------------
@@ -519,14 +519,14 @@ print_summary() {
     Flux  — podinfo-{base,overlay (dependsOn),suspended}, podinfo HelmRelease,
             zombie-kustomization (stuck Terminating, severity ramps with age)
 
-  Run Radar against this cluster:
+  Run KubeAtlas against this cluster:
     kubectl config use-context ${KUBECTL_CTX}
     ./scripts/visual-test-start.sh
 
-  Connect Radar's Argo CD integration (deep diff):
-    port-forward argocd-server (see above), then in Radar Settings -> Argo CD:
+  Connect KubeAtlas's Argo CD integration (deep diff):
+    port-forward argocd-server (see above), then in KubeAtlas Settings -> Argo CD:
     URL https://localhost:8080, insecure TLS on, token from
-    scripts/gitops-demo/.radar-argocd-token
+    scripts/gitops-demo/.kubeatlas-argocd-token
 
   Other commands:
     $0 status           # inventory the cluster

@@ -20,8 +20,8 @@ import (
 
 func chartVersion(version string) *repo.ChartVersion {
 	return &repo.ChartVersion{
-		Metadata: &chart.Metadata{Name: "radar", Version: version},
-		URLs:     []string{"radar-" + version + ".tgz"},
+		Metadata: &chart.Metadata{Name: "kubeatlas", Version: version},
+		URLs:     []string{"kubeatlas-" + version + ".tgz"},
 	}
 }
 
@@ -76,7 +76,7 @@ func TestServerDryRunRejectsUnavailableCloudDeployment(t *testing.T) {
 	values := map[string]any{
 		"cloud": map[string]any{
 			"enabled": true, "url": "wss://preflight.invalid/agent",
-			"clusterName": "preflight-cluster-id", "existingSecret": "radar-cloud-config",
+			"clusterName": "preflight-cluster-id", "existingSecret": "kubeatlas-cloud-config",
 		},
 		"auth": map[string]any{"mode": "proxy"},
 		"rbac": map[string]any{
@@ -102,11 +102,11 @@ metadata:
   name: one
 spec:
   selector:
-    matchLabels: {app: radar}
+    matchLabels: {app: kubeatlas}
   template:
     spec:
       containers:
-      - name: radar
+      - name: kubeatlas
         env:
         - {name: KUBEATLAS_CLOUD_MODE, value: "true"}
 ---
@@ -116,15 +116,15 @@ metadata:
   name: two
 spec:
   selector:
-    matchLabels: {app: radar-two}
+    matchLabels: {app: kubeatlas-two}
   template:
     spec:
       containers:
-      - name: radar
+      - name: kubeatlas
         env:
         - {name: KUBEATLAS_CLOUD_MODE, value: "true"}
 `
-	if _, err := cloudDeploymentRef(manifest, "radar"); err == nil {
+	if _, err := cloudDeploymentRef(manifest, "kubeatlas"); err == nil {
 		t.Fatal("expected ambiguous cloud Deployments to fail")
 	}
 }
@@ -132,16 +132,16 @@ spec:
 func TestResolvePreparedChartPinsExactArchiveAndDigest(t *testing.T) {
 	withTestHelmHTTPClient(t)
 	chartObject := &chart.Chart{
-		Metadata: &chart.Metadata{APIVersion: "v2", Name: "radar", Version: "1.6.0", Type: "application"},
+		Metadata: &chart.Metadata{APIVersion: "v2", Name: "kubeatlas", Version: "1.6.0", Type: "application"},
 		Templates: []*chart.File{{Name: "templates/deployment.yaml", Data: []byte(`apiVersion: apps/v1
 kind: Deployment
-metadata: {name: radar}
+metadata: {name: kubeatlas}
 spec:
-  selector: {matchLabels: {app: radar}}
+  selector: {matchLabels: {app: kubeatlas}}
   template:
     spec:
       containers:
-      - name: radar
+      - name: kubeatlas
         env:
         - {name: KUBEATLAS_CLOUD_MODE, value: "true"}
 `)}},
@@ -157,11 +157,11 @@ spec:
 	digest := sha256.Sum256(archive)
 	validIndex := fmt.Sprintf(`apiVersion: v1
 entries:
-  radar:
+  kubeatlas:
   - apiVersion: v2
-    name: radar
+    name: kubeatlas
     version: 1.6.0
-    urls: [radar-1.6.0.tgz]
+    urls: [kubeatlas-1.6.0.tgz]
     digest: %s
 `, hex.EncodeToString(digest[:]))
 	index := validIndex
@@ -169,7 +169,7 @@ entries:
 		switch r.URL.Path {
 		case "/index.yaml":
 			_, _ = w.Write([]byte(index))
-		case "/radar-1.6.0.tgz":
+		case "/kubeatlas-1.6.0.tgz":
 			_, _ = w.Write(archive)
 		default:
 			http.NotFound(w, r)
@@ -179,7 +179,7 @@ entries:
 
 	client := &Client{repositoryNetwork: testHelmRepositoryNetwork()}
 	loaded, exact, err := client.resolvePreparedChart(context.Background(), &InstallRequest{
-		ChartName: "radar", Repository: server.URL,
+		ChartName: "kubeatlas", Repository: server.URL,
 	}, "1.5.4")
 	if err != nil {
 		t.Fatal(err)
@@ -190,7 +190,7 @@ entries:
 
 	index = strings.Replace(validIndex, fmt.Sprintf("    digest: %s\n", hex.EncodeToString(digest[:])), "", 1)
 	_, _, err = client.resolvePreparedChart(context.Background(), &InstallRequest{
-		ChartName: "radar", Repository: server.URL,
+		ChartName: "kubeatlas", Repository: server.URL,
 	}, "1.5.4")
 	if err == nil || !strings.Contains(err.Error(), "has no SHA-256 digest") {
 		t.Fatalf("missing repository digest error = %v", err)
@@ -198,7 +198,7 @@ entries:
 
 	index = strings.Replace(validIndex, hex.EncodeToString(digest[:]), "sha512:deadbeef", 1)
 	_, _, err = (&Client{}).resolvePreparedChart(context.Background(), &InstallRequest{
-		ChartName: "radar", Repository: server.URL,
+		ChartName: "kubeatlas", Repository: server.URL,
 	}, "1.5.4")
 	if err == nil || !strings.Contains(err.Error(), "has an invalid SHA-256 digest") {
 		t.Fatalf("malformed repository digest error = %v", err)
@@ -209,7 +209,7 @@ func TestResolvePreparedChartHonorsCanceledContext(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	_, _, err := (&Client{}).resolvePreparedChart(ctx, &InstallRequest{
-		ChartName: "radar", Repository: "https://example.invalid/charts",
+		ChartName: "kubeatlas", Repository: "https://example.invalid/charts",
 	}, "1.5.4")
 	if !errors.Is(err, context.Canceled) {
 		t.Fatalf("expected context cancellation, got %v", err)

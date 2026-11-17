@@ -11,7 +11,7 @@ const summary = (extra: Partial<HealthSourceNoticeSummary>): HealthSourceNoticeS
   ...extra,
 })
 
-describe('GitOpsHealthSourceNotice while Radar connects to Argo CD', () => {
+describe('GitOpsHealthSourceNotice while KubeAtlas connects to Argo CD', () => {
   test('says it is connecting, without sending the user to Settings', () => {
     const s = summary({ resourceHealthApiPending: true })
     const html = renderToStaticMarkup(<GitOpsHealthSourceNotice summary={s} onOpenSettings={() => {}} />)
@@ -25,7 +25,7 @@ describe('GitOpsHealthSourceNotice while Radar connects to Argo CD', () => {
     const s = summary({ resourceHealthApiError: undefined, resourceHealthApiPending: true })
     expect(hasHealthSettingsHint(s, [])).toBe(true)
     const html = renderToStaticMarkup(<GitOpsHealthSourceNotice summary={s} onOpenSettings={() => {}} />)
-    expect(html).toContain('connect Radar to your Argo CD server')
+    expect(html).toContain('connect KubeAtlas to your Argo CD server')
   })
 
   test('a real failure still reads as one and offers Settings', () => {

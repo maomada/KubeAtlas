@@ -28,7 +28,7 @@ describe('updateNoticeVisible', () => {
 
   it('is visible until that version is dismissed', () => {
     expect(updateNoticeVisible('1.16.0', true)).toBe(true)
-    store.set('radar-update-dismissed', '1.16.0')
+    store.set('kubeatlas-update-dismissed', '1.16.0')
     expect(updateNoticeVisible('1.16.0', true)).toBe(false)
     expect(updateNoticeVisible('1.16.0', false)).toBe(false)
   })

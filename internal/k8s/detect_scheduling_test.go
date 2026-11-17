@@ -357,7 +357,7 @@ func TestClassifyAdmissionFailure(t *testing.T) {
 		{`application says failed calling webhook "named.example.com": timeout`, "", false},
 		{`failed calling webhook "call.example.com": admission webhook "inner.example.com" denied the request`, "WebhookUnavailable", true},
 		{`failed calling webhook "dns.example.com": Post "https://external.example/": dial tcp: lookup external.example: no such host`, "WebhookUnavailable", true},
-		{`Create Pod statefulset-blocked-0 in StatefulSet statefulset-blocked failed error: Internal error occurred: failed calling webhook "refused.radar-autodev.example": failed to call webhook: Post "https://refused-backend.radar-autodev-webhook.svc:443/validate?timeout=1s": dial tcp 10.96.132.122:443: connect: connection refused`, "WebhookUnavailable", true},
+		{`Create Pod statefulset-blocked-0 in StatefulSet statefulset-blocked failed error: Internal error occurred: failed calling webhook "refused.kubeatlas-autodev.example": failed to call webhook: Post "https://refused-backend.kubeatlas-autodev-webhook.svc:443/validate?timeout=1s": dial tcp 10.96.132.122:443: connect: connection refused`, "WebhookUnavailable", true},
 		{`Create Pod statefulset-blocked-0 in StatefulSet statefulset-blocked failed error: admission webhook "policy.example.com" denied the request: nope`, "WebhookDenied", true},
 		{`Error creating job: admission webhook "jobs.example.com" denied the request: nope`, "WebhookDenied", true},
 		{`Error creating job: Internal error occurred: failed calling webhook "jobs.example.com": context deadline exceeded`, "WebhookUnavailable", true},

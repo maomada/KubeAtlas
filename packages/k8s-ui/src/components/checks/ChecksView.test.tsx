@@ -5,14 +5,14 @@ import type { Check, EffectiveCheckFinding } from './types'
 
 function check(messages: string[], cluster = 'one'): Check {
   const findings: EffectiveCheckFinding[] = messages.map((message, i) => ({
-    source: 'radar_builtin',
+    source: 'kubeatlas_builtin',
     resource: { cluster_id: cluster, group: '', kind: 'Secret', namespace: 'test', name: `cert-${i}` },
     checkID: 'tlsCertificateExpiry', category: 'Reliability', originalSeverity: 'danger',
     effectiveSeverity: 'high', message,
     state: { visibility: 'visible', source: 'detector_default', scoreImpact: 'counts', alertImpact: 'alerts', complianceImpact: 'counts' },
   }))
   return {
-    id: cluster, source: 'radar_builtin', subject: findings[0].resource,
+    id: cluster, source: 'kubeatlas_builtin', subject: findings[0].resource,
     checkID: 'tlsCertificateExpiry', category: 'Reliability', effectiveSeverity: 'high',
     title: 'TLS certificate expiring', message: messages[0], affectedFindings: findings.length,
     affectedResources: findings.length, representativeFinding: findings[0], findings,

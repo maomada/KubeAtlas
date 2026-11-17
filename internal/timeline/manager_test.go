@@ -26,7 +26,7 @@ func TestInitStoreKeepsNoFallbackStoreForPostgres(t *testing.T) {
 
 	if err := InitStore(StoreConfig{
 		Type: StoreTypePostgres,
-		DSN:  "postgres://radar:secret@127.0.0.1:1/radar?connect_timeout=1",
+		DSN:  "postgres://kubeatlas:secret@127.0.0.1:1/kubeatlas?connect_timeout=1",
 	}); err != nil {
 		t.Fatalf("InitStore error = %v, want the timeline to degrade on its own", err)
 	}
@@ -74,7 +74,7 @@ func TestInitStoreConcurrentWithResetPreservesPostgresError(t *testing.T) {
 
 	cfg := StoreConfig{
 		Type: StoreTypePostgres,
-		DSN:  "postgres://radar:secret@127.0.0.1:1/radar?connect_timeout=1",
+		DSN:  "postgres://kubeatlas:secret@127.0.0.1:1/kubeatlas?connect_timeout=1",
 	}
 
 	for iteration := 0; iteration < 200; iteration++ {

@@ -8,7 +8,7 @@ import {
 } from '../../utils/version'
 import { Tooltip } from '../ui/Tooltip'
 
-interface RadarVersionLineProps {
+interface KubeAtlasVersionLineProps {
   version: VersionInfo
   manager?: CloudConnectSelf
   managerLoading?: boolean
@@ -24,7 +24,7 @@ function displayVersion(version: string): string {
   return version === 'dev' || version.startsWith('v') ? version : `v${version}`
 }
 
-export function RadarVersionLine({
+export function KubeAtlasVersionLine({
   version,
   manager,
   managerLoading = false,
@@ -32,7 +32,7 @@ export function RadarVersionLine({
   onNavigateToGitOps,
   showUpgrade: upgradeAllowed = true,
   onShowWhatsNew,
-}: RadarVersionLineProps) {
+}: KubeAtlasVersionLineProps) {
   const latestVersion = version.latestVersion
   const updateStatus = getVersionUpdateStatus(version.currentVersion, latestVersion)
   const showUpgrade = upgradeAllowed && version.updateAvailable && !!latestVersion && updateStatus.tier !== 'none'

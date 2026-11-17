@@ -23,7 +23,7 @@ function installDom(pathname = '/traffic'): NavRecorder {
   const location: Record<string, unknown> = {
     pathname,
     search: '',
-    _href: `http://radar.local${pathname}`,
+    _href: `http://kubeatlas.local${pathname}`,
     reload: () => {
       rec.count++
       rec.urls.push('[reload]')

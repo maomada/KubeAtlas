@@ -207,7 +207,7 @@ func (c *Catalog) Complete() bool {
 
 // DependentKinds returns the kinds whose objects can be dependents the
 // garbage collector acts on, sorted by group and kind. Events are left out:
-// Radar keeps none of their owner references, so an answer about an object's
+// KubeAtlas keeps none of their owner references, so an answer about an object's
 // dependents covers every kind but Events. The slice is the catalog's own and
 // must not be modified.
 func (c *Catalog) DependentKinds() []CatalogKind {

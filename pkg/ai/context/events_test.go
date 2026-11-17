@@ -33,12 +33,12 @@ func makeEvent(reason, message, eventType string, count int32, lastTime time.Tim
 func TestNormalizeMessage_CollapsesSerialNumericIncarnations(t *testing.T) {
 	pairs := [][2]string{
 		{
-			"Failed node radar-batch-cronworkflow-1784443200: child 'radar-batch-cronworkflow-1784443200-1321105865' failed",
-			"Failed node radar-batch-cronworkflow-1784442600: child 'radar-batch-cronworkflow-1784442600-331300114' failed",
+			"Failed node kubeatlas-batch-cronworkflow-1784443200: child 'kubeatlas-batch-cronworkflow-1784443200-1321105865' failed",
+			"Failed node kubeatlas-batch-cronworkflow-1784442600: child 'kubeatlas-batch-cronworkflow-1784442600-331300114' failed",
 		},
 		{
-			"child 'radar-batch-cronworkflow-1784443200-1321105865' failed",
-			"child 'radar-batch-cronworkflow-1784442000-1354049248' failed",
+			"child 'kubeatlas-batch-cronworkflow-1784443200-1321105865' failed",
+			"child 'kubeatlas-batch-cronworkflow-1784442000-1354049248' failed",
 		},
 		// cert-manager Order/Challenge names carry decimal FNV suffixes
 		// (<=10 digits; a 5-digit render falls to podHashPattern instead).

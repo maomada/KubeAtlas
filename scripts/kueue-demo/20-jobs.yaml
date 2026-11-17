@@ -4,7 +4,7 @@ metadata:
   name: admitted-running
   namespace: kueue-demo
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo
     kueue.x-k8s.io/queue-name: ready
 spec:
   suspend: true
@@ -13,7 +13,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/part-of: radar-kueue-demo
+        app.kubernetes.io/part-of: kubeatlas-kueue-demo
     spec:
       containers:
         - name: hold
@@ -30,7 +30,7 @@ metadata:
   name: quota-blocked
   namespace: kueue-demo
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo
     kueue.x-k8s.io/queue-name: ready
 spec:
   suspend: true
@@ -39,7 +39,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/part-of: radar-kueue-demo
+        app.kubernetes.io/part-of: kubeatlas-kueue-demo
     spec:
       containers:
         - name: would-run
@@ -56,7 +56,7 @@ metadata:
   name: queue-held
   namespace: kueue-demo
   labels:
-    app.kubernetes.io/part-of: radar-kueue-demo
+    app.kubernetes.io/part-of: kubeatlas-kueue-demo
     kueue.x-k8s.io/queue-name: held
 spec:
   suspend: true
@@ -65,7 +65,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/part-of: radar-kueue-demo
+        app.kubernetes.io/part-of: kubeatlas-kueue-demo
     spec:
       containers:
         - name: would-run

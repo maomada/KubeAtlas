@@ -159,7 +159,7 @@ func (h *Handlers) RegisterRoutes(r chi.Router) {
 		r.Post("/repositories/{name}/update", h.handleUpdateRepository)
 
 		// Registered OCI chart sources (the OCI analog of `helm repo add`) — let
-		// Radar track upgrades for the user's own OCI-published charts.
+		// KubeAtlas track upgrades for the user's own OCI-published charts.
 		r.Get("/oci-sources", h.handleListOCISources)
 		r.Post("/oci-sources", h.handleAddOCISource)
 		r.Delete("/oci-sources", h.handleRemoveOCISource)
@@ -1111,7 +1111,7 @@ func (h *Handlers) handleListOCISources(w http.ResponseWriter, r *http.Request) 
 }
 
 // handleAddOCISource registers an OCI chart-source prefix. The source list is
-// shared Radar configuration that later upgrades resolve against, so it is
+// shared KubeAtlas configuration that later upgrades resolve against, so it is
 // gated as config (ConfigWriteAllowed), not as a cluster mutation.
 func (h *Handlers) handleAddOCISource(w http.ResponseWriter, r *http.Request) {
 	if h.ConfigWriteAllowed != nil && !h.ConfigWriteAllowed(w, r) {
@@ -1385,9 +1385,9 @@ type installResult struct {
 // Returns true if the request should proceed, false if an error was written.
 //
 // With a signed-in caller the write runs as that caller, so their own RBAC
-// decides, not Radar's service account: Helm stores the release as a Secret in
+// decides, not KubeAtlas's service account: Helm stores the release as a Secret in
 // its namespace, so secrets/create there is the check. It runs before any chart
-// is fetched, so a caller who could never install can't make Radar reach out to
+// is fetched, so a caller who could never install can't make KubeAtlas reach out to
 // an arbitrary repository URL either. An empty namespace is a pod-local change
 // (the chart cache, OCI sources) and needs no cluster permission.
 //
@@ -1424,7 +1424,7 @@ func requireHelmWrite(w http.ResponseWriter, r *http.Request, namespace string) 
 	}
 	if !caps.HelmWrite {
 		log.Printf("[helm] Denied %s %s: helmWrite capability not available", r.Method, r.URL.Path)
-		writeError(w, http.StatusForbidden, "Helm write operations require additional RBAC permissions. Set rbac.helm=true in the Radar Helm chart values.")
+		writeError(w, http.StatusForbidden, "Helm write operations require additional RBAC permissions. Set rbac.helm=true in the KubeAtlas Helm chart values.")
 		return false
 	}
 	return true

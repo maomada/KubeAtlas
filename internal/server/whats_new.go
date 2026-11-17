@@ -27,10 +27,10 @@ const whatsNewFile = "whats-new.json"
 
 // Captured before main writes anything under ~/.kubeatlas (install-id, star.json),
 // which would otherwise make a first run look like an existing install.
-var whatsNewPriorInstall = radarDirHadState()
+var whatsNewPriorInstall = kubeatlasDirHadState()
 
 // Serializes read-compare-write within this process (two tabs acknowledging at
-// once). Separate Radar processes sharing ~/.kubeatlas can still interleave; the
+// once). Separate KubeAtlas processes sharing ~/.kubeatlas can still interleave; the
 // cost is showing notes once more, not worth a cross-platform file lock.
 var whatsNewWriteMu sync.Mutex
 
@@ -89,7 +89,7 @@ func (s *Server) handleMarkWhatsNewSeen(w http.ResponseWriter, r *http.Request) 
 		s.writeError(w, http.StatusBadRequest, fmt.Sprintf("invalid version %q", req.Version))
 		return
 	}
-	// Two Radars can share ~/.kubeatlas (an older CLI beside an updated Desktop);
+	// Two KubeAtlas instances can share ~/.kubeatlas (an older CLI beside an updated Desktop);
 	// the record only moves forward, or the newer one would replay its notes.
 	whatsNewWriteMu.Lock()
 	defer whatsNewWriteMu.Unlock()
@@ -119,7 +119,7 @@ func versionAfter(a, b string) bool {
 	return va.GreaterThan(vb)
 }
 
-func radarDir() (string, error) {
+func kubeatlasDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return "", err
@@ -127,8 +127,8 @@ func radarDir() (string, error) {
 	return filepath.Join(home, ".kubeatlas"), nil
 }
 
-func radarDirHadState() bool {
-	dir, err := radarDir()
+func kubeatlasDirHadState() bool {
+	dir, err := kubeatlasDir()
 	if err != nil {
 		return false
 	}
@@ -150,7 +150,7 @@ func radarDirHadState() bool {
 // ok is false when nothing has been recorded yet (or the file is unreadable),
 // which the client must tell apart from an empty seen version.
 func readWhatsNewState() (whatsNewState, bool) {
-	dir, err := radarDir()
+	dir, err := kubeatlasDir()
 	if err != nil {
 		return whatsNewState{}, false
 	}
@@ -174,7 +174,7 @@ func readWhatsNewState() (whatsNewState, bool) {
 }
 
 func writeWhatsNewState(state whatsNewState) error {
-	dir, err := radarDir()
+	dir, err := kubeatlasDir()
 	if err != nil {
 		return err
 	}
@@ -185,7 +185,7 @@ func writeWhatsNewState(state whatsNewState) error {
 	if err != nil {
 		return err
 	}
-	// A unique temp file: two Radars can share ~/.kubeatlas.
+	// A unique temp file: two KubeAtlas instances can share ~/.kubeatlas.
 	tmp, err := os.CreateTemp(dir, whatsNewFile+".*.tmp")
 	if err != nil {
 		return err

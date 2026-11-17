@@ -1,4 +1,4 @@
-revision: radar-lab
+revision: kubeatlas-lab
 autoscaleEnabled: false
 replicaCount: 1
 podAnnotations:
@@ -7,7 +7,7 @@ resources:
   requests: {cpu: 100m, memory: 256Mi}
   limits: {cpu: "1", memory: 768Mi}
 global:
-  istioNamespace: radar-metrics-istio-system
+  istioNamespace: kubeatlas-metrics-istio-system
   proxy:
     resources:
       requests: {cpu: 25m, memory: 64Mi}
@@ -20,4 +20,4 @@ meshConfig:
     - matchExpressions:
         - key: kubernetes.io/metadata.name
           operator: In
-          values: [radar-metrics-fixture, radar-metrics-istio-system]
+          values: [kubeatlas-metrics-fixture, kubeatlas-metrics-istio-system]

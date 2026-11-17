@@ -14,7 +14,7 @@ interface RBACErrorSectionProps {
   errorPrefix?: string
 }
 
-// 503 because Radar's SA can't read RBAC, so the informers never synced — a
+// 503 because KubeAtlas's SA can't read RBAC, so the informers never synced — a
 // cluster-static config state (same on every resource), not a failure. The message
 // check distinguishes it from a generic connectivity 503 ("Not connected to
 // cluster"), which is a real fault and must stay loud (red).
@@ -44,7 +44,7 @@ export function RBACErrorSection({
     return (
       <Section title={title} icon={icon}>
         <div className="text-sm text-theme-text-tertiary">
-          RBAC visibility isn’t available — the identity Radar connects with can’t read
+          RBAC visibility isn’t available — the identity KubeAtlas connects with can’t read
           RBAC resources in this cluster.
         </div>
       </Section>

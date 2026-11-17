@@ -111,7 +111,7 @@ var knownControllers = map[string]controllerInfo{
 // configured to serve it. The default-class path is the primary one in practice
 // (Ingresses commonly omit ingressClassName).
 //
-// Reads from the DYNAMIC cache (IngressClasses isn't a typed informer in Radar)
+// Reads from the DYNAMIC cache (IngressClasses isn't a typed informer in KubeAtlas)
 // - already synced and RBAC-respecting, so a cluster where the caller can't
 // watch ingressclasses simply yields "not found" → fail-soft, never "broken".
 func resolveIngressClass(deps Deps, ing *networkingv1.Ingress) (name, controller string, found, couldRead bool) {
@@ -309,7 +309,7 @@ func ingressControllerStatus(deps Deps, ing *networkingv1.Ingress) controllerSta
 		// annotations may also be stale, so this stays a soft configured-tier
 		// pill, never a finding.
 		st.servedBy = "cloud LB (no address)"
-		st.servedByTitle = "This Ingress has cloud load balancer annotations, but no load balancer address has been assigned - Radar couldn't confirm anything is serving it yet."
+		st.servedByTitle = "This Ingress has cloud load balancer annotations, but no load balancer address has been assigned - KubeAtlas couldn't confirm anything is serving it yet."
 		return st
 	}
 	if len(addr) > 0 {
@@ -317,7 +317,7 @@ func ingressControllerStatus(deps Deps, ing *networkingv1.Ingress) controllerSta
 		// identify which. Reachable, not broken. The @addr pill already shows it,
 		// so no extra servedBy pill.
 		st.servedBy = "via a controller"
-		st.servedByTitle = fmt.Sprintf("Reachable at %s - an ingress controller serves this, but Radar couldn’t identify which one.", strings.Join(addr, ", "))
+		st.servedByTitle = fmt.Sprintf("Reachable at %s - an ingress controller serves this, but KubeAtlas couldn’t identify which one.", strings.Join(addr, ", "))
 		return st
 	}
 	if legacy := legacyIngressClass(ing); legacy != "" {
@@ -335,7 +335,7 @@ func ingressControllerStatus(deps Deps, ing *networkingv1.Ingress) controllerSta
 		// empty class list does not land here - resolveIngressClass reports it as
 		// readable, because it is a real observation.)
 		st.servedBy = "via a controller"
-		st.servedByTitle = "Radar couldn’t identify the ingress controller (it couldn’t read IngressClasses). This isn’t a sign that nothing is serving the Ingress."
+		st.servedByTitle = "KubeAtlas couldn’t identify the ingress controller (it couldn’t read IngressClasses). This isn’t a sign that nothing is serving the Ingress."
 		return st
 	}
 	// POSITIVE no-controller signal: classes are readable and none resolves, no
@@ -498,29 +498,29 @@ func inClusterClassStatus(deps Deps, info controllerInfo, addr []string) control
 		return st
 	}
 
-	// Pods not found - almost always a namespace Radar's own service account
+	// Pods not found - almost always a namespace KubeAtlas's own service account
 	// can't read. Never condemn; and without observed pods, an address is the
 	// only thing that upgrades "configured" to "served".
 	if scoped {
 		st.servedBy = "via a controller"
 		if len(addr) > 0 {
-			st.servedByTitle = fmt.Sprintf("Served by this class’s ingress controller - a load balancer address is assigned. Radar couldn’t see its pods, so controller health wasn’t checked. %s", sharedControllerNote)
+			st.servedByTitle = fmt.Sprintf("Served by this class’s ingress controller - a load balancer address is assigned. KubeAtlas couldn’t see its pods, so controller health wasn’t checked. %s", sharedControllerNote)
 		} else {
-			st.servedByTitle = fmt.Sprintf("This Ingress’s class is configured for an ingress controller - Radar couldn’t see its pods, so it couldn’t confirm the controller is running. %s", sharedControllerNote)
+			st.servedByTitle = fmt.Sprintf("This Ingress’s class is configured for an ingress controller - KubeAtlas couldn’t see its pods, so it couldn’t confirm the controller is running. %s", sharedControllerNote)
 		}
 		return st
 	}
 	st.servedBy = info.name
 	if len(addr) > 0 {
-		st.servedByTitle = fmt.Sprintf("Served by the %s ingress controller - a load balancer address is assigned. Radar couldn’t see its pods (they may be in a namespace it can’t access), so controller health wasn’t checked. %s", info.name, sharedControllerNote)
+		st.servedByTitle = fmt.Sprintf("Served by the %s ingress controller - a load balancer address is assigned. KubeAtlas couldn’t see its pods (they may be in a namespace it can’t access), so controller health wasn’t checked. %s", info.name, sharedControllerNote)
 	} else {
-		st.servedByTitle = fmt.Sprintf("This Ingress’s class is configured for the %s ingress controller - Radar couldn’t see its pods (they may be in a namespace it can’t access), so it couldn’t confirm it’s running. %s", info.name, sharedControllerNote)
+		st.servedByTitle = fmt.Sprintf("This Ingress’s class is configured for the %s ingress controller - KubeAtlas couldn’t see its pods (they may be in a namespace it can’t access), so it couldn’t confirm it’s running. %s", info.name, sharedControllerNote)
 	}
 	return st
 }
 
 // unknownControllerStatus reports a class that resolves to a controller string
-// Radar has no pod-lookup knowledge for. Never condemned: many controllers
+// KubeAtlas has no pod-lookup knowledge for. Never condemned: many controllers
 // never publish an address and we can't check their pods. The raw
 // spec.controller string is cluster-scoped IngressClass content, so scoped
 // callers get the tier without it.
@@ -531,14 +531,14 @@ func unknownControllerStatus(deps Deps, ctrlStr string, addr []string) controlle
 		if len(addr) > 0 {
 			st.servedByTitle = fmt.Sprintf("Served by this class’s ingress controller - a load balancer address is assigned. Controller details are cluster-scoped and not shown for namespace-scoped access. %s", sharedControllerNote)
 		} else {
-			st.servedByTitle = fmt.Sprintf("This Ingress’s class is configured for an ingress controller Radar doesn’t know how to check. Controller details are cluster-scoped and not shown for namespace-scoped access. %s", sharedControllerNote)
+			st.servedByTitle = fmt.Sprintf("This Ingress’s class is configured for an ingress controller KubeAtlas doesn’t know how to check. Controller details are cluster-scoped and not shown for namespace-scoped access. %s", sharedControllerNote)
 		}
 		return st
 	}
 	if len(addr) > 0 {
 		st.servedByTitle = fmt.Sprintf("Served by ingress controller %q - a load balancer address is assigned. %s", ctrlStr, sharedControllerNote)
 	} else {
-		st.servedByTitle = fmt.Sprintf("This Ingress’s class is handled by controller %q - Radar doesn’t know how to check its pods, and no load balancer address is published (many controllers never publish one). %s", ctrlStr, sharedControllerNote)
+		st.servedByTitle = fmt.Sprintf("This Ingress’s class is handled by controller %q - KubeAtlas doesn’t know how to check its pods, and no load balancer address is published (many controllers never publish one). %s", ctrlStr, sharedControllerNote)
 	}
 	return st
 }

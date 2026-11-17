@@ -1,6 +1,6 @@
 {{- /*
 Cluster-admin-equivalent add-on ClusterRole. Emitted under the same gate as
-radar-helm but bound only to radar:owner — never radar:member.
+kubeatlas-helm but bound only to kubeatlas:owner — never kubeatlas:member.
 
 The verbs in this role are individually sufficient for self-promotion to
 cluster-admin or for bypassing admission control:
@@ -15,9 +15,9 @@ require an owner identity to install.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "radar.fullname" . }}-helm-admin
+  name: {{ include "kubeatlas.fullname" . }}-helm-admin
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 rules:
   - apiGroups: ["rbac.authorization.k8s.io"]
     resources: ["clusterroles", "clusterrolebindings", "roles", "rolebindings"]

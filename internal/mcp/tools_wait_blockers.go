@@ -50,7 +50,7 @@ func readWaitBlockers(ctx context.Context, dyn dynamic.Interface, gvr schema.Gro
 	ns := obj.GetNamespace()
 	unavailable := func(reason string) waitBlockerResult { return waitBlockerResult{unavailable: reason} }
 	if !namespaceWithinPin(ns) {
-		return unavailable("outside Radar's namespace scope")
+		return unavailable("outside KubeAtlas's namespace scope")
 	}
 	if !checkNamespaceAccess(ctx, ns) {
 		return unavailable("pods are not readable with your permissions")

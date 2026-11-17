@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"sort"
 
 	"helm.sh/helm/v3/pkg/action"
@@ -14,8 +15,8 @@ import (
 	"helm.sh/helm/v3/pkg/storage/driver"
 )
 
-const chartSourceBindingLabel = "radarhq.io/chart-source-binding"
-const chartSourceAttemptLabel = "radarhq.io/chart-source-attempt"
+const chartSourceBindingLabel = "kubeatlas.io/chart-source-binding"
+const chartSourceAttemptLabel = "kubeatlas.io/chart-source-attempt"
 
 var errSourceRequired = errors.New("select and confirm a chart source to continue")
 var errSourceAlreadyConfirmed = errors.New("release already has a confirmed source; choose a source for the next upgrade to replace it")
@@ -62,11 +63,14 @@ func confirmedChartSource(rel *release.Release) (*ChartSourceCandidate, bool) {
 		return nil, false
 	}
 	binding := chartSourceBinding(rel.Chart)
-	return source, binding != "" && rel.Labels[chartSourceBindingLabel] == binding
+	labels, validLabels := compat.CanonicalChartSourceLabels(rel.Labels)
+	return source, validLabels && binding != "" && labels[chartSourceBindingLabel] == binding
 }
 
 func boundChartSourceLabels(current map[string]string, source *ChartSourceCandidate, ch *chart.Chart) map[string]string {
 	labels := chartSourceUpgradeLabels(current, source)
+	labels[compat.LegacyChartSourceBinding] = "null"
+	labels[compat.LegacyChartSourceAttempt] = "null"
 	labels[chartSourceAttemptLabel] = "null"
 	labels[chartSourceBindingLabel] = "null"
 	if source != nil {

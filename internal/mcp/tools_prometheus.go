@@ -761,8 +761,8 @@ func notConnectedMessage(address string, err error) string {
 		// quotes request URLs of its own, which get the stronger treatment.
 		detail = fmt.Sprintf(" (last address: %s)", prom.SafeAddress(address))
 	}
-	return fmt.Sprintf("prometheus is not connected%s: %s — radar auto-discovers Prometheus in the cluster; "+
-		"set --prometheus-url (with --prometheus-header for auth) or check Settings → Prometheus in the radar UI",
+	return fmt.Sprintf("prometheus is not connected%s: %s — kubeatlas auto-discovers Prometheus in the cluster; "+
+		"set --prometheus-url (with --prometheus-header for auth) or check Settings → Prometheus in the kubeatlas UI",
 		detail, prom.RedactURLs(err.Error()))
 }
 

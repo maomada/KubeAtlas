@@ -7,7 +7,7 @@
 #   guestbook-healthy   → Synced + Healthy (auto-sync on)
 #   guestbook-drift     → stable OutOfSync (auto-sync on, selfHeal: false — stays drifted)
 #   guestbook-manual    → manual sync (auto-sync off, drives ManualDriftWithoutAutoSync detector)
-#   guestbook-suspended → suspended via Radar's annotation pattern (drives Suspended chip)
+#   guestbook-suspended → suspended via KubeAtlas's annotation pattern (drives Suspended chip)
 ---
 # Healthy + auto-sync. Default scenario the Topology graph + sync/health
 # badges + Activity history all need a working example for.
@@ -19,7 +19,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: radar-demo
+  project: kubeatlas-demo
   source:
     repoURL: https://github.com/argoproj/argocd-example-apps
     targetRevision: HEAD
@@ -47,7 +47,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: radar-demo
+  project: kubeatlas-demo
   source:
     repoURL: https://github.com/argoproj/argocd-example-apps
     targetRevision: HEAD
@@ -73,7 +73,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: radar-demo
+  project: kubeatlas-demo
   source:
     repoURL: https://github.com/argoproj/argocd-example-apps
     targetRevision: HEAD
@@ -84,7 +84,7 @@ spec:
   # No syncPolicy.automated → manual sync only. Argo treats this as
   # syncMode "Manual" which is what describeArgoAutoSync renders.
 ---
-# Suspended app — uses the same annotation scheme Radar's
+# Suspended app — uses the same annotation scheme KubeAtlas's
 # SetArgoAutoSync writes. The frontend's "Enable auto-sync" affordance
 # should appear (suspended path) instead of the default Disable button.
 apiVersion: argoproj.io/v1alpha1
@@ -95,10 +95,10 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
   annotations:
-    radarhq.io/suspended-prune: "true"
-    radarhq.io/suspended-selfheal: "false"
+    kubeatlas.io/suspended-prune: "true"
+    kubeatlas.io/suspended-selfheal: "false"
 spec:
-  project: radar-demo
+  project: kubeatlas-demo
   source:
     repoURL: https://github.com/argoproj/argocd-example-apps
     targetRevision: HEAD

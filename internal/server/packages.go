@@ -91,7 +91,7 @@ type PackagesResponse struct {
 // are part of the /api/packages public response shape — wire-stable.
 // Code values are likewise stable (see ErrCode* below); add new codes,
 // never rename. Renaming any of these fields silently breaks the frontend
-// (radar-hub-web) and MCP fleet_list_packages clients.
+// (kubeatlas-hub-web) and MCP fleet_list_packages clients.
 type SourceError struct {
 	Source     packages.SourceCode `json:"source"`
 	StatusCode int                 `json:"statusCode,omitempty"`
@@ -102,7 +102,7 @@ type SourceError struct {
 	// log messages. Populated for known failure shapes; empty for
 	// generic errors (consumer falls back to category="failed").
 	// Producer: errorCodeForHelm in this file. Consumer: the frontend's
-	// categorizeSourceError in radar-hub-web.
+	// categorizeSourceError in kubeatlas-hub-web.
 	Code string `json:"code,omitempty"`
 	// AffectedNamespaces, when set, lists the namespaces this error
 	// applies to. Populated when the error is scoped (e.g., a
@@ -376,7 +376,7 @@ func computePackagesInternal(ctx context.Context, cache *k8s.ResourceCache, name
 
 	// Helm releases (source H). Inventory reads pass empty user/groups
 	// so the SA does the read — see deploy/helm/kubeatlas/templates/clusterrole.yaml
-	// for the secrets-rule rationale (radar:viewer → K8s `view` excludes
+	// for the secrets-rule rationale (kubeatlas:viewer → K8s `view` excludes
 	// secrets, so impersonating would 403 viewers on inventory metadata
 	// that isn't credential data). Sensitive Helm reads (GetValues,
 	// GetManifest) and all writes still impersonate.

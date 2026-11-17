@@ -143,7 +143,7 @@ func TestClusterScopedForNamespaceBudgetsAndAuthorizesBeforeCapping(t *testing.T
 	// The webhook watches started moments ago, inside the window: earlier
 	// changes are unknown, and the section says so.
 	if got.Error != "" || len(got.Changes) != 5 || len(got.NotListed) != 5 || !got.Truncated ||
-		!strings.Contains(got.Incomplete, "Radar has watched MutatingWebhookConfigurations only since") || strings.Contains(got.Incomplete, "recorded changes only since") {
+		!strings.Contains(got.Incomplete, "KubeAtlas has watched MutatingWebhookConfigurations only since") || strings.Contains(got.Incomplete, "recorded changes only since") {
 		t.Fatalf("section=%+v", got)
 	}
 
@@ -154,7 +154,7 @@ func TestClusterScopedForNamespaceBudgetsAndAuthorizesBeforeCapping(t *testing.T
 	for n := 0; n < 150; n++ {
 		timeline.RecordDrop("ConfigMap", "other", fmt.Sprintf("cm-%d", n), "no_diff", "update", k8s.ActiveClusterContext())
 	}
-	if failed := ClusterScopedForNamespace(context.Background(), "shop", shop, time.Hour, nil, false); !strings.Contains(failed.Incomplete, "Radar failed to record a ValidatingWebhookConfiguration change at") {
+	if failed := ClusterScopedForNamespace(context.Background(), "shop", shop, time.Hour, nil, false); !strings.Contains(failed.Incomplete, "KubeAtlas failed to record a ValidatingWebhookConfiguration change at") {
 		t.Fatalf("failed recording not disclosed: %+v", failed.Incomplete)
 	}
 	if got.Changes[0].Name != "policy-00" || got.Changes[0].Applicability != issuesapi.ClusterScopedApplies || !strings.Contains(got.NotListed[4], "MutatingWebhookConfiguration policy-09") {
@@ -175,14 +175,14 @@ func TestClusterScopedForNamespaceBudgetsAndAuthorizesBeforeCapping(t *testing.T
 		t.Fatalf("denied section=%+v", denied)
 	}
 
-	// A window longer than Radar has been watching is not a complete negative.
+	// A window longer than KubeAtlas has been watching is not a complete negative.
 	timeline.SetObservationStartForTest(now.Add(-10 * time.Minute))
 	fresh := ClusterScopedForNamespace(context.Background(), "shop", shop, time.Hour, nil, false)
-	if !strings.Contains(fresh.Incomplete, "Radar has recorded changes only since") {
+	if !strings.Contains(fresh.Incomplete, "KubeAtlas has recorded changes only since") {
 		t.Fatalf("observation gap not disclosed: %+v", fresh)
 	}
 
-	// An issues view drops notes that only say Radar started inside the
+	// An issues view drops notes that only say KubeAtlas started inside the
 	// window, but keeps them beside any other gap.
 	timeline.GetMetrics().Reset()
 	quiet := ClusterScopedForNamespace(context.Background(), "shop", shop, time.Hour, nil, true)
@@ -191,7 +191,7 @@ func TestClusterScopedForNamespaceBudgetsAndAuthorizesBeforeCapping(t *testing.T
 	}
 	timeline.RecordDrop("MutatingWebhookConfiguration", "", "lost", timeline.DropReasonStoreFailed, "update", k8s.ActiveClusterContext())
 	both := ClusterScopedForNamespace(context.Background(), "shop", shop, time.Hour, nil, true)
-	if !strings.Contains(both.Incomplete, "Radar has recorded changes only since") || !strings.Contains(both.Incomplete, "failed to record a MutatingWebhookConfiguration change") {
+	if !strings.Contains(both.Incomplete, "KubeAtlas has recorded changes only since") || !strings.Contains(both.Incomplete, "failed to record a MutatingWebhookConfiguration change") {
 		t.Fatalf("startup note dropped beside another gap: %+v", both.Incomplete)
 	}
 }
@@ -314,7 +314,7 @@ func TestClusterScopedForNamespaceDisclosesEvictedHistoryAndUncachedKinds(t *tes
 		t.Fatalf("watch: %v", err)
 	}
 	got := ClusterScopedForNamespace(context.Background(), "shop", NamespaceLabels{Known: true}, time.Hour, nil, false)
-	if !strings.Contains(got.Incomplete, "Radar has evicted older change history") {
+	if !strings.Contains(got.Incomplete, "KubeAtlas has evicted older change history") {
 		t.Fatalf("evicted history not disclosed: %+v", got)
 	}
 	// The oldest retained event here is a ConfigMap in another namespace; its
@@ -330,7 +330,7 @@ func TestClusterScopedForNamespaceDisclosesEvictedHistoryAndUncachedKinds(t *tes
 	// startup-only notes: history recorded since the start was still lost.
 	timeline.SetObservationStartForTest(now.Add(-10 * time.Minute))
 	quiet := ClusterScopedForNamespace(context.Background(), "shop", NamespaceLabels{Known: true}, time.Hour, nil, true)
-	if !strings.Contains(quiet.Incomplete, "Radar has evicted older change history") || !strings.Contains(quiet.Incomplete, "Radar has recorded changes only since") || !quiet.Informative() {
+	if !strings.Contains(quiet.Incomplete, "KubeAtlas has evicted older change history") || !strings.Contains(quiet.Incomplete, "KubeAtlas has recorded changes only since") || !quiet.Informative() {
 		t.Fatalf("eviction after a recent start hidden on the quiet view: %+v", quiet)
 	}
 }

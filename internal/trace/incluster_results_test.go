@@ -176,7 +176,7 @@ func TestApplyInClusterResults_NoFoldIsNoOp(t *testing.T) {
 		tr := entryBrokenTrace()
 		tr.NotTested = []RouteSkip{{
 			Route:       "internal.example.com:443",
-			Reason:      "couldn't reach an internal address from your machine - run radar in-cluster",
+			Reason:      "couldn't reach an internal address from your machine - run kubeatlas in-cluster",
 			ReasonClass: SkipClassVantage,
 		}}
 		return tr
@@ -259,10 +259,10 @@ func TestApplyInClusterResults_SiblingRouteNotVouched(t *testing.T) {
 	}
 }
 
-// ApplyInClusterResults must prune the SkipClassVantage "run radar
+// ApplyInClusterResults must prune the SkipClassVantage "run kubeatlas
 // in-cluster" NotTested rows for routes the live in-cluster pass just upgraded to a
 // real reach/verify. Otherwise the response reports the route verified while
-// advising "run radar in-cluster" for the SAME route, and coverage counts it as
+// advising "run kubeatlas in-cluster" for the SAME route, and coverage counts it as
 // Passed AND Skipped.
 func TestApplyInClusterResults_PrunesResolvedVantageSkip(t *testing.T) {
 	tr := &Trace{
@@ -276,7 +276,7 @@ func TestApplyInClusterResults_PrunesResolvedVantageSkip(t *testing.T) {
 		}},
 		NotTested: []RouteSkip{{
 			Route:       "api:80",
-			Reason:      "couldn't reach an internal address from your machine - run radar in-cluster",
+			Reason:      "couldn't reach an internal address from your machine - run kubeatlas in-cluster",
 			ReasonClass: SkipClassVantage,
 		}},
 	}
@@ -398,7 +398,7 @@ func TestApplyInClusterResults_KeepsUnresolvedVantageSkip(t *testing.T) {
 		},
 		NotTested: []RouteSkip{{
 			Route:       "other:80",
-			Reason:      "couldn't reach an internal address from your machine - run radar in-cluster",
+			Reason:      "couldn't reach an internal address from your machine - run kubeatlas in-cluster",
 			ReasonClass: SkipClassVantage,
 		}},
 	}
@@ -414,7 +414,7 @@ func TestApplyInClusterResults_KeepsUnresolvedVantageSkip(t *testing.T) {
 
 // The vantage skip rows are HOST-level (one row per probe target), so a partial
 // fold on a multi-path host must not prune the shared row: /web passing while
-// /admin stays untested leaves the "run radar in-cluster" advice as the truth
+// /admin stays untested leaves the "run kubeatlas in-cluster" advice as the truth
 // for /admin, and deleting it made the partial run read as complete.
 func TestApplyInClusterResults_PartialFoldKeepsSameHostVantageSkip(t *testing.T) {
 	tr := &Trace{
@@ -437,7 +437,7 @@ func TestApplyInClusterResults_PartialFoldKeepsSameHostVantageSkip(t *testing.T)
 		},
 		NotTested: []RouteSkip{{
 			Route:       "shop.example.com:443",
-			Reason:      "couldn't reach an internal address from your machine - run radar in-cluster",
+			Reason:      "couldn't reach an internal address from your machine - run kubeatlas in-cluster",
 			ReasonClass: SkipClassVantage,
 		}},
 	}

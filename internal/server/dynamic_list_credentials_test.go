@@ -65,14 +65,14 @@ func TestDynamicListKeepsWholeScopeCredentialRejection(t *testing.T) {
 		t.Fatal(err)
 	}
 	encoded, _ := json.Marshal(body)
-	// read-a's rows stand; the rest of the scope is unread because Radar's
+	// read-a's rows stand; the rest of the scope is unread because KubeAtlas's
 	// credentials were rejected, which is not collection narrowing.
 	if resp.StatusCode != http.StatusOK || len(body.Items) != 1 || body.Coverage == nil || body.Coverage.Status != resourceapi.CoveragePartial {
 		t.Fatalf("whole-scope credential rejection was lost: %s", encoded)
 	}
 	if !slices.ContainsFunc(body.Coverage.Gaps, func(g resourceapi.Gap) bool {
-		return g.Code == readreason.RadarCredentialsRejected && g.Namespaces != nil && g.Namespaces.Extent == resourceapi.ExtentUnknown
+		return g.Code == readreason.KubeAtlasCredentialsRejected && g.Namespaces != nil && g.Namespaces.Extent == resourceapi.ExtentUnknown
 	}) {
-		t.Fatalf("want a radar_credentials_rejected gap over the unknown remainder: %s", encoded)
+		t.Fatalf("want a kubeatlas_credentials_rejected gap over the unknown remainder: %s", encoded)
 	}
 }

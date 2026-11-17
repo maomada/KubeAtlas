@@ -62,18 +62,18 @@ func workloadMetricExpression(metric, scope, target string, identity *workloadId
 	}
 	podLabel, uidLabel := "k8s_pod_name", "k8s_pod_uid"
 	if !identity.beyla {
-		podLabel, uidLabel = "pod", "__radar_uid"
-		expression = `label_replace(` + expression + `,"__radar_uid","","",".*")`
+		podLabel, uidLabel = "pod", "__kubeatlas_uid"
+		expression = `label_replace(` + expression + `,"__kubeatlas_uid","","",".*")`
 		for _, driver := range podCgroupFormats {
 			prefix := strings.ReplaceAll(driver.prefix, "(", "(?:")
 			uid := `([a-f0-9]{8})` + driver.separator + `([a-f0-9]{4})` + driver.separator + `([a-f0-9]{4})` + driver.separator + `([a-f0-9]{4})` + driver.separator + `([a-f0-9]{12})`
-			expression = `label_replace(` + expression + `,"__radar_uid","$1-$2-$3-$4-$5","id",` + strconv.Quote(prefix+uid+driver.suffix) + `)`
+			expression = `label_replace(` + expression + `,"__kubeatlas_uid","$1-$2-$3-$4-$5","id",` + strconv.Quote(prefix+uid+driver.suffix) + `)`
 		}
 	}
-	expression = `label_join(` + expression + `,"__radar_pair","/","` + podLabel + `","` + uidLabel + `")`
+	expression = `label_join(` + expression + `,"__kubeatlas_pair","/","` + podLabel + `","` + uidLabel + `")`
 	// Clear a preexisting source label before using it as the match sentinel.
-	expression = `label_replace(` + expression + `,"__radar_keep","","",".*")`
-	return `(label_replace(` + expression + `,"__radar_keep","1","__radar_pair",` + strconv.Quote(identity.pairs) + `) and on(__radar_keep) label_replace(vector(1),"__radar_keep","1","",".*"))`
+	expression = `label_replace(` + expression + `,"__kubeatlas_keep","","",".*")`
+	return `(label_replace(` + expression + `,"__kubeatlas_keep","1","__kubeatlas_pair",` + strconv.Quote(identity.pairs) + `) and on(__kubeatlas_keep) label_replace(vector(1),"__kubeatlas_keep","1","",".*"))`
 }
 
 func buildWorkloadIdentityFilter(pods []WorkloadPodIdentity, source RequestSource) (*workloadIdentityFilter, error) {

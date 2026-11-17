@@ -23,7 +23,7 @@ describe('Deletion preview states', () => {
   it('states the namespace-wide deletion consequence without relying on topology', async () => {
     await act(async () => root.render(<ForceDeleteConfirmDialog {...base} resourceKind="Namespace" resourceName="demo" namespaceName="" cascadeRootResolved={false} />))
     expect(document.body.textContent).toContain('永久删除命名空间“demo”及其中的所有资源')
-    expect(document.body.textContent).not.toContain("不在 Radar 的拓扑中")
+    expect(document.body.textContent).not.toContain("不在 KubeAtlas 的拓扑中")
   })
   it('shows one advisory statement for a resolved preview', async () => {
     await act(async () => root.render(<ForceDeleteConfirmDialog {...base} cascadeRootResolved cascadeDependents={[{ kind: 'Pod', namespace: 'demo', name: 'web-pod' }]} />))
@@ -42,11 +42,11 @@ describe('Deletion preview states', () => {
   })
   it('distinguishes an observed unresolved root from a fetch failure', async () => {
     await act(async () => root.render(<ForceDeleteConfirmDialog {...base} cascadeRootResolved={false} />))
-    expect(document.body.textContent).toContain('Radar 无法验证 Kubernetes 还会删除哪些从属资源。')
+    expect(document.body.textContent).toContain('KubeAtlas 无法验证 Kubernetes 还会删除哪些从属资源。')
     await act(async () => root.render(<ForceDeleteConfirmDialog {...base} cascadeRootResolved={false} cascadePreviewFailed cascadeDependents={[{ kind: 'Pod', namespace: 'demo', name: 'stale' }]} />))
     expect(document.body.textContent).toContain('删除预览不可用')
     expect(document.body.textContent).toContain('还可能有其他资源被删除。')
-    expect(document.body.textContent).not.toContain('此资源不在 Radar 的拓扑中')
+    expect(document.body.textContent).not.toContain('此资源不在 KubeAtlas 的拓扑中')
     expect(document.body.textContent).not.toContain('Other resources may be affected')
     expect(document.body.textContent).not.toContain('尚未验证从属资源')
     expect(document.body.textContent).not.toContain('可能会影响')

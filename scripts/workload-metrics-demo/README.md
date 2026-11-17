@@ -17,7 +17,7 @@ bash scripts/workload-metrics-demo.sh history
 ```
 
 Requires Docker, kind, kubectl, Helm, Node.js, Python 3 and curl. The script uses
-its own kubeconfig and fixed `radar-workload-metrics-demo` kind context; it never
+its own kubeconfig and fixed `kubeatlas-workload-metrics-demo` kind context; it never
 changes the user's global current context. `up` is idempotent, but reapplies the
 baseline and restarts only demo workloads. No public Service is created.
 
@@ -29,8 +29,8 @@ baseline and restarts only demo workloads. No public Service is created.
 - Add kubelet/cAdvisor scrapes with original cgroup `id`, and KSM 2.19 workload
   inventory with original Pod `uid`. Every scrape gets `cluster=workload-demo`.
   This is an ordinary labeled single-cluster collector, not proof that unlabeled
-  remote stores are safe. No broad node-label copying or custom Radar metric names.
-- Istio 1.30.3 revision `radar-lab` watches only its control-plane/fixture namespaces.
+  remote stores are safe. No broad node-label copying or custom KubeAtlas metric names.
+- Istio 1.30.3 revision `kubeatlas-lab` watches only its control-plane/fixture namespaces.
   Its sidecars are scraped directly, without merged application metrics. No
   gateway, CNI, ambient or injection into the Beyla baseline namespace.
 - Persistent fixtures: two-port/two-replica Istio HTTP server, idle no-server
@@ -43,8 +43,8 @@ baseline and restarts only demo workloads. No public Service is created.
 Wait for at least two scrapes; rate/latency assertions need traffic in the queried
 window. `check` waits a bounded period for recent usable observations and returns
 nonzero when an expected panel is missing, attribution is absent or HTTP errors
-are never observed. It saves full Radar API evidence and cleans up its own Radar
-and port-forward processes. It never switches an existing Radar instance.
+are never observed. It saves full KubeAtlas API evidence and cleans up its own KubeAtlas
+and port-forward processes. It never switches an existing KubeAtlas instance.
 
 ## What this does and does not certify
 
@@ -70,7 +70,7 @@ in the real-Prometheus suite. Large live scale, HA deduplication, ingress/waypoi
 and native-only histograms remain separate work. Raw metric availability is not
 proof of rendered chart quality.
 
-For an existing cloud lab, connect a dedicated Radar instance to the desired
+For an existing cloud lab, connect a dedicated KubeAtlas instance to the desired
 cluster/backend using its normal kubeconfig and metrics credentials. Capture
 without mutating that cluster or persisting credentials:
 
@@ -80,12 +80,12 @@ node scripts/workload-metrics-demo/capture.mjs http://localhost:9347 Deployment/
 
 This saves workload responses and per-Pod Istio counter/count/bucket history,
 preserving labels. It requires the raw-query permission as well as workload read
-access. `KUBEATLAS_CAPTURE_AUTHORIZATION` optionally authenticates to Radar (not to
+access. `KUBEATLAS_CAPTURE_AUTHORIZATION` optionally authenticates to KubeAtlas (not to
 Prometheus); it is never written into evidence or sent through redirects.
 Connection evidence omits the backend address and error text, which may contain
 credentials. Raw metric labels and cluster names are retained: treat captures as
 private operational data, not automatically safe public attachments.
-For large raw captures start that dedicated Radar process with
+For large raw captures start that dedicated KubeAtlas process with
 `KUBEATLAS_MCP_PROM_MAX_RESPONSE_BYTES=8388608`. The capture fails on summarized
 responses instead of presenting them as complete. A capture records observations;
 unlike `check`, it does not certify expected chart values.
@@ -112,7 +112,7 @@ KUBEATLAS_TEST_PROMTOOL_IMAGE=prom/prometheus:v3.5.0 go test -C pkg ./prom -run 
 ```
 
 This does not replace live exporter compatibility testing or UI screenshots.
-Beyla direct exposition is live-verified, including Radar auto-discovery and a
+Beyla direct exposition is live-verified, including KubeAtlas auto-discovery and a
 two-replica HTTP workload with bounded traffic and scheduled 503 responses.
 The repeatable kind lab additionally passes all eight core panels for both Beyla
 3.25 and Istio 1.30.3, including positive request/error/latency samples from

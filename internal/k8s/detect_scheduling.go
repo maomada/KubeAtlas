@@ -1364,7 +1364,7 @@ func ParseAdmissionBlocker(message string) (AdmissionBlocker, bool) {
 //
 // The pod was scheduled (a node accepted it) but the kubelet can't bring it
 // up — stuck in ContainerCreating because the CNI can't hand out an IP or the
-// CSI can't attach/mount a volume. radar otherwise treats ContainerCreating
+// CSI can't attach/mount a volume. kubeatlas otherwise treats ContainerCreating
 // as benign, so these silently sit as "Pending". The best failure detail lives
 // in kubelet events (FailedCreatePodSandBox / FailedMount / FailedAttachVolume),
 // but events expire; when no recent event remains, a narrow fallback catches

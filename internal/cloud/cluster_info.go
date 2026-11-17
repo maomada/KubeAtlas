@@ -46,7 +46,7 @@ func DiscoverAPIServerURL(ctx context.Context, client kubernetes.Interface) stri
 
 // LookupAPIServerURL is DiscoverAPIServerURL, except that a read that failed
 // for another reason than the ConfigMap being absent or forbidden returns an
-// error instead of "". An enrolling Radar names the cluster from this URL, and
+// error instead of "". An enrolling KubeAtlas names the cluster from this URL, and
 // a name built while the API server was briefly unreachable would rename the
 // cluster in the Hub.
 func LookupAPIServerURL(ctx context.Context, client kubernetes.Interface) (string, error) {
@@ -121,7 +121,7 @@ func validClusterServer(raw string) string {
 // validateAPIServerURL is a defensive header-value check. We send what
 // DiscoverAPIServerURL returns, but a corrupted ConfigMap shouldn't be
 // able to inject newlines / null bytes / oversized garbage into the
-// X-Radar-API-Server-URL header. Returns the input on success, "" on
+// X-KubeAtlas-API-Server-URL header. Returns the input on success, "" on
 // rejection. Caller logs at info level when it rejects so operators have
 // a breadcrumb without spamming.
 func validateAPIServerURL(s string) (string, error) {

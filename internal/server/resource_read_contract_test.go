@@ -43,14 +43,14 @@ func TestEveryReadCodeHasAStatus(t *testing.T) {
 			t.Errorf("%s has no HTTP status", code)
 		}
 	}
-	// Radar's own collection is never the caller's 401/403, and a limit of
+	// KubeAtlas's own collection is never the caller's 401/403, and a limit of
 	// what it collects is never a retryable 503.
-	for _, code := range []readreason.Code{readreason.RadarForbidden, readreason.RadarCredentialsRejected, readreason.RadarNamespaceNotCollected} {
+	for _, code := range []readreason.Code{readreason.KubeAtlasForbidden, readreason.KubeAtlasCredentialsRejected, readreason.KubeAtlasNamespaceNotCollected} {
 		if status := readStatusFor(code); status == http.StatusUnauthorized || status == http.StatusForbidden {
 			t.Errorf("%s answers %d, which reads as the caller's denial", code, status)
 		}
 	}
-	if readStatusFor(readreason.RadarNamespaceNotCollected) == http.StatusServiceUnavailable {
+	if readStatusFor(readreason.KubeAtlasNamespaceNotCollected) == http.StatusServiceUnavailable {
 		t.Error("a collection limit must not invite a retry")
 	}
 }
@@ -245,11 +245,11 @@ func TestAIListRefusesWhatABareArrayCantQualify(t *testing.T) {
 	}
 	narrowed := get(t, "/api/ai/resources/services")
 	defer narrowed.Body.Close()
-	assertResourceReadError(t, narrowed, http.StatusConflict, "radar_namespace_not_collected")
+	assertResourceReadError(t, narrowed, http.StatusConflict, "kubeatlas_namespace_not_collected")
 	named := get(t, "/api/ai/resources/services?namespace=alpha")
 	defer named.Body.Close()
 	if named.StatusCode != http.StatusOK {
-		t.Fatalf("a namespace Radar collects is answered whole: %d", named.StatusCode)
+		t.Fatalf("a namespace KubeAtlas collects is answered whole: %d", named.StatusCode)
 	}
 }
 

@@ -19,7 +19,7 @@ func TestAuthenticatedTunnelHandlerMarksRequests(t *testing.T) {
 	}))
 	req := httptest.NewRequest(http.MethodGet, "/api/topology", nil)
 	// A lookalike header has no bearing on the private context marker.
-	req.Header.Set("X-Radar-Authenticated-Tunnel", "true")
+	req.Header.Set("X-KubeAtlas-Authenticated-Tunnel", "true")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)

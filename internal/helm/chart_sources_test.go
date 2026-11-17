@@ -38,8 +38,8 @@ func TestChartSourceLabelsRoundTripAndRejectCredentials(t *testing.T) {
 			if errs := validation.IsValidLabelValue(value); len(errs) > 0 {
 				t.Fatalf("invalid label %s=%q: %v", key, value, errs)
 			}
-			if len(key) < len("radarhq.io/") || key[:len("radarhq.io/")] != "radarhq.io/" {
-				t.Fatalf("label %q is outside radarhq.io namespace", key)
+			if len(key) < len("kubeatlas.io/") || key[:len("kubeatlas.io/")] != "kubeatlas.io/" {
+				t.Fatalf("label %q is outside kubeatlas.io namespace", key)
 			}
 		}
 		got, ok := chartSourceFromRelease(&release.Release{Labels: labels})

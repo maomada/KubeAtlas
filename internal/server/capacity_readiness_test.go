@@ -113,7 +113,7 @@ func TestCapacityReadsLoadedNamespacesWhileAnotherIsStuck(t *testing.T) {
 	}
 }
 
-// On a loaded namespace-scoped cache, Capacity counts the namespaces Radar
+// On a loaded namespace-scoped cache, Capacity counts the namespaces KubeAtlas
 // collects and marks what it didn't read.
 func TestCapacityLoadedNamespaceScopedCache(t *testing.T) {
 	client := fake.NewClientset(

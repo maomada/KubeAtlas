@@ -14,7 +14,7 @@ import (
 
 // defaultCompressLevel is the gzip level used when KUBEATLAS_COMPRESS_LEVEL is unset.
 //
-// Level 1 (BestSpeed) is deliberate: on large clusters Radar's informer +
+// Level 1 (BestSpeed) is deliberate: on large clusters KubeAtlas's informer +
 // topology processing already runs CPU-hot, and that's exactly where response
 // bodies are largest, so peak compression cost coincides with peak baseline
 // load. gzip-1 on k8s JSON still yields ~90%+ size reduction at the highest
@@ -41,7 +41,7 @@ func resolveCompressLevel(raw string) int {
 // compression is disabled (KUBEATLAS_COMPRESS_LEVEL=0).
 //
 // k8s JSON (topology, resource lists, RBAC, audit) compresses 5-10x and today
-// travels raw over the network — costly over the Radar Cloud tunnel's high-RTT
+// travels raw over the network — costly over the KubeAtlas Cloud tunnel's high-RTT
 // hop. Compressing at the source means the bytes are small across both the
 // tunnel and the browser hop, with the hub passing them through untouched and
 // the browser decompressing transparently.

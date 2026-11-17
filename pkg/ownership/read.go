@@ -21,7 +21,7 @@ const (
 	// Absent: the store serving the object's kind and namespace had loaded in
 	// full and does not hold it.
 	Absent
-	// Excluded: the kind is outside ownership. Radar keeps none of an Event's
+	// Excluded: the kind is outside ownership. KubeAtlas keeps none of an Event's
 	// owner references, so it can't say what owns one.
 	Excluded
 )
@@ -82,9 +82,9 @@ func Observe(ref resourceid.Ref, m metav1.Object) Observation {
 }
 
 // Gap is what a read could not establish: Kind in Namespace, or cluster-wide
-// for a cluster-scoped kind, and why. Reasons describe Radar's caches; a host
+// for a cluster-scoped kind, and why. Reasons describe KubeAtlas's caches; a host
 // refines them with what only it knows, such as why its access probe left a
-// typed kind uncollected or that a namespace is outside Radar's
+// typed kind uncollected or that a namespace is outside KubeAtlas's
 // --namespace-scope.
 type Gap struct {
 	Kind      resourceid.GroupKind

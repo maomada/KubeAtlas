@@ -43,7 +43,7 @@ type Filters struct {
 	CanReadRelated func(Ref) bool
 	// CanReadSubject authorizes a namespaced row's own resource the way the
 	// resource drawer does: namespace access, plus a per-kind check for the
-	// kinds Radar authorizes per kind (Secrets). It runs on the flat rows
+	// kinds KubeAtlas authorizes per kind (Secrets). It runs on the flat rows
 	// before grouping, so a denied row never becomes another issue's member,
 	// fan-out count or diagnostic link. Cluster-scoped rows are
 	// CanReadClusterScoped's. Nil preserves internal/no-auth composition.

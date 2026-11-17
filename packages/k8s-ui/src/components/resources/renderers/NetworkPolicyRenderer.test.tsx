@@ -27,8 +27,8 @@ describe('NetworkPolicyRenderer', () => {
       policyTypes: ['Ingress'],
       ingress: [{
         from: [{
-          podSelector: { matchLabels: { app: 'radar' } },
-          namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'radar' } },
+          podSelector: { matchLabels: { app: 'kubeatlas' } },
+          namespaceSelector: { matchLabels: { 'kubernetes.io/metadata.name': 'kubeatlas' } },
         }],
       }],
     })

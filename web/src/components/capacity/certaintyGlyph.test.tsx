@@ -178,7 +178,7 @@ describe("DeniedCapacityState", () => {
     expect(html).toContain("Capacity access denied");
     expect(html).toContain("Pod drawer and Issues");
     expect(html).toContain("Permissions to request");
-    expect(html).toContain("radar-capacity-viewer");
+    expect(html).toContain("kubeatlas-capacity-viewer");
     expect(html).toContain("nodepools");
   });
 });

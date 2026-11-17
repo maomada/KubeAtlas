@@ -7,7 +7,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/investigation"
 )
 
-// applyMutationTracker derives mutation truth from Radar write-tool results.
+// applyMutationTracker derives mutation truth from KubeAtlas write-tool results.
 // Agent prose and process exit are deliberately excluded: a zero exit cannot
 // turn a failed/missing tool result into a confirmed Kubernetes mutation.
 //
@@ -168,7 +168,7 @@ func inputDryRun(summary string) bool {
 func (t *applyMutationTracker) outcome(profile ExecutionProfile) ApplyMutationOutcome {
 	if profile == ExecutionProfileFullLocal {
 		// Full-local agents may use user-configured MCP servers whose bare tool
-		// names collide with Radar's write tools. Until the write transport carries
+		// names collide with KubeAtlas's write tools. Until the write transport carries
 		// the same exact-payload provenance as read-only investigations, no observed
 		// full-local call can authoritatively confirm the mutation. Verification is
 		// still scheduled because an unobserved write may have landed.

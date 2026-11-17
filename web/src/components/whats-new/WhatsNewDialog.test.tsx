@@ -170,11 +170,11 @@ describe('WhatsNew', () => {
 
   it('keeps the in-cluster record in the browser, never on the server', async () => {
     serverState = { currentVersion: 'v1.15.2', storage: 'browser' }
-    localStorage.setItem('radar-whats-new-seen', 'v1.14.1')
+    localStorage.setItem('kubeatlas-whats-new-seen', 'v1.14.1')
     await render('/')
     expect(dialog()).not.toBeNull()
     await clickGotIt()
-    expect(localStorage.getItem('radar-whats-new-seen')).toBe('v1.15.2')
+    expect(localStorage.getItem('kubeatlas-whats-new-seen')).toBe('v1.15.2')
     expect(seenPosts).toEqual([])
   })
 
@@ -205,10 +205,10 @@ describe('WhatsNew', () => {
 
   it('clears the dot when another tab acknowledges the notes', async () => {
     serverState = { currentVersion: 'v1.15.2', storage: 'browser' }
-    localStorage.setItem('radar-whats-new-seen', 'v1.14.1')
+    localStorage.setItem('kubeatlas-whats-new-seen', 'v1.14.1')
     await render('/resources/pods')
     expect(status.current.unread).toBe(true)
-    localStorage.setItem('radar-whats-new-seen', 'v1.15.2')
+    localStorage.setItem('kubeatlas-whats-new-seen', 'v1.15.2')
     await act(async () => { window.dispatchEvent(new Event('storage')) })
     expect(status.current.unread).toBe(false)
   })
@@ -321,7 +321,7 @@ describe('WhatsNew', () => {
 
   it('does not name a seen record that is not a version', async () => {
     serverState = { currentVersion: 'v1.15.2', storage: 'browser' }
-    localStorage.setItem('radar-whats-new-seen', 'vdev')
+    localStorage.setItem('kubeatlas-whats-new-seen', 'vdev')
     await render('/')
     expect(dialog()?.textContent).toContain("What's new in KubeAtlas v1.15")
     expect(dialog()?.textContent).not.toContain('vdev')

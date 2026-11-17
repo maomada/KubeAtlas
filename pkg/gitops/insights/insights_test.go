@@ -1044,7 +1044,7 @@ func TestBuildIssues_DegradedAppFallsBackToLoudestResourceEvent(t *testing.T) {
 }
 
 // TestBuildIssues_DegradedAppLeadIsGatedAndDoesNotExplain: the live-state
-// tier only runs for an app deploying to this cluster (Radar's engine and
+// tier only runs for an app deploying to this cluster (KubeAtlas's engine and
 // events describe local objects), still runs alongside an informational
 // Running row, and an events lead leaves the degraded-resources summary
 // visible because it is a pointer, not an explanation.
@@ -1382,7 +1382,7 @@ func TestBuildSummary_TerminatingFields(t *testing.T) {
 // TestBuildSummary_IgnoredDifferences pins the Argo comparison-coverage
 // disclosure: RuleCount counts every spec.ignoreDifferences entry,
 // UnsupportedRuleCount counts those using jqPathExpressions OR
-// managedFieldsManagers (Radar's drift filter applies neither — the drift
+// managedFieldsManagers (KubeAtlas's drift filter applies neither — the drift
 // panel may surface fields Argo's UI suppresses), and Kinds is the sorted
 // unique Group/Kind targets with a group-wildcard rule (kind omitted)
 // rendered as "group/*".
@@ -1401,7 +1401,7 @@ func TestBuildSummary_IgnoredDifferences(t *testing.T) {
 				"kind":              "ConfigMap",
 				"jqPathExpressions": []any{".data.checksum"},
 			},
-			// managedFieldsManagers rule — the other exclusion shape Radar's
+			// managedFieldsManagers rule — the other exclusion shape KubeAtlas's
 			// drift filter doesn't apply.
 			map[string]any{
 				"group":                 "apps",
@@ -1572,26 +1572,26 @@ func TestArgoResourceChanges_TakesTreeHealthWhenCRHasNone(t *testing.T) {
 	root := argoApp(map[string]any{
 		"resourceHealthSource": "appTree",
 		"resources": []any{
-			map[string]any{"group": "apps", "kind": "Deployment", "namespace": "staging", "name": "radar-hub", "status": "Synced"},
-			map[string]any{"kind": "Service", "namespace": "staging", "name": "radar-hub", "status": "Synced", "health": map[string]any{"status": "Progressing", "message": "argo says so"}},
+			map[string]any{"group": "apps", "kind": "Deployment", "namespace": "staging", "name": "kubeatlas-hub", "status": "Synced"},
+			map[string]any{"kind": "Service", "namespace": "staging", "name": "kubeatlas-hub", "status": "Synced", "health": map[string]any{"status": "Progressing", "message": "argo says so"}},
 			map[string]any{"kind": "ConfigMap", "namespace": "staging", "name": "vars", "status": "Synced"},
 			map[string]any{"kind": "SealedSecret", "namespace": "staging", "name": "x", "status": "Synced"},
 		},
 	})
 	tree := &gitopstree.ResourceTree{HealthMode: gitopstree.HealthModeAppTree, Nodes: []gitopstree.Node{
-		{Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "staging", Name: "radar-hub"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceRadar, HealthReason: "CrashLoopBackOff", HealthMessage: "back-off restarting failed container", HealthSeverity: "critical"},
-		{Ref: gitopstree.ResourceRef{Kind: "Service", Namespace: "staging", Name: "radar-hub"}, Health: "Healthy", HealthSource: gitopstree.HealthSourceRadar},
+		{Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "staging", Name: "kubeatlas-hub"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceKubeAtlas, HealthReason: "CrashLoopBackOff", HealthMessage: "back-off restarting failed container", HealthSeverity: "critical"},
+		{Ref: gitopstree.ResourceRef{Kind: "Service", Namespace: "staging", Name: "kubeatlas-hub"}, Health: "Healthy", HealthSource: gitopstree.HealthSourceKubeAtlas},
 		{Ref: gitopstree.ResourceRef{Kind: "ConfigMap", Namespace: "staging", Name: "vars"}, Health: ""},
 	}}
 	byName := map[string]Change{}
 	for _, c := range argoResourceChanges(root, tree, nil) {
 		byName[c.Ref.Name+"/"+c.Ref.Kind] = c
 	}
-	dep := byName["radar-hub/Deployment"]
-	if dep.Health != "Degraded" || dep.HealthSource != "radar" || dep.HealthReason != "CrashLoopBackOff" || dep.Message != "back-off restarting failed container" || dep.Category != CategoryDegraded {
-		t.Errorf("Deployment should take the tree's Radar-derived health with provenance, got %+v", dep)
+	dep := byName["kubeatlas-hub/Deployment"]
+	if dep.Health != "Degraded" || dep.HealthSource != "kubeatlas" || dep.HealthReason != "CrashLoopBackOff" || dep.Message != "back-off restarting failed container" || dep.Category != CategoryDegraded {
+		t.Errorf("Deployment should take the tree's KubeAtlas-derived health with provenance, got %+v", dep)
 	}
-	svc := byName["radar-hub/Service"]
+	svc := byName["kubeatlas-hub/Service"]
 	if svc.Health != "Progressing" || svc.HealthSource != "controller" || svc.Message != "argo says so" {
 		t.Errorf("Service has controller health in the CR; it must win over the tree, got %+v", svc)
 	}
@@ -1622,12 +1622,12 @@ func TestArgoResourceChanges_APIOverlayBeatsInlineValue(t *testing.T) {
 	}
 }
 
-// TestBuildIssues_RadarDerivedHealthYieldsEngineIssue pins the Argo 3
+// TestBuildIssues_KubeAtlasDerivedHealthYieldsEngineIssue pins the Argo 3
 // shape: no per-resource health in the CR, the tree carries the issues
 // engine's finding (overlaid by the host), and the resulting Issue is the
-// engine's finding — its reason, message and severity, with source=radar —
+// engine's finding — its reason, message and severity, with source=kubeatlas —
 // not an Argo-vocabulary "is Degraded" row.
-func TestBuildIssues_RadarDerivedHealthYieldsEngineIssue(t *testing.T) {
+func TestBuildIssues_KubeAtlasDerivedHealthYieldsEngineIssue(t *testing.T) {
 	root := argoApp(map[string]any{
 		"health":               map[string]any{"status": "Degraded"},
 		"resourceHealthSource": "appTree",
@@ -1637,20 +1637,20 @@ func TestBuildIssues_RadarDerivedHealthYieldsEngineIssue(t *testing.T) {
 		},
 	})
 	tree := &gitopstree.ResourceTree{HealthMode: gitopstree.HealthModeAppTree, Nodes: []gitopstree.Node{
-		{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "external-secrets.io", Kind: "ClusterSecretStore", Name: "platform"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceRadar, HealthReason: "Ready: InvalidProviderConfig", HealthMessage: "no route to host", HealthSeverity: "warning"},
-		{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "platform", Name: "web"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceRadar, HealthReason: "CrashLoopBackOff", HealthMessage: "back-off restarting", HealthSeverity: "critical"},
+		{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "external-secrets.io", Kind: "ClusterSecretStore", Name: "platform"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceKubeAtlas, HealthReason: "Ready: InvalidProviderConfig", HealthMessage: "no route to host", HealthSeverity: "warning"},
+		{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "platform", Name: "web"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceKubeAtlas, HealthReason: "CrashLoopBackOff", HealthMessage: "back-off restarting", HealthSeverity: "critical"},
 	}}
 	tree.Summary = gitopstree.Summarize(tree.Nodes)
 	issues := buildIssues(root, tree, "argocd", &fakeResolver{})
 	if len(issues) != 2 {
-		t.Fatalf("expected one Issue per Radar-derived Degraded resource, got %d: %+v", len(issues), issues)
+		t.Fatalf("expected one Issue per KubeAtlas-derived Degraded resource, got %d: %+v", len(issues), issues)
 	}
 	// Severity-sorted: the critical crashloop first.
-	if issues[0].Reason != "CrashLoopBackOff" || issues[0].Severity != SeverityCritical || issues[0].Source != "radar" {
-		t.Errorf("crashloop Issue = %+v, want engine reason, critical, source=radar", issues[0])
+	if issues[0].Reason != "CrashLoopBackOff" || issues[0].Severity != SeverityCritical || issues[0].Source != "kubeatlas" {
+		t.Errorf("crashloop Issue = %+v, want engine reason, critical, source=kubeatlas", issues[0])
 	}
-	if issues[1].Reason != "Ready: InvalidProviderConfig" || issues[1].Severity != SeverityWarning || issues[1].Source != "radar" {
-		t.Errorf("condition Issue = %+v, want engine reason, WARNING (engine severity, not promoted), source=radar", issues[1])
+	if issues[1].Reason != "Ready: InvalidProviderConfig" || issues[1].Severity != SeverityWarning || issues[1].Source != "kubeatlas" {
+		t.Errorf("condition Issue = %+v, want engine reason, WARNING (engine severity, not promoted), source=kubeatlas", issues[1])
 	}
 	if !strings.Contains(issues[1].Message, "no route to host") {
 		t.Errorf("Message = %q, want the engine message", issues[1].Message)
@@ -1672,7 +1672,7 @@ func TestBuildIssues_RadarDerivedHealthYieldsEngineIssue(t *testing.T) {
 	}
 }
 
-// TestBuildIssues_TopologyReadIsWarningAndSilentOnHealthyApp: Radar's own
+// TestBuildIssues_TopologyReadIsWarningAndSilentOnHealthyApp: KubeAtlas's own
 // topology read (no engine reason) is an observation, not a verdict — a
 // warning-tier Issue on a Degraded app, and no Issue at all when Argo calls
 // the app Healthy.
@@ -1687,12 +1687,12 @@ func TestBuildIssues_TopologyReadIsWarningAndSilentOnHealthyApp(t *testing.T) {
 		})
 	}
 	tree := &gitopstree.ResourceTree{HealthMode: gitopstree.HealthModeAppTree, Nodes: []gitopstree.Node{
-		{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "prod", Name: "web"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceRadar},
+		{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "prod", Name: "web"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceKubeAtlas},
 	}}
 	tree.Summary = gitopstree.Summarize(tree.Nodes)
 	degraded := buildIssues(mk("Degraded"), tree, "argocd", &fakeResolver{})
-	if len(degraded) != 1 || degraded[0].Severity != SeverityWarning || degraded[0].Source != "radar" {
-		t.Errorf("topology read on a Degraded app = %+v, want one warning-tier radar Issue", degraded)
+	if len(degraded) != 1 || degraded[0].Severity != SeverityWarning || degraded[0].Source != "kubeatlas" {
+		t.Errorf("topology read on a Degraded app = %+v, want one warning-tier kubeatlas Issue", degraded)
 	}
 	for _, iss := range buildIssues(mk("Healthy"), tree, "argocd", &fakeResolver{}) {
 		if iss.Scope == ScopeResource || iss.Reason == "DegradedResources" {
@@ -1701,25 +1701,25 @@ func TestBuildIssues_TopologyReadIsWarningAndSilentOnHealthyApp(t *testing.T) {
 	}
 }
 
-// TestBuildIssues_EventsLeadYieldsToRadarFinding: once the tree carries a
-// Radar-sourced finding for a resource (even a warning-tier one), the
+// TestBuildIssues_EventsLeadYieldsToKubeAtlasFinding: once the tree carries a
+// KubeAtlas-sourced finding for a resource (even a warning-tier one), the
 // Warning-event lead stays out — it would only restate the same app.
-func TestBuildIssues_EventsLeadYieldsToRadarFinding(t *testing.T) {
+func TestBuildIssues_EventsLeadYieldsToKubeAtlasFinding(t *testing.T) {
 	root := argoApp(map[string]any{
 		"health":               map[string]any{"status": "Degraded"},
 		"resourceHealthSource": "appTree",
 		"resources": []any{
-			map[string]any{"group": "radar.demo", "kind": "Gadget", "namespace": "demo", "name": "g", "status": "Synced"},
+			map[string]any{"group": "kubeatlas.demo", "kind": "Gadget", "namespace": "demo", "name": "g", "status": "Synced"},
 		},
 	})
 	tree := &gitopstree.ResourceTree{HealthMode: gitopstree.HealthModeAppTree, Nodes: []gitopstree.Node{
-		{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "radar.demo", Kind: "Gadget", Namespace: "demo", Name: "g"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceRadar, HealthReason: "Ready: NotConfigured", HealthMessage: "no config", HealthSeverity: "warning"},
+		{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "kubeatlas.demo", Kind: "Gadget", Namespace: "demo", Name: "g"}, Health: "Degraded", HealthSource: gitopstree.HealthSourceKubeAtlas, HealthReason: "Ready: NotConfigured", HealthMessage: "no config", HealthSeverity: "warning"},
 	}}
 	tree.Summary = gitopstree.Summarize(tree.Nodes)
 	r := &fakeResolver{events: map[string][]EventSummary{"g": {{Type: "Warning", Reason: "Bad", Message: "boom", Count: 9}}}}
 	for _, iss := range buildIssues(root, tree, "argocd", r) {
 		if iss.Reason == "PossibleCause" {
-			t.Errorf("events lead must not stack on a Radar finding, got %+v", iss)
+			t.Errorf("events lead must not stack on a KubeAtlas finding, got %+v", iss)
 		}
 	}
 }

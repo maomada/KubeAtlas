@@ -15,11 +15,11 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/topology"
 )
 
-// nodeFromTopology builds a node for a managed resource Radar's topology
+// nodeFromTopology builds a node for a managed resource KubeAtlas's topology
 // knows. A controller-supplied health wins and sets the node's tone; without
-// one, Radar's own topology status fills in as HealthSourceRadar. Either way
+// one, KubeAtlas's own topology status fills in as HealthSourceKubeAtlas. Either way
 // TopologyStatus is the tone of the resolved health, so the graph never
-// paints a controller-Degraded node green because Radar's live read
+// paints a controller-Degraded node green because KubeAtlas's live read
 // disagrees.
 func nodeFromTopology(n topology.Node, ref ResourceRef, role NodeRole, tool Tool, sync, health string, source HealthSource) Node {
 	data := map[string]any{}
@@ -31,7 +31,7 @@ func nodeFromTopology(n topology.Node, ref ResourceRef, role NodeRole, tool Tool
 	info := infoFromTopology(n)
 	if health == "" {
 		health = healthFromTopology(n.Status)
-		source = HealthSourceRadar
+		source = HealthSourceKubeAtlas
 	}
 	status := string(n.Status)
 	if health != "" {

@@ -15,7 +15,7 @@ export function SummaryShell({ children }: { children: ReactNode }) {
   return <div className="px-4 py-4">{children}</div>
 }
 
-/** The object's own Radar issues, most severe first. */
+/** The object's own KubeAtlas issues, most severe first. */
 export function ObjectProblems({
   issues,
   subject,

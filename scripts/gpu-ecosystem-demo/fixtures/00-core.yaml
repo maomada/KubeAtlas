@@ -3,7 +3,7 @@ kind: Namespace
 metadata:
   name: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 ---
 apiVersion: v1
 kind: PodTemplate
@@ -34,7 +34,7 @@ metadata:
   name: collision-demo
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   suspend: true
   template:
@@ -53,7 +53,7 @@ metadata:
   name: gpu-demand
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   restartPolicy: Never
   containers:

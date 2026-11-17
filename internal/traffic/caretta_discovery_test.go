@@ -322,7 +322,7 @@ func TestGetFlowsStaysSilentOnVerifiedBackend(t *testing.T) {
 	}
 }
 
-// Reached-but-wrong and never-reached are different problems: one means Radar is
+// Reached-but-wrong and never-reached are different problems: one means KubeAtlas is
 // reading the wrong database, the other means it read nothing at all. Collapsing
 // them sends the user to fix the wrong thing.
 func TestNoBackendWarningDistinguishesRejectionReasons(t *testing.T) {

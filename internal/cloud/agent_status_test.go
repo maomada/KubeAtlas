@@ -62,12 +62,12 @@ func TestAgentStatusClientRejectsUnauthorizedWithoutResponseBodyLeak(t *testing.
 }
 
 func TestAgentStatusClientGetsCanonicalFrontendURLWithoutClusterToken(t *testing.T) {
-	c, err := NewAgentStatusClient("wss://api.radar.acme.example/agent")
+	c, err := NewAgentStatusClient("wss://api.kubeatlas.acme.example/agent")
 	if err != nil {
 		t.Fatalf("NewAgentStatusClient: %v", err)
 	}
 	c.HTTP = &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		if r.URL.String() != "https://api.radar.acme.example/api/config" {
+		if r.URL.String() != "https://api.kubeatlas.acme.example/api/config" {
 			t.Fatalf("URL = %q", r.URL.String())
 		}
 		if got := r.Header.Get("Authorization"); got != "" {
@@ -77,7 +77,7 @@ func TestAgentStatusClientGetsCanonicalFrontendURLWithoutClusterToken(t *testing
 			StatusCode: http.StatusOK,
 			Status:     "200 OK",
 			Header:     make(http.Header),
-			Body:       io.NopCloser(strings.NewReader(`{"frontend_url":"https://radar.acme.example/"}`)),
+			Body:       io.NopCloser(strings.NewReader(`{"frontend_url":"https://kubeatlas.acme.example/"}`)),
 		}, nil
 	})}
 
@@ -85,7 +85,7 @@ func TestAgentStatusClientGetsCanonicalFrontendURLWithoutClusterToken(t *testing
 	if err != nil {
 		t.Fatalf("GetFrontendURL: %v", err)
 	}
-	if got != "https://radar.acme.example" {
+	if got != "https://kubeatlas.acme.example" {
 		t.Fatalf("frontend URL = %q", got)
 	}
 }
@@ -142,7 +142,7 @@ func TestAgentStatusClientHandlesOlderHubConfigShapes(t *testing.T) {
 }
 
 func TestAgentStatusClientRecognizesMissingStatusEndpoint(t *testing.T) {
-	c, err := NewAgentStatusClient("wss://acme.radarhq.io/agent")
+	c, err := NewAgentStatusClient("wss://acme.kubeatlas.io/agent")
 	if err != nil {
 		t.Fatalf("NewAgentStatusClient: %v", err)
 	}

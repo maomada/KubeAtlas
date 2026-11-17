@@ -42,7 +42,7 @@ const (
 var cnpgHistoryMemoTTL = 15 * time.Second
 
 // CNPGClusterHistoryResponse is GET /api/cnpg/clusters/{ns}/{name}/history.
-// Source "none" means Radar has no Prometheus; the UI then keeps its own
+// Source "none" means KubeAtlas has no Prometheus; the UI then keeps its own
 // in-browser samples. State describes the query as a whole; each chart
 // carries its own state when the whole succeeded.
 type CNPGClusterHistoryResponse struct {
@@ -107,25 +107,25 @@ func historyMemoizable(ctx context.Context, charts []prometheuspkg.CNPGHistoryCh
 	return true
 }
 
-// cnpgNoPrometheusReason words why Radar has no Prometheus to read from the
+// cnpgNoPrometheusReason words why KubeAtlas has no Prometheus to read from the
 // connection error msg ("" when there is no connection at all). Discovery's
 // own failures are complete diagnoses, so they are not prefixed again.
 func cnpgNoPrometheusReason(msg string) string {
 	switch {
 	case msg == "":
-		return "Radar is not connected to Prometheus"
-	case strings.HasPrefix(msg, "Radar "), strings.HasPrefix(msg, "No working Prometheus endpoint found"):
+		return "KubeAtlas is not connected to Prometheus"
+	case strings.HasPrefix(msg, "KubeAtlas "), strings.HasPrefix(msg, "No working Prometheus endpoint found"):
 		return truncateCNPGRuntimeError(msg)
 	}
-	return "Radar is not connected to Prometheus: " + truncateCNPGRuntimeError(msg)
+	return "KubeAtlas is not connected to Prometheus: " + truncateCNPGRuntimeError(msg)
 }
 
 func historyScopeFailure(err error) (string, string) {
 	switch {
 	case errors.Is(err, prometheuspkg.ErrScopeAmbiguous):
-		return cnpgHistoryStateAmbiguous, "This Prometheus holds series for these Pod names under more than one cluster identity, so history could mix clusters. An operator can configure the cluster identity labels Radar should require."
+		return cnpgHistoryStateAmbiguous, "This Prometheus holds series for these Pod names under more than one cluster identity, so history could mix clusters. An operator can configure the cluster identity labels KubeAtlas should require."
 	case errors.Is(err, prometheuspkg.ErrScopeMismatch):
-		return cnpgHistoryStateScopeMismatch, "The cluster identity labels proven for this cluster do not appear on the CNPG exporter series, so Radar cannot tell this cluster's history from another's."
+		return cnpgHistoryStateScopeMismatch, "The cluster identity labels proven for this cluster do not appear on the CNPG exporter series, so KubeAtlas cannot tell this cluster's history from another's."
 	}
 	return historyStateError, "Prometheus query failed: " + truncateCNPGRuntimeError(err.Error())
 }
@@ -134,9 +134,9 @@ func historyScopeFailure(err error) (string, string) {
 func usageScopeFailure(err error) (string, string) {
 	switch {
 	case errors.Is(err, prometheuspkg.ErrScopeAmbiguous):
-		return cnpgHistoryStateAmbiguous, "This Prometheus holds volume stats for these claim names under more than one cluster identity, so a value could be another cluster's. An operator can configure the cluster identity labels Radar should require."
+		return cnpgHistoryStateAmbiguous, "This Prometheus holds volume stats for these claim names under more than one cluster identity, so a value could be another cluster's. An operator can configure the cluster identity labels KubeAtlas should require."
 	case errors.Is(err, prometheuspkg.ErrScopeMismatch):
-		return cnpgHistoryStateScopeMismatch, "The cluster identity labels proven for this cluster do not appear on these claims' volume stats, so Radar cannot tell this cluster's volumes from another's."
+		return cnpgHistoryStateScopeMismatch, "The cluster identity labels proven for this cluster do not appear on these claims' volume stats, so KubeAtlas cannot tell this cluster's volumes from another's."
 	}
 	return historyStateError, "Prometheus query failed: " + truncateCNPGRuntimeError(err.Error())
 }

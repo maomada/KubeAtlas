@@ -492,7 +492,7 @@ func summarizeGenericCRD(obj *unstructured.Unstructured, pause resourcecontext.C
 	// Gateway API policies (GEP-713) report per-ancestor, at
 	// status.ancestors[].conditions, so the top-level lookups below find
 	// nothing and the status comes back empty. Matched on the shape rather
-	// than on a list of kinds: every implementation shares it, and Radar
+	// than on a list of kinds: every implementation shares it, and KubeAtlas
 	// should read one it has never heard of.
 	if status, ok := gatewayPolicyStatus(obj); ok {
 		s.Status = status

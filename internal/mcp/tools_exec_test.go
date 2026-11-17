@@ -162,7 +162,7 @@ func TestExecPodTimeoutReturnsPartialOutput(t *testing.T) {
 		t.Fatal("timeout not enforced")
 	}
 	got := decodeToolResult(t, res)
-	if got["timedOut"] != true || got["stdout"] != "partial" || got["exitCode"] != nil || !strings.Contains(got["message"].(string), "Radar stopped waiting") {
+	if got["timedOut"] != true || got["stdout"] != "partial" || got["exitCode"] != nil || !strings.Contains(got["message"].(string), "KubeAtlas stopped waiting") {
 		t.Fatalf("timeout result: %+v", got)
 	}
 }

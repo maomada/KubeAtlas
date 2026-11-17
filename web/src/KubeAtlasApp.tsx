@@ -2,7 +2,7 @@
 //
 // This is the entrypoint the `@maomada/kubeatlas-app` library publishes.
 // It's also rendered by KubeAtlas's own binary via web/src/main.tsx — so
-// KubeAtlas standalone and KubeAtlas-embedded-in-another-app (e.g., Radar Hub)
+// KubeAtlas standalone and KubeAtlas-embedded-in-another-app (e.g., KubeAtlas Hub)
 // share exactly one code path.
 //
 // Config model:
@@ -33,17 +33,17 @@ import {
   showApiSuccess,
 } from "./components/ui/Toast";
 import { setApiBase, setBasename } from "./api/config";
-import { shouldRetryRadarQuery } from "./api/radarFeatures";
+import { shouldRetryKubeAtlasQuery } from "./api/kubeatlasFeatures";
 import { isShownInline } from "./api/httpErrors";
 import { NavCustomizationProvider } from "./context/NavCustomization";
 import { FilterLocationBridge } from "./filter/FilterLocationBridge";
 import type { NavCustomization } from "./context/NavCustomization";
-import { RadarUpgradeHostProvider } from "./context/RadarUpgradeHost";
+import { KubeAtlasUpgradeHostProvider } from "./context/KubeAtlasUpgradeHost";
 import { YamlDraftPolicyProvider } from "@maomada/k8s-ui";
 import type {
-  RadarUpgradeHost,
-  RadarUpgradeRequest,
-} from "./context/RadarUpgradeHost";
+  KubeAtlasUpgradeHost,
+  KubeAtlasUpgradeRequest,
+} from "./context/KubeAtlasUpgradeHost";
 import type { ClusterLoadState } from "./types/clusterLoadState";
 import { TimelineSourceProvider } from "./context/TimelineSource";
 import type { TimelineSourceConfig } from "./api/timelineSource";
@@ -61,7 +61,7 @@ import { DiagnoseProvider } from "./components/diagnose/DiagnoseContext";
 // Declare the shape of mutation meta here — inlined rather than in a
 // separate side-effect-only module so consumers that tree-shake aggressively
 // (package.json sets sideEffects: ["*.css"]) can't drop the augmentation.
-// Any consumer that imports RadarApp will pull in this declaration.
+// Any consumer that imports KubeAtlasApp will pull in this declaration.
 declare module "@tanstack/react-query" {
   interface Register {
     mutationMeta: {
@@ -72,7 +72,7 @@ declare module "@tanstack/react-query" {
   }
 }
 
-export interface RadarAppProps {
+export interface KubeAtlasAppProps {
   /** API base URL (REST + SSE + WS). Defaults to '/api' (same-origin). */
   apiBase?: string;
   /** Stable, non-secret identity for scoping session-restored YAML drafts. Omit to retain legacy recovery behavior. */
@@ -81,25 +81,25 @@ export interface RadarAppProps {
   yamlReadOnly?: boolean;
   /**
    * The version of the KubeAtlas behind `apiBase`, as the host knows it (KubeAtlas
-   * Cloud: the cluster's `radar_version`). KubeAtlas prefers that KubeAtlas's own
+   * Cloud: the cluster's `kubeatlas_version`). KubeAtlas prefers that KubeAtlas's own
    * /version-check answer and uses this only until it arrives or when it
    * fails, to decide up front that a feature needs a newer KubeAtlas instead of
    * probing for it.
    */
-  radarVersion?: string;
+  kubeatlasVersion?: string;
   /**
    * Called when the user asks to upgrade from an inline "needs a newer KubeAtlas"
    * note next to a feature the connected KubeAtlas is too old to serve. The host
    * runs its own upgrade flow (upstream Cloud: one-click for owners, "ask an
    * owner" otherwise). Omitted → the note links to the upgrade instructions.
    */
-  onRequestRadarUpgrade?: (request: RadarUpgradeRequest) => void;
+  onRequestKubeAtlasUpgrade?: (request: KubeAtlasUpgradeRequest) => void;
   /** React Router basename. Defaults to '' (mounted at root). */
   basename?: string;
   /**
    * Router strategy:
    *   - 'browser' (default): BrowserRouter — URL bar reflects all navigation.
-   *     Use when KubeAtlas owns routing. Library consumers should mount RadarApp
+   *     Use when KubeAtlas owns routing. Library consumers should mount KubeAtlasApp
    *     above their own router (or replace the host's router with this one)
    *     and pass `basename` — React Router forbids nesting routers.
    *   - 'memory': MemoryRouter — URL bar does NOT change as KubeAtlas navigates.
@@ -113,13 +113,13 @@ export interface RadarAppProps {
    * prefer to share its client rather than nest two providers.
    */
   queryClient?: QueryClient;
-  /** Embedded layout and host navigation hooks for Radar Hub. */
+  /** Embedded layout and host navigation hooks for KubeAtlas Hub. */
   navSlots?: NavCustomization;
   /**
    * Whether KubeAtlas may set the browser tab title (`document.title`) per view.
    * Defaults to OFF: embedders keep title ownership without opting out. The
    * standalone binary opts in (`web/src/main.tsx` renders
-   * `<RadarApp manageDocumentTitle />`), and any full-page embed that wants
+   * `<KubeAtlasApp manageDocumentTitle />`), and any full-page embed that wants
    * KubeAtlas's per-view titles can do the same.
    */
   manageDocumentTitle?: boolean;
@@ -157,18 +157,18 @@ export interface RadarAppProps {
    * Initial route for `router: 'memory'` (ignored for 'browser'). Lets a host
    * deep-link a specific view (e.g. '/topology') without owning the URL bar —
    * used with `navSlots.embedded: true` to render a single per-cluster view
-   * chromeless under the host's own chrome (Radar Hub's per-cluster destinations).
+   * chromeless under the host's own chrome (KubeAtlas Hub's per-cluster destinations).
    */
   initialPath?: string;
   /**
    * Reports cluster-data warmup after the main connection is usable. Embedders
-   * with their own chrome (Radar Hub) can render this in their topbar while
+   * with their own chrome (KubeAtlas Hub) can render this in their topbar while
    * KubeAtlas runs with `navSlots.embedded: true`.
    */
   onClusterLoadStateChange?: (state: ClusterLoadState) => void;
   /**
    * Called after a focused investigation has been resolved by the server.
-   * Embedders whose chrome lives outside RadarApp's router can use this as a
+   * Embedders whose chrome lives outside KubeAtlasApp's router can use this as a
    * navigation hint without treating an unverified URL id as durable state.
    */
   onInvestigationFocus?: (runID: string) => void;
@@ -202,7 +202,7 @@ export function makeDefaultQueryClient(): QueryClient {
     defaultOptions: {
       queries: {
         refetchOnWindowFocus: false,
-        retry: shouldRetryRadarQuery,
+        retry: shouldRetryKubeAtlasQuery,
       },
     },
     mutationCache: new MutationCache({
@@ -230,12 +230,12 @@ export function makeDefaultQueryClient(): QueryClient {
   });
 }
 
-export function RadarApp({
+export function KubeAtlasApp({
   apiBase,
   yamlDraftScope,
   yamlReadOnly,
-  radarVersion,
-  onRequestRadarUpgrade,
+  kubeatlasVersion,
+  onRequestKubeAtlasUpgrade,
   basename,
   router = "browser",
   queryClient,
@@ -251,7 +251,7 @@ export function RadarApp({
   onInvestigationFocus,
   timelineSource,
   timelineRetentionNote,
-}: RadarAppProps): React.ReactElement {
+}: KubeAtlasAppProps): React.ReactElement {
   // Apply runtime config during render so module-level singletons are set
   // before children construct URLs. getApiBase() / getAuthHeaders() /
   // getCredentialsMode() are read on every fetch, SSE connect, and WS
@@ -268,9 +268,9 @@ export function RadarApp({
     [queryClient],
   );
 
-  const upgradeHost = React.useMemo<RadarUpgradeHost>(
-    () => ({ radarVersion, onRequestRadarUpgrade }),
-    [radarVersion, onRequestRadarUpgrade],
+  const upgradeHost = React.useMemo<KubeAtlasUpgradeHost>(
+    () => ({ kubeatlasVersion, onRequestKubeAtlasUpgrade }),
+    [kubeatlasVersion, onRequestKubeAtlasUpgrade],
   );
 
   const inner = (
@@ -279,7 +279,7 @@ export function RadarApp({
       <QueryClientProvider client={client}>
         <ToastProvider>
           <NavCustomizationProvider value={navSlots}>
-            <RadarUpgradeHostProvider value={upgradeHost}>
+            <KubeAtlasUpgradeHostProvider value={upgradeHost}>
               <FilterLocationBridge>
                 <TimelineSourceProvider config={timelineSource}>
                   <TimelineRetentionNoteProvider value={timelineRetentionNote}>
@@ -304,7 +304,7 @@ export function RadarApp({
                   </TimelineRetentionNoteProvider>
                 </TimelineSourceProvider>
               </FilterLocationBridge>
-            </RadarUpgradeHostProvider>
+            </KubeAtlasUpgradeHostProvider>
           </NavCustomizationProvider>
         </ToastProvider>
       </QueryClientProvider>
@@ -323,7 +323,4 @@ export function RadarApp({
   );
 }
 
-export const KubeAtlasApp = RadarApp;
-export type KubeAtlasAppProps = RadarAppProps;
-
-export default RadarApp;
+export default KubeAtlasApp;

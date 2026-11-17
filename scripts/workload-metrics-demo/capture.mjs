@@ -5,13 +5,13 @@ import {join} from 'node:path';
 const [address, ...workloads] = process.argv.slice(2);
 if (!address || workloads.length === 0) throw Error('Usage: node capture.mjs KUBEATLAS_URL Kind/namespace/name [...]');
 const base = new URL(address);
-if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw Error('Use a plain Radar URL; supply auth only through KUBEATLAS_CAPTURE_AUTHORIZATION.');
+if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash) throw Error('Use a plain KubeAtlas URL; supply auth only through KUBEATLAS_CAPTURE_AUTHORIZATION.');
 const headers = process.env.KUBEATLAS_CAPTURE_AUTHORIZATION ? {Authorization: process.env.KUBEATLAS_CAPTURE_AUTHORIZATION} : {};
-const dir = await mkdtemp(join(tmpdir(), 'radar-metrics-capture-'));
+const dir = await mkdtemp(join(tmpdir(), 'kubeatlas-metrics-capture-'));
 const result = {checkedAt: new Date().toISOString(), workloads: []};
 async function get(path) {
   const response = await fetch(base.href.replace(/\/$/, '') + path, {headers, signal: AbortSignal.timeout(40000), redirect: 'error'});
-  if (!response.ok) throw Error(`Radar request failed: HTTP ${response.status}`);
+  if (!response.ok) throw Error(`KubeAtlas request failed: HTTP ${response.status}`);
   const reader = response.body.getReader();
   const chunks = [];
   let size = 0;
@@ -23,7 +23,7 @@ async function get(path) {
     chunks.push(value);
   }
   const body = JSON.parse(Buffer.concat(chunks).toString());
-  if (body.truncated) throw Error('Radar summarized the raw series. Use a dedicated test instance with KUBEATLAS_MCP_PROM_MAX_RESPONSE_BYTES=8388608; do not claim complete evidence.');
+  if (body.truncated) throw Error('KubeAtlas summarized the raw series. Use a dedicated test instance with KUBEATLAS_MCP_PROM_MAX_RESPONSE_BYTES=8388608; do not claim complete evidence.');
   return body;
 }
 try {

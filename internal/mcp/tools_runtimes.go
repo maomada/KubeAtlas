@@ -55,7 +55,7 @@ func handleGetRuntimeVersions(ctx context.Context, _ *mcp.CallToolRequest, input
 		return nil, nil, err
 	}
 	if input.Namespace != "" && pinExcludesVisible(ctx, []string{input.Namespace}) {
-		return nil, nil, fmt.Errorf("%s: namespace %q is outside Radar's configured scope", ReasonOutsideNamespacePin, input.Namespace)
+		return nil, nil, fmt.Errorf("%s: namespace %q is outside KubeAtlas's configured scope", ReasonOutsideNamespacePin, input.Namespace)
 	}
 	pods, denied := runtimePods(ctx, cache, input.Namespace)
 	user, _ := resolveUserPerms(ctx)
@@ -91,10 +91,10 @@ func handleGetRuntimeVersions(ctx context.Context, _ *mcp.CallToolRequest, input
 		Runtime: input.Runtime,
 		FixedIn: fixedIn,
 		Limit:   input.Limit,
-		// Radar's own registry credentials are the user's own only when
-		// Radar runs on their machine with auth off; in-cluster they belong
-		// to Radar's ServiceAccount, even without auth.
-		RadarCredentials: user == nil && !k8s.IsInCluster(),
+		// KubeAtlas's own registry credentials are the user's own only when
+		// KubeAtlas runs on their machine with auth off; in-cluster they belong
+		// to KubeAtlas's ServiceAccount, even without auth.
+		KubeAtlasCredentials: user == nil && !k8s.IsInCluster(),
 	})
 
 	return toJSONResult(runtimeVersionsResponse{Inventory: inv, Basis: runtimeVersionsBasis, NamespacesWithoutPodAccess: denied})

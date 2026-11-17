@@ -1,6 +1,6 @@
-// Package capacityapi defines the stable JSON contract for Radar's Capacity API.
-// It is data-only so Radar Cloud can consume the same wire model without
-// importing Radar's cache, server, or Karpenter implementation packages.
+// Package capacityapi defines the stable JSON contract for KubeAtlas's Capacity API.
+// It is data-only so KubeAtlas Cloud can consume the same wire model without
+// importing KubeAtlas's cache, server, or Karpenter implementation packages.
 package capacityapi
 
 import "time"

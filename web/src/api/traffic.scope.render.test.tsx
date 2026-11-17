@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { useTrafficFlows, useTrafficRecords } from './traffic'
 
-vi.mock('../context/RadarUpgradeHost', () => ({ useRadarUpgradeHost: () => ({}) }))
+vi.mock('../context/KubeAtlasUpgradeHost', () => ({ useKubeAtlasUpgradeHost: () => ({}) }))
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
 const requested: URL[] = []
@@ -15,7 +15,7 @@ let client: QueryClient
 beforeEach(() => {
   requested.length = 0
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-    requested.push(new URL(String(input), 'http://radar.invalid'))
+    requested.push(new URL(String(input), 'http://kubeatlas.invalid'))
     return new Promise<Response>(() => {})
   }))
   root = createRoot(document.createElement('div'))

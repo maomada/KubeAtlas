@@ -1,8 +1,8 @@
 package cloud
 
-// Cloud Connect device-flow client (RFC 8628-shaped). This is the Radar side of
-// the flow the hub implements: Radar POSTs a connect request, shows the user the
-// approval URL, the user approves in the browser, and Radar polls with its
+// Cloud Connect device-flow client (RFC 8628-shaped). This is the KubeAtlas side of
+// the flow the hub implements: KubeAtlas POSTs a connect request, shows the user the
+// approval URL, the user approves in the browser, and KubeAtlas polls with its
 // device_secret until it receives the minted cluster token. See the hub's
 // connect_handlers.go and docs/OSS-TO-CLOUD-UX.md §3 for the contract.
 
@@ -50,17 +50,17 @@ type pollTransportError struct {
 func (e *pollTransportError) Error() string { return e.err.Error() }
 func (e *pollTransportError) Unwrap() error { return e.err }
 
-// ConnectMetadata is the display context Radar advertises about the cluster it
+// ConnectMetadata is the display context KubeAtlas advertises about the cluster it
 // wants to connect. DeploymentMode is required; the consent-page metadata is
 // best-effort and none of it is security-relevant.
 type ConnectMetadata struct {
-	DeploymentMode string `json:"deployment_mode"` // "in-cluster"
-	ClusterName    string `json:"cluster_name,omitempty"`
-	RadarVersion   string `json:"radar_version,omitempty"`
-	K8sVersion     string `json:"k8s_version,omitempty"`
-	K8sDistro      string `json:"k8s_distro,omitempty"`
-	NodeCount      *int   `json:"node_count,omitempty"`
-	Scope          string `json:"scope,omitempty"`
+	DeploymentMode   string `json:"deployment_mode"` // "in-cluster"
+	ClusterName      string `json:"cluster_name,omitempty"`
+	KubeAtlasVersion string `json:"kubeatlas_version,omitempty"`
+	K8sVersion       string `json:"k8s_version,omitempty"`
+	K8sDistro        string `json:"k8s_distro,omitempty"`
+	NodeCount        *int   `json:"node_count,omitempty"`
+	Scope            string `json:"scope,omitempty"`
 }
 
 // CreateResponse is the hub's reply to POST /api/connect/requests.
@@ -145,7 +145,7 @@ func HubDeclinedStatus(err error) (int, bool) {
 }
 
 // Create initiates a connect request. The returned device_secret is the
-// credential Radar uses to poll; it is never sent in a URL.
+// credential KubeAtlas uses to poll; it is never sent in a URL.
 func (c *ConnectClient) Create(ctx context.Context, meta ConnectMetadata) (*CreateResponse, error) {
 	if meta.DeploymentMode != "in-cluster" {
 		return nil, fmt.Errorf("unsupported Cloud Connect deployment mode %q: only in-cluster agents are currently accepted", meta.DeploymentMode)

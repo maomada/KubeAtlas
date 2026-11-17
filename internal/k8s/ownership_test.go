@@ -156,7 +156,7 @@ func historyChild(name string) topology.ResourceRef {
 	return topology.ResourceRef{Group: "apps", Kind: "ReplicaSet", Namespace: "shop", Name: name}
 }
 
-// Before discovery answers, as while Radar starts, no kind can be searched or
+// Before discovery answers, as while KubeAtlas starts, no kind can be searched or
 // resolved: the answer is unavailable, not a list of children with every kind
 // unread.
 func TestAnswerOwnershipWaitsForDiscovery(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"log"
 	"net/http"
 	"net/url"
@@ -24,7 +25,7 @@ var (
 	releasesURL = ""
 	githubURL   = "https://api.github.com/repos/maomada/KubeAtlas/releases/latest"
 
-	// Current is the current version of Radar, set at build time
+	// Current is the current version of KubeAtlas, set at build time
 	Current = "dev"
 
 	// isDesktop is set to true when running as a desktop app (Wails).
@@ -45,7 +46,7 @@ type updateCacheEntry struct {
 	loading   chan struct{}
 }
 
-// InstallMethod represents how Radar was installed
+// InstallMethod represents how KubeAtlas was installed
 type InstallMethod string
 
 const (
@@ -108,10 +109,10 @@ func BuildChannelName() string {
 	return string(buildChannel(Current))
 }
 
-// LocalInstalledAt returns when Radar first ran on this machine (the creation
+// LocalInstalledAt returns when KubeAtlas first ran on this machine (the creation
 // time of ~/.kubeatlas) as Unix seconds, or 0 when the platform can't tell.
 func LocalInstalledAt() int64 {
-	return radarDirBirthtime()
+	return kubeatlasDirBirthtime()
 }
 
 // IsDevelopmentBuild reports whether this is an unreleased build (source,
@@ -225,7 +226,7 @@ func RelayUpdateCheck(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("create relayed update check: %w", err)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("radar/%s", Current))
+	req.Header.Set("User-Agent", fmt.Sprintf("kubeatlas/%s", Current))
 	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
 	if err != nil {
 		return fmt.Errorf("send relayed update check: %w", err)
@@ -329,7 +330,7 @@ func fetchLatestRelease(ctx context.Context, options checkOptions) *UpdateInfo {
 		log.Printf("[version] %s", result.Error)
 		return result
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("radar/%s", Current))
+	req.Header.Set("User-Agent", fmt.Sprintf("kubeatlas/%s", Current))
 
 	resp, err := client.Do(req)
 	if releasesURL != "" && (err != nil || resp.StatusCode != http.StatusOK) {
@@ -344,7 +345,7 @@ func fetchLatestRelease(ctx context.Context, options checkOptions) *UpdateInfo {
 			log.Printf("[version] %s", result.Error)
 			return result
 		}
-		req2.Header.Set("User-Agent", fmt.Sprintf("radar/%s", Current))
+		req2.Header.Set("User-Agent", fmt.Sprintf("kubeatlas/%s", Current))
 		resp, err = client.Do(req2)
 	}
 	if err != nil {
@@ -425,7 +426,7 @@ func buildChannel(value string) buildChannelName {
 }
 
 func isPackageReleaseVersion(value string) bool {
-	for _, prefix := range []string{"k8s-ui-v", "radar-app-v", "pkg/v"} {
+	for _, prefix := range []string{"k8s-ui-v", "kubeatlas-app-v", compat.LegacyAppVersionPrefix, "pkg/v"} {
 		if strings.HasPrefix(value, prefix) && IsReleaseVersion(strings.TrimPrefix(value, prefix)) {
 			return true
 		}
@@ -507,12 +508,12 @@ func installTimestamp(ctx context.Context, mode string) int64 {
 			return installed
 		}
 	}
-	return radarDirBirthtime()
+	return kubeatlasDirBirthtime()
 }
 
-// radarDirBirthtime returns the creation timestamp of ~/.kubeatlas/ as Unix epoch
+// kubeatlasDirBirthtime returns the creation timestamp of ~/.kubeatlas/ as Unix epoch
 // seconds, or 0 if unavailable.
-func radarDirBirthtime() int64 {
+func kubeatlasDirBirthtime() int64 {
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return 0
@@ -520,7 +521,7 @@ func radarDirBirthtime() int64 {
 	return dirBirthtime(filepath.Join(homeDir, ".kubeatlas"))
 }
 
-// detectInstallMethod determines how Radar was installed based on binary path
+// detectInstallMethod determines how KubeAtlas was installed based on binary path
 func detectInstallMethod() InstallMethod {
 	if isDesktop {
 		return InstallDesktop
@@ -536,7 +537,7 @@ func detectInstallMethod() InstallMethod {
 }
 
 // executablePath returns this binary's path with symlinks resolved. Package
-// managers expose a stable link (e.g. /opt/homebrew/bin/radar) into a versioned
+// managers expose a stable link (e.g. /opt/homebrew/bin/kubeatlas) into a versioned
 // install directory, and only the resolved path shows which one installed it.
 func executablePath() (string, error) {
 	exe, err := os.Executable()

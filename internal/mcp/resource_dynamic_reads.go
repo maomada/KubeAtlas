@@ -91,7 +91,7 @@ func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, g
 				continue
 			}
 			unresolved := slices.DeleteFunc(slices.Clone(part.Namespaces), func(ns string) bool { return !unanswered[ns] })
-			unknown := part.Extent == readplan.UnknownNamespaces && (observation.ProbeRetrying || part.Verdict.Code == readreason.ReadError || part.Verdict.Code == readreason.RadarCredentialsRejected)
+			unknown := part.Extent == readplan.UnknownNamespaces && (observation.ProbeRetrying || part.Verdict.Code == readreason.ReadError || part.Verdict.Code == readreason.KubeAtlasCredentialsRejected)
 			if len(unresolved) > 0 || unknown {
 				gaps.add(part.Verdict.Code, dynamicPlanError(ctx, kind, group, "", "list", part.Verdict.Code), unresolved...)
 				if unknown {
@@ -139,15 +139,15 @@ func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, g
 				if !classified || code == readreason.ConnectionChanged {
 					return nil, nil, err
 				}
-				if code == readreason.RadarForbidden {
+				if code == readreason.KubeAtlasForbidden {
 					refused = append(refused, ns)
 					if refusal == nil {
 						refusal = collectorCause(err)
 					}
 				}
-				// A namespace Radar doesn't collect or is refused in narrows a
+				// A namespace KubeAtlas doesn't collect or is refused in narrows a
 				// read the caller didn't scope; one they named is a gap.
-				if (code == readreason.RadarNamespaceNotCollected || code == readreason.RadarForbidden) && !target.explicit && !clusterScoped {
+				if (code == readreason.KubeAtlasNamespaceNotCollected || code == readreason.KubeAtlasForbidden) && !target.explicit && !clusterScoped {
 					uncollected[code] = append(uncollected[code], ns)
 					if uncollectedErr[code] == nil {
 						uncollectedErr[code] = err
@@ -162,7 +162,7 @@ func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, g
 		}
 		if len(uncollected) > 0 {
 			if len(read) > 0 {
-				target = target.narrowedByNamespaceCollection(nil, slices.Concat(uncollected[readreason.RadarNamespaceNotCollected], uncollected[readreason.RadarForbidden]))
+				target = target.narrowedByNamespaceCollection(nil, slices.Concat(uncollected[readreason.KubeAtlasNamespaceNotCollected], uncollected[readreason.KubeAtlasForbidden]))
 			} else {
 				for code, namespaces := range uncollected {
 					gaps.add(code, uncollectedErr[code], namespaces...)
@@ -171,7 +171,7 @@ func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, g
 		}
 		if len(read) == 0 {
 			if len(refused) > 1 {
-				// One sentence for every namespace Radar was refused in,
+				// One sentence for every namespace KubeAtlas was refused in,
 				// rather than the first namespace's.
 				var covered []string
 				if found && dynamicCache != nil {
@@ -179,7 +179,7 @@ func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, g
 						covered = observation.Namespaces
 					}
 				}
-				gaps.firstErr[readreason.RadarForbidden] = coverageError(ctx, collector, refused, covered, refusal)
+				gaps.firstErr[readreason.KubeAtlasForbidden] = coverageError(ctx, collector, refused, covered, refusal)
 			}
 			return nil, nil, withListCoverage(ctx, gaps.failure(), collector.resource, target, clusterScoped)
 		}
@@ -228,19 +228,19 @@ func listDynamicResources(ctx context.Context, cache *k8s.ResourceCache, kind, g
 }
 
 // readErrorCodeOf classifies one namespace's failed dynamic read. An API
-// server refusal of Radar's own identity is the collector's, not the caller's.
+// server refusal of KubeAtlas's own identity is the collector's, not the caller's.
 func readErrorCodeOf(err error) (readreason.Code, bool) {
 	var re *readError
 	if errors.As(err, &re) {
 		return re.code, true
 	}
 	if apierrors.IsForbidden(err) {
-		return readreason.RadarForbidden, true
+		return readreason.KubeAtlasForbidden, true
 	}
 	return "", false
 }
 
 func isCollectorForbidden(err error) bool {
 	var re *readError
-	return errors.As(err, &re) && re.code == readreason.RadarForbidden
+	return errors.As(err, &re) && re.code == readreason.KubeAtlasForbidden
 }

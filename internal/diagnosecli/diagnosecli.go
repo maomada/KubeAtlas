@@ -1,5 +1,5 @@
-// Package diagnosecli implements `radar diagnose` — a terminal client for the
-// AI investigation engine of a RUNNING radar instance. It is deliberately a thin
+// Package diagnosecli implements `kubeatlas diagnose` — a terminal client for the
+// AI investigation engine of a RUNNING kubeatlas instance. It is deliberately a thin
 // client over the same REST+SSE contract the web panel uses: the run it starts
 // is the same durable server-side job, so it can be watched or continued from
 // the UI (and vice versa).
@@ -82,39 +82,39 @@ func newFlagSet() (*flag.FlagSet, *options) {
 	fs.StringVar(&o.namespace, "namespace", "", "Namespace of the resource")
 	fs.StringVar(&o.group, "group", "", "Kubernetes API group (inferred for built-in kinds; set for CRDs or kind collisions)")
 	fs.StringVar(&o.agent, "agent", "", "Agent backend to use (claude|codex|cursor-agent|opencode; default = server's pick)")
-	fs.StringVar(&o.profile, "profile", "", "Execution profile (safeguarded = Radar safeguards; full-local = your agent setup; default = safest available)")
-	fs.StringVar(&o.server, "server", "", "Radar server URL (default: discover the running instance via ~/.kubeatlas/mcp-port)")
+	fs.StringVar(&o.profile, "profile", "", "Execution profile (safeguarded = KubeAtlas safeguards; full-local = your agent setup; default = safest available)")
+	fs.StringVar(&o.server, "server", "", "KubeAtlas server URL (default: discover the running instance via ~/.kubeatlas/mcp-port)")
 	fs.BoolVar(&o.jsonOut, "json", false, "Print the final conclusion as JSON on stdout (progress goes to stderr)")
-	fs.BoolVar(&o.open, "open", false, "Also open the investigation in the Radar UI")
+	fs.BoolVar(&o.open, "open", false, "Also open the investigation in the KubeAtlas UI")
 	fs.BoolVar(&o.yes, "yes", false, "Skip the first-run consent prompt")
-	fs.BoolVar(&o.standalone, "standalone", false, "Run against a temporary in-process Radar instead of a running instance (slower: connects to the cluster first)")
+	fs.BoolVar(&o.standalone, "standalone", false, "Run against a temporary in-process KubeAtlas instead of a running instance (slower: connects to the cluster first)")
 	fs.StringVar(&o.kubeconfig, "kubeconfig", "", "Kubeconfig for --standalone (default: ~/.kube/config)")
 	return fs, o
 }
 
-// Run executes `radar diagnose <kind>/<name>` and returns the process exit code.
+// Run executes `kubeatlas diagnose <kind>/<name>` and returns the process exit code.
 func Run(args []string, openBrowser func(url string)) int {
 	fs, o := newFlagSet()
 	fs.Usage = func() {
-		fmt.Fprint(os.Stderr, `Usage: radar diagnose <kind>/<name> [-n namespace] [flags]
+		fmt.Fprint(os.Stderr, `Usage: kubeatlas diagnose <kind>/<name> [-n namespace] [flags]
 
 Runs an AI investigation of a Kubernetes resource using your own local agent
-CLI (Claude Code, Codex, Cursor, or OpenCode) against the running Radar
-instance — no API key, no cloud. The investigation is a durable Radar job:
-watch it here, in the Radar UI, or continue it in your own agent afterwards.
+CLI (Claude Code, Codex, Cursor, or OpenCode) against the running KubeAtlas
+instance — no API key, no cloud. The investigation is a durable KubeAtlas job:
+watch it here, in the KubeAtlas UI, or continue it in your own agent afterwards.
 
 Examples:
-  radar diagnose pod/checkout-6f4d -n prod
-  radar diagnose deploy/api --json > conclusion.json
-  radar diagnose rollout/checkout -n prod --group argoproj.io
-  radar diagnose node/ip-10-0-3-36 --open
+  kubeatlas diagnose pod/checkout-6f4d -n prod
+  kubeatlas diagnose deploy/api --json > conclusion.json
+  kubeatlas diagnose rollout/checkout -n prod --group argoproj.io
+  kubeatlas diagnose node/ip-10-0-3-36 --open
 
 Flags:
 `)
 		fs.PrintDefaults()
 	}
 	// Interleaved parse: Go's flag package stops at the first positional, but
-	// kubectl users write `radar diagnose pod/web -n prod` — collect positionals
+	// kubectl users write `kubeatlas diagnose pod/web -n prod` — collect positionals
 	// and keep parsing the remainder so flags may appear on either side.
 	var positionals []string
 	rest := args
@@ -149,7 +149,7 @@ Flags:
 	out := newRenderer(o.jsonOut)
 
 	// Resolve the engine: an explicit --server, else the running instance from
-	// ~/.kubeatlas/mcp-port, else fall back to a temporary in-process Radar (what
+	// ~/.kubeatlas/mcp-port, else fall back to a temporary in-process KubeAtlas (what
 	// --standalone forces). Cold start pays a cluster connect up front — the
 	// running-instance path stays the fast default.
 	standalone := o.standalone
@@ -164,7 +164,7 @@ Flags:
 				fmt.Fprintf(os.Stderr, "nothing is listening at %s\n", o.server)
 				return 1
 			}
-			fmt.Fprintln(os.Stderr, "no running Radar found — starting a temporary one for this investigation (use --server to target a running instance)")
+			fmt.Fprintln(os.Stderr, "no running KubeAtlas found — starting a temporary one for this investigation (use --server to target a running instance)")
 			standalone = true
 		}
 	}
@@ -211,28 +211,28 @@ Flags:
 	agents, err := fetchAgents(base)
 	if err != nil {
 		// A 404 here means SOMETHING answered but has no /api/agents — almost
-		// always an older Radar (or a stale ~/.kubeatlas/mcp-port pointing at one
+		// always an older KubeAtlas (or a stale ~/.kubeatlas/mcp-port pointing at one
 		// when several instances ran). Say that, not just "404".
 		if strings.Contains(err.Error(), "404") {
-			fmt.Fprintf(os.Stderr, "the Radar at %s doesn't support AI investigations — it's likely an older version (or a stale ~/.kubeatlas/mcp-port from another instance). Upgrade/restart it, pass --server for the right instance, or use --standalone.\n", base)
+			fmt.Fprintf(os.Stderr, "the KubeAtlas at %s doesn't support AI investigations — it's likely an older version (or a stale ~/.kubeatlas/mcp-port from another instance). Upgrade/restart it, pass --server for the right instance, or use --standalone.\n", base)
 		} else {
-			fmt.Fprintf(os.Stderr, "found Radar at %s but couldn't query it: %v\n", base, err)
+			fmt.Fprintf(os.Stderr, "found KubeAtlas at %s but couldn't query it: %v\n", base, err)
 		}
 		return 1
 	}
 	if !agents.Enabled {
-		// Eligible separates "this Radar could run investigations, it just found
+		// Eligible separates "this KubeAtlas could run investigations, it just found
 		// no CLI" from "this deployment never can" (--no-mcp, auth, in-cluster or
 		// shared), where installing a CLI is the wrong advice.
 		if agents.Eligible && agents.CLIOverride {
-			fmt.Fprintf(os.Stderr, "the Radar at %s can't run its KUBEATLAS_AI_CLI_BIN. Fix the path, or remove it "+
-				"and restart that Radar.\n", base)
+			fmt.Fprintf(os.Stderr, "the KubeAtlas at %s can't run its KUBEATLAS_AI_CLI_BIN. Fix the path, or remove it "+
+				"and restart that KubeAtlas.\n", base)
 		} else if agents.Eligible {
-			fmt.Fprintf(os.Stderr, "the Radar at %s found no agent CLI. Install Claude Code, Codex, Cursor, "+
+			fmt.Fprintf(os.Stderr, "the KubeAtlas at %s found no agent CLI. Install Claude Code, Codex, Cursor, "+
 				"or OpenCode on that machine and run this again.\n", base)
 		} else {
-			fmt.Fprintf(os.Stderr, "the Radar at %s can't run AI investigations. Use --standalone to run them "+
-				"with a local Radar.\n", base)
+			fmt.Fprintf(os.Stderr, "the KubeAtlas at %s can't run AI investigations. Use --standalone to run them "+
+				"with a local KubeAtlas.\n", base)
 		}
 		return 1
 	}
@@ -260,7 +260,7 @@ Flags:
 
 	// Send the agent the consent was for. With no name the server uses its own
 	// default, which can differ from this list's first agent once a CLI is
-	// installed while that Radar runs.
+	// installed while that KubeAtlas runs.
 	run, err := startRun(base, kind, o.group, o.namespace, name, effective, profile)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -276,12 +276,12 @@ Flags:
 		return 1
 	}
 	if o.jsonOut {
-		radarURL := base + "/?ai-run=" + url.QueryEscape(run.ID)
+		kubeatlasURL := base + "/?ai-run=" + url.QueryEscape(run.ID)
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")
 		_ = enc.Encode(map[string]any{
 			"run": run.ID, "kind": run.Kind, "group": run.Group, "namespace": run.Namespace, "name": run.Name,
-			"agent": run.Agent, "radar_url": radarURL, "diagnosis": diag,
+			"agent": run.Agent, "kubeatlas_url": kubeatlasURL, "diagnosis": diag,
 		})
 	}
 	return 0
@@ -309,13 +309,13 @@ func resolveServer(explicit string) (string, error) {
 	}
 	b, err := os.ReadFile(filepath.Join(home, ".kubeatlas", "mcp-port"))
 	if err != nil {
-		return "", fmt.Errorf("no running Radar found (%s missing) — start radar first, or pass --server http://localhost:<port>",
+		return "", fmt.Errorf("no running KubeAtlas found (%s missing) — start kubeatlas first, or pass --server http://localhost:<port>",
 			filepath.Join(home, ".kubeatlas", "mcp-port"))
 	}
 	lines := strings.Split(strings.TrimSpace(string(b)), "\n")
 	port, err := strconv.Atoi(strings.TrimSpace(lines[0]))
 	if err != nil || port <= 0 {
-		return "", fmt.Errorf("~/.kubeatlas/mcp-port is unreadable — is radar running? (or pass --server)")
+		return "", fmt.Errorf("~/.kubeatlas/mcp-port is unreadable — is kubeatlas running? (or pass --server)")
 	}
 	basePath := ""
 	if len(lines) > 1 {
@@ -381,7 +381,7 @@ func consentLabel(effective string) string {
 
 func standaloneEffectiveAgent(ctx context.Context, requested string) string {
 	// This path only detects/labels installed agents; it never starts an
-	// investigation turn, so it does not need Radar's private evidence registry.
+	// investigation turn, so it does not need KubeAtlas's private evidence registry.
 	diagnoser, err := ai.NewDetected(ctx, nil)
 	if err != nil {
 		return ""
@@ -389,12 +389,12 @@ func standaloneEffectiveAgent(ctx context.Context, requested string) string {
 	return diagnoser.AgentName(requested)
 }
 
-// noAgentCLIHint is the one wording for "this machine has no agent CLI Radar can
+// noAgentCLIHint is the one wording for "this machine has no agent CLI KubeAtlas can
 // drive". Every local surface that hits it reads this, so they can't drift.
 const noAgentCLIHint = "no supported agent CLI found. Install Claude Code, Codex, Cursor, or OpenCode"
 
 // localNoAgentHint is noAgentCLIHint unless KUBEATLAS_AI_CLI_BIN is set here: then
-// detection is off and the variable names a file Radar can't run, so installing
+// detection is off and the variable names a file KubeAtlas can't run, so installing
 // a CLI wouldn't help.
 func localNoAgentHint() string {
 	if v := strings.TrimSpace(os.Getenv("KUBEATLAS_AI_CLI_BIN")); v != "" {
@@ -419,43 +419,43 @@ func executionProfile(agent, requested string) (ai.ExecutionProfile, error) {
 
 func consentNotice(agent string, profile ai.ExecutionProfile) string {
 	agentLabel := consentLabel(agent)
-	notice := fmt.Sprintf(`This runs your own %s on your machine — no Radar cloud, no API key.
-Radar sends the resource's spec, recent events, and pod logs to it (and on to
-its model provider under your account). Transcripts are kept in your local Radar
+	notice := fmt.Sprintf(`This runs your own %s on your machine — no KubeAtlas cloud, no API key.
+KubeAtlas sends the resource's spec, recent events, and pod logs to it (and on to
+its model provider under your account). Transcripts are kept in your local KubeAtlas
 history until cleared.
 `, agentLabel)
 	if profile == ai.ExecutionProfileFullLocal {
 		notice += fmt.Sprintf(`Your %s setup uses its normal configuration and other configured
-tools and MCP servers. Radar cannot constrain that external tooling; it may
+tools and MCP servers. KubeAtlas cannot constrain that external tooling; it may
 access local files or the network and may be able to change your cluster.
 `, agentLabel)
 		if agent == "cursor-agent" {
-			notice += `Radar passes Cursor --force so headless tool calls can run. This
+			notice += `KubeAtlas passes Cursor --force so headless tool calls can run. This
 auto-approves Cursor's built-in tools and every MCP server it loads, including
 your global servers. Cursor's sandbox does not reliably confine those tools to
-Radar's temporary working directory.
+KubeAtlas's temporary working directory.
 `
 		} else if agent == "claude" {
-			notice += `Claude uses the permissions from your setup; Radar does not override them.
+			notice += `Claude uses the permissions from your setup; KubeAtlas does not override them.
 `
 		} else if agent == "opencode" {
-			notice += `Radar runs OpenCode with --auto, which automatically approves actions that your configuration would normally ask about, including built-in tools and configured MCP servers. Explicit denials still apply. Radar does not enforce a CLI sandbox.
+			notice += `KubeAtlas runs OpenCode with --auto, which automatically approves actions that your configuration would normally ask about, including built-in tools and configured MCP servers. Explicit denials still apply. KubeAtlas does not enforce a CLI sandbox.
 `
 		} else {
-			notice += `Radar still enables the agent CLI's own sandbox, but that sandbox does not
+			notice += `KubeAtlas still enables the agent CLI's own sandbox, but that sandbox does not
 constrain external MCP servers.
 `
 		}
 	} else {
-		notice += `Radar's investigation tools can only READ your cluster.
+		notice += `KubeAtlas's investigation tools can only READ your cluster.
 `
 		if agent == "claude" {
-			notice += `Radar safeguards disable Claude's built-in tools and limit MCP access to
-Radar's read-only investigation tools. Your Claude settings, hooks, and
-CLAUDE.md instructions still apply and are outside Radar's control.
+			notice += `KubeAtlas safeguards disable Claude's built-in tools and limit MCP access to
+KubeAtlas's read-only investigation tools. Your Claude settings, hooks, and
+CLAUDE.md instructions still apply and are outside KubeAtlas's control.
 `
 		} else if agent == "codex" {
-			notice += `Radar safeguards exclude your Codex configuration and other MCP servers.
+			notice += `KubeAtlas safeguards exclude your Codex configuration and other MCP servers.
 Codex's sandboxed shell can still read files on this machine; it cannot
 write or reach the network.
 `
@@ -466,7 +466,7 @@ write or reach the network.
 
 // promptConsent mirrors the UI's one-time consent card. Interactive terminals
 // get a real y/N gate; non-interactive callers (CI) get the disclosure on
-// stderr and proceed — an explicit `radar diagnose` invocation in a script is
+// stderr and proceed — an explicit `kubeatlas diagnose` invocation in a script is
 // already an informed act, and a blocking prompt there would just break CI.
 // record persists the acknowledgment to the shared machine-scoped store.
 func promptConsent(agent string, profile ai.ExecutionProfile, surface string, record func(surface string) error) bool {

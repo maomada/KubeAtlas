@@ -39,7 +39,7 @@ func markWhatsNewSeen(body string) *httptest.ResponseRecorder {
 	return w
 }
 
-func TestWhatsNewRecordsSeenVersionUnderRadarDir(t *testing.T) {
+func TestWhatsNewRecordsSeenVersionUnderKubeAtlasDir(t *testing.T) {
 	useWhatsNewStorage(t, true)
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -160,10 +160,10 @@ func TestWhatsNewLeavesInClusterStateToTheBrowser(t *testing.T) {
 	}
 }
 
-func TestRadarDirHadStateIgnoresItsOwnFile(t *testing.T) {
+func TestKubeAtlasDirHadStateIgnoresItsOwnFile(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	if radarDirHadState() {
+	if kubeatlasDirHadState() {
 		t.Fatal("missing ~/.kubeatlas reported as prior state")
 	}
 	dir := filepath.Join(home, ".kubeatlas")
@@ -173,13 +173,13 @@ func TestRadarDirHadStateIgnoresItsOwnFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, whatsNewFile), []byte(`{}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if radarDirHadState() {
+	if kubeatlasDirHadState() {
 		t.Fatal("only the What's New file present, reported as prior state")
 	}
 	if err := os.WriteFile(filepath.Join(dir, "install-id"), []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if !radarDirHadState() {
+	if !kubeatlasDirHadState() {
 		t.Fatal("existing install-id not reported as prior state")
 	}
 }

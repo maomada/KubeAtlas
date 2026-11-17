@@ -98,7 +98,7 @@ export function summarizeTrace(trace: Trace): TraceSummaryView {
   return {
     kind: 'minimal',
     headline: 'Verify the live path to these pods',
-    subtitle: 'A quick live connection test from where Radar runs.',
+    subtitle: 'A quick live connection test from where KubeAtlas runs.',
     notTested: 0,
     ctaLabel: RUN_CTA_SHORT,
   }

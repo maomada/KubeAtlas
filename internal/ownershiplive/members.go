@@ -77,7 +77,7 @@ func inClusterServer(server string) bool {
 	return strings.HasPrefix(host, "kubernetes.default.svc.")
 }
 
-// unreadable is what a manager whose list can't be read says: nothing Radar
+// unreadable is what a manager whose list can't be read says: nothing KubeAtlas
 // can read, unless it applies to another cluster, whose objects alone its
 // list can name, so it names none here.
 func unreadable(state ownership.MembershipState, namespace string) (ownership.MembershipState, []resourceid.Ref, string) {

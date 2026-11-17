@@ -40,7 +40,7 @@ type Builder func(obj runtime.Object, u *unstructured.Unstructured, group, kind,
 
 // SearchBudget bounds how long search waits for its per-hit context (issue
 // index and the topology behind managedBy). Both read custom resources, which
-// right after a restart wait on Radar's custom-resource discovery for tens of
+// right after a restart wait on KubeAtlas's custom-resource discovery for tens of
 // seconds on a CRD-heavy cluster; search answers without the context rather
 // than hold its results.
 const SearchBudget = 3 * time.Second

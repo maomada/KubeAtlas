@@ -24,7 +24,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/prom"
 )
 
-// Client is radar's application-scoped Prometheus client. It holds the
+// Client is kubeatlas's application-scoped Prometheus client. It holds the
 // K8s-aware state required for kubectl-like port-forward discovery, along
 // with a pkg/prom.Client that performs the actual HTTP calls once an
 // endpoint has been discovered.
@@ -103,7 +103,7 @@ type Client struct {
 	k8sConfig   *rest.Config
 	contextName string
 
-	// inCluster records how Radar reaches the cluster, captured once at
+	// inCluster records how KubeAtlas reaches the cluster, captured once at
 	// construction from the same detection the connection context reports as
 	// "in-cluster". In-cluster, discovery connects over the direct Service-address
 	// probe and does not fall back to a port-forward it cannot open (pods/

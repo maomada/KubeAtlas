@@ -1,22 +1,22 @@
 {{- /*
-Default ClusterRoleBindings for Radar Cloud identity groups. Emitted only
+Default ClusterRoleBindings for KubeAtlas Cloud identity groups. Emitted only
 when cloud.enabled=true and cloud.defaultRbac.create=true (the default).
 
 Cloud injects identity headers on every proxied request:
   X-Forwarded-User:   <workos user id>
-  X-Forwarded-Groups: radar:<role>,radar:org:<org_id>,radar:user:<user_id>
+  X-Forwarded-Groups: kubeatlas:<role>,kubeatlas:org:<org_id>,kubeatlas:user:<user_id>
 
-Radar runs with --auth-mode=proxy under cloud-mode, so K8s sees the request
+KubeAtlas runs with --auth-mode=proxy under cloud-mode, so K8s sees the request
 as that impersonated identity and enforces RBAC on it. These bindings map
 the Cloud role tiers to standard K8s ClusterRoles:
 
-  radar:owner   → K8s "admin" role (namespace-everything, no cluster-scoped writes)
-  radar:member  → K8s "edit" role (read+write on standard resources, no RBAC)
-  radar:viewer  → K8s "view" role (read-only)
+  kubeatlas:owner   → K8s "admin" role (namespace-everything, no cluster-scoped writes)
+  kubeatlas:member  → K8s "edit" role (read+write on standard resources, no RBAC)
+  kubeatlas:viewer  → K8s "view" role (read-only)
 
 Cluster operators can disable any of these (set cloud.defaultRbac.<role>=false)
 and author their own bindings — e.g., per-namespace RoleBindings, or bindings
-for radar:user:<id> groups to grant individuals extra access. Set
+for kubeatlas:user:<id> groups to grant individuals extra access. Set
 cloud.defaultRbac.ownerClusterRole=cluster-admin to grant cluster-wide admin.
 
 Each binding also includes its pre-rename cloud:* subject so rolling hub and
@@ -27,16 +27,16 @@ chart upgrades remain compatible. Remove those subjects in v2.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-owner
+  name: {{ include "kubeatlas.fullname" . }}-cloud-owner
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ .Values.cloud.defaultRbac.ownerClusterRole }}
 subjects:
   - kind: Group
-    name: radar:owner
+    name: kubeatlas:owner
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
     name: cloud:owner
@@ -47,16 +47,16 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-member
+  name: {{ include "kubeatlas.fullname" . }}-cloud-member
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ .Values.cloud.defaultRbac.memberClusterRole }}
 subjects:
   - kind: Group
-    name: radar:member
+    name: kubeatlas:member
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
     name: cloud:member
@@ -67,16 +67,16 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-viewer
+  name: {{ include "kubeatlas.fullname" . }}-cloud-viewer
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ .Values.cloud.defaultRbac.viewerClusterRole }}
 subjects:
   - kind: Group
-    name: radar:viewer
+    name: kubeatlas:viewer
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
     name: cloud:viewer

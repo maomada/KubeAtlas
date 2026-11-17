@@ -280,7 +280,7 @@ func TestConnectBothLanesFailReportsBoth(t *testing.T) {
 }
 
 func TestComposeConnectErrorForbiddenRemediation(t *testing.T) {
-	forbidden := errors.New(`port-forward failed: error upgrading connection: pods "hubble-relay-x" is forbidden: User "system:serviceaccount:radar:radar" cannot create resource "pods/portforward" in API group "" in the namespace "kube-system"`)
+	forbidden := errors.New(`port-forward failed: error upgrading connection: pods "hubble-relay-x" is forbidden: User "system:serviceaccount:kubeatlas:kubeatlas" cannot create resource "pods/portforward" in API group "" in the namespace "kube-system"`)
 
 	// Unreachable direct lane + forbidden forward: both remediations apply.
 	msg := composeConnectError("10.0.0.1:80", errDirectUnreachable, forbidden)

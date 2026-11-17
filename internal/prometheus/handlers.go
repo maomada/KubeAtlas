@@ -59,7 +59,7 @@ func handleStatus(w http.ResponseWriter, r *http.Request) {
 // has no body or query parameters — the Prometheus URL is configured at
 // process startup via --prometheus-url, never per-request. Accepting a URL
 // here would let any caller redirect Prometheus queries to an arbitrary
-// host (SSRF) since radar binds to 0.0.0.0 by default.
+// host (SSRF) since kubeatlas binds to 0.0.0.0 by default.
 func handleConnect(w http.ResponseWriter, r *http.Request) {
 	client, connectionErr := ClientForOperation()
 	if connectionErr != nil {

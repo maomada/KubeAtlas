@@ -144,7 +144,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
             "release-image.yml",
             "release-desktop.yml",
             "publish-k8s-ui.yml",
-            "publish-radar-app.yml",
+            "publish-kubeatlas-app.yml",
         )
         for name in removed:
             self.assertFalse((ROOT / ".github/workflows" / name).exists())

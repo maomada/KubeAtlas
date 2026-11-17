@@ -15,7 +15,7 @@ func TestFormatStartupLogSummaryLoopback(t *testing.T) {
 		mcpEnabled:           true,
 		aiAgent:              "claude",
 		showRemoteAccessHint: true,
-		contextName:          "kind-radar",
+		contextName:          "kind-kubeatlas",
 		kubeconfigPath:       "/tmp/kubeconfig",
 		kubeconfig: k8s.KubeconfigSummary{
 			Mode:               "single",
@@ -31,7 +31,7 @@ func TestFormatStartupLogSummaryLoopback(t *testing.T) {
 		"URL:         http://localhost:9280",
 		"Access:      LOCAL ONLY (127.0.0.1)",
 		"Auth:        disabled",
-		"Cluster:     kind-radar",
+		"Cluster:     kind-kubeatlas",
 		"Kubeconfig:  /tmp/kubeconfig · 24 contexts · 3 exec plugins",
 		"MCP:         enabled at /mcp",
 		"AI investigations: enabled via claude",
@@ -56,7 +56,7 @@ func TestFormatStartupLogSummaryUnauthenticatedWildcard(t *testing.T) {
 		"Listener:    0.0.0.0:9280",
 		"NETWORK-EXPOSED",
 		"DISABLED",
-		"WARNING: Remote clients can access Radar without authentication.",
+		"WARNING: Remote clients can access KubeAtlas without authentication.",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("startup summary missing %q:\n%s", want, got)
@@ -72,15 +72,15 @@ func TestFormatStartupLogSummaryExplicitIPs(t *testing.T) {
 		address string
 		want    string
 	}{
-		{"127.0.0.2", "URL:         http://127.0.0.2:9280/radar/"},
-		{"::1", "URL:         http://[::1]:9280/radar/"},
+		{"127.0.0.2", "URL:         http://127.0.0.2:9280/kubeatlas/"},
+		{"::1", "URL:         http://[::1]:9280/kubeatlas/"},
 		{"192.0.2.10", "Listener:    192.0.2.10:9280"},
 		{"2001:db8::10", "Listener:    [2001:db8::10]:9280"},
 		{"::", "Listener:    [::]:9280"},
 	} {
 		t.Run(tt.address, func(t *testing.T) {
 			got := strings.Join(formatStartupLogSummary(startupLogSummary{
-				listenAddress: tt.address, port: 9280, basePath: "/radar",
+				listenAddress: tt.address, port: 9280, basePath: "/kubeatlas",
 			}, false), "\n")
 			if !strings.Contains(got, tt.want) {
 				t.Fatalf("summary missing %q:\n%s", tt.want, got)
@@ -99,7 +99,7 @@ func TestFormatStartupLogSummaryCloudListener(t *testing.T) {
 	}, false), "\n")
 
 	for _, want := range []string{
-		"Mode:        Radar Cloud",
+		"Mode:        KubeAtlas Cloud",
 		"Access:      HEALTH CHECK ONLY (application traffic uses the Cloud tunnel)",
 		"Auth:        proxy (Cloud tunnel identity)",
 		"Kubeconfig:  in-cluster service account",
@@ -108,7 +108,7 @@ func TestFormatStartupLogSummaryCloudListener(t *testing.T) {
 			t.Errorf("startup summary missing %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "Remote clients can access Radar") || strings.Contains(got, "ensure the ingress strips") {
+	if strings.Contains(got, "Remote clients can access KubeAtlas") || strings.Contains(got, "ensure the ingress strips") {
 		t.Fatalf("Cloud health listener emitted an inapplicable warning:\n%s", got)
 	}
 }
@@ -236,7 +236,7 @@ func TestStartupAIStatusExplainsWhyItIsOff(t *testing.T) {
 				mcpEnabled: true,
 				kubeconfig: k8s.KubeconfigSummary{Mode: "in-cluster"},
 			},
-			want: "not available when Radar runs inside the cluster",
+			want: "not available when KubeAtlas runs inside the cluster",
 		},
 		{
 			name:    "a shared installation does not tell anyone to install a CLI",

@@ -50,7 +50,7 @@ func cloudStatus(args []string, out, errOut io.Writer) int {
 	var flagOutput bytes.Buffer
 	fs.SetOutput(&flagOutput)
 	fs.Usage = func() {
-		fmt.Fprintln(fs.Output(), "Usage: radar cloud status [--context NAME] [--namespace NS --release NAME]")
+		fmt.Fprintln(fs.Output(), "Usage: kubeatlas cloud status [--context NAME] [--namespace NS --release NAME]")
 		fmt.Fprintln(fs.Output(), "Without both --namespace and --release, KubeAtlas discovers installations across visible namespaces.")
 		fs.PrintDefaults()
 	}
@@ -115,7 +115,7 @@ func cloudStatus(args []string, out, errOut io.Writer) int {
 	ctx, cancel := signalContext()
 	defer cancel()
 	exactTarget := cloudInstallUsesExactTarget(explicitNamespace, explicitRelease)
-	result, err := cloudinstall.DiscoverRadarTargets(ctx, clients.Kubernetes, clients.Dynamic, cloudinstall.DiscoveryOptions{
+	result, err := cloudinstall.DiscoverKubeAtlasTargets(ctx, clients.Kubernetes, clients.Dynamic, cloudinstall.DiscoveryOptions{
 		Namespace: normalizedNamespace, ReleaseName: normalizedRelease, ClusterWide: !exactTarget,
 	})
 	if err != nil {
@@ -155,7 +155,7 @@ func cloudStatus(args []string, out, errOut io.Writer) int {
 	return code
 }
 
-func printCloudDiscoveryStatus(out, errOut io.Writer, targets []cloudinstall.RadarTarget, clusterWideErr error, exactTarget bool, namespace, release string) int {
+func printCloudDiscoveryStatus(out, errOut io.Writer, targets []cloudinstall.KubeAtlasTarget, clusterWideErr error, exactTarget bool, namespace, release string) int {
 	if clusterWideErr != nil {
 		style := cliui.New(errOut)
 		fmt.Fprintf(errOut, "%s KubeAtlas could not inspect all visible namespaces: %v\n", style.Tone(cliui.Attention, "Warning:"), clusterWideErr)
@@ -170,7 +170,7 @@ func printCloudDiscoveryStatus(out, errOut io.Writer, targets []cloudinstall.Rad
 			fmt.Fprintln(out, "Other installations could not be ruled out. Pass --namespace and --release to inspect one directly.")
 		} else {
 			fmt.Fprintln(out, "KubeAtlas installation: not found")
-			fmt.Fprintln(out, "Run `radar cloud install` to connect this cluster.")
+			fmt.Fprintln(out, "Run `kubeatlas cloud install` to connect this cluster.")
 		}
 		return 1
 	case 1:
@@ -191,11 +191,11 @@ func printCloudDiscoveryStatus(out, errOut io.Writer, targets []cloudinstall.Rad
 	}
 }
 
-func printCloudStatus(out io.Writer, target cloudinstall.RadarTarget) bool {
+func printCloudStatus(out io.Writer, target cloudinstall.KubeAtlasTarget) bool {
 	return printCloudStatusWithStyle(out, target, cliui.New(out))
 }
 
-func printCloudStatusWithStyle(out io.Writer, target cloudinstall.RadarTarget, style cliui.Styler) bool {
+func printCloudStatusWithStyle(out io.Writer, target cloudinstall.KubeAtlasTarget, style cliui.Styler) bool {
 	runtime := target.Runtime
 	fmt.Fprintf(out, "KubeAtlas installation: %s/%s\n", target.Namespace, target.DeploymentName)
 	fmt.Fprintf(out, "Managed by: %s\n", cloudOwnershipLabel(target))
@@ -302,7 +302,7 @@ func cloudAgentHealthy(runtime cloudinstall.DeploymentRuntime) bool {
 		runtime.AvailableReplicas >= runtime.DesiredReplicas
 }
 
-func cloudStatusHeadline(targets []cloudinstall.RadarTarget, clusterWideErr error, tunnel hubTunnelResult) string {
+func cloudStatusHeadline(targets []cloudinstall.KubeAtlasTarget, clusterWideErr error, tunnel hubTunnelResult) string {
 	switch len(targets) {
 	case 0:
 		if clusterWideErr != nil {
@@ -320,11 +320,11 @@ func cloudStatusHeadline(targets []cloudinstall.RadarTarget, clusterWideErr erro
 	}
 }
 
-func formatCloudStatusHeadline(style cliui.Styler, targets []cloudinstall.RadarTarget, clusterWideErr error, tunnel hubTunnelResult) string {
+func formatCloudStatusHeadline(style cliui.Styler, targets []cloudinstall.KubeAtlasTarget, clusterWideErr error, tunnel hubTunnelResult) string {
 	return fmt.Sprintf("%s %s %s", style.Bold("Status:"), style.Marker(cloudStatusTone(targets, clusterWideErr, tunnel)), cloudStatusHeadline(targets, clusterWideErr, tunnel))
 }
 
-func cloudStatusTone(targets []cloudinstall.RadarTarget, clusterWideErr error, tunnel hubTunnelResult) cliui.Tone {
+func cloudStatusTone(targets []cloudinstall.KubeAtlasTarget, clusterWideErr error, tunnel hubTunnelResult) cliui.Tone {
 	if len(targets) != 1 {
 		return cliui.Attention
 	}
@@ -335,7 +335,7 @@ func cloudStatusTone(targets []cloudinstall.RadarTarget, clusterWideErr error, t
 	return tone
 }
 
-func cloudTargetStatusTone(target cloudinstall.RadarTarget, tunnel hubTunnelResult) cliui.Tone {
+func cloudTargetStatusTone(target cloudinstall.KubeAtlasTarget, tunnel hubTunnelResult) cliui.Tone {
 	agentTone := cloudAgentTone(target.Runtime)
 	if !target.Runtime.AlreadyCloud || len(missingCloudConfiguration(target.Runtime)) > 0 {
 		if agentTone == cliui.Failure {
@@ -355,7 +355,7 @@ func cloudTargetStatusTone(target cloudinstall.RadarTarget, tunnel hubTunnelResu
 	return cliui.Attention
 }
 
-func cloudTargetStatusHeadline(target cloudinstall.RadarTarget, tunnel hubTunnelResult) string {
+func cloudTargetStatusHeadline(target cloudinstall.KubeAtlasTarget, tunnel hubTunnelResult) string {
 	runtime := target.Runtime
 	agentHealthy := cloudAgentHealthy(runtime)
 	if !runtime.AlreadyCloud {
@@ -405,11 +405,11 @@ func cloudTargetStatusHeadline(target cloudinstall.RadarTarget, tunnel hubTunnel
 	}
 }
 
-func printHubTunnelStatus(out io.Writer, target cloudinstall.RadarTarget, result hubTunnelResult) {
+func printHubTunnelStatus(out io.Writer, target cloudinstall.KubeAtlasTarget, result hubTunnelResult) {
 	printHubTunnelStatusWithStyle(out, target, result, cliui.New(out))
 }
 
-func printHubTunnelStatusWithStyle(out io.Writer, target cloudinstall.RadarTarget, result hubTunnelResult, style cliui.Styler) {
+func printHubTunnelStatusWithStyle(out io.Writer, target cloudinstall.KubeAtlasTarget, result hubTunnelResult, style cliui.Styler) {
 	tone := hubTunnelTone(result)
 	fmt.Fprintf(out, "\nCloud connection: %s %s\n", style.Marker(tone), result.summary)
 	if result.hubClusterID != "" && result.hubClusterID != target.Runtime.ClusterName {
@@ -447,12 +447,12 @@ func hubTunnelTone(result hubTunnelResult) cliui.Tone {
 	}
 }
 
-func checkHubTunnelStatus(ctx context.Context, kc kubernetes.Interface, target cloudinstall.RadarTarget) hubTunnelResult {
+func checkHubTunnelStatus(ctx context.Context, kc kubernetes.Interface, target cloudinstall.KubeAtlasTarget) hubTunnelResult {
 	runtime := target.Runtime
 	if !runtime.AlreadyCloud {
 		return hubTunnelResult{
 			summary: "not configured",
-			next:    "run `radar cloud install` to connect this installation.",
+			next:    "run `kubeatlas cloud install` to connect this installation.",
 		}
 	}
 	if missing := missingCloudConfiguration(runtime); len(missing) > 0 {
@@ -505,7 +505,7 @@ func addHubFrontendLinks(result hubTunnelResult, frontendURL string) hubTunnelRe
 	return result
 }
 
-func checkHubTunnelStatusWithClient(ctx context.Context, kc kubernetes.Interface, target cloudinstall.RadarTarget, client agentStatusGetter) hubTunnelResult {
+func checkHubTunnelStatusWithClient(ctx context.Context, kc kubernetes.Interface, target cloudinstall.KubeAtlasTarget, client agentStatusGetter) hubTunnelResult {
 	runtime := target.Runtime
 	if runtime.CloudTokenSecretName == "" || runtime.CloudTokenSecretKey == "" {
 		return hubTunnelResult{
@@ -626,7 +626,7 @@ func missingCloudConfiguration(runtime cloudinstall.DeploymentRuntime) []string 
 	return missing
 }
 
-func cloudOwnershipLabel(target cloudinstall.RadarTarget) string {
+func cloudOwnershipLabel(target cloudinstall.KubeAtlasTarget) string {
 	switch target.Ownership.Classification {
 	case cloudinstall.OwnershipNativeHelm:
 		if target.ReleaseName != "" {

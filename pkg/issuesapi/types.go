@@ -1,6 +1,6 @@
-// Package issuesapi defines the stable JSON contract for Radar's /api/issues
-// response. It is intentionally data-only so Radar Cloud can share the wire
-// shape without importing Radar's internal issue detection implementation.
+// Package issuesapi defines the stable JSON contract for KubeAtlas's /api/issues
+// response. It is intentionally data-only so KubeAtlas Cloud can share the wire
+// shape without importing KubeAtlas's internal issue detection implementation.
 package issuesapi
 
 import (
@@ -188,8 +188,8 @@ func GroupOf(c Category) CategoryGroup {
 	return GroupUnknown
 }
 
-// MessageSourceRadar marks an issue Message that Radar wrote.
-const MessageSourceRadar = "radar"
+// MessageSourceKubeAtlas marks an issue Message that KubeAtlas wrote.
+const MessageSourceKubeAtlas = "kubeatlas"
 
 type Scope string
 
@@ -500,7 +500,7 @@ type ConditionalCleanup struct {
 // changed.
 type FinalizerRemoval struct {
 	Finalizer string `json:"finalizer"`
-	// PatchResource is input for Radar's patch_resource tool, with dry_run=true.
+	// PatchResource is input for KubeAtlas's patch_resource tool, with dry_run=true.
 	PatchResource json.RawMessage `json:"patch_resource"`
 	// Kubectl is the same patch as a server-side dry run; dropping
 	// --dry-run=server applies it.
@@ -533,7 +533,7 @@ type Issue struct {
 	Reason        string        `json:"reason"`
 	Message       string        `json:"message,omitempty"`
 	RawMessage    string        `json:"raw_message,omitempty"`
-	// MessageSource is MessageSourceRadar when Message is Radar's own summary
+	// MessageSource is MessageSourceKubeAtlas when Message is KubeAtlas's own summary
 	// rather than text from Kubernetes or a controller, so a UI doesn't present
 	// it as raw output. A detector that sets it writes a Cause that stands on
 	// its own without Message.
@@ -564,7 +564,7 @@ type Issue struct {
 	// sees it set, since the bit would otherwise leak cluster-scoped pool state.
 	CapacityRelevant bool `json:"capacity_relevant,omitempty"`
 	// FirstSeen is the earliest evidence-backed time the issue was active. It
-	// may be the time Radar first observed a state rather than its exact onset,
+	// may be the time KubeAtlas first observed a state rather than its exact onset,
 	// so consumers should read it as "active at least since".
 	FirstSeen            time.Time      `json:"first_seen,omitzero"`
 	OnsetUnknown         bool           `json:"onset_unknown,omitempty"`
@@ -577,7 +577,7 @@ type Issue struct {
 	RestartCount         int32          `json:"restart_count,omitempty"`
 	LastTerminatedReason string         `json:"last_terminated_reason,omitempty"`
 	// RestartLoop is set on a crashloop or oom_killed issue whose container
-	// Radar classifies as in an active restart loop. It is the evidence for the loop, taken
+	// KubeAtlas classifies as in an active restart loop. It is the evidence for the loop, taken
 	// from one container so every field describes the same termination.
 	RestartLoop       *RestartLoop       `json:"restart_loop,omitempty"`
 	Affected          Affected           `json:"affected,omitzero"`
@@ -644,27 +644,27 @@ type Issue struct {
 	// absence must never be read as "no changes".
 	NoRecentChanges *NoRecentChangesMarker `json:"no_recent_changes,omitempty"`
 	// CorrelatedChangesIncomplete is set when CorrelatedChanges is non-empty
-	// but the subject's change history in the window was larger than Radar's
+	// but the subject's change history in the window was larger than KubeAtlas's
 	// fetch bound, so older changes were not read. The listed changes are
 	// leads, not the subject's full history.
 	CorrelatedChangesIncomplete bool `json:"correlated_changes_incomplete,omitempty"`
 }
 
-// HistoryGapReason names why Radar's recorded change history does not cover a
+// HistoryGapReason names why KubeAtlas's recorded change history does not cover a
 // requested window. Wire contract: clients branch on the values.
 type HistoryGapReason string
 
 const (
-	// HistoryObservationStartedLate: this Radar process started observing
+	// HistoryObservationStartedLate: this KubeAtlas process started observing
 	// after the window began, so earlier changes were never recorded by it.
 	HistoryObservationStartedLate HistoryGapReason = "observation_started_late"
-	// HistoryEventsEvicted: Radar deleted recorded events from the window to
+	// HistoryEventsEvicted: KubeAtlas deleted recorded events from the window to
 	// stay within its history size or retention limit.
 	HistoryEventsEvicted HistoryGapReason = "events_evicted"
 )
 
 // HistoryCoverage reports that a change answer's window starts before the
-// history Radar holds, so an empty or short answer does not establish that
+// history KubeAtlas holds, so an empty or short answer does not establish that
 // nothing changed. Present only when Incomplete. CompleteSince is when the
 // held history becomes complete; it is store-wide, so it is sent only to
 // callers who can read the whole cluster.
@@ -702,7 +702,7 @@ type Response struct {
 	// scope either way, not implied absent.
 	RecentChangesTruncated bool `json:"recent_changes_truncated,omitempty"`
 	// RecentChangesHistoryCoverage is set when the recent-changes window starts
-	// before the history Radar holds, including when no change was returned.
+	// before the history KubeAtlas holds, including when no change was returned.
 	RecentChangesHistoryCoverage *HistoryCoverage `json:"recent_changes_history_coverage,omitempty"`
 	// RecentChangesError is set when the recent-changes feed was due but could
 	// not be read, such as while the timeline database is unreachable. Without
@@ -713,7 +713,7 @@ type Response struct {
 	// checked first). Under truncation, an issue without correlation markers
 	// means "not checked", not "no changes".
 	CorrelationTruncated bool `json:"correlation_truncated,omitempty"`
-	// UncheckedSources lists the issue sources Radar couldn't check for this
+	// UncheckedSources lists the issue sources KubeAtlas couldn't check for this
 	// answer, so their issues may be missing. Omitted when every source was
 	// checked. A source the caller may not read, or a read cut short because
 	// the caller left, is not listed. Consumers must treat an unknown source
@@ -771,13 +771,13 @@ func (c *ClusterScopedChanges) Informative() bool {
 	return c != nil && (len(c.Changes) > 0 || len(c.NotListed) > 0 || c.Truncated || c.Error != "" || c.Incomplete != "")
 }
 
-// UncheckedSource is one issue source Radar couldn't check. A source can
+// UncheckedSource is one issue source KubeAtlas couldn't check. A source can
 // appear more than once, once per reason.
 type UncheckedSource struct {
 	Source UncheckedSourceName `json:"source"`
 	Reason UncheckedReason     `json:"reason"`
 	// Kinds names the kinds within the source that went unchecked. Absent
-	// means the whole source, or that Radar can't tell which kinds.
+	// means the whole source, or that KubeAtlas can't tell which kinds.
 	Kinds []UncheckedKind `json:"kinds,omitempty"`
 	// Namespaces names the namespaces whose read failed when the source was
 	// read in the others, so issues outside them are complete. Absent means
@@ -796,10 +796,10 @@ type UncheckedKind struct {
 type UncheckedSourceName string
 
 const (
-	// UncheckedSourceHelm is Radar's native Helm release read (release
+	// UncheckedSourceHelm is KubeAtlas's native Helm release read (release
 	// Secrets). Flux HelmReleases are not part of it.
 	UncheckedSourceHelm UncheckedSourceName = "helm"
-	// UncheckedSourceResources is Radar's checks on built-in Kubernetes kinds
+	// UncheckedSourceResources is KubeAtlas's checks on built-in Kubernetes kinds
 	// (Pods, workloads, Services, PVCs, HPAs, Nodes and the like), read from
 	// its resource cache.
 	UncheckedSourceResources UncheckedSourceName = "resources"
@@ -815,14 +815,14 @@ type UncheckedReason string
 
 const (
 	// UncheckedReasonReadFailed: the read failed, for example an API server
-	// error, rejected credentials, or Radar's own request deadline.
+	// error, rejected credentials, or KubeAtlas's own request deadline.
 	UncheckedReasonReadFailed UncheckedReason = "read_failed"
-	// UncheckedReasonSyncPending: Radar is still loading these kinds, for
+	// UncheckedReasonSyncPending: KubeAtlas is still loading these kinds, for
 	// example right after it starts. A later request can succeed.
 	UncheckedReasonSyncPending UncheckedReason = "kind_sync_pending"
 	// UncheckedReasonSyncFailed: loading these kinds stalled or gave up.
 	UncheckedReasonSyncFailed UncheckedReason = "kind_sync_failed"
-	// UncheckedReasonCollectorAccessDenied: Kubernetes refused Radar's own
+	// UncheckedReasonCollectorAccessDenied: Kubernetes refused KubeAtlas's own
 	// identity, such as a ServiceAccount that may not impersonate the
 	// caller. Granting the caller more access does not help.
 	UncheckedReasonCollectorAccessDenied UncheckedReason = "collector_access_denied"

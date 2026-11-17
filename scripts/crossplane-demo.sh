@@ -16,7 +16,7 @@
 #   - kubectl
 #   - helm     https://helm.sh/docs/intro/install/
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-crossplane-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-crossplane-demo).
 #
 # Fixtures cover both Crossplane API models on a single cluster:
 #   - v1 Claim -> bound XR -> composed resources (the v1 claim/XR/MR flow), via
@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-crossplane-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-crossplane-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 
 # Versions pinned so the demo behaves consistently across runs. Bump when
@@ -286,7 +286,7 @@ spec:
         namespace: default
       data:
         managed-by: crossplane
-        purpose: radar-demo-standalone-mr
+        purpose: kubeatlas-demo-standalone-mr
 ---
 apiVersion: kubernetes.crossplane.io/v1alpha1
 kind: Object
@@ -750,7 +750,7 @@ print_summary() {
 
   Live reconcile state (Ready/Synced): ${CHAINS_READY_HINT}
 
-  Run Radar against this cluster:
+  Run KubeAtlas against this cluster:
     kubectl config use-context ${KUBECTL_CTX}
     ./scripts/visual-test-start.sh
 

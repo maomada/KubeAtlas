@@ -368,17 +368,17 @@ func scanDeprecatedAPIRequests(input *Input, target *utilversion.Version) Check 
 	}
 	if input.DeprecatedAPIRequests == nil {
 		check.Status = CheckUnknown
-		check.Summary = "API usage metrics are unavailable; Radar could not inspect deprecated API requests."
+		check.Summary = "API usage metrics are unavailable; KubeAtlas could not inspect deprecated API requests."
 		check.Caveat = "API server /metrics evidence was not collected."
 		check.EvidenceNote = ""
 		switch input.DeprecatedAPIMetricsFailure {
 		case APIMetricsUnreadable:
-			check.Caveat = "Radar could not read or parse the API server /metrics response completely. Check the connection and Radar logs, then retry the scan."
+			check.Caveat = "KubeAtlas could not read or parse the API server /metrics response completely. Check the connection and KubeAtlas logs, then retry the scan."
 		case APIMetricsTooLarge:
-			check.Summary = "API usage metrics are too large; Radar could not inspect deprecated API requests."
-			check.Caveat = fmt.Sprintf("The API server /metrics response exceeded Radar's size limit: %d MiB for the full response or %d KiB for a metric line.", APIMetricsResponseLimit>>20, APIMetricsLineLimit>>10)
+			check.Summary = "API usage metrics are too large; KubeAtlas could not inspect deprecated API requests."
+			check.Caveat = fmt.Sprintf("The API server /metrics response exceeded KubeAtlas's size limit: %d MiB for the full response or %d KiB for a metric line.", APIMetricsResponseLimit>>20, APIMetricsLineLimit>>10)
 		case APIMetricsForbidden:
-			check.Caveat = "Grant get on the API server /metrics non-resource URL to the current identity to enable this evidence. Radar Cloud's default role intentionally omits this broader read."
+			check.Caveat = "Grant get on the API server /metrics non-resource URL to the current identity to enable this evidence. KubeAtlas Cloud's default role intentionally omits this broader read."
 			check.References = append(check.References, cloudMetricsPermissionReference)
 		}
 		return check
@@ -515,7 +515,7 @@ func scanNodeHealth(input *Input) Check {
 	}
 	if input.Nodes == nil || len(input.Nodes) == 0 {
 		check.Status = CheckUnknown
-		check.Summary = "Nodes are unavailable; Radar could not verify cluster health before the upgrade."
+		check.Summary = "Nodes are unavailable; KubeAtlas could not verify cluster health before the upgrade."
 		return check
 	}
 	check.Inspected = len(input.Nodes)
@@ -552,7 +552,7 @@ func scanKubeletSkew(input *Input, target *utilversion.Version) Check {
 	}
 	if input.Nodes == nil || len(input.Nodes) == 0 {
 		check.Status = CheckUnknown
-		check.Summary = "Nodes are unavailable; Radar could not validate kubelet version skew."
+		check.Summary = "Nodes are unavailable; KubeAtlas could not validate kubelet version skew."
 		return check
 	}
 	check.Inspected = len(input.Nodes)
@@ -594,7 +594,7 @@ func scanKubeletSkew(input *Input, target *utilversion.Version) Check {
 	}
 	if len(check.Findings) == 0 && unparsed > 0 {
 		check.Status = CheckUnknown
-		check.Summary = fmt.Sprintf("Radar could not parse the kubelet version on %d %s.", unparsed, plural(unparsed, "node", "nodes"))
+		check.Summary = fmt.Sprintf("KubeAtlas could not parse the kubelet version on %d %s.", unparsed, plural(unparsed, "node", "nodes"))
 	}
 	return check
 }
@@ -611,7 +611,7 @@ func scanKubeProxySkew(input *Input, target *utilversion.Version) Check {
 	}
 	if input.DaemonSets == nil {
 		check.Status = CheckUnknown
-		check.Summary = "DaemonSets are unavailable; Radar could not inspect kube-proxy."
+		check.Summary = "DaemonSets are unavailable; KubeAtlas could not inspect kube-proxy."
 		return check
 	}
 	if input.Namespaces != nil && !containsString(input.Namespaces, "kube-system") {
@@ -662,7 +662,7 @@ func scanKubeProxySkew(input *Input, target *utilversion.Version) Check {
 	}
 	if len(check.Findings) == 0 && unparsed > 0 {
 		check.Status = CheckUnknown
-		check.Summary = "Radar found kube-proxy but could not determine its Kubernetes version from the image."
+		check.Summary = "KubeAtlas found kube-proxy but could not determine its Kubernetes version from the image."
 	}
 	return check
 }
@@ -730,7 +730,7 @@ func scanFlexVolume(input *Input, index *workloadIndex) Check {
 	}
 	if countNonNil(input.Nodes) == 0 {
 		check.Status = CheckUnknown
-		check.Summary = "Nodes are unavailable; Radar could not determine whether this kubeadm-specific change applies."
+		check.Summary = "Nodes are unavailable; KubeAtlas could not determine whether this kubeadm-specific change applies."
 		return check
 	}
 	if input.Namespaces != nil {
@@ -831,7 +831,7 @@ func scanServiceExternalIPs(input *Input) Check {
 	}
 	if input.Services == nil {
 		check.Status = CheckUnknown
-		check.Summary = "Services are unavailable; Radar could not inspect spec.externalIPs."
+		check.Summary = "Services are unavailable; KubeAtlas could not inspect spec.externalIPs."
 		return check
 	}
 	check.Inspected = countNonNil(input.Services)
@@ -875,7 +875,7 @@ func scanRenamedMetrics(input *Input) Check {
 	}
 	if !input.PrometheusRulesDiscoveryAvailable {
 		check.Status = CheckUnknown
-		check.Summary = "API discovery is unavailable; Radar could not determine whether PrometheusRule is installed."
+		check.Summary = "API discovery is unavailable; KubeAtlas could not determine whether PrometheusRule is installed."
 		return check
 	}
 	if !input.PrometheusRulesInstalled {
@@ -895,7 +895,7 @@ func scanRenamedMetrics(input *Input) Check {
 		if check.Caveat != "" {
 			check.Summary = "PrometheusRules are installed but unavailable in the current namespace scope."
 		} else {
-			check.Summary = "PrometheusRules are installed but unavailable to Radar."
+			check.Summary = "PrometheusRules are installed but unavailable to KubeAtlas."
 		}
 		return check
 	}

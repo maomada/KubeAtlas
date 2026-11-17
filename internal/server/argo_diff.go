@@ -65,7 +65,7 @@ type argoResourceDiffResponse struct {
 //     SubjectAccessReview for cluster-scoped kinds and Secrets. (A namespaced
 //     non-Secret kind is gated by namespace access only, matching the resource
 //     drawer's model — not a per-kind `get` on that exact kind.)
-//  3. the destination cluster — Radar's SARs authorize against its OWN cluster,
+//  3. the destination cluster — KubeAtlas's SARs authorize against its OWN cluster,
 //     so a diff is served only when the Application deploys in-cluster
 //     (isInClusterDestination). A remote hub-spoke destination is refused: a
 //     local SAR cannot authorize a read of another cluster's manifests.
@@ -118,7 +118,7 @@ func (s *Server) handleArgoResourceDiff(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Gate 3: the destination cluster. The two SARs above authorize the caller
-	// against RADAR'S cluster, but Argo's managed-resources reflect the cluster
+	// against KUBEATLAS'S cluster, but Argo's managed-resources reflect the cluster
 	// the Application deploys to. For a hub-spoke Application whose destination is
 	// a remote cluster, a local SAR cannot authorize a remote read — so the
 	// desired/live manifests must not be served. Fail closed: refuse both a remote
@@ -144,7 +144,7 @@ func (s *Server) handleArgoResourceDiff(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if !isInClusterDestination(appObj) {
-		s.writeError(w, http.StatusBadRequest, "Per-resource diff is available only for Applications that deploy to the cluster Radar is connected to. This Application targets a different cluster — connect Radar to that cluster to diff its resources.")
+		s.writeError(w, http.StatusBadRequest, "Per-resource diff is available only for Applications that deploy to the cluster KubeAtlas is connected to. This Application targets a different cluster — connect KubeAtlas to that cluster to diff its resources.")
 		return
 	}
 
@@ -180,7 +180,7 @@ func (s *Server) handleArgoResourceDiff(w http.ResponseWriter, r *http.Request) 
 	// Argo's states retain managedFields and the last-applied annotation.
 	// managedFields is pure apply-machinery noise that dwarfs the actual
 	// manifest in the side-by-side view; last-applied embeds a full manifest
-	// copy. Radar-wide policy (pkg/k8score StripUnstructuredFields) is that
+	// copy. KubeAtlas-wide policy (pkg/k8score StripUnstructuredFields) is that
 	// neither reaches outward payloads. Stripped from BOTH sides, so the
 	// removal is diff-neutral.
 	for _, obj := range []map[string]any{desiredObj, liveObj} {
@@ -411,7 +411,7 @@ func manifestToYAML(obj map[string]any) string {
 	return string(b)
 }
 
-const argoConnectingMessage = "Radar is still connecting to Argo CD. Try again in a few seconds."
+const argoConnectingMessage = "KubeAtlas is still connecting to Argo CD. Try again in a few seconds."
 
 // writeArgoDiffError maps managed-resources fetch failures to HTTP status
 // codes. Token problems (either the manager's auth verification or an

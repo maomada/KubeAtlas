@@ -1,7 +1,7 @@
 # CloudNativePG Demo Cluster
 
 Bootstraps a `kind` cluster with CloudNativePG installed and a curated set of
-fixtures covering the states Radar's CNPG surfaces need to render correctly.
+fixtures covering the states KubeAtlas's CNPG surfaces need to render correctly.
 Use it for visual-testing CNPG UI changes, or for catching regressions across
 badge / drawer / Issues / audit / filter in a single pass.
 
@@ -16,8 +16,8 @@ variety that matters.
 ./scripts/cnpg-demo.sh up        # ~6 minutes on first run
 ./scripts/cnpg-demo.sh status    # inventory, and whether the operator is frozen
 
-# Run Radar against it
-kubectl config use-context kind-radar-cnpg-demo
+# Run KubeAtlas against it
+kubectl config use-context kind-kubeatlas-cnpg-demo
 ./scripts/visual-test-start.sh
 
 # When done
@@ -130,7 +130,7 @@ counts, which is the class of bug this fixture exists to catch.
 | `pg/pg-healthy-pooler` | Pooler | Positive state is **Scheduled**, not Ready — `status.instances` counts pods being scheduled, not ready ones. Deliberately not named `pg-healthy-rw`; see below. |
 | `pg/pg-nightly` | ScheduledBackup | `method: plugin`. The audit check must count all three method values; a default-method fixture would pass whether or not it is plugin-aware. |
 | `pg/pg-backup-ok` | Backup | `completed` |
-| `pg/pg-backup-wal-broken` | Backup | `walArchivingFailing` — a Radar-curated label, not a CNPG phase string |
+| `pg/pg-backup-wal-broken` | Backup | `walArchivingFailing` — a KubeAtlas-curated label, not a CNPG phase string |
 | `pg/pg-backup-unknown-phase` | Backup | An unmapped phase, proving a future CNPG minor passes through **verbatim** rather than being asserted healthy |
 | `pg/velero-nightly-cluster` | Backup (`velero.io`) | Shared `backups` plural — must render Velero's column set, not CNPG's |
 | `pg/kb-mysql` | Cluster (`apps.kubeblocks.io`) | Shared `clusters` plural — must render the **generic** drawer: not blank, not a fabricated Postgres status |
@@ -259,8 +259,8 @@ subdirectory, so `up`/`live` never apply them.
 | `pgrt/pg-runtime-hourly` | ScheduledBackup, `method: plugin`, `immediate: true` → a Backup the operator actually took |
 | `pgrt/pg-runtime-restore` | 1 instance, `bootstrap.recovery` from `minio-store` / `serverName: pg-runtime` |
 | `pgrt/pg-runtime-pooler-rw` | PgBouncer, transaction mode, 2 pods |
-| `pgrt/pg-load` | pgbench through the Pooler, ~5 tps (`application_name=radar-pgbench`) |
-| `pgrt/pg-lock-holder` / `pg-lock-waiter` | `idle in transaction` holding a row lock on `radar_lock_demo`, and an `UPDATE` blocked on it |
+| `pgrt/pg-load` | pgbench through the Pooler, ~5 tps (`application_name=kubeatlas-pgbench`) |
+| `pgrt/pg-lock-holder` / `pg-lock-waiter` | `idle in transaction` holding a row lock on `kubeatlas_lock_demo`, and an `UPDATE` blocked on it |
 | `monitoring/prometheus-server` | Scrapes instances `:9187` (job `cnpg-instances`) and poolers `:9127` (job `cnpg-poolers`), 15s, keeping `namespace`, `pod`, `cluster` (+ `pooler`); and each kubelet through the apiserver node proxy (job `kubelet`, only `kubelet_volume_stats_*`) |
 
 **Why the operator must be live.** Every runtime state is produced by the
@@ -271,9 +271,9 @@ deleted first). The `pg` terminal phases do not survive that — `refreeze`
 restores them, after which pgrt keeps archiving (the sidecar talks to the
 instance manager, not the operator) but gets no scheduled backups or failover.
 
-**How Radar finds the Prometheus.** `monitoring/prometheus-server` is an exact
+**How KubeAtlas finds the Prometheus.** `monitoring/prometheus-server` is an exact
 entry in `WellKnownLocations` (`pkg/prom/discovery.go`), so discovery is a
-targeted Service GET, not the scored dynamic scan; off-cluster Radar
+targeted Service GET, not the scored dynamic scan; off-cluster KubeAtlas
 port-forwards to it. Its only port is 9090 so the "first port" rule is
 unambiguous. The frozen `pg` instances are scraped too.
 
@@ -292,7 +292,7 @@ tests (`internal/server/cnpg_storage_test.go`, `workspace-disk.test.ts`), not
 this fixture. To check the scrape itself:
 
 ```bash
-kubectl --context kind-radar-cnpg-demo -n monitoring exec deploy/prometheus-server -- wget -qO- 'http://localhost:9090/api/v1/query?query=up{job="kubelet"}'
+kubectl --context kind-kubeatlas-cnpg-demo -n monitoring exec deploy/prometheus-server -- wget -qO- 'http://localhost:9090/api/v1/query?query=up{job="kubelet"}'
 ```
 
 ### Constraints, all of which fail quietly
@@ -331,11 +331,11 @@ kubectl --context kind-radar-cnpg-demo -n monitoring exec deploy/prometheus-serv
 ### Verify
 
 ```bash
-C="--context kind-radar-cnpg-demo"
+C="--context kind-kubeatlas-cnpg-demo"
 kubectl $C -n pgrt get clusters,backups,poolers
 kubectl $C -n pgrt get cluster pg-runtime -o jsonpath='{.status.conditions[?(@.type=="ContinuousArchiving")].status}'
 kubectl $C -n pgrt exec pg-runtime-1 -c postgres -- psql -U postgres -d app -c \
-  "SELECT application_name, state, wait_event_type, pg_blocking_pids(pid) FROM pg_stat_activity WHERE application_name LIKE 'radar-%'"
+  "SELECT application_name, state, wait_event_type, pg_blocking_pids(pid) FROM pg_stat_activity WHERE application_name LIKE 'kubeatlas-%'"
 kubectl $C get --raw /api/v1/namespaces/pgrt/pods/https:pg-runtime-1:8000/proxy/pg/status   # replicationInfo
 kubectl $C -n monitoring port-forward svc/prometheus-server 9090 &
 curl -s 'localhost:9090/api/v1/query?query=up' | python3 -m json.tool
@@ -346,14 +346,14 @@ curl -s 'localhost:9090/api/v1/query?query=up' | python3 -m json.tool
 
 ## Notes
 
-- `CNPG_VERSION` is pinned to 1.27.0. Radar matches CNPG's phases on **equality**
+- `CNPG_VERSION` is pinned to 1.27.0. KubeAtlas matches CNPG's phases on **equality**
   against full English sentences from `api/v1/cluster_types.go`, so bumping the
   version can silently move a cluster into the unrecognised-phase bucket. Bump
   deliberately, then re-check the badges.
 - **DatabaseRole (CNPG 1.30+).** `11-databaseroles.yaml` is applied only when
   `databaseroles.postgresql.cnpg.io` is served, so the pinned 1.27 demo skips
   it. To see it, bring up a **separate** cluster on 1.30:
-  `CLUSTER_NAME=radar-cnpg-130 CNPG_VERSION=1.30.0 ./scripts/cnpg-demo.sh up`.
+  `CLUSTER_NAME=kubeatlas-cnpg-130 CNPG_VERSION=1.30.0 ./scripts/cnpg-demo.sh up`.
   Do not re-run `up` with a newer `CNPG_VERSION` over an existing demo: the
   operator upgrade rolls every instance and the phase strings may move (see
   the first note). The fixture gives one applied role (`demo-reader`) and one

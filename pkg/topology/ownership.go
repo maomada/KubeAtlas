@@ -29,7 +29,7 @@ const maxOwnershipRefs = 500
 //     manager's Manages are the members its status records.
 //
 // fetched is the object rel describes, as the response shows it. It answers
-// for itself when Radar doesn't collect its kind; if the caches hold another
+// for itself when KubeAtlas doesn't collect its kind; if the caches hold another
 // incarnation, rel answers nothing and reports a read error.
 func ApplyOwnership(rel *Relationships, v *ownership.View, fetched ownership.Observation) {
 	if rel == nil || v == nil {
@@ -282,7 +282,7 @@ func namedOwner(owner ownership.OwnerAnswer) *ResourceRef {
 	return &ResourceRef{Group: gv.Group, Kind: r.Kind, Name: r.Name}
 }
 
-// OwnershipUnavailable records that Radar couldn't answer rel's ownership,
+// OwnershipUnavailable records that KubeAtlas couldn't answer rel's ownership,
 // with a readreason code saying why. No answer from manages edges stands in.
 func OwnershipUnavailable(rel *Relationships, reason string) {
 	if rel != nil {

@@ -30,7 +30,7 @@ type localConnectionResponse struct {
 
 func (s *Server) requireLocalConnections(w http.ResponseWriter) bool {
 	if s.configManagement() != "local" || s.localConnections == nil || s.localRuntime == nil {
-		s.writeError(w, http.StatusForbidden, "Saved connections are available only in local CLI and Desktop Radar. Change this installation's integrations through its operator configuration.")
+		s.writeError(w, http.StatusForbidden, "Saved connections are available only in local CLI and Desktop KubeAtlas. Change this installation's integrations through its operator configuration.")
 		return false
 	}
 	return true
@@ -147,7 +147,7 @@ func (s *Server) handleUpdateLocalConnection(w http.ResponseWriter, r *http.Requ
 			log.Printf("[connections] %s candidate check failed: %s", request.Kind, sanitizeForLog(detail))
 			message := "Argo CD connection check failed; check its URL, network access and TLS settings. The previous connection is unchanged"
 			if request.Kind == config.IntegrationArgoCD && pending.Candidate.Settings.ArgoCD.URL == "" {
-				message = "Argo CD connection check failed; Radar could not find or reach argocd-server in this cluster. Check that it is installed and that your kubeconfig user can port-forward to it, or enter its URL. The previous connection is unchanged"
+				message = "Argo CD connection check failed; KubeAtlas could not find or reach argocd-server in this cluster. Check that it is installed and that your kubeconfig user can port-forward to it, or enter its URL. The previous connection is unchanged"
 			}
 			if request.Kind == config.IntegrationCost {
 				message = kubecostConnectionGuidance(err, pending.Candidate.Settings.Kubecost.APIKey != "")

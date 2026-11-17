@@ -11,7 +11,7 @@ import {
   type GitOpsWriteTarget,
 } from '@maomada/k8s-ui'
 import type { Relationships } from '../types'
-import { fetchGitOpsWriteEvidence, useResource, useRadarFeature } from '../api/client'
+import { fetchGitOpsWriteEvidence, useResource, useKubeAtlasFeature } from '../api/client'
 import { getApiBase } from '../api/config'
 import { kindToPluralWithGroup } from '../utils/navigation'
 import { gitOpsOwnerKindRef, useResolvedGitOpsOwner, type ResolvedGitOpsOwner } from './useResolvedGitOpsOwner'
@@ -63,7 +63,7 @@ export function useGitOpsWriteGuard({
     target.name,
     target.group || undefined,
     // Keyed by API base: a host can point one QueryClient at several clusters
-    // (Radar Hub's fleet Diagnose panel), and the shared resource keys aren't.
+    // (KubeAtlas Hub's fleet Diagnose panel), and the shared resource keys aren't.
     { enabled: needsTarget, cacheScope: getApiBase() },
   )
   const ownRelationships = relationships ?? targetQuery.relationships
@@ -107,9 +107,9 @@ export function useGitOpsWriteGuard({
   // the Application whose status lists the object.
   const canFetchEvidence = (managed || needsManagerEvidence) && !lookupPending && !targetLookupFailed && !ownership.lookupError
 
-  const evidenceFeature = useRadarFeature('gitopsWriteEvidence')
+  const evidenceFeature = useKubeAtlasFeature('gitopsWriteEvidence')
   const evidenceQuery = useQuery({
-    // The API base identifies the cluster when a host switches it (Radar Hub).
+    // The API base identifies the cluster when a host switches it (KubeAtlas Hub).
     queryKey: ['gitops-write-evidence', getApiBase(), target.kind, target.group, target.namespace, target.name, paths, ownerRef, manager, ...evidenceFeature.gatedKey],
     queryFn: () =>
       evidenceFeature.guard(() =>

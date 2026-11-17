@@ -3,11 +3,11 @@ package resourceid
 import "strings"
 
 // Builtin describes a resource Kubernetes ships, as opposed to one a CRD or an
-// aggregated API adds. These are facts about the API, not about Radar: which
-// of them Radar serves from typed caches is decided by its consumers.
+// aggregated API adds. These are facts about the API, not about KubeAtlas: which
+// of them KubeAtlas serves from typed caches is decided by its consumers.
 type Builtin struct {
 	Group string
-	// Version is the version Radar reads the resource at. It is empty where the
+	// Version is the version KubeAtlas reads the resource at. It is empty where the
 	// served version still varies across supported clusters, so callers must
 	// take it from discovery.
 	Version    string
@@ -32,7 +32,7 @@ func (b Builtin) GroupKind() GroupKind {
 }
 
 // Builtins is the one table of built-in resource identities. Keep it to
-// resources Radar addresses somewhere; exhaustiveness is not the goal.
+// resources KubeAtlas addresses somewhere; exhaustiveness is not the goal.
 var Builtins = []Builtin{
 	{Group: "", Version: "v1", Kind: "Pod", Resource: "pods", Namespaced: true, Aliases: []string{"po"}},
 	{Group: "", Version: "v1", Kind: "Service", Resource: "services", Namespaced: true, Aliases: []string{"svc"}},
@@ -129,7 +129,7 @@ func GroupForBuiltinKind(kind string) string {
 	return group
 }
 
-// BuiltinAPIVersion returns the apiVersion Radar reads a built-in Kind at, for
+// BuiltinAPIVersion returns the apiVersion KubeAtlas reads a built-in Kind at, for
 // restoring the TypeMeta that typed informer objects arrive without. It is
 // false for unknown kinds and for built-ins whose served version varies.
 func BuiltinAPIVersion(kind string) (string, bool) {

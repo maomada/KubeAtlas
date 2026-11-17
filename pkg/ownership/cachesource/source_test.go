@@ -120,7 +120,7 @@ func discoveryLists() []*metav1.APIResourceList {
 	}
 }
 
-// fixture is a cluster's fake API clients and Radar's caches over them.
+// fixture is a cluster's fake API clients and KubeAtlas's caches over them.
 type fixture struct {
 	typed   *fake.Clientset
 	dynamic *dynamicfake.FakeDynamicClient
@@ -253,7 +253,7 @@ func TestObjectCopiesWhatOwnershipReads(t *testing.T) {
 	if node := s.Object(ref("", "Node", "", "n1")); node.State != ownership.Present || node.Object.UID != "uid-node" {
 		t.Fatalf("Node = %v %+v", node.State, node.Object)
 	}
-	// Radar keeps none of an Event's owner references, so ownership can't read
+	// KubeAtlas keeps none of an Event's owner references, so ownership can't read
 	// one, in either Event group.
 	for _, group := range []string{"", "events.k8s.io"} {
 		if event := s.Object(ref(group, "Event", "alpha", "e1")); event.State != ownership.Excluded {
@@ -297,9 +297,9 @@ func TestObjectSaysWhyItCannotAnswer(t *testing.T) {
 		ref  resourceid.Ref
 		want readreason.Code
 	}{
-		{"typed kind Radar doesn't collect", ref("", "Secret", "alpha", "s"), readreason.RadarKindNotCollected},
-		{"known kind with no watch", ref("example.io", "Gadget", "alpha", "g"), readreason.RadarKindNotCollected},
-		{"kind whose watch was refused", ref("example.io", "Widget", "alpha", "w1"), readreason.RadarForbidden},
+		{"typed kind KubeAtlas doesn't collect", ref("", "Secret", "alpha", "s"), readreason.KubeAtlasKindNotCollected},
+		{"known kind with no watch", ref("example.io", "Gadget", "alpha", "g"), readreason.KubeAtlasKindNotCollected},
+		{"kind whose watch was refused", ref("example.io", "Widget", "alpha", "w1"), readreason.KubeAtlasForbidden},
 		{"kind served without watch", ref("example.io", "Summary", "alpha", "s"), readreason.KindNotWatchable},
 		{"kind discovery doesn't serve", ref("example.io", "Sprocket", "alpha", "s"), readreason.KindUnknown},
 		{"kind in the wrong group", ref("example.io", "Pod", "alpha", "web-1-a"), readreason.KindUnknown},
@@ -319,7 +319,7 @@ func TestObjectSaysWhyItCannotAnswer(t *testing.T) {
 	}
 }
 
-// A 401 rejects Radar's credentials rather than refusing one kind, so the
+// A 401 rejects KubeAtlas's credentials rather than refusing one kind, so the
 // remedy is new credentials, not more access.
 func TestObjectOfAKindWhoseCredentialsWereRejected(t *testing.T) {
 	f := newFixture(t, k8score.CacheConfig{}, func(f *fixture) {
@@ -332,14 +332,14 @@ func TestObjectOfAKindWhoseCredentialsWereRejected(t *testing.T) {
 	}
 	r := ref("example.io", "Widget", "alpha", "w1")
 	got := begin(t, f.source()).Object(r)
-	want := ownership.Gap{Kind: r.GroupKind(), Namespace: r.Namespace, Reason: readreason.RadarCredentialsRejected}
+	want := ownership.Gap{Kind: r.GroupKind(), Namespace: r.Namespace, Reason: readreason.KubeAtlasCredentialsRejected}
 	if got.State != ownership.Unavailable || got.Gap != want {
 		t.Fatalf("%v = %v %+v; want unavailable %+v", r, got.State, got.Gap, want)
 	}
 }
 
 // A stopped cache no longer follows the cluster, so a read after the stop is
-// a connection change, not a kind Radar leaves out.
+// a connection change, not a kind KubeAtlas leaves out.
 func TestObjectReadAfterTheCachesStopped(t *testing.T) {
 	f := newFixture(t, k8score.CacheConfig{}, nil)
 	if err := f.caches.Dynamic.EnsureWatching(widgets); err != nil {
@@ -434,7 +434,7 @@ func TestObjectOutsideTheCollectedNamespacesIsUnavailable(t *testing.T) {
 		t.Fatalf("Pod in a collected namespace = %v %+v", got.State, got.Gap)
 	}
 	got := s.Object(ref("", "Pod", "beta", "web-1-a"))
-	if want := (ownership.Gap{Kind: resourceid.GroupKind{Kind: "Pod"}, Namespace: "beta", Reason: readreason.RadarNamespaceNotCollected}); got.State != ownership.Unavailable || got.Gap != want {
+	if want := (ownership.Gap{Kind: resourceid.GroupKind{Kind: "Pod"}, Namespace: "beta", Reason: readreason.KubeAtlasNamespaceNotCollected}); got.State != ownership.Unavailable || got.Gap != want {
 		t.Fatalf("Pod outside the collected namespaces = %v %+v; want unavailable %+v", got.State, got.Gap, want)
 	}
 }
@@ -545,7 +545,7 @@ func TestValidateFailsOnceTheConnectionIsReplaced(t *testing.T) {
 	}
 }
 
-// Radar publishes its typed cache before its dynamic cache and discovery, so a
+// KubeAtlas publishes its typed cache before its dynamic cache and discovery, so a
 // session can begin without them; their arrival replaces nothing it read.
 func TestValidateAcceptsCachesThatArriveAfterBegin(t *testing.T) {
 	f := newFixture(t, k8score.CacheConfig{}, nil)
@@ -723,16 +723,16 @@ func TestReasonsForEveryCacheState(t *testing.T) {
 		o    k8score.DynamicResourceObservation
 		want readreason.Code
 	}{
-		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationUnwatched, ReasonCode: "not_observed"}, readreason.RadarKindNotCollected},
+		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationUnwatched, ReasonCode: "not_observed"}, readreason.KubeAtlasKindNotCollected},
 		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationUnwatched, ReasonCode: "cache_stopped"}, readreason.ConnectionChanged},
 		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationDeferred, ReasonCode: "eager_watch_pending"}, readreason.KindSyncPending},
 		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationDeferred, ReasonCode: "scope_probe_incomplete"}, readreason.ReadError},
-		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationDeferred}, readreason.RadarKindNotCollected},
+		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationDeferred}, readreason.KubeAtlasKindNotCollected},
 		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationSyncing, ReasonCode: "initial_sync"}, readreason.KindSyncPending},
 		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationSyncing, ReasonCode: "sync_stalled"}, readreason.KindSyncTimedOut},
 		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationSynced}, readreason.KindSyncPending},
-		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationDenied}, readreason.RadarForbidden},
-		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationDenied, ReasonCode: "credentials_rejected"}, readreason.RadarCredentialsRejected},
+		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationDenied}, readreason.KubeAtlasForbidden},
+		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationDenied, ReasonCode: "credentials_rejected"}, readreason.KubeAtlasCredentialsRejected},
 		{k8score.DynamicResourceObservation{State: k8score.DynamicObservationUnsupported}, readreason.KindNotWatchable},
 	} {
 		if got := dynamicReason(tc.o); got != tc.want {
@@ -741,7 +741,7 @@ func TestReasonsForEveryCacheState(t *testing.T) {
 	}
 }
 
-// Radar's access probe leaves a typed kind off when Kubernetes refuses it,
+// KubeAtlas's access probe leaves a typed kind off when Kubernetes refuses it,
 // when the probe can't tell, and when the kind isn't installed. The cache
 // knows only that it is off.
 func TestObjectOfATypedKindLeftOffIsNotWatched(t *testing.T) {
@@ -751,8 +751,8 @@ func TestObjectOfATypedKindLeftOffIsNotWatched(t *testing.T) {
 	}}, nil)
 	s := begin(t, f.source())
 	for _, r := range []resourceid.Ref{ref("", "Secret", "alpha", "s"), ref("", "ConfigMap", "alpha", "c")} {
-		if got := s.Object(r); got.State != ownership.Unavailable || got.Gap.Reason != readreason.RadarKindNotCollected {
-			t.Fatalf("%v = %v %+v; want unavailable radar_kind_not_collected", r, got.State, got.Gap)
+		if got := s.Object(r); got.State != ownership.Unavailable || got.Gap.Reason != readreason.KubeAtlasKindNotCollected {
+			t.Fatalf("%v = %v %+v; want unavailable kubeatlas_kind_not_collected", r, got.State, got.Gap)
 		}
 	}
 }
@@ -912,8 +912,8 @@ func TestObjectIgnoresAWatchOfAnUnservedVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := begin(t, f.source())
-	if got := s.Object(ref("example.io", "Widget", "alpha", "w1")); got.State != ownership.Unavailable || got.Gap.Reason != readreason.RadarKindNotCollected {
-		t.Fatalf("Widget with only an unserved version watched = %v %+v; want unavailable radar_kind_not_collected", got.State, got.Gap)
+	if got := s.Object(ref("example.io", "Widget", "alpha", "w1")); got.State != ownership.Unavailable || got.Gap.Reason != readreason.KubeAtlasKindNotCollected {
+		t.Fatalf("Widget with only an unserved version watched = %v %+v; want unavailable kubeatlas_kind_not_collected", got.State, got.Gap)
 	}
 }
 

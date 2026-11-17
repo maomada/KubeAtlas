@@ -70,7 +70,7 @@ func Explain(np *networkingv1.NetworkPolicy, dir Direction, selected *corev1.Pod
 	}
 	selects, err := Selects(np, selected)
 	if err != nil {
-		return Explanation{Undecidable, "Radar could not interpret this policy's pod selector (" + err.Error() + ")"}
+		return Explanation{Undecidable, "KubeAtlas could not interpret this policy's pod selector (" + err.Error() + ")"}
 	}
 	if !selects {
 		return Explanation{NotApplicable, "does not select pod " + podRef(selected)}
@@ -177,7 +177,7 @@ func Explain(np *networkingv1.NetworkPolicy, dir Direction, selected *corev1.Pod
 // podRangeCaveat is why an ipBlock is never decisive for a pod at the other
 // end: network plugins disagree on whether address ranges match pod
 // addresses at all.
-const podRangeCaveat = "network plugins disagree on whether address ranges match pod addresses (Cilium doesn't by default), so Radar can't tell whether this rule applies"
+const podRangeCaveat = "network plugins disagree on whether address ranges match pod addresses (Cilium doesn't by default), so KubeAtlas can't tell whether this rule applies"
 
 type ruleView struct {
 	ports []networkingv1.NetworkPolicyPort
@@ -260,7 +260,7 @@ func peerAdmits(entry *networkingv1.NetworkPolicyPeer, target Peer, policyNs str
 				// anything in the cluster: a miss is a miss.
 				return triNo, desc
 			}
-			return triUnknown, desc + ": the network may change the source address before this rule sees it, so Radar can't tell whether " + addrOrPeer(target, dir) + " falls in this range"
+			return triUnknown, desc + ": the network may change the source address before this rule sees it, so KubeAtlas can't tell whether " + addrOrPeer(target, dir) + " falls in this range"
 		default:
 			if dir == DirectionEgress && len(ips) > 0 {
 				// The destination is known and reached over the other address
@@ -271,7 +271,7 @@ func peerAdmits(entry *networkingv1.NetworkPolicyPeer, target Peer, policyNs str
 		}
 	}
 	if entry.NamespaceSelector == nil && entry.PodSelector == nil {
-		return triUnknown, "an empty from/to entry, which Radar can't interpret"
+		return triUnknown, "an empty from/to entry, which KubeAtlas can't interpret"
 	}
 	desc := selectorPeerDesc(entry, policyNs)
 	if target.External {
@@ -318,7 +318,7 @@ func peerAdmits(entry *networkingv1.NetworkPolicyPeer, target Peer, policyNs str
 		return triUnknown, desc + ": can't check the labels of namespace " + target.Pod.Namespace + " — they are unavailable"
 	}
 	if pod == triUnknown {
-		return triUnknown, desc + ": Radar could not interpret this selector"
+		return triUnknown, desc + ": KubeAtlas could not interpret this selector"
 	}
 	return triYes, desc
 }

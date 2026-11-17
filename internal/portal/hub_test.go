@@ -29,7 +29,7 @@ func newPortalHubFixture(t *testing.T, factory bool) (*Handler, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cfg := &HubConfig{Store: store, Groups: []string{"radar:idp:operators"}}
+	cfg := &HubConfig{Store: store, Groups: []string{"kubeatlas:idp:operators"}}
 	if factory {
 		cfg.MCPFactory = func(*hub.Hub, *hubstate.Store) (http.Handler, error) {
 			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -148,7 +148,7 @@ func TestPortalHubCredentialBoundaryAndLifecycle(t *testing.T) {
 	hubRequest(t, h, cookie, "wrong", "POST", "/mcp", `{}`, 401)
 	hubRequest(t, h, nil, agent.Token, "POST", "/mcp", `{}`, 401)
 	principal := decodeHubResponse[hub.Principal](t, hubRequest(t, h, cookie, issued.Token, "POST", "/mcp", `{}`, 200))
-	if principal.UserID != h.liveHub.userID || principal.CredentialID != issued.Credential.ID || !principal.ReadOnly || len(principal.ClusterIDs) != 1 || principal.ClusterIDs[0] != "alpha" || len(principal.Groups) != 1 || principal.Groups[0] != "radar:idp:operators" {
+	if principal.UserID != h.liveHub.userID || principal.CredentialID != issued.Credential.ID || !principal.ReadOnly || len(principal.ClusterIDs) != 1 || principal.ClusterIDs[0] != "alpha" || len(principal.Groups) != 1 || principal.Groups[0] != "kubeatlas:idp:operators" {
 		t.Fatal("MCP principal differs from owner-bound credential")
 	}
 	listed := hubRequest(t, h, cookie, "", "GET", "/api/mcp/credentials", "", 200)
@@ -258,8 +258,8 @@ func TestPortalClusterAPIUsesSelectedClusterAndSanitizesIdentity(t *testing.T) {
 		r.Header.Set("Referer", "http://localhost/clusters")
 		r.Header.Set("Sec-Fetch-Site", "same-origin")
 		r.Header.Set("X-Forwarded-User", "forged-user")
-		r.Header.Set("X-Forwarded-Groups", "radar:admin")
-		r.Header.Set("X-Radar-Role", "admin")
+		r.Header.Set("X-Forwarded-Groups", "kubeatlas:admin")
+		r.Header.Set("X-KubeAtlas-Role", "admin")
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		return w
@@ -286,7 +286,7 @@ func TestPortalClusterAPIUsesSelectedClusterAndSanitizesIdentity(t *testing.T) {
 	} {
 		got := <-requests
 		if got.Method != want.method || got.Path != want.path || got.Query != "namespace=demo-shop" ||
-			got.User != h.liveHub.userID || len(got.Groups) != 1 || got.Groups[0] != "radar:idp:operators" ||
+			got.User != h.liveHub.userID || len(got.Groups) != 1 || got.Groups[0] != "kubeatlas:idp:operators" ||
 			!got.Tunnel || got.Host != "localhost" || got.Auth != "" || got.Cookie != "" ||
 			got.Origin != "" || got.Referer != "" || got.FetchSite != "" || got.Forwarded != h.liveHub.userID {
 			t.Fatalf("source request identity/path was not sanitized: %+v", got)
@@ -311,7 +311,7 @@ func TestPortalClusterAPIUsesSelectedClusterAndSanitizesIdentity(t *testing.T) {
 	}
 	if _, _, err := h.liveHub.store.UpdateMember(memberID, hubstate.MemberInput{
 		Role: "viewer", Status: "active", ClusterIDs: []string{"alpha"},
-		KubernetesGroups: []string{"radar:readonly"},
+		KubernetesGroups: []string{"kubeatlas:readonly"},
 	}); err != nil {
 		t.Fatal(err)
 	}

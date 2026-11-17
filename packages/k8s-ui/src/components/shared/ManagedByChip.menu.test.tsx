@@ -46,21 +46,21 @@ it('names an unresolved candidate without linking it', async () => {
   expect(items).toHaveLength(2)
   const a0 = items.find(i => i.textContent!.startsWith('Application a'))!
   expect(a0.disabled).toBe(true)
-  expect(a0.textContent).toContain('Radar found no Application of this name listing it; it may be managed from another cluster')
+  expect(a0.textContent).toContain('KubeAtlas found no Application of this name listing it; it may be managed from another cluster')
   await act(async () => root.unmount())
   element.remove()
 })
 
-// A claim of a manager Radar didn't find is named but not linked, so the chip
+// A claim of a manager KubeAtlas didn't find is named but not linked, so the chip
 // never opens a page for an Application that isn't there.
-it('links only managers Radar found', () => {
+it('links only managers KubeAtlas found', () => {
   const missing: ManagerAnswer = { state: 'claimed', lead: a, direct: { object, claims: [{ manager: a, source: 'argo-tracking-id', check: 'missing' }] } }
   expect(renderToStaticMarkup(<ManagedByChip manager={missing} onOpen={() => {}} />)).not.toContain('<button')
   const found: ManagerAnswer = { state: 'claimed', lead: a, direct: { object, claims: [{ manager: a, source: 'argo-tracking-id', check: 'omitted' }] } }
   expect(renderToStaticMarkup(<ManagedByChip manager={found} onOpen={() => {}} />)).toContain('<button')
 })
 
-// A newer Radar may send a check this UI doesn't know: render, don't link.
+// A newer KubeAtlas may send a check this UI doesn't know: render, don't link.
 it('renders an unfamiliar check without linking it', () => {
   const future: ManagerAnswer = { state: 'claimed', lead: a, direct: { object, claims: [{ manager: a, source: 'argo-tracking-id', check: 'installation-mismatch' as never }] } }
   expect(renderToStaticMarkup(<ManagedByChip manager={future} onOpen={() => {}} />)).not.toContain('<button')
@@ -97,7 +97,7 @@ it.each<[string, ManagerAnswer]>([
   await act(async () => { element.querySelector<HTMLButtonElement>('button[aria-haspopup="menu"]')!.click() })
   const text = element.textContent!
   expect(text).toContain("its label doesn't say which Application of this name")
-  expect(text).not.toContain('Radar found no Application')
+  expect(text).not.toContain('KubeAtlas found no Application')
   await act(async () => root.unmount())
   element.remove()
 })

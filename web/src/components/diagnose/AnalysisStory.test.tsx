@@ -36,7 +36,7 @@ const resolver =
 describe("resolveStoryPlacements", () => {
   it("places the first block marker per observation and references the rest", () => {
     const story = resolveStoryPlacements(
-      "A.\n\n[[radar:evidence=0]]\n\nAgain [[radar:evidence=0]] and [[radar:evidence=1]].\n\n[[radar:evidence=1]]\n\n[[radar:evidence=0]]",
+      "A.\n\n[[kubeatlas:evidence=0]]\n\nAgain [[kubeatlas:evidence=0]] and [[kubeatlas:evidence=1]].\n\n[[kubeatlas:evidence=1]]\n\n[[kubeatlas:evidence=0]]",
       resolver({ 0: target(0, "a"), 1: target(1, "a") }),
     );
     // Item 1 resolves to the same observation as item 0: one card, not two.
@@ -48,14 +48,14 @@ describe("resolveStoryPlacements", () => {
 
   it("renders one card for a repeated block marker and keeps the paragraph when nothing places", () => {
     const repeated = resolveStoryPlacements(
-      "[[radar:evidence=0]]\n\nAgain:\n\n[[radar:evidence=0]]",
+      "[[kubeatlas:evidence=0]]\n\nAgain:\n\n[[kubeatlas:evidence=0]]",
       resolver({ 0: target(0, "a") }),
     );
     expect(repeated.placedAt.get(0)).toBe(0);
     const html = renderToStaticMarkup(
       <AnalysisStory
         placements={resolveStoryPlacements(
-          "Opening paragraph.\n\n[[radar:evidence=2]]\n\nMore.",
+          "Opening paragraph.\n\n[[kubeatlas:evidence=2]]\n\nMore.",
           resolver({ 2: "unlinked" }),
         )}
         renderPlacement={() => null}
@@ -68,7 +68,7 @@ describe("resolveStoryPlacements", () => {
 
   it("places a card under the paragraph that first mentions it inline, and drops that marker from the sentence", () => {
     const story = resolveStoryPlacements(
-      "Envoy boots [[radar:evidence=0]] then hangs on xDS.\n\nLater, see [[radar:evidence=0]] again.",
+      "Envoy boots [[kubeatlas:evidence=0]] then hangs on xDS.\n\nLater, see [[kubeatlas:evidence=0]] again.",
       resolver({ 0: target(0, "a") }),
     );
     expect(story.segments.map((segment) => segment.kind)).toEqual([
@@ -86,12 +86,12 @@ describe("resolveStoryPlacements", () => {
       "Envoy boots then hangs on xDS.",
     );
     expect((story.segments[2] as { markdown: string }).markdown).toContain(
-      "#radar-evidence-0",
+      "#kubeatlas-evidence-0",
     );
     const html = renderToStaticMarkup(
       <AnalysisStory
         placements={resolveStoryPlacements(
-          "Envoy boots [[radar:evidence=0]] then hangs on xDS.\n\nLater, see [[radar:evidence=0]] again.",
+          "Envoy boots [[kubeatlas:evidence=0]] then hangs on xDS.\n\nLater, see [[kubeatlas:evidence=0]] again.",
           resolver({ 0: target(0, "a") }),
         )}
         renderPlacement={() => <div data-card>card</div>}
@@ -107,7 +107,7 @@ describe("resolveStoryPlacements", () => {
     const html = renderToStaticMarkup(
       <AnalysisStory
         placements={resolveStoryPlacements(
-          "First [[radar:evidence=0]] here.\n\nThen:\n\n[[radar:evidence=0]]",
+          "First [[kubeatlas:evidence=0]] here.\n\nThen:\n\n[[kubeatlas:evidence=0]]",
           resolver({ 0: target(0, "a") }),
         )}
         renderPlacement={() => <div data-card>card</div>}
@@ -137,7 +137,7 @@ describe("resolveStoryPlacements", () => {
       domId: `story-${group}`,
     });
     const story = resolveStoryPlacements(
-      "[[radar:evidence=0]]\n\n[[radar:evidence=1]]",
+      "[[kubeatlas:evidence=0]]\n\n[[kubeatlas:evidence=1]]",
       resolver({ 0: shared(0, "logs"), 1: shared(1, "events") }),
     );
     expect(story.placedCount).toBe(2);
@@ -146,7 +146,7 @@ describe("resolveStoryPlacements", () => {
 
   it("keeps the compact flag of an inline marker it auto-places, and tidies only the marker's hole", () => {
     const story = resolveStoryPlacements(
-      "Line one  \nline two says [[radar:evidence=0|compact]], then more.",
+      "Line one  \nline two says [[kubeatlas:evidence=0|compact]], then more.",
       resolver({ 0: target(0, "a") }),
     );
     expect(story.segments).toEqual([
@@ -161,13 +161,13 @@ describe("resolveStoryPlacements", () => {
         resolveStoryPlacements(report, resolver({ 0: target(0, "a") }))
           .segments[0] as { markdown: string }
       ).markdown;
-    expect(breaks("Says [[radar:evidence=0]]  \nnext")).toBe("Says  \nnext");
-    expect(breaks("Says  \n[[radar:evidence=0]] next")).toBe("Says  \nnext");
+    expect(breaks("Says [[kubeatlas:evidence=0]]  \nnext")).toBe("Says  \nnext");
+    expect(breaks("Says  \n[[kubeatlas:evidence=0]] next")).toBe("Says  \nnext");
   });
 
   it("keeps the agent's own-line placement when a twin item on the same card was mentioned inline first", () => {
     const story = resolveStoryPlacements(
-      "Inline [[radar:evidence=1]] first.\n\nLater:\n\n[[radar:evidence=0]]",
+      "Inline [[kubeatlas:evidence=1]] first.\n\nLater:\n\n[[kubeatlas:evidence=0]]",
       resolver({ 0: target(0, "a"), 1: target(1, "a") }),
     );
     expect(story.segments.map((segment) => segment.kind)).toEqual([
@@ -185,12 +185,12 @@ describe("resolveStoryPlacements", () => {
     for (let i = 0; i < 8; i += 1) table[i] = target(i, `o${i}`);
     const markers = Array.from(
       { length: 6 },
-      (_, i) => `[[radar:evidence=${i}]]`,
+      (_, i) => `[[kubeatlas:evidence=${i}]]`,
     ).join("\n\n");
     const html = renderToStaticMarkup(
       <AnalysisStory
         placements={resolveStoryPlacements(
-          `${markers}\n\nSee [[radar:evidence=7]] here.`,
+          `${markers}\n\nSee [[kubeatlas:evidence=7]] here.`,
           resolver(table),
         )}
         renderPlacement={() => <div data-card>card</div>}
@@ -204,7 +204,7 @@ describe("resolveStoryPlacements", () => {
     const ownLine = renderToStaticMarkup(
       <AnalysisStory
         placements={resolveStoryPlacements(
-          Array.from({ length: 7 }, (_, i) => `[[radar:evidence=${i}]]`).join(
+          Array.from({ length: 7 }, (_, i) => `[[kubeatlas:evidence=${i}]]`).join(
             "\n\n",
           ),
           resolver(table),
@@ -222,7 +222,7 @@ describe("resolveStoryPlacements", () => {
   it("caps placed cards and reports every distinct lost item once", () => {
     const markers = Array.from(
       { length: 8 },
-      (_, i) => `[[radar:evidence=${i}]]`,
+      (_, i) => `[[kubeatlas:evidence=${i}]]`,
     ).join("\n\n");
     const table: Record<number, StoryPlacementTarget | StoryPlacementLoss> = {};
     for (let i = 0; i < 8; i += 1) table[i] = target(i, `o${i}`);
@@ -231,7 +231,7 @@ describe("resolveStoryPlacements", () => {
     expect(story.byIndex.get(7)?.kind).toBe("reference");
 
     const lost = resolveStoryPlacements(
-      "[[radar:evidence=3]]\n\nx [[radar:evidence=3]] [[radar:evidence=4]]",
+      "[[kubeatlas:evidence=3]]\n\nx [[kubeatlas:evidence=3]] [[kubeatlas:evidence=4]]",
       resolver({ 3: "unlinked", 4: "unplaced" }),
     );
     expect(lost.lostItems).toBe(2);
@@ -263,7 +263,7 @@ describe("AnalysisStory", () => {
 
   it("previews the paragraph before the first placed card plus that card, compact, and nothing after", () => {
     const html = render(
-      "Intro paragraph.\n\nThe container dies on start.\n\n[[radar:evidence=0]]\n\nThen a second thought.\n\n[[radar:evidence=1]]",
+      "Intro paragraph.\n\nThe container dies on start.\n\n[[kubeatlas:evidence=0]]\n\nThen a second thought.\n\n[[kubeatlas:evidence=1]]",
     );
     expect(html).toContain("The container dies on start.");
     expect(html).toContain('data-placed="story-group-crash"');
@@ -279,7 +279,7 @@ describe("AnalysisStory", () => {
 
   it("opens to the whole story with full cards, reference chips and visible lost support", () => {
     const html = render(
-      "Intro.\n\n[[radar:evidence=0]]\n\nSee [[radar:evidence=0]] and [[radar:evidence=2]].",
+      "Intro.\n\n[[kubeatlas:evidence=0]]\n\nSee [[kubeatlas:evidence=0]] and [[kubeatlas:evidence=2]].",
       true,
     );
     expect(html).toContain("Intro.");

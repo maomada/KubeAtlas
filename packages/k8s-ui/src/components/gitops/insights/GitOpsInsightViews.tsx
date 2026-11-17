@@ -4,7 +4,7 @@ import { clsx } from 'clsx'
 import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import type { GitOpsChange, GitOpsDrift, GitOpsHistoryItem, GitOpsInsight, GitOpsInsightRef, GitOpsIssue, GitOpsPlanItem, GitOpsRemediation, GitOpsResourceTree, GitOpsTreeNode } from '../../../types'
 import { HealthStatusBadge, SyncStatusBadge } from '../GitOpsStatusBadge'
-import { radarHealthNote } from '../health-provenance'
+import { kubeatlasHealthNote } from '../health-provenance'
 import { SEVERITY_BADGE, SEVERITY_TEXT } from '../../../utils/badge-colors'
 import { formatRelativeAgeTime } from '../../../utils/format'
 import { Tooltip } from '../../ui/Tooltip'
@@ -995,14 +995,14 @@ export function GitOpsChangesView({ insight, error, onOpenResource, onSyncResour
         )}
         {/* Honest disclaimer about diff scope. Neither Argo nor Flux exposes
             per-resource desired-vs-live diffs on the CRD — they're computed
-            on demand by their respective servers/CLIs, which Radar doesn't
+            on demand by their respective servers/CLIs, which KubeAtlas doesn't
             call. Suppressed for an Argo app that shows the connect/reconnect bar
             below (which points at Settings), so the two don't stack with subtly
             different advice — the CLI fallback stays for Flux and for consumers
             that don't wire Settings. */}
         {totalCount > 0 && !argoDiffAvailable && !(isArgoRoot && !!onOpenSettings) && (
           <div className="border-b border-theme-border bg-theme-base/40 px-4 py-2 text-[11px] text-theme-text-tertiary">
-            Radar reads each resource's drift status from the controller. For a line-by-line diff, {insight.summary.tool === 'fluxcd' ? (
+            KubeAtlas reads each resource's drift status from the controller. For a line-by-line diff, {insight.summary.tool === 'fluxcd' ? (
               insight.summary.kind === 'HelmRelease' ? (
                 <>run <code className="inline-code text-[10px]">helm diff upgrade {insight.summary.name} &lt;chart&gt;</code> (requires the helm-diff plugin).</>
               ) : (
@@ -1051,7 +1051,7 @@ export function GitOpsChangesView({ insight, error, onOpenResource, onSyncResour
                   {ignoredDiffs.unsupportedRuleCount > 0 && (
                     <div>
                       {ignoredDiffs.unsupportedRuleCount} of them use jq expressions or managed-fields managers,
-                      which Radar doesn&apos;t evaluate — so a few fields Argo hides may still appear here.
+                      which KubeAtlas doesn&apos;t evaluate — so a few fields Argo hides may still appear here.
                     </div>
                   )}
                 </div>
@@ -1110,7 +1110,7 @@ export function GitOpsChangesView({ insight, error, onOpenResource, onSyncResour
                 // they are in the Argo managed set by construction — the diff
                 // endpoint can serve every one (a Missing resource just has an
                 // empty live side). NOT gated on change.hasDesired/partial:
-                // those describe Radar's LOCAL last-applied view, and the Argo
+                // those describe KubeAtlas's LOCAL last-applied view, and the Argo
                 // API diff exists precisely for the rows where it's absent.
                 const canFullDiff = argoDiffAvailable && !!change.ref.kind && !!change.ref.name
                 // Render a wave separator above this row when the wave value
@@ -1244,7 +1244,7 @@ function buildTreeExtras(nodes: GitOpsTreeNode[], declared: GitOpsChange[]): Git
       category: 'Unknown',
       sync: n.sync,
       health: n.health,
-      // No healthSource: generated rows are always Radar's read and never
+      // No healthSource: generated rows are always KubeAtlas's read and never
       // had a controller verdict to be distinguished from.
       message: n.healthMessage,
       hasDesired: false,
@@ -1370,9 +1370,9 @@ function ChangeRow({
   // and offer "View in Git →" instead so the operator can read the
   // declared source instead of a non-existent live object.
   const isAbsent = change.missing || (change.health === 'Missing' && !change.hasLive)
-  const radarNote = change.missing
-    ? 'Radar confirmed that this resource is not present in the cluster.'
-    : radarHealthNote({ health: change.health, healthSource: change.healthSource, healthMessage: change.message })
+  const kubeatlasNote = change.missing
+    ? 'KubeAtlas confirmed that this resource is not present in the cluster.'
+    : kubeatlasHealthNote({ health: change.health, healthSource: change.healthSource, healthMessage: change.message })
   const handleRowClick = () => {
     if (expandable) {
       setExpanded((v) => !v)
@@ -1484,10 +1484,10 @@ function ChangeRow({
         </div>
         <div className="flex flex-col items-start gap-1 self-start">
           <HealthStatusBadge health={changeHealth(change)} />
-          {radarNote && (
-            <Tooltip content={radarNote} delay={200} wrapperClassName="inline-flex">
+          {kubeatlasNote && (
+            <Tooltip content={kubeatlasNote} delay={200} wrapperClassName="inline-flex">
               <span className="cursor-help select-none rounded border border-theme-border bg-theme-elevated/70 px-1.5 py-0.5 text-[10px] leading-3 text-theme-text-tertiary">
-                Found by Radar
+                Found by KubeAtlas
               </span>
             </Tooltip>
           )}

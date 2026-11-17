@@ -102,7 +102,7 @@ func TestHandleAuthMe_CloudUser_ExposesCloudRole(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := requestWithUser("GET", "/api/auth/me", &auth.User{
 		Username: "bob",
-		Groups:   []string{"radar:viewer", "radar:org:abc"},
+		Groups:   []string{"kubeatlas:viewer", "kubeatlas:org:abc"},
 	})
 	s.handleAuthMe(w, r)
 
@@ -860,7 +860,7 @@ func authMeBody(t *testing.T, s *Server, user *auth.User) map[string]any {
 func TestHandleAuthMe_NoNamespaceAccess(t *testing.T) {
 	prev := k8s.GetConnectionStatus()
 	t.Cleanup(func() { k8s.SetConnectionStatus(prev) })
-	user := &auth.User{Username: "bob", Groups: []string{"radar:idp:team-a"}}
+	user := &auth.User{Username: "bob", Groups: []string{"kubeatlas:idp:team-a"}}
 
 	t.Run("reported when connected and no namespace is readable", func(t *testing.T) {
 		k8s.SetConnectionStatus(k8s.ConnectionStatus{State: k8s.StateConnected})

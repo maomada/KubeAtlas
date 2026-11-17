@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-jobset-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-jobset-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 JOBSET_VERSION="${JOBSET_VERSION:-v0.12.0}"
 JOBSET_MANIFEST="https://github.com/kubernetes-sigs/jobset/releases/download/${JOBSET_VERSION}/manifests.yaml"
@@ -11,8 +11,8 @@ KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.36.1@sha256:3489c7674813ba5d
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/jobset-demo"
 DEMO_NS="jobset-demo"
-MARKER_NAME="radar-jobset-demo-owner"
-MARKER_VALUE="skyhook-radar-jobset-demo-v1"
+MARKER_NAME="kubeatlas-jobset-demo-owner"
+MARKER_VALUE="skyhook-kubeatlas-jobset-demo-v1"
 WAIT_SECONDS="${WAIT_SECONDS:-240}"
 KUBEATLAS_URL="${KUBEATLAS_URL:-http://127.0.0.1:9280}"
 PREVIOUS_CONTEXT=''
@@ -285,7 +285,7 @@ jobset_webhook_ready() {
 apiVersion: jobset.x-k8s.io/v1alpha2
 kind: JobSet
 metadata:
-  name: radar-jobset-webhook-probe
+  name: kubeatlas-jobset-webhook-probe
   namespace: default
 spec:
   replicatedJobs:
@@ -366,7 +366,7 @@ mcp_get_jobset() {
   jq -er '.result.content[0].text | fromjson' <<<"${event}"
 }
 
-radar_execution_matches() {
+kubeatlas_execution_matches() {
   local name="$1" phase="$2" roles="$3" jobs="$4" ready="$5" active="$6" failed="$7"
   local expected generation rest_response mcp_response rest_execution mcp_execution
   generation="$(kc -n "${DEMO_NS}" get jobset "${name}" -o jsonpath='{.metadata.generation}')" || \
@@ -406,44 +406,44 @@ radar_execution_matches() {
   ok "${name}: REST and MCP agree on ${phase}, ${roles} roles, ${active} active and ${failed} failed Jobs"
 }
 
-radar_health_ready() {
+kubeatlas_health_ready() {
   curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/health" 2>/dev/null | \
     jq -e '.status == "healthy"' >/dev/null 2>&1
 }
 
-radar_crd_discovery_ready() {
+kubeatlas_crd_discovery_ready() {
   curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/cluster-info" 2>/dev/null | \
     jq -e '.crdDiscoveryStatus == "ready"' >/dev/null 2>&1
 }
 
-radar_inventory_ready() {
+kubeatlas_inventory_ready() {
   local kind="$1" group="$2" live cached projection
   projection='map({metadata: (.metadata | {namespace, name, uid, ownerReferences, labels}), status: (.status | {phase, terminalState, replicatedJobsStatus, conditions: [.conditions[]? | {type, status, reason}]})}) | sort_by(.metadata.name)'
   live="$(kc -n "${DEMO_NS}" get "${kind}${group:+.${group}}" --request-timeout=10s -o json | jq -cS ".items | ${projection}")" || return 1
-  cached="$(curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/resources/${kind}?group=${group}&namespace=${DEMO_NS}" | jq -cS 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end |'" ${projection}")" || return 1
+  cached="$(curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/resources/${kind}?group=${group}&namespace=${DEMO_NS}" | jq -cS 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end |'" ${projection}")" || return 1
   [ "${live}" = "${cached}" ]
 }
 
-cmd_verify_radar() {
+cmd_verify_kubeatlas() {
   require_cmd kind "https://kind.sigs.k8s.io/"
   require_cmd kubectl "https://kubernetes.io/docs/tasks/tools/"
   require_cmd curl "https://curl.se/download.html"
   require_cmd jq "https://jqlang.github.io/jq/download/"
   require_owned_cluster
   assert_cluster_contract
-  step "Verifying Radar API at ${KUBEATLAS_URL}"
+  step "Verifying KubeAtlas API at ${KUBEATLAS_URL}"
 
   local response jobs pods
-  wait_until "Radar health endpoint" radar_health_ready
-  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/cluster-info")" || fail "Radar cluster-info request failed"
+  wait_until "KubeAtlas health endpoint" kubeatlas_health_ready
+  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/cluster-info")" || fail "KubeAtlas cluster-info request failed"
   jq -e --arg context "${KUBECTL_CTX}" '.context == $context and .cluster == $context' <<<"${response}" >/dev/null || \
-    fail "Radar is not connected to the expected context and cluster '${KUBECTL_CTX}'"
-  wait_until "Radar CRD discovery" radar_crd_discovery_ready
-  wait_until "Radar JobSet identities, ownership and status" radar_inventory_ready jobsets jobset.x-k8s.io
-  wait_until "Radar Job identities, ownership and status" radar_inventory_ready jobs batch
-  wait_until "Radar Pod identities, ownership and status" radar_inventory_ready pods ""
+    fail "KubeAtlas is not connected to the expected context and cluster '${KUBECTL_CTX}'"
+  wait_until "KubeAtlas CRD discovery" kubeatlas_crd_discovery_ready
+  wait_until "KubeAtlas JobSet identities, ownership and status" kubeatlas_inventory_ready jobsets jobset.x-k8s.io
+  wait_until "KubeAtlas Job identities, ownership and status" kubeatlas_inventory_ready jobs batch
+  wait_until "KubeAtlas Pod identities, ownership and status" kubeatlas_inventory_ready pods ""
 
-  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/jobsets?group=jobset.x-k8s.io&namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || fail "Radar jobsets list request failed"
+  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/jobsets?group=jobset.x-k8s.io&namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || fail "KubeAtlas jobsets list request failed"
   jq -e '
     type == "array" and length == 3 and
     all(.[]; .apiVersion == "jobset.x-k8s.io/v1alpha2") and
@@ -451,9 +451,9 @@ cmd_verify_radar() {
     any(.[]; .metadata.name == "dependency-held" and (.status.terminalState // "") == "") and
     any(.[]; .metadata.name == "terminal-failure" and .status.terminalState == "Failed" and
       any(.status.conditions[]?; .type == "Failed" and .status == "True" and .reason == "FailJobSetFailurePolicyAction"))
-  ' <<<"${response}" >/dev/null || fail "Radar did not return the three group-pure reconciled JobSets"
+  ' <<<"${response}" >/dev/null || fail "KubeAtlas did not return the three group-pure reconciled JobSets"
 
-  jobs="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/jobs?namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || fail "Radar jobs list request failed"
+  jobs="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/jobs?namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || fail "KubeAtlas jobs list request failed"
   jq -e '
     type == "array" and
     ([.[] | select(.metadata.labels["jobset.sigs.k8s.io/jobset-name"] == "roles-running")] | length) == 3 and
@@ -464,9 +464,9 @@ cmd_verify_radar() {
       .metadata.labels["jobset.sigs.k8s.io/job-group-index"]] | sort) == ["0", "1", "2"] and
     ([.[] | select(.metadata.labels["jobset.sigs.k8s.io/jobset-name"] == "dependency-held")] | length) == 1 and
     ([.[] | select(.metadata.labels["jobset.sigs.k8s.io/jobset-name"] == "terminal-failure")] | length) == 1
-  ' <<<"${jobs}" >/dev/null || fail "Radar did not expose the expected controller-created child Jobs"
+  ' <<<"${jobs}" >/dev/null || fail "KubeAtlas did not expose the expected controller-created child Jobs"
 
-  pods="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/pods?namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || fail "Radar pods list request failed"
+  pods="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/pods?namespace=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || fail "KubeAtlas pods list request failed"
   jq -e '
     type == "array" and
     ([.[] | select(.metadata.labels["jobset.sigs.k8s.io/jobset-name"] == "roles-running" and .status.phase == "Running")] | length) == 3 and
@@ -477,11 +477,11 @@ cmd_verify_radar() {
       .metadata.labels["jobset.sigs.k8s.io/job-group-index"]] | sort) == ["0", "1", "2"] and
     ([.[] | select(.metadata.labels["jobset.sigs.k8s.io/jobset-name"] == "dependency-held" and .status.phase == "Running")] | length) == 1 and
     ([.[] | select(.metadata.labels["jobset.sigs.k8s.io/jobset-name"] == "terminal-failure" and .status.phase == "Failed")] | length) == 1
-  ' <<<"${pods}" >/dev/null || fail "Radar did not expose the expected controller-created Pods"
-  wait_until "Radar execution projection" radar_execution_matches roles-running active 2 3 3 3 0
-  wait_until "Radar execution projection" radar_execution_matches dependency-held active 2 3 1 1 0
-  wait_until "Radar execution projection" radar_execution_matches terminal-failure finished 1 1 0 0 1
-  ok "Radar returned real JobSet lineage and exact matching REST/MCP execution context"
+  ' <<<"${pods}" >/dev/null || fail "KubeAtlas did not expose the expected controller-created Pods"
+  wait_until "KubeAtlas execution projection" kubeatlas_execution_matches roles-running active 2 3 3 3 0
+  wait_until "KubeAtlas execution projection" kubeatlas_execution_matches dependency-held active 2 3 1 1 0
+  wait_until "KubeAtlas execution projection" kubeatlas_execution_matches terminal-failure finished 1 1 0 0 1
+  ok "KubeAtlas returned real JobSet lineage and exact matching REST/MCP execution context"
 }
 
 cmd_up() {
@@ -509,7 +509,7 @@ cmd_up() {
   install_jobset
   apply_fixtures
   cmd_verify
-  note "See ${FIXTURES_DIR}/README.md for the isolated-kubeconfig Radar smoke test."
+  note "See ${FIXTURES_DIR}/README.md for the isolated-kubeconfig KubeAtlas smoke test."
 }
 
 cmd_down() {
@@ -561,21 +561,21 @@ Commands:
   reset          Safely recreate the owned cluster and all scenarios
   status         Show the controller, JobSets, Jobs, and Pods with role/index labels
   verify         Assert controller-earned lifecycle and ownership states
-  verify-radar   Assert a running Radar exposes the real JobSet states and children
+  verify-kubeatlas   Assert a running KubeAtlas exposes the real JobSet states and children
   up-admission   Add Kueue and four JobSet admission scenarios to this same cluster
   verify-admission        Verify the combined controllers and pre-Pod blockers
-  verify-admission-radar  Verify both lanes plus Radar's connected admission lookup
+  verify-admission-kubeatlas  Verify both lanes plus KubeAtlas's connected admission lookup
   help           Show this message
 
 Environment:
-  CLUSTER_NAME      kind cluster name (default: radar-jobset-demo)
+  CLUSTER_NAME      kind cluster name (default: kubeatlas-jobset-demo)
   JOBSET_VERSION    pinned JobSet release (default: v0.12.0)
   KUBERNETES_VERSION expected Kubernetes server version (default: v1.36.1)
   KIND_NODE_IMAGE   immutable kind node image (default: kindest/node v1.36.1 digest)
   WAIT_SECONDS      maximum wait per reconciled state (default: 240)
-  KUBEATLAS_URL         running Radar base URL for verify-radar (default: http://127.0.0.1:9280)
+  KUBEATLAS_URL         running KubeAtlas base URL for verify-kubeatlas (default: http://127.0.0.1:9280)
 
-This validates JobSet controller reconciliation and Radar's read path. It does
+This validates JobSet controller reconciliation and KubeAtlas's read path. It does
 not validate GPUs, distributed framework semantics, or cost. The optional
 up-admission mode also validates Kueue admission (KUEUE_VERSION=v0.19.2).
 EOF
@@ -589,10 +589,10 @@ case "${1:-help}" in
   reset) cmd_reset ;;
   status) cmd_status ;;
   verify) cmd_verify ;;
-  verify-radar) cmd_verify_radar ;;
+  verify-kubeatlas) cmd_verify_kubeatlas ;;
   up-admission) cmd_up_admission ;;
   verify-admission) cmd_verify_admission ;;
-  verify-admission-radar) cmd_verify_admission_radar ;;
+  verify-admission-kubeatlas) cmd_verify_admission_kubeatlas ;;
   help|-h|--help) usage ;;
   *) fail "unknown subcommand: $1 (try '$0 help')" ;;
 esac

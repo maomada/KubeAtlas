@@ -221,7 +221,7 @@ func TestManagerStates(t *testing.T) {
 			state: ownership.ManagerNone,
 		},
 		{
-			name: "unknown: no evidence, and a list Radar can't read",
+			name: "unknown: no evidence, and a list KubeAtlas can't read",
 			build: func(b *ownershiptest.Builder) resourceid.Ref {
 				cm := b.Add("", "ConfigMap", "shop", "settings")
 				b.Manager(ownership.ArgoApplication, "argocd", "broken", ownership.MembersUnreadable, "shop")
@@ -408,7 +408,7 @@ func TestManagerStopsAtAWithheldController(t *testing.T) {
 	}
 }
 
-// Radar couldn't tell whether the caller may read Applications everywhere
+// KubeAtlas couldn't tell whether the caller may read Applications everywhere
 // they are loading: no evidence is unknown, not none.
 func TestManagerWithUndecidedAccessIsUnknown(t *testing.T) {
 	b := ownershiptest.NewBuilder()

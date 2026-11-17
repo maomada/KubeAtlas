@@ -60,7 +60,7 @@ func getCNPGLogs(t *testing.T, path string) (int, cnpgsvc.ClusterLogsResponse, s
 	return resp.StatusCode, out, string(body)
 }
 
-// useLogServer points Radar's client at an apiserver that serves one JSON log
+// useLogServer points KubeAtlas's client at an apiserver that serves one JSON log
 // line per Pod, so the handler's merge and parse run end to end.
 func useLogServer(t *testing.T) {
 	t.Helper()

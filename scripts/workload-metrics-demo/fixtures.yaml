@@ -1,16 +1,16 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: radar-metrics-fixture
+  name: kubeatlas-metrics-fixture
   labels:
-    istio.io/rev: radar-lab
-    app.kubernetes.io/part-of: radar-metrics-lab
+    istio.io/rev: kubeatlas-lab
+    app.kubernetes.io/part-of: kubeatlas-metrics-lab
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
   name: web
-  namespace: radar-metrics-fixture
+  namespace: kubeatlas-metrics-fixture
 data:
   default.conf: |
     server {
@@ -27,14 +27,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: web
-  namespace: radar-metrics-fixture
+  namespace: kubeatlas-metrics-fixture
 spec:
   replicas: 2
   selector:
-    matchLabels: {app: radar-lab-web}
+    matchLabels: {app: kubeatlas-lab-web}
   template:
     metadata:
-      labels: {app: radar-lab-web}
+      labels: {app: kubeatlas-lab-web}
       annotations:
         prometheus.io/scrape: "false"
     spec:
@@ -59,9 +59,9 @@ apiVersion: v1
 kind: Service
 metadata:
   name: web
-  namespace: radar-metrics-fixture
+  namespace: kubeatlas-metrics-fixture
 spec:
-  selector: {app: radar-lab-web}
+  selector: {app: kubeatlas-lab-web}
   ports:
     - {name: http, port: 8080, targetPort: 8080}
     - {name: http-second, port: 8081, targetPort: 8081}
@@ -70,14 +70,14 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: worker
-  namespace: radar-metrics-fixture
+  namespace: kubeatlas-metrics-fixture
 spec:
   replicas: 1
   selector:
-    matchLabels: {app: radar-lab-worker}
+    matchLabels: {app: kubeatlas-lab-worker}
   template:
     metadata:
-      labels: {app: radar-lab-worker}
+      labels: {app: kubeatlas-lab-worker}
       annotations:
         prometheus.io/scrape: "false"
     spec:
@@ -93,15 +93,15 @@ apiVersion: apps/v1
 kind: StatefulSet
 metadata:
   name: redis
-  namespace: radar-metrics-fixture
+  namespace: kubeatlas-metrics-fixture
 spec:
   serviceName: redis
   replicas: 1
   selector:
-    matchLabels: {app: radar-lab-redis}
+    matchLabels: {app: kubeatlas-lab-redis}
   template:
     metadata:
-      labels: {app: radar-lab-redis}
+      labels: {app: kubeatlas-lab-redis}
       annotations:
         prometheus.io/scrape: "false"
     spec:
@@ -119,10 +119,10 @@ apiVersion: v1
 kind: Service
 metadata:
   name: redis
-  namespace: radar-metrics-fixture
+  namespace: kubeatlas-metrics-fixture
 spec:
   clusterIP: None
-  selector: {app: radar-lab-redis}
+  selector: {app: kubeatlas-lab-redis}
   ports:
     - {name: tcp-redis, port: 6379, targetPort: 6379}
 ---
@@ -130,7 +130,7 @@ apiVersion: apps/v1
 kind: DaemonSet
 metadata:
   name: node-worker
-  namespace: radar-metrics-fixture
+  namespace: kubeatlas-metrics-fixture
 spec:
   selector: {matchLabels: {app: node-worker}}
   template:

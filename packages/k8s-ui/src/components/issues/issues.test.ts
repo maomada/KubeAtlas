@@ -594,7 +594,7 @@ describe('IssueRow diagnosis raw messages', () => {
     expect(html).toContain('rpc error: code = Unknown desc = app path does not exist')
   })
 
-  it("doesn't present Radar's own summary as a raw error", () => {
+  it("doesn't present KubeAtlas's own summary as a raw error", () => {
     const base = {
       category: 'network_policy_denied',
       category_group: 'networking',
@@ -603,17 +603,17 @@ describe('IssueRow diagnosis raw messages', () => {
       message: 'Would block all inbound traffic to the 2 pods behind Service recommendation',
       cause: 'NetworkPolicy deny-all leaves the 2 pods behind Service recommendation with no allowed inbound traffic.',
     }
-    const radar = renderToString(createElement(IssueRow, {
+    const kubeatlas = renderToString(createElement(IssueRow, {
       issue: mk({
         ...base,
-        message_source: 'radar',
+        message_source: 'kubeatlas',
         diagnostic_context: { role: 'candidate', facts: [{ type: 'network_policy_isolates', confidence: 'high', refs: [{ kind: 'Service', namespace: 'shop', name: 'recommendation' }] }] },
       }),
       open: true, onToggle: () => undefined, as: 'div',
     }))
-    expect(radar).not.toContain('原始错误')
-    expect(radar).toContain('leaves the 2 pods behind Service recommendation')
-    expect(radar).toContain('受影响的资源')
+    expect(kubeatlas).not.toContain('原始错误')
+    expect(kubeatlas).toContain('leaves the 2 pods behind Service recommendation')
+    expect(kubeatlas).toContain('受影响的资源')
 
     // Without the marker the message is still treated as detector output.
     const unmarked = renderToString(createElement(IssueRow, { issue: mk(base), open: true, onToggle: () => undefined, as: 'div' }))

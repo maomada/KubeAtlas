@@ -370,11 +370,11 @@ func (s *Reader) operatorConfigMap(ctx context.Context, cache *k8s.ResourceCache
 	}
 	assessment := cache.AssessKindRead("configmaps", []string{namespace})
 	if len(assessment.Uncovered) > 0 {
-		state.Reason = "Radar does not watch ConfigMaps in " + namespace
+		state.Reason = "KubeAtlas does not watch ConfigMaps in " + namespace
 		return ref
 	}
 	if assessment.Readiness == k8s.KindUnavailable {
-		state.Reason = "Radar is not collecting ConfigMaps"
+		state.Reason = "KubeAtlas is not collecting ConfigMaps"
 		return ref
 	}
 	switch assessment.TargetReadiness() {

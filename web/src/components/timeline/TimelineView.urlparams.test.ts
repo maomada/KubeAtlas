@@ -228,22 +228,22 @@ describe('resolveApplicationTimelineScope', () => {
 
   it('uses the application scope namespaces and removes duplicates', () => {
     const params = sp({
-      app: '/Application/radar-hub-staging',
+      app: '/Application/kubeatlas-hub-staging',
       scopeNamespaces: 'argocd, staging,argocd',
     })
 
     expect(resolveApplicationTimelineScope(params, ['default'])).toEqual({
-      appKey: '/Application/radar-hub-staging',
+      appKey: '/Application/kubeatlas-hub-staging',
       namespaces: ['argocd', 'staging'],
       ready: true,
     })
   })
 
   it('fails closed when an application link omits its namespace scope', () => {
-    const params = sp({ app: '/Application/radar-hub-staging' })
+    const params = sp({ app: '/Application/kubeatlas-hub-staging' })
 
     expect(resolveApplicationTimelineScope(params, ['default'])).toEqual({
-      appKey: '/Application/radar-hub-staging',
+      appKey: '/Application/kubeatlas-hub-staging',
       namespaces: [],
       ready: false,
     })

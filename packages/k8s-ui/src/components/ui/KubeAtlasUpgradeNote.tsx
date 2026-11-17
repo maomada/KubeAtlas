@@ -1,19 +1,19 @@
 import { createContext, useContext } from 'react'
 import { clsx } from 'clsx'
 import { ArrowUpCircle, ExternalLink } from 'lucide-react'
-import type { RadarUpgradeRequirement } from '../../types/fetch-error'
+import type { KubeAtlasUpgradeRequirement } from '../../types/fetch-error'
 
-export interface RadarUpgradeActions {
-  /** Hands the upgrade to the host, e.g. Radar Cloud's role-aware upgrade flow. */
-  onRequestUpgrade?: (requirement: RadarUpgradeRequirement) => void
+export interface KubeAtlasUpgradeActions {
+  /** Hands the upgrade to the host, e.g. KubeAtlas Cloud's role-aware upgrade flow. */
+  onRequestUpgrade?: (requirement: KubeAtlasUpgradeRequirement) => void
   /** Used when there is no handler: a page with upgrade instructions. */
   upgradeHref?: string
 }
 
-export const RadarUpgradeContext = createContext<RadarUpgradeActions>({})
+export const KubeAtlasUpgradeContext = createContext<KubeAtlasUpgradeActions>({})
 
 /** "v1.10.0" → "v1.10", "1.7.2" → "v1.7.2". Anything else is shown as given. */
-export function formatRadarVersion(version: string): string {
+export function formatKubeAtlasVersion(version: string): string {
   const match = /^v?(\d+)\.(\d+)\.(\d+)$/.exec(version.trim())
   if (!match) return version
   const [, major, minor, patch] = match
@@ -31,17 +31,17 @@ function isNewer(a: number[], b: number[]): boolean {
 }
 
 /**
- * Which Radar to ask for. The release that introduced the feature when it is
+ * Which KubeAtlas to ask for. The release that introduced the feature when it is
  * known; otherwise the latest release, which serves everything this UI calls;
- * otherwise just "a newer Radar".
+ * otherwise just "a newer KubeAtlas".
  */
-function target(requirement: RadarUpgradeRequirement): { since?: string; latest?: string } {
-  if (requirement.minimumVersion) return { since: formatRadarVersion(requirement.minimumVersion) }
+function target(requirement: KubeAtlasUpgradeRequirement): { since?: string; latest?: string } {
+  if (requirement.minimumVersion) return { since: formatKubeAtlasVersion(requirement.minimumVersion) }
   const { latestVersion } = requirement
   const latest = parseVersion(latestVersion)
   const current = parseVersion(requirement.currentVersion)
   if (latestVersion && latest && (!current || isNewer(latest, current))) {
-    return { latest: formatRadarVersion(latestVersion) }
+    return { latest: formatKubeAtlasVersion(latestVersion) }
   }
   return {}
 }
@@ -57,21 +57,21 @@ function featureLabel(feature: string): string {
   return FEATURE_LABELS[feature] ?? feature
 }
 
-// The Radar that is behind is the cluster's, not the UI the user is looking
+// The KubeAtlas that is behind is the cluster's, not the UI the user is looking
 // at, so the copy names the cluster. "It runs dev." says nothing useful, so
 // only a real version is quoted.
-function clusterVersion(requirement: RadarUpgradeRequirement): string | undefined {
+function clusterVersion(requirement: KubeAtlasUpgradeRequirement): string | undefined {
   const current = requirement.currentVersion?.trim()
-  return current && /^v?\d+\.\d+/.test(current) ? formatRadarVersion(current) : undefined
+  return current && /^v?\d+\.\d+/.test(current) ? formatKubeAtlasVersion(current) : undefined
 }
 
-/** Headline for a full-page state: "Capacity needs a newer Radar on this cluster". */
-export function radarUpgradeHeadline(feature: string): string {
+/** Headline for a full-page state: "Capacity needs a newer KubeAtlas on this cluster". */
+export function kubeatlasUpgradeHeadline(feature: string): string {
   return `此集群需要更新版本的 KubeAtlas 才能使用${featureLabel(feature)}`
 }
 
-/** Detail under that headline: "Available from Radar v1.9. This cluster runs v1.7.2." */
-export function radarUpgradeDetail(requirement: RadarUpgradeRequirement): string {
+/** Detail under that headline: "Available from KubeAtlas v1.9. This cluster runs v1.7.2." */
+export function kubeatlasUpgradeDetail(requirement: KubeAtlasUpgradeRequirement): string {
   const { since, latest } = target(requirement)
   const current = clusterVersion(requirement)
   return [
@@ -80,8 +80,8 @@ export function radarUpgradeDetail(requirement: RadarUpgradeRequirement): string
   ].filter(Boolean).join('')
 }
 
-/** Follows the feature name in an inline note: "need Radar v1.10 or newer on this cluster. It runs v1.7.2." */
-function radarUpgradeNeed(requirement: RadarUpgradeRequirement): string {
+/** Follows the feature name in an inline note: "need KubeAtlas v1.10 or newer on this cluster. It runs v1.7.2." */
+function kubeatlasUpgradeNeed(requirement: KubeAtlasUpgradeRequirement): string {
   const { since, latest } = target(requirement)
   const current = clusterVersion(requirement)
   const need = since
@@ -93,8 +93,8 @@ function radarUpgradeNeed(requirement: RadarUpgradeRequirement): string {
 }
 
 /** The upgrade call to action, or nothing when the host offers no way to upgrade. */
-export function RadarUpgradeAction({ requirement }: { requirement: RadarUpgradeRequirement }) {
-  const { onRequestUpgrade, upgradeHref } = useContext(RadarUpgradeContext)
+export function KubeAtlasUpgradeAction({ requirement }: { requirement: KubeAtlasUpgradeRequirement }) {
+  const { onRequestUpgrade, upgradeHref } = useContext(KubeAtlasUpgradeContext)
   const className = 'inline-flex items-center gap-1 font-medium text-accent-text hover:underline'
   if (onRequestUpgrade) {
     return (
@@ -115,14 +115,14 @@ export function RadarUpgradeAction({ requirement }: { requirement: RadarUpgradeR
 }
 
 /**
- * Inline note for a feature the connected Radar is too old to serve. Calm on
- * purpose: nothing failed, the cluster just runs an older Radar than this UI.
+ * Inline note for a feature the connected KubeAtlas is too old to serve. Calm on
+ * purpose: nothing failed, the cluster just runs an older KubeAtlas than this UI.
  */
-export function RadarUpgradeNote({
+export function KubeAtlasUpgradeNote({
   requirement,
   className,
 }: {
-  requirement: RadarUpgradeRequirement
+  requirement: KubeAtlasUpgradeRequirement
   className?: string
 }) {
   return (
@@ -130,9 +130,9 @@ export function RadarUpgradeNote({
       <ArrowUpCircle className="mt-px h-3.5 w-3.5 shrink-0 text-accent-text" aria-hidden />
       <p className="min-w-0">
         <span className="font-medium text-theme-text-primary">{featureLabel(requirement.feature)}</span>
-        {radarUpgradeNeed(requirement)}
+        {kubeatlasUpgradeNeed(requirement)}
         {' '}
-        <RadarUpgradeAction requirement={requirement} />
+        <KubeAtlasUpgradeAction requirement={requirement} />
       </p>
     </div>
   )

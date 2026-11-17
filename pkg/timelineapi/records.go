@@ -1,5 +1,5 @@
 // Package timelineapi holds the timeline events wire contract shared by every
-// server that speaks it: radar OSS and radar-hub. The HTTP body is NDJSON —
+// server that speaks it: kubeatlas OSS and kubeatlas-hub. The HTTP body is NDJSON —
 // one JSON object per line — where each line is either an event row or one of
 // a small set of control records distinguished by a "type" discriminator. The
 // exported record types below pin that on-the-wire shape so both servers, and
@@ -28,8 +28,8 @@ const (
 )
 
 // EndRecord is the terminal record that closes a successful stream. Its shape
-// is the contract the web client's retained source parses; radar OSS emits it
-// verbatim from internal/server (timelineEndRecord) and radar-hub emits the
+// is the contract the web client's retained source parses; kubeatlas OSS emits it
+// verbatim from internal/server (timelineEndRecord) and kubeatlas-hub emits the
 // same shape. Cursor is opaque to clients — feed it back as the delta
 // position; More signals another delta page waits; Truncated signals a window
 // load hit its row cap and the oldest part of the range was cut.
@@ -42,7 +42,7 @@ type EndRecord struct {
 
 // CoverageRecord reports a sub-range of the requested window the server could
 // not answer for (a retention gap: events aged out, or a period predating the
-// current observation). radar OSS never emits it; radar-hub does. Times are
+// current observation). kubeatlas OSS never emits it; kubeatlas-hub does. Times are
 // event-time epoch milliseconds.
 type CoverageRecord struct {
 	Type             string `json:"type"`
@@ -53,9 +53,9 @@ type CoverageRecord struct {
 
 // ErrorRecord is an in-stream failure record: a server that has already
 // written rows (and committed 200 + headers) reports a mid-stream failure as a
-// terminal line rather than a broken connection. radar OSS surfaces failures
+// terminal line rather than a broken connection. kubeatlas OSS surfaces failures
 // as real HTTP error statuses before the first byte and never emits this;
-// radar-hub emits it.
+// kubeatlas-hub emits it.
 type ErrorRecord struct {
 	Type    string `json:"type"`
 	Message string `json:"message,omitempty"`

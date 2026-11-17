@@ -75,16 +75,16 @@ export interface GitOpsInsightSummary {
   finalizers?: string[]
   // Argo comparison-coverage disclosure: the field exclusions declared in
   // spec.ignoreDifferences that suppress drift from comparison (both Argo's
-  // and Radar's). Undefined for Flux roots and Applications without any
-  // exclusions. unsupportedRuleCount counts entries Radar does NOT evaluate
+  // and KubeAtlas's). Undefined for Flux roots and Applications without any
+  // exclusions. unsupportedRuleCount counts entries KubeAtlas does NOT evaluate
   // (jqPathExpressions / managedFieldsManagers rules) — the
   // drift panel may surface fields Argo's own UI suppresses.
   ignoredDifferences?: GitOpsIgnoredDifferences
   // Argo roots: where Argo keeps per-resource health. 'appTree' means the
   // controller's verdicts are not in the Application object and any
-  // per-resource health shown is Radar's own read.
+  // per-resource health shown is KubeAtlas's own read.
   resourceHealthMode?: GitOpsHealthMode
-  // The Application deploys to another cluster; Radar derives nothing about
+  // The Application deploys to another cluster; KubeAtlas derives nothing about
   // its resources from here.
   remoteDestination?: boolean
   // Per-resource health came from Argo CD's API server: the verdicts shown
@@ -137,7 +137,7 @@ export interface GitOpsIssue {
   // `action` string still describes the manual path in that case.
   remediation?: GitOpsRemediation
   // Set on resource-scoped issues: 'controller' when the GitOps controller's
-  // own per-resource health produced it, 'radar' when Radar's issues engine
+  // own per-resource health produced it, 'kubeatlas' when KubeAtlas's issues engine
   // did because the controller's verdict wasn't available.
   source?: GitOpsHealthSource
 }
@@ -284,7 +284,7 @@ export interface ArgoRevisionMetadata {
 // Response of GET /api/argo/applications/{ns}/{name}/resource-diff. `desired`
 // is the Git-rendered manifest, `live` the normalized cluster state — both YAML
 // for the line-by-line view. `fieldEntries` is the same diff structured per
-// path for a compact summary; Radars before the list was made non-null send
+// path for a compact summary; KubeAtlas instances before the list was made non-null send
 // null when it is empty. `fieldEntriesTruncated` is set when the list was cut
 // at the server's entry cap. `redacted` is set when Secret values were masked
 // server-side; `hook` marks Argo sync-hook resources.

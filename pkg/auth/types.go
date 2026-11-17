@@ -65,13 +65,14 @@ type User struct {
 	// User-token mode only. Token is the user's Kubernetes bearer token,
 	// UID and Extra come from the API server's SelfSubjectReview of it.
 	// System marks an allow-listed background identity with no token.
-	// HubGroups are the upstream's radar:* groups, kept apart from the
+	// HubGroups are the upstream's kubeatlas:* groups, kept apart from the
 	// Kubernetes identity so Hub-role gates still see them.
 	Token     string              `json:"-"`
 	UID       string              `json:"-"`
 	Extra     map[string][]string `json:"-"`
 	System    bool                `json:"-"`
 	HubGroups []string            `json:"-"`
+	Cloud     bool                `json:"-"`
 }
 
 // Defaults applies default values to config fields that are empty

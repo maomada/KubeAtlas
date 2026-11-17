@@ -99,13 +99,13 @@ const investigationCase = {
 const report = [
   'Every checkout-api pod is killed by the kernel about 40 seconds after it starts. The container’s last state is **OOMKilled** with exit code 137:',
   '',
-  '[[radar:evidence=0]]',
+  '[[kubeatlas:evidence=0]]',
   '',
   'The previous container’s log ends in the middle of cache warm-up, with the JVM reporting 238Mi of heap against a 256Mi limit — no exception, just a process that stopped:',
   '',
-  '[[radar:evidence=1]]',
+  '[[kubeatlas:evidence=1]]',
   '',
-  'This started with the v2.15.0 rollout at 09:12, which introduced the in-memory product cache [[radar:evidence=2]]. The node itself has plenty of memory [[radar:evidence=3]], so the limit is the container’s, not the node’s.',
+  'This started with the v2.15.0 rollout at 09:12, which introduced the in-memory product cache [[kubeatlas:evidence=2]]. The node itself has plenty of memory [[kubeatlas:evidence=3]], so the limit is the container’s, not the node’s.',
 ].join('\n')
 
 const groupsById = new Map([crashGroup, logsGroup, changesGroup, nodeGroup].map((g) => [g.id, g]))

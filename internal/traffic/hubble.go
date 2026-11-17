@@ -652,9 +652,9 @@ var errDirectUnreachable = errors.New("tcp dial failed (unreachable or blocked)"
 func composeConnectError(directAddr string, directErr, pfErr error) string {
 	msg := fmt.Sprintf("direct connection to %s (%s) failed (%v); port-forward fallback failed: %v", hubbleRelayService, directAddr, directErr, pfErr)
 	if isForbiddenPortForward(pfErr) {
-		msg += " — grant Radar port-forward permission (Helm: rbac.portForward=true)"
+		msg += " — grant KubeAtlas port-forward permission (Helm: rbac.portForward=true)"
 		if errors.Is(directErr, errDirectUnreachable) {
-			msg += ", or allow network traffic from Radar's namespace to hubble-relay so the direct connection works"
+			msg += ", or allow network traffic from KubeAtlas's namespace to hubble-relay so the direct connection works"
 		}
 	}
 	return msg

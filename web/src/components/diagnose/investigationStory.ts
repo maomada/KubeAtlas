@@ -1,6 +1,8 @@
+import { EVIDENCE_MARKER_SOURCE, EVIDENCE_ANCHOR_SOURCE, canonicalEvidenceMarker } from '@maomada/k8s-ui/utils/legacy-brand';
+
 /**
  * The story is the agent's prose with KubeAtlas results placed inside it. A
- * placement is `[[radar:evidence=N]]` alone on a line, N being the 0-based
+ * placement is `[[kubeatlas:evidence=N]]` alone on a line, N being the 0-based
  * index into the verdict's `evidence` array; the same marker inside a sentence
  * is a reference back to the placed card. Markers inside fenced code, inline
  * code or a blockquote are the agent quoting something and never place: a
@@ -11,16 +13,16 @@
  * fixtures pin it on both sides of the wire (see internal/ai/story_test.go).
  */
 
-// An agent that writes the ledger's ref form, [[radar:evidence-ref=ev_…]],
+// An agent that writes the ledger's ref form, [[kubeatlas:evidence-ref=ev_…]],
 // meant a placement; the parser rewrites a cited ref to its index, and one
 // nothing cites reaches here as a ref the resolver cannot place. Either way
 // it is a marker, never literal text.
 const STORY_PLACEMENT_RE =
-  /\[\[radar:evidence(?:=(\d+)|-ref=([A-Za-z0-9_]+))(?:\|(compact))?\]\]/g;
+  new RegExp(`\\[\\[${EVIDENCE_MARKER_SOURCE}(?:=(\\d+)|-ref=([A-Za-z0-9_]+))(?:\\|(compact))?\\]\\]`, 'g');
 // Four or more leading spaces is Markdown indented code, so a marker there
 // stays literal like one inside a fence.
 const BLOCK_PLACEMENT_RE =
-  /^\s{0,3}\[\[radar:evidence(?:=(\d+)|-ref=([A-Za-z0-9_]+))(?:\|(compact))?\]\]\s*$/;
+  new RegExp(`^\\s{0,3}\\[\\[${EVIDENCE_MARKER_SOURCE}(?:=(\\d+)|-ref=([A-Za-z0-9_]+))(?:\\|(compact))?\\]\\]\\s*$`);
 /** A reference the story cannot resolve renders as a placement KubeAtlas cannot identify. */
 export const UNRESOLVED_STORY_INDEX = -1;
 export type StoryRefResolver = (ref: string) => number | undefined;
@@ -60,13 +62,13 @@ interface StorySplit {
 
 /** The href an inline reference is rewritten to; the Markdown link renderer reads it back. */
 export function storyReferenceHref(index: number): string {
-  return `#radar-evidence-${index}`;
+  return `#kubeatlas-evidence-${index}`;
 }
 
 export function storyReferenceIndex(
   href: string | undefined,
 ): number | undefined {
-  const match = href ? /^#radar-evidence-(-?\d+)$/.exec(href) : null;
+  const match = href ? new RegExp(`^#${EVIDENCE_ANCHOR_SOURCE}(-?\\d+)$`).exec(href) : null;
   return match ? Number(match[1]) : undefined;
 }
 
@@ -106,7 +108,7 @@ function rewriteInlineMarkers(
       out += match[0];
     } else {
       const index = markerIndex(match[1], match[2], resolveRef);
-      out += `[${match[0]}](${storyReferenceHref(index)})`;
+      out += `[${canonicalEvidenceMarker(match[0])}](${storyReferenceHref(index)})`;
     }
     cursor = start + match[0].length;
   }

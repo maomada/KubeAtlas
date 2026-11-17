@@ -9,13 +9,13 @@ export interface ResourceReadScope {
 /**
  * A single-kind read's coverage. `status` is relative to `scope`: the
  * namespaces the request named, or what remained of every namespace after
- * `narrowedBy` (the caller's access, Radar's pin, what Radar collects) narrowed it.
+ * `narrowedBy` (the caller's access, KubeAtlas's pin, what KubeAtlas collects) narrowed it.
  */
 export interface ResourceReadCoverage {
   status: 'complete' | 'partial'
   scope: ResourceReadScope
   narrowedBy?: ReadNarrowing[]
-  /** What Radar read; on every successful answer, never on a failed read's coverage. */
+  /** What KubeAtlas read; on every successful answer, never on a failed read's coverage. */
   read?: ResourceReadScope
   gaps: ReadGap[]
 }

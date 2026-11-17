@@ -1,6 +1,6 @@
-// Package ownership reads what Radar has observed about objects' owners, for
+// Package ownership reads what KubeAtlas has observed about objects' owners, for
 // rules that say what owns an object, what it owns, and what deleting it would
-// take with it. A Source never does I/O: answers come from what Radar already
+// take with it. A Source never does I/O: answers come from what KubeAtlas already
 // watches, and every read says whether it was complete.
 package ownership
 
@@ -24,8 +24,8 @@ type Source interface {
 // informer behind it, so an answer should read each object once. A session is
 // not safe for concurrent use.
 //
-// A session does no authorization: it reads everything Radar collected,
-// whoever asks, and its coverage describes Radar's collection, not what a
+// A session does no authorization: it reads everything KubeAtlas collected,
+// whoever asks, and its coverage describes KubeAtlas's collection, not what a
 // caller may see. A host decides what its caller may read before it shows an
 // answer; ValidateCaches says the reads came from the current caches, not that
 // anyone may see them.
@@ -54,7 +54,7 @@ type ReadSession interface {
 	// I/O and waits for nothing.
 	RecordingManagers(ref resourceid.Ref) RecordingManagersRead
 	// ValidateCaches returns ErrCachesReplaced if the caches the session read
-	// were replaced since it began, as when Radar switches clusters
+	// were replaced since it began, as when KubeAtlas switches clusters
 	// or rebuilds its cache, and nil otherwise. An answer built in a session
 	// must pass ValidateCaches before it is used: one read across a switch may
 	// mix two clusters. A store replaced within the caches, such as namespace
@@ -67,6 +67,6 @@ var (
 	// ErrNotConnected: there are no caches to read.
 	ErrNotConnected = errors.New("ownership: no cluster connection to read")
 	// ErrCachesReplaced: the caches were replaced after the session began, as
-	// when Radar switches clusters or rebuilds its cache.
+	// when KubeAtlas switches clusters or rebuilds its cache.
 	ErrCachesReplaced = errors.New("ownership: the caches were replaced during the read")
 )

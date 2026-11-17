@@ -168,7 +168,7 @@ func truncateLargeConfigMapData(resourceData any) (any, string) {
 			if !ok || len(s) <= valueCap {
 				continue
 			}
-			replacement := s[:valueCap] + fmt.Sprintf("\n…[truncated by radar: value is %d bytes, showing first %d]", len(s), valueCap)
+			replacement := s[:valueCap] + fmt.Sprintf("\n…[truncated by kubeatlas: value is %d bytes, showing first %d]", len(s), valueCap)
 			// Marker overhead can exceed the bytes saved for values only just
 			// over the cap — never grow a value in the name of truncating it.
 			if len(replacement) >= len(s) {

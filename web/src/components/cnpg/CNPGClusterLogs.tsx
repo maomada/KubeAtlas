@@ -1,7 +1,7 @@
 import { useCallback } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { PaneLoader, WorkloadLogsViewer, type WorkloadLogsFetchParams, type WorkloadLogsResult } from '@maomada/k8s-ui'
-import { fetchJSON, useCapabilities, useRadarFeature } from '../../api/client'
+import { fetchJSON, useCapabilities, useKubeAtlasFeature } from '../../api/client'
 import { getApiBase, getCredentialsMode } from '../../api/config'
 import { useDesktopDownload } from '../../hooks/useDesktopDownload'
 import { useTheme } from '../../context/ThemeContext'
@@ -56,7 +56,7 @@ export function CNPGClusterLogs({ namespace, name }: { namespace: string; name: 
   const since = interval?.since
   const until = interval?.until
 
-  const { guard, support } = useRadarFeature('cnpgWorkspace')
+  const { guard, support } = useKubeAtlasFeature('cnpgWorkspace')
   const capabilities = useCapabilities()
   const allContainersSupported = support === 'supported'
   const fetchAll = useCallback(

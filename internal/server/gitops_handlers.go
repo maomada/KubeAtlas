@@ -76,7 +76,7 @@ func (s *Server) parseGitOpsRequest(w http.ResponseWriter, r *http.Request) (*gi
 	// than the active UI namespace filter. The root resource (e.g. an Argo
 	// Application in `argocd`) commonly manages workloads in *other*
 	// namespaces; if we honored the UI filter, the tree would be empty
-	// whenever the user has narrowed Radar to a different namespace than the
+	// whenever the user has narrowed KubeAtlas to a different namespace than the
 	// managed ones. The root namespace itself is still RBAC-checked above
 	// (s.getUserNamespaces with the namespace param).
 	return &gitopsRequest{
@@ -162,7 +162,7 @@ func (s *Server) handleGitOpsTree(w http.ResponseWriter, r *http.Request) {
 }
 
 // resolveGitOpsTree is the one path both detail endpoints take from a parsed
-// request to a servable tree: build, overlay Radar's own health where the
+// request to a servable tree: build, overlay KubeAtlas's own health where the
 // controller's isn't in the CR, drop what the user may not see, then count
 // what's left. The tree and insights endpoints are separate requests; sharing
 // this keeps a node's health identical in both responses. The returned
@@ -186,7 +186,7 @@ func (s *Server) resolveGitOpsTree(r *http.Request, req *gitopsRequest) (*gitops
 		return s.gitopsIssuesMemo.load(memoKey, resolver.composeIssues)
 	}
 	if !overlayArgoAPIHealth(r.Context(), tree, root, s.argoAPIHealth) {
-		overlayRadarHealth(tree, root, resolver.ResourceProblems)
+		overlayKubeAtlasHealth(tree, root, resolver.ResourceProblems)
 	}
 	tree = s.filterGitOpsTreeForUser(r, req, tree)
 	tree.Summary = gitopstree.Summarize(tree.Nodes)
@@ -197,23 +197,23 @@ func (s *Server) resolveGitOpsTree(r *http.Request, req *gitopsRequest) (*gitops
 // Only meaningful in appTree mode. Cached and throttled by the manager. A
 // nil health with a nil error is "no answer and nothing to tell the user":
 // nothing is configured and the install doesn't serve anonymous reads, so
-// the caller falls through to Radar's own read quietly. While a connection
+// the caller falls through to KubeAtlas's own read quietly. While a connection
 // is being made it returns *argoHealthPending (with no notice when nothing
 // is configured), so the page asks again. With the
 // integration configured, the failure comes back in the user's words — they
 // set the connection up for this, and the page should say it isn't
-// delivering rather than silently show Radar's read.
+// delivering rather than silently show KubeAtlas's read.
 func (s *Server) argoAPIHealth(ctx context.Context, appNamespace, appName string) (*argoapi.ApplicationHealth, error) {
 	health, err := argocd.ApplicationHealthCached(ctx, argoapi.ApplicationQuery{AppNamespace: appNamespace, AppName: appName})
 	if err == nil {
 		return health, nil
 	}
 	// A settings failure leaves the manager unconfigured, so without this the
-	// page would silently fall back to Radar's read instead of saying why.
+	// page would silently fall back to KubeAtlas's read instead of saying why.
 	var settingsErr *connections.SettingsError
 	if errors.As(err, &settingsErr) {
 		if settingsErr.Launch {
-			return nil, errors.New("its startup configuration for this launch is invalid; check Radar's logs")
+			return nil, errors.New("its startup configuration for this launch is invalid; check KubeAtlas's logs")
 		}
 		return nil, errors.New("this cluster's saved integration settings need review in Settings")
 	}
@@ -238,7 +238,7 @@ func (s *Server) argoAPIHealth(ctx context.Context, appNamespace, appName string
 	return nil, errors.New(argoAPIHealthFailure(err, argocd.TokenSet()))
 }
 
-// argoHealthPending: Radar is connecting to argocd-server in the background,
+// argoHealthPending: KubeAtlas is connecting to argocd-server in the background,
 // and the page should ask again. notice is what to tell a user who
 // configured the integration (empty when they didn't, since they set
 // nothing up to wait for). retrying: a connect failed and is being retried;
@@ -250,7 +250,7 @@ type argoHealthPending struct {
 
 func (p *argoHealthPending) Error() string { return p.notice }
 
-// argoAPIHealthFailure is the clause the notice appends to "Radar couldn't
+// argoAPIHealthFailure is the clause the notice appends to "KubeAtlas couldn't
 // read Argo's per-resource health from your Argo CD server".
 func argoAPIHealthFailure(err error, tokenSet bool) string {
 	switch {
@@ -279,7 +279,7 @@ func argoAPIHealthFailure(err error, tokenSet bool) string {
 // overlayArgoAPIHealth fills per-resource health from the controller's own
 // API server when the CR doesn't carry it (appTree mode). Argo's verdicts
 // are authoritative for the whole app, including "no check for this kind",
-// so a successful overlay returns true and Radar's own read does not run.
+// so a successful overlay returns true and KubeAtlas's own read does not run.
 // The answer must be about THIS Application: argocd-server is a configured
 // URL, and a different install could serve a same-named app, so the UID has
 // to match. Remote-destination apps are skipped for the same reason the
@@ -334,7 +334,7 @@ func overlayArgoAPIHealth(ctx context.Context, tree *gitopstree.ResourceTree, ro
 		rh, ok := byRef[apiHealthKey(n.Ref.Group, n.Ref.Kind, n.Ref.Namespace, n.Ref.Name)]
 		if !ok {
 			// Argo has no verdict for this resource now: clear whatever the
-			// node carried — Radar's topology fill, or a value the CR still
+			// node carried — KubeAtlas's topology fill, or a value the CR still
 			// held from before — so the page shows exactly what the
 			// controller says today.
 			n.Health, n.HealthSource, n.HealthReason, n.HealthMessage, n.HealthSeverity = "", "", "", "", ""
@@ -355,22 +355,22 @@ func apiHealthKey(group, kind, namespace, name string) string {
 	return group + "|" + kind + "|" + namespace + "|" + name
 }
 
-// overlayRadarHealth fills per-resource health from Radar's issues engine
+// overlayKubeAtlasHealth fills per-resource health from KubeAtlas's issues engine
 // when the Argo Application doesn't carry the controller's own
 // (status.resourceHealthSource=appTree, the Argo CD 3 default). It only
 // ever adds problems: a node the engine has nothing on keeps no health, so
 // nothing here claims a resource is Healthy on Argo's behalf. Skipped for a
-// remote destination (Radar's engine reads the local cluster, which could
+// remote destination (KubeAtlas's engine reads the local cluster, which could
 // hold an unrelated same-named object) and for an app Argo calls Healthy
 // (the engine may still hold a warning; contradicting the controller's
 // verdict on a node, and composing the cluster's issues on every poll of a
 // healthy app, are both worse than leaving it). A node whose health is
-// Radar's own topology read (Progressing at 1/2 replicas, say) is still a
-// candidate: the engine's classified finding is the more specific Radar
+// KubeAtlas's own topology read (Progressing at 1/2 replicas, say) is still a
+// candidate: the engine's classified finding is the more specific KubeAtlas
 // answer and replaces it. Controller-sourced health is final. problems is
 // the resolver's ResourceProblems, which applies the request's per-user
 // access gate.
-func overlayRadarHealth(tree *gitopstree.ResourceTree, root *unstructured.Unstructured, problems func(group, kind, namespace, name string) []gitopsinsights.ResourceProblem) {
+func overlayKubeAtlasHealth(tree *gitopstree.ResourceTree, root *unstructured.Unstructured, problems func(group, kind, namespace, name string) []gitopsinsights.ResourceProblem) {
 	if tree == nil || root == nil || problems == nil {
 		return
 	}
@@ -385,7 +385,7 @@ func overlayRadarHealth(tree *gitopstree.ResourceTree, root *unstructured.Unstru
 		if n.Role != gitopstree.RoleDeclared {
 			continue
 		}
-		if n.Health != "" && n.HealthSource != gitopstree.HealthSourceRadar {
+		if n.Health != "" && n.HealthSource != gitopstree.HealthSourceKubeAtlas {
 			continue
 		}
 		problem, ok := gitopsinsights.WorstResourceProblem(problems(n.Ref.Group, n.Ref.Kind, n.Ref.Namespace, n.Ref.Name))
@@ -393,7 +393,7 @@ func overlayRadarHealth(tree *gitopstree.ResourceTree, root *unstructured.Unstru
 			continue
 		}
 		n.Health = "Degraded"
-		n.HealthSource = gitopstree.HealthSourceRadar
+		n.HealthSource = gitopstree.HealthSourceKubeAtlas
 		n.HealthReason = problem.Reason
 		n.HealthMessage = problem.Message
 		n.HealthSeverity = problem.Severity
@@ -462,10 +462,10 @@ func setArgoCapabilities(ctx context.Context, namespace, name string, root *unst
 			diffReady = true
 			// Revision metadata is about the Git source, so it's available for
 			// any connected app. The deep diff reads destination-cluster
-			// manifests, which Radar's local SARs can only authorize when the
+			// manifests, which KubeAtlas's local SARs can only authorize when the
 			// Application deploys in-cluster — a remote hub-spoke destination is
 			// gated off here (and refused by the diff endpoint) so we never
-			// offer a diff Radar can't authorize.
+			// offer a diff KubeAtlas can't authorize.
 			caps.RevisionMetadataAvailable = true
 			caps.ArgoDiffAvailable = isInClusterDestination(root)
 		}
@@ -539,7 +539,7 @@ var managedScanDenyList = map[string]bool{
 }
 
 // managedScanKindsFromDiscovery builds the kind list for the managed-
-// resources scan by asking radar's existing APIResources discovery what
+// resources scan by asking kubeatlas's existing APIResources discovery what
 // the cluster actually has. Filters out:
 //
 //   - kinds in managedScanDenyList (see above)
@@ -591,9 +591,9 @@ func managedScanKindsFromDiscovery() []managedScanKind {
 // the latter is controller-side (walks live ownership from the Application
 // CRD outward, only works when controller + workloads share a cluster);
 // this one is destination-side (matches by Argo's tracking annotation,
-// works regardless of where the controller lives). Used by Radar Hub's
+// works regardless of where the controller lives). Used by KubeAtlas Hub's
 // fleet GitOps detail page to render the workload graph for cross-cluster
-// Argo apps; also useful for single-cluster Radar users connected to a
+// Argo apps; also useful for single-cluster KubeAtlas users connected to a
 // destination cluster who want to see "what's managed here by app X".
 //
 // Query params:

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"io"
 	"os"
 	"os/exec"
@@ -47,7 +48,7 @@ func (a *opencodeAgent) command(ctx context.Context, s turnSpec) (*exec.Cmd, fun
 	workdir := s.workdir
 	cleanup := func() {}
 	if workdir == "" {
-		dir, err := os.MkdirTemp("", "radar-opencode-")
+		dir, err := os.MkdirTemp("", "kubeatlas-opencode-")
 		if err != nil {
 			return nil, nil, fmt.Errorf("ai: opencode workdir: %w", err)
 		}
@@ -74,13 +75,13 @@ func writeOpencodeConfig(workdir, mcpURL string) error {
 	}
 
 	cfg := map[string]any{
-		// Preserve any result Radar can retain, including UTF-8 and the evidence marker.
+		// Preserve any result KubeAtlas can retain, including UTF-8 and the evidence marker.
 		"tool_output": map[string]int{
 			"max_bytes": utf8.UTFMax*maxToolPayload + 1024,
 			"max_lines": maxToolPayload + 1024,
 		},
 		"mcp": map[string]any{
-			"radar": map[string]any{
+			"kubeatlas": map[string]any{
 				"type": "remote",
 				"url":  mcpURL,
 			},
@@ -172,7 +173,7 @@ func (a *opencodeAgent) parseStream(r io.Reader, onEvent func(StreamEvent)) Diag
 			result, truncated := capPayload(resultText)
 			// OpenCode emits tool_use only when the call has finished.
 			onEvent(StreamEvent{Type: "step", Step: &StepInfo{
-				ID: part.ID, Tool: strings.TrimPrefix(part.Tool, "radar_"), Status: "done",
+				ID: part.ID, Tool: compat.CanonicalToolName(part.Tool), Status: "done",
 				Summary: toolArgsText(part.State.Input), Result: result,
 				EvidenceRef: evidenceRef, IsError: &isError,
 				Truncated:      truncated || part.State.Metadata.Truncated,

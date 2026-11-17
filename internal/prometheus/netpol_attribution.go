@@ -18,7 +18,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/prom"
 )
 
-// networkPolicyBlockedError names the NetworkPolicy that denies Radar's pod a
+// networkPolicyBlockedError names the NetworkPolicy that denies KubeAtlas's pod a
 // candidate it could not reach. It unwraps to errPrometheusUnreachable so
 // every errors.Is caller keeps its answer; only the message changes.
 type networkPolicyBlockedError struct {
@@ -29,9 +29,9 @@ func (e *networkPolicyBlockedError) Error() string { return e.msg }
 func (e *networkPolicyBlockedError) Unwrap() error { return errPrometheusUnreachable }
 
 // attributeNetworkPolicyBlock explains an in-cluster direct-probe failure by
-// a NetworkPolicy when — and only when — the policies Radar can see deny the
+// a NetworkPolicy when — and only when — the policies KubeAtlas can see deny the
 // connection from its own pod to a candidate's ready backends. It returns nil
-// whenever any input is missing or uncertain: Radar's pod identity, an
+// whenever any input is missing or uncertain: KubeAtlas's pod identity, an
 // unsynced or namespace-scoped cache that may hide an admitting policy, a
 // backend it cannot resolve, or a probe that was refused rather than
 // unreachable. A nil answer means "nothing to add", never "no policy blocks".
@@ -75,7 +75,7 @@ func (c *Client) attributeNetworkPolicyBlock(ctx context.Context, cache *k8s.Res
 		if !ok || len(backends) == 0 {
 			continue
 		}
-		// Policies from every namespace involved: Radar's own, and each
+		// Policies from every namespace involved: KubeAtlas's own, and each
 		// backend's — a manually managed EndpointSlice can point outside the
 		// Service's namespace, and the policy admitting the traffic lives
 		// wherever the backend does.
@@ -291,10 +291,10 @@ func describeNetworkPolicyBlock(cand prom.Candidate, self *corev1.Pod, backends 
 		return fmt.Sprintf("Prometheus candidate %s was unreachable, and %s egress from %s with no rule admitting it; add an egress rule to %s",
 			target, subject, selfRef, backendDestinations(backends))
 	case netpol.DirectionBoth:
-		return fmt.Sprintf("Prometheus candidate %s was unreachable, and %s the path from %s: no backend is admitted by both Radar's egress rules and its own ingress rules; allow egress to %s and ingress from Radar's namespace (%s)",
+		return fmt.Sprintf("Prometheus candidate %s was unreachable, and %s the path from %s: no backend is admitted by both KubeAtlas's egress rules and its own ingress rules; allow egress to %s and ingress from KubeAtlas's namespace (%s)",
 			target, subject, selfRef, backendDestinations(backends), self.Namespace)
 	default:
-		return fmt.Sprintf("Prometheus candidate %s was unreachable, and %s ingress to its pods with no rule admitting %s; add an ingress rule for Radar's namespace (%s)",
+		return fmt.Sprintf("Prometheus candidate %s was unreachable, and %s ingress to its pods with no rule admitting %s; add an ingress rule for KubeAtlas's namespace (%s)",
 			target, subject, selfRef, self.Namespace)
 	}
 }

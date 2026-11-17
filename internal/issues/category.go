@@ -185,7 +185,7 @@ func Classify(in classifyInput) issuesapi.Category {
 	return issuesapi.CategoryUnknown
 }
 
-// classifyProblem handles the broad source=problem channel (radar's per-kind
+// classifyProblem handles the broad source=problem channel (kubeatlas's per-kind
 // detection). Split out to keep Classify readable.
 func classifyProblem(in classifyInput) issuesapi.Category {
 	if in.Reason == "Terminating stuck" || in.Reason == "Namespace terminating stuck" {

@@ -29,7 +29,7 @@ func TestSelfUpgradeRequiresCloudOwner(t *testing.T) {
 	t.Setenv("MY_POD_NAMESPACE", "")
 	t.Setenv("MY_DEPLOYMENT_NAME", "")
 
-	for _, tier := range []string{"radar:viewer", "radar:member", "radar:unknown", ""} {
+	for _, tier := range []string{"kubeatlas:viewer", "kubeatlas:member", "kubeatlas:unknown", ""} {
 		t.Run(tier, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/agent/self-upgrade", strings.NewReader(`{"image":"ghcr.io/maomada/kubeatlas:1.9.0"}`))
 			req = req.WithContext(auth.ContextWithUser(req.Context(), userWithGroups(tier)))
@@ -60,21 +60,21 @@ func TestSelfUpgradeImagePreservesConfiguredRepository(t *testing.T) {
 	}{
 		{
 			name:       "official repository",
-			containers: []corev1.Container{{Name: "radar", Image: "ghcr.io/maomada/kubeatlas:1.8.0"}},
+			containers: []corev1.Container{{Name: "kubeatlas", Image: "ghcr.io/maomada/kubeatlas:1.8.0"}},
 			want:       "ghcr.io/maomada/kubeatlas:1.9.0",
 		},
 		{
 			name:       "private registry with port",
-			containers: []corev1.Container{{Name: "radar", Image: "registry.example:5000/platform/radar:1.8.0"}},
-			want:       "registry.example:5000/platform/radar:1.9.0",
+			containers: []corev1.Container{{Name: "kubeatlas", Image: "registry.example:5000/platform/kubeatlas:1.8.0"}},
+			want:       "registry.example:5000/platform/kubeatlas:1.9.0",
 		},
 		{
 			name:       "digest pin",
-			containers: []corev1.Container{{Name: "radar", Image: "mirror.example/radar@sha256:abc"}},
-			want:       "mirror.example/radar:1.9.0",
+			containers: []corev1.Container{{Name: "kubeatlas", Image: "mirror.example/kubeatlas@sha256:abc"}},
+			want:       "mirror.example/kubeatlas:1.9.0",
 		},
 		{
-			name:       "missing Radar container",
+			name:       "missing KubeAtlas container",
 			containers: []corev1.Container{{Name: "sidecar", Image: "example.com/sidecar:v1"}},
 			wantErr:    true,
 		},
@@ -93,7 +93,7 @@ func TestSelfUpgradeCloudOwnerPassesRoleGate(t *testing.T) {
 	t.Setenv("MY_POD_NAMESPACE", "")
 	t.Setenv("MY_DEPLOYMENT_NAME", "")
 	req := httptest.NewRequest(http.MethodPost, "/api/agent/self-upgrade", strings.NewReader(`{"image":"ghcr.io/maomada/kubeatlas:1.9.0"}`))
-	req = req.WithContext(auth.ContextWithUser(req.Context(), userWithGroups("radar:owner")))
+	req = req.WithContext(auth.ContextWithUser(req.Context(), userWithGroups("kubeatlas:owner")))
 	rec := httptest.NewRecorder()
 
 	(&Server{}).handleSelfUpgrade(rec, req)
@@ -106,7 +106,7 @@ func TestSelfUpgradeCloudOwnerPassesRoleGate(t *testing.T) {
 	}
 }
 
-func TestIsValidRadarImageTag(t *testing.T) {
+func TestIsValidKubeAtlasImageTag(t *testing.T) {
 	tests := []struct {
 		name string
 		tag  string
@@ -124,8 +124,8 @@ func TestIsValidRadarImageTag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := isValidRadarImageTag(tt.tag); got != tt.want {
-				t.Fatalf("isValidRadarImageTag(%q) = %v, want %v", tt.tag, got, tt.want)
+			if got := isValidKubeAtlasImageTag(tt.tag); got != tt.want {
+				t.Fatalf("isValidKubeAtlasImageTag(%q) = %v, want %v", tt.tag, got, tt.want)
 			}
 		})
 	}
@@ -133,41 +133,41 @@ func TestIsValidRadarImageTag(t *testing.T) {
 
 func TestBuildSelfUpgradeApplyPatchUsesFullHelmDeploymentManifest(t *testing.T) {
 	manifest := `---
-# Source: radar/templates/service.yaml
+# Source: kubeatlas/templates/service.yaml
 apiVersion: v1
 kind: Service
 metadata:
-  name: radar
+  name: kubeatlas
 ---
-# Source: radar/templates/deployment.yaml
+# Source: kubeatlas/templates/deployment.yaml
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: radar
+  name: kubeatlas
   labels:
-    app.kubernetes.io/name: radar
+    app.kubernetes.io/name: kubeatlas
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app.kubernetes.io/name: radar
-      app.kubernetes.io/instance: radar
+      app.kubernetes.io/name: kubeatlas
+      app.kubernetes.io/instance: kubeatlas
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: radar
-        app.kubernetes.io/instance: radar
+        app.kubernetes.io/name: kubeatlas
+        app.kubernetes.io/instance: kubeatlas
     spec:
-      serviceAccountName: radar
+      serviceAccountName: kubeatlas
       containers:
-        - name: radar
+        - name: kubeatlas
           image: "ghcr.io/maomada/kubeatlas:1.6.1"
           imagePullPolicy: IfNotPresent
         - name: sidecar
           image: "example.com/sidecar:v1"
 `
 
-	patch, err := buildSelfUpgradeApplyPatch(manifest, "radar", "radar", "radar", "ghcr.io/maomada/kubeatlas:1.6.2")
+	patch, err := buildSelfUpgradeApplyPatch(manifest, "kubeatlas", "kubeatlas", "kubeatlas", "ghcr.io/maomada/kubeatlas:1.6.2")
 	if err != nil {
 		t.Fatalf("buildSelfUpgradeApplyPatch() error = %v", err)
 	}
@@ -177,23 +177,23 @@ spec:
 		t.Fatalf("patch is not valid JSON: %v", err)
 	}
 
-	if got := nestedString(t, obj, "metadata", "namespace"); got != "radar" {
-		t.Errorf("metadata.namespace = %q, want radar", got)
+	if got := nestedString(t, obj, "metadata", "namespace"); got != "kubeatlas" {
+		t.Errorf("metadata.namespace = %q, want kubeatlas", got)
 	}
-	if got := nestedString(t, obj, "metadata", "annotations", "meta.helm.sh/release-name"); got != "radar" {
-		t.Errorf("release-name annotation = %q, want radar", got)
+	if got := nestedString(t, obj, "metadata", "annotations", "meta.helm.sh/release-name"); got != "kubeatlas" {
+		t.Errorf("release-name annotation = %q, want kubeatlas", got)
 	}
-	if got := nestedString(t, obj, "metadata", "annotations", "meta.helm.sh/release-namespace"); got != "radar" {
-		t.Errorf("release-namespace annotation = %q, want radar", got)
+	if got := nestedString(t, obj, "metadata", "annotations", "meta.helm.sh/release-namespace"); got != "kubeatlas" {
+		t.Errorf("release-namespace annotation = %q, want kubeatlas", got)
 	}
 	if got := nestedFloat(t, obj, "spec", "replicas"); got != 1 {
 		t.Errorf("spec.replicas = %v, want 1", got)
 	}
-	if got := nestedString(t, obj, "spec", "selector", "matchLabels", "app.kubernetes.io/name"); got != "radar" {
-		t.Errorf("selector label = %q, want radar", got)
+	if got := nestedString(t, obj, "spec", "selector", "matchLabels", "app.kubernetes.io/name"); got != "kubeatlas" {
+		t.Errorf("selector label = %q, want kubeatlas", got)
 	}
-	if got := nestedString(t, obj, "spec", "template", "spec", "serviceAccountName"); got != "radar" {
-		t.Errorf("serviceAccountName = %q, want radar", got)
+	if got := nestedString(t, obj, "spec", "template", "spec", "serviceAccountName"); got != "kubeatlas" {
+		t.Errorf("serviceAccountName = %q, want kubeatlas", got)
 	}
 
 	containers, ok, err := nestedSlice(obj, "spec", "template", "spec", "containers")
@@ -201,10 +201,10 @@ spec:
 		t.Fatalf("containers lookup ok=%v err=%v", ok, err)
 	}
 	if got := containers[0].(map[string]any)["image"]; got != "ghcr.io/maomada/kubeatlas:1.6.2" {
-		t.Errorf("radar image = %q, want upgraded image", got)
+		t.Errorf("kubeatlas image = %q, want upgraded image", got)
 	}
 	if got := containers[0].(map[string]any)["imagePullPolicy"]; got != "IfNotPresent" {
-		t.Errorf("radar imagePullPolicy = %q, want preserved", got)
+		t.Errorf("kubeatlas imagePullPolicy = %q, want preserved", got)
 	}
 	if got := containers[1].(map[string]any)["image"]; got != "example.com/sidecar:v1" {
 		t.Errorf("sidecar image = %q, want unchanged", got)
@@ -212,7 +212,7 @@ spec:
 }
 
 func TestBuildSelfUpgradeApplyPatchRejectsMissingDeployment(t *testing.T) {
-	_, err := buildSelfUpgradeApplyPatch("apiVersion: v1\nkind: Service\nmetadata:\n  name: radar\n", "radar", "radar", "radar", "ghcr.io/maomada/kubeatlas:1.6.2")
+	_, err := buildSelfUpgradeApplyPatch("apiVersion: v1\nkind: Service\nmetadata:\n  name: kubeatlas\n", "kubeatlas", "kubeatlas", "kubeatlas", "ghcr.io/maomada/kubeatlas:1.6.2")
 	if err == nil {
 		t.Fatal("buildSelfUpgradeApplyPatch() error = nil, want missing deployment error")
 	}

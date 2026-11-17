@@ -29,7 +29,7 @@ func (s *Server) authorizeCNPGRuntime(w http.ResponseWriter, r *http.Request, na
 
 // cnpgRuntimeClient builds the caller's client for the proxy reads: the
 // impersonated identity when auth is on (nil when impersonation fails — never
-// Radar's own identity), with redirects refused so a proxied answer cannot
+// KubeAtlas's own identity), with redirects refused so a proxied answer cannot
 // steer the request to another path on the Pod.
 func cnpgRuntimeClient(cfg *rest.Config) kubernetes.Interface {
 	if cfg == nil {

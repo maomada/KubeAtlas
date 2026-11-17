@@ -6,7 +6,7 @@
 
 import { formatGrant, type Grant, type ActionConfirmResult } from '@maomada/k8s-ui'
 import { ApiError } from './client'
-import { isRadarFeatureUnsupported } from './radarFeatures'
+import { isKubeAtlasFeatureUnsupported } from './kubeatlasFeatures'
 
 export interface ActionCapability {
   allowed: boolean
@@ -38,7 +38,7 @@ export type ActionErrorCode = 'context_changed' | 'changed' | 'blocked' | 'parti
 const AMBIGUOUS_STATUSES = new Set([500, 502, 503, 504])
 
 export function actionErrorCode<C extends string = ActionErrorCode>(err: unknown): C | ActionErrorCode | undefined {
-  if (!err || isRadarFeatureUnsupported(err)) return undefined
+  if (!err || isKubeAtlasFeatureUnsupported(err)) return undefined
   if (!(err instanceof ApiError)) return 'outcome_unknown'
   const code = err.data?.code
   if (typeof code === 'string') return code as C

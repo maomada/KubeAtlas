@@ -1,4 +1,6 @@
-// What resolves each read code, mirroring Radar's pkg/readreason. A test
+import { LEGACY_READ_CODES as LEGACY_BRAND_READ_CODES } from './legacy-brand'
+
+// What resolves each read code, mirroring KubeAtlas's pkg/readreason. A test
 // checks this table against pkg/readreason/testdata/actions.json.
 export type ReadAction =
   | 'retry'
@@ -6,12 +8,12 @@ export type ReadAction =
   | 'check_target'
   | 'change_request'
   | 'user_access'
-  | 'radar_config'
+  | 'kubeatlas_config'
   | 'none'
 
 export const READ_ACTIONS: Record<string, ReadAction> = {
   cluster_connecting: 'retry',
-  cluster_disconnected: 'radar_config',
+  cluster_disconnected: 'kubeatlas_config',
   connection_changed: 'check_target',
   cursor_expired: 'change_request',
   filter_eval_failed: 'change_request',
@@ -27,11 +29,11 @@ export const READ_ACTIONS: Record<string, ReadAction> = {
   namespace_not_found: 'change_request',
   namespace_required: 'change_request',
   object_not_found: 'none',
-  outside_namespace_pin: 'radar_config',
-  radar_credentials_rejected: 'radar_config',
-  radar_forbidden: 'radar_config',
-  radar_kind_not_collected: 'radar_config',
-  radar_namespace_not_collected: 'radar_config',
+  outside_namespace_pin: 'kubeatlas_config',
+  kubeatlas_credentials_rejected: 'kubeatlas_config',
+  kubeatlas_forbidden: 'kubeatlas_config',
+  kubeatlas_kind_not_collected: 'kubeatlas_config',
+  kubeatlas_namespace_not_collected: 'kubeatlas_config',
   read_error: 'retry',
   user_forbidden: 'user_access',
   user_namespace_not_visible: 'change_request',
@@ -39,20 +41,21 @@ export const READ_ACTIONS: Record<string, ReadAction> = {
   user_permission_check_failed: 'retry',
 }
 
-// Spellings Radar releases sent before the shared vocabulary, for codes that
-// kept their meaning: a newer UI reading an older Radar reads them as the code
+// Spellings KubeAtlas releases sent before the shared vocabulary, for codes that
+// kept their meaning: a newer UI reading an older KubeAtlas reads them as the code
 // they became.
 const LEGACY_READ_CODES: Record<string, string> = {
+  ...LEGACY_BRAND_READ_CODES,
   kind_sync_failed: 'kind_sync_timed_out',
   rbac_denied: 'user_forbidden',
 }
 
-/** The current spelling of a read code, translating one an older Radar sent. */
+/** The current spelling of a read code, translating one an older KubeAtlas sent. */
 export function canonicalReadCode(code: unknown): unknown {
   return typeof code === 'string' ? (LEGACY_READ_CODES[code] ?? code) : code
 }
 
-/** The action for a code; an unknown code (from a newer Radar) is treated as needing a change. */
+/** The action for a code; an unknown code (from a newer KubeAtlas) is treated as needing a change. */
 export function readActionFor(code: unknown): ReadAction | undefined {
   const current = canonicalReadCode(code)
   return typeof current === 'string' ? (READ_ACTIONS[current] ?? 'change_request') : undefined
@@ -61,16 +64,16 @@ export function readActionFor(code: unknown): ReadAction | undefined {
 /** Why a read failed, in a few plain words; an unknown code reads as a failed read. */
 export function gapReasonText(reason: string): string {
   switch (canonicalReadCode(reason)) {
-    case 'radar_kind_not_collected':
-    case 'radar_namespace_not_collected':
-      return "Radar doesn't collect it"
+    case 'kubeatlas_kind_not_collected':
+    case 'kubeatlas_namespace_not_collected':
+      return "KubeAtlas doesn't collect it"
     case 'kind_sync_pending':
       return 'still loading'
     case 'kind_sync_timed_out':
       return 'loading is overdue'
-    case 'radar_forbidden':
-    case 'radar_credentials_rejected':
-      return 'Radar may not list it'
+    case 'kubeatlas_forbidden':
+    case 'kubeatlas_credentials_rejected':
+      return 'KubeAtlas may not list it'
     case 'kind_not_watchable':
       return "its API can't be watched"
     case 'user_permission_check_failed':
@@ -78,15 +81,15 @@ export function gapReasonText(reason: string): string {
     case 'user_forbidden':
       return 'you may not list it'
     case 'kind_unknown':
-      return "Radar's API discovery doesn't list its kind or version"
+      return "KubeAtlas's API discovery doesn't list its kind or version"
     case 'object_not_found':
-      return "Radar doesn't have it yet"
+      return "KubeAtlas doesn't have it yet"
     case 'cluster_connecting':
-      return 'Radar is still connecting'
+      return 'KubeAtlas is still connecting'
     case 'cluster_disconnected':
-      return 'Radar lost its connection'
+      return 'KubeAtlas lost its connection'
     case 'connection_changed':
-      return "Radar's connection changed meanwhile"
+      return "KubeAtlas's connection changed meanwhile"
     default:
       return 'the read failed'
   }

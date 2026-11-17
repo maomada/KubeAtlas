@@ -2,6 +2,7 @@ package investigation
 
 import (
 	"encoding/json"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"regexp"
 	"strconv"
 	"strings"
@@ -10,16 +11,16 @@ import (
 
 var (
 	jsonBlockRe = regexp.MustCompile("(?s)```json\\s*(\\{.*?\\})\\s*```")
-	// The ledger marks each tool result with [[radar:evidence-ref=ev_…]]; an
+	// The ledger marks each tool result with [[kubeatlas:evidence-ref=ev_…]]; an
 	// agent that copies that form into the story meant the placement marker,
-	// so a ref that names a cited item becomes [[radar:evidence=N]] and reads
+	// so a ref that names a cited item becomes [[kubeatlas:evidence=N]] and reads
 	// the same everywhere downstream.
-	storyRefMarkerRe = regexp.MustCompile(`\[\[radar:evidence-ref=(ev_[a-z2-7]{26,128}_[a-z2-7]{26,128})(\|compact)?\]\]`)
+	storyRefMarkerRe = regexp.MustCompile(`\[\[` + compat.EvidenceNamespacePattern + `:evidence-ref=(ev_[a-z2-7]{26,128}_[a-z2-7]{26,128})(\|compact)?\]\]`)
 	// No marker of any kind belongs in the headline fields.
-	anyStoryMarkerRe = regexp.MustCompile(` ?\[\[radar:[^\]]*\]\]`)
+	anyStoryMarkerRe = regexp.MustCompile(` ?\[\[` + compat.EvidenceNamespacePattern + `:[^\]]*\]\]`)
 	// placementMarkerRe matches the story's placements. They mean nothing to
 	// a model reading the story back, so prompts strip them.
-	placementMarkerRe = regexp.MustCompile(`\[\[radar:evidence(?:=\d+|-ref=[a-z0-9_]+)(?:\|compact)?\]\]`)
+	placementMarkerRe = regexp.MustCompile(`\[\[` + compat.EvidenceNamespacePattern + `:evidence(?:=\d+|-ref=[a-z0-9_]+)(?:\|compact)?\]\]`)
 )
 
 var certainties = map[Certainty]struct{}{Established: {}, Likely: {}, Suspected: {}}
@@ -500,7 +501,7 @@ func parseCaseItem(raw json.RawMessage) caseItemRequest {
 }
 
 func canonicalStoryMarkers(report string, items []caseItemRequest) string {
-	if !strings.Contains(report, "[[radar:evidence-ref=") {
+	if !storyRefMarkerRe.MatchString(report) {
 		return report
 	}
 	// A ref cited by two items (one diagnose result, two subjects) names no
@@ -517,7 +518,7 @@ func canonicalStoryMarkers(report string, items []caseItemRequest) string {
 		return storyRefMarkerRe.ReplaceAllStringFunc(text, func(marker string) string {
 			m := storyRefMarkerRe.FindStringSubmatch(marker)
 			if i, ok := indexByRef[m[1]]; ok && i >= 0 {
-				return "[[radar:evidence=" + strconv.Itoa(i) + m[2] + "]]"
+				return "[[kubeatlas:evidence=" + strconv.Itoa(i) + m[2] + "]]"
 			}
 			return marker
 		})
@@ -603,7 +604,7 @@ func stripStoryMarkers(text string) string {
 	return strings.TrimSpace(anyStoryMarkerRe.ReplaceAllString(text, ""))
 }
 
-// StripPlacementMarkers removes the story's [[radar:evidence=N]] placements
+// StripPlacementMarkers removes the story's [[kubeatlas:evidence=N]] placements
 // for a model that reads the story back, such as an explanation turn.
 func StripPlacementMarkers(report string) string {
 	return strings.TrimSpace(placementMarkerRe.ReplaceAllString(report, ""))

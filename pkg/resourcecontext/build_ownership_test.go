@@ -25,7 +25,7 @@ func controlledPod() *corev1.Pod {
 }
 
 // An ownership answer that names no owner says why in the context, as the
-// graph's answer did: the reader may not view it, or Radar couldn't tell.
+// graph's answer did: the reader may not view it, or KubeAtlas couldn't tell.
 func TestBuildSaysWhyOwnershipNamedNoOwner(t *testing.T) {
 	for _, tc := range []struct {
 		name     string

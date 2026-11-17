@@ -30,7 +30,7 @@ vi.mock('../settings/OperatorManagedNotice', () => ({ OperatorManagedNotice: () 
 vi.mock('../../api/client', () => {
   const idle = { mutate: vi.fn(), mutateAsync: vi.fn(), isPending: false }
   return {
-    useRadarFeature: () => ({ support: state.featureSupported ? 'supported' : 'unsupported' }),
+    useKubeAtlasFeature: () => ({ support: state.featureSupported ? 'supported' : 'unsupported' }),
     useHelmSourceStatus: () => ({ data: state.status, error: null, isFetching: state.statusFetching, refetch: vi.fn() }),
     useHelmRepositories: () => ({ data: state.repositories, isLoading: false }),
     useHelmOCISources: () => ({ data: state.ociSources }),

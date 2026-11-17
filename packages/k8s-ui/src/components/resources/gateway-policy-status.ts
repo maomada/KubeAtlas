@@ -10,7 +10,7 @@ import type { GenericStatus } from './generic-status'
  * ClientTrafficPolicy / BackendTrafficPolicy / EnvoyPatchPolicy /
  * EnvoyExtensionPolicy, and GKE's GCPBackendPolicy family. Dispatching on the
  * shape rather than on a list of kinds means a policy from an implementation
- * Radar has never heard of reads correctly too.
+ * KubeAtlas has never heard of reads correctly too.
  *
  * Kept separate from the generic ladder rather than folded into it, because the
  * ladder resolves positive conditions before negative ones and that order is

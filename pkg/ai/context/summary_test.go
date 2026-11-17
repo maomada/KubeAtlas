@@ -292,7 +292,7 @@ func TestSummary_PodStatus(t *testing.T) {
 		{
 			// THE case this work exists for. A Job pod whose main container
 			// finished while a sidecar keeps running: phase stays Running
-			// forever, so the bare phase said "Running" and radar called it
+			// forever, so the bare phase said "Running" and kubeatlas called it
 			// healthy. kubectl reports NotReady, which is what let other tools
 			// spot a CronJob wedged by a non-exiting sidecar.
 			name: "completed main container with a lingering sidecar is NotReady",

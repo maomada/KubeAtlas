@@ -1,5 +1,5 @@
 # A Deployment whose only container exits immediately. Argo's Deployment
-# health goes Degraded once progressDeadlineSeconds passes; Radar's issues
+# health goes Degraded once progressDeadlineSeconds passes; KubeAtlas's issues
 # engine classifies the pods' CrashLoopBackOff and collapses it onto the
 # Deployment, which is what the per-resource row shows on Argo CD 3.
 apiVersion: apps/v1

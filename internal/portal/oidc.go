@@ -12,6 +12,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"io"
 	"net"
 	"net/http"
@@ -227,16 +228,16 @@ func (t *boundedOIDCRoundTripper) RoundTrip(request *http.Request) (*http.Respon
 
 func (h *Handler) oidcStateCookieName() string {
 	if h.secureCookies {
-		return "__Host-radar_oidc_state"
+		return "__Host-kubeatlas_oidc_state"
 	}
-	return "radar_oidc_state"
+	return "kubeatlas_oidc_state"
 }
 
 func (h *Handler) oidcStateCookieNameForRequest(r *http.Request) string {
 	if h.cookieSecureForRequest(r) {
-		return "__Host-radar_oidc_state"
+		return "__Host-kubeatlas_oidc_state"
 	}
-	return "radar_oidc_state"
+	return "kubeatlas_oidc_state"
 }
 
 func (a *oidcAuthenticator) newTransaction() (string, string, string, error) {
@@ -307,6 +308,7 @@ func (h *Handler) oidcLogin(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "OIDC login is unavailable", http.StatusServiceUnavailable)
 		return
 	}
+	http.SetCookie(w, &http.Cookie{Name: legacyOIDCStateCookieName(h, r), Path: "/", MaxAge: -1, HttpOnly: true, Secure: h.cookieSecureForRequest(r), SameSite: http.SameSiteLaxMode})
 	http.SetCookie(w, &http.Cookie{
 		Name: h.oidcStateCookieNameForRequest(r), Value: state, Path: "/", MaxAge: int(oidcTransactionLifetime.Seconds()),
 		HttpOnly: true, Secure: h.cookieSecureForRequest(r), SameSite: http.SameSiteLaxMode,
@@ -351,6 +353,7 @@ func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "OIDC callback authority is not allowed", http.StatusForbidden)
 		return
 	}
+	http.SetCookie(w, &http.Cookie{Name: legacyOIDCStateCookieName(h, r), Path: "/", MaxAge: -1, HttpOnly: true, Secure: h.cookieSecureForRequest(r), SameSite: http.SameSiteLaxMode})
 	http.SetCookie(w, &http.Cookie{
 		Name: h.oidcStateCookieNameForRequest(r), Value: "", Path: "/", MaxAge: -1,
 		HttpOnly: true, Secure: h.cookieSecureForRequest(r), SameSite: http.SameSiteLaxMode,
@@ -372,7 +375,11 @@ func (h *Handler) oidcCallback(w http.ResponseWriter, r *http.Request) {
 	cookies := 0
 	cookieState := ""
 	for _, cookie := range r.Cookies() {
-		if cookie.Name == h.oidcStateCookieNameForRequest(r) {
+		legacyName := compat.LegacyOIDCStateCookie
+		if h.cookieSecureForRequest(r) {
+			legacyName = "__Host-" + legacyName
+		}
+		if cookie.Name == h.oidcStateCookieNameForRequest(r) || cookie.Name == legacyName {
 			cookies++
 			cookieState = cookie.Value
 		}

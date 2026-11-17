@@ -19,7 +19,7 @@ import (
 
 // The Cluster report bundle mirrors `kubectl cnpg report cluster`: the
 // Cluster, its Pods, Jobs, PVCs and events as manifests, optionally the Pods'
-// logs. Radar adds what it already knows (Backups, ScheduledBackups, Poolers,
+// logs. KubeAtlas adds what it already knows (Backups, ScheduledBackups, Poolers,
 // the ObjectStore, operator and plugin versions, the runtime and storage
 // snapshots) and a coverage record of everything it could not read and why.
 // Secret values are never read; the bundle lists the Secrets the cluster
@@ -74,7 +74,7 @@ func (s *Server) handleCNPGClusterReport(w http.ResponseWriter, r *http.Request)
 	}
 	auth.AuditLog(r, namespace, name)
 
-	meta := cnpgsvc.ReportMetadata{Context: contextName, RadarVersion: version.Current, Now: time.Now().UTC()}
+	meta := cnpgsvc.ReportMetadata{Context: contextName, KubeAtlasVersion: version.Current, Now: time.Now().UTC()}
 	if user := auth.UserFromContext(r.Context()); user != nil {
 		meta.RequestedBy = user.Username
 	}

@@ -91,7 +91,7 @@ func TestCursorParseStream_FormatPin(t *testing.T) {
 		`{"type":"thinking","subtype":"delta","text":"checking "}`,
 		`{"type":"thinking","subtype":"delta","text":"pods"}`,
 		`{"type":"tool_call","subtype":"started","tool_call":{"toolCallId":"call_1","mcpToolCall":{"args":{"toolName":"get_resource","args":{"namespace":"dev"}}}}}`,
-		`{"type":"tool_call","subtype":"completed","tool_call":{"toolCallId":"call_1","mcpToolCall":{"args":{"toolName":"get_resource","args":{"namespace":"dev"}},"result":{"success":{"isError":false,"content":[{"text":{"text":"[[radar:evidence-ref=` + ref + `]]\n"}},{"text":{"text":"crashloop detail"}}]}}}}}`,
+		`{"type":"tool_call","subtype":"completed","tool_call":{"toolCallId":"call_1","mcpToolCall":{"args":{"toolName":"get_resource","args":{"namespace":"dev"}},"result":{"success":{"isError":false,"content":[{"text":{"text":"[[kubeatlas:evidence-ref=` + ref + `]]\n"}},{"text":{"text":"crashloop detail"}}]}}}}}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"bad tag."}]}}`,
 		"{\"type\":\"result\",\"subtype\":\"success\",\"is_error\":false,\"result\":\"bad tag.\\n\\n```json\\n{\\\"root_cause\\\":\\\"bad tag\\\"}\\n```\"}",
 	}, "\n")
@@ -140,7 +140,7 @@ func TestCursorParseStream_FormatPin(t *testing.T) {
 	if !strings.Contains(doneResult, "crashloop detail") {
 		t.Errorf("expected nested tool result on done step, got %q", doneResult)
 	}
-	if doneEvidenceRef != ref || strings.Contains(doneResult, "radar:evidence-ref") {
+	if doneEvidenceRef != ref || strings.Contains(doneResult, "kubeatlas:evidence-ref") {
 		t.Errorf("marker extraction result=%q ref=%q", doneResult, doneEvidenceRef)
 	}
 	if doneIsError == nil || *doneIsError {
@@ -231,9 +231,9 @@ func TestCursorToolResultErrorState(t *testing.T) {
 		},
 		{
 			name:       "server not found",
-			resultJSON: `{"serverNotFound":{"name":"missing-server","availableServers":["radar","grafana"]}}`,
+			resultJSON: `{"serverNotFound":{"name":"missing-server","availableServers":["kubeatlas","grafana"]}}`,
 			wantError:  true,
-			wantText:   []string{"missing-server", "radar", "grafana"},
+			wantText:   []string{"missing-server", "kubeatlas", "grafana"},
 		},
 		{
 			name:       "approved",
@@ -298,7 +298,7 @@ func TestCursorParseStream_ErrorResultNotVerdict(t *testing.T) {
 
 // TestCursorCommandFlags pins the headless containment flags and per-run workspace:
 // stream-json output, sandboxed shell, MCP auto-approval, a workspace-local
-// mcp.json pointed at radar, and --resume only on a continued session.
+// mcp.json pointed at kubeatlas, and --resume only on a continued session.
 func TestCursorCommandFlags(t *testing.T) {
 	a := &cursorAgent{bin: "cursor-agent", approvalKnown: true, approvalArgs: []string{"--force", "--trust"}}
 	dir := t.TempDir()
@@ -331,7 +331,7 @@ func TestCursorCommandFlags(t *testing.T) {
 		t.Error("cursor must inherit the full env (auth lives under ~/.cursor); cmd.Env should be nil")
 	}
 
-	// The workspace-local MCP config must point Cursor at radar's mount.
+	// The workspace-local MCP config must point Cursor at kubeatlas's mount.
 	cfgPath := filepath.Join(dir, ".cursor", "mcp.json")
 	b, err := os.ReadFile(cfgPath)
 	if err != nil {
@@ -345,8 +345,8 @@ func TestCursorCommandFlags(t *testing.T) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		t.Fatalf("mcp.json not valid JSON: %v", err)
 	}
-	if cfg.MCPServers["radar"].URL != url {
-		t.Errorf("mcp.json radar url = %q, want %q", cfg.MCPServers["radar"].URL, url)
+	if cfg.MCPServers["kubeatlas"].URL != url {
+		t.Errorf("mcp.json kubeatlas url = %q, want %q", cfg.MCPServers["kubeatlas"].URL, url)
 	}
 
 	// A continued session passes --resume <id>.

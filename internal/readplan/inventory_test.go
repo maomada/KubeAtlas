@@ -10,7 +10,7 @@ import (
 func TestForInventory(t *testing.T) {
 	ready := Partition{Extent: NamespaceSet, Namespaces: []string{"alpha"}, Verdict: Verdict{State: Readable}}
 	pending := Partition{Extent: NamespaceSet, Namespaces: []string{"beta"}, Verdict: Verdict{State: Gap, Code: readreason.KindSyncPending}}
-	outside := Partition{Extent: NamespaceSet, Namespaces: []string{"gamma"}, Verdict: Verdict{State: OutsideCollection, Code: readreason.RadarNamespaceNotCollected}}
+	outside := Partition{Extent: NamespaceSet, Namespaces: []string{"gamma"}, Verdict: Verdict{State: OutsideCollection, Code: readreason.KubeAtlasNamespaceNotCollected}}
 	unknown := Partition{Extent: UnknownNamespaces, Verdict: Verdict{State: Gap, Code: readreason.ReadError}}
 	for _, tc := range []struct {
 		name              string
@@ -42,8 +42,8 @@ func TestForInventory(t *testing.T) {
 		{name: "empty plan does not imply all namespaces", want: Inventory{Namespaces: []string{}}},
 		{name: "cluster gap extent retained", cluster: true, plan: Plan{Partitions: []Partition{{Extent: Cluster, Verdict: Verdict{State: Gap, Code: readreason.KindSyncPending}}}},
 			want: Inventory{Namespaces: []string{}, Gaps: []Partition{{Extent: Cluster, Verdict: Verdict{State: Gap, Code: readreason.KindSyncPending}}}}},
-		{name: "all namespace gap extent retained", plan: Plan{Partitions: []Partition{{Extent: AllNamespaces, Verdict: Verdict{State: Gap, Code: readreason.RadarForbidden}}}},
-			want: Inventory{Namespaces: []string{}, Gaps: []Partition{{Extent: AllNamespaces, Verdict: Verdict{State: Gap, Code: readreason.RadarForbidden}}}}},
+		{name: "all namespace gap extent retained", plan: Plan{Partitions: []Partition{{Extent: AllNamespaces, Verdict: Verdict{State: Gap, Code: readreason.KubeAtlasForbidden}}}},
+			want: Inventory{Namespaces: []string{}, Gaps: []Partition{{Extent: AllNamespaces, Verdict: Verdict{State: Gap, Code: readreason.KubeAtlasForbidden}}}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got := ForInventory(tc.plan, tc.target, tc.explicit, tc.cluster)
@@ -58,7 +58,7 @@ func TestCollectionNarrowKeepsIntendedRatherThanReadableScope(t *testing.T) {
 	p := Plan{CollectionLimited: true, Partitions: []Partition{
 		{Extent: NamespaceSet, Namespaces: []string{"alpha"}, Verdict: Verdict{State: Readable}},
 		{Extent: NamespaceSet, Namespaces: []string{"beta"}, Verdict: Verdict{State: Gap, Code: readreason.KindSyncPending}},
-		{Extent: NamespaceSet, Namespaces: []string{"gamma"}, Verdict: Verdict{State: OutsideCollection, Code: readreason.RadarNamespaceNotCollected}},
+		{Extent: NamespaceSet, Namespaces: []string{"gamma"}, Verdict: Verdict{State: OutsideCollection, Code: readreason.KubeAtlasNamespaceNotCollected}},
 	}}
 	inventory := ForInventory(p, nil, false, false)
 	for _, tc := range []struct {
@@ -101,7 +101,7 @@ func TestInventoryOwnsProjectedNamespaces(t *testing.T) {
 	p := Plan{Partitions: []Partition{
 		{Extent: NamespaceSet, Namespaces: []string{"alpha"}, Verdict: Verdict{State: Readable}},
 		{Extent: NamespaceSet, Namespaces: []string{"beta"}, Verdict: Verdict{State: Gap, Code: readreason.KindSyncPending}},
-		{Extent: NamespaceSet, Namespaces: []string{"gamma"}, Verdict: Verdict{State: OutsideCollection, Code: readreason.RadarNamespaceNotCollected}},
+		{Extent: NamespaceSet, Namespaces: []string{"gamma"}, Verdict: Verdict{State: OutsideCollection, Code: readreason.KubeAtlasNamespaceNotCollected}},
 	}}
 	got := ForInventory(p, nil, false, false)
 	got.Namespaces[0], got.Gaps[0].Namespaces[0] = "changed", "changed"

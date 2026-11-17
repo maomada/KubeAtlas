@@ -41,7 +41,7 @@ func (t CommandTarget) Helm() string {
 }
 
 func (t CommandTarget) CloudStatus(namespace, release string) string {
-	command := "radar cloud status"
+	command := "kubeatlas cloud status"
 	if t.Context != "" {
 		command += " --context " + ShellArgument(t.Context)
 	}
@@ -125,7 +125,7 @@ func PostApprovalProvisionGuidance(clusterID, clusterURL string, recovery Provis
 				g.Lines = append(g.Lines, "The unchanged Cloud token Secret created by this attempt was removed after rollback verification.")
 			}
 		default:
-			g.Lines = append(g.Lines, "Radar could not prove that the original release was fully restored, so it preserved the Cloud token Secret. Inspect and recover this same Hub cluster before any cleanup.")
+			g.Lines = append(g.Lines, "KubeAtlas could not prove that the original release was fully restored, so it preserved the Cloud token Secret. Inspect and recover this same Hub cluster before any cleanup.")
 		}
 		g.Inspect = []string{
 			fmt.Sprintf("%s status %s -n %s", target.Helm(), recovery.ReleaseName, recovery.Namespace),
@@ -159,7 +159,7 @@ func TunnelConfirmationGuidance(err error, clusterID, cloudURL, clusterURL strin
 	case errors.Is(err, cloud.ErrConnectConsumptionTimeout):
 		reason = "the five-minute confirmation window elapsed"
 	case errors.Is(err, cloud.ErrConnectPickupExpired):
-		reason = "the Hub stopped reporting the approved request before the in-cluster Radar connected"
+		reason = "the Hub stopped reporting the approved request before the in-cluster KubeAtlas connected"
 	case errors.Is(err, context.Canceled):
 		reason = "confirmation was canceled"
 	}

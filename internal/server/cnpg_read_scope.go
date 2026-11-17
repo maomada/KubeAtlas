@@ -10,8 +10,8 @@ import (
 )
 
 // typedKindScope resolves where the caller may list a typed kind and which of
-// those namespaces Radar's informer actually holds. The informer may itself be
-// namespace-scoped when Radar's own identity cannot list the kind
+// those namespaces KubeAtlas's informer actually holds. The informer may itself be
+// namespace-scoped when KubeAtlas's own identity cannot list the kind
 // cluster-wide; what it does not hold is unread, not empty, and not denied.
 // read is nil for "every namespace".
 func (s *Server) typedKindScope(r *http.Request, cache *k8s.ResourceCache, namespaces []string, group, resource string) (acc integration.KindAccess, read []string) {

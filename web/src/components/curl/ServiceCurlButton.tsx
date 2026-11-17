@@ -283,7 +283,7 @@ export function CurlPanel({
   const [sheetOpen, setSheetOpen] = useState(false)
   // What was actually sent — so the sheet header / re-renders reflect the response.
   const [sent, setSent] = useState<{ scheme: 'http' | 'https'; path: string }>({ scheme: initialScheme, path: initialPath })
-  // Enter animation: mount collapsed, then expand next tick (radar's grid 0fr↔1fr).
+  // Enter animation: mount collapsed, then expand next tick (kubeatlas's grid 0fr↔1fr).
   // Combined with the host-controlled `open` prop this gives a symmetric reveal:
   // expand on mount, collapse when the host sets open=false (before it unmounts).
   const [mounted, setMounted] = useState(false)

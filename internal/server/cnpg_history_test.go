@@ -224,13 +224,13 @@ func TestCNPGFleetMetricsReceiverDownAndInactiveSlot(t *testing.T) {
 			return "[" + row(`"pod":"pg-orders-2"`, "0") + "]"
 		case strings.HasPrefix(q, "label_replace("):
 			return "[" + strings.Join([]string{
-				row(`"pod":"pg-orders-1","slot_name":"_cnpg_pg_orders_2","radar_row":"inactive"`, "0"),
-				row(`"pod":"pg-orders-1","slot_name":"_cnpg_pg_orders_2","radar_row":"retained"`, "4900000000"),
-				row(`"pod":"pg-orders-1","radar_row":"reported"`, "1"),
-				row(`"pod":"pg-orders-1","radar_row":"recovery"`, "0"),
-				row(`"pod":"pg-orders-2","radar_row":"recovery"`, "1"),
-				row(`"pod":"pg-orders-1","radar_row":"scraped"`, "1"),
-				row(`"pod":"pg-orders-2","radar_row":"scraped"`, "1"),
+				row(`"pod":"pg-orders-1","slot_name":"_cnpg_pg_orders_2","kubeatlas_row":"inactive"`, "0"),
+				row(`"pod":"pg-orders-1","slot_name":"_cnpg_pg_orders_2","kubeatlas_row":"retained"`, "4900000000"),
+				row(`"pod":"pg-orders-1","kubeatlas_row":"reported"`, "1"),
+				row(`"pod":"pg-orders-1","kubeatlas_row":"recovery"`, "0"),
+				row(`"pod":"pg-orders-2","kubeatlas_row":"recovery"`, "1"),
+				row(`"pod":"pg-orders-1","kubeatlas_row":"scraped"`, "1"),
+				row(`"pod":"pg-orders-2","kubeatlas_row":"scraped"`, "1"),
 			}, ",") + "]"
 		}
 		return ""

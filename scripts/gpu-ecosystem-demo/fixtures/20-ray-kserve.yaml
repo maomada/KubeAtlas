@@ -4,7 +4,7 @@ metadata:
   name: inference-ray
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   rayVersion: 2.52.0
   headGroupSpec:
@@ -48,7 +48,7 @@ metadata:
   name: batch-embedding
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   entrypoint: python /app/embed.py
   shutdownAfterJobFinishes: true
@@ -72,7 +72,7 @@ metadata:
   name: online-inference
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   serveConfigV2: |
     applications:
@@ -105,7 +105,7 @@ metadata:
   name: nightly-evaluation
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   schedule: "0 2 * * *"
   suspend: false
@@ -130,7 +130,7 @@ metadata:
   name: fraud-model
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
   annotations:
     serving.kserve.io/deploymentMode: RawDeployment
 spec:
@@ -158,7 +158,7 @@ metadata:
   name: sklearn-runtime
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   supportedModelFormats:
     - name: sklearn
@@ -173,7 +173,7 @@ kind: ClusterServingRuntime
 metadata:
   name: vllm-runtime
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   supportedModelFormats:
     - name: huggingface
@@ -188,7 +188,7 @@ metadata:
   name: recommendation-graph
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   nodes:
     root:
@@ -210,7 +210,7 @@ metadata:
   name: fraud-v42
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   inferenceService: fraud-model
   model:
@@ -231,7 +231,7 @@ metadata:
   name: qwen-inference
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   model:
     name: Qwen/Qwen2.5-7B-Instruct

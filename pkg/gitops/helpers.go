@@ -19,8 +19,8 @@ func StringValue(v any) string {
 }
 
 // IsInClusterDestination reports whether an Argo Application deploys to the
-// cluster Radar is connected to — spec.destination is the local API server or
-// the "in-cluster" name — as opposed to a remote hub-spoke destination. Radar's
+// cluster KubeAtlas is connected to — spec.destination is the local API server or
+// the "in-cluster" name — as opposed to a remote hub-spoke destination. KubeAtlas's
 // per-user SARs authorize against the local cluster only, so the desired/live
 // manifests of a remote destination cannot be authorized here. An Application
 // with no destination is invalid (Argo reports InvalidSpecError and deploys
@@ -83,7 +83,7 @@ func argoDestination(app *unstructured.Unstructured) (name, server string) {
 	return strings.TrimSpace(name), strings.TrimSpace(server)
 }
 
-// ArgoAppliesElsewhere reports whether an Application's list, whether Radar
+// ArgoAppliesElsewhere reports whether an Application's list, whether KubeAtlas
 // can read it or not, describes a destination Argo CD names and that isn't
 // this cluster. An Application naming no destination isn't known to apply
 // anywhere.
@@ -94,7 +94,7 @@ func ArgoAppliesElsewhere(app *unstructured.Unstructured) bool {
 
 // FluxTargetsLocalCluster reports whether a Flux Kustomization or HelmRelease
 // applies to the cluster it runs in. spec.kubeConfig points it at a cluster
-// Radar can't confirm is this one, whose objects its inventory then names.
+// KubeAtlas can't confirm is this one, whose objects its inventory then names.
 // Fail closed: a nil object is not local.
 func FluxTargetsLocalCluster(obj *unstructured.Unstructured) bool {
 	if obj == nil {
@@ -173,7 +173,7 @@ const (
 )
 
 // ToolFor returns the controller family that owns objects of this API group
-// and kind, or "" when Radar has no GitOps view for that identity. The kind alone is
+// and kind, or "" when KubeAtlas has no GitOps view for that identity. The kind alone is
 // not identity: SIG Apps (app.k8s.io) defines an Application too. Argo CD
 // shares argoproj.io with Argo Rollouts, Workflows and Events, so it is
 // matched by kind as well. Flux uses the supported operation registry.

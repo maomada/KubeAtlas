@@ -1,4 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
+import { readKubeAtlasVersion } from '@maomada/k8s-ui/utils/legacy-brand'
 import { X, Copy, Check, ExternalLink } from 'lucide-react'
 import { clsx } from 'clsx'
 import { TRANSITION_BACKDROP, TRANSITION_PANEL, overlayTransitionStyle } from '../../utils/animation'
@@ -107,7 +108,7 @@ export function DiagnosticsOverlay({ onClose, isOpen = true, focus }: Diagnostic
             <h2 className="text-sm font-semibold text-theme-text-primary">Diagnostics</h2>
             {data && (
               <span className="text-xs text-theme-text-tertiary">
-                v{data.radarVersion} &middot; up {data.uptime}
+                v{readKubeAtlasVersion(data)} &middot; up {data.uptime}
               </span>
             )}
           </div>
@@ -233,7 +234,7 @@ function KubeconfigSection({ data }: { data: DiagnosticsSnapshot }) {
   if (!data.kubeconfig) return null
   const k = data.kubeconfig
   // Missing exec plugins are the single strongest signal for desktop-app
-  // multi-cluster failures (radar#411) — GUI apps often don't inherit the
+  // multi-cluster failures (kubeatlas#411) — GUI apps often don't inherit the
   // user's PATH, so aws/gcloud/doctl/kubelogin can be invisible even though
   // the CLI works fine. Highlight the whole section when that's the case.
   const missing = k.execPluginsMissing ?? []
@@ -658,7 +659,7 @@ export function formatForGitHub(data: DiagnosticsSnapshot, frontendPerf?: K8sUIP
   const lines: string[] = []
   lines.push(`## KubeAtlas Diagnostics`)
   lines.push(``)
-  lines.push(`**Version:** ${data.radarVersion} | **Go:** ${data.goVersion} | **OS:** ${data.goos}/${data.goarch} | **Uptime:** ${data.uptime}`)
+  lines.push(`**Version:** ${readKubeAtlasVersion(data)} | **Go:** ${data.goVersion} | **OS:** ${data.goos}/${data.goarch} | **Uptime:** ${data.uptime}`)
   lines.push(``)
 
   if (data.connection) {

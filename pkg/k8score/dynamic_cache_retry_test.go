@@ -150,7 +150,7 @@ func TestProbeRetryWholeKindOutcomes(t *testing.T) {
 	}
 }
 
-// A 401 rejects Radar's credentials, not one scope. A retry that meets one
+// A 401 rejects KubeAtlas's credentials, not one scope. A retry that meets one
 // records it as such, stops, and settling the walk doesn't overwrite it.
 func TestProbeRetryKeepsRejectedCredentials(t *testing.T) {
 	gvr := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}

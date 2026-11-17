@@ -47,7 +47,7 @@ func TestConfirmedAbsenceCreatesIssueDespiteHealthyControllerVerdict(t *testing.
 				continue
 			}
 			found = true
-			if issue.Source != "radar" || issue.Severity != SeverityWarning || issue.Message != "ConfigMap values is not present in the cluster" {
+			if issue.Source != "kubeatlas" || issue.Severity != SeverityWarning || issue.Message != "ConfigMap values is not present in the cluster" {
 				t.Fatalf("wrong presence issue: %+v", issue)
 			}
 			if sync == "Synced" && issue.Action != "Refresh the application to check its status." {

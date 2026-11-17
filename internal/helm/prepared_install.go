@@ -52,7 +52,7 @@ func (e *ChartVersionError) Error() string {
 	return fmt.Sprintf("chart version %q is not eligible: %s (minimum stable version %s)", version, e.Reason, e.Minimum)
 }
 
-// DeploymentRef is the actual Radar workload rendered by Helm. Selector is a
+// DeploymentRef is the actual KubeAtlas workload rendered by Helm. Selector is a
 // kubectl-compatible label selector, not a guessed release-name convention.
 type DeploymentRef struct {
 	Name      string
@@ -243,15 +243,15 @@ func validatePreparedCloudMutationSurface(rel *release.Release) error {
 		if hook == nil {
 			continue
 		}
-		return fmt.Errorf("prepared Radar chart renders Helm hook %q; Cloud install permission preflight does not support chart hooks", hook.Name)
+		return fmt.Errorf("prepared KubeAtlas chart renders Helm hook %q; Cloud install permission preflight does not support chart hooks", hook.Name)
 	}
 	if rel.Chart != nil {
 		if crds := rel.Chart.CRDObjects(); len(crds) > 0 {
-			return fmt.Errorf("prepared Radar chart contains CRD %q; Cloud install permission preflight does not support chart CRDs", crds[0].Name)
+			return fmt.Errorf("prepared KubeAtlas chart contains CRD %q; Cloud install permission preflight does not support chart CRDs", crds[0].Name)
 		}
 	}
 	if strings.Contains(rel.Manifest, "# HIDDEN: The Secret output has been suppressed") {
-		return errors.New("prepared Radar chart renders a Secret hidden from Cloud install permission preflight")
+		return errors.New("prepared KubeAtlas chart renders a Secret hidden from Cloud install permission preflight")
 	}
 	return nil
 }

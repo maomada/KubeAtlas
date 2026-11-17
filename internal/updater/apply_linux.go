@@ -29,7 +29,7 @@ func applyUpdate(_ context.Context, assetPath string) error {
 	}
 
 	// Extract tar.gz
-	extractDir, err := os.MkdirTemp("", "radar-update-*")
+	extractDir, err := os.MkdirTemp("", "kubeatlas-update-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}

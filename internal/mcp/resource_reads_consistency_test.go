@@ -18,7 +18,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/k8score"
 )
 
-// A kind Radar first watched namespace by namespace is promoted to one
+// A kind KubeAtlas first watched namespace by namespace is promoted to one
 // cluster-wide informer when its identity gains cluster-wide list. A read that
 // lands on the replacement before it has loaded must not stand as complete,
 // even though the scope reads as synced both before and after it.

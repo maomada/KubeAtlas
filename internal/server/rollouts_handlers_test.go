@@ -22,7 +22,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/rollouts"
 )
 
-// A sentinel falling through to 500 reads as "Radar broke" when the real answer
+// A sentinel falling through to 500 reads as "KubeAtlas broke" when the real answer
 // is "that revision is already live".
 func TestWriteRolloutErrorStatusMapping(t *testing.T) {
 	rolloutGR := schema.GroupResource{Group: "argoproj.io", Resource: "rollouts"}

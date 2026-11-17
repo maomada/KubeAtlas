@@ -32,7 +32,7 @@ func TestMemberPersistenceScopeAndCredentialRevocation(t *testing.T) {
 	}
 	member, changed, err := store.UpdateMember(id, MemberInput{
 		Role: "member", Status: "active", ClusterIDs: []string{"alpha"},
-		KubernetesGroups: []string{"radar:reader"},
+		KubernetesGroups: []string{"kubeatlas:reader"},
 	})
 	if err != nil || !changed || member.Status != "active" {
 		t.Fatalf("activate member = %#v, changed=%v, err=%v", member, changed, err)
@@ -54,7 +54,7 @@ func TestMemberPersistenceScopeAndCredentialRevocation(t *testing.T) {
 	}
 	if _, _, err := store.UpdateMember(id, MemberInput{
 		Role: "viewer", Status: "active", ClusterIDs: []string{"alpha"},
-		KubernetesGroups: []string{"radar:reader"},
+		KubernetesGroups: []string{"kubeatlas:reader"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +64,7 @@ func TestMemberPersistenceScopeAndCredentialRevocation(t *testing.T) {
 	}
 	if _, _, err := store.UpdateMember(id, MemberInput{
 		Role: "viewer", Status: "active", ClusterIDs: []string{},
-		KubernetesGroups: []string{"radar:reader"},
+		KubernetesGroups: []string{"kubeatlas:reader"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -181,11 +181,11 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	adminID, memberID, viewerID := "oidc:"+strings.Repeat("a", 64), "oidc:"+strings.Repeat("b", 64), "oidc:"+strings.Repeat("c", 64)
 	legacyMembers := map[string]Member{
 		adminID: {ID: adminID, UserID: "kubeatlas:" + adminID, DisplayName: "Legacy Admin", Role: "admin", Status: "active",
-			ClusterIDs: []string{}, KubernetesGroups: []string{"radar:legacy-admin"}, CreatedAt: now, UpdatedAt: now},
+			ClusterIDs: []string{}, KubernetesGroups: []string{"kubeatlas:legacy-admin"}, CreatedAt: now, UpdatedAt: now},
 		memberID: {ID: memberID, UserID: "kubeatlas:" + memberID, DisplayName: "Legacy Member", Role: "member", Status: "active",
-			ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{"radar:legacy-member"}, CreatedAt: now, UpdatedAt: now},
+			ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{"kubeatlas:legacy-member"}, CreatedAt: now, UpdatedAt: now},
 		viewerID: {ID: viewerID, UserID: "kubeatlas:" + viewerID, DisplayName: "Legacy Viewer", Role: "viewer", Status: "active",
-			ClusterIDs: []string{}, KubernetesGroups: []string{"radar:legacy-viewer"}, CreatedAt: now, UpdatedAt: now},
+			ClusterIDs: []string{}, KubernetesGroups: []string{"kubeatlas:legacy-viewer"}, CreatedAt: now, UpdatedAt: now},
 	}
 	legacy["members"], err = json.Marshal(legacyMembers)
 	if err != nil {

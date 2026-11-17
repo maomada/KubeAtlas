@@ -20,7 +20,7 @@ export interface CascadeDetail {
   notEnumerated?: string[]
   /** "ownerReferences" when dependents are garbage-collection results; absent from older servers. */
   basis?: string
-  /** Deleted unless another owner Radar can't see is still live. */
+  /** Deleted unless another owner KubeAtlas can't see is still live. */
   possibleDependents?: CascadeDependent[]
   /** What Argo CD or Flux deletes through its finalizer. */
   controllerTeardown?: {
@@ -112,7 +112,7 @@ export function ForceDeleteConfirmDialog({
             <CascadeDependentsList
               dependents={cascadeDependents}
               title={`也可能删除 ${cascadeDependents.length} 个相关资源`}
-              note="此版本 Radar 无法区分所有权关系和其他关联。Kubernetes 只会删除将此资源列为所有者的对象。"
+              note="此版本 KubeAtlas 无法区分所有权关系和其他关联。Kubernetes 只会删除将此资源列为所有者的对象。"
             />
           )
         )}
@@ -126,7 +126,7 @@ export function ForceDeleteConfirmDialog({
         )}
 
         {!cascadeLoading && !cascadePreviewFailed && cascadeDetail?.coverage && !orphaning && !cascadeDetail.coverage.complete ? (
-          <p className="text-xs text-theme-text-secondary">此预览不完整：Radar 可能未收集所有从属资源，或你无权查看它们。还可能有其他资源被删除。</p>
+          <p className="text-xs text-theme-text-secondary">此预览不完整：KubeAtlas 可能未收集所有从属资源，或你无权查看它们。还可能有其他资源被删除。</p>
         ) : null}
         {!cascadeLoading && !cascadePreviewFailed && cascadeDetail?.controllerTeardown && (
           <ControllerTeardownNotice teardown={cascadeDetail.controllerTeardown} force={forceDelete} />
@@ -136,14 +136,14 @@ export function ForceDeleteConfirmDialog({
           <AlertBanner
             variant="warning"
             title="尚未验证从属资源"
-            message="Radar 无法验证 Kubernetes 还会删除哪些从属资源。可能还有未显示的资源会被删除。"
+            message="KubeAtlas 无法验证 Kubernetes 还会删除哪些从属资源。可能还有未显示的资源会被删除。"
             className="mb-0"
           />
         )}
 
         {!cascadeLoading && !cascadePreviewFailed && orphaning && <p className="text-xs text-theme-text-secondary">保留待处理的 orphan 策略：所有者引用的从属资源将被孤立。控制器清理仍可能删除资源。</p>}
         {!cascadeLoading && !cascadePreviewFailed && forceDelete && cascadeDetail?.propagation === 'Orphan' && <p className="text-xs text-warning-text">强制删除会移除 orphan finalizer 并使用 Background 传播策略。所有者引用的从属资源可能因此被垃圾回收。</p>}
-        {!cascadeLoading && !cascadePreviewFailed && !orphaning && cascadeDetail?.coverage?.complete && cascadeDetail.coverage.narrowed && <p className="text-xs text-theme-text-secondary">仅列出 Radar 可观察且你有权查看的资源。</p>}
+        {!cascadeLoading && !cascadePreviewFailed && !orphaning && cascadeDetail?.coverage?.complete && cascadeDetail.coverage.narrowed && <p className="text-xs text-theme-text-secondary">仅列出 KubeAtlas 可观察且你有权查看的资源。</p>}
         {!cascadeLoading && cascadePreviewFailed && <AlertBanner variant="warning" title="删除预览不可用" message="还可能有其他资源被删除。" className="mb-0" />}
         {!cascadeLoading && !cascadePreviewFailed && cascadeDetail?.notEnumerated?.map(item => <p key={item} className="text-xs text-theme-text-secondary">未枚举：{item}。</p>)}
         <CrossplaneDeleteNotice resources={[resourceData]} force={forceDelete} />
@@ -176,9 +176,9 @@ function optOut(teardown: NonNullable<CascadeDetail['controllerTeardown']>): str
 function ControllerTeardownNotice({ teardown, force }: { teardown: NonNullable<CascadeDetail['controllerTeardown']>; force: boolean }) {
   const resources = teardown.resources ?? []
   const destinationNotice = teardown.destination === 'remote'
-    ? '此控制器的目标位置无法确认是当前集群。Radar 无法列出它将在该位置删除的资源。'
+    ? '此控制器的目标位置无法确认是当前集群。KubeAtlas 无法列出它将在该位置删除的资源。'
     : teardown.destination === 'unknown'
-      ? '目标集群未知。Radar 无法显示控制器将在何处执行清理。'
+      ? '目标集群未知。KubeAtlas 无法显示控制器将在何处执行清理。'
       : ''
   const what = teardown.action === 'uninstall' ? '卸载 Helm release' : '删除它管理的资源'
   if (force) {
@@ -205,7 +205,7 @@ function ControllerTeardownNotice({ teardown, force }: { teardown: NonNullable<C
     <CascadeDependentsList
       dependents={resources}
       title={resources.length > 0 ? `${title}（显示 ${resources.length} 个）` : title}
-      summary={`${destinationNotice ? destinationNotice + ' ' : ''}${teardown.action === 'uninstall' ? 'Helm 会卸载其存储的 release 清单中记录的资源' : `${teardown.controller} 会删除其自身清单中记录的资源`}，其中可能包含 Radar 未显示的资源。${optOut(teardown) ? ` 标记为 ${optOut(teardown)} 的资源会保留。` : ''}`}
+      summary={`${destinationNotice ? destinationNotice + ' ' : ''}${teardown.action === 'uninstall' ? 'Helm 会卸载其存储的 release 清单中记录的资源' : `${teardown.controller} 会删除其自身清单中记录的资源`}，其中可能包含 KubeAtlas 未显示的资源。${optOut(teardown) ? ` 标记为 ${optOut(teardown)} 的资源会保留。` : ''}`}
     />
   )
 }

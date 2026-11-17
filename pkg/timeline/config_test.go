@@ -7,7 +7,7 @@ func TestPostgresStoreConfig(t *testing.T) {
 		t.Fatalf("StoreTypePostgres = %q, want postgres", StoreTypePostgres)
 	}
 
-	const dsn = "postgres://radar@example.test/radar"
+	const dsn = "postgres://kubeatlas@example.test/kubeatlas"
 	cfg := StoreConfig{Type: StoreTypePostgres, DSN: dsn}
 	if cfg.DSN != dsn {
 		t.Fatalf("StoreConfig.DSN = %q, want %q", cfg.DSN, dsn)

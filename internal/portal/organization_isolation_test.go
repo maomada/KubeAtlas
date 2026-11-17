@@ -50,7 +50,7 @@ func startBlockedMCP(t *testing.T, h *Handler, calls chan *blockedMCPCall, cooki
 		r := httptest.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader("{}"))
 		r.Header.Set("Authorization", "Bearer "+token)
 		r.Header.Set("X-KubeAtlas-Organization-ID", organizationID)
-		r.Header.Set("X-Kubernetes-Groups", "radar:spoofed")
+		r.Header.Set("X-Kubernetes-Groups", "kubeatlas:spoofed")
 		if cookie != nil {
 			r.AddCookie(cookie)
 		}
@@ -75,10 +75,10 @@ func organizationTestRequest(h *Handler, cookie *http.Cookie, method, path, body
 	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	r.Header.Set("X-KubeAtlas-Organization-ID", "attacker-org")
 	r.Header.Set("X-Organization-ID", "attacker-org")
-	r.Header.Set("X-Kubernetes-Groups", "radar:spoofed")
-	r.Header.Set("X-Forwarded-Groups", "radar:spoofed")
+	r.Header.Set("X-Kubernetes-Groups", "kubeatlas:spoofed")
+	r.Header.Set("X-Forwarded-Groups", "kubeatlas:spoofed")
 	r.Header.Set("X-Forwarded-User", "forged-user")
-	r.Header.Set("X-Radar-Role", "admin")
+	r.Header.Set("X-KubeAtlas-Role", "admin")
 	if cookie != nil {
 		r.AddCookie(cookie)
 	}

@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"mime"
 	"net"
 	"net/http"
@@ -72,9 +73,9 @@ func (s *viewerSessions) allowLogin() bool {
 
 func (h *Handler) cookieName() string {
 	if h.secureCookies {
-		return "__Host-radar_portal_session"
+		return "__Host-kubeatlas_portal_session"
 	}
-	return "radar_portal_session"
+	return "kubeatlas_portal_session"
 }
 
 func (h *Handler) cookieSecureForRequest(r *http.Request) bool {
@@ -137,13 +138,17 @@ func sameCookieAuthority(request, configured *url.URL) bool {
 
 func (h *Handler) cookieNameForRequest(r *http.Request) string {
 	if h.cookieSecureForRequest(r) {
-		return "__Host-radar_portal_session"
+		return "__Host-kubeatlas_portal_session"
 	}
-	return "radar_portal_session"
+	return "kubeatlas_portal_session"
 }
 
 func (h *Handler) sessionHash(r *http.Request) ([32]byte, bool) {
-	cookie, err := r.Cookie(h.cookieNameForRequest(r))
+	legacyName := compat.LegacyPortalCookie
+	if h.cookieSecureForRequest(r) {
+		legacyName = "__Host-" + legacyName
+	}
+	cookie, err := compat.SingleCookie(r, h.cookieNameForRequest(r), legacyName)
 	if err != nil || len(cookie.Value) != 43 {
 		return [32]byte{}, false
 	}
@@ -372,10 +377,17 @@ func (s *viewerSessions) close() {
 
 func (h *Handler) setSessionCookie(w http.ResponseWriter, r *http.Request, value string, maxAge int) {
 	secure := h.cookieSecureForRequest(r)
+	legacyName := compat.LegacyPortalCookie
+	if secure {
+		legacyName = "__Host-" + legacyName
+	}
 	http.SetCookie(w, &http.Cookie{
 		Name: h.cookieNameForRequest(r), Value: value, Path: "/", MaxAge: maxAge,
 		HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode,
 	})
+	if _, err := r.Cookie(legacyName); err == nil {
+		http.SetCookie(w, &http.Cookie{Name: legacyName, Value: "", Path: "/", MaxAge: -1, HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode})
+	}
 }
 
 func (h *Handler) createSession(w http.ResponseWriter, r *http.Request, ownerID string, expires time.Time) bool {

@@ -156,7 +156,7 @@ describe('summarizeTrace - the passive drawer glance', () => {
     expect(v.headline).not.toContain('running pod')
     expect(v.headline).not.toContain('shop.example.com')
     expect(v.headline).not.toContain('port 80')
-    expect(v.subtitle).toBe('A quick live connection test from where Radar runs.')
+    expect(v.subtitle).toBe('A quick live connection test from where KubeAtlas runs.')
     expect(v.ctaLabel).toBe('Run test →')
   })
 

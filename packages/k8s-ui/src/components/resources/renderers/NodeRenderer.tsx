@@ -121,7 +121,7 @@ export function NodeRenderer({ data, relationships, onViewPods, metrics, metrics
             {!removalPlanLoading && !removalPlanError && !currentPlan && <p>此主机无法获取 Pod 和干扰预算检查结果。</p>}
             {currentPlan && (
               <>
-                <p>{currentPlan.pods.length} pods in the current snapshot · {terminationKnown ? `${terminatingPods} terminating` : 'termination state unavailable from this Radar'} · {currentPlan.summary.skip} skipped by drain estimate (DaemonSet, static or completed).</p>
+                <p>{currentPlan.pods.length} pods in the current snapshot · {terminationKnown ? `${terminatingPods} terminating` : 'termination state unavailable from this KubeAtlas'} · {currentPlan.summary.skip} skipped by drain estimate (DaemonSet, static or completed).</p>
                 <p className="text-theme-text-secondary">Checked {formatRelativeAgeTime(currentPlan.generatedAt)}. This is a snapshot, not an eviction history. Disruption-budget checks estimate what the Eviction API would allow now.</p>
                 <p className="text-theme-text-secondary">移除控制器也可能因 karpenter.sh/do-not-disrupt 或 cluster-autoscaler.kubernetes.io/safe-to-evict=false 标记而保留 Pod。此驱逐估算不会评估这些策略。</p>
                 <ul className="max-h-48 overflow-y-auto space-y-1">

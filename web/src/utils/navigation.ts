@@ -93,7 +93,7 @@ export function buildWorkloadPath(resource: ResourceNavigationTarget): string {
  *
  * Unlike buildWorkloadPath, this opens the detail drawer for ANY kind,
  * including cluster-scoped resources. Returns a basename-relative path;
- * embedders (Radar Hub) prepend their cluster prefix (e.g. /c/:id).
+ * embedders (KubeAtlas Hub) prepend their cluster prefix (e.g. /c/:id).
  */
 export function resourcePath(resource: SelectedResource): string {
   const params = new URLSearchParams()
@@ -116,7 +116,7 @@ export function relatedResourcePath(resource: ResourceNavigationTarget): string 
   return resourcePath(resource)
 }
 
-// radar-specific: open URL in system browser (desktop app support)
+// kubeatlas-specific: open URL in system browser (desktop app support)
 export function openExternal(url: string): void {
   fetch(apiUrl('/desktop/open-url'), {
     method: 'POST',
@@ -192,7 +192,7 @@ export function writeViewParams(
 
 /** Carries the current cross-view params onto an in-app path that doesn't set them itself. */
 export function withCrossViewParams(path: string, currentSearch: string): string {
-  const destination = new URL(path, 'http://radar.invalid')
+  const destination = new URL(path, 'http://kubeatlas.invalid')
   const current = new URLSearchParams(currentSearch)
   for (const key of CROSS_VIEW_PARAMS) {
     const value = current.get(key)

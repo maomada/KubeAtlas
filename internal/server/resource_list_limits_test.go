@@ -159,7 +159,7 @@ func TestDynamicSizeFailureKeepsOtherNamespaceGaps(t *testing.T) {
 			for _, want := range []struct {
 				code  readreason.Code
 				names []string
-			}{{readreason.RadarForbidden, []string{"gamma"}}, {readreason.ListTooLarge, []string{"alpha", "delta"}}} {
+			}{{readreason.KubeAtlasForbidden, []string{"gamma"}}, {readreason.ListTooLarge, []string{"alpha", "delta"}}} {
 				i := slices.IndexFunc(body.Coverage.Gaps, func(g resourceapi.Gap) bool { return g.Code == want.code })
 				if i < 0 || !slices.Equal(body.Coverage.Gaps[i].Namespaces.Names, want.names) {
 					t.Fatalf("missing %s gap: %+v", want.code, body.Coverage)

@@ -214,7 +214,7 @@ func TestHandleTimelineEvents_ExplainsUnreachableDatabase(t *testing.T) {
 	const password = "s3cret-pw"
 	if err := timeline.InitStore(timeline.StoreConfig{
 		Type: timeline.StoreTypePostgres,
-		DSN:  "postgres://radar:" + password + "@127.0.0.1:1/radar?connect_timeout=2",
+		DSN:  "postgres://kubeatlas:" + password + "@127.0.0.1:1/kubeatlas?connect_timeout=2",
 	}); err != nil {
 		t.Fatalf("InitStore: %v", err)
 	}
@@ -274,7 +274,7 @@ func TestWriteTimelineQueryError_TimeoutChecksTheDatabase(t *testing.T) {
 
 	if err := timeline.InitStore(timeline.StoreConfig{
 		Type: timeline.StoreTypePostgres,
-		DSN:  "postgres://radar:pw@127.0.0.1:1/radar?connect_timeout=2",
+		DSN:  "postgres://kubeatlas:pw@127.0.0.1:1/kubeatlas?connect_timeout=2",
 	}); err != nil {
 		t.Fatalf("InitStore: %v", err)
 	}

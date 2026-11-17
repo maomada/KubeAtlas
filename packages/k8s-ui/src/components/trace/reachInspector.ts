@@ -16,7 +16,7 @@ export interface InspectorCTA {
   action?: InspectorAction
   ref?: ResourceRef
   command?: string
-  /** Set when the CTA describes something Radar cannot do - rendered inert. */
+  /** Set when the CTA describes something KubeAtlas cannot do - rendered inert. */
   disabledReason?: string
 }
 
@@ -80,7 +80,7 @@ function contextGroup(ctx: Ctx, byId: Map<string, GraphNode>, sel: Selection): S
   const label =
     ctx.origin.id === 'apiserver'
       ? 'CONFIGURED ENTRY — KUBERNETES RELAYED THE REQUEST PAST THIS'
-      : ctx.origin.id === 'incluster' || ctx.origin.id === 'radar-incluster'
+      : ctx.origin.id === 'incluster' || ctx.origin.id === 'kubeatlas-incluster'
         ? 'CONFIGURED ENTRY — THE PROBE DIALS THE SERVICE DIRECTLY'
         : 'PARALLEL ENTRY — NOT ON THIS ROUTE\u2019S PATH'
   return {
@@ -127,7 +127,7 @@ const SYNTHETIC_IDENTITY =
 function originScope(o: Origin, trace: Trace, request?: string): { k: string; v: string }[] {
   const runsIn: Record<OriginId, string> = {
     incluster: `a throwaway Pod in ${trace.subject.namespace || 'the cluster'}`,
-    'radar-incluster': 'Radar\u2019s own Pod',
+    'kubeatlas-incluster': 'KubeAtlas\u2019s own Pod',
     apiserver: 'the kube-apiserver process',
     local: 'your workstation (outside the cluster)',
     caller: 'the application workload’s own Pod',
@@ -148,7 +148,7 @@ function originScope(o: Origin, trace: Trace, request?: string): { k: string; v:
 }
 
 /**
- * The next-step prompt, driven by the strongest gap Radar can CLOSE. The
+ * The next-step prompt, driven by the strongest gap KubeAtlas can CLOSE. The
  * unreachable ceiling is stated underneath as a caveat instead of being offered
  * as an action - a button that can never be pressed is not a next step.
  */
@@ -164,7 +164,7 @@ function gapNext(
   // When none does, the run fails with "not supported for this subject" - so the
   // panel must say that HERE, instead of recommending it as the strongest
   // evidence available and letting the operator find out by clicking.
-  const notRunnable = 'No path on this resource has a request Radar can send from inside the cluster, so this test would have nothing to run.'
+  const notRunnable = 'No path on this resource has a request KubeAtlas can send from inside the cluster, so this test would have nothing to run.'
   // No button here. The in-cluster run is offered ON the vantage capsule in the
   // graph, which is the thing that would produce the missing evidence - and a
   // third copy of the same control (header, panel, capsule) was one too many.
@@ -187,7 +187,7 @@ function gapNext(
   const allPaths = multiPath ? ' The test covers every path on this resource, not only this one.' : ''
 
   // Mid-run, a running origin is not a "gap" any more, so the no-gap branch
-  // below would claim Radar "already has the strongest evidence" BEFORE the
+  // below would claim KubeAtlas "already has the strongest evidence" BEFORE the
   // result exists. Being in flight is its own state, and it is the whole truth
   // about this panel right now.
   const runningOrigin = origins.find((o) => o.mark === 'running')
@@ -232,7 +232,7 @@ function gapNext(
     body:
       actionable.id === 'incluster' && !inClusterRunnable
         ? `${notRunnable} Every declared path here was skipped before a request could be formed.`
-        : `${actionable.name} has not been used for this path, and is the strongest evidence Radar can still collect.${allPaths}`,
+        : `${actionable.name} has not been used for this path, and is the strongest evidence KubeAtlas can still collect.${allPaths}`,
     blocked: ceilingNote,
     ctas: actionable.id === 'incluster' ? inClusterCTA() : [{ text: '⟳ Re-run', action: 'run-probes' }],
   }
@@ -347,7 +347,7 @@ function statusMeaning(evidence?: string, httpPath?: string, failedLayer?: strin
     return { text: `the app answered by demanding credentials (HTTP ${code}) - it is enforcing auth, which is a different thing from reachability.`, pathWorks: true }
   }
   if (code >= 300 && code < 400) {
-    return { text: `the app answered with a redirect (HTTP ${code}), which Radar does not follow - so whatever it points at is untested from here.`, pathWorks: true }
+    return { text: `the app answered with a redirect (HTTP ${code}), which KubeAtlas does not follow - so whatever it points at is untested from here.`, pathWorks: true }
   }
   if (code >= 400) {
     return { text: `the app answered (HTTP ${code}) - that is it saying it serves no route for ${asked}, not a reachability problem. To verify a real route, re-run with a path your app serves.`, pathWorks: true }
@@ -394,7 +394,7 @@ function pathSection(ctx: Ctx): Sidebar['path'] {
   const hasFrontDoor = (trace.upstreams ?? []).length > 0
   const external = origins.find((o) => o.id === 'external')
   if (hasFrontDoor && external?.unsupported && origin.id !== 'external') {
-    // "No request has come in from outside" is only true until Radar's own
+    // "No request has come in from outside" is only true until KubeAtlas's own
     // machine dials the public entry and gets an answer - that request DID come
     // from outside. What stays unproven then is narrower: a real user's request.
     const outsideDialAnswered = (trace.upstreams ?? []).some((h) => {
@@ -403,7 +403,7 @@ function pathSection(ctx: Ctx): Sidebar['path'] {
     })
     notProve.push(
       outsideDialAnswered
-        ? 'That real users can reach it — Radar dialled the public entry from outside and got an answer, but no real user request has been observed.'
+        ? 'That real users can reach it — KubeAtlas dialled the public entry from outside and got an answer, but no real user request has been observed.'
         : 'That people on the internet can reach it — no request has come in from outside.',
     )
   }
@@ -480,7 +480,7 @@ function pathSection(ctx: Ctx): Sidebar['path'] {
         attemptError ||
         skipReason ||
         (origin.unsupported
-          ? 'Radar cannot test from here, so nothing has been learned this way'
+          ? 'KubeAtlas cannot test from here, so nothing has been learned this way'
           : origin.mark === 'denied'
             ? 'not permitted to run this test'
             : // A vantage that CANNOT be used states why (nothing dialable from
@@ -767,7 +767,7 @@ export function buildVerdict(
     // is not legitimate is leaving the reader to guess which is which, so the
     // badge names its own scope in full.
     // Prefixed here rather than at the render site: with no pathLabel the old
-    // template produced the visible "for from Radar on your machine".
+    // template produced the visible "for from KubeAtlas on your machine".
     chipScope: [opts.pathLabel ? `for ${opts.pathLabel}` : '', opts.originName ? `from ${opts.originName}` : '']
       .filter(Boolean)
       .join(' · ') || undefined,

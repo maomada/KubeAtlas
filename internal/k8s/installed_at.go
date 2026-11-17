@@ -12,7 +12,7 @@ import (
 	"k8s.io/client-go/kubernetes"
 )
 
-// InstalledAt returns when Radar was installed in this cluster, as the
+// InstalledAt returns when KubeAtlas was installed in this cluster, as the
 // creation time of its own Deployment in Unix seconds. The Deployment is
 // created once at install and patched in place by `helm upgrade`, so the value
 // survives pod restarts, rollouts, and replica changes — unlike anything under

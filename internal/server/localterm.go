@@ -101,7 +101,7 @@ func (s *Server) localTerminalUnavailable(r *http.Request) (int, string) {
 		return http.StatusForbidden, "local terminal is unavailable when authentication is enabled"
 	}
 	if cloud.IsAuthenticatedTunnelRequest(r.Context()) {
-		return http.StatusForbidden, "local terminal is unavailable over the Radar Hub tunnel"
+		return http.StatusForbidden, "local terminal is unavailable over the KubeAtlas Hub tunnel"
 	}
 	if k8s.IsInCluster() {
 		return http.StatusBadRequest, "local terminal not available in-cluster mode"
@@ -113,7 +113,7 @@ func (s *Server) localTerminalUnavailable(r *http.Request) (int, string) {
 }
 
 // handleLocalTerminal opens a shell only when expectedContext matches the
-// exported client-state snapshot. It never switches Radar's active context.
+// exported client-state snapshot. It never switches KubeAtlas's active context.
 func (s *Server) handleLocalTerminal(w http.ResponseWriter, r *http.Request) {
 	if status, message := s.localTerminalUnavailable(r); status != 0 {
 		s.writeError(w, status, message)
@@ -127,7 +127,7 @@ func (s *Server) handleLocalTerminal(w http.ResponseWriter, r *http.Request) {
 
 	expectedContext := r.URL.Query().Get("expectedContext")
 	if !r.URL.Query().Has("expectedContext") {
-		s.writeError(w, http.StatusBadRequest, "Open a new terminal from Radar to select its context")
+		s.writeError(w, http.StatusBadRequest, "Open a new terminal from KubeAtlas to select its context")
 		return
 	}
 	kubeconfig, configErr := k8s.WriteKubeconfigSnapshotForCurrentContext(&expectedContext)
@@ -155,7 +155,7 @@ func (s *Server) handleLocalTerminal(w http.ResponseWriter, r *http.Request) {
 	shell := getDefaultShell()
 
 	// Set up environment: inherit current process env, override KUBECONFIG
-	// with a temp copy that has current-context set to Radar's active context.
+	// with a temp copy that has current-context set to KubeAtlas's active context.
 	env := os.Environ()
 	tmpKubeconfig := kubeconfig.Path
 	sessionInfo := localTermSessionInfo{Type: "session"}
@@ -171,7 +171,7 @@ func (s *Server) handleLocalTerminal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Ensure TERM is set so the shell's terminfo binds the escape sequences
-	// xterm.js emits (e.g. Backspace → 0x7f, Delete → CSI 3~). When Radar is
+	// xterm.js emits (e.g. Backspace → 0x7f, Delete → CSI 3~). When KubeAtlas is
 	// launched from a GUI (desktop app, browser), the inherited env often has
 	// no TERM, leaving backspace/delete keys broken.
 	env = setEnv(env, "TERM", "xterm-256color")

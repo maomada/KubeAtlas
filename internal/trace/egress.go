@@ -631,7 +631,7 @@ func (s egressSummary) chipNotes() []string {
 		}
 	}
 	if s.denyAllOut || hasMuted {
-		notes = append(notes, "Radar reads this from the rule - it hasn't confirmed your cluster actually enforces it.")
+		notes = append(notes, "KubeAtlas reads this from the rule - it hasn't confirmed your cluster actually enforces it.")
 	}
 	if s.dnsGapFires() {
 		notes = append(notes, "These pods may not be able to look up other services by name - no rule allows DNS (port 53). Could break their outbound calls if the rule is enforced.")

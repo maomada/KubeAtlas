@@ -165,7 +165,7 @@ func (r *renderer) header(run runSummary, base string) {
 	target += run.Name
 	fmt.Fprintf(r.w, "%s %s\n", r.c(cBold, "◉ Investigating"), r.c(cBold, r.c(cCyan, target)))
 	fmt.Fprintf(r.w, "%s\n", r.c(cDim, fmt.Sprintf("%s · via %s · watch: %s", run.ID, ai.AgentLabel(run.Agent), r.watchURL)))
-	// Radar's read at start — the concrete issue rows the server captured, shown
+	// KubeAtlas's read at start — the concrete issue rows the server captured, shown
 	// before the agent produces anything (its boot is the longest silent gap).
 	if h := run.Health; h != nil {
 		for _, line := range h.Issues {
@@ -345,9 +345,9 @@ func (r *renderer) conclusion(d diagnosis) {
 			fmt.Fprintln(r.w, "The investigation finished without a clear conclusion.")
 		}
 	}
-	footer := "AI-generated — review before applying. Continue in the Radar UI or your own agent."
+	footer := "AI-generated — review before applying. Continue in the KubeAtlas UI or your own agent."
 	if r.watchURL != "" {
-		footer = "AI-generated — review before applying. Continue in Radar: " + r.watchURL + " — or in your own agent."
+		footer = "AI-generated — review before applying. Continue in KubeAtlas: " + r.watchURL + " — or in your own agent."
 	}
 	fmt.Fprintf(r.w, "\n%s\n", r.c(cDim, footer))
 }

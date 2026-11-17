@@ -18,7 +18,7 @@ import (
 type reasonClass int
 
 const (
-	// classScope covers the caller's access, Radar's setup and query feedback.
+	// classScope covers the caller's access, KubeAtlas's setup and query feedback.
 	// They describe what a search covers rather than what went wrong, so they
 	// are reported as gaps only for a kind or namespace the query names; on a
 	// broad query they narrow the search instead.
@@ -33,15 +33,15 @@ func classify(reason readreason.Code) reasonClass {
 	switch reason {
 	case readreason.KindSyncPending:
 		return classTransient
-	case readreason.KindSyncTimedOut, readreason.ReadError, readreason.UserPermissionCheckFailed, readreason.RadarCredentialsRejected:
+	case readreason.KindSyncTimedOut, readreason.ReadError, readreason.UserPermissionCheckFailed, readreason.KubeAtlasCredentialsRejected:
 		return classFailure
 	}
 	return classScope
 }
 
 // narrowingFor is what a scope reason a broad query does not report narrowed.
-// What Radar collects narrows by kind when the reason is about a kind (one
-// Radar isn't watching, which naming it would search), and by namespace when
+// What KubeAtlas collects narrows by kind when the reason is about a kind (one
+// KubeAtlas isn't watching, which naming it would search), and by namespace when
 // it is about a namespace.
 func narrowingFor(reason readreason.Code, byKind bool) resourceapi.Narrowing {
 	switch reason {
@@ -132,7 +132,7 @@ func newCoverage(q Query) *coverage {
 // quiet reports whether a kind-level reason goes unreported for this query,
 // so callers can skip work that could only produce it. A quiet reason still
 // narrowed the search, and is recorded as such — except a kind search never
-// covers (list-only APIs, and kinds Radar reads directly such as Endpoints and
+// covers (list-only APIs, and kinds KubeAtlas reads directly such as Endpoints and
 // Leases): those are outside every search by definition, so they would narrow
 // every one.
 func (c *coverage) quiet(reason readreason.Code) bool {
@@ -323,19 +323,19 @@ var errIncompleteDiscovery = errors.New("some API groups could not be discovered
 
 // ErrConnectionChanged ends a search whose caches were replaced while it ran:
 // its hits could mix two clusters.
-var ErrConnectionChanged = errors.New("Radar's cluster connection changed during this search (a context switch or reconnect); confirm which cluster Radar is connected to, then retry")
+var ErrConnectionChanged = errors.New("KubeAtlas's cluster connection changed during this search (a context switch or reconnect); confirm which cluster KubeAtlas is connected to, then retry")
 
 // listErrorReason keeps warm-up budget exhaustion pending: retrying search
-// can finish collection without changing Radar's setup.
+// can finish collection without changing KubeAtlas's setup.
 func listErrorReason(err error) readreason.Code {
 	if code, ok := readplan.CollectorErrorCode(err); ok {
 		switch code {
-		case readreason.RadarCredentialsRejected, readreason.RadarForbidden, readreason.KindSyncPending:
+		case readreason.KubeAtlasCredentialsRejected, readreason.KubeAtlasForbidden, readreason.KindSyncPending:
 			return code
 		}
 	}
 	if strings.HasPrefix(err.Error(), "forbidden:") {
-		return readreason.RadarForbidden
+		return readreason.KubeAtlasForbidden
 	}
 	if errors.Is(err, k8s.ErrUnknownKind) {
 		return readreason.KindNotWatchable

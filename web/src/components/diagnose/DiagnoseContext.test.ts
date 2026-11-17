@@ -52,7 +52,7 @@ describe("investigation workspace routes", () => {
       investigationWorkspaceRestorePath(
         { investigationWorkspaceReturn: "/resources?kind=pods&ai-run=old#row" },
         "new run",
-        "https://radar.local",
+        "https://kubeatlas.local",
       ),
     ).toBe("/resources?kind=pods&ai-run=new+run#row");
   });
@@ -62,7 +62,7 @@ describe("investigation workspace routes", () => {
       investigationWorkspaceRestorePath(
         { investigationWorkspaceReturn: "/\\\\evil.example" },
         "run-1",
-        "https://radar.local",
+        "https://kubeatlas.local",
       ),
     ).toBeNull();
   });

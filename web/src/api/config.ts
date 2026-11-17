@@ -3,7 +3,7 @@
 // When KubeAtlas runs as its own binary (standalone or in-cluster), the
 // frontend is same-origin with the Go API server and `apiBase` is `/api`.
 // When KubeAtlas's web is embedded as `@maomada/kubeatlas-app` in another
-// frontend (e.g. Radar Hub), the host app calls `setApiBase()` to point
+// frontend (e.g. KubeAtlas Hub), the host app calls `setApiBase()` to point
 // at a cluster-scoped proxy URL like `/c/{cluster_id}/api` before mounting.
 //
 // This module is deliberately a small mutable singleton rather than a
@@ -41,7 +41,7 @@ export function setApiBase(url: string): void {
 }
 
 /**
- * Returns the router basename (e.g. `/c/abc` when mounted in Radar Hub),
+ * Returns the router basename (e.g. `/c/abc` when mounted in KubeAtlas Hub),
  * or `''` for standalone use.
  */
 export function getBasename(): string {
@@ -111,7 +111,7 @@ export function apiUrl(path: string, base = getApiBase()): string {
 
 /**
  * Register a function that returns HTTP headers to attach to every KubeAtlas
- * API request. Used by library consumers (e.g. Radar Hub) to inject
+ * API request. Used by library consumers (e.g. KubeAtlas Hub) to inject
  * Authorization bearer tokens or session tokens. The provider is called
  * on each request so it can read fresh state.
  *

@@ -129,7 +129,7 @@ type Input struct {
 	// formatted for display by the collector that read the metrics endpoint.
 	DeprecatedAPIMetricsWindow  string
 	DeprecatedAPIMetricsFailure APIMetricsFailure
-	// PrometheusRules is nil when the CRD exists but Radar could not inspect it.
+	// PrometheusRules is nil when the CRD exists but KubeAtlas could not inspect it.
 	// An empty slice with PrometheusRulesInstalled=false means not applicable.
 	PrometheusRules                     []*unstructured.Unstructured
 	PrometheusRulesInstalled            bool

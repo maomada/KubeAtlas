@@ -53,7 +53,7 @@ func (s *Server) handleArgoCDStatus(w http.ResponseWriter, r *http.Request) {
 		resp.Address = argocd.Address()
 		resp.Anonymous = argocd.AnonymousReadAllowed()
 		if err := argocd.LastReadError(); err != nil && resp.Configured {
-			resp.Reason = "Radar's last read from Argo CD failed: " + argoAPIHealthFailure(err, argocd.TokenSet()) + "."
+			resp.Reason = "KubeAtlas's last read from Argo CD failed: " + argoAPIHealthFailure(err, argocd.TokenSet()) + "."
 		}
 	} else {
 		// While a reconnect runs, the last failure still says why it is needed.
@@ -64,7 +64,7 @@ func (s *Server) handleArgoCDStatus(w http.ResponseWriter, r *http.Request) {
 				resp.Reason = "The saved Argo CD token is not bound to this kubeconfig source. Ask the operator to provision the token through startup configuration."
 			}
 		} else if err := argocd.LastProbeError(); err != nil && resp.Configured {
-			resp.Reason = "Radar couldn't connect to Argo CD: " + argoAPIHealthFailure(err, argocd.TokenSet()) + "."
+			resp.Reason = "KubeAtlas couldn't connect to Argo CD: " + argoAPIHealthFailure(err, argocd.TokenSet()) + "."
 		}
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -80,7 +80,7 @@ func (s *Server) handleApplyArgoCDConfig(w http.ResponseWriter, r *http.Request)
 	if !s.requireConfigEditable(w, r) {
 		return
 	}
-	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify Radar configuration") {
+	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify KubeAtlas configuration") {
 		return
 	}
 	if s.localConnections != nil && s.configManagement() == "local" {
@@ -153,7 +153,7 @@ func (s *Server) handleApplyArgoCDConfig(w http.ResponseWriter, r *http.Request)
 
 	// A token is minted for one Argo CD server; carrying a stored token to a
 	// DIFFERENT origin would both fail and leak the credential to whatever host
-	// the new URL points at (Radar probes it with Bearer <token>). So when the
+	// the new URL points at (KubeAtlas probes it with Bearer <token>). So when the
 	// origin changes and the caller reuses the stored token instead of supplying
 	// a fresh one, refuse — the token must be re-entered for the new server.
 	if token != "" && !suppliesNewToken && !sameIntegrationOrigin(rawURL, prev.ArgoCDURL) {

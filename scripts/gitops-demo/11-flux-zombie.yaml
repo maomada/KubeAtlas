@@ -1,6 +1,6 @@
 # Stuck-Terminating zombie fixture. The Kustomization itself is valid
 # Flux config; what makes it a zombie is the post-apply orchestration:
-# the script patches in a fake finalizer (radar-demo.io/intentional-zombie)
+# the script patches in a fake finalizer (kubeatlas-demo.io/intentional-zombie)
 # that no controller owns, then deletes the resource. Flux removes its
 # own finalizer normally, but the fake one blocks deletion forever — the
 # resource sits with deletionTimestamp set indefinitely, exercising:

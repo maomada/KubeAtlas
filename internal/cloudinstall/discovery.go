@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"sort"
 	"strconv"
 	"strings"
@@ -59,7 +60,7 @@ type TargetOwnership struct {
 	NativeHelmMatchesTarget bool
 }
 
-type RadarTarget struct {
+type KubeAtlasTarget struct {
 	Namespace      string
 	DeploymentName string
 	Chart          string
@@ -89,7 +90,7 @@ type DeploymentRuntime struct {
 	CloudTokenConfigured  bool
 	CloudTokenSecretName  string
 	CloudTokenSecretKey   string
-	// Enrollment mode: Radar joins with a shared key instead of a configured
+	// Enrollment mode: KubeAtlas joins with a shared key instead of a configured
 	// token.
 	EnrollmentConfigured bool
 	HubURL               string
@@ -107,18 +108,18 @@ type DiscoveryOptions struct {
 // DiscoveryResult deliberately returns candidates instead of selecting one.
 // Selected contains only candidates matching the explicit/default target.
 type DiscoveryResult struct {
-	Selected         []RadarTarget
-	Namespace        []RadarTarget
-	ClusterWide      []RadarTarget
+	Selected         []KubeAtlasTarget
+	Namespace        []KubeAtlasTarget
+	ClusterWide      []KubeAtlasTarget
 	ClusterWideError error
 }
 
-// DiscoverRadarTargets finds official Radar chart Deployments before Helm
+// DiscoverKubeAtlasTargets finds official KubeAtlas chart Deployments before Helm
 // preparation. A forbidden cluster-wide list does not discard the authoritative
 // selected-namespace inspection.
-func DiscoverRadarTargets(ctx context.Context, kc kubernetes.Interface, dc dynamic.Interface, opts DiscoveryOptions) (DiscoveryResult, error) {
+func DiscoverKubeAtlasTargets(ctx context.Context, kc kubernetes.Interface, dc dynamic.Interface, opts DiscoveryOptions) (DiscoveryResult, error) {
 	if kc == nil {
-		return DiscoveryResult{}, fmt.Errorf("discover Radar targets: nil kubernetes client")
+		return DiscoveryResult{}, fmt.Errorf("discover KubeAtlas targets: nil kubernetes client")
 	}
 
 	namespace := opts.Namespace
@@ -134,12 +135,12 @@ func DiscoverRadarTargets(ctx context.Context, kc kubernetes.Interface, dc dynam
 		LabelSelector: "helm.sh/chart",
 	})
 	if err != nil && !apierrors.IsNotFound(err) {
-		return DiscoveryResult{}, fmt.Errorf("list Radar Deployments in namespace %q: %w", namespace, err)
+		return DiscoveryResult{}, fmt.Errorf("list KubeAtlas Deployments in namespace %q: %w", namespace, err)
 	}
 
 	result := DiscoveryResult{}
 	if err == nil {
-		result.Namespace = radarTargets(ctx, deployments.Items, dc)
+		result.Namespace = kubeatlasTargets(ctx, deployments.Items, dc)
 		for _, target := range result.Namespace {
 			if target.ReleaseName == releaseName {
 				result.Selected = append(result.Selected, target)
@@ -155,19 +156,19 @@ func DiscoverRadarTargets(ctx context.Context, kc kubernetes.Interface, dc dynam
 		LabelSelector: "helm.sh/chart",
 	})
 	if err != nil {
-		result.ClusterWideError = fmt.Errorf("list Radar Deployments across visible namespaces: %w", err)
+		result.ClusterWideError = fmt.Errorf("list KubeAtlas Deployments across visible namespaces: %w", err)
 		return result, nil
 	}
-	result.ClusterWide = withoutNamespaceTargets(radarTargets(ctx, all.Items, dc), result.Namespace)
+	result.ClusterWide = withoutNamespaceTargets(kubeatlasTargets(ctx, all.Items, dc), result.Namespace)
 	return result, nil
 }
 
-func withoutNamespaceTargets(all, namespace []RadarTarget) []RadarTarget {
+func withoutNamespaceTargets(all, namespace []KubeAtlasTarget) []KubeAtlasTarget {
 	seen := make(map[string]struct{}, len(namespace))
 	for _, target := range namespace {
 		seen[target.Namespace+"\x00"+target.DeploymentName] = struct{}{}
 	}
-	other := make([]RadarTarget, 0, len(all))
+	other := make([]KubeAtlasTarget, 0, len(all))
 	for _, target := range all {
 		if _, exists := seen[target.Namespace+"\x00"+target.DeploymentName]; exists {
 			continue
@@ -177,15 +178,15 @@ func withoutNamespaceTargets(all, namespace []RadarTarget) []RadarTarget {
 	return other
 }
 
-func radarTargets(ctx context.Context, deployments []appsv1.Deployment, dc dynamic.Interface) []RadarTarget {
-	targets := make([]RadarTarget, 0, len(deployments))
+func kubeatlasTargets(ctx context.Context, deployments []appsv1.Deployment, dc dynamic.Interface) []KubeAtlasTarget {
+	targets := make([]KubeAtlasTarget, 0, len(deployments))
 	for i := range deployments {
 		deployment := &deployments[i]
 		chart := deployment.Labels["helm.sh/chart"]
-		if !isOfficialRadarChartLabel(chart) {
+		if !isOfficialKubeAtlasChartLabel(chart) {
 			continue
 		}
-		targets = append(targets, RadarTarget{
+		targets = append(targets, KubeAtlasTarget{
 			Namespace:      deployment.Namespace,
 			DeploymentName: deployment.Name,
 			Chart:          chart,
@@ -203,7 +204,14 @@ func radarTargets(ctx context.Context, deployments []appsv1.Deployment, dc dynam
 	return targets
 }
 
-func isOfficialRadarChartLabel(label string) bool {
+func isOfficialKubeAtlasChartLabel(label string) bool {
+	if label == compat.LegacyChartName {
+		return true
+	}
+	if value, ok := strings.CutPrefix(label, compat.LegacyChartName+"-"); ok {
+		_, err := semver.StrictNewVersion(value)
+		return err == nil
+	}
 	if label == chartName {
 		return true
 	}
@@ -231,7 +239,7 @@ func inspectDeploymentRuntime(deployment *appsv1.Deployment) DeploymentRuntime {
 	runtime.StatusObserved = deployment.Status.ObservedGeneration >= deployment.Generation
 	var container *corev1.Container
 	for i := range deployment.Spec.Template.Spec.Containers {
-		if deployment.Spec.Template.Spec.Containers[i].Name == chartName {
+		if deployment.Spec.Template.Spec.Containers[i].Name == chartName || deployment.Spec.Template.Spec.Containers[i].Name == compat.LegacyContainerName {
 			container = &deployment.Spec.Template.Spec.Containers[i]
 			break
 		}
@@ -571,7 +579,7 @@ func controllerGVRs(ref subject.Ref) []schema.GroupVersionResource {
 	}
 }
 
-// UsesEnrollment reports a Radar that joins its Hub with an enrollment key
+// UsesEnrollment reports a KubeAtlas that joins its Hub with an enrollment key
 // rather than a configured token. A configured token wins, as in the binary.
 func (r DeploymentRuntime) UsesEnrollment() bool {
 	return r.EnrollmentConfigured && !r.CloudTokenConfigured

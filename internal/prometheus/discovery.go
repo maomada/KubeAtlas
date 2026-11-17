@@ -73,7 +73,7 @@ const directProbeBudget = 4 * time.Second
 //
 // Well-known + dynamic candidate enumeration lives in pkg/prom.Discover so
 // it can be shared by any consumer of the package. This function owns
-// Radar's port-forward fallback, which is only needed when Radar runs
+// KubeAtlas's port-forward fallback, which is only needed when KubeAtlas runs
 // outside the cluster and can't reach in-cluster Service DNS directly.
 //
 // The lock is only held briefly to read/write state, not during network I/O.
@@ -182,8 +182,8 @@ func (c *Client) discover(ctx context.Context, gen uint64) (string, string, erro
 	log.Printf("[prometheus] enumerated %d candidate(s) from %s in %s: %s", len(candidates), enumSource, took(enumStart), summarizeCandidates(candidates))
 
 	// Direct pass: probe each candidate at its in-cluster Service address, with
-	// bounded concurrency. This connects immediately when Radar runs in-cluster,
-	// and also when Radar runs outside the cluster on a network that routes
+	// bounded concurrency. This connects immediately when KubeAtlas runs in-cluster,
+	// and also when KubeAtlas runs outside the cluster on a network that routes
 	// Service DNS / ClusterIPs (VPN, routed dev cluster) — the reachability of
 	// the address decides, not how the kubeconfig was loaded. Off-cluster
 	// without such routing, every probe fails fast and we fall through to
@@ -215,7 +215,7 @@ func (c *Client) discover(ctx context.Context, gen uint64) (string, string, erro
 	// In-cluster, the direct Service-address probe is the whole story: pods/
 	// portforward is normally denied, so falling back to a forward here only
 	// burns ~10s per candidate on an attempt that cannot open. Fail closed on the
-	// direct pass instead of chasing a port-forward Radar can't establish.
+	// direct pass instead of chasing a port-forward KubeAtlas can't establish.
 	if c.inCluster {
 		log.Printf("[prometheus] no candidate reachable via direct probe (%s); in-cluster, not attempting port-forward", took(directStart))
 		c.mu.Lock()

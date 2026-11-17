@@ -17,7 +17,7 @@ import (
 	"github.com/maomada/KubeAtlas/internal/k8s"
 )
 
-// The limit Radar advertises, and the only one stated in bytes of YAML. Apply
+// The limit KubeAtlas advertises, and the only one stated in bytes of YAML. Apply
 // carries the content raw so its body cap is this number; preview carries it
 // JSON-escaped, so it checks this against the decoded field instead.
 const maxYAMLContentBytes = 6 << 20
@@ -233,7 +233,7 @@ func requireAcknowledgementWithoutLiveState(doc *yamlPreviewDocument) {
 		return
 	}
 	doc.Status = "unavailable"
-	doc.Error = "Kubernetes accepted the server-side dry-run, but Radar could not read the live resource. Applying it will not be protected against changes after review."
+	doc.Error = "Kubernetes accepted the server-side dry-run, but KubeAtlas could not read the live resource. Applying it will not be protected against changes after review."
 }
 
 func decodeBoundedJSONBody(w http.ResponseWriter, r *http.Request, limit int64, target any) error {
@@ -255,7 +255,7 @@ func decodeBoundedJSONBody(w http.ResponseWriter, r *http.Request, limit int64, 
 
 // readBoundedTextBody reads a raw YAML request body, capping it before the read
 // rather than after. /resources/apply takes the manifest as the body itself, so
-// an unbounded read would let a single request decide how much memory Radar
+// an unbounded read would let a single request decide how much memory KubeAtlas
 // spends on it.
 func (s *Server) readBoundedTextBody(w http.ResponseWriter, r *http.Request, limit int64) (string, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, limit)

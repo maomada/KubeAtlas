@@ -130,10 +130,10 @@ export interface ProbeResult {
   /** Scope of those addresses. Describes the ADDRESS, not the journey: a public
    *  address does not prove a packet crossed the public internet. */
   addressScope?: 'public' | 'private' | 'mixed'
-  /** WHO issued this probe. Radar's own process and a throwaway probe Job are
+  /** WHO issued this probe. KubeAtlas's own process and a throwaway probe Job are
    *  both in-cluster over the data path but are different observers with
-   *  different identities. Absent means 'radar'. */
-  source?: 'radar' | 'probe-job'
+   *  different identities. Absent means 'kubeatlas'. */
+  source?: 'kubeatlas' | 'probe-job'
   /** Copyable command to verify what this probe couldn't (non-HTTP port, HTTPS
    *  backend, an address only reachable in-cluster). Set at the skip site. */
   command?: string
@@ -225,10 +225,10 @@ export interface Trace {
   verdict: Verdict
   brokenAt: number
   reason?: string
-  /** Where RADAR ITSELF ran the inline probes from: 'in-cluster' when Radar is
-   *  a Pod (its direct dials are real pod-to-pod traffic, issued with Radar's
+  /** Where KUBEATLAS ITSELF ran the inline probes from: 'in-cluster' when KubeAtlas is
+   *  a Pod (its direct dials are real pod-to-pod traffic, issued with KubeAtlas's
    *  own identity) or 'local' when it runs on a workstation. Without this an
-   *  in-cluster probe with no `source` is ambiguous between Radar's own dial and
+   *  in-cluster probe with no `source` is ambiguous between KubeAtlas's own dial and
    *  the throwaway Job's. */
   runVantage?: 'in-cluster' | 'local'
   /** Distinguishes the two flavors of the unknown verdict so the UI can
@@ -378,10 +378,10 @@ export interface RouteResult {
 export interface VantageResult {
   vantage: ProbeVantage
   path: ProbePath
-  /** Who dialled: 'radar' (Radar's own process) or 'probe-job' (a throwaway Pod
-   *  Radar created). Absent means 'radar'. Kept apart from `vantage` because the
+  /** Who dialled: 'kubeatlas' (KubeAtlas's own process) or 'probe-job' (a throwaway Pod
+   *  KubeAtlas created). Absent means 'kubeatlas'. Kept apart from `vantage` because the
    *  two share (in-cluster, data) but are different observers. */
-  source?: 'radar' | 'probe-job'
+  source?: 'kubeatlas' | 'probe-job'
   outcome: RouteOutcome
   confidence?: RouteConfidence
   evidence?: string

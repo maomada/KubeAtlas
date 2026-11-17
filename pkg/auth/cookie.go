@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"log"
 	"net/http"
 	"strconv"
@@ -16,7 +17,7 @@ import (
 )
 
 // DefaultCookieName is the default session cookie name
-const DefaultCookieName = "radar_session"
+const DefaultCookieName = "kubeatlas_session"
 
 // maxCookieSize is the safe limit for a single cookie value. RFC 6265 requires
 // browsers to support at least 4096 bytes per cookie, but some proxies and CDNs
@@ -24,7 +25,7 @@ const DefaultCookieName = "radar_session"
 // attributes (Path, Secure, HttpOnly, SameSite, MaxAge), and the chunk suffix.
 const maxCookieSize = 3800
 
-// cookieChunkSuffix names the per-chunk cookies (radar_session_chunk_0, _1, …).
+// cookieChunkSuffix names the per-chunk cookies (kubeatlas_session_chunk_0, _1, …).
 const cookieChunkSuffix = "_chunk_"
 
 // cookieChunkCountSuffix names the meta-cookie holding the chunk count.
@@ -73,7 +74,10 @@ func NewSessionID() string {
 // emit oversized tokens (e.g. Keycloak with many claims) don't get silently
 // rejected by the browser's ~4 KB per-cookie limit. Callers must SetCookie each
 // returned cookie.
-func CreateSessionCookie(user *User, sid, idToken, secret string, ttl time.Duration, secure bool) []*http.Cookie {
+func CreateSessionCookie(user *User, sid, idToken, secret string, ttl time.Duration, secure bool) (cookies []*http.Cookie) {
+	defer func() {
+		cookies = append(cookies, expireCookie(compat.LegacySessionCookie, secure), expireCookie(compat.LegacySessionCookie+cookieChunkCountSuffix, secure))
+	}()
 	if sid == "" {
 		panic(fmt.Sprintf("[auth] CreateSessionCookie called with empty sid for user %s", user.Username))
 	}
@@ -174,11 +178,25 @@ func splitString(s string, chunkSize int) []string {
 // stale chunk cookies from a previous larger session are still in the browser
 // (those expire with the TTL and are cleared on logout).
 func ParseSessionCookie(r *http.Request, secret string) *Session {
-	if cookie, err := r.Cookie(DefaultCookieName); err == nil && cookie.Value != "" {
+	name := DefaultCookieName
+	current, legacy := sessionCookieFamilyPresent(r, name), sessionCookieFamilyPresent(r, compat.LegacySessionCookie)
+	if current && legacy {
+		return nil
+	}
+	if legacy {
+		name = compat.LegacySessionCookie
+	}
+	return parseNamedSessionCookie(r, secret, name)
+}
+
+func parseNamedSessionCookie(r *http.Request, secret, name string) *Session {
+	if cookie, err := compat.SingleCookie(r, name); err == nil && cookie.Value != "" {
 		return parseCookieValue(cookie.Value, secret, r.RemoteAddr)
+	} else if err != nil && err != http.ErrNoCookie {
+		return nil
 	}
 
-	chunksCookie, err := r.Cookie(DefaultCookieName + cookieChunkCountSuffix)
+	chunksCookie, err := compat.SingleCookie(r, name+cookieChunkCountSuffix)
 	if err != nil {
 		return nil
 	}
@@ -189,7 +207,7 @@ func ParseSessionCookie(r *http.Request, secret string) *Session {
 
 	var fullValue strings.Builder
 	for i := range numChunks {
-		chunk, err := r.Cookie(fmt.Sprintf("%s%s%d", DefaultCookieName, cookieChunkSuffix, i))
+		chunk, err := compat.SingleCookie(r, fmt.Sprintf("%s%s%d", name, cookieChunkSuffix, i))
 		if err != nil {
 			return nil
 		}
@@ -263,7 +281,10 @@ func ClearSessionCookie(r *http.Request) []*http.Cookie {
 	// non-Secure deletion cookie may not reliably evict a Secure one in every
 	// browser. OIDC issues Secure cookies, so over HTTPS we must clear Secure.
 	secure := r != nil && (r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https")
-	cookies := []*http.Cookie{expireCookie(DefaultCookieName, secure)}
+	cookies := []*http.Cookie{expireCookie(DefaultCookieName, secure), expireCookie(compat.LegacySessionCookie, secure), expireCookie(compat.LegacySessionCookie+cookieChunkCountSuffix, secure)}
+	for i := range maxCookieChunks {
+		cookies = append(cookies, expireCookie(fmt.Sprintf("%s%s%d", compat.LegacySessionCookie, cookieChunkSuffix, i), secure))
+	}
 
 	if r == nil {
 		return cookies

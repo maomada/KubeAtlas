@@ -3,8 +3,8 @@
  *
  * One curve, a handful of durations, and class fragments that apply them.
  * Every surface that opens, closes, expands or collapses takes its timing
- * from here — the hub (radar-hub-web) re-exports this module so Radar Cloud
- * chrome and the embedded Radar views move alike.
+ * from here — the hub (kubeatlas-hub-web) re-exports this module so KubeAtlas Cloud
+ * chrome and the embedded KubeAtlas views move alike.
  *
  * Property choice: geometry that has to move (grid-template-rows on a
  * disclosure, width on a drawer) is animated directly; everything else is

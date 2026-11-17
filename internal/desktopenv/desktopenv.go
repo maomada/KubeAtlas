@@ -1,7 +1,7 @@
 // Package desktopenv reports the host rendering environment the desktop app
 // is running in. On Linux the display server, compositor and WebKit render
 // overrides decide whether the webview works at all, and none of it is
-// derivable from anything else Radar already collects.
+// derivable from anything else KubeAtlas already collects.
 package desktopenv
 
 import "sync/atomic"

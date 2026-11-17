@@ -63,10 +63,10 @@ describe('applyCNPGFleetMetrics', () => {
     expect(row(denied, 'ha').replication.text).toBe('1/1 Pods ready · lag unknown')
     expect(row(denied, 'ha').replication.source).toBe('Needs get pods in namespace db')
 
-    const none = applyCNPGFleetMetrics(fleet(), undefined, { source: 'none', reason: 'Radar is not connected to Prometheus' })
+    const none = applyCNPGFleetMetrics(fleet(), undefined, { source: 'none', reason: 'KubeAtlas is not connected to Prometheus' })
     expect(row(none, 'ha').replication.text).toBe('1/1 Pods ready · lag unknown')
     expect(row(none, 'ha').replication.source).toBe('Prometheus not connected')
-    expect(row(none, 'ha').replication.detail).toBe('Radar is not connected to Prometheus')
+    expect(row(none, 'ha').replication.detail).toBe('KubeAtlas is not connected to Prometheus')
     expect(row(none, 'ha').diskGrowth).toBeUndefined()
   })
 
@@ -114,7 +114,7 @@ describe('sustained replication lag', () => {
   })
 
   it('says when the series were matched to the cluster by Pod name only', () => {
-    const note = "Matched by namespace and Pod names. Radar couldn't confirm these series belong to this exact cluster (no cluster label it could check)"
+    const note = "Matched by namespace and Pod names. KubeAtlas couldn't confirm these series belong to this exact cluster (no cluster label it could check)"
     const f = applyCNPGFleetMetrics(
       fleet(),
       [reading('ha', { state: 'ok', seconds: 95, pod: 'ha-2', sustainedSeconds: 40, sustainedPod: 'ha-2', sustainedWindow: '10m0s', isolation: { mode: 'unverified', note } })],

@@ -7,7 +7,7 @@ import { rolloutActivityLevel, type WorkloadRolloutActivity } from './workload-r
 // cluster view and (eventually) the Cloud fleet view both build on these types
 // and helpers. No React, no fetching.
 //
-// The wire shape mirrors radar OSS's GET /api/applications response
+// The wire shape mirrors kubeatlas OSS's GET /api/applications response
 // (internal/server/applications.go). Field names match the Go json tags.
 
 export type AppWorkloadClass =
@@ -190,7 +190,7 @@ export interface AppIdentity {
   evidence: string;
   /** True when the key is backed by declared upstream identity and can group across clusters. */
   portable?: boolean;
-  /** Machine-readable provenance tier (radar applications_identity.go):
+  /** Machine-readable provenance tier (kubeatlas applications_identity.go):
    *  explicit | argo-path | argo-appset | flux-source (declared origins, portable)
    *  · label | name-stem | namespace (NAMEs, per-cluster). */
   source?: string;

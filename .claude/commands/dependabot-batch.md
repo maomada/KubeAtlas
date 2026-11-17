@@ -1,10 +1,10 @@
 ---
-description: Review Radar's weekly Dependabot updates and batch only soaked, low-risk bumps into one tested PR
+description: Review KubeAtlas's weekly Dependabot updates and batch only soaked, low-risk bumps into one tested PR
 ---
 
 # Dependabot Batch
 
-Replace Radar's open weekly Dependabot PRs with one evidence-backed dependency PR. Include only updates that have been published for at least 72 hours and look safe after upstream review and Radar-specific testing. Do not merge the resulting PR.
+Replace KubeAtlas's open weekly Dependabot PRs with one evidence-backed dependency PR. Include only updates that have been published for at least 72 hours and look safe after upstream review and KubeAtlas-specific testing. Do not merge the resulting PR.
 
 This command is end-to-end unless the user asks for an audit only or says not to create a PR. Creating the batch PR includes pushing its branch and closing only the Dependabot PRs it supersedes. It does not authorize merging, publishing, tagging, or changing release artifacts.
 
@@ -15,7 +15,7 @@ This command is end-to-end unless the user asks for an audit only or says not to
 - Read the official release notes or changelog for every direct candidate across the complete old-to-new range. Review official release metadata and meaningful changes for every changed transitive dependency too. If notes are missing or vague, inspect the upstream compare/commit range; uncertainty raises risk rather than counting as evidence of safety.
 - Use primary sources: upstream releases, changelogs, compare views, issue trackers/security advisories, npm registry metadata, the Go module proxy, and GitHub tag/release metadata. Dependabot's summary and compatibility score are leads, not the review.
 - Do not execute lifecycle/install scripts from a candidate package before it clears the soak and review gates. `npm install --package-lock-only --ignore-scripts` or `npm ci --ignore-scripts` is appropriate while constructing/auditing the graph; run the repository's normal verification after the included set is approved.
-- Keep the batch dependency-only. If an update requires Radar source changes, a migration, or a speculative compatibility fallback, exclude it and explain the needed follow-up. Version-locked companion packages may move together when upstream requires it, but each resolved version must clear the same review and soak gates.
+- Keep the batch dependency-only. If an update requires KubeAtlas source changes, a migration, or a speculative compatibility fallback, exclude it and explain the needed follow-up. Version-locked companion packages may move together when upstream requires it, but each resolved version must clear the same review and soak gates.
 - Preserve unrelated work. Start from current `origin/main` on a dedicated `deps/dependabot-batch-YYYY-MM-DD` branch, using a separate worktree when the current tree is dirty or in active use.
 
 ## 1. Inventory and reconcile
@@ -30,7 +30,7 @@ Before evaluating a PR, compare its target with current `origin/main`:
 - If its base versions no longer match, reconstruct the real old-to-new movement from current manifests and lockfiles.
 - Treat grouped PRs as collections of resolved versions, not one indivisible title. Do not split ecosystems that must stay aligned, such as Kubernetes modules or React/React DOM, without upstream and repository evidence that the split is valid.
 
-Capture a baseline of direct and resolved versions for every affected ecosystem before editing. Radar currently has root Go and npm dependency graphs plus GitHub Actions; inspect the repository rather than assuming that list is exhaustive.
+Capture a baseline of direct and resolved versions for every affected ecosystem before editing. KubeAtlas currently has root Go and npm dependency graphs plus GitHub Actions; inspect the repository rather than assuming that list is exhaustive.
 
 ## 2. Establish release age
 
@@ -42,16 +42,16 @@ For each proposed target and every resolved transitive addition/upgrade, record 
 
 If a grouped update contains a too-fresh version, either pin/exclude that member when the ecosystem supports it cleanly or hold the group. Never let a package-manager refresh silently float to a newer, unsoaked version.
 
-## 3. Review risk in Radar's actual usage
+## 3. Review risk in KubeAtlas's actual usage
 
 For every candidate:
 
 1. Read every intervening release note/changelog entry and the upstream compare range. Look for breaking changes, removed/renamed exports, changed defaults, new runtime/toolchain requirements, migrations, security-sensitive behavior, yanks/retractions, and regressions reported against the release.
-2. Search Radar for imports, commands, configuration, deep imports, generated output, and affected APIs. Judge the dependency by how this repository uses it, not by semver alone.
+2. Search KubeAtlas for imports, commands, configuration, deep imports, generated output, and affected APIs. Judge the dependency by how this repository uses it, not by semver alone.
 3. Review the individual Dependabot PR's checks and discussion. Diagnose failures; do not assume the combined batch will fix them.
 4. Decide `include`, `hold for soak`, or `exclude for risk`, and write down the evidence. A major version is not automatically unsafe and a patch is not automatically safe.
 
-Give extra scrutiny to auth/security, persistence, networking/protocols, serialization, Kubernetes/Helm behavior, desktop/runtime frameworks, compilers/bundlers, CSS/fonts/icons, and CI/release actions. Include these only when the affected Radar surface is understood and a meaningful targeted test is available. Hold documented breakage, unresolved upstream regressions, unexplained graph churn, or changes whose relevant behavior cannot be exercised with reasonable confidence.
+Give extra scrutiny to auth/security, persistence, networking/protocols, serialization, Kubernetes/Helm behavior, desktop/runtime frameworks, compilers/bundlers, CSS/fonts/icons, and CI/release actions. Include these only when the affected KubeAtlas surface is understood and a meaningful targeted test is available. Hold documented breakage, unresolved upstream regressions, unexplained graph churn, or changes whose relevant behavior cannot be exercised with reasonable confidence.
 
 ## 4. Build the unified change
 
@@ -90,7 +90,7 @@ Commit without `Co-Authored-By` trailers. Push the dedicated branch and open one
 - all excluded/held PRs with concrete reasons;
 - links to the upstream release notes/changelogs used for material conclusions;
 - unexpected direct/transitive graph movement and why it is acceptable;
-- Radar usage/risk notes and targeted tests for nontrivial bumps;
+- KubeAtlas usage/risk notes and targeted tests for nontrivial bumps;
 - exact verification results and explicit visual-test status;
 - a `Supersedes #...` list for included Dependabot PRs.
 

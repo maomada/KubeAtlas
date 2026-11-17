@@ -8,7 +8,7 @@ import (
 // CheckMeta is a check's static definition (human-readable context). Aliased
 // from pkg/checks so the k8s-free Checks rollup and the audit engine share one
 // shape — the Hub imports only pkg/checks; the engine + registry re-export it
-// here. Same fields/JSON, so radar's existing audit.CheckMeta references are
+// here. Same fields/JSON, so kubeatlas's existing audit.CheckMeta references are
 // unchanged.
 type CheckMeta = checks.CheckMeta
 
@@ -313,15 +313,15 @@ var CheckRegistry = map[string]CheckMeta{
 		ID:          "orphanConfigMapSecret",
 		Title:       "Unused ConfigMap or Secret",
 		Category:    CategoryEfficiency,
-		Description: "No workload, Ingress, or supported controller configuration references this ConfigMap or Secret. Radar checks the reference kinds it understands; a consumer that reads it by name from code or from an unsupported controller would not be seen.",
-		Remediation: "Confirm nothing outside Radar's view still uses it, then either add the missing reference from the workload, Ingress, or controller that should consume it, or delete it. Keep a copy of a Secret before deleting it - its contents cannot be recovered.",
+		Description: "No workload, Ingress, or supported controller configuration references this ConfigMap or Secret. KubeAtlas checks the reference kinds it understands; a consumer that reads it by name from code or from an unsupported controller would not be seen.",
+		Remediation: "Confirm nothing outside KubeAtlas's view still uses it, then either add the missing reference from the workload, Ingress, or controller that should consume it, or delete it. Keep a copy of a Secret before deleting it - its contents cannot be recovered.",
 		References:  []Reference{refConfigMaps, refSecrets},
 	},
 	"pvcNoConsumer": {
 		ID:          "pvcNoConsumer",
 		Title:       "PVC with no consumer observed",
 		Category:    CategoryEfficiency,
-		Description: "A Bound claim without a controller owner has no reference from the Pods, built-in workload templates, or Pending clones Radar can see. Where Kubernetes reports the claim's Unused condition (1.37+), the 24 hours count from when it became unused, and a claim it reports in use is never flagged. StatefulSet generated claims count even at zero replicas. CRD consumers, snapshot operations, and intentional retained data may still need this storage.",
+		Description: "A Bound claim without a controller owner has no reference from the Pods, built-in workload templates, or Pending clones KubeAtlas can see. Where Kubernetes reports the claim's Unused condition (1.37+), the 24 hours count from when it became unused, and a claim it reports in use is never flagged. StatefulSet generated claims count even at zero replicas. CRD consumers, snapshot operations, and intentional retained data may still need this storage.",
 		Remediation: "Confirm whether an operator, virtual machine, snapshot, external consumer, or recovery plan still needs the data, and check the bound volume's reclaim policy and backups. If nothing needs it, delete the claim; if its PV is Retain, reclaim that too.",
 		References:  []Reference{refPV},
 	},

@@ -38,9 +38,9 @@ type Node struct {
 	// Missing is a confirmed local NotFound, independent of controller health.
 	Missing bool `json:"missing,omitempty"`
 	// HealthSource says who produced Health. The GitOps controller's own
-	// verdict (HealthSourceController) and Radar's own read of the live
-	// object (HealthSourceRadar) are different claims and the UI labels the
-	// second one; consumers must not present a Radar-derived value as the
+	// verdict (HealthSourceController) and KubeAtlas's own read of the live
+	// object (HealthSourceKubeAtlas) are different claims and the UI labels the
+	// second one; consumers must not present a KubeAtlas-derived value as the
 	// controller's. Empty when Health is empty.
 	HealthSource   HealthSource   `json:"healthSource,omitempty"`
 	HealthReason   string         `json:"healthReason,omitempty"`
@@ -53,7 +53,7 @@ type Node struct {
 	Count          int            `json:"count,omitempty"`
 	Data           map[string]any `json:"data,omitempty"`
 	// Remote marks a resource that lives on the destination cluster of a
-	// remote tree. Radar's API reads this cluster, so a same-named object
+	// remote tree. KubeAtlas's API reads this cluster, so a same-named object
 	// here is a different resource, not this node.
 	Remote bool `json:"remote,omitempty"`
 	// Dependency marks a node reached only through a Flux source, chart or
@@ -68,11 +68,11 @@ const (
 	// HealthSourceController: the GitOps controller wrote this health into
 	// its own CR (Argo status.resources[].health, Flux conditions).
 	HealthSourceController HealthSource = "controller"
-	// HealthSourceRadar: Radar derived it from the live object — the topology
+	// HealthSourceKubeAtlas: KubeAtlas derived it from the live object — the topology
 	// builder's status for kinds it models, or the issues engine's
 	// classification overlaid by the host. Never a "Healthy" verdict from the
 	// issues engine: that path only ever reports problems.
-	HealthSourceRadar HealthSource = "radar"
+	HealthSourceKubeAtlas HealthSource = "kubeatlas"
 	// HealthSourceControllerAPI: the controller's own verdict, read from its
 	// API server (argocd-server) because the CR doesn't carry it. Same
 	// authority as HealthSourceController; a distinct value so the UI can say
@@ -139,7 +139,7 @@ type ResourceTree struct {
 	Summary  Summary  `json:"summary"`
 	// HealthMode is set for Argo CD roots only. In appTree mode the
 	// controller's per-resource verdicts are not in the CR, so any node
-	// health present came from Radar (HealthSourceRadar) unless a host
+	// health present came from KubeAtlas (HealthSourceKubeAtlas) unless a host
 	// overlaid the controller's answer from the Argo CD API.
 	HealthMode HealthMode `json:"healthMode,omitempty"`
 	// HealthFromAPI is true when a host filled per-resource health from the
@@ -159,9 +159,9 @@ type ResourceTree struct {
 	HealthAPIRetrying bool `json:"healthApiRetrying,omitempty"`
 	// RemoteDestination is true for an Argo CD Application whose
 	// spec.destination is another cluster, or a Flux object with
-	// spec.kubeConfig. Radar's own reads describe the
-	// local cluster, so nothing Radar derives can be attributed to such an
-	// app's resources; hosts must not overlay Radar health onto it.
+	// spec.kubeConfig. KubeAtlas's own reads describe the
+	// local cluster, so nothing KubeAtlas derives can be attributed to such an
+	// app's resources; hosts must not overlay KubeAtlas health onto it.
 	RemoteDestination bool `json:"remoteDestination,omitempty"`
 }
 

@@ -1,6 +1,6 @@
 # Design System
 
-Radar's design system for AI coding agents. Read this before writing or modifying frontend code.
+KubeAtlas's design system for AI coding agents. Read this before writing or modifying frontend code.
 
 Source files: `packages/k8s-ui/src/theme/variables.css` (tokens), `tailwind-theme.css` (Tailwind mapping), `components.css` (shared classes), `Badge.tsx` (badge component + color definitions).
 
@@ -124,7 +124,7 @@ named by intent so a future retune moves exactly the right ones):
 | a neutral **attention/FYI** marker (cross-namespace, wildcard, default, immutable) | `tone="note"` | `<Badge tone="note">cross-namespace</Badge>` |
 | **local** categorical distinction (rw/ro, spot/on-demand, control-plane/worker) — hue has no global meaning, just "tell siblings apart" | `tone="accent1"`/`"accent2"`/`"accent3"` | `<Badge tone="accent1">rw</Badge>` |
 | a **structural** data fragment (port, path, host, weight, name, count) | `tone="structural"` | `<Badge tone="structural" size="sm">:8080</Badge>` |
-| words an **AI agent** attached to a Radar fact (evidence role chips: Cause, Symptom, Rules out) — muted accent, never a severity hue, so agent framing can't pass for a Radar finding | `tone="agent"` | `<Badge tone="agent" size="sm">Cause</Badge>` |
+| words an **AI agent** attached to a KubeAtlas fact (evidence role chips: Cause, Symptom, Rules out) — muted accent, never a severity hue, so agent framing can't pass for a KubeAtlas finding | `tone="agent"` | `<Badge tone="agent" size="sm">Cause</Badge>` |
 | genuinely one-off (last resort) | `colorClass=` | `<Badge colorClass="…">Custom</Badge>` |
 
 ```tsx
@@ -188,7 +188,7 @@ Every relative time uses the shared tiers — seconds, minutes, hours, days (`45
 
 A bare `5m` under "Started" or "Finished" reads as a duration, so a moment in a drawer, list or sentence always says "ago".
 
-Table columns are a judgment call per screen, because the header already names the event. Choose what reads clearest there. Columns that mirror `kubectl get` (Age, Last Seen, Last Schedule) stay bare, as kubectl prints them. Radar's own views don't have to look like CLI output: the GitOps fleet's Last Sync and the Leases list's Last Renewed say "ago" because it reads more naturally. Keep sibling columns on one screen consistent with each other.
+Table columns are a judgment call per screen, because the header already names the event. Choose what reads clearest there. Columns that mirror `kubectl get` (Age, Last Seen, Last Schedule) stay bare, as kubectl prints them. KubeAtlas's own views don't have to look like CLI output: the GitOps fleet's Last Sync and the Leases list's Last Renewed say "ago" because it reads more naturally. Keep sibling columns on one screen consistent with each other.
 
 Go text uses `pkg/timeutil.FormatAgeShort`, with the same tiers.
 
@@ -213,7 +213,7 @@ Standard Tailwind spacing scale. No custom base unit.
 | `lg` | 1280px |
 | `xl` | 1536px |
 
-Wider than Tailwind defaults — Radar is a desktop-first tool.
+Wider than Tailwind defaults — KubeAtlas is a desktop-first tool.
 
 ## 6. Depth & Elevation
 
@@ -229,7 +229,7 @@ Dark mode adds heavier shadows with subtle white inset borders for edge definiti
 
 ## 7. Motion
 
-One curve, a handful of durations, and a primitive per surface. All timing lives in `packages/k8s-ui/src/utils/animation.ts`; radar-hub-web re-exports it so Radar and Radar Cloud move alike. Never write a duration or curve inline.
+One curve, a handful of durations, and a primitive per surface. All timing lives in `packages/k8s-ui/src/utils/animation.ts`; kubeatlas-hub-web re-exports it so KubeAtlas and KubeAtlas Cloud move alike. Never write a duration or curve inline.
 
 | Surface | Primitive | Timing |
 |---------|-----------|--------|

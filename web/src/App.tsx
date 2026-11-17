@@ -1,3 +1,4 @@
+import { readProductStorage, removeProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef } from 'react'
 import { flushSync } from 'react-dom'
 import { startViewTransitionSafe } from '@maomada/k8s-ui/utils/view-transition'
@@ -49,7 +50,7 @@ import { ConnectionErrorView } from './components/ConnectionErrorView'
 import { SyncProgressPanel } from './components/SyncProgressPanel'
 import { NoClusterAccessBanner } from './components/NoClusterAccessBanner'
 import { CapabilitiesProvider, useCapabilitiesContext } from './contexts/CapabilitiesContext'
-import { RadarUpgradeProvider } from './context/RadarUpgrade'
+import { KubeAtlasUpgradeProvider } from './context/KubeAtlasUpgrade'
 import { UserMenu } from './components/UserMenu'
 import { ErrorBoundary } from './components/ui/ErrorBoundary'
 import { ShortcutHelpOverlay } from './components/ui/ShortcutHelpOverlay'
@@ -76,7 +77,7 @@ import { kindToPluralWithGroup, pluralToKind, apiVersionToGroup, relatedResource
 import { namespaceFilterDisabled } from './utils/namespaceFilter'
 import { findSelectedTopologyNode } from './utils/topology-selection'
 import { type OmnibarHandle } from './components/ui/Omnibar'
-import { RadarOmnibar } from './components/ui/RadarOmnibar'
+import { KubeAtlasOmnibar } from './components/ui/KubeAtlasOmnibar'
 import type { ContextSwitcherHandle } from './components/ContextSwitcher'
 
 // All possible node kinds (core + GitOps)
@@ -171,7 +172,7 @@ const CRASH_LABELS = {
 // correct regardless of which component renders it. A detail drawer that opens
 // over a list (?resource=…) is deliberately NOT titled — it's the same page, so
 // it keeps the list's title.
-function radarPageTitle(pathname: string, search = '', apiResources?: APIResource[]): string | null {
+function kubeatlasPageTitle(pathname: string, search = '', apiResources?: APIResource[]): string | null {
   const decode = (s: string) => {
     try {
       return decodeURIComponent(s)
@@ -345,9 +346,9 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
   // /topology), this second strip eats the route and re-auth lands on home —
   // accepted, since a wrong-but-valid landing beats a doubled URL.
   useEffect(() => {
-    const returnPath = sessionStorage.getItem('radar_return_path')
+    const returnPath = readProductStorage(sessionStorage, 'kubeatlas_return_path')
     if (returnPath) {
-      sessionStorage.removeItem('radar_return_path')
+      removeProductStorage(sessionStorage, 'kubeatlas_return_path')
       navigate(stripBasename(returnPath), { replace: true })
     }
   }, [navigate])
@@ -375,10 +376,10 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
   // chip isn't a dead control next to the cluster switcher.
   const namespaceFilter = namespaceFilterDisabled(mainView, location.pathname, location.search, navApiResources)
 
-  // One URL-derived tab title for every view (see radarPageTitle). Driving it
+  // One URL-derived tab title for every view (see kubeatlasPageTitle). Driving it
   // from the URL — not the mounted component. Off unless the host opts in
   // (standalone passes manageDocumentTitle), so embedders keep title ownership.
-  useDocumentTitle(manageDocumentTitle ? radarPageTitle(location.pathname, location.search, navApiResources) : null, documentTitleSuffix)
+  useDocumentTitle(manageDocumentTitle ? kubeatlasPageTitle(location.pathname, location.search, navApiResources) : null, documentTitleSuffix)
 
   // Workload slug after `/resources/` (defaults to `pods`). Bare `/resources` redirects to `/resources/pods`.
   const normalizedResourcesKindSlug = useMemo(() => {
@@ -412,14 +413,14 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
   )
 
   // Canonical URL — `/resources` is not stable for bookmarks/sharing; normalize to
-  // the last kind (hosts such as Radar Hub link to bare `/resources`), else Pods.
+  // the last kind (hosts such as KubeAtlas Hub link to bare `/resources`), else Pods.
   useEffect(() => {
     const path = location.pathname.replace(/\/+$/, '') || '/'
     // Wait for the cluster so its last kind can be read; landing on Pods first would overwrite it.
     if (path !== '/resources' || clusterInfoLoading) return
     const current = new URLSearchParams(location.search)
     const onlyCrossView = [...current.keys()].every(key => (CROSS_VIEW_PARAMS as readonly string[]).includes(key))
-    const destination = new URL((onlyCrossView && kindFilterStore?.lastKind()) || '/resources/pods', 'http://radar.invalid')
+    const destination = new URL((onlyCrossView && kindFilterStore?.lastKind()) || '/resources/pods', 'http://kubeatlas.invalid')
     current.forEach((value, key) => destination.searchParams.set(key, value))
     navigate(
       { pathname: destination.pathname, search: destination.search, hash: location.hash },
@@ -565,8 +566,8 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
         'overview'
       openSettings(section)
     }
-    window.addEventListener('radar:open-settings', handler)
-    return () => window.removeEventListener('radar:open-settings', handler)
+    window.addEventListener('kubeatlas:open-settings', handler)
+    return () => window.removeEventListener('kubeatlas:open-settings', handler)
   }, [openSettings])
 
   // Listen for "open-local-terminal" DOM event — the AI surface is portaled above
@@ -577,8 +578,8 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
       const { command, title } = (e as CustomEvent).detail ?? {}
       openLocalTerminal({ initialCommand: command, title })
     }
-    window.addEventListener('radar:open-local-terminal', handler)
-    return () => window.removeEventListener('radar:open-local-terminal', handler)
+    window.addEventListener('kubeatlas:open-local-terminal', handler)
+    return () => window.removeEventListener('kubeatlas:open-local-terminal', handler)
   }, [openLocalTerminal])
 
   // Diagnostics overlay state
@@ -896,7 +897,7 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
       scope: 'global' as const,
       // KubeAtlas owns the shortcut registry even in a chromeless embed, so its `?`
       // overlay is the one that actually lists the working shortcuts. The host
-      // (Radar Hub) drives it from its own chrome by dispatching a `?` keydown —
+      // (KubeAtlas Hub) drives it from its own chrome by dispatching a `?` keydown —
       // it has no registry of its own to populate a competing overlay with.
       handler: () => setShowHelp(prev => !prev),
     },
@@ -907,7 +908,7 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
       category: 'General' as const,
       scope: 'global' as const,
       allowInInputs: true,
-      // Radar Hub owns its own omnibar.
+      // KubeAtlas Hub owns its own omnibar.
       handler: () => { if (!embedded) omnibarRef.current?.focus() },
     },
     {
@@ -1375,7 +1376,7 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
   // Defer the state flip to onSuccess. Setting namespaces to [] before the
   // server-side pref has actually been cleared makes React Query refetch
   // under the new empty key while a KubeAtlas that applies the stored pick to
-  // reads naming no namespace (Hub embeds this UI against such Radars) returns
+  // reads naming no namespace (Hub embeds this UI against such KubeAtlas instances) returns
   // the previous pick's scope, caching stale data under the new key with no
   // later invalidation.
   // onSettled would do the same on errors, leaving the UI showing "All
@@ -1853,9 +1854,9 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
             box centered in it — pinned regardless of how wide the left-side
             chrome gets (cluster name, namespace label, "Discovering…" /
             "Disconnected" text). Overflowing side content truncates instead of
-            dragging the box. Same pattern as Radar Hub's ClusterTopBar. */}
+            dragging the box. Same pattern as KubeAtlas Hub's ClusterTopBar. */}
         <div className="hidden @min-[720px]:flex flex-1 justify-center min-w-0 px-3">
-          <RadarOmnibar
+          <KubeAtlasOmnibar
             ref={omnibarRef}
             onNavigateView={(view) => setMainView(view)}
             onNavigateKind={(kind, group) => {
@@ -2377,7 +2378,7 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
         <ResourceDetailDrawer
           resource={drawerResource}
           initialTab={drawerInitialTab}
-          // No KubeAtlas header in chromeless embeds (Radar Hub) — anchor the drawer
+          // No KubeAtlas header in chromeless embeds (KubeAtlas Hub) — anchor the drawer
           // to the top of the content area instead of leaving a 49px gap.
           headerHeight={embedded ? 0 : undefined}
           rightInset={contentGutter}
@@ -2525,7 +2526,7 @@ function AppInner({ manageDocumentTitle = false, documentTitleSuffix, onClusterL
         onNavigateToResource={navigateToResourceList}
       />
 
-      {/* Debug overlay — dev mode, standalone only. Embedded hosts (Radar Hub)
+      {/* Debug overlay — dev mode, standalone only. Embedded hosts (KubeAtlas Hub)
           own their own dev tooling; ours would collide with theirs bottom-right. */}
       {import.meta.env.DEV && showNavRail && <DebugOverlay />}
       </div>
@@ -2557,7 +2558,7 @@ function App({ manageDocumentTitle = false, documentTitleSuffix, onClusterLoadSt
   return (
     <ConnectionProvider>
       <CapabilitiesProvider>
-        <RadarUpgradeProvider>
+        <KubeAtlasUpgradeProvider>
           <ContextSwitchProvider>
             <DockProvider>
               <KeyboardShortcutProvider>
@@ -2569,7 +2570,7 @@ function App({ manageDocumentTitle = false, documentTitleSuffix, onClusterLoadSt
               </KeyboardShortcutProvider>
             </DockProvider>
           </ContextSwitchProvider>
-        </RadarUpgradeProvider>
+        </KubeAtlasUpgradeProvider>
       </CapabilitiesProvider>
     </ConnectionProvider>
   )

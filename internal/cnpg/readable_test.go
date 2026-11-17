@@ -81,7 +81,7 @@ func TestDeferredKindsReadALoadedNamespaceWhileAnotherLoads(t *testing.T) {
 	if claims, reason := cnpgCachedClaims(cache, "alpha", labels.SelectorFromSet(labels.Set{clusterLabel: "db"})); reason != "" || len(claims) != 1 || claims[0].Name != "db-1" {
 		t.Fatalf("claims in loaded alpha = %v %q", claims, reason)
 	}
-	if claims, reason := cnpgCachedClaims(cache, "gamma", labels.Everything()); claims != nil || reason != "Volumes unknown: Radar is still loading PersistentVolumeClaims" {
+	if claims, reason := cnpgCachedClaims(cache, "gamma", labels.Everything()); claims != nil || reason != "Volumes unknown: KubeAtlas is still loading PersistentVolumeClaims" {
 		t.Fatalf("claims in loading gamma = %v %q", claims, reason)
 	}
 
@@ -91,7 +91,7 @@ func TestDeferredKindsReadALoadedNamespaceWhileAnotherLoads(t *testing.T) {
 		t.Fatalf("PodDisruptionBudgets in loaded alpha = %+v", pdbs)
 	}
 	loading := cnpgObj(Group+"/v1", "Cluster", "gamma", "db", nil, nil)
-	if pdbs := reader.hAPDBs(ctx, cache, loading); pdbs.ReadSource.State != cnpgHAStateUnavailable || pdbs.ReadSource.Reason != "Disruption budgets unknown: Radar is still loading PodDisruptionBudgets" {
+	if pdbs := reader.hAPDBs(ctx, cache, loading); pdbs.ReadSource.State != cnpgHAStateUnavailable || pdbs.ReadSource.Reason != "Disruption budgets unknown: KubeAtlas is still loading PodDisruptionBudgets" {
 		t.Fatalf("PodDisruptionBudgets in loading gamma = %+v", pdbs.ReadSource)
 	}
 }

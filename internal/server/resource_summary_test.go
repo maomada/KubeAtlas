@@ -71,8 +71,8 @@ func argoApplicationFixture() *unstructured.Unstructured {
 				"team":                       "payments-platform",
 			},
 			"annotations": map[string]any{
-				"radarhq.io/suspended-at":    "2026-06-30T12:00:00Z",
-				"radarhq.io/suspended-by":    "nadav@example.com",
+				"kubeatlas.io/suspended-at":  "2026-06-30T12:00:00Z",
+				"kubeatlas.io/suspended-by":  "nadav@example.com",
 				"skyhook.io/suspended-at":    "2026-06-30T12:00:00Z",
 				"skyhook.io/suspended-by":    "nadav@example.com",
 				"argocd.argoproj.io/refresh": "normal",

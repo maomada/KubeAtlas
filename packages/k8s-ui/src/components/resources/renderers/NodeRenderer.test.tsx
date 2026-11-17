@@ -34,8 +34,8 @@ describe('NodeRenderer metrics', () => {
     )
 
     expect(html).toContain('资源使用情况')
-    expect(html).toContain('指标不可用。Radar 无法读取 metrics.k8s.io。')
-    expect(html).toContain('Radar 无法读取 metrics.k8s.io')
+    expect(html).toContain('指标不可用。KubeAtlas 无法读取 metrics.k8s.io。')
+    expect(html).toContain('KubeAtlas 无法读取 metrics.k8s.io')
     expect(html).toContain('指标错误详情')
     expect(html).not.toContain('Install or repair metrics-server and its APIService')
     expect(html).not.toContain('指标采集错误：')
@@ -51,7 +51,7 @@ describe('NodeRenderer metrics', () => {
       />,
     )
 
-    expect(html).toContain('指标不可用。Radar 无法读取 metrics.k8s.io。')
+    expect(html).toContain('指标不可用。KubeAtlas 无法读取 metrics.k8s.io。')
     expect(html).not.toContain('100m')
     expect(html).not.toContain('Last updated')
   })
@@ -67,7 +67,7 @@ describe('NodeRenderer metrics', () => {
       />,
     )
 
-    expect(html).toContain('指标不可用。Radar 无法读取 metrics.k8s.io。')
+    expect(html).toContain('指标不可用。KubeAtlas 无法读取 metrics.k8s.io。')
     expect(html).toContain('CPU')
     expect(html).toContain('Memory')
     expect(html).not.toContain('Last updated')

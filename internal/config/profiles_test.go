@@ -108,7 +108,7 @@ func TestProfileStoreNewerVersionIsNotReportedAsCorrupt(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, _, err := s.Read()
-		if err == nil || !strings.Contains(err.Error(), "upgrade Radar") || strings.Contains(err.Error(), "repair") || strings.Contains(err.Error(), "do-not-display") {
+		if err == nil || !strings.Contains(err.Error(), "upgrade KubeAtlas") || strings.Contains(err.Error(), "repair") || strings.Contains(err.Error(), "do-not-display") {
 			t.Fatalf("incorrect newer-format guidance: %v", err)
 		}
 		if _, err := s.Update(context.Background(), "", func(*ClusterProfiles) error { t.Fatal("newer file reached mutation"); return nil }); err == nil {

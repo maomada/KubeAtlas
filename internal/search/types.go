@@ -30,7 +30,7 @@ type Query struct {
 	NSFilter    []string  // ns:foo modifiers; restrict namespaced kinds, and exclude cluster-scoped kinds unless a kind: names them
 	LabelFilter []LabelEq // label:k=v equality or label:k presence checks; AND'd
 	ImageFilter []string  // image:foo modifiers; substring match on container images
-	Cluster     string    // cluster: modifier — radar ignores; hub uses for routing
+	Cluster     string    // cluster: modifier — kubeatlas ignores; hub uses for routing
 	Raw         string    // original query string, for debugging / round-tripping
 }
 
@@ -84,7 +84,7 @@ type Result struct {
 	// asked. Status "partial" means something was loading or failed, a kind or
 	// namespace you named couldn't be searched, or the filter couldn't be
 	// evaluated on some objects — gaps say which. NarrowedBy says a broad
-	// query searched only what your access and Radar's collection allow, so
+	// query searched only what your access and KubeAtlas's collection allow, so
 	// even "complete" is no proof that nothing exists outside them. Result
 	// limits (Total vs TotalMatched) are separate.
 	Coverage resourceapi.SearchCoverage `json:"coverage"`

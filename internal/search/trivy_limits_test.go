@@ -253,7 +253,7 @@ func TestSearch_NamespaceFilterNarrowsAccessChecks(t *testing.T) {
 }
 
 // partialProvider serves its objects but says coverage isn't complete yet.
-// A namespace whose reports Radar can't read yet is reported on a plain
+// A namespace whose reports KubeAtlas can't read yet is reported on a plain
 // query too, not only on kind: queries.
 // Entries that aren't searchable (passed checks) still count toward the
 // cancellation and budget checks.

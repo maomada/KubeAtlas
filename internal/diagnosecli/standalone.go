@@ -20,10 +20,10 @@ import (
 	"github.com/maomada/KubeAtlas/internal/config"
 )
 
-// bootEphemeral starts a temporary in-process Radar for one investigation:
+// bootEphemeral starts a temporary in-process KubeAtlas for one investigation:
 // headless, random port, no ~/.kubeatlas/mcp-port claim (a real instance may own
 // it), timeline in memory — but the SHARED ai-runs history, so a cold run's
-// transcript still shows up in the UI later. Radar's boot logging is captured
+// transcript still shows up in the UI later. KubeAtlas's boot logging is captured
 // to a tail buffer and surfaced only on failure; the terminal shows a single
 // connecting spinner instead.
 func bootEphemeral(kubeconfig string) (base string, shutdown func(), err error) {
@@ -89,7 +89,7 @@ func bootEphemeral(kubeconfig string) (base string, shutdown func(), err error) 
 	select {
 	case <-ready:
 	case <-time.After(15 * time.Second):
-		return "", nil, fmt.Errorf("temporary Radar didn't start listening\n%s", tail.String())
+		return "", nil, fmt.Errorf("temporary KubeAtlas didn't start listening\n%s", tail.String())
 	}
 	base = "http://" + srv.ActualAddr()
 
@@ -114,7 +114,7 @@ func bootEphemeral(kubeconfig string) (base string, shutdown func(), err error) 
 		}
 		if time.Now().After(deadline) {
 			close(stopSpin)
-			return "", nil, fmt.Errorf("couldn't connect to the cluster\n--- radar log tail ---\n%s", tail.String())
+			return "", nil, fmt.Errorf("couldn't connect to the cluster\n--- kubeatlas log tail ---\n%s", tail.String())
 		}
 		time.Sleep(500 * time.Millisecond)
 	}
@@ -123,7 +123,7 @@ func bootEphemeral(kubeconfig string) (base string, shutdown func(), err error) 
 	return base, func() { app.Shutdown(srv) }, nil
 }
 
-// bootSpinner is the pre-run wait line ("starting a temporary Radar —
+// bootSpinner is the pre-run wait line ("starting a temporary KubeAtlas —
 // connecting to cluster… 12s") on stderr; the renderer's own spinner takes
 // over once the investigation streams.
 func bootSpinner(stop <-chan struct{}) {
@@ -140,7 +140,7 @@ func bootSpinner(stop <-chan struct{}) {
 			fmt.Fprint(os.Stderr, clearLine)
 			return
 		case <-t.C:
-			fmt.Fprintf(os.Stderr, "%s%s%s starting a temporary Radar — connecting to cluster… %ds%s",
+			fmt.Fprintf(os.Stderr, "%s%s%s starting a temporary KubeAtlas — connecting to cluster… %ds%s",
 				clearLine, cAmber+spinnerFrames[frame%len(spinnerFrames)]+cReset, cDim,
 				int(time.Since(start).Seconds()), cReset)
 			frame++
@@ -173,7 +173,7 @@ func (t *tailBuffer) String() string {
 }
 
 // probeListening reports whether anything answers on the discovered base —
-// used to distinguish "stale port file" from "no Radar at all".
+// used to distinguish "stale port file" from "no KubeAtlas at all".
 func probeListening(base string) bool {
 	// Dial the authority only. The base carries the server's --base-path when it
 	// has one, and a path suffix is not a valid dial address — leaving it in makes

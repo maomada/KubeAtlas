@@ -54,7 +54,7 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: ClusterAnalysisTemplate
 metadata:
-  name: radar-demo-smoke-test
+  name: kubeatlas-demo-smoke-test
 spec:
   metrics:
     - name: smoke-test

@@ -73,7 +73,7 @@ type PolicyResourceResponse struct {
 	Evaluated  bool   `json:"evaluated"`
 	Status     string `json:"status"`
 	ReasonCode string `json:"reasonCode,omitempty"`
-	// DeniedGroups are report families RADAR's own probe could not read, so the
+	// DeniedGroups are report families KUBEATLAS's own probe could not read, so the
 	// index never carried them for anyone. Distinct from WithheldByFamily, which
 	// is what THIS caller may not see. Present even on a `ready` status: the
 	// index is real but incomplete.
@@ -277,7 +277,7 @@ type PolicyCoverageResponse struct {
 	// subject has no namespace to name.
 	WithheldClusterScoped bool `json:"withheldClusterScoped,omitempty"`
 	// UnreadableFamilies are report families the CALLER cannot read, distinct from
-	// DeniedGroups, which are the ones radar's own probe could not read. Their
+	// DeniedGroups, which are the ones kubeatlas's own probe could not read. Their
 	// results are dropped rather than merged, so naming the families is what
 	// turns a smaller number into an explained one.
 	UnreadableFamilies []string `json:"unreadableFamilies,omitempty"`
@@ -499,7 +499,7 @@ func (s *Server) handlePolicyCoverage(w http.ResponseWriter, r *http.Request) {
 
 	sort.Strings(ruleOrder)
 	// Reported per caller, from what was actually withheld — not from what
-	// radar's own probe could reach. A family the caller cannot read but which
+	// kubeatlas's own probe could reach. A family the caller cannot read but which
 	// carried nothing they asked for is not worth mentioning.
 	for _, f := range k8s.PolicyReportFamilies {
 		if unreadable[f.Group] {
@@ -700,7 +700,7 @@ func (s *Server) handlePolicyQueued(w http.ResponseWriter, r *http.Request) {
 		s.writeError(w, http.StatusServiceUnavailable, "queued work is still loading")
 		return
 	default:
-		// Anything else — Radar's own SA denied the kind, discovery not ready,
+		// Anything else — KubeAtlas's own SA denied the kind, discovery not ready,
 		// transient — is a failure to look, and reporting it as an empty queue
 		// is the "absence from a failed lookup" this surface exists to avoid.
 		log.Printf("[policy] Failed to list UpdateRequests for %s: %v", sanitizeForLog(policy), err)

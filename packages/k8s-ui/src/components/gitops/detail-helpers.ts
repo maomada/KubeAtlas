@@ -4,9 +4,9 @@ import { formatCompactAge } from '../../utils/format'
 import { apiVersionToGroup } from '../../utils/navigation'
 
 // =============================================================================
-// Shared helpers used by both per-cluster Radar's GitOps detail view (OSS
-// web/src/components/gitops/GitOpsView.tsx) and Radar Hub's fleet GitOps
-// detail page (radar-hub-web/src/pages/fleet/GitOpsDetailPage.tsx). Lives
+// Shared helpers used by both per-cluster KubeAtlas's GitOps detail view (OSS
+// web/src/components/gitops/GitOpsView.tsx) and KubeAtlas Hub's fleet GitOps
+// detail page (kubeatlas-hub-web/src/pages/fleet/GitOpsDetailPage.tsx). Lives
 // here so the two surfaces can't drift on what "in-cluster" means, how
 // rollback ids parse, or how terminating tooltips read.
 // =============================================================================

@@ -9,7 +9,7 @@ import (
 )
 
 // ContextRef identifies a kubeconfig context precisely enough to survive a
-// restart: the name Radar displays, plus the file it came from and the name it
+// restart: the name KubeAtlas displays, plus the file it came from and the name it
 // carries inside that file.
 //
 // The name alone is ambiguous once more than one kubeconfig is loaded. Two
@@ -18,7 +18,7 @@ import (
 // adding a file can silently reassign the name to a different cluster. A
 // caller persisting a context across restarts must carry the file too.
 //
-// SourceFile + InFileName are the identity; Name is the label Radar shows. A
+// SourceFile + InFileName are the identity; Name is the label KubeAtlas shows. A
 // ref carrying only a Name resolves to nothing, because a name is exactly the
 // thing another file can take over.
 type ContextRef struct {
@@ -32,7 +32,7 @@ func (r ContextRef) Empty() bool {
 	return r.SourceFile == "" || r.InFileName == ""
 }
 
-// ContextSourceFor returns the full reference for a context Radar currently
+// ContextSourceFor returns the full reference for a context KubeAtlas currently
 // knows, so callers persisting it can record where it came from. Outside the
 // registry there is only one kubeconfig loaded, and it is the only place the
 // active context can have come from.
@@ -67,7 +67,7 @@ func ContextForSafetyBinding(binding string) ContextRef {
 	return ContextRef{}
 }
 
-// ContextReferenceKnownMissing reports whether Radar successfully loaded the
+// ContextReferenceKnownMissing reports whether KubeAtlas successfully loaded the
 // recorded kubeconfig file and that file no longer defines the recorded
 // context. A false result is intentionally inconclusive: the file may only be
 // temporarily unavailable or outside this run's configured kubeconfig set.
@@ -101,7 +101,7 @@ func ContextReferenceKnownMissing(ref ContextRef) bool {
 	return !exists
 }
 
-// IsEphemeralContext reports whether a context lives in a temp kubeconfig Radar
+// IsEphemeralContext reports whether a context lives in a temp kubeconfig KubeAtlas
 // wrote itself for a CAPI workload cluster. That file is gone on the next run,
 // so callers that persist a context across restarts must skip those.
 func IsEphemeralContext(name string) bool {
@@ -144,7 +144,7 @@ func applyContextPreference(path string, preferred ContextRef, overrides *client
 	overrides.CurrentContext = preferred.InFileName
 }
 
-// reportContextPreferenceMiss explains why Radar did not come up where the last
+// reportContextPreferenceMiss explains why KubeAtlas did not come up where the last
 // session left it. Falling back to current-context is the safe answer — the
 // name alone is what another kubeconfig can take over — but a silent redirect
 // leaves the user staring at a cluster they didn't pick, so it goes to the

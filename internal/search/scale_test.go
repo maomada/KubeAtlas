@@ -218,7 +218,7 @@ func TestSearchClusterWideCacheStopsBetweenNamespaces(t *testing.T) {
 		dynamic:   &k8s.DynamicResourceCache{DynamicResourceCache: dc},
 		discovery: &k8s.ResourceDiscovery{ResourceDiscovery: discovery},
 	}}}
-	// A cache stopped mid-search belongs to a connection Radar left: the
+	// A cache stopped mid-search belongs to a connection KubeAtlas left: the
 	// search fails rather than answering with part of it.
 	_, err = Search(t.Context(), p, Parse("kind:Widget robusta"), Options{Selection: readscope.Selection{Namespaces: []string{"a", "b"}}, Include: IncludeNone})
 	if !errors.Is(err, ErrConnectionChanged) {
@@ -251,7 +251,7 @@ func TestSearchClusterWideProbeGapRemainsNamespaceSpecific(t *testing.T) {
 func TestCoverageNamespaceDeduplicationPreservesSort(t *testing.T) {
 	c := newCoverage(Parse("ns:z ns:a"))
 	for range 5000 {
-		c.namespaces(readreason.RadarNamespaceNotCollected, "z", "a", "ambient")
+		c.namespaces(readreason.KubeAtlasNamespaceNotCollected, "z", "a", "ambient")
 	}
 	got := c.result()
 	if len(got) != 1 || got[0].Namespaces == nil || got[0].Namespaces.Count != 2 || got[0].Namespaces.Names[0] != "a" || got[0].Namespaces.Names[1] != "z" {

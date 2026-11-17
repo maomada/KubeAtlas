@@ -99,7 +99,7 @@ type CarettaSource struct {
 	boundIsCarettaStore bool   // bound backend is Caretta's own store, trusted on identity
 	backendWarning      string // why no backend could be bound, surfaced to the UI
 	closed              bool   // set by Close; a late Connect must not resurrect the source
-	// inCluster records how Radar reaches the cluster, captured once at
+	// inCluster records how KubeAtlas reaches the cluster, captured once at
 	// construction from the same detection the connection context reports as
 	// "in-cluster". It flips discovery's cost model: in-cluster a Service address
 	// resolves and answers in single-digit ms but pods/portforward is normally
@@ -359,7 +359,7 @@ func (c *CarettaSource) GetFlows(ctx context.Context, opts FlowOptions) (*FlowsR
 				target = fmt.Sprintf("%s/%s", ns, svc)
 			}
 			response.Warning = fmt.Sprintf("Connected to %s, which holds no Caretta metrics. "+
-				"Point Radar at Caretta's own metrics store (caretta-vm) with --prometheus-url, "+
+				"Point KubeAtlas at Caretta's own metrics store (caretta-vm) with --prometheus-url, "+
 				"or reinstall Caretta with its bundled VictoriaMetrics.", target)
 		}
 	}
@@ -764,7 +764,7 @@ func noBackendWarning(noData, unreachable []string) string {
 	switch {
 	case len(noData) > 0:
 		return fmt.Sprintf("Connected to %s, which holds no Caretta metrics. Caretta's own metrics store (caretta-vm) was not found — "+
-			"reinstall Caretta with its bundled VictoriaMetrics, or point Radar at the backend holding Caretta data with --prometheus-url.",
+			"reinstall Caretta with its bundled VictoriaMetrics, or point KubeAtlas at the backend holding Caretta data with --prometheus-url.",
 			strings.Join(noData, ", "))
 	case len(unreachable) > 0:
 		return fmt.Sprintf("Found %s but could not reach it. Check that the service is running and its pods are ready.",

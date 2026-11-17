@@ -74,7 +74,7 @@ export function StoryWithSignals() {
           summary: 'checkout-api is healthy — the restarts you saw were a one-off node drain this morning.',
           certainty: 'established',
           rootCause: '',
-          report: 'All replicas are Ready. [[radar:evidence=1]]',
+          report: 'All replicas are Ready. [[kubeatlas:evidence=1]]',
           remediation: [],
         }}
         healthSignals={[

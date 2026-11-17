@@ -18,9 +18,9 @@ import (
 func enrollFlags() cloudStartupFlags {
 	return cloudStartupFlags{
 		HubURL:            "https://hub.example.com/",
-		EnrollmentKeyFile: "/etc/radar/enrollment/key",
-		PodNamespace:      "radar",
-		HelmRelease:       "radar",
+		EnrollmentKeyFile: "/etc/kubeatlas/enrollment/key",
+		PodNamespace:      "kubeatlas",
+		HelmRelease:       "kubeatlas",
 	}
 }
 
@@ -90,10 +90,10 @@ func TestResolveCloudStartup(t *testing.T) {
 
 func enrolledDeployment() *appsv1.Deployment {
 	return &appsv1.Deployment{
-		ObjectMeta: metav1.ObjectMeta{Name: "radar", Namespace: "radar"},
+		ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas", Namespace: "kubeatlas"},
 		Spec: appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
-			Name: "radar",
-			Args: []string{"--cloud-hub-url=https://hub.example.com", "--cloud-enrollment-key-file=/etc/radar/enrollment/key"},
+			Name: "kubeatlas",
+			Args: []string{"--cloud-hub-url=https://hub.example.com", "--cloud-enrollment-key-file=/etc/kubeatlas/enrollment/key"},
 			Env:  []corev1.EnvVar{{Name: "KUBEATLAS_CLOUD_MODE", Value: "true"}},
 		}}}}},
 	}
@@ -102,10 +102,10 @@ func enrolledDeployment() *appsv1.Deployment {
 func TestDiscoveryAcceptsEnrollmentOnlyConfig(t *testing.T) {
 	kc := fake.NewClientset(func() *appsv1.Deployment {
 		d := enrolledDeployment()
-		d.Labels = map[string]string{"helm.sh/chart": "radar-1.19.0", "app.kubernetes.io/instance": "radar"}
+		d.Labels = map[string]string{"helm.sh/chart": "kubeatlas-1.19.0", "app.kubernetes.io/instance": "kubeatlas"}
 		return d
 	}())
-	result, err := cloudinstall.DiscoverRadarTargets(context.Background(), kc, nil, cloudinstall.DiscoveryOptions{Namespace: "radar", ReleaseName: "radar"})
+	result, err := cloudinstall.DiscoverKubeAtlasTargets(context.Background(), kc, nil, cloudinstall.DiscoveryOptions{Namespace: "kubeatlas", ReleaseName: "kubeatlas"})
 	if err != nil || len(result.Selected) != 1 {
 		t.Fatalf("discovery: %+v %v", result, err)
 	}
@@ -119,7 +119,7 @@ func TestDiscoveryAcceptsEnrollmentOnlyConfig(t *testing.T) {
 }
 
 func TestEnrolledStatusPointsAtTheLog(t *testing.T) {
-	target := cloudinstall.RadarTarget{Namespace: "edge-ns", DeploymentName: "edge-radar"}
+	target := cloudinstall.KubeAtlasTarget{Namespace: "edge-ns", DeploymentName: "edge-kubeatlas"}
 	target.Runtime = cloudinstall.DeploymentRuntime{
 		AlreadyCloud: true, EnrollmentConfigured: true,
 		CloudModeConfigured: true, CloudMode: true, HubURLConfigured: true, HubURL: "https://hub.example.com",
@@ -127,7 +127,7 @@ func TestEnrolledStatusPointsAtTheLog(t *testing.T) {
 	}
 	kc := fake.NewClientset()
 	res := checkHubTunnelStatus(context.Background(), kc, target)
-	if res.verdict != hubTunnelUnavailable || !strings.Contains(res.summary, "joins the Hub with an enrollment key") || !strings.HasSuffix(res.next, "kubectl -n edge-ns logs deploy/edge-radar") {
+	if res.verdict != hubTunnelUnavailable || !strings.Contains(res.summary, "joins the Hub with an enrollment key") || !strings.HasSuffix(res.next, "kubectl -n edge-ns logs deploy/edge-kubeatlas") {
 		t.Fatalf("result = %+v", res)
 	}
 	if len(kc.Actions()) != 0 {

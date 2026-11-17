@@ -89,7 +89,7 @@ type Client struct {
 	chartPathLocator  func(*action.Configuration, string, string) (string, error)
 	repositoryNetwork *helmRepositoryNetwork
 	// restConfig, when set, is the explicit rest.Config all actions target —
-	// used by callers that resolve the cluster themselves before Radar's k8s
+	// used by callers that resolve the cluster themselves before KubeAtlas's k8s
 	// singleton is up (the CLI install driver), so Helm can't diverge onto a
 	// different kubeconfig current-context than the caller's own client.
 	restConfig *rest.Config
@@ -161,7 +161,7 @@ func Initialize(kubeconfig string) error {
 
 // InitializeWithRESTConfig sets up the global Helm client to operate against an
 // explicit rest.Config. Used by the CLI install driver, which resolves the
-// target cluster itself (before Radar's k8s singleton is initialized) — this
+// target cluster itself (before KubeAtlas's k8s singleton is initialized) — this
 // guarantees Helm targets the SAME cluster the caller's kube client does, rather
 // than falling through to a possibly-divergent kubeconfig current-context.
 func InitializeWithRESTConfig(restCfg *rest.Config) error {
@@ -224,7 +224,7 @@ func (c *Client) getActionConfigForUser(namespace string, user *pkgauth.User) (*
 // buildActionConfig is the shared init path for both anonymous and
 // impersonated action configurations. When kubeconfig is empty (running
 // in-cluster) we hand Helm an in-cluster RESTClientGetter built from the
-// rest.Config the rest of Radar already uses — Helm's default
+// rest.Config the rest of KubeAtlas already uses — Helm's default
 // ConfigFlags only resolves kubeconfig and would otherwise fall through
 // to localhost:8080 inside a pod with no ~/.kube/config.
 func (c *Client) buildActionConfig(namespace string, user *pkgauth.User) (*action.Configuration, error) {
@@ -286,7 +286,7 @@ type restClientGetterParams struct {
 //   - kubeconfig path is set: hand Helm a ConfigFlags pointing at that
 //     single file. This is the dominant OSS path (kubectl plugin /
 //     standalone binary on a laptop with ~/.kube/config).
-//   - kubeconfig path is empty: hand Helm the rest.Config Radar already
+//   - kubeconfig path is empty: hand Helm the rest.Config KubeAtlas already
 //     resolved at boot. Fires for in-cluster deploys (Hub mode, OSS
 //     Helm-chart deploy — no ~/.kube/config in the pod) and for
 //     multi-source kubeconfig modes (--kubeconfig-dir / multi-path
@@ -1549,7 +1549,7 @@ type helmReleaseStorageSnapshot struct {
 }
 
 // storageClient reads Helm release Secrets on the same cluster as c's action
-// configurations: the explicit rest.Config when c has one, else Radar's
+// configurations: the explicit rest.Config when c has one, else KubeAtlas's
 // current cluster.
 func (c *Client) storageClient(user *pkgauth.User) (kubernetes.Interface, error) {
 	c.mu.RLock()
@@ -1585,7 +1585,7 @@ func (c *Client) storageClient(user *pkgauth.User) (kubernetes.Interface, error)
 // helmReleaseStorageSnapshotWithClient reads every Helm release Secret in
 // namespace ("" for all). The list carries each revision's full encoded
 // release, so on clusters with many or large releases it is the slowest read
-// Radar makes; ctx bounds both the read and the decoding.
+// KubeAtlas makes; ctx bounds both the read and the decoding.
 func helmReleaseStorageSnapshotWithClient(ctx context.Context, client kubernetes.Interface, namespace string) (*helmReleaseStorageSnapshot, error) {
 	secrets, err := client.CoreV1().Secrets(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "owner=helm",
@@ -2539,7 +2539,7 @@ func (c *Client) upgradeWith(actionConfig *action.Configuration, name, targetVer
 		return err
 	}
 
-	// Create upgrade action — don't use Wait=true because Radar already
+	// Create upgrade action — don't use Wait=true because KubeAtlas already
 	// shows real-time resource status via SSE. Waiting blocks the dialog
 	// for minutes with zero feedback; users can monitor the rollout in the UI.
 	if err := useReleaseTargetNamespace(actionConfig, name); err != nil {
@@ -2655,7 +2655,7 @@ func (c *Client) chartForUpgradeTargetWithLoader(actionConfig *action.Configurat
 			return nil, err
 		}
 		if reconstructingStoredChart {
-			return nil, fmt.Errorf("cannot edit values for this release: Radar could not rebuild the full chart. This release has subcharts, and Helm does not store their contents, so Radar has to fetch %s version %s again - and no configured Helm repository has it. Add the repository this release was installed from, then try again. Applying without the subcharts would delete the resources they created: %w", rel.Chart.Metadata.Name, targetVersion, err)
+			return nil, fmt.Errorf("cannot edit values for this release: KubeAtlas could not rebuild the full chart. This release has subcharts, and Helm does not store their contents, so KubeAtlas has to fetch %s version %s again - and no configured Helm repository has it. Add the repository this release was installed from, then try again. Applying without the subcharts would delete the resources they created: %w", rel.Chart.Metadata.Name, targetVersion, err)
 		}
 		return nil, err
 	}
@@ -2664,7 +2664,7 @@ func (c *Client) chartForUpgradeTargetWithLoader(actionConfig *action.Configurat
 	}
 	if reconstructingStoredChart {
 		if err := storedChartMatchesReconstructed(rel.Chart, loaded); err != nil {
-			return nil, fmt.Errorf("cannot edit values for this release: Radar found %s version %s in a configured Helm repository, but that copy does not match the chart this release was installed from, so applying it could replace your release with a different chart. Add the repository this release came from so Radar can pick the right one: %w", rel.Chart.Metadata.Name, targetVersion, err)
+			return nil, fmt.Errorf("cannot edit values for this release: KubeAtlas found %s version %s in a configured Helm repository, but that copy does not match the chart this release was installed from, so applying it could replace your release with a different chart. Add the repository this release came from so KubeAtlas can pick the right one: %w", rel.Chart.Metadata.Name, targetVersion, err)
 		}
 	}
 	return loaded, nil
@@ -2875,7 +2875,7 @@ func resolveOCIChartURL(source, chartName string) (string, error) {
 }
 
 // locateChartPath resolves one exact chart version. OCI pulls require a
-// registry client explicitly; Radar builds it from Helm's existing registry
+// registry client explicitly; KubeAtlas builds it from Helm's existing registry
 // credential store and never changes the configured OCI source inventory.
 func (c *Client) locateChartPath(actionConfig *action.Configuration, chartURL, version string) (string, error) {
 	if registry.IsOCI(chartURL) && version == "latest" {
@@ -3110,7 +3110,7 @@ func (c *Client) applyValuesWith(actionConfig *action.Configuration, name string
 		return err
 	}
 
-	// Create upgrade action — no Wait, Radar shows resource status in real-time
+	// Create upgrade action — no Wait, KubeAtlas shows resource status in real-time
 	if err := useReleaseTargetNamespace(actionConfig, name); err != nil {
 		return err
 	}
@@ -3200,7 +3200,7 @@ func (c *Client) UpdateRepository(repoName string) error {
 	if err := os.MkdirAll(c.settings.RepositoryCache, 0o755); err != nil {
 		return fmt.Errorf("prepare repository cache: %w", err)
 	}
-	stageDir, err := os.MkdirTemp(c.settings.RepositoryCache, ".radar-repository-")
+	stageDir, err := os.MkdirTemp(c.settings.RepositoryCache, ".kubeatlas-repository-")
 	if err != nil {
 		return fmt.Errorf("stage repository index: %w", err)
 	}
@@ -3902,7 +3902,7 @@ func (c *Client) installWithProgressUsing(actionConfig *action.Configuration, re
 
 // installedHelmRelease converts the immediate result of an install action.
 // Unlike toHelmRelease (the list/detail path), it deliberately does not query
-// Radar's informer cache for post-install resource health.
+// KubeAtlas's informer cache for post-install resource health.
 func installedHelmRelease(rel *release.Release) *HelmRelease {
 	return &HelmRelease{
 		Name: rel.Name, Namespace: rel.Namespace,

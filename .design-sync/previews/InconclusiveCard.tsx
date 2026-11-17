@@ -30,7 +30,7 @@ export function StoryWithBlockers() {
           summary: 'Couldn’t tell why checkout-api exits with code 1 — the container prints nothing before it dies.',
           certainty: 'suspected',
           rootCause: '',
-          report: 'The container exits with code 1 ~3s after start. [[radar:evidence=1]]',
+          report: 'The container exits with code 1 ~3s after start. [[kubeatlas:evidence=1]]',
           unresolved: [
             'The entrypoint writes no output before exiting, so logs cannot distinguish a config error from a crash.',
             'Whether the `payments-db` Secret rotated at 09:40 — Secret contents are not readable with the current role.',

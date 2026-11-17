@@ -17,7 +17,7 @@ import (
 
 // Per-issue change correlation answers the first triage question — "did
 // anything change on THIS subject recently, or has it always been like
-// this?" — as deterministic per-issue facts. Radar makes no judgment call:
+// this?" — as deterministic per-issue facts. KubeAtlas makes no judgment call:
 // no demotion, no reordering, no causal claim. A chronic pre-existing issue
 // truthfully carries no_recent_changes; an incident workload carries the
 // correlated change refs; the consumer weighs them.
@@ -165,7 +165,7 @@ func correlateIssue(ctx context.Context, iss *issuesapi.Issue, window time.Durat
 	iss.CorrelatedChangesIncomplete = result.FetchSaturated
 }
 
-// correlationHistoryComplete reports whether Radar holds the whole window's
+// correlationHistoryComplete reports whether KubeAtlas holds the whole window's
 // history for the correlated objects: either the store covers the window, or
 // every object was created after the point where its history becomes
 // complete, so nothing about it can have been evicted. Only a cached workload

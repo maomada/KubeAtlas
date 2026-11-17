@@ -19,7 +19,7 @@ import (
 )
 
 // --disable-local-terminal must refuse the endpoint, not merely hide it from
-// the advertised capabilities: the handler runs a shell on the Radar host, so
+// the advertised capabilities: the handler runs a shell on the KubeAtlas host, so
 // an operator who turns it off must actually lose the route.
 func TestLocalTerminalDisabledRejectsRequest(t *testing.T) {
 	previousForceDisableLocalTerminal := k8s.ForceDisableLocalTerminal
@@ -102,7 +102,7 @@ func TestLocalTerminalAuthenticatedTunnelRejectsRequest(t *testing.T) {
 	if w.Code != http.StatusForbidden {
 		t.Errorf("status = %d, want %d", w.Code, http.StatusForbidden)
 	}
-	if got, want := w.Body.String(), "{\"error\":\"local terminal is unavailable over the Radar Hub tunnel\"}\n"; got != want {
+	if got, want := w.Body.String(), "{\"error\":\"local terminal is unavailable over the KubeAtlas Hub tunnel\"}\n"; got != want {
 		t.Errorf("body = %q, want %q", got, want)
 	}
 }
@@ -236,9 +236,9 @@ func TestCapabilitiesAdvertiseLocalTerminalAvailability(t *testing.T) {
 		tunnel bool
 		want   bool
 	}{
-		{name: "authenticated deployment", server: Server{listenAddress: DefaultListenAddress, authConfig: auth.Config{Mode: "proxy"}}, host: "radar.example.com", want: false},
+		{name: "authenticated deployment", server: Server{listenAddress: DefaultListenAddress, authConfig: auth.Config{Mode: "proxy"}}, host: "kubeatlas.example.com", want: false},
 		{name: "shared listener", server: Server{listenAddress: AllInterfacesAddress}, host: "localhost:9280", want: false},
-		{name: "non-loopback request host", server: Server{listenAddress: DefaultListenAddress}, host: "radar.example.com", want: false},
+		{name: "non-loopback request host", server: Server{listenAddress: DefaultListenAddress}, host: "kubeatlas.example.com", want: false},
 		{name: "authenticated tunnel", server: Server{listenAddress: DefaultListenAddress}, host: "localhost:9280", tunnel: true, want: false},
 		{name: "supported loopback deployment", server: Server{listenAddress: DefaultListenAddress}, host: "localhost:9280", want: true},
 	}

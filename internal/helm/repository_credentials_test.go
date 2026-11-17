@@ -43,7 +43,7 @@ func TestRepositoryRedirectCredentials(t *testing.T) {
 					t.Fatal(err)
 				}
 				var seen atomic.Bool
-				index := fmt.Sprintf("apiVersion: v1\nentries:\n  radar:\n  - apiVersion: v2\n    name: radar\n    version: 1.0.0\n    urls: [chart.tgz]\n    digest: %x\n", sha256.Sum256(archive))
+				index := fmt.Sprintf("apiVersion: v1\nentries:\n  kubeatlas:\n  - apiVersion: v2\n    name: kubeatlas\n    version: 1.0.0\n    urls: [chart.tgz]\n    digest: %x\n", sha256.Sum256(archive))
 				target := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 					seen.Store(r.Header.Get("Authorization") != "")
 					if consumer != "refresh" && consumer != "add" {
@@ -72,7 +72,7 @@ func TestRepositoryRedirectCredentials(t *testing.T) {
 				}
 				switch consumer {
 				case "source":
-					_, _, err = c.loadSourceChart(nil, ChartSourceCandidate{Type: "repository", Reference: "probe", URL: origin.URL}, "radar", "1.0.0")
+					_, _, err = c.loadSourceChart(nil, ChartSourceCandidate{Type: "repository", Reference: "probe", URL: origin.URL}, "kubeatlas", "1.0.0")
 				case "refresh":
 					err = c.UpdateRepository("probe")
 				case "add":
@@ -82,14 +82,14 @@ func TestRepositoryRedirectCredentials(t *testing.T) {
 						t.Fatal(err)
 					}
 					cfg := memoryActionConfig(t)
-					req := &InstallRequest{ReleaseName: "credentials", Namespace: "default", Repository: "probe", ChartName: "radar", Version: "1.0.0"}
+					req := &InstallRequest{ReleaseName: "credentials", Namespace: "default", Repository: "probe", ChartName: "kubeatlas", Version: "1.0.0"}
 					switch consumer {
 					case "install":
 						_, err = c.installWith(cfg, req)
 					case "progress":
 						_, err = c.installWithProgressUsing(cfg, req, make(chan InstallProgress, 100))
 					case "detail":
-						_, err = c.GetChartDetail("probe", "radar", "1.0.0")
+						_, err = c.GetChartDetail("probe", "kubeatlas", "1.0.0")
 					case "prepared":
 						_, _, err = c.resolvePreparedChart(context.Background(), req, "0.1.0")
 					}
@@ -288,7 +288,7 @@ func TestRepositoryIndexOCIArchiveError(t *testing.T) {
 	}
 	c.chartPathLocator = func(*action.Configuration, string, string) (string, error) { return path, nil }
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprint(w, "apiVersion: v1\nentries:\n  radar:\n  - apiVersion: v2\n    name: radar\n    version: 1.0.0\n    urls: [oci://registry.example.test/charts/radar]\n")
+		fmt.Fprint(w, "apiVersion: v1\nentries:\n  kubeatlas:\n  - apiVersion: v2\n    name: kubeatlas\n    version: 1.0.0\n    urls: [oci://registry.example.test/charts/kubeatlas]\n")
 	}))
 	defer server.Close()
 	f := repo.NewFile()
@@ -299,15 +299,15 @@ func TestRepositoryIndexOCIArchiveError(t *testing.T) {
 	if err := c.UpdateRepository("probe"); err != nil {
 		t.Fatal(err)
 	}
-	req := &InstallRequest{ReleaseName: "proof", Namespace: "default", Repository: "probe", ChartName: "radar", Version: "1.0.0"}
+	req := &InstallRequest{ReleaseName: "proof", Namespace: "default", Repository: "probe", ChartName: "kubeatlas", Version: "1.0.0"}
 	if _, err := c.installWith(memoryActionConfig(t), req); err == nil {
 		t.Fatal("invalid OCI archive accepted")
 	}
-	detail, err := c.GetChartDetail("probe", "radar", "1.0.0")
+	detail, err := c.GetChartDetail("probe", "kubeatlas", "1.0.0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if detail.Name != "radar" || detail.Version != "1.0.0" {
+	if detail.Name != "kubeatlas" || detail.Version != "1.0.0" {
 		t.Fatalf("basic index detail changed: %+v", detail)
 	}
 }

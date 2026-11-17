@@ -104,28 +104,28 @@ func (s scanSession) ambiguous(gk resourceid.GroupKind) bool {
 	return ok
 }
 
-// heldReason says why Radar doesn't hold a kind's objects in namespace ("" for
-// the whole kind), or "" when it holds them. A namespace outside what Radar
+// heldReason says why KubeAtlas doesn't hold a kind's objects in namespace ("" for
+// the whole kind), or "" when it holds them. A namespace outside what KubeAtlas
 // collects stays unread for good, so that reason wins over loading.
 func heldReason(c Collection, namespaced bool, namespace string) readreason.Code {
 	switch c.State {
 	case NotCollected:
-		return readreason.RadarKindNotCollected
+		return readreason.KubeAtlasKindNotCollected
 	case Refused:
 		if !c.OnDemand {
-			// The typed cache knows only that Radar's access probe left the
+			// The typed cache knows only that KubeAtlas's access probe left the
 			// kind off, not why.
-			return readreason.RadarKindNotCollected
+			return readreason.KubeAtlasKindNotCollected
 		}
-		return readreason.RadarForbidden
+		return readreason.KubeAtlasForbidden
 	case Unwatchable:
 		return readreason.KindNotWatchable
 	}
 	if namespaced && namespace != "" && c.Namespaces != nil && !slices.Contains(c.Namespaces, namespace) {
 		if c.OnDemand {
-			return readreason.RadarKindNotCollected
+			return readreason.KubeAtlasKindNotCollected
 		}
-		return readreason.RadarNamespaceNotCollected
+		return readreason.KubeAtlasNamespaceNotCollected
 	}
 	if c.State == Loading {
 		return readreason.KindSyncPending
@@ -230,7 +230,7 @@ func (s scanSession) DependentCandidates(uid types.UID, scope ownership.SearchSc
 			all = true
 		case scope.AllNamespaces:
 			// Collected in some namespaces only: the rest are unread.
-			gap(k.gk, "", readreason.RadarNamespaceNotCollected)
+			gap(k.gk, "", readreason.KubeAtlasNamespaceNotCollected)
 			for _, ns := range c.Namespaces {
 				if reason := heldReason(c, true, ns); reason != "" {
 					gap(k.gk, ns, reason)
@@ -342,7 +342,7 @@ func (s scanSession) Membership(manager resourceid.Ref) ownership.MembersRead {
 }
 
 // nameable says why no manager can list ref, or "" when one can: a reference
-// must name an object of a kind whose scope Radar can tell, in that scope, or
+// must name an object of a kind whose scope KubeAtlas can tell, in that scope, or
 // of a custom kind complete discovery doesn't serve, matched as recorded. A
 // built-in kind's scope is its own, unless discovery serves the kind with the
 // other scope.
@@ -401,7 +401,7 @@ func (s scanSession) RecordingManagers(ref resourceid.Ref) ownership.RecordingMa
 			}
 			all = true
 		} else {
-			gap(gk, "", readreason.RadarNamespaceNotCollected)
+			gap(gk, "", readreason.KubeAtlasNamespaceNotCollected)
 			for _, ns := range c.Namespaces {
 				if reason := heldReason(c, true, ns); reason != "" {
 					gap(gk, ns, reason)

@@ -58,7 +58,7 @@ import (
 // namespace (namespace-scoped RBAC — see refLookupResult), the check is
 // silently skipped. This is the conservative path — better to under-report
 // than to false-positive every ref during cold-cache windows or on
-// namespace-restricted installs. The trade-off: a freshly-started radar
+// namespace-restricted installs. The trade-off: a freshly-started kubeatlas
 // may miss the SA-missing case until something else triggers the
 // ServiceAccount informer.
 //

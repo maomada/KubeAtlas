@@ -210,13 +210,13 @@ func collectorMapper(resources []ownership.ServedResource) meta.RESTMapper {
 }
 
 // Every spelling of an owner reference the API server admits must resolve as
-// the collector maps it, or be unknown where Radar can't tell: where its
+// the collector maps it, or be unknown where KubeAtlas can't tell: where its
 // RESTMapper maps nothing, the collector retries, so the owner is unknown;
 // where it maps a namespaced owner for a cluster-scoped object, the reference
 // is unresolvable; where it maps a resource no API serves, as for the List
-// kinds it makes up, Radar leaves the owner unknown; otherwise the owner is
+// kinds it makes up, KubeAtlas leaves the owner unknown; otherwise the owner is
 // the object of the mapped kind at the reference's name, judged by UID,
-// unless Radar can't read that kind.
+// unless KubeAtlas can't read that kind.
 func TestResolveOwnerMapsReferencesAsTheCollectorsRESTMapperDoes(t *testing.T) {
 	w := ownershiptest.Fixture()
 	s, _ := ownershiptest.Scan(w).Begin()
@@ -277,8 +277,8 @@ func TestResolveOwnerMapsReferencesAsTheCollectorsRESTMapperDoes(t *testing.T) {
 }
 
 // collectorResolves is what the collector's RESTMapper and a GET make of ref.
-// readable is false when Radar can't read the mapped kind, so an unknown
-// answer is honest. Radar also leaves unknown the List kinds the RESTMapper
+// readable is false when KubeAtlas can't read the mapped kind, so an unknown
+// answer is honest. KubeAtlas also leaves unknown the List kinds the RESTMapper
 // makes up, whose resources no API serves.
 func collectorResolves(t *testing.T, w ownershiptest.World, mapper meta.RESTMapper, kindOf map[schema.GroupResource]resourceid.GroupKind, dependent ownership.Observation, ref metav1.OwnerReference) (ownership.OwnerState, resourceid.Ref, bool) {
 	t.Helper()
@@ -319,7 +319,7 @@ func collectorResolves(t *testing.T, w ownershiptest.World, mapper meta.RESTMapp
 }
 
 // References the collector's RESTMapper settles by the order it registered
-// resources in, which Radar can't know, stay unknown rather than resolving to
+// resources in, which KubeAtlas can't know, stay unknown rather than resolving to
 // one candidate: a kind in lower case that two kinds differing only in case
 // share, a served kind that is another's lower-case spelling, and the List
 // kinds it makes up, one of which can name a served resource.

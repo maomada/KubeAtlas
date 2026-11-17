@@ -54,7 +54,7 @@ describe('FetchResult', () => {
     expect(html).toContain('Resource cache not available')
   })
 
-  // kind_sync_failed is how Radar releases before kind_sync_timed_out spelled it.
+  // kind_sync_failed is how KubeAtlas releases before kind_sync_timed_out spelled it.
   it.each(['kind_sync_timed_out', 'kind_sync_failed'])('does not blame the cluster for a %s 503', (code) => {
     const html = renderToString(
       <FetchResult
@@ -67,11 +67,11 @@ describe('FetchResult', () => {
     expect(html).toContain('pods failed to load within the sync deadline')
   })
 
-  it('blames Radar\'s collector, not the cluster, for a collector failure', () => {
+  it('blames KubeAtlas\'s collector, not the cluster, for a collector failure', () => {
     const html = renderToString(
-      <FetchResult loading={false} error={shaped('Radar is not allowed to list pods', 503, { error_code: 'radar_forbidden' })} />,
+      <FetchResult loading={false} error={shaped('KubeAtlas is not allowed to list pods', 503, { error_code: 'kubeatlas_forbidden' })} />,
     )
-    expect(html).toContain('Radar 无法读取')
+    expect(html).toContain('KubeAtlas 无法读取')
     expect(html).not.toContain('集群不可用')
   })
 
@@ -80,7 +80,7 @@ describe('FetchResult', () => {
       <FetchResult loading={false} error={shaped('Not connected to cluster', 503, { error_code: 'cluster_disconnected' })} />,
     )
     expect(html).toContain('集群不可用')
-    expect(html).not.toContain('Radar 无法读取')
+    expect(html).not.toContain('KubeAtlas 无法读取')
   })
 
   it('renders a 重试 button only when onRetry is given', () => {

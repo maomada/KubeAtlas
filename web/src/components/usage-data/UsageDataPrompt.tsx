@@ -86,7 +86,7 @@ export function UsageDataPrompt({ status }: { status: UsageDataStatus | undefine
 
   const readMore = () => {
     setDismissed(true)
-    window.dispatchEvent(new CustomEvent('radar:open-settings', { detail: { section: 'privacy' } }))
+    window.dispatchEvent(new CustomEvent('kubeatlas:open-settings', { detail: { section: 'privacy' } }))
   }
   const choose = (enabled: boolean) => setUsageData.mutate(enabled, { onSuccess: () => setAnswer(enabled) })
 

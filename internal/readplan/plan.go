@@ -1,4 +1,4 @@
-// Package readplan assesses what Radar's caches can answer for one kind and
+// Package readplan assesses what KubeAtlas's caches can answer for one kind and
 // target right now, and why the rest can't be read. It is shared by REST,
 // MCP and search so the same cache state gets the same verdict on every
 // surface. It reads cache state only: callers authorize, warm, read, validate
@@ -17,7 +17,7 @@ import (
 )
 
 // State is a namespace's verdict: Readable now, a Gap with a code, or
-// OutsideCollection (Radar doesn't collect the kind there; a named namespace
+// OutsideCollection (KubeAtlas doesn't collect the kind there; a named namespace
 // reports it, an implicit target narrows it away).
 type State uint8
 
@@ -28,7 +28,7 @@ const (
 )
 
 // Extent says which namespaces a partition covers: those listed, every
-// namespace, a cluster-scoped kind, or some Radar can't name.
+// namespace, a cluster-scoped kind, or some KubeAtlas can't name.
 type Extent uint8
 
 const (
@@ -54,7 +54,7 @@ type Partition struct {
 
 // Plan groups a target's namespaces by verdict; each namespace is in exactly
 // one partition. CollectionLimited marks an implicit all-namespace target that
-// Radar collects in only some namespaces. WholeKindReady is an execution hint
+// KubeAtlas collects in only some namespaces. WholeKindReady is an execution hint
 // for typed listers, not a coverage status. A plan is not a read receipt:
 // callers still check the source around the read.
 type Plan struct {
@@ -105,12 +105,12 @@ func Typed(cache *k8s.ResourceCache, permissions *k8s.PermissionCheckResult, res
 	extent := targetExtent(target, clusterScoped)
 	rejected := permissions.CredentialRejectedNamespaces(resource, target)
 	if a.Readiness == k8s.KindUnavailable {
-		code := readreason.RadarKindNotCollected
+		code := readreason.KubeAtlasKindNotCollected
 		if permissions != nil {
 			if len(rejected) > 0 || apierrors.IsUnauthorized(permissions.ProbeErrors[resource]) {
-				code = readreason.RadarCredentialsRejected
+				code = readreason.KubeAtlasCredentialsRejected
 			} else if scope, known := permissions.Scopes[resource]; known && !scope.Enabled {
-				code = readreason.RadarForbidden
+				code = readreason.KubeAtlasForbidden
 			}
 		}
 		p.add(extent, target, Gap, code)
@@ -139,8 +139,8 @@ func Typed(cache *k8s.ResourceCache, permissions *k8s.PermissionCheckResult, res
 	outside := slices.DeleteFunc(slices.Clone(a.Uncovered), func(ns string) bool { return rejections[ns] })
 	p.CollectionLimited = target == nil && !a.AllNamespaces
 	p.add(NamespaceSet, a.Read, Readable, "")
-	p.add(NamespaceSet, rejected, Gap, readreason.RadarCredentialsRejected)
-	p.add(NamespaceSet, outside, OutsideCollection, readreason.RadarNamespaceNotCollected)
+	p.add(NamespaceSet, rejected, Gap, readreason.KubeAtlasCredentialsRejected)
+	p.add(NamespaceSet, outside, OutsideCollection, readreason.KubeAtlasNamespaceNotCollected)
 	p.add(NamespaceSet, a.Loading, Gap, readreason.KindSyncPending)
 	p.add(NamespaceSet, a.Failed, Gap, readreason.KindSyncTimedOut)
 	return p
@@ -217,7 +217,7 @@ func dynamicVerdict(o k8score.DynamicResourceObservation, outside bool) (State, 
 	case o.ReasonCode == "cache_stopped":
 		return Gap, readreason.ConnectionChanged
 	case o.ReasonCode == "credentials_rejected":
-		return Gap, readreason.RadarCredentialsRejected
+		return Gap, readreason.KubeAtlasCredentialsRejected
 	case o.ProbeRetrying:
 		return Gap, readreason.KindSyncPending
 	case len(o.UnansweredNamespaces) > 0 || o.ReasonCode == "scope_probe_incomplete":
@@ -229,9 +229,9 @@ func dynamicVerdict(o k8score.DynamicResourceObservation, outside bool) (State, 
 	case o.State == k8score.DynamicObservationSyncing:
 		return Gap, readreason.KindSyncPending
 	case o.State == k8score.DynamicObservationDenied:
-		return Gap, readreason.RadarForbidden
+		return Gap, readreason.KubeAtlasForbidden
 	case outside:
-		return OutsideCollection, readreason.RadarNamespaceNotCollected
+		return OutsideCollection, readreason.KubeAtlasNamespaceNotCollected
 	case o.State == k8score.DynamicObservationUnsupported:
 		return Gap, readreason.KindNotWatchable
 	case o.ReasonCode == "eager_watch_pending":
@@ -239,6 +239,6 @@ func dynamicVerdict(o k8score.DynamicResourceObservation, outside bool) (State, 
 	case o.ReasonCode == "scope_probe_failed":
 		return Gap, readreason.ReadError
 	default:
-		return Gap, readreason.RadarKindNotCollected
+		return Gap, readreason.KubeAtlasKindNotCollected
 	}
 }

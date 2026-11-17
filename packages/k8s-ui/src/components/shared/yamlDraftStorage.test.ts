@@ -12,9 +12,9 @@ beforeEach(() => sessionStorage.clear())
 const resource = { group: 'apps', kind: 'Deployment', namespace: 'qa', name: 'agent' }
 
 it('uses legacy keys by default and scopes by group, kind, namespace, and name when requested', () => {
-  expect(yamlDraftStorageKey(undefined, resource)).toBe('radar_yaml_draft:Deployment/qa/agent')
+  expect(yamlDraftStorageKey(undefined, resource)).toBe('kubeatlas_yaml_draft:Deployment/qa/agent')
   expect(yamlDraftStorageKey('owner-a:cluster-a', resource)).toBe(
-    'radar_yaml_draft:scoped:owner-a%3Acluster-a:apps/Deployment/qa/agent',
+    'kubeatlas_yaml_draft:scoped:owner-a%3Acluster-a:apps/Deployment/qa/agent',
   )
   expect(yamlDraftStorageKey('scope', { ...resource, group: 'example.test' })).not.toBe(
     yamlDraftStorageKey('scope', resource),
@@ -22,12 +22,12 @@ it('uses legacy keys by default and scopes by group, kind, namespace, and name w
 })
 
 it('purges legacy and scoped drafts on Hub entry, preserving unrelated session state', () => {
-  sessionStorage.setItem('radar_yaml_draft:ConfigMap/qa/config', 'legacy')
+  sessionStorage.setItem('kubeatlas_yaml_draft:ConfigMap/qa/config', 'legacy')
   sessionStorage.setItem(yamlDraftStorageKey('owner-a:cluster-a', resource), 'owner-unsaved')
   sessionStorage.setItem('activeOrganizationId', 'org-a')
 
   expect(reconcileHubYamlDraftScope('authority-owner-a', 'cluster-a:/c/cluster-a/api')).toBe(true)
-  expect(sessionStorage.getItem('radar_yaml_draft:ConfigMap/qa/config')).toBeNull()
+  expect(sessionStorage.getItem('kubeatlas_yaml_draft:ConfigMap/qa/config')).toBeNull()
   expect(sessionStorage.getItem(yamlDraftStorageKey('owner-a:cluster-a', resource))).toBeNull()
   expect(sessionStorage.getItem('activeOrganizationId')).toBe('org-a')
   expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).toContain('authority-owner-a')
@@ -71,11 +71,11 @@ it('does not restore drafts after logout and same-authority relogin', () => {
 })
 
 it('removes only the YAML draft namespace', () => {
-  sessionStorage.setItem('radar_yaml_draft:legacy', 'draft')
+  sessionStorage.setItem('kubeatlas_yaml_draft:legacy', 'draft')
   sessionStorage.setItem(HUB_YAML_DRAFT_AUTHORITY_MARKER, 'marker')
   sessionStorage.setItem('unrelated', 'keep')
   expect(clearYamlDraftNamespace()).toBe(true)
-  expect(sessionStorage.getItem('radar_yaml_draft:legacy')).toBeNull()
+  expect(sessionStorage.getItem('kubeatlas_yaml_draft:legacy')).toBeNull()
   expect(sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)).toBeNull()
   expect(sessionStorage.getItem('unrelated')).toBe('keep')
 })

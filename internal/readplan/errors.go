@@ -18,9 +18,9 @@ func CollectorErrorCode(err error) (readreason.Code, bool) {
 	case errors.Is(err, k8score.ErrCollectionNotSupported):
 		return readreason.KindNotWatchable, true
 	case apierrors.IsUnauthorized(err):
-		return readreason.RadarCredentialsRejected, true
+		return readreason.KubeAtlasCredentialsRejected, true
 	case apierrors.IsForbidden(err):
-		return readreason.RadarForbidden, true
+		return readreason.KubeAtlasForbidden, true
 	case errors.Is(err, k8s.ErrUnknownDynamicKind):
 		return readreason.KindUnknown, true
 	case errors.Is(err, k8s.ErrDynamicNotReady):

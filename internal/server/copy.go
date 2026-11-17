@@ -366,7 +366,7 @@ func isDownloadablePath(cleaned string) bool {
 // has been written out. Kubernetes tears the exec output stream down when the
 // process exits and drops whatever the client has not drained yet, while still
 // reporting success — over a slow link that silently costs the tail of a large
-// file. Radar closes stdin only once it holds every byte, so the process
+// file. KubeAtlas closes stdin only once it holds every byte, so the process
 // outlives the transfer instead of racing it. The guard is armed only on
 // success: a command that failed has nothing worth waiting for, and waiting
 // would hang a caller that is still expecting the file.

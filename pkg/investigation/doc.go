@@ -1,10 +1,10 @@
-// Package investigation is the contract between Radar's AI investigation
+// Package investigation is the contract between KubeAtlas's AI investigation
 // agents and the Findings page: what the model is asked for, what it may
 // answer, how that answer is read, and how its citations are bound to the tool
-// results Radar recorded.
+// results KubeAtlas recorded.
 //
-// Two products drive an agent and render the same page. Radar OSS runs a
-// coding CLI on the user's machine; Radar Cloud runs the Claude Agent SDK in a
+// Two products drive an agent and render the same page. KubeAtlas OSS runs a
+// coding CLI on the user's machine; KubeAtlas Cloud runs the Claude Agent SDK in a
 // sandboxed Job. Each owns its run lifecycle, transport and store. What they
 // share is here, so a change to the prompt, the verdict shape, a cap or a
 // binding rule lands once and reaches both when they update this module.

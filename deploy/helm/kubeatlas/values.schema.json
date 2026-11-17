@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Radar Helm chart values",
-  "description": "Configuration schema for the Radar Helm chart.",
+  "title": "KubeAtlas Helm chart values",
+  "description": "Configuration schema for the KubeAtlas Helm chart.",
   "type": "object",
   "additionalProperties": true,
   "properties": {
@@ -24,7 +24,7 @@
     "replicaCount": {
       "type": "integer",
       "minimum": 1,
-      "description": "Number of Radar pod replicas. Note: backchannel logout requires single replica."
+      "description": "Number of KubeAtlas pod replicas. Note: backchannel logout requires single replica."
     },
     "image": {
       "type": "object",
@@ -67,7 +67,7 @@
         "podExec": { "type": "boolean", "description": "Allow pod exec (terminal feature)." },
         "podLogs": { "type": "boolean" },
         "portForward": { "type": "boolean" },
-        "selfUpgrade": { "type": "boolean", "description": "Allow Radar Cloud organization owners to trigger in-app upgrades." },
+        "selfUpgrade": { "type": "boolean", "description": "Allow KubeAtlas Cloud organization owners to trigger in-app upgrades." },
         "traffic": { "type": "boolean", "description": "Read access to hubble-relay-client-certs for Hubble TLS." },
         "metrics": { "type": "boolean", "description": "Read metrics.k8s.io for CPU/memory widgets." },
         "crdGroups": {
@@ -139,7 +139,7 @@
     "basePath": {
       "type": "string",
       "pattern": "^$|^/?[A-Za-z0-9._~-]*[A-Za-z0-9_~-][A-Za-z0-9._~-]*(/[A-Za-z0-9._~-]*[A-Za-z0-9_~-][A-Za-z0-9._~-]*)*/?$",
-      "description": "Optional URL path prefix served by Radar itself, e.g. /radar. Use when ingress forwards the subpath without stripping it. Path segments accept letters, digits, '-', '_', '.' and '~', and no segment may be '.' or '..' — matching the server's --base-path validation, so an invalid value fails at install time instead of crash-looping the pod."
+      "description": "Optional URL path prefix served by KubeAtlas itself, e.g. /kubeatlas. Use when ingress forwards the subpath without stripping it. Path segments accept letters, digits, '-', '_', '.' and '~', and no segment may be '.' or '..' — matching the server's --base-path validation, so an invalid value fails at install time instead of crash-looping the pod."
     },
     "allowedHosts": {
       "type": "array",
@@ -147,7 +147,7 @@
         "type": "string",
         "pattern": "^(\\*|(\\*\\.)?[^\\s/:@*,.][^\\s/:@*,]*)$"
       },
-      "description": "Hostnames besides localhost, IP addresses and Kubernetes Service names that Radar answers when auth.mode is none, e.g. radar.internal. Ingress and HTTPRoute hostnames are added automatically. Exact names, or *.example.com for names under a domain; \"*\" turns the check off."
+      "description": "Hostnames besides localhost, IP addresses and Kubernetes Service names that KubeAtlas answers when auth.mode is none, e.g. kubeatlas.internal. Ingress and HTTPRoute hostnames are added automatically. Exact names, or *.example.com for names under a domain; \"*\" turns the check off."
     },
     "trustedOrigins": {
       "type": "array",
@@ -155,7 +155,7 @@
         "type": "string",
         "pattern": "^https?://(\\[[0-9A-Fa-f:.]+\\]|[^/*?#@,:\\[\\]\\s]+)(:(6553[0-5]|655[0-2][0-9]|65[0-4][0-9]{2}|6[0-4][0-9]{3}|[1-5][0-9]{4}|[1-9][0-9]{0,3}))?/?$"
       },
-      "description": "Origins besides Radar's own address that may use Radar's API, including changes and pod terminals, e.g. http://radar.internal. Needed only when a proxy rewrites the Host header. Exact scheme://host[:port], no wildcards or paths. An entry the server cannot use is logged at startup and ignored."
+      "description": "Origins besides KubeAtlas's own address that may use KubeAtlas's API, including changes and pod terminals, e.g. http://kubeatlas.internal. Needed only when a proxy rewrites the Host header. Exact scheme://host[:port], no wildcards or paths. An entry the server cannot use is logged at startup and ignored."
     },
     "ingress": {
       "type": "object",

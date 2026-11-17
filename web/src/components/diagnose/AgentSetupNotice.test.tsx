@@ -47,7 +47,7 @@ describe("AgentSetupNotice", () => {
   });
 
   it("says nothing it can't know when an agent is reported but off", () => {
-    // Radar Hub reports a hosted agent that is supported but not enabled when
+    // KubeAtlas Hub reports a hosted agent that is supported but not enabled when
     // its own runner is down: no CLI, no startup output, no override.
     const html = render("needs-restart");
     expect(html).toContain("aren&#x27;t available right now");

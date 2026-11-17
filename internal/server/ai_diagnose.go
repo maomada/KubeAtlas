@@ -254,7 +254,7 @@ func mergeDetectedWithDrivable(detected, drivable []ai.AgentInfo) []ai.AgentInfo
 
 // handleDiagnoseConsent records the user's acknowledgment of the current
 // disclosure for an execution profile. Doesn't require a connected cluster — consent can be
-// given while Radar is still connecting.
+// given while KubeAtlas is still connecting.
 func (s *Server) handleDiagnoseConsent(w http.ResponseWriter, r *http.Request) {
 	if s.aiRunManager() == nil {
 		s.writeError(w, http.StatusNotImplemented, "AI investigations are not available")
@@ -279,7 +279,7 @@ func (s *Server) handleDiagnoseConsent(w http.ResponseWriter, r *http.Request) {
 }
 
 // aiReady gates every diagnose endpoint: the engine exists only in no-auth
-// standalone Radar with the investigation MCP mounted, once an agent CLI is found. Returns
+// standalone KubeAtlas with the investigation MCP mounted, once an agent CLI is found. Returns
 // the run manager, or false (having written the error) when unavailable.
 func (s *Server) aiReady(w http.ResponseWriter) (*ai.RunManager, bool) {
 	runs := s.aiRunManager()
@@ -344,7 +344,7 @@ func (s *Server) handleDiagnoseStart(w http.ResponseWriter, r *http.Request) {
 	requested := strings.TrimSpace(body.Agent)
 	agent := runs.AgentName(requested)
 	if agent == "" {
-		s.writeError(w, http.StatusNotImplemented, "the agent CLI Radar was using is no longer installed")
+		s.writeError(w, http.StatusNotImplemented, "the agent CLI KubeAtlas was using is no longer installed")
 		return
 	}
 	// A named agent that isn't installed fails rather than starting another one:
@@ -410,7 +410,7 @@ func (s *Server) handleDiagnoseList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// handleDiagnoseGet resolves one retained run by its stable id. Local Radar has
+// handleDiagnoseGet resolves one retained run by its stable id. Local KubeAtlas has
 // no sharing boundary—all callers are the same local user—but the direct route
 // keeps deep links independent of the bounded history list.
 func (s *Server) handleDiagnoseGet(w http.ResponseWriter, r *http.Request) {
@@ -471,7 +471,7 @@ func (s *Server) handleDiagnoseTurn(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if body.Apply && s.mcpReadOnly() {
-		s.writeError(w, http.StatusForbidden, "AI apply is unavailable in read-only MCP mode. Restart Radar with --mcp-read-only=false to enable MCP write tools.")
+		s.writeError(w, http.StatusForbidden, "AI apply is unavailable in read-only MCP mode. Restart KubeAtlas with --mcp-read-only=false to enable MCP write tools.")
 		return
 	}
 	if body.Verify && strings.TrimSpace(body.Question) == "" {

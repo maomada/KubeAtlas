@@ -1,8 +1,8 @@
-# Legacy upstream Radar Cloud default integration-read policy
+# Legacy legacy upstream cloud default integration-read policy
 
 This document retains an upstream compatibility policy for provenance only. KubeAtlas rejects Cloud enablement; following this policy does not enable a supported KubeAtlas Cloud mode.
 
-The legacy upstream Radar Cloud connector collects resources with its service account. A user's
+The legacy upstream cloud connector collects resources with its service account. A user's
 Kubernetes permissions are separate: the default tiers bind viewer/member/owner
 to `view`/`edit`/`admin`, which do not reliably include operator CRDs. Vendor role
 aggregation may cover some types on some clusters. Without an explicit baseline,
@@ -10,8 +10,8 @@ an integration can be collected successfully but denied in an authorized diagnos
 
 The chart adds two read-only ClusterRoles: `*-integration-read-namespaced` and
 `*-integration-read-cluster`. Both grant only `get/list/watch` on exact reviewed
-group/resource identities. Each enabled legacy upstream Radar Cloud tier gets its own bindings to
-`radar:<tier>` and the existing compatibility group `cloud:<tier>`. Namespaced
+group/resource identities. Each enabled legacy upstream cloud tier gets its own bindings to
+`kubeatlas:<tier>` and the existing compatibility group `cloud:<tier>`. Namespaced
 resources are readable **across all namespaces** under the default bindings.
 The grants apply to any Kubernetes identity carrying those groups, not just to a
 particular UI or client.
@@ -91,7 +91,7 @@ add-on does not revoke those old grants. Member/owner write permissions are unch
 
 Enterprise customers who want only their own group bindings can set
 `cloud.defaultRbac.create=false`. The Hub can still forward IdP groups as
-`radar:idp:<group>`; bind these to Roles in the intended namespaces. Adding a
+`kubeatlas:idp:<group>`; bind these to Roles in the intended namespaces. Adding a
 namespace RoleBinding does not restrict an existing cluster-wide default binding,
 so disable the defaults first. Product organization roles and saved-investigation
 sharing are separate concerns; this chart change does not redefine them.
@@ -102,7 +102,7 @@ The baseline is default-on for enabled default tiers. Upgrading an installed cha
 therefore expands deliberate read access, including inline configuration. Missing
 `integrationRead` maps/keys on `helm upgrade --reuse-values` follow the declared
 default; explicit `false` is preserved. Review/set opt-outs before the upgrade.
-Upgrading only the binary or using legacy upstream Radar Cloud self-upgrade does not install these RBAC
+Upgrading only the binary or using legacy upstream cloud self-upgrade does not install these RBAC
 objects. No cluster configuration sync or automatic rollout is introduced.
 
 Test with `go test ./internal/k8s -run TestIntegrationRead`, chart lint/unittests,

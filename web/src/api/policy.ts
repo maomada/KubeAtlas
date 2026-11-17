@@ -7,9 +7,9 @@ import type {
   VeleroStoredBackupsResponse,
   VeleroRunMessagesResponse,
 } from '@maomada/k8s-ui'
-import { fetchJSON, useRadarFeature } from './client'
+import { fetchJSON, useKubeAtlasFeature } from './client'
 import { hasPolicyReports, useAPIResources } from './apiResources'
-import { isRadarFeatureUnsupported } from './radarFeatures'
+import { isKubeAtlasFeatureUnsupported } from './kubeatlasFeatures'
 
 const POLICY_NOT_INSTALLED: PolicyResourceResponse = {
   evaluated: false,
@@ -25,7 +25,7 @@ const POLICY_NOT_INSTALLED: PolicyResourceResponse = {
 // a short stale window keeps drawer navigation instant without going stale in a
 // way an operator would notice.
 export function usePolicyResource(kind: string, namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('policyResource')
+  const { guard, gatedKey } = useKubeAtlasFeature('policyResource')
   const { data: apiResources, isPending: discoveryPending } = useAPIResources()
   const query = useQuery<PolicyResourceResponse>({
     queryKey: ['policy', 'resource', kind, namespace, name, ...gatedKey],
@@ -46,7 +46,7 @@ export function usePolicyResource(kind: string, namespace: string, name: string,
   // upgrade there would promise a section that stays empty. Derived at render
   // so it follows discovery whenever /api-resources answers; until it does the
   // section stays loading rather than flashing a note it may withdraw.
-  if (isRadarFeatureUnsupported(query.error)) {
+  if (isKubeAtlasFeatureUnsupported(query.error)) {
     if (apiResources === undefined && discoveryPending) {
       return { ...query, error: null, isError: false, isLoading: true, isPending: true, status: 'pending' as const }
     }

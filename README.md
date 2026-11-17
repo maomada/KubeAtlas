@@ -3,7 +3,7 @@
 **The missing open-source Kubernetes UI.**
 <br>Single binary. No account required. Apache-2.0 licensed.
 
-This is an independently maintained KubeAtlas distribution derived from Radar.
+This is an independently maintained KubeAtlas distribution.
 See [NOTICE](NOTICE) for origin attribution and [LICENSE](LICENSE) for the
 Apache-2.0 terms. There is no official upstream affiliation, and KubeAtlas is
 not yet published.
@@ -373,7 +373,7 @@ Proactive best-practices scanner with 44 checks across security, reliability, an
 - Check-grouped remediation queue with search and category, severity, and framework filters; expand a check to see affected resources
 - Each finding includes description and remediation guidance, with inline hide actions for a check or category
 - Configurable: ignored namespaces (with wildcard patterns), disabled checks, persisted across sessions
-- Per-resource opt-out via the `radarhq.io/ignore-checks` annotation (comma-separated check IDs) — set on the resource a finding is attributed to, so the exclusion travels with the manifest instead of living in one operator's local settings
+- Per-resource opt-out via the `kubeatlas.io/ignore-checks` annotation (comma-separated check IDs) — set on the resource a finding is attributed to, so the exclusion travels with the manifest instead of living in one operator's local settings
 - Framework labels: NSA/CISA, CIS benchmarks
 - MCP tool (`get_cluster_audit`) for AI-assisted cluster analysis
 

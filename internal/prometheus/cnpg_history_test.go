@@ -369,7 +369,7 @@ func TestQueryCNPGFleetSlotsListsInactivePhysicalSlots(t *testing.T) {
 		for _, want := range []string{
 			`cnpg_pg_replication_slots_active{namespace="pg",pod=~"^(a|b|c|d)-[0-9]+$",cluster_id="x",slot_type="physical"}) == 0)`,
 			`cnpg_pg_replication_slots_pg_wal_lsn_diff{namespace="pg",pod=~"^(a|b|c|d)-[0-9]+$",cluster_id="x",slot_type="physical"}`,
-			`"radar_row", "retained", "pod", ".*")`,
+			`"kubeatlas_row", "retained", "pod", ".*")`,
 		} {
 			if !strings.Contains(query, want) {
 				t.Errorf("slots query lacks %q: %s", want, query)

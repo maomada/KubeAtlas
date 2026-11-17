@@ -21,7 +21,7 @@ describe('originOf', () => {
 })
 
 describe('buildOrigins', () => {
-  it('always surfaces the origins Radar cannot use, so synthetic evidence never looks complete', () => {
+  it('always surfaces the origins KubeAtlas cannot use, so synthetic evidence never looks complete', () => {
     const os = buildOrigins(traceWith([p({})]))
     const caller = os.find((o) => o.id === 'caller')
     const external = os.find((o) => o.id === 'external')
@@ -33,7 +33,7 @@ describe('buildOrigins', () => {
 
   it('orders by evidence strength, strongest first', () => {
     const os = buildOrigins(traceWith([]))
-    // radar-incluster is absent here: this fixture's Radar runs on a laptop.
+    // kubeatlas-incluster is absent here: this fixture's KubeAtlas runs on a laptop.
     expect(os.map((o) => o.id)).toEqual(['caller', 'external', 'incluster', 'local', 'apiserver'])
   })
 
@@ -179,58 +179,58 @@ describe('the laptop vantage says where it actually dialled', () => {
   })
 })
 
-describe('Radar-as-a-Pod is not the throwaway probe Job', () => {
-  // Both are (in-cluster, data). Collapsed into one origin, Radar's own dials
+describe('KubeAtlas-as-a-Pod is not the throwaway probe Job', () => {
+  // Both are (in-cluster, data). Collapsed into one origin, KubeAtlas's own dials
   // were credited to a Job that was never created, under the namespace default
-  // account rather than Radar's own.
+  // account rather than KubeAtlas's own.
   it('routes an explicitly-sourced probe to its own origin', () => {
-    expect(originOf(p({ vantage: 'in-cluster', path: 'data', source: 'radar' }))).toBe('radar-incluster')
+    expect(originOf(p({ vantage: 'in-cluster', path: 'data', source: 'kubeatlas' }))).toBe('kubeatlas-incluster')
     expect(originOf(p({ vantage: 'in-cluster', path: 'data', source: 'probe-job' }))).toBe('incluster')
   })
 
-  // An older producer sends no source. Radar can only have dialled in-cluster
+  // An older producer sends no source. KubeAtlas can only have dialled in-cluster
   // itself when it IS in the cluster; otherwise the only way to get such a
   // probe is the Job. runVantage is the producer's own statement about itself.
   it('resolves an unsourced in-cluster probe from runVantage', () => {
     const probe = p({ vantage: 'in-cluster', path: 'data' })
-    expect(originOf(probe, 'in-cluster')).toBe('radar-incluster')
+    expect(originOf(probe, 'in-cluster')).toBe('kubeatlas-incluster')
     expect(originOf(probe, 'local')).toBe('incluster')
     expect(originOf(probe)).toBe('incluster')
   })
 
   it('never reassigns an apiserver relay, whatever the source', () => {
-    expect(originOf(p({ vantage: 'in-cluster', path: 'apiserver', source: 'radar' }), 'in-cluster')).toBe('apiserver')
+    expect(originOf(p({ vantage: 'in-cluster', path: 'apiserver', source: 'kubeatlas' }), 'in-cluster')).toBe('apiserver')
   })
 
-  // Radar not being a Pod is a deployment detail, not a hole in the evidence -
+  // KubeAtlas not being a Pod is a deployment detail, not a hole in the evidence -
   // the throwaway Job covers the same ground. Listing it as "never tested" pads
   // the coverage caveat beside genuine gaps like "as your application".
-  it('omits Radar-in-cluster entirely when Radar runs on a laptop', () => {
+  it('omits KubeAtlas-in-cluster entirely when KubeAtlas runs on a laptop', () => {
     const os = buildOrigins(traceWith([]))
-    expect(os.find((o) => o.id === 'radar-incluster')).toBeUndefined()
+    expect(os.find((o) => o.id === 'kubeatlas-incluster')).toBeUndefined()
     expect(os.map((o) => o.id)).toEqual(['caller', 'external', 'incluster', 'local', 'apiserver'])
   })
 
-  it('offers it once Radar actually runs in the cluster', () => {
-    const t = traceWith([p({ vantage: 'in-cluster', path: 'data', source: 'radar', ok: true })])
+  it('offers it once KubeAtlas actually runs in the cluster', () => {
+    const t = traceWith([p({ vantage: 'in-cluster', path: 'data', source: 'kubeatlas', ok: true })])
     t.runVantage = 'in-cluster'
-    const radar = buildOrigins(t).find((o) => o.id === 'radar-incluster')
-    expect(radar?.unsupported).toBeFalsy()
+    const kubeatlas = buildOrigins(t).find((o) => o.id === 'kubeatlas-incluster')
+    expect(kubeatlas?.unsupported).toBeFalsy()
   })
 
-  // The mirror rule. A Radar that runs as a Pod has no process on the operator's
+  // The mirror rule. A KubeAtlas that runs as a Pod has no process on the operator's
   // machine, so a workstation vantage there is not a test anyone can run - it is
   // a control that would never do anything, standing where a real gap should be.
-  it('omits the workstation vantage entirely when Radar runs in the cluster', () => {
-    const t = traceWith([p({ vantage: 'in-cluster', path: 'data', source: 'radar', ok: true })])
+  it('omits the workstation vantage entirely when KubeAtlas runs in the cluster', () => {
+    const t = traceWith([p({ vantage: 'in-cluster', path: 'data', source: 'kubeatlas', ok: true })])
     t.runVantage = 'in-cluster'
     const os = buildOrigins(t)
     expect(os.find((o) => o.id === 'local')).toBeUndefined()
-    expect(os.map((o) => o.id)).toEqual(['caller', 'external', 'incluster', 'radar-incluster', 'apiserver'])
+    expect(os.map((o) => o.id)).toEqual(['caller', 'external', 'incluster', 'kubeatlas-incluster', 'apiserver'])
   })
 
   it('keeps the external gap declared there — it is what nothing can prove', () => {
-    const t = traceWith([p({ vantage: 'in-cluster', path: 'data', source: 'radar', ok: true })])
+    const t = traceWith([p({ vantage: 'in-cluster', path: 'data', source: 'kubeatlas', ok: true })])
     t.runVantage = 'in-cluster'
     expect(buildOrigins(t).find((o) => o.id === 'external')?.unsupported).toBe(true)
   })
@@ -249,13 +249,13 @@ describe('Radar-as-a-Pod is not the throwaway probe Job', () => {
     expect(buildOrigins(t).find((o) => o.id === 'local')).toBeDefined()
   })
 
-  it('describes Radar-in-cluster with Radar\'s own identity, not the Job\'s', () => {
-    const t = traceWith([p({ vantage: 'in-cluster', path: 'data', source: 'radar', ok: true })])
+  it('describes KubeAtlas-in-cluster with KubeAtlas\'s own identity, not the Job\'s', () => {
+    const t = traceWith([p({ vantage: 'in-cluster', path: 'data', source: 'kubeatlas', ok: true })])
     t.runVantage = 'in-cluster'
-    const radar = buildOrigins(t).find((o) => o.id === 'radar-incluster')
-    expect(radar?.identity).toMatch(/Radar/)
-    expect(radar?.identity).not.toMatch(/default account/)
-    expect(radar?.mark).toBe('proved')
+    const kubeatlas = buildOrigins(t).find((o) => o.id === 'kubeatlas-incluster')
+    expect(kubeatlas?.identity).toMatch(/KubeAtlas/)
+    expect(kubeatlas?.identity).not.toMatch(/default account/)
+    expect(kubeatlas?.mark).toBe('proved')
   })
 })
 
@@ -382,7 +382,7 @@ describe('an externally addressable Service is not told it has no entry point', 
       config: { serviceType },
       probes: [{ layer: 'http', target: 'shop:80', vantage: 'local', path: 'apiserver', ok: false, skipped: true, reason: 'x', port: 80 }] }],
   }) as never
-  it('LoadBalancer: the claim is about Radar, not the Service', () => {
+  it('LoadBalancer: the claim is about KubeAtlas, not the Service', () => {
     const local = buildOrigins(mkTyped('LoadBalancer')).find((o) => o.id === 'local')!
     expect(local.unavailable).toMatch(/doesn.t dial/i)
     expect(local.unavailable).not.toMatch(/no Ingress/i)

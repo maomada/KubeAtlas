@@ -1599,21 +1599,21 @@ def _gate_specs(bundle: Path, rules_source: Path, gate: str) -> tuple[list[dict]
         script = r"""set -euo pipefail
 helm lint deploy/helm/kubeatlas
 helm lint deploy/helm/kubeatlas-portal --set image.repository=example.test/kubeatlas-portal --set existingSecret=portal-auth
-helm template radar deploy/helm/kubeatlas >/dev/null
+helm template kubeatlas deploy/helm/kubeatlas >/dev/null
 for mode in inline existing missing; do
   args=(--set cloud.enabled=true --set cloud.url=wss://cloud.example/agent --set cloud.clusterName=test)
   if [[ "$mode" == inline ]]; then args+=(--set cloud.token=rhc_deadbeef); fi
   if [[ "$mode" == existing ]]; then args+=(--set cloud.existingSecret=my-cloud-token); fi
-  if output=$(helm template radar deploy/helm/kubeatlas "${args[@]}" 2>&1); then
+  if output=$(helm template kubeatlas deploy/helm/kubeatlas "${args[@]}" 2>&1); then
     echo "cloud.enabled unexpectedly rendered"; exit 1
   fi
   grep -Fq "cloud.enabled is unavailable in KubeAtlas" <<<"$output"
 done
-helm template radar deploy/helm/kubeatlas --set argocd.token=argo_deadbeef --set argocd.url=https://argocd.example.com >/dev/null
-helm template radar deploy/helm/kubeatlas --set argocd.existingSecret=my-argo-token >/dev/null
-if helm template radar deploy/helm/kubeatlas --set argocd.token=argo_deadbeef --set argocd.existingSecret=my-argo-token 2>/dev/null; then exit 1; fi
-helm template radar deploy/helm/kubeatlas --set timeline.storage=postgres --set timeline.postgres.existingSecret=radar-postgres --set timeline.retention=720h >/dev/null
-if helm template radar deploy/helm/kubeatlas --set timeline.storage=postgres 2>/dev/null; then exit 1; fi
+helm template kubeatlas deploy/helm/kubeatlas --set argocd.token=argo_deadbeef --set argocd.url=https://argocd.example.com >/dev/null
+helm template kubeatlas deploy/helm/kubeatlas --set argocd.existingSecret=my-argo-token >/dev/null
+if helm template kubeatlas deploy/helm/kubeatlas --set argocd.token=argo_deadbeef --set argocd.existingSecret=my-argo-token 2>/dev/null; then exit 1; fi
+helm template kubeatlas deploy/helm/kubeatlas --set timeline.storage=postgres --set timeline.postgres.existingSecret=kubeatlas-postgres --set timeline.retention=720h >/dev/null
+if helm template kubeatlas deploy/helm/kubeatlas --set timeline.storage=postgres 2>/dev/null; then exit 1; fi
 ./scripts/test-chart.sh
 HELM_BIN="${HELM3_BIN:-helm3}" helmfile -f ./deploy/helm/ unittest"""
         return [{"name": "Helm 4 lint/template/negative checks and Helm 3 helmfile tests", "argv": ["bash", "-euo", "pipefail", "-c", script]}], reports, env

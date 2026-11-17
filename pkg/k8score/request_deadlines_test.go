@@ -310,7 +310,7 @@ func TestRequestDeadlines_DeadWatchSurfacesAsError(t *testing.T) {
 
 	_, err := client.CoreV1().Secrets("").Watch(ctx, metav1.ListOptions{TimeoutSeconds: &timeout, ResourceVersion: "hang-headers"})
 	if !errors.Is(err, errRequestEnded) {
-		t.Fatalf("a watch with no headers: err = %v, want it ended by Radar", err)
+		t.Fatalf("a watch with no headers: err = %v, want it ended by KubeAtlas", err)
 	}
 	if n := attempts.Load(); n != 1 {
 		t.Fatalf("client-go retried the ended watch %d times; it must surface the error", n-1)

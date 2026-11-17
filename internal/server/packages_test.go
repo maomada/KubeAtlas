@@ -66,7 +66,7 @@ func TestErrorCodeForHelm(t *testing.T) {
 // Pins the error wording produced by k8s.ResourceCache.ListDynamicWithGroup
 // when the requested CRD isn't installed. If that wording changes,
 // graceful degradation breaks for clusters without ArgoCD/FluxCD —
-// every Radar install would suddenly show error banners on /api/packages.
+// every KubeAtlas install would suddenly show error banners on /api/packages.
 // See internal/k8s/cache.go ListDynamicWithGroup.
 func TestIsMissingCRDErr_PinsK8scoreErrorString(t *testing.T) {
 	cases := []struct {

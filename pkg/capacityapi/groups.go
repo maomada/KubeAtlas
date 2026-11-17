@@ -35,7 +35,7 @@ type CapacityGroupSummary struct {
 	// would read as failing to recognize the fleet's most basic fact.
 	Platform string `json:"platform"`
 	// ManagerValidated is false when the manager link rests on a join rule
-	// Radar has not validated against a live cluster of this provider.
+	// KubeAtlas has not validated against a live cluster of this provider.
 	ManagerValidated bool `json:"managerValidated"`
 	NodeCount        int  `json:"nodeCount"`
 	ReadyNodeCount   int  `json:"readyNodeCount"`

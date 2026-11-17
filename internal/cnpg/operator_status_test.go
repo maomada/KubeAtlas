@@ -114,7 +114,7 @@ func TestCNPGOperatorFactsVerdict(t *testing.T) {
 	if v := f.verdict("pg"); v.State != cnpgOperatorUnknown || !strings.Contains(v.Unknown, "lease") {
 		t.Errorf("unreadable lease = %+v", v)
 	}
-	// WATCH_NAMESPACE from a ConfigMap Radar does not read: a healthy leader
+	// WATCH_NAMESPACE from a ConfigMap KubeAtlas does not read: a healthy leader
 	// may be restricted to another namespace, so it proves nothing here.
 	fromConfigMap := up
 	fromConfigMap.name = "op-cm"
@@ -131,7 +131,7 @@ func TestCNPGOperatorFactsVerdict(t *testing.T) {
 	if v := f.verdict("team-b"); v.State != cnpgOperatorUnknown {
 		t.Errorf("down confirmed watcher beside a leading unresolved one = %+v, want unknown", v)
 	}
-	f = cnpgOperatorFacts{deploymentsUnknown: "Radar cannot list Deployments in every namespace"}
+	f = cnpgOperatorFacts{deploymentsUnknown: "KubeAtlas cannot list Deployments in every namespace"}
 	if v := f.verdict("pg"); v.State != cnpgOperatorUnknown || v.Unknown == "" {
 		t.Errorf("no visible operator = %+v", v)
 	}
@@ -217,7 +217,7 @@ func TestOperatorFactsExplainUnreadDeployments(t *testing.T) {
 	}{
 		{integration.KindCoverageSyncing, "still syncing"},
 		{integration.KindCoverageError, "could not load Deployments"},
-		{integration.KindCoverageUncached, "outside Radar's cache scope"},
+		{integration.KindCoverageUncached, "outside KubeAtlas's cache scope"},
 		{integration.KindCoverageDenied, "cannot list Deployments"},
 	} {
 		t.Run(string(tc.state), func(t *testing.T) {

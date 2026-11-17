@@ -18,7 +18,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/resourceapi"
 )
 
-// A broad query searches only what the caller and Radar can read without
+// A broad query searches only what the caller and KubeAtlas can read without
 // naming each skipped kind, so it must say its scope was narrowed: "complete"
 // alone would read as an exhaustive negative.
 func TestBroadSearchSaysHowItWasNarrowed(t *testing.T) {
@@ -54,7 +54,7 @@ func TestBroadSearchSaysHowItWasNarrowed(t *testing.T) {
 // A scope reason a broad query doesn't report still narrowed it.
 func TestQuietScopeReasonsNarrowTheSearch(t *testing.T) {
 	p := namespaceFixture()
-	p.typedReasons = map[string]string{"Node": string(readreason.RadarForbidden)}
+	p.typedReasons = map[string]string{"Node": string(readreason.KubeAtlasForbidden)}
 	res, _ := Search(context.Background(), p, Parse("robusta"), Options{Include: IncludeNone, CanReadClusterScoped: func(kind, group, resource string) (bool, bool) { return kind != "ClusterRole", true }})
 	want := []resourceapi.Narrowing{resourceapi.NarrowedByKindCollection, resourceapi.NarrowedByUserAccess}
 	if partial(res) || !reflect.DeepEqual(res.Coverage.NarrowedBy, want) {

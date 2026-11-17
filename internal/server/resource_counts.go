@@ -21,9 +21,9 @@ type ResourceCountsResponse struct {
 	Forbidden   []string                        `json:"forbidden,omitempty"`
 	Unavailable []string                        `json:"unavailable,omitempty"`
 	// Reasons maps a forbidden kind key to why it's hidden:
-	//   "rbac_denied" — Radar's ServiceAccount can read the kind but the user's
+	//   "rbac_denied" — KubeAtlas's ServiceAccount can read the kind but the user's
 	//      own RBAC denies it. Granting the user list access surfaces it.
-	//   "unavailable" — Radar can't read the kind at all (no informer): its type
+	//   "unavailable" — KubeAtlas can't read the kind at all (no informer): its type
 	//      isn't installed, the SA lacks RBAC, or the feature is off (e.g.
 	//      rbac.viewRBAC). A user-level grant won't help.
 	Reasons map[string]string `json:"reasons,omitempty"`
@@ -72,7 +72,7 @@ func (s *Server) handleResourceCounts(w http.ResponseWriter, r *http.Request) {
 		s.writeCollectionFailure(w, "resource counts", errReadHandlesChanged)
 		return
 	}
-	// A named namespace Radar knows doesn't exist is a gap and is never
+	// A named namespace KubeAtlas knows doesn't exist is a gap and is never
 	// counted: a zero there would say it holds nothing.
 	if requestTarget.explicit && namespaces != nil {
 		namespaces = slices.DeleteFunc(slices.Clone(namespaces), func(ns string) bool { return !slices.Contains(requestTarget.namespaces, ns) })
@@ -219,7 +219,7 @@ func (s *Server) handleResourceCounts(w http.ResponseWriter, r *http.Request) {
 		if plan.wholeKindReady {
 			l := kl.Lister()(cache.ResourceCache)
 			if l == nil {
-				// No informer: Radar's SA can't read this kind (not installed, SA
+				// No informer: KubeAtlas's SA can't read this kind (not installed, SA
 				// RBAC, or feature off) — a user-level grant won't surface it.
 				markForbidden(kl.CountKey(), reasonUnavailable)
 				continue
@@ -448,7 +448,7 @@ func (s *Server) handleResourceCounts(w http.ResponseWriter, r *http.Request) {
 		s.writeCollectionFailure(w, "resource counts", errReadHandlesChanged)
 		return
 	case dynamicCache != k8s.GetDynamicResourceCache() || discovery != k8s.GetResourceDiscovery():
-		// Radar finished starting its CRD cache or discovery during the count.
+		// KubeAtlas finished starting its CRD cache or discovery during the count.
 		s.writeCollectionFailure(w, "resource counts", k8s.ErrDynamicNotReady)
 		return
 	}

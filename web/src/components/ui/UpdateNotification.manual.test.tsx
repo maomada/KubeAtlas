@@ -54,29 +54,29 @@ afterEach(() => {
 
 describe('manual Desktop version checks', () => {
   it('acknowledges one check even when Settings is also mounted', () => {
-    act(() => { window.dispatchEvent(new Event('radar:check-for-updates')) })
+    act(() => { window.dispatchEvent(new Event('kubeatlas:check-for-updates')) })
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
     expect(container.textContent).toContain('Checking for updates…')
   })
 
   it('reports an up-to-date result once', () => {
-    act(() => { window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: current })) })
+    act(() => { window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: current })) })
     expect(container.querySelectorAll('[role="status"]')).toHaveLength(1)
     expect(container.textContent).toContain("You're up to date")
     expect(container.textContent).toContain('KubeAtlas 1.2.3')
   })
 
   it('publishes a fresh available update and clears its dismissal', () => {
-    localStorage.setItem('radar-update-dismissed', '1.3.0')
+    localStorage.setItem('kubeatlas-update-dismissed', '1.3.0')
     const info = { ...current, updateAvailable: true, latestVersion: '1.3.0' }
-    act(() => { window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: info })) })
+    act(() => { window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: info })) })
     expect(client.getQueryData(['version-check', '/desktop/api'])).toEqual(info)
-    expect(localStorage.getItem('radar-update-dismissed')).toBeNull()
+    expect(localStorage.getItem('kubeatlas-update-dismissed')).toBeNull()
     expect(container.textContent).toContain('KubeAtlas 1.3.0 is available')
   })
 
   it('reports failure without replacing known version data', () => {
-    act(() => { window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: { ...current, error: 'offline' } })) })
+    act(() => { window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: { ...current, error: 'offline' } })) })
     expect(container.querySelector('[role="status"]')?.textContent).toContain('Could not check for updates')
     expect(container.textContent).toContain('offline')
     expect(container.textContent).not.toContain("You're up to date")
@@ -84,7 +84,7 @@ describe('manual Desktop version checks', () => {
   })
 
   it('does not claim a development build is up to date', () => {
-    act(() => { window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: { ...current, currentVersion: '1.3.0-37-g8b325b372', buildChannel: 'development', latestVersion: '1.3.0' } })) })
+    act(() => { window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: { ...current, currentVersion: '1.3.0-37-g8b325b372', buildChannel: 'development', latestVersion: '1.3.0' } })) })
     expect(container.textContent).not.toContain("You're up to date")
     expect(container.textContent).toContain('Latest KubeAtlas release: 1.3.0')
     expect(container.textContent).toContain('You are running a development build.')
@@ -98,7 +98,7 @@ describe('manual Desktop version checks', () => {
       staleTime: 0,
     }).catch(() => undefined)
     const info = { ...current, updateAvailable: true, latestVersion: '1.3.0' }
-    act(() => { window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: info })) })
+    act(() => { window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: info })) })
     resolveAutomatic(current)
     await pending
     expect(client.getQueryData(['version-check', '/desktop/api'])).toEqual(info)
@@ -112,8 +112,8 @@ describe('manual Desktop version checks', () => {
       queryFn: () => new Promise<VersionInfo>(resolve => { resolveAutomatic = resolve }),
     })
     act(() => {
-      window.dispatchEvent(new Event('radar:check-for-updates'))
-      window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: { ...current, error: 'offline' } }))
+      window.dispatchEvent(new Event('kubeatlas:check-for-updates'))
+      window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: { ...current, error: 'offline' } }))
     })
     resolveAutomatic(current)
     await pending
@@ -124,13 +124,13 @@ describe('manual Desktop version checks', () => {
 
 describe('manual check toast lifecycle', () => {
   it('updates the same toast element after a slow check and starts the result timer then', () => {
-    act(() => { window.dispatchEvent(new Event('radar:check-for-updates')) })
+    act(() => { window.dispatchEvent(new Event('kubeatlas:check-for-updates')) })
     const toast = container.querySelector('[role="status"]')
     act(() => { vi.advanceTimersByTime(9000) })
     expect(container.querySelector('[role="status"]')).toBe(toast)
     expect(toast?.textContent).toContain('Checking for updates…')
 
-    act(() => { window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: current })) })
+    act(() => { window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: current })) })
     expect(container.querySelector('[role="status"]')).toBe(toast)
     expect(toast?.textContent).toContain("You're up to date")
     expect(container.textContent).not.toContain('Checking for updates…')
@@ -142,9 +142,9 @@ describe('manual check toast lifecycle', () => {
   })
 
   it('replaces progress with an error in the same toast', () => {
-    act(() => { window.dispatchEvent(new Event('radar:check-for-updates')) })
+    act(() => { window.dispatchEvent(new Event('kubeatlas:check-for-updates')) })
     const toast = container.querySelector('[role="status"]')
-    act(() => { window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: { ...current, error: 'offline' } })) })
+    act(() => { window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: { ...current, error: 'offline' } })) })
     expect(container.querySelector('[role="status"]')).toBe(toast)
     expect(container.textContent).not.toContain('Checking for updates…')
     expect(container.querySelectorAll('[role="status"], [role="alert"]')).toHaveLength(1)
@@ -155,9 +155,9 @@ describe('manual check toast lifecycle', () => {
   })
 
   it('does not let a previous result timer dismiss the next check', () => {
-    act(() => { window.dispatchEvent(new CustomEvent('radar:update-check-result', { detail: current })) })
+    act(() => { window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', { detail: current })) })
     act(() => { vi.advanceTimersByTime(7100) })
-    act(() => { window.dispatchEvent(new Event('radar:check-for-updates')) })
+    act(() => { window.dispatchEvent(new Event('kubeatlas:check-for-updates')) })
     const toast = container.querySelector('[role="status"]')
     act(() => { vi.advanceTimersByTime(9000) })
     expect(container.querySelector('[role="status"]')).toBe(toast)

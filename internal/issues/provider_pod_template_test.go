@@ -292,7 +292,7 @@ func TestPodTemplateGroupedCacheEvidenceAndCaps(t *testing.T) {
 			if !strings.Contains(fact.Message, `vpaUpdates annotation, absent from the template, reads "Pod resources updated by a vertical autoscaler"`) || !strings.Contains(fact.Message, "Writer and timing are unknown") {
 				t.Fatalf("self-reported mutator missing or overclaimed: %+v", fact)
 			}
-			if !strings.Contains(fact.Message, "Mutating webhook configurations were not inspected: Radar has not cached them.") {
+			if !strings.Contains(fact.Message, "Mutating webhook configurations were not inspected: KubeAtlas has not cached them.") {
 				t.Fatalf("webhook coverage gap not stated: %+v", fact)
 			}
 		}

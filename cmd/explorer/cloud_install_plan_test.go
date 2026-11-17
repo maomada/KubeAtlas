@@ -39,9 +39,9 @@ func TestExistingInstallConsentIsIndependentOfYes(t *testing.T) {
 }
 
 func TestMultipleTargetsErrorGetsCLIFlagHint(t *testing.T) {
-	targets := []cloudinstall.RadarTarget{
-		{Namespace: "radar", ReleaseName: "one", DeploymentName: "one"},
-		{Namespace: "radar", ReleaseName: "two", DeploymentName: "two"},
+	targets := []cloudinstall.KubeAtlasTarget{
+		{Namespace: "kubeatlas", ReleaseName: "one", DeploymentName: "one"},
+		{Namespace: "kubeatlas", ReleaseName: "two", DeploymentName: "two"},
 	}
 	wrapped := renderMultipleTargetsHint(&cloudinstall.MultipleTargetsError{Targets: targets})
 	for _, want := range []string{"--namespace and --release", `release "one"`, `release "two"`} {
@@ -65,7 +65,7 @@ func TestGitOpsHandoffGenerationFailureRecoversExistingHubCluster(t *testing.T) 
 			t.Errorf("guidance missing %q:\n%s", want, got)
 		}
 	}
-	for _, wrong := range []string{"command was canceled", "Rerun `radar cloud install`"} {
+	for _, wrong := range []string{"command was canceled", "Rerun `kubeatlas cloud install`"} {
 		if strings.Contains(got, wrong) {
 			t.Errorf("guidance contains false recovery claim %q:\n%s", wrong, got)
 		}

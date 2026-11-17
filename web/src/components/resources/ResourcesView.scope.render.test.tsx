@@ -8,7 +8,7 @@ import { ResourcesView } from './ResourcesView'
 
 vi.mock('../../context/ConnectionContext', () => ({ useConnection: () => ({ connection: { state: 'connected', context: 'test' } }) }))
 vi.mock('../dock', () => ({ useOpenLogs: () => () => {}, useOpenWorkloadLogs: () => () => {} }))
-vi.mock('../../context/RadarUpgradeHost', () => ({ useRadarUpgradeHost: () => ({}) }))
+vi.mock('../../context/KubeAtlasUpgradeHost', () => ({ useKubeAtlasUpgradeHost: () => ({}) }))
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
 
 const requested: URL[] = []
@@ -19,7 +19,7 @@ beforeEach(() => {
   requested.length = 0
   vi.stubGlobal('matchMedia', () => ({ matches: false, addEventListener: () => {}, removeEventListener: () => {} }))
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-    requested.push(new URL(String(input), 'http://radar.invalid'))
+    requested.push(new URL(String(input), 'http://kubeatlas.invalid'))
     return new Promise<Response>(() => {})
   }))
   root = createRoot(document.createElement('div'))

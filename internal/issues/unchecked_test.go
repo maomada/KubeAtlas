@@ -187,7 +187,7 @@ func TestComposeReportsKarpenterInventoryGaps(t *testing.T) {
 		t.Fatalf("NodeClaim request: unchecked = %+v, want %+v", stats.Unchecked, want)
 	}
 
-	// Not installed, or excluded from Radar's own access, is not a gap.
+	// Not installed, or excluded from KubeAtlas's own access, is not a gap.
 	p.karpenterInv[karpenter.NodePoolKind] = karpenterResourceInventory{Coverage: karpenterCoverageUnknown}
 	if _, stats = ComposeWithStats(p, Filters{Limit: NoLimit}); stats.Unchecked != nil {
 		t.Fatalf("unchecked = %+v, want none", stats.Unchecked)

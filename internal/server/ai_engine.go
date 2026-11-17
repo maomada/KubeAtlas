@@ -21,12 +21,12 @@ func (s *Server) aiRunManager() *ai.RunManager {
 	return runs
 }
 
-// aiDeploymentSupported reports whether this Radar can run local AI
+// aiDeploymentSupported reports whether this KubeAtlas can run local AI
 // investigations at all, whatever is installed. The engine drives the CLI
 // against this server's own investigation MCP mount with no credentials, which
 // only works when MCP is mounted and unauthenticated. Under proxy/OIDC auth
 // (team and cloud deployments) the MCP requires identity headers a local CLI
-// can't supply, and investigations are the embedding host's job (e.g. Radar
+// can't supply, and investigations are the embedding host's job (e.g. KubeAtlas
 // Hub). An operator-managed shared installation is never a user's own machine.
 func (s *Server) aiDeploymentSupported() bool {
 	return s.configManagement() != "operator" && !s.authConfig.Enabled() &&
@@ -37,7 +37,7 @@ func (s *Server) aiDeploymentSupported() bool {
 // it turns the engine on when the first one appears, and keeps a running
 // engine's backends current (Diagnoser.Refresh). Called at startup, whenever a
 // client asks which agents exist, and before a run or follow-up starts, so
-// installing, moving or removing a CLI never needs a Radar restart. Detection
+// installing, moving or removing a CLI never needs a KubeAtlas restart. Detection
 // only resolves paths; it runs nothing.
 func (s *Server) refreshAIEngine(ctx context.Context) {
 	if !s.aiDeploymentSupported() {

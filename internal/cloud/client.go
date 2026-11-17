@@ -1,14 +1,14 @@
-// Package cloud connects the Radar binary to a Radar Cloud service.
+// Package cloud connects the KubeAtlas binary to a KubeAtlas Cloud service.
 //
-// When configured with a Cloud URL, Radar dials out via WebSocket, establishes
+// When configured with a Cloud URL, KubeAtlas dials out via WebSocket, establishes
 // a yamux session with itself as the server, and serves its existing HTTP
 // router over streams that Cloud opens on behalf of browsers. All of
-// Radar's endpoints (topology, resources, SSE, pod exec, MCP) work unchanged
+// KubeAtlas's endpoints (topology, resources, SSE, pod exec, MCP) work unchanged
 // because a yamux stream IS a net.Conn — the router doesn't know the request
 // came from a tunnel.
 //
 // This package is only active when --cloud-url is set. With no Cloud
-// configured, Radar's local-binary behavior is unchanged.
+// configured, KubeAtlas's local-binary behavior is unchanged.
 package cloud
 
 import (
@@ -21,7 +21,7 @@ import (
 	"time"
 )
 
-// Config is the runtime configuration for connecting to Radar Cloud.
+// Config is the runtime configuration for connecting to KubeAtlas Cloud.
 type Config struct {
 	// URL is the WebSocket URL of the Cloud service's /agent endpoint,
 	// e.g. wss://api.example.test/agent
@@ -38,7 +38,7 @@ type Config struct {
 	// tunnel's TLS verification.
 	CA *x509.CertPool
 
-	// Enrolled marks a token this Radar obtained by enrolling. A token the
+	// Enrolled marks a token this KubeAtlas obtained by enrolling. A token the
 	// Hub rejects (401) ends Run with ErrTokenRejected instead of retrying
 	// forever, so the caller can enroll again for a new one.
 	Enrolled bool
@@ -58,17 +58,17 @@ type Config struct {
 	// ClusterName is the human-readable label the user chose in the wizard.
 	ClusterName string
 
-	// Namespace is the Kubernetes namespace Radar is running in. Sent to the
+	// Namespace is the Kubernetes namespace KubeAtlas is running in. Sent to the
 	// hub on connect so it knows where to target Deployment patches on upgrade.
 	// Populated from MY_POD_NAMESPACE (downward API); empty string is fine —
 	// the hub stores whatever it receives and surfaces a "reconnect required"
 	// error if the field is absent when an upgrade is requested.
 	Namespace string
 
-	// Release is the Helm release name Radar was installed under, from
+	// Release is the Helm release name KubeAtlas was installed under, from
 	// KUBEATLAS_HELM_RELEASE (set by the chart from .Release.Name). Sent to the
 	// hub so the dashboard's token-rotation command targets this release
-	// instead of assuming `radar`. Empty for non-Helm installs; the hub keeps
+	// instead of assuming `kubeatlas`. Empty for non-Helm installs; the hub keeps
 	// its last stored value then.
 	Release string
 
@@ -84,12 +84,12 @@ type Config struct {
 	APIServerURL string
 
 	// SelfUpgradeAvailable reports whether this installation has the RBAC
-	// Radar's in-cluster self-upgrade endpoint needs. It is advertised
+	// KubeAtlas's in-cluster self-upgrade endpoint needs. It is advertised
 	// explicitly on every Cloud tunnel handshake so the Hub never has to infer
-	// capability from the Radar version.
+	// capability from the KubeAtlas version.
 	//
 	// It is a func, not a bool, because the answer can change without
-	// restarting Radar: enabling rbac.selfUpgrade adds a Role and RoleBinding
+	// restarting KubeAtlas: enabling rbac.selfUpgrade adds a Role and RoleBinding
 	// but leaves the pod template untouched, so a value sampled once at
 	// startup would stay stale for the process lifetime. Re-evaluated per
 	// handshake, and re-checked periodically while a tunnel is up — a stable
@@ -99,7 +99,7 @@ type Config struct {
 	SelfUpgradeAvailable func() bool
 
 	// Handler is the HTTP handler to serve over tunneled streams — typically
-	// Radar's Server.Handler() (chi router).
+	// KubeAtlas's Server.Handler() (chi router).
 	Handler http.Handler
 }
 
@@ -122,7 +122,7 @@ func (c Config) validate() error {
 	return nil
 }
 
-// Run connects to Radar Cloud and serves incoming streams until ctx is
+// Run connects to KubeAtlas Cloud and serves incoming streams until ctx is
 // cancelled. It reconnects with exponential backoff on disconnect; Run
 // returns only on context cancellation or unrecoverable config errors.
 func Run(ctx context.Context, cfg Config) error {
@@ -140,7 +140,7 @@ func Run(ctx context.Context, cfg Config) error {
 			return ctx.Err()
 		}
 
-		log.Printf("[cloud] dialing Radar Cloud: %s cluster=%s", cfg.URL, cfg.ClusterID)
+		log.Printf("[cloud] dialing KubeAtlas Cloud: %s cluster=%s", cfg.URL, cfg.ClusterID)
 		advertised := cfg.SelfUpgradeAvailable != nil && cfg.SelfUpgradeAvailable()
 		sess, err := dial(ctx, cfg, advertised)
 		if err != nil {
@@ -165,7 +165,7 @@ func Run(ctx context.Context, cfg Config) error {
 		}
 		failures = 0
 
-		log.Printf("[cloud] connected to Radar Cloud; serving streams")
+		log.Printf("[cloud] connected to KubeAtlas Cloud; serving streams")
 		connectedAt := time.Now()
 		if cfg.OnConnected != nil {
 			cfg.OnConnected()
@@ -271,7 +271,7 @@ func nextBackoff(cur, max time.Duration) time.Duration {
 	return n
 }
 
-// escalationWarning is what Radar says once a run of dial failures stops
+// escalationWarning is what KubeAtlas says once a run of dial failures stops
 // looking transient.
 //
 // A handshake that was answered carries its own instruction, and the flag list

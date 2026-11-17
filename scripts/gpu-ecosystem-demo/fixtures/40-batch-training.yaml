@@ -4,7 +4,7 @@ metadata:
   name: tensor-parallel
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   replicas: 2
   leaderWorkerTemplate:
@@ -35,7 +35,7 @@ metadata:
   name: distributed-evaluation
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   replicatedJobs:
     - name: evaluators
@@ -66,7 +66,7 @@ metadata:
   name: collision-demo
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   queue: gpu-volcano
   minAvailable: 2
@@ -95,7 +95,7 @@ kind: Queue
 metadata:
   name: gpu-volcano
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   weight: 4
   capability:
@@ -119,7 +119,7 @@ metadata:
   name: collision-demo
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   queue: gpu-volcano
   minMember: 4
@@ -139,7 +139,7 @@ metadata:
   name: model-pipeline
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   jobRetainPolicy: retain
   flows:
@@ -160,7 +160,7 @@ metadata:
   name: train
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   queue: gpu-volcano
   minAvailable: 1
@@ -183,7 +183,7 @@ kind: Queue
 metadata:
   name: gpu-kai
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   displayName: GPU research
   priority: 80
@@ -212,7 +212,7 @@ metadata:
   name: collision-demo
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   queue: gpu-kai
   minMember: 2
@@ -236,7 +236,7 @@ metadata:
   name: llm-finetune
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   pytorchReplicaSpecs:
     Master:
@@ -280,7 +280,7 @@ metadata:
   name: ranking-train
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   tfReplicaSpecs:
     Chief:
@@ -320,7 +320,7 @@ metadata:
   name: distributed-benchmark
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   slotsPerWorker: 1
   mpiReplicaSpecs:
@@ -362,7 +362,7 @@ metadata:
   name: torch-distributed
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   runtimeRef:
     apiGroup: trainer.kubeflow.org

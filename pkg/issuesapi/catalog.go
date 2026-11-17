@@ -80,10 +80,10 @@ var catalogOrder = []Category{
 	CategoryHelmReleaseFailed, CategoryWebhookBackendDown, CategoryControlPlaneNotReady, CategoryMachineNotReady,
 }
 
-// categoriesWithoutDetector are enum categories Radar doesn't emit yet — the
+// categoriesWithoutDetector are enum categories KubeAtlas doesn't emit yet — the
 // detection layer (internal/issues/category.go) has no path that produces them.
 // They're deliberately excluded from the catalog: a settings registry must not
-// imply Radar detects something it can't (you can't hide what never fires).
+// imply KubeAtlas detects something it can't (you can't hide what never fires).
 // When a detector lands, move the category into catalogOrder + categoryDescription
 // and drop it from here. TestCatalogComplete enforces both directions.
 var categoriesWithoutDetector = map[Category]bool{}

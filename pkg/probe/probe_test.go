@@ -143,7 +143,7 @@ func TestHTTPStatusFromError(t *testing.T) {
 // reaching the APISERVER itself (cluster down / stale kubeconfig) must read as
 // "can't test from here" (→ skip), while the apiserver RELAYING a backend
 // failure (a typed StatusError) must NOT - that stays a real backend verdict.
-// The cardinal rule: never condemn a healthy workload because Radar lost its
+// The cardinal rule: never condemn a healthy workload because KubeAtlas lost its
 // cluster connection.
 func TestIsClusterUnreachable(t *testing.T) {
 	cases := []struct {
@@ -410,7 +410,7 @@ func TestTLSProbe_UntrustedCertReached(t *testing.T) {
 
 // TestSSRFGuard_DeniesInternalTargets: the direct TCP/HTTP probes must refuse
 // loopback and link-local (cloud metadata 169.254.169.254) targets, so a
-// user-controlled Ingress host/Gateway address can't make Radar reach internal
+// user-controlled Ingress host/Gateway address can't make KubeAtlas reach internal
 // endpoints on their behalf. Private cluster ranges stay allowed.
 func TestSSRFGuard_DeniesInternalTargets(t *testing.T) {
 	for _, addr := range []string{"169.254.169.254:80", "127.0.0.1:80"} {
@@ -430,7 +430,7 @@ func TestSSRFGuard_DeniesInternalTargets(t *testing.T) {
 	}
 	// Unspecified addresses (0.0.0.0 / ::) route to localhost on a connect() - some
 	// Gateway controllers report 0.0.0.0 in status.addresses, so the guard must deny
-	// them too, or a probe reaches services on Radar's own localhost.
+	// them too, or a probe reaches services on KubeAtlas's own localhost.
 	for _, addr := range []string{"0.0.0.0:80", "[::]:80", "[fe80::1%eth0]:80", "[ff02::1]:80", "[ff0e::1]:80", "224.0.0.1:80", "[::ffff:127.0.0.1]:80", "[::ffff:169.254.169.254]:80", "[::ffff:100.100.100.100]:80", "not-an-ip:80", "invalid"} {
 		if err := denyInternalControl("tcp", addr, nil); err == nil {
 			t.Errorf("denyInternalControl(%s): want denied restricted/unparseable address, got nil", addr)

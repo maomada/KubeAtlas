@@ -5,12 +5,12 @@ import { destinationNamespaceLabel, hasSyncPolicy, normalizeArgoApplicationSet, 
 // Mirrors scripts/gitops-demo/05-argo-applicationset.yaml: a list generator,
 // so nothing about the deployed source is discoverable from the generator.
 const listGeneratorSet = {
-  metadata: { name: 'radar-demo-set', namespace: 'argocd', creationTimestamp: '2026-01-01T00:00:00Z' },
+  metadata: { name: 'kubeatlas-demo-set', namespace: 'argocd', creationTimestamp: '2026-01-01T00:00:00Z' },
   spec: {
     generators: [{ list: { elements: [{ name: 'vanilla', path: 'guestbook' }] } }],
     template: {
       spec: {
-        project: 'radar-demo',
+        project: 'kubeatlas-demo',
         source: { repoURL: 'https://github.com/argoproj/argocd-example-apps', targetRevision: 'HEAD', path: '{{path}}' },
         destination: { server: 'https://kubernetes.default.svc', namespace: 'demo-set' },
         syncPolicy: { automated: { prune: true, selfHeal: true } },
@@ -37,7 +37,7 @@ describe('normalizeArgoApplicationSet source and project', () => {
   })
 
   test('reads a literal project from the template', () => {
-    expect(normalizeArgoApplicationSet(listGeneratorSet).project).toBe('radar-demo')
+    expect(normalizeArgoApplicationSet(listGeneratorSet).project).toBe('kubeatlas-demo')
   })
 
   test('blanks a templated project', () => {

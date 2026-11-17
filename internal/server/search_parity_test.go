@@ -42,7 +42,7 @@ func TestSearchCoverageMatchesAcrossRESTAndMCP(t *testing.T) {
 		{Group: probes.Group, Version: probes.Version, Name: probes.Resource, Kind: "ProbeWidget", Namespaced: true, Verbs: []string{"get", "list", "watch"}},
 		{Group: reports.Group, Version: reports.Version, Name: reports.Resource, Kind: "Report", Namespaced: true, Verbs: []string{"get", "list"}},
 	}
-	// 25 cluster-scoped kinds Radar's own identity may not list: more than a
+	// 25 cluster-scoped kinds KubeAtlas's own identity may not list: more than a
 	// broad search would ever name.
 	var gadgets []schema.GroupVersionResource
 	var gadgetTerms []string
@@ -113,14 +113,14 @@ func TestSearchCoverageMatchesAcrossRESTAndMCP(t *testing.T) {
 
 	var deniedGadgets []unsearchedEntry
 	for i := range 25 {
-		deniedGadgets = append(deniedGadgets, unsearchedEntry{Kind: fmt.Sprintf("Gadget%02d", i), Group: "gadgets.example.io", Reason: "radar_forbidden"})
+		deniedGadgets = append(deniedGadgets, unsearchedEntry{Kind: fmt.Sprintf("Gadget%02d", i), Group: "gadgets.example.io", Reason: "kubeatlas_forbidden"})
 	}
 	for _, tc := range []struct {
 		query  string
 		want   []unsearchedEntry
 		before func()
 	}{
-		// Unwatched kinds, list-only APIs and kinds Radar's own identity may
+		// Unwatched kinds, list-only APIs and kinds KubeAtlas's own identity may
 		// not list are the search's scope: a broad query names none of them.
 		{"robusta", []unsearchedEntry{}, nil},
 		{"kind:Widget robusta", []unsearchedEntry{}, nil},

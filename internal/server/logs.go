@@ -117,7 +117,7 @@ func (s *Server) handlePodLogs(w http.ResponseWriter, r *http.Request) {
 	if container != "" {
 		// Fetch logs for specific container
 		logContent, err := s.fetchContainerLogs(r.Context(), client, namespace, podName, container, tailLines, previous, sinceSeconds)
-		// These are answers about the pod, not failures in Radar. The code
+		// These are answers about the pod, not failures in KubeAtlas. The code
 		// lets the viewer show them as such.
 		if errors.Is(err, k8score.ErrLogsUnavailable) {
 			s.writeErrorCode(w, http.StatusNotFound, "logs_unavailable", k8score.ErrLogsUnavailable.Error())
@@ -214,7 +214,7 @@ func (s *Server) handlePodLogsStream(w http.ResponseWriter, r *http.Request) {
 	// Flush the 200 + SSE headers and a connection event to the client before
 	// opening the follow stream. GetContainerLogs with Follow issues a live,
 	// blocking apiserver call that can stall (and a buffering OIDC/ALB proxy in
-	// front of Radar holds back unflushed bytes); flushing first means the
+	// front of KubeAtlas holds back unflushed bytes); flushing first means the
 	// browser EventSource opens immediately instead of pending with 0 bytes.
 	sendSSEEvent(w, flusher, "connected", map[string]any{
 		"pod":       podName,
@@ -225,7 +225,7 @@ func (s *Server) handlePodLogsStream(w http.ResponseWriter, r *http.Request) {
 	// A container that has not started has no logs yet, but often will soon
 	// (ContainerCreating, an image still pulling). The stream waits for it and
 	// says why it is waiting, instead of ending on an answer that goes stale.
-	// While Radar's pod cache still shows the container waiting, it doesn't ask
+	// While KubeAtlas's pod cache still shows the container waiting, it doesn't ask
 	// the apiserver again, so a waiting viewer costs no cluster requests.
 	var waitingNotice string
 	var stream io.ReadCloser
@@ -273,7 +273,7 @@ func (s *Server) handlePodLogsStream(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if time.Since(lastWrite) >= waitingKeepaliveInterval {
-			// An unchanged notice sends nothing, and a proxy in front of Radar
+			// An unchanged notice sends nothing, and a proxy in front of KubeAtlas
 			// may close a connection that stays idle through a long image pull.
 			// An SSE comment keeps it open without reaching the viewer.
 			_, _ = fmt.Fprint(w, ": waiting\n\n")
@@ -303,7 +303,7 @@ func (s *Server) handlePodLogsStream(w http.ResponseWriter, r *http.Request) {
 			// no trailing newline, so it arrives together with EOF.
 			if followErr := k8score.LogFollowError(line); followErr != nil {
 				// Coded like the snapshot answer, so the viewer shows it as an
-				// answer about the pod rather than a Radar failure.
+				// answer about the pod rather than a KubeAtlas failure.
 				sendSSEEvent(w, flusher, "error", map[string]string{"error": followErr.Error(), "error_code": "logs_unavailable"})
 				return
 			}

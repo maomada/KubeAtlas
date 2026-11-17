@@ -616,7 +616,7 @@ func childNamePatterns(group, kind, name string) map[string]childPattern {
 }
 
 // unownedChildrenByName finds past children whose rows never learned their
-// owner — mostly K8s Events about Jobs and Pods deleted before Radar started —
+// owner — mostly K8s Events about Jobs and Pods deleted before KubeAtlas started —
 // by the names the workload's controller gives its children. They join the
 // scope as OwnerlessRefs, so a row that does record an owner is never pulled
 // in by name.

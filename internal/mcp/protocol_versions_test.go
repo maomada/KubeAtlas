@@ -266,7 +266,7 @@ func TestParamRepairOnBothProtocols(t *testing.T) {
 		t.Run(version, func(t *testing.T) {
 			received := make(chan sentinelIn, 2)
 			registry := newToolParamRegistry()
-			srv := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "radar-test", Version: "test"}, nil)
+			srv := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kubeatlas-test", Version: "test"}, nil)
 			srv.AddReceivingMiddleware(paramRepairMiddlewareFor(registry))
 			addToolWithRegistry(registry, srv, &mcpsdk.Tool{Name: "get_subject_permissions", Description: "sentinel"},
 				func(_ context.Context, _ *mcpsdk.CallToolRequest, in sentinelIn) (*mcpsdk.CallToolResult, any, error) {
@@ -322,7 +322,7 @@ func TestHTTPAcceptsLargeToolCalls(t *testing.T) {
 	type in struct {
 		YAML string `json:"yaml"`
 	}
-	srv := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "radar-test", Version: "test"}, nil)
+	srv := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kubeatlas-test", Version: "test"}, nil)
 	mcpsdk.AddTool(srv, &mcpsdk.Tool{Name: "fixture_apply"},
 		func(_ context.Context, _ *mcpsdk.CallToolRequest, args in) (*mcpsdk.CallToolResult, any, error) {
 			return &mcpsdk.CallToolResult{Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: strconv.Itoa(len(args.YAML))}}}, nil, nil
@@ -383,7 +383,7 @@ func newMCPTestServer(t *testing.T) *httptest.Server {
 	return httpServer
 }
 
-// Radar answers with one caller's view of one cluster, so results that carry a
+// KubeAtlas answers with one caller's view of one cluster, so results that carry a
 // cache scope (2026-07-28) say private rather than the SDK's default public.
 func TestCacheableResultsArePrivate(t *testing.T) {
 	httpServer := newMCPTestServer(t)

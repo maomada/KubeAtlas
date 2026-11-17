@@ -41,7 +41,7 @@ it.each<[string, ManagerAnswer]>([
   await done()
 })
 
-it("doesn't link a manager Radar didn't find", async () => {
+it("doesn't link a manager KubeAtlas didn't find", async () => {
   const manager: ManagerAnswer = { state: 'disagree', direct: { object, recorders: [b], claims: [{ manager: { ...a, namespace: '' }, source: 'argo-instance-label', check: 'unresolved' }] } }
   const { links, done } = await linksOf(manager, () => {})
   expect(links.map(l => l.textContent)).toEqual(['Application argocd/b'])

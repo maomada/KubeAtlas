@@ -71,7 +71,7 @@ func fillValue(v protoreflect.Value, fd protoreflect.FieldDescriptor, variant, i
 	return v
 }
 
-// The mask Radar sends must hold everything the conversion reads: a field
+// The mask KubeAtlas sends must hold everything the conversion reads: a field
 // left out arrives empty from a Cilium 1.19+ Relay, and the flow converts
 // differently with no error anywhere. Each flow here is converted whole and
 // again after Cilium's own mask code has pruned it the way an agent would,

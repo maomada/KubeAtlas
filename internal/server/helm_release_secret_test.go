@@ -206,7 +206,7 @@ func TestSecretGet_HelmReleaseLiveReadFailures(t *testing.T) {
 	}
 }
 
-// With auth on, the live read runs as the caller, never as Radar's own
+// With auth on, the live read runs as the caller, never as KubeAtlas's own
 // identity, so the API server applies the caller's RBAC.
 func TestSecretGet_HelmReleaseLiveReadImpersonatesCaller(t *testing.T) {
 	fakeAPI := useHelmReleaseSecretCluster(t, "H4sIpayload")

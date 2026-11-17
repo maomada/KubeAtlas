@@ -12,13 +12,13 @@ import (
 
 func evidenceStep(ref string, patch func(*StepInfo)) RunEvent {
 	step := &StepInfo{
-		ID:            "call-1",
-		Tool:          "get_resource",
-		Status:        "done",
-		Result:        `{"kind":"Pod"}`,
-		EvidenceRef:   ref,
-		RadarEvidence: true,
-		IsError:       boolPointer(false),
+		ID:                "call-1",
+		Tool:              "get_resource",
+		Status:            "done",
+		Result:            `{"kind":"Pod"}`,
+		EvidenceRef:       ref,
+		KubeAtlasEvidence: true,
+		IsError:           boolPointer(false),
 	}
 	if patch != nil {
 		patch(step)
@@ -125,7 +125,7 @@ func TestBindRootCauseEvidenceLinksOnlyCurrentCompleteSuccessfulSteps(t *testing
 		[]RunEvent{
 			{Event: StreamEvent{Type: "turn"}},
 			{Event: StreamEvent{Type: "step", Step: &StepInfo{
-				ID: "call-1", Tool: "mcp__radar__get_resource", Status: "running",
+				ID: "call-1", Tool: "mcp__kubeatlas__get_resource", Status: "running",
 			}}},
 			evidenceStep(first, func(step *StepInfo) { step.Tool = "" }),
 			evidenceStep(second, func(step *StepInfo) { step.ID = "call-2" }),
@@ -185,8 +185,8 @@ func TestBindRootCauseEvidenceRejectsUnverifiableRefsAsASet(t *testing.T) {
 		{name: "unknown outcome", events: []RunEvent{{Event: StreamEvent{Type: "turn"}}, evidenceStep(validRef, func(step *StepInfo) { step.IsError = nil })}, refs: []string{validRef}},
 		{name: "empty result", events: []RunEvent{{Event: StreamEvent{Type: "turn"}}, evidenceStep(validRef, func(step *StepInfo) { step.Result = " " })}, refs: []string{validRef}},
 		{name: "truncated", events: []RunEvent{{Event: StreamEvent{Type: "turn"}}, evidenceStep(validRef, func(step *StepInfo) { step.Truncated = true })}, refs: []string{validRef}},
-		{name: "unvalidated marker", events: []RunEvent{{Event: StreamEvent{Type: "turn"}}, evidenceStep(validRef, func(step *StepInfo) { step.RadarEvidence = false })}, refs: []string{validRef}},
-		{name: "non-Radar tool", events: []RunEvent{{Event: StreamEvent{Type: "turn"}}, evidenceStep(validRef, func(step *StepInfo) { step.Tool = "mcp__grafana__query_prometheus" })}, refs: []string{validRef}},
+		{name: "unvalidated marker", events: []RunEvent{{Event: StreamEvent{Type: "turn"}}, evidenceStep(validRef, func(step *StepInfo) { step.KubeAtlasEvidence = false })}, refs: []string{validRef}},
+		{name: "non-KubeAtlas tool", events: []RunEvent{{Event: StreamEvent{Type: "turn"}}, evidenceStep(validRef, func(step *StepInfo) { step.Tool = "mcp__grafana__query_prometheus" })}, refs: []string{validRef}},
 		{name: "missing tool identity", events: []RunEvent{{Event: StreamEvent{Type: "turn"}}, evidenceStep(validRef, func(step *StepInfo) { step.Tool = "" })}, refs: []string{validRef}},
 		{
 			name: "conflicting correlated tool",

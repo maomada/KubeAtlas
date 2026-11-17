@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	// uninstallStartRetain drops anchors for releases Radar has stopped reading,
+	// uninstallStartRetain drops anchors for releases KubeAtlas has stopped reading,
 	// such as one whose uninstall finished and purged its history. It is far
 	// longer than any read cadence so a live anchor is never dropped between
 	// reads; only releases that were uninstalling are ever held.
@@ -33,11 +33,11 @@ type uninstallStartEntry struct {
 	lastObserved time.Time
 }
 
-// uninstallStartMemo keeps the earliest uninstall start Radar has read for a
+// uninstallStartMemo keeps the earliest uninstall start KubeAtlas has read for a
 // release revision. Helm rewrites Info.Deleted at the start of every uninstall
 // attempt, before the pre-delete hook runs, so a retry that fails on the same
 // blocker would otherwise restart the stuck clock and hide the issue for
-// another threshold. It lives in the Radar process: a restart re-anchors to
+// another threshold. It lives in the KubeAtlas process: a restart re-anchors to
 // Helm's latest timestamp.
 type uninstallStartMemo struct {
 	mu        sync.Mutex

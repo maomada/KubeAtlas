@@ -12,7 +12,7 @@
 #   reset         down + up.
 #   status        Cluster/pod/target inventory, exported metric names, observed label
 #                 sets and label values, series counts.
-#   query         Run the exact PromQL the Radar Beyla traffic source uses (L4 + L7)
+#   query         Run the exact PromQL the KubeAtlas Beyla traffic source uses (L4 + L7)
 #                 and print the returned series.
 #   default       Beyla config A: network + application, default attributes.
 #                 dst_port and transport are NOT exported in this mode — that is the point.
@@ -28,7 +28,7 @@
 #   - helm     https://helm.sh/docs/intro/install/
 #   - curl, python3
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-beyla-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-beyla-demo).
 #
 # NOTES, learned the hard way:
 #   - Beyla's network flow metric exports `dst_port` and `transport` ONLY when they are
@@ -36,7 +36,7 @@
 #     A stock install exports neither, so any consumer grouping by them gets empty labels.
 #   - `direction` (request/response/unknown) IS on by default. Every conversation is
 #     reported twice, once per direction, with src and dst swapped. Aggregating without
-#     it produces a mirrored edge for every real edge. Radar keeps direction="request"
+#     it produces a mirrored edge for every real edge. KubeAtlas keeps direction="request"
 #     only: UDP is reported as "unknown" on BOTH ends, so it cannot be oriented at all
 #     and is excluded rather than drawn with an invented arrow.
 #   - Selecting dst.port makes the response-direction series carry the client's EPHEMERAL
@@ -48,7 +48,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-beyla-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-beyla-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 
 # Versions pinned so the demo behaves consistently across runs. Bump deliberately.
@@ -60,7 +60,7 @@ DEMO_NS="demo"
 BEYLA_NS="beyla"
 MONITORING_NS="monitoring"
 
-# The Radar traffic source scopes its queries with this matcher. Kept here so the
+# The KubeAtlas traffic source scopes its queries with this matcher. Kept here so the
 # `query` subcommand runs byte-identical PromQL to the product code.
 JOB_SELECTOR='job=~".*beyla.*|.*alloy.*"'
 
@@ -410,7 +410,7 @@ apply_prometheus() {
   step "Deploying Prometheus in namespace '${MONITORING_NS}'"
   # Deliberately minimal: one Deployment, pod service discovery, 2h retention. All we
   # need is a scrape of Beyla plus a query endpoint. The scrape job is named "beyla" so
-  # Radar's default job matcher (.*beyla.*|.*alloy.*) applies unchanged.
+  # KubeAtlas's default job matcher (.*beyla.*|.*alloy.*) applies unchanged.
   kctl apply -f - >/dev/null <<YAML
 apiVersion: v1
 kind: Namespace
@@ -706,7 +706,7 @@ for k in sorted(keys): print("      " + k)
 cmd_query() {
   require_cluster
 
-  step "Radar L4 query (network flows, request direction only)"
+  step "KubeAtlas L4 query (network flows, request direction only)"
   note "sum by (8 labels) (rate(beyla_network_flow_bytes_total{${JOB_SELECTOR}, direction=\"request\"}[5m]))"
   prom_query "sum by (k8s_src_owner_name, k8s_src_namespace, k8s_src_owner_type, k8s_dst_owner_name, k8s_dst_namespace, k8s_dst_owner_type, dst_port, transport) (rate(beyla_network_flow_bytes_total{${JOB_SELECTOR}, direction=\"request\"}[5m]))" | print_series
 
@@ -714,11 +714,11 @@ cmd_query() {
   note "the same query with no direction filter — every edge above gains a twin pointing the other way"
   prom_query "sum by (direction, k8s_src_owner_name, k8s_dst_owner_name, k8s_src_owner_type, k8s_dst_owner_type, dst_port, transport) (rate(beyla_network_flow_bytes_total{${JOB_SELECTOR}, k8s_src_namespace=\"${DEMO_NS}\", k8s_dst_namespace=\"${DEMO_NS}\"}[5m]))" | print_series
 
-  step "Traffic Radar excludes: direction=unknown (UDP, both ends)"
+  step "Traffic KubeAtlas excludes: direction=unknown (UDP, both ends)"
   note "this is the probe behind the \"UDP is not shown\" warning"
   prom_query "sum by (direction, k8s_src_owner_name, k8s_dst_owner_name, dst_port, transport) (rate(beyla_network_flow_bytes_total{${JOB_SELECTOR}, direction=\"unknown\"}[5m]))" | print_series
 
-  step "Radar L7 query (HTTP server duration count, joined on server_port)"
+  step "KubeAtlas L7 query (HTTP server duration count, joined on server_port)"
   note "sum by (7 labels incl. server_port) (rate(http_server_request_duration_seconds_count{${JOB_SELECTOR}}[5m]))"
   prom_query "sum by (k8s_namespace_name, k8s_owner_name, k8s_pod_name, server_port, http_request_method, http_route, http_response_status_code) (rate(http_server_request_duration_seconds_count{${JOB_SELECTOR}}[5m]))" | print_series
 

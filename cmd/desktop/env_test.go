@@ -30,7 +30,7 @@ func setupEnvTestShell(t *testing.T, shell, profile string) string {
 	wrapper := filepath.Join(dir, "shell")
 	// Source only the fixture, so developer profiles cannot affect the test.
 	script := "#!/bin/sh\nexec " + shell + " " + args +
-		" -c '. \"$1\"; eval \"$2\"' radar-env-test \"${0%/*}/profile\" \"$4\"\n"
+		" -c '. \"$1\"; eval \"$2\"' kubeatlas-env-test \"${0%/*}/profile\" \"$4\"\n"
 	if err := os.WriteFile(wrapper, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}

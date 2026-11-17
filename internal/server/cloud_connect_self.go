@@ -1,14 +1,14 @@
 package server
 
-// In-cluster Cloud Connect: a Radar pod cannot install its own connection —
+// In-cluster Cloud Connect: a KubeAtlas pod cannot install its own connection —
 // the ServiceAccount cannot self-grant the impersonation RBAC (Kubernetes
 // escalation prevention), and a successful `helm upgrade` restarts the very
 // pod serving the flow. So the in-cluster lane hands off to the Hub wizard.
 //
 // What it can do is stop making the operator work out their own situation.
-// This Radar IS the installation: it knows its namespace, Helm release, chart,
+// This KubeAtlas IS the installation: it knows its namespace, Helm release, chart,
 // and whether it is managed natively by Helm or owned by Argo/Flux. The Hub
-// wizard otherwise assumes the documented `radar/radar` layout and tells
+// wizard otherwise assumes the documented `kubeatlas/kubeatlas` layout and tells
 // anyone else to adjust by hand — and its imperative command is simply wrong
 // for a GitOps-managed install, which would drift or be reverted.
 
@@ -24,7 +24,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/subject"
 )
 
-// cloudConnectSelf describes the in-cluster Radar to the funnel modal so it can
+// cloudConnectSelf describes the in-cluster KubeAtlas to the funnel modal so it can
 // route the operator to the right next step.
 type cloudConnectSelf struct {
 	// Ownership is helm | gitops | ambiguous | unknown — which handoff applies.
@@ -45,7 +45,7 @@ type cloudConnectSelf struct {
 
 const cloudConnectSelfTimeout = 15 * time.Second
 
-// handleCloudConnectSelf reports what this in-cluster Radar knows about its own
+// handleCloudConnectSelf reports what this in-cluster KubeAtlas knows about its own
 // installation. Read-only: it never contacts the Hub and never mutates.
 func (s *Server) handleCloudConnectSelf(w http.ResponseWriter, r *http.Request) {
 	if cloudMode() || cloudConnectDeploymentMode() != k8s.DeploymentModeInCluster {
@@ -64,7 +64,7 @@ func (s *Server) handleCloudConnectSelf(w http.ResponseWriter, r *http.Request) 
 	s.writeJSON(w, self)
 }
 
-// inspectSelfInstall discovers the Radar installation in the pod's own
+// inspectSelfInstall discovers the KubeAtlas installation in the pod's own
 // namespace and classifies how it is managed. Every failure degrades to
 // ownership "unknown" with a generic wizard link — a wrong-but-confident
 // answer here would send an operator to a command that damages their install.
@@ -79,16 +79,16 @@ func (s *Server) inspectSelfInstall(ctx context.Context, r *http.Request, namesp
 		return generic
 	}
 
-	result, err := cloudinstall.DiscoverRadarTargets(ctx, kc, dc, cloudinstall.DiscoveryOptions{
+	result, err := cloudinstall.DiscoverKubeAtlasTargets(ctx, kc, dc, cloudinstall.DiscoveryOptions{
 		Namespace: namespace, ReleaseName: cloudinstall.DefaultReleaseName,
 	})
 	if err != nil {
 		return generic
 	}
-	// Match this pod's own Deployment by name. "The only Radar-labelled
+	// Match this pod's own Deployment by name. "The only KubeAtlas-labelled
 	// Deployment in my namespace" is not proof that it is the one serving this
 	// request — a sibling install would produce a confident, wrong deep link.
-	var target cloudinstall.RadarTarget
+	var target cloudinstall.KubeAtlasTarget
 	found := false
 	for _, candidate := range cloudinstall.DiscoveredTargets(result, false) {
 		if candidate.DeploymentName == deploymentName {
@@ -207,7 +207,7 @@ func (s *Server) wizardInstallURL(namespace, release, method string) string {
 // frontend's SIGNUP_QUERY vocabulary (cloudConnectHandoff.ts).
 func cloudFunnelUTM(content string) url.Values {
 	return url.Values{
-		"utm_source":   {"radar-oss"},
+		"utm_source":   {"kubeatlas-oss"},
 		"utm_medium":   {"app"},
 		"utm_campaign": {"cloud-modal"},
 		"utm_content":  {content},

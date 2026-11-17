@@ -6,8 +6,8 @@ set:
     mode: oidc
     oidc:
       issuerURL: https://idp.example.com
-      clientID: radar
-      redirectURL: https://radar.example.com/auth/callback
+      clientID: kubeatlas
+      redirectURL: https://kubeatlas.example.com/auth/callback
 tests:
   - it: renders no empty flag by default so the binary keeps email, then sub
     asserts:

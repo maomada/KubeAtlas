@@ -97,9 +97,9 @@ func formatStartupLogSummary(summary startupLogSummary, color bool) []string {
 		return fmt.Sprintf("%-13s%s", key, value)
 	}
 
-	lines := []string{paint(startupANSIBold, "── Radar startup ─────────────────────────────────────────")}
+	lines := []string{paint(startupANSIBold, "── KubeAtlas startup ─────────────────────────────────────────")}
 	if summary.cloudMode {
-		lines = append(lines, row("Mode", "Radar Cloud"))
+		lines = append(lines, row("Mode", "KubeAtlas Cloud"))
 	} else {
 		lines = append(lines, row("Mode", "local"))
 	}
@@ -154,7 +154,7 @@ func formatStartupLogSummary(summary startupLogSummary, color bool) []string {
 		lines = append(lines, row("Remote", "use --listen-address=0.0.0.0 with authentication and network controls"))
 	}
 	if shouldWarnUnauthenticatedListener(summary.listenAddress, authMode != "" && authMode != "none") && !summary.cloudMode {
-		lines = append(lines, paint(startupANSIAmberBold, "WARNING: Remote clients can access Radar without authentication."))
+		lines = append(lines, paint(startupANSIAmberBold, "WARNING: Remote clients can access KubeAtlas without authentication."))
 	}
 	if authMode == "proxy" && !summary.cloudMode {
 		lines = append(lines, paint(startupANSIAmberBold, fmt.Sprintf(
@@ -225,8 +225,8 @@ func startupLogColorEnabled(w io.Writer) bool {
 }
 
 // startupAIStatus explains the AI-investigations state. The disabled cases carry
-// a reason because "no agent CLI found" reads to the user as a bug in Radar when
-// their CLI is installed but sits outside the PATH Radar was launched with. The
+// a reason because "no agent CLI found" reads to the user as a bug in KubeAtlas when
+// their CLI is installed but sits outside the PATH KubeAtlas was launched with. The
 // install advice is held back in-cluster and in shared installations, which
 // can't run local investigations at all.
 func startupAIStatus(summary startupLogSummary) string {
@@ -239,12 +239,12 @@ func startupAIStatus(summary startupLogSummary) string {
 	case !summary.mcpEnabled:
 		return "disabled (needs MCP; remove --no-mcp)"
 	case summary.kubeconfig.Mode == "in-cluster":
-		return "disabled (not available when Radar runs inside the cluster)"
+		return "disabled (not available when KubeAtlas runs inside the cluster)"
 	case summary.configManagement == "operator":
 		return "disabled (not available in a shared installation)"
 	case summary.aiCLIOverride != "":
 		// The override wins over detection, so when it names something this
-		// Radar can't run, nothing else was tried. Saying "no agent CLI found"
+		// KubeAtlas can't run, nothing else was tried. Saying "no agent CLI found"
 		// here would send the user to set the variable they already set.
 		return "disabled (can't run KUBEATLAS_AI_CLI_BIN=" + summary.aiCLIOverride + ")"
 	default:

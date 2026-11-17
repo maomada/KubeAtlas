@@ -47,7 +47,7 @@ export interface ResourceCompareViewProps {
    * When true, the diff editor area drops its padding + rounded border.
    * Use when the host renders compare as a full-bleed page (the diff IS
    * the page). Default false preserves the inset-card look that works
-   * inside OSS Radar's narrower compare route.
+   * inside OSS KubeAtlas's narrower compare route.
    */
   bleed?: boolean
 }

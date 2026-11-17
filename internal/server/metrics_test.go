@@ -39,17 +39,17 @@ func TestMetricsReportTimelineOutage(t *testing.T) {
 	// Port 1 refuses at once, so the first attempt fails without a timeout.
 	if err := timeline.InitStore(timeline.StoreConfig{
 		Type: timeline.StoreTypePostgres,
-		DSN:  "postgres://radar:pw@127.0.0.1:1/radar?connect_timeout=2",
+		DSN:  "postgres://kubeatlas:pw@127.0.0.1:1/kubeatlas?connect_timeout=2",
 	}); err != nil {
 		t.Fatalf("InitStore: %v", err)
 	}
 	timeline.RecordDrop("Deployment", "shop", "web", timeline.DropReasonStoreDown, "update", "ctx")
 
 	out := scrapeMetrics(t)
-	if !strings.Contains(out, "radar_timeline_available 0") {
+	if !strings.Contains(out, "kubeatlas_timeline_available 0") {
 		t.Fatalf("scrape does not report the timeline down:\n%s", out)
 	}
-	if !strings.Contains(out, `radar_timeline_dropped_events_total{reason="store_unavailable"} 1`) {
+	if !strings.Contains(out, `kubeatlas_timeline_dropped_events_total{reason="store_unavailable"} 1`) {
 		t.Fatalf("scrape does not count the lost change:\n%s", out)
 	}
 	if strings.Contains(out, "127.0.0.1") {
@@ -60,7 +60,7 @@ func TestMetricsReportTimelineOutage(t *testing.T) {
 	if err := timeline.InitStore(timeline.StoreConfig{Type: timeline.StoreTypeMemory, MaxSize: 10}); err != nil {
 		t.Fatalf("InitStore memory: %v", err)
 	}
-	if out := scrapeMetrics(t); !strings.Contains(out, "radar_timeline_available 1") {
+	if out := scrapeMetrics(t); !strings.Contains(out, "kubeatlas_timeline_available 1") {
 		t.Fatalf("scrape reports a working timeline as down:\n%s", out)
 	}
 }
@@ -77,7 +77,7 @@ func TestMetricsTimelineCheckIsReusedWithinTheTTL(t *testing.T) {
 	})
 	if err := timeline.InitStore(timeline.StoreConfig{
 		Type: timeline.StoreTypePostgres,
-		DSN:  "postgres://radar:pw@127.0.0.1:1/radar?connect_timeout=2",
+		DSN:  "postgres://kubeatlas:pw@127.0.0.1:1/kubeatlas?connect_timeout=2",
 	}); err != nil {
 		t.Fatalf("InitStore: %v", err)
 	}

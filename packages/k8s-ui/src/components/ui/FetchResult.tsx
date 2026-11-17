@@ -16,7 +16,7 @@ import { readActionFor, canonicalReadCode } from '../../utils/read-actions'
 //   error (403)              → "Access denied"            + error.message
 //   error (404)              → notFoundMessage            + error.message
 //   error (503 sync failed)  → "Couldn't load this view"  + error.message
-//   error (503 collector)    → "Radar can't read this"    + error.message
+//   error (503 collector)    → "KubeAtlas can't read this"    + error.message
 //   error (503)              → "Cluster unavailable"      + error.message
 //   error (401)              → "Sign-in required"         (apiFetch redirects; fallback)
 //   error (other / no shape) → "Couldn't load this view"  + error.message
@@ -28,7 +28,7 @@ import { readActionFor, canonicalReadCode } from '../../utils/read-actions'
 //
 // The error contract is duck-typed via FetchErrorShape so this stays in
 // @maomada/k8s-ui without importing ApiError from either web/ (OSS)
-// or radar-hub-web.
+// or kubeatlas-hub-web.
 
 interface FetchResultProps {
   loading: boolean
@@ -128,10 +128,10 @@ function classify(error: unknown, notFoundMessage: string): Classified {
         if (errorCodeOf(error) === 'cluster_disconnected') {
           return { headline: '集群不可用', detail: error.message, icon: ServerCrash }
         }
-        // Radar's own identity or collection can't serve the read: neither
+        // KubeAtlas's own identity or collection can't serve the read: neither
         // the cluster being down nor the reader's access.
-        if (readActionFor(errorCodeOf(error)) === 'radar_config') {
-          return { headline: "Radar 无法读取此内容", detail: error.message, icon: ShieldOff }
+        if (readActionFor(errorCodeOf(error)) === 'kubeatlas_config') {
+          return { headline: "KubeAtlas 无法读取此内容", detail: error.message, icon: ShieldOff }
         }
         // The cluster is healthy and still loading — the retry policies keep
         // these surfaces polling, but a caller without one must not tell the

@@ -42,7 +42,7 @@ func TestInvestigationWorksWithoutFullMCP(t *testing.T) {
 		t.Fatalf("read: %v, %v", result, err)
 	}
 	encoded, _ := json.Marshal(result)
-	if !strings.Contains(string(encoded), "readonly-investigation") || !strings.Contains(string(encoded), "radar:evidence-ref=") {
+	if !strings.Contains(string(encoded), "readonly-investigation") || !strings.Contains(string(encoded), "kubeatlas:evidence-ref=") {
 		t.Fatalf("missing read evidence: %s", encoded)
 	}
 	result, err = session.CallTool(t.Context(), &mcpsdk.CallToolParams{Name: "apply_resource", Arguments: struct{}{}})

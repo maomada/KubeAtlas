@@ -57,7 +57,7 @@ func ReadNamespaceLabels(namespace string, canRead bool) NamespaceLabels {
 // anything about history the caller may not read. Every candidate in the
 // window is judged before the row budget applies.
 //
-// quietStartup leaves out the notes that only say Radar started (or started
+// quietStartup leaves out the notes that only say KubeAtlas started (or started
 // watching webhooks) inside the window, unless something else is incomplete
 // too. A view that is not about history, like an issues answer, would
 // otherwise carry them on every call after a restart.
@@ -92,13 +92,13 @@ func ClusterScopedForNamespace(ctx context.Context, namespace string, nsLabels N
 	}
 	windowStart := time.Now().Add(-since)
 	if start := timeline.ObservationStart(); !start.IsZero() && start.After(windowStart) {
-		startup = append(startup, fmt.Sprintf("Radar has recorded changes only since %s; earlier changes in the window are unknown.", start.UTC().Format(time.RFC3339)))
+		startup = append(startup, fmt.Sprintf("KubeAtlas has recorded changes only since %s; earlier changes in the window are unknown.", start.UTC().Format(time.RFC3339)))
 	}
 	// Eviction is a gap of its own: a recent start does not explain history
 	// recorded since and then dropped. The eviction boundary can date any
 	// namespace or kind, so its time is not shown.
 	if timeline.HistoryEvictedThrough().After(windowStart) {
-		incomplete = append(incomplete, "Radar has evicted older change history; earlier changes in the window are unknown.")
+		incomplete = append(incomplete, "KubeAtlas has evicted older change history; earlier changes in the window are unknown.")
 	}
 	q := normalizeQuery(Query{Kinds: readable, Since: since, start: windowStart})
 	var events []timeline.TimelineEvent
@@ -121,12 +121,12 @@ func ClusterScopedForNamespace(ctx context.Context, namespace string, nsLabels N
 		case !loaded[kind]:
 			incomplete = append(incomplete, fmt.Sprintf("Current %ss are not cached, so their scope could not be checked; their changes are listed as may_apply.", kind))
 		case watchedSince[kind].After(windowStart):
-			startup = append(startup, fmt.Sprintf("Radar has watched %ss only since %s; earlier changes in the window are unknown.", kind, watchedSince[kind].UTC().Format(time.RFC3339)))
+			startup = append(startup, fmt.Sprintf("KubeAtlas has watched %ss only since %s; earlier changes in the window are unknown.", kind, watchedSince[kind].UTC().Format(time.RFC3339)))
 		}
 	}
 	for _, kind := range readable {
 		if failed := timeline.LastStoreFailure(kind); failed.After(windowStart) {
-			incomplete = append(incomplete, fmt.Sprintf("Radar failed to record a %s change at %s; changes in the window may be missing.", kind, failed.UTC().Format(time.RFC3339)))
+			incomplete = append(incomplete, fmt.Sprintf("KubeAtlas failed to record a %s change at %s; changes in the window may be missing.", kind, failed.UTC().Format(time.RFC3339)))
 		}
 	}
 	var applicable []issuesapi.ClusterScopedChange
@@ -346,7 +346,7 @@ func webhookChangeApplicability(change issuesapi.RecentChange, namespace string,
 				bestName = scope.name
 			}
 		case scope.scopeUnknown:
-			bestMay = fmt.Sprintf("webhook %s selects namespace %s; Radar could not confirm that its rules reach namespaced resources", scope.name, namespace)
+			bestMay = fmt.Sprintf("webhook %s selects namespace %s; KubeAtlas could not confirm that its rules reach namespaced resources", scope.name, namespace)
 			if bestApplies == "" {
 				bestName = scope.name
 			}

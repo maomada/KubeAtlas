@@ -1,6 +1,6 @@
-# Test Radar
+# Test KubeAtlas
 
-Build and test Radar changes using a real running instance. Combines build verification, API smoke tests, and optional Playwright E2E tests.
+Build and test KubeAtlas changes using a real running instance. Combines build verification, API smoke tests, and optional Playwright E2E tests.
 
 ## Prerequisites
 
@@ -8,7 +8,7 @@ Build and test Radar changes using a real running instance. Combines build verif
 
 ## Setup
 
-1. **Pick a random port** (e.g., 9300-9399 range) for the backend to avoid conflicting with other running Radar instances.
+1. **Pick a random port** (e.g., 9300-9399 range) for the backend to avoid conflicting with other running KubeAtlas instances.
 2. **Build**: Run `make build` from the repo root. If it fails, diagnose and report — do not proceed.
 3. **Start server**: Run the built binary with `--port <random-port> --no-open` in the background. Wait for it to be ready (curl the health endpoint or `/api/cluster-info`).
 
@@ -38,7 +38,7 @@ Consider whether unit/smoke/E2E tests should be added to the codebase. Be smart 
 
 ## Cleanup
 
-When done testing, **kill the Radar process** you started. Don't leave orphan processes.
+When done testing, **kill the KubeAtlas process** you started. Don't leave orphan processes.
 
 ## Output
 

@@ -332,7 +332,7 @@ export function ResourcesView({ namespaces, selectedResource, onResourceClick, o
   // (e.g. /c/abc/c/abc/resources/pods). Under that URL, getViewFromPath()
   // sees 'c' as the first segment and falls through to 'home' — which
   // manifests as "click a resource → bounced to the home dashboard" in
-  // any host that mounts RadarApp under a non-empty basename (upstream Cloud).
+  // any host that mounts KubeAtlasApp under a non-empty basename (upstream Cloud).
   // Strip the basename here so react-router can re-apply it cleanly.
   const handleNavigate = useMemo(() => {
     return (path: string, options?: { replace?: boolean }) => {

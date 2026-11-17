@@ -125,7 +125,7 @@ type InitOptions struct {
 	KubeconfigDirs []string // Directories containing kubeconfig files
 	// PreferredContext is the context to start on instead of the kubeconfig's
 	// current-context. Ignored when it doesn't resolve, so a stale preference
-	// can never keep Radar from starting.
+	// can never keep KubeAtlas from starting.
 	PreferredContext ContextRef
 }
 
@@ -517,7 +517,7 @@ func normalizeKubeconfigPath(path, homeDir string) (string, error) {
 	return absolute, nil
 }
 
-// NormalizeKubeconfigPath applies Radar's path expansion to one explicitly configured file.
+// NormalizeKubeconfigPath applies KubeAtlas's path expansion to one explicitly configured file.
 func NormalizeKubeconfigPath(value string) (string, error) {
 	return normalizeKubeconfigPath(value, homedir.HomeDir())
 }
@@ -831,7 +831,7 @@ type KubeconfigSummary struct {
 //
 // ExecPluginsPresent/Missing are computed lazily against the *current*
 // process PATH at snapshot time (not init time) so a user who installs
-// `gke-gcloud-auth-plugin` (or similar) *after* launching Radar sees the
+// `gke-gcloud-auth-plugin` (or similar) *after* launching KubeAtlas sees the
 // plugin move from "missing" to "present" in their next snapshot without
 // restarting — and a user whose PATH is smaller in a long-running session
 // still gets accurate data.
@@ -961,7 +961,7 @@ func recordEmptyCommandWarning(source string, authInfos []string) {
 }
 
 // WriteKubeconfigForCurrentContext creates a temporary kubeconfig file with
-// current-context set to Radar's active context. The caller must remove the
+// current-context set to KubeAtlas's active context. The caller must remove the
 // file when done. Returns the temp file path.
 func WriteKubeconfigForCurrentContext() (string, error) {
 	snapshot, err := WriteKubeconfigSnapshotForCurrentContext(nil)
@@ -990,7 +990,7 @@ func WriteKubeconfigSnapshotForCurrentContext(expectedContext *string) (Kubeconf
 	clientMu.RUnlock()
 
 	if expectedContext != nil && *expectedContext != ctx {
-		return KubeconfigSnapshot{}, fmt.Errorf("%w: this terminal is for %q; Radar is showing %q", ErrKubeconfigContextMismatch, *expectedContext, ctx)
+		return KubeconfigSnapshot{}, fmt.Errorf("%w: this terminal is for %q; KubeAtlas is showing %q", ErrKubeconfigContextMismatch, *expectedContext, ctx)
 	}
 
 	var rawConfig clientcmdapi.Config
@@ -1049,7 +1049,7 @@ func WriteKubeconfigSnapshotForCurrentContext(expectedContext *string) (Kubeconf
 		rawConfig.CurrentContext = currentContextForFile
 	}
 
-	tmpFile, err := os.CreateTemp("", "radar-kubeconfig-*.yaml")
+	tmpFile, err := os.CreateTemp("", "kubeatlas-kubeconfig-*.yaml")
 	if err != nil {
 		return KubeconfigSnapshot{}, fmt.Errorf("failed to create temp kubeconfig: %w", err)
 	}
@@ -1146,9 +1146,9 @@ const clusterUIDNegativeTTL = 45 * time.Second
 // ClusterIdentity returns a stable per-cluster identifier for scoping
 // cluster-keyed client state (e.g. the in-cluster-test consent memory). A real
 // kubeconfig context name wins. In-cluster deployments all report the SAME
-// "in-cluster" sentinel - useless as an identity when one shared origin (Radar
+// "in-cluster" sentinel - useless as an identity when one shared origin (KubeAtlas
 // Hub) fronts many clusters - so they fall back to the kube-system namespace
-// UID: immutable, unique per cluster, readable with radar's existing RBAC.
+// UID: immutable, unique per cluster, readable with kubeatlas's existing RBAC.
 // Returns "" when even that read fails; callers must treat empty as "no stable
 // identity" and never persist per-cluster state under a shared fallback key.
 func ClusterIdentity(ctx context.Context) string {
@@ -1592,7 +1592,7 @@ func GetAvailableContexts() ([]ContextInfo, error) {
 	// only refresh point in multi-file (isolated-load) mode — without
 	// it, kubeconfigs that were rewritten or deleted on disk after
 	// startup keep showing up in the dropdown until the user
-	// restarts Radar (the "junk clusters" complaint).
+	// restarts KubeAtlas (the "junk clusters" complaint).
 	//
 	// refreshContextRegistry returns NEW maps when anything changes,
 	// so we publish them atomically under the write lock. Snapshot
@@ -1926,7 +1926,7 @@ type capiPromotionSnapshot struct {
 var preCapiPromotion *capiPromotionSnapshot
 
 // MergeAndSwitchContext writes the provided kubeconfig data to a temporary
-// file and registers its context so that Radar can switch to it. Returns
+// file and registers its context so that KubeAtlas can switch to it. Returns
 // (qualifiedName, tmpPath, created, error): qualifiedName is the identifier the
 // caller must pass to PerformContextSwitch, and may differ from the input
 // contextName if another file already owns that name (the registry disambiguates
@@ -1934,7 +1934,7 @@ var preCapiPromotion *capiPromotionSnapshot
 // exposed for diagnostics / logging only. created is false when an existing,
 // previously published CAPI source was refreshed in place.
 //
-// If Radar started in single-file mode, the first CAPI merge promotes it
+// If KubeAtlas started in single-file mode, the first CAPI merge promotes it
 // into isolated-load mode by seeding the registry with the original
 // kubeconfig plus the new CAPI file — otherwise subsequent CAPI merges
 // would silently revert to client-go's Precedence behavior (issue #519).
@@ -2055,7 +2055,7 @@ func MergeAndSwitchContext(kubeconfigData []byte, contextName, safetyBinding str
 	}
 
 	// Write to a new temp file.
-	tmpFile, err := os.CreateTemp("", "radar-capi-kubeconfig-*.yaml")
+	tmpFile, err := os.CreateTemp("", "kubeatlas-capi-kubeconfig-*.yaml")
 	if err != nil {
 		return "", "", false, fmt.Errorf("failed to create temp kubeconfig: %w", err)
 	}

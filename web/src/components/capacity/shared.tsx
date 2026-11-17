@@ -15,10 +15,10 @@ import {
   FreshnessControl,
   healthToSeverity,
   formatDuration,
-  getRadarUpgradeRequirement,
-  RadarUpgradeAction,
-  radarUpgradeDetail,
-  radarUpgradeHeadline,
+  getKubeAtlasUpgradeRequirement,
+  KubeAtlasUpgradeAction,
+  kubeatlasUpgradeDetail,
+  kubeatlasUpgradeHeadline,
   memberRef,
   PaneLoader,
   ResourceBar,
@@ -1338,7 +1338,7 @@ export function ScopeBadges({
 export const CAPACITY_VIEWER_CLUSTERROLE = `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: radar-capacity-viewer
+  name: kubeatlas-capacity-viewer
 rules:
 - apiGroups: [""]
   resources: ["nodes"]
@@ -1410,16 +1410,16 @@ export function integrationBlock(
       return <DeniedCapacityState detail={errorMessage(error)} />;
     // Only reachable behind a version-skewed host (upstream Cloud): the OSS
     // binary always serves the routes its own frontend calls.
-    const upgrade = getRadarUpgradeRequirement(error);
+    const upgrade = getKubeAtlasUpgradeRequirement(error);
     if (upgrade)
       return (
         <ScreenEmptyState
           icon={Gauge}
-          title={radarUpgradeHeadline("Capacity")}
-          detail={radarUpgradeDetail(upgrade)}
+          title={kubeatlasUpgradeHeadline("Capacity")}
+          detail={kubeatlasUpgradeDetail(upgrade)}
           action={
             <div className="mt-3 text-sm">
-              <RadarUpgradeAction requirement={upgrade} />
+              <KubeAtlasUpgradeAction requirement={upgrade} />
             </div>
           }
         />

@@ -55,7 +55,7 @@ export function CNPGBackupRenderer({ data, onNavigate }: CNPGBackupRendererProps
           {backupPlugin && (
             <Property
               label="Destination"
-              value={backupPlugin.name === CNPG_BARMAN_PLUGIN_NAME ? "From the Cluster's barman-cloud plugin" : 'Unknown: Radar does not model this plugin’s destination'}
+              value={backupPlugin.name === CNPG_BARMAN_PLUGIN_NAME ? "From the Cluster's barman-cloud plugin" : 'Unknown: KubeAtlas does not model this plugin’s destination'}
             />
           )}
           {backupPlugin?.name === CNPG_BARMAN_PLUGIN_NAME && backupPlugin.parameters && Object.keys(backupPlugin.parameters).length > 0 && (

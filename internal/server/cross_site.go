@@ -12,7 +12,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/urlutil"
 )
 
-// browserOriginAllowed decides whether a request may act with Radar's cluster
+// browserOriginAllowed decides whether a request may act with KubeAtlas's cluster
 // authority. It guards every state-changing /api route (via requireSameOrigin)
 // and the pod exec and local-terminal WebSocket upgrades, so a trusted origin
 // set by the operator applies to all of them.
@@ -45,10 +45,10 @@ func (s *Server) browserOriginAllowed(r *http.Request) bool {
 // refuses only what the browser itself labels as coming from another site, so
 // curl, scripts and browsers that send no Sec-Fetch-Site are unaffected, and
 // a proxy that rewrites Host is too: the browser compares the page with the
-// address it sent the request to, both of which are Radar's public address.
+// address it sent the request to, both of which are KubeAtlas's public address.
 //
 // "same-site" is refused as well. A site ignores the port, so any other page
-// served from localhost is same-site with a local Radar.
+// served from localhost is same-site with a local KubeAtlas.
 //
 // Browsers send Sec-Fetch-Site only to HTTPS and localhost addresses. Over
 // plain HTTP at any other address a cross-site read carries nothing to tell it
@@ -102,7 +102,7 @@ func (s *Server) originTrusted(origin string) bool {
 
 // ParseTrustedOrigins validates a comma-separated --trusted-origins value.
 // An entry it cannot use is reported in the error and left out, and the rest
-// are still returned: a typo in an optional setting must not stop Radar from
+// are still returned: a typo in an optional setting must not stop KubeAtlas from
 // starting, so the caller logs the error and carries on.
 func ParseTrustedOrigins(raw string) ([]string, error) {
 	var origins []string
@@ -123,11 +123,11 @@ func ParseTrustedOrigins(raw string) ([]string, error) {
 
 func validateTrustedOrigin(entry string) error {
 	if strings.Contains(entry, "*") {
-		return fmt.Errorf("wildcards are not allowed; list each origin exactly, e.g. https://radar.example.com")
+		return fmt.Errorf("wildcards are not allowed; list each origin exactly, e.g. https://kubeatlas.example.com")
 	}
 	u, err := url.Parse(entry)
 	if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") {
-		return fmt.Errorf("expected http(s)://host[:port], e.g. https://radar.example.com")
+		return fmt.Errorf("expected http(s)://host[:port], e.g. https://kubeatlas.example.com")
 	}
 	if u.User != nil || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
 		return fmt.Errorf("an origin is scheme://host[:port] only, with no path, query or credentials")
@@ -206,14 +206,14 @@ func (s *Server) requireSameOrigin(next http.Handler) http.Handler {
 }
 
 // crossOriginRefusalMessage is shown to the operator as the detail of the
-// failed action. A legitimate user only sees it when a proxy hides Radar's own
+// failed action. A legitimate user only sees it when a proxy hides KubeAtlas's own
 // address, so it says what to change.
 func crossOriginRefusalMessage(r *http.Request) string {
 	origin := r.Header.Get("Origin")
 	if origin == "" || origin == "null" {
-		return "Radar refused this request because the browser reported it came from another website."
+		return "KubeAtlas refused this request because the browser reported it came from another website."
 	}
-	return fmt.Sprintf("Radar refused this request because it came from %s, but reached Radar addressed to %s. "+
-		"If %s is the address you open Radar at, set your proxy to keep the original Host header, "+
-		"or add %s to Radar's trusted origins (Helm value trustedOrigins, KUBEATLAS_TRUSTED_ORIGINS, or --trusted-origins).", origin, r.Host, origin, origin)
+	return fmt.Sprintf("KubeAtlas refused this request because it came from %s, but reached KubeAtlas addressed to %s. "+
+		"If %s is the address you open KubeAtlas at, set your proxy to keep the original Host header, "+
+		"or add %s to KubeAtlas's trusted origins (Helm value trustedOrigins, KUBEATLAS_TRUSTED_ORIGINS, or --trusted-origins).", origin, r.Host, origin, origin)
 }

@@ -149,7 +149,7 @@ interface WorkloadViewProps {
   // ── Hosted chrome (expanded mode) ────────────────────────────────────────
   /**
    * A breadcrumb rendered above the identity header — e.g. when a larger
-   * surface (Radar Cloud's app page) hosts this view inside its own navigation.
+   * surface (KubeAtlas Cloud's app page) hosts this view inside its own navigation.
    * When set, the standalone back button is not rendered; `onBack` still backs
    * the Escape shortcut.
    */
@@ -176,7 +176,7 @@ interface WorkloadViewProps {
   hideBackButton?: boolean
   /**
    * Controls injected into the shell's tab-row scope slot — e.g. a cluster /
-   * workload picker in Radar Cloud. Absent in standalone Radar.
+   * workload picker in KubeAtlas Cloud. Absent in standalone KubeAtlas.
    */
   scopeControls?: ReactNode
   /** Hide WorkloadView's own breadcrumb/identity header when a host page owns that chrome. */
@@ -199,7 +199,7 @@ interface WorkloadViewProps {
   scalerDiagnostics?: ScalerDiagnosis[]
   /** Pod readiness data from the host's workload-pods endpoint. Optional so
    *  shared consumers can still render from relationships when they do not wire
-   *  Radar-specific data hooks. */
+   *  KubeAtlas-specific data hooks. */
   workloadPods?: WorkloadPodInfo[]
   workloadPodsLoading?: boolean
   workloadPodsError?: Error | null
@@ -904,7 +904,7 @@ export function WorkloadView({
   // set apart from the imperative ops in the action bar — it's an invitation to
   // understand the resource, not another verb to run on it. Adaptive by health:
   // prominent "Diagnose" on a problem, a quiet icon when fine. Rendered via the host
-  // slot (DiagnoseCustomization); standalone Radar injects it, Hub overrides it.
+  // slot (DiagnoseCustomization); standalone KubeAtlas injects it, Hub overrides it.
   const renderDiagnose = actionsBarProps?.renderDiagnose as
     | ((ctx: { kind: string; group?: string; namespace: string; name: string; health?: DiagnoseHealthHint }) => ReactNode)
     | undefined

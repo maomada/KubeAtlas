@@ -1,6 +1,7 @@
 package audit
 
 import (
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"strings"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -11,17 +12,17 @@ import (
 
 // IgnoreChecksAnnotation opts a single resource out of named checks:
 //
-//	radarhq.io/ignore-checks: singleReplica
-//	radarhq.io/ignore-checks: hostNetwork,livenessProbeMissing
+//	kubeatlas.io/ignore-checks: singleReplica
+//	kubeatlas.io/ignore-checks: hostNetwork,livenessProbeMissing
 //
 // The value is a comma-separated list of check IDs (see CheckRegistry).
 // Names that match no check are inert. The annotation must sit on the
 // resource a finding is ATTRIBUTED to — for the pod-spec family that is the
 // workload (Deployment/StatefulSet/...), not the Pod it generates.
 //
-// Annotations, not Radar-side settings: the opt-out then travels with the
-// manifest, so every operator's Radar reports the same posture.
-const IgnoreChecksAnnotation = "radarhq.io/ignore-checks"
+// Annotations, not KubeAtlas-side settings: the opt-out then travels with the
+// manifest, so every operator's KubeAtlas reports the same posture.
+const IgnoreChecksAnnotation = "kubeatlas.io/ignore-checks"
 
 // ignoreIndex maps ResourceKey → set of checkIDs that resource opts out of.
 type ignoreIndex map[string]map[string]bool
@@ -48,6 +49,12 @@ func (idx ignoreIndex) add(kind string, obj metav1.Object) {
 
 func (idx ignoreIndex) addKeyed(group, kind string, obj metav1.Object) {
 	ids := parseIgnoredChecks(obj.GetAnnotations()[IgnoreChecksAnnotation])
+	for id := range parseIgnoredChecks(obj.GetAnnotations()[compat.LegacyIgnoreChecksAnnotation]) {
+		if ids == nil {
+			ids = make(map[string]bool)
+		}
+		ids[id] = true
+	}
 	if ids == nil {
 		return
 	}

@@ -7,7 +7,7 @@ describe('CNPG host composition', () => {
   it('preserves context and query state when mapping a generic detail route', () => {
     const search = new URLSearchParams('apiGroup=postgresql.cnpg.io&ctx=kind-demo&tab=timeline&drawer=pods%3Apg-1')
     const path = cnpgHost.detailRedirect(resource, search)!
-    const url = new URL(path, 'http://radar.test')
+    const url = new URL(path, 'http://kubeatlas.test')
     expect(url.pathname).toBe('/cnpg/clusters/db/pg')
     expect(Object.fromEntries(url.searchParams)).toEqual({ ctx: 'kind-demo', tab: 'activity', drawer: 'pods:pg-1' })
     expect(search.get('tab')).toBe('timeline')

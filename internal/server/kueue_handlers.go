@@ -75,7 +75,7 @@ func (s *Server) handleKueueAdmission(w http.ResponseWriter, r *http.Request) {
 	var err error
 	if isJob {
 		if cache.Jobs() == nil || !cache.KindCoversNamespace("jobs", namespace) {
-			s.writeError(w, http.StatusForbidden, "Radar cannot observe Jobs in this namespace")
+			s.writeError(w, http.StatusForbidden, "KubeAtlas cannot observe Jobs in this namespace")
 			return
 		}
 		if synced, known := cache.InformerSynced("jobs"); known && !synced {
@@ -116,7 +116,7 @@ func (s *Server) handleKueueAdmission(w http.ResponseWriter, r *http.Request) {
 				s.writeError(w, http.StatusNotFound, rootKind+" not found")
 			} else {
 				log.Printf("[kueue] Failed to read %s %s/%s: %v", rootKind, namespace, name, err)
-				s.writeError(w, http.StatusServiceUnavailable, "Radar could not observe the "+rootKind+"; retry when its cache is available")
+				s.writeError(w, http.StatusServiceUnavailable, "KubeAtlas could not observe the "+rootKind+"; retry when its cache is available")
 			}
 			return
 		}
@@ -150,7 +150,7 @@ func (s *Server) handleKueueAdmission(w http.ResponseWriter, r *http.Request) {
 	items, err := listDynamicSynced(r.Context(), cache, "Workload", kueueGroup, namespace)
 	if err != nil {
 		log.Printf("[kueue] Failed to list Workloads for root %s/%s: %v", namespace, name, err)
-		s.writeError(w, http.StatusServiceUnavailable, "Radar could not observe Kueue Workloads; retry when its cache is available")
+		s.writeError(w, http.StatusServiceUnavailable, "KubeAtlas could not observe Kueue Workloads; retry when its cache is available")
 		return
 	}
 	respond(kueueAdmissionForRoot(r.Context(), root, items, kueueReferenceChecker{s.newRequestScopedChecker(r)}))
@@ -263,7 +263,7 @@ func (s *Server) handleKueueProvisioning(w http.ResponseWriter, r *http.Request)
 			s.writeError(w, http.StatusNotFound, "Kueue Workload not found")
 		} else {
 			log.Printf("[kueue] Failed to read Workload %s/%s: %v", namespace, name, err)
-			s.writeError(w, http.StatusServiceUnavailable, "Radar could not observe the Workload; retry when its cache is available")
+			s.writeError(w, http.StatusServiceUnavailable, "KubeAtlas could not observe the Workload; retry when its cache is available")
 		}
 		return
 	}
@@ -282,7 +282,7 @@ func (s *Server) handleKueueProvisioning(w http.ResponseWriter, r *http.Request)
 	items, err := listDynamicSynced(r.Context(), cache, "ProvisioningRequest", provisioningGroup, namespace)
 	if err != nil {
 		log.Printf("[kueue] Failed to list ProvisioningRequests for Workload %s/%s: %v", namespace, name, err)
-		s.writeError(w, http.StatusServiceUnavailable, "Radar could not observe ProvisioningRequests; retry when its cache is available")
+		s.writeError(w, http.StatusServiceUnavailable, "KubeAtlas could not observe ProvisioningRequests; retry when its cache is available")
 		return
 	}
 	s.writeJSON(w, provisioningForWorkload(root, items))

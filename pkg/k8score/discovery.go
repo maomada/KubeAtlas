@@ -708,7 +708,7 @@ const KyvernoModernPolicyGroup = "policies.kyverno.io"
 //
 // Detecting only the legacy family would report not-installed on a
 // modern-only cluster and silently drop the entire PolicyReport index —
-// the reports would still exist, Radar would just stop indexing them.
+// the reports would still exist, KubeAtlas would just stop indexing them.
 // Whole-group presence is the right signal for the modern family because
 // policies.kyverno.io is owned exclusively by Kyverno, so no single kind
 // has to be nominated as the sentinel.

@@ -78,18 +78,18 @@ func TestOpencodeConfigAndCommand(t *testing.T) {
 	if err := json.Unmarshal(b, &cfg); err != nil {
 		t.Fatalf("opencode.json not valid JSON: %v", err)
 	}
-	srv, ok := cfg.MCP["radar"]
+	srv, ok := cfg.MCP["kubeatlas"]
 	if !ok {
-		t.Fatalf("opencode.json missing radar server entry: %s", string(b))
+		t.Fatalf("opencode.json missing kubeatlas server entry: %s", string(b))
 	}
 	if srv.Type != "remote" || srv.URL != url {
-		t.Errorf("opencode.json radar entry = %+v, want type=remote, url=%s", srv, url)
+		t.Errorf("opencode.json kubeatlas entry = %+v, want type=remote, url=%s", srv, url)
 	}
 	marker := investigation.RefMarker("ev_"+strings.Repeat("a", 128)+"_"+strings.Repeat("b", 128)) + "\n\n"
 	for _, payload := range []string{strings.Repeat("\U0010ffff", maxToolPayload), strings.Repeat("\n", maxToolPayload)} {
 		output := marker + payload
 		if len(output) > cfg.ToolOutput.MaxBytes || strings.Count(output, "\n")+1 > cfg.ToolOutput.MaxLines {
-			t.Fatal("OpenCode would truncate a result within Radar's retention limit")
+			t.Fatal("OpenCode would truncate a result within KubeAtlas's retention limit")
 		}
 	}
 	cmd, cleanup, err = a.command(context.Background(), turnSpec{
@@ -192,7 +192,7 @@ func TestOpencodeToolEvidenceRequiresPrivateIssuance(t *testing.T) {
 				ref, _ = refs.Issue(scope, payload)
 			}
 			output, _ := json.Marshal(investigation.RefMarker(ref) + "\n\n" + payload)
-			stream := `{"type":"tool_use","part":{"id":"call1","tool":"radar_get_resource","state":{"status":"` + status + `","input":{"kind":"Pod"},"output":` + string(output) + `,"error":` + string(output) + `}}}`
+			stream := `{"type":"tool_use","part":{"id":"call1","tool":"kubeatlas_get_resource","state":{"status":"` + status + `","input":{"kind":"Pod"},"output":` + string(output) + `,"error":` + string(output) + `}}}`
 			validator := investigationEvidenceValidator{registry: refs, scope: scope, claimed: map[string]struct{}{}}
 			events := []RunEvent{{Event: StreamEvent{Type: "turn"}}}
 			(&opencodeAgent{}).parseStream(strings.NewReader(stream), func(ev StreamEvent) {
@@ -222,7 +222,7 @@ func TestOpencodeToolResultsPreserveTruncationAndErrors(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			output, _ := json.Marshal(tc.output)
 			truncated, _ := json.Marshal(tc.hostTruncated)
-			stream := `{"type":"tool_use","part":{"id":"call","tool":"radar_get_resource","state":{"status":"` + tc.status + `","output":` + string(output) + `,"error":` + string(output) + `,"metadata":{"truncated":` + string(truncated) + `}}}}`
+			stream := `{"type":"tool_use","part":{"id":"call","tool":"kubeatlas_get_resource","state":{"status":"` + tc.status + `","output":` + string(output) + `,"error":` + string(output) + `,"metadata":{"truncated":` + string(truncated) + `}}}}`
 			var step *StepInfo
 			(&opencodeAgent{}).parseStream(strings.NewReader(stream), func(ev StreamEvent) { step = ev.Step })
 			if step == nil || step.Status != "done" || step.IsError == nil || *step.IsError != tc.wantError || step.Truncated != tc.wantTruncated {

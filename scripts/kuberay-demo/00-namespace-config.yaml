@@ -6,15 +6,15 @@ metadata:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: radar-ray-serve
+  name: kubeatlas-ray-serve
   namespace: kuberay-demo
 data:
-  radar_serve.py: |
+  kubeatlas_serve.py: |
     from ray import serve
 
     @serve.deployment
-    class RadarDemo:
+    class KubeAtlasDemo:
         def __call__(self):
-            return "radar-kuberay-ready"
+            return "kubeatlas-kuberay-ready"
 
-    app = RadarDemo.bind()
+    app = KubeAtlasDemo.bind()

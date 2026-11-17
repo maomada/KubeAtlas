@@ -14,7 +14,7 @@ type PreflightResult struct {
 	// Denied and Unverifiable are subsets of Blocking, kept so a presenter can
 	// say what kind of stop this is without parsing the lines. Denied is the
 	// caller's identity lacking a permission (an access review said no, or the
-	// dry run came back 403). Unverifiable is Radar unable to prove the exact
+	// dry run came back 403). Unverifiable is KubeAtlas unable to prove the exact
 	// mutation (the prepared chart hid a Secret). Everything else in Blocking
 	// is the cluster refusing the change itself: an admission webhook, an
 	// object already owned by something else, an API the cluster does not
@@ -37,11 +37,11 @@ const (
 	// BlockCauseCluster: at least one blocker is the cluster refusing the
 	// change. More permission would not help; something has to be resolved.
 	BlockCauseCluster BlockCause = "cluster"
-	// BlockCauseVerification: nothing was refused, but Radar could not prove
+	// BlockCauseVerification: nothing was refused, but KubeAtlas could not prove
 	// what the install would do, so it declines to do it blind. Today this can
-	// only mean the Radar chart rendered something this binary's installer
-	// refuses to apply unseen — a Radar version/chart mismatch, not anything
-	// about the person or their cluster — so present it as Radar's limitation.
+	// only mean the KubeAtlas chart rendered something this binary's installer
+	// refuses to apply unseen — a KubeAtlas version/chart mismatch, not anything
+	// about the person or their cluster — so present it as KubeAtlas's limitation.
 	BlockCauseVerification BlockCause = "verification"
 )
 

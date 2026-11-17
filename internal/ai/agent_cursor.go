@@ -25,8 +25,8 @@ import (
 // --force grant required for headless MCP calls also approves its built-in tools
 // and every loaded MCP server. --sandbox enabled is still requested, but Cursor's
 // tools can write outside the supplied workspace, so neither it nor the
-// throwaway workspace is treated as a security boundary. Radar's investigation
-// MCP mount remains read-only; Cursor's other tools are outside Radar's control.
+// throwaway workspace is treated as a security boundary. KubeAtlas's investigation
+// MCP mount remains read-only; Cursor's other tools are outside KubeAtlas's control.
 // This exposure is explicit in the versioned full-local consent surface.
 //
 // Cursor's --resume is workspace-scoped, so every turn of a run must share one
@@ -60,7 +60,7 @@ func (a *cursorAgent) command(ctx context.Context, s turnSpec) (*exec.Cmd, func(
 	cleanup := func() {}
 	if workdir == "" {
 		// One-shot (non-RunManager) use: a fresh throwaway workspace, removed after.
-		dir, err := os.MkdirTemp("", "radar-cursor-")
+		dir, err := os.MkdirTemp("", "kubeatlas-cursor-")
 		if err != nil {
 			return nil, nil, fmt.Errorf("ai: cursor workdir: %w", err)
 		}
@@ -76,14 +76,14 @@ func (a *cursorAgent) command(ctx context.Context, s turnSpec) (*exec.Cmd, func(
 		"-p", "--output-format", "stream-json",
 		"--workspace", workdir,
 		"--sandbox", "enabled", // request Cursor's sandbox; full-local consent does not treat it as a security boundary
-		"--approve-mcps", // auto-approve the radar server for this headless run
+		"--approve-mcps", // auto-approve the kubeatlas server for this headless run
 	}
 	// Headless (-p) runs get no TTY, so nothing can answer Cursor's approval
 	// prompts: without an approval flag the run aborts at the workspace-trust gate,
 	// and the per-run throwaway workdir means a one-time manual trust never carries
 	// over. --force/--yolo is the load-bearing grant — it approves tool calls, and
 	// observably clears the workspace gate as well (the force-only shim run pins
-	// that). --trust clears only the gate: --approve-mcps registers the radar server
+	// that). --trust clears only the gate: --approve-mcps registers the kubeatlas server
 	// but does NOT approve its invocations, so a run granted trust alone has every
 	// MCP call auto-denied and ends with no evidence. Trust is still passed when
 	// advertised, since no help text promises force subsumes it; an unsupported flag
@@ -179,7 +179,7 @@ func cursorHelpApprovalFlags(help string) []string {
 	return flags
 }
 
-// writeCursorMCPConfig points Cursor at radar's MCP via the workspace-local config
+// writeCursorMCPConfig points Cursor at kubeatlas's MCP via the workspace-local config
 // (<workdir>/.cursor/mcp.json). The endpoint is loopback-only in standalone mode,
 // so no auth header.
 func writeCursorMCPConfig(workdir, mcpURL string) error {
@@ -187,7 +187,7 @@ func writeCursorMCPConfig(workdir, mcpURL string) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return fmt.Errorf("ai: cursor mcp config dir: %w", err)
 	}
-	cfg := map[string]any{"mcpServers": map[string]any{"radar": map[string]any{"url": mcpURL}}}
+	cfg := map[string]any{"mcpServers": map[string]any{"kubeatlas": map[string]any{"url": mcpURL}}}
 	b, err := json.Marshal(cfg)
 	if err != nil {
 		return err

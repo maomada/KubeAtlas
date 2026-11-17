@@ -123,10 +123,10 @@ describe('evaluateGitOpsWriteGuard', () => {
     })
 
     it('no evidence at all ⇒ may-revert, and says why', () => {
-      const g = guard({ writes: [hibernate], evidenceError: 'GitOps revert warnings need a newer Radar' })
+      const g = guard({ writes: [hibernate], evidenceError: 'GitOps revert warnings need a newer KubeAtlas' })
       expect(g.level).toBe('may-revert')
       expect(g.requiresAck).toBe(true)
-      expect(g.perWrite[0].reason).toContain("can't see which fields the GitOps source declares (GitOps revert warnings need a newer Radar)")
+      expect(g.perWrite[0].reason).toContain("can't see which fields the GitOps source declares (GitOps revert warnings need a newer KubeAtlas)")
     })
 
     it('unknown fields (no paths) ⇒ may-revert', () => {
@@ -281,7 +281,7 @@ describe('evaluateGitOpsWriteGuard', () => {
   })
 
   it('unverifiable ownership needs acknowledgement', () => {
-    const why = "Radar couldn't read this resource, so it can't tell whether a GitOps tool or Helm manages it."
+    const why = "KubeAtlas couldn't read this resource, so it can't tell whether a GitOps tool or Helm manages it."
     const g = evaluateGitOpsWriteGuard({ target, owner: null, ownershipError: why, writes: [hibernate] })
     expect(g.requiresAck).toBe(true)
     expect(g.summary).toBe(`A GitOps tool may revert this change. ${why}`)
@@ -364,7 +364,7 @@ describe('copy', () => {
     expect(g.level).toBe('may-revert')
     expect(g.requiresAck).toBe(true)
     expect(g.perWrite[0].reason).toBe(
-      "Radar can't confirm the Application's ignore rule (spec.ignoreDifferences jsonPointers) covers this field, so the next sync may overwrite it.",
+      "KubeAtlas can't confirm the Application's ignore rule (spec.ignoreDifferences jsonPointers) covers this field, so the next sync may overwrite it.",
     )
   })
 
@@ -494,7 +494,7 @@ describe('manager answer composition', () => {
     const manager = { state: 'listed' as const, lead: a, direct: { object: subject, recorders: [a], claims: [{ manager: b, source: 'argo-tracking-id' as const, check: 'missing' as const, copied: true }] } }
     const g = run(manager, [write], { evidence: evidence(selfHeal, [pathEvidence({ lastApplied: 'present' })]) })
     expect(g.level).toBe('may-revert')
-    expect(g.summary).toContain("Radar can't confirm Application argocd/a applies this object")
+    expect(g.summary).toContain("KubeAtlas can't confirm Application argocd/a applies this object")
     // The field evidence stays, behind the condition.
     expect(g.summary).toMatch(/If it does: .+/)
   })
@@ -516,7 +516,7 @@ describe('manager answer composition', () => {
     expect(g.summary).not.toContain('recreates it')
   })
 
-  // A newer Radar's state with no lead, or one candidate of a kind this UI
+  // A newer KubeAtlas's state with no lead, or one candidate of a kind this UI
   // can't open, still warns.
   it.each([
     ['an unfamiliar state without a lead', { state: 'future-state' as never, direct: { object: subject, recorders: [a] } }],
@@ -596,7 +596,7 @@ describe('manager answer composition', () => {
     const g = run(agree, [hibernate], { evidence: evidence(selfHeal, [pathEvidence({ lastApplied: 'present', ignored: 'effective' })], { managerUnavailable: 'objects_changed' }) })
     expect(g.level).toBe('may-revert')
     expect(g.owner).toBeNull()
-    expect(g.summary).toContain("Radar couldn't check what manages this resource right now (the read failed)")
+    expect(g.summary).toContain("KubeAtlas couldn't check what manages this resource right now (the read failed)")
     expect(g.summary).not.toContain('objects_changed')
   })
 
@@ -604,7 +604,7 @@ describe('manager answer composition', () => {
     ['kind_sync_pending', '(still loading)', true],
     ['read_error', '(the read failed)', true],
     ['user_forbidden', '(you may not list it)', false],
-    // Spellings an older Radar sends read as the code they became.
+    // Spellings an older KubeAtlas sends read as the code they became.
     ['kind_sync_failed', '(loading is overdue)', true],
     ['rbac_denied', '(you may not list it)', false],
   ])('a refused live answer explains %s in words', (code, words, reopen) => {

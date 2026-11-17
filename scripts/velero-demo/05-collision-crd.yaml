@@ -1,7 +1,7 @@
 # The collision fixture, and the reason it uses a REAL third-party CRD.
 #
 # rancher/backup-restore-operator ships restores.resources.cattle.io — the
-# same plural Velero uses. Radar's renderers, status readers and column sets
+# same plural Velero uses. KubeAtlas's renderers, status readers and column sets
 # must select on the API group, not the plural, or a Rancher Restore renders
 # through Velero's UI. A mock CRD would not prove much; this is the actual
 # schema, trimmed to the fields the fixture sets.

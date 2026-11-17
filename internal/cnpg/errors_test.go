@@ -56,7 +56,7 @@ func TestCNPGRelayedPodSentence(t *testing.T) {
 	untypedStatus := apierrors.NewGenericServerResponse(504, "get", schema.GroupResource{Resource: "pods"}, "https:pg-1:8000", `{"kind":"Status","status":"Failure","message":"Timeout: request did not complete within the allotted timeout","code":504}`, 0, true)
 	opaque := apierrors.NewGenericServerResponse(500, "get", schema.GroupResource{Resource: "pods"}, "https:pg-1:8000", "internal server error", 0, true)
 	neutral := func(code int) string {
-		return fmt.Sprintf("the read through the Kubernetes API failed with HTTP %d (from a gateway or the Pod; Radar can't tell which)", code)
+		return fmt.Sprintf("the read through the Kubernetes API failed with HTTP %d (from a gateway or the Pod; KubeAtlas can't tell which)", code)
 	}
 	cases := []struct {
 		err  error
@@ -185,9 +185,9 @@ func TestCNPGRelayedPodSentenceIgnoresAPIServerErrors(t *testing.T) {
 
 func TestCNPGNoPrometheusReasonIsOneSentence(t *testing.T) {
 	for msg, want := range map[string]string{
-		"": "Radar is not connected to Prometheus",
-		"Radar found 2 services that may be Prometheus but may not port-forward to them (needs create pods/portforward)": "Radar found 2 services that may be Prometheus but may not port-forward to them (needs create pods/portforward)",
-		"context deadline exceeded": "Radar is not connected to Prometheus: context deadline exceeded",
+		"": "KubeAtlas is not connected to Prometheus",
+		"KubeAtlas found 2 services that may be Prometheus but may not port-forward to them (needs create pods/portforward)": "KubeAtlas found 2 services that may be Prometheus but may not port-forward to them (needs create pods/portforward)",
+		"context deadline exceeded": "KubeAtlas is not connected to Prometheus: context deadline exceeded",
 		"No working Prometheus endpoint found.\nCandidate cert-manager/cert-manager did not respond after port-forward": "No working Prometheus endpoint found.\nCandidate cert-manager/cert-manager did not respond after port-forward",
 	} {
 		if got := cnpgNoPrometheusReason(msg); got != want {

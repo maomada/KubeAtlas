@@ -5,7 +5,7 @@ import {
   isCapacityCursorInvalidError,
   shouldRetryCapacityQuery,
 } from "./client";
-import { RadarFeatureUnsupportedError } from "./radarFeatures";
+import { KubeAtlasFeatureUnsupportedError } from "./kubeatlasFeatures";
 
 describe("isCapacityCursorInvalidError", () => {
   it("uses the structured capacity error code", () => {
@@ -45,7 +45,7 @@ describe("shouldRetryCapacityQuery", () => {
 
   it("never retries a feature the connected KubeAtlas predates", () => {
     expect(
-      shouldRetryCapacityQuery(0, new RadarFeatureUnsupportedError("capacity", {})),
+      shouldRetryCapacityQuery(0, new KubeAtlasFeatureUnsupportedError("capacity", {})),
     ).toBe(false);
   });
 
@@ -73,7 +73,7 @@ describe("capacityRefetchInterval", () => {
   it("stops polling a KubeAtlas that predates Capacity", () => {
     expect(
       capacityRefetchInterval(undefined, true)({
-        state: { error: new RadarFeatureUnsupportedError("capacity", {}) },
+        state: { error: new KubeAtlasFeatureUnsupportedError("capacity", {}) },
       }),
     ).toBe(false);
   });

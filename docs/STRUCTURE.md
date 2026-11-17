@@ -7,14 +7,14 @@ packages for persistent identity state, live MCP, and the Cloud UI. It is not
 part of the native Agent's Kubernetes API process.
 
 ```
-radar/
+kubeatlas/
 ├── cmd/
 │   ├── explorer/              # CLI entry point (main.go)
 │   ├── desktop/               # Desktop app entry point (Wails v2)
 │   └── kubeatlas-portal/      # Self-hosted Cloud Hub entry point
 ├── internal/
 │   ├── app/                   # Application lifecycle management
-│   ├── audit/                 # Radar-specific audit runner (cache → pkg/audit bridge)
+│   ├── audit/                 # KubeAtlas-specific audit runner (cache → pkg/audit bridge)
 │   ├── cnpg/                  # CNPG service: caller-scoped reads, actions, reports and log/activity interpretation
 │   ├── config/                # Configuration management
 │   ├── errorlog/              # Error logging utilities
@@ -34,7 +34,7 @@ radar/
 │   │   ├── inspector.go       # Image filesystem extraction and caching
 │   │   └── types.go           # Image metadata and filesystem types
 │   ├── k8s/
-│   │   ├── cache.go           # Singleton wrapper over pkg/k8score + Radar-specific extensions
+│   │   ├── cache.go           # Singleton wrapper over pkg/k8score + KubeAtlas-specific extensions
 │   │   ├── capabilities.go    # Cluster capability detection (probe-based RBAC gating)
 │   │   ├── client.go          # K8s client initialization
 │   │   ├── cluster_detection.go # GKE/EKS/AKS platform detection

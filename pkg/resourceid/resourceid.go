@@ -1,4 +1,4 @@
-// Package resourceid is Radar's model of Kubernetes resource identity: what
+// Package resourceid is KubeAtlas's model of Kubernetes resource identity: what
 // makes two references name the same object, which facts identify a built-in
 // resource, and how a reference that is missing part of its identity gets
 // resolved (or refused).

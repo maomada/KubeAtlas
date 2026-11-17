@@ -67,12 +67,12 @@ it('keeps organization ownership separate from explicit platform authority', () 
 
 it('keeps a rejected logout visible on organization selection', async () => {
   sessionStorage.clear()
-  sessionStorage.setItem('radar_yaml_draft:ConfigMap/qa/config', 'unsaved')
+  sessionStorage.setItem('kubeatlas_yaml_draft:ConfigMap/qa/config', 'unsaved')
   sessionStorage.setItem(HUB_YAML_DRAFT_AUTHORITY_MARKER, 'authority-marker')
   let draftsWerePurgedBeforeRequest = false
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     if (String(input) === '/api/auth/logout') {
-      draftsWerePurgedBeforeRequest = sessionStorage.getItem('radar_yaml_draft:ConfigMap/qa/config') === null && sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER) === null
+      draftsWerePurgedBeforeRequest = sessionStorage.getItem('kubeatlas_yaml_draft:ConfigMap/qa/config') === null && sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER) === null
       return Response.json({ message: 'Logout unavailable' }, { status: 503 })
     }
     throw new Error('Unexpected request: ' + String(input))
@@ -255,7 +255,7 @@ it('warns for non-loopback HTTP auth and enrollment origins only', async () => {
 })
 
 it('retains and synchronizes native theme preferences across pending pages', async () => {
-  localStorage.setItem('radar-theme', 'light')
+  localStorage.setItem('kubeatlas-theme', 'light')
   await render(<ThemeToggle />)
   await act(async () => host.querySelector('button')!.click())
   expect(localStorage.getItem('kubeatlas-portal-theme')).toBe('dark')
@@ -265,17 +265,17 @@ it('retains and synchronizes native theme preferences across pending pages', asy
   await render(<PendingMembership member={{ ...member, status: 'pending' }} retry={() => undefined} />)
   expect(document.documentElement.classList.contains('dark')).toBe(true)
   expect(document.documentElement.style.colorScheme).toBe('dark')
-  expect(localStorage.getItem('radar-theme')).toBe('dark')
+  expect(localStorage.getItem('kubeatlas-theme')).toBe('dark')
   await act(async () => host.querySelector<HTMLButtonElement>('[aria-label="切换浅色主题"]')!.click())
   expect(document.documentElement.style.colorScheme).toBe('light')
   expect(localStorage.getItem('kubeatlas-portal-theme')).toBe('light')
-  expect(localStorage.getItem('radar-theme')).toBe('light')
-  await act(async () => window.dispatchEvent(new StorageEvent('storage', { key: 'radar-theme', newValue: 'dark' })))
+  expect(localStorage.getItem('kubeatlas-theme')).toBe('light')
+  await act(async () => window.dispatchEvent(new StorageEvent('storage', { key: 'kubeatlas-theme', newValue: 'dark' })))
   expect(document.documentElement.style.colorScheme).toBe('dark')
 })
 
 it('keeps existing native-theme preferences when no Portal preference exists', async () => {
-  localStorage.setItem('radar-theme', 'dark')
+  localStorage.setItem('kubeatlas-theme', 'dark')
   await render(<ThemeToggle />)
   expect(document.documentElement.style.colorScheme).toBe('dark')
   expect(localStorage.getItem('kubeatlas-portal-theme')).toBe('dark')

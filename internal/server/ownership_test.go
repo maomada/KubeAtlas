@@ -23,7 +23,7 @@ import (
 // withOwnershipDiscovery serves the fixture's kinds as Kubernetes does, with
 // delete, so the garbage collector's kinds are the ones searched for
 // dependents. It also marks the relationship graph for a rebuild on the next
-// read, as Radar's first update cycle does, since a GET answers nothing
+// read, as KubeAtlas's first update cycle does, since a GET answers nothing
 // without one.
 func withOwnershipDiscovery(t *testing.T) {
 	t.Helper()
@@ -115,7 +115,7 @@ func TestResourceGetAnswersOwnershipFromOwnerReferences(t *testing.T) {
 	}
 }
 
-// Until Radar can build a relationship graph, as after a context switch whose
+// Until KubeAtlas can build a relationship graph, as after a context switch whose
 // build the switch overtook, a GET sends no relationships: the UI reads that as
 // owners not mapped yet, and its GitOps write guard warns instead of finding
 // no manager.
@@ -321,7 +321,7 @@ func TestDirectLookupsWithholdWhatTheUserMayNotList(t *testing.T) {
 }
 
 // A recorded member of a kind no served resource names, as when its CRD was
-// removed, is one Radar can't check, not one the user may not see.
+// removed, is one KubeAtlas can't check, not one the user may not see.
 func TestRelationshipAccessCountsAnUnservedMemberAsUnknown(t *testing.T) {
 	env := newAuthTestServer(t)
 	env.srv.permCache.Set("ivo", nil, &auth.UserPermissions{AllowedNamespaces: []string{"alpha"}})

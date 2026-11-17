@@ -142,9 +142,9 @@ func TestHubTunnelRoutesMultipleSourcesAndIsolatesCallerIdentity(t *testing.T) {
 	}
 
 	principals := []Principal{
-		{UserID: "user-one", Groups: []string{"radar:viewer"}, ClusterIDs: []string{"alpha"}},
-		{UserID: "user-two", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}},
-		{UserID: "user-three", Groups: []string{"radar:owner"}, ClusterIDs: []string{"beta"}},
+		{UserID: "user-one", Groups: []string{"kubeatlas:viewer"}, ClusterIDs: []string{"alpha"}},
+		{UserID: "user-two", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}},
+		{UserID: "user-three", Groups: []string{"kubeatlas:owner"}, ClusterIDs: []string{"beta"}},
 	}
 	var wg sync.WaitGroup
 	failures := make(chan error, 24)
@@ -165,10 +165,10 @@ func TestHubTunnelRoutesMultipleSourcesAndIsolatesCallerIdentity(t *testing.T) {
 			}
 			request.Host = "forged.example"
 			request.Header.Set("Authorization", "Bearer caller-token")
-			request.Header.Set("Cookie", "radar_session=forged")
+			request.Header.Set("Cookie", "kubeatlas_session=forged")
 			request.Header.Set("Forwarded", "for=attacker")
 			request.Header.Set("X-Forwarded-User", "forged-user")
-			request.Header.Set("X-Forwarded-Groups", "radar:owner")
+			request.Header.Set("X-Forwarded-Groups", "kubeatlas:owner")
 			request.Header.Set("X-Forwarded-Kubernetes-Token", "caller-k8s-token")
 			request.Header.Set("Impersonate-User", "system:masters")
 			request.Header.Set("MCP-Protocol-Version", "2025-03-26")
@@ -270,7 +270,7 @@ func TestHubHandshakeRejectsUntrustedClaimsBeforeTrust(t *testing.T) {
 				headers.Set("Authorization", "Bearer "+tc.token)
 			}
 			if tc.credentials != "" {
-				headers.Set("X-Radar-Kubernetes-Credentials", tc.credentials)
+				headers.Set("X-KubeAtlas-Kubernetes-Credentials", tc.credentials)
 			}
 			if tc.originHeader {
 				headers.Set("Origin", tc.origin)
@@ -311,7 +311,7 @@ func TestHubRejectsDuplicateAndReleasesIDAfterDisconnect(t *testing.T) {
 		t.Fatal("source did not complete the WebSocket handshake")
 	}
 
-	headers := http.Header{"Authorization": []string{"Bearer token-alpha"}, "X-Radar-Kubernetes-Credentials": []string{"impersonate"}}
+	headers := http.Header{"Authorization": []string{"Bearer token-alpha"}, "X-KubeAtlas-Kubernetes-Credentials": []string{"impersonate"}}
 	target := endpoint + "/agent?cluster_id=alpha&cluster_name=duplicate"
 	conn, response, err := (&websocket.Dialer{}).Dial(target, headers)
 	if conn != nil {
@@ -362,10 +362,10 @@ func TestHubEnforcesScopeReadOnlyPathAndCancellation(t *testing.T) {
 	startSource(t, endpoint, "alpha", "token-alpha", handler)
 	agent := waitForAgent(t, hub, "alpha")
 
-	if _, err := hub.HTTPClient("beta", Principal{UserID: "user", Groups: []string{"radar:viewer"}, ClusterIDs: []string{"alpha"}}); err == nil {
+	if _, err := hub.HTTPClient("beta", Principal{UserID: "user", Groups: []string{"kubeatlas:viewer"}, ClusterIDs: []string{"alpha"}}); err == nil {
 		t.Fatal("client creation outside principal cluster scope succeeded")
 	}
-	readOnlyClient, err := hub.HTTPClient("alpha", Principal{UserID: "reader", Groups: []string{"radar:viewer"}, ClusterIDs: []string{"alpha"}, ReadOnly: true})
+	readOnlyClient, err := hub.HTTPClient("alpha", Principal{UserID: "reader", Groups: []string{"kubeatlas:viewer"}, ClusterIDs: []string{"alpha"}, ReadOnly: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -391,7 +391,7 @@ func TestHubEnforcesScopeReadOnlyPathAndCancellation(t *testing.T) {
 	}
 	readResponse.Body.Close()
 
-	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -442,7 +442,7 @@ func TestPreCanceledContextDoesNotDispatch(t *testing.T) {
 	})
 	startSource(t, endpoint, "alpha", "token-alpha", handler)
 	waitForAgent(t, hub, "alpha")
-	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -481,7 +481,7 @@ func TestHubPinnedClientDoesNotReplayAfterReconnect(t *testing.T) {
 	}))
 	startSource(t, endpoint, "alpha", "token-alpha", sourceHandler)
 	first := waitForAgent(t, hub, "alpha")
-	oldClient, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	oldClient, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -516,7 +516,7 @@ func TestHubPinnedClientDoesNotReplayAfterReconnect(t *testing.T) {
 	if got := counter.Load(); got != before {
 		t.Fatalf("old client replayed on new generation: source calls %d -> %d", before, got)
 	}
-	newClient, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	newClient, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -572,7 +572,7 @@ func TestHubLimitsAgentsAndConcurrentStreams(t *testing.T) {
 	}))
 	startSource(t, endpoint, "alpha", "token-alpha", handler)
 	waitForAgent(t, tunnelHub, "alpha")
-	client, err := tunnelHub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	client, err := tunnelHub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -719,7 +719,7 @@ func TestHubRejectsIdentityHeaderAndPathVariants(t *testing.T) {
 		t.Fatal("cluster ID validation did not require lowercase DNS-like IDs")
 	}
 	for _, value := range []string{"", "system:masters", "bad\nuser"} {
-		if principalAllowed(Principal{UserID: value, Groups: []string{"radar:viewer"}, ClusterIDs: []string{"alpha"}}, "alpha") {
+		if principalAllowed(Principal{UserID: value, Groups: []string{"kubeatlas:viewer"}, ClusterIDs: []string{"alpha"}}, "alpha") {
 			t.Errorf("accepted invalid user identity %q", value)
 		}
 	}
@@ -815,8 +815,8 @@ func TestDisconnectRejectsAuthenticationAlreadyInProgress(t *testing.T) {
 	go func() {
 		dialer := websocket.Dialer{HandshakeTimeout: 30 * time.Second}
 		conn, response, err := dialer.DialContext(ctx, cloudWebSocketEndpoint(server.URL)+"/agent?cluster_id=alpha", http.Header{
-			"Authorization":                  {"Bearer token-old"},
-			"X-Radar-Kubernetes-Credentials": {"impersonate"},
+			"Authorization":                      {"Bearer token-old"},
+			"X-KubeAtlas-Kubernetes-Credentials": {"impersonate"},
 		})
 		if conn != nil {
 			_ = conn.Close()
@@ -894,7 +894,7 @@ func TestCanceledOpenIsBoundedAndDoesNotCloseSession(t *testing.T) {
 	hub.agents["alpha"] = state
 	transport := &tunnelRoundTripper{
 		hub: hub, state: state, clusterID: "alpha",
-		principal: Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}},
+		principal: Principal{UserID: "writer", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}},
 	}
 
 	const requests = maxAgentStreams
@@ -1019,7 +1019,7 @@ func TestDisconnectWakesRequestQueuedBehindUnreadBodies(t *testing.T) {
 	})
 	startSource(t, endpoint, "alpha", "token-alpha", handler)
 	waitForAgent(t, hub, "alpha")
-	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1119,7 +1119,7 @@ func TestHubBoundsSourceResponseHeadersAndHandlesInterimResponses(t *testing.T) 
 	})
 	startSource(t, endpoint, "alpha", "token-alpha", handler)
 	waitForAgent(t, hub, "alpha")
-	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"radar:member"}, ClusterIDs: []string{"alpha"}})
+	client, err := hub.HTTPClient("alpha", Principal{UserID: "writer", Groups: []string{"kubeatlas:member"}, ClusterIDs: []string{"alpha"}})
 	if err != nil {
 		t.Fatal(err)
 	}

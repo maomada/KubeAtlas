@@ -432,7 +432,7 @@ function reachVerdictBase(trace: Trace, probed?: boolean): ReachVerdictView {
   if (fd.state === 'skipped' && backendReachable) {
     // Two facts a developer must connect into ONE conclusion: the backend is up,
     // but the Ingress entry path itself was NOT tested (its host didn't resolve
-    // where Radar ran). Headline states the relationship ("reachable - but…");
+    // where KubeAtlas ran). Headline states the relationship ("reachable - but…");
     // the caveat says how the backend WAS reached (so "via API server" reads as an
     // implication, not jargon) and gives the action that actually works for a
     // host that only resolves elsewhere - test it from where it resolves, NOT the
@@ -452,8 +452,8 @@ function reachVerdictBase(trace: Trace, probed?: boolean): ReachVerdictView {
     // from a laptop). Only say "didn't resolve" when the DNS layer was the skip -
     // otherwise describe the actual gap and give the right next action.
     const gap = fd.dnsSkip
-      ? `${host} didn’t resolve from where Radar ran`
-      : `the entry path to ${host} couldn’t be reached from where Radar ran`
+      ? `${host} didn’t resolve from where KubeAtlas ran`
+      : `the entry path to ${host} couldn’t be reached from where KubeAtlas ran`
     const fix = fd.dnsSkip
       ? `request ${host} from a client that can resolve it (inside the cluster if it’s internal)`
       : `request ${host} from a client on a network that can reach the ingress (inside the cluster if it’s internal)`
@@ -530,13 +530,13 @@ function reachVerdictBase(trace: Trace, probed?: boolean): ReachVerdictView {
     // real-confidence (indirect OR undefined) must read neutral with a caveat -
     // undefined confidence is not real-traffic confirmation.
     if (!allReal) {
-      // An ExternalName was dialed directly by Radar - say that, not "via the API
+      // An ExternalName was dialed directly by KubeAtlas - say that, not "via the API
       // proxy" (which would contradict the matrix's "direct from your machine").
       if (ext) {
         return {
           icon: '',
           tone: 'neutral',
-          text: `Reached ${ext} directly from Radar`,
+          text: `Reached ${ext} directly from KubeAtlas`,
           caveat: 'in-cluster clients may resolve or route it differently - not confirmed from inside the cluster',
         }
       }

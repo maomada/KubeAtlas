@@ -181,7 +181,7 @@ func TestUpdateRepositoryPreservesReadersAndFailedRefreshCache(t *testing.T) {
 	if err != nil || len(result.Charts) != 1 || result.Charts[0].Version != "2.0.0" {
 		t.Fatalf("invalid index replaced cached chart: %#v, %v", result, err)
 	}
-	staged, err := filepath.Glob(filepath.Join(client.settings.RepositoryCache, ".radar-repository-*"))
+	staged, err := filepath.Glob(filepath.Join(client.settings.RepositoryCache, ".kubeatlas-repository-*"))
 	if err != nil || len(staged) != 0 {
 		t.Fatalf("failed refresh left staging directories: %v, %v", staged, err)
 	}
@@ -253,7 +253,7 @@ func TestUpdateRepositoryConcurrentRefreshAndSearch(t *testing.T) {
 	for err := range failures {
 		t.Error(err)
 	}
-	staged, err := filepath.Glob(filepath.Join(client.settings.RepositoryCache, ".radar-repository-*"))
+	staged, err := filepath.Glob(filepath.Join(client.settings.RepositoryCache, ".kubeatlas-repository-*"))
 	if err != nil || len(staged) != 0 {
 		t.Fatalf("staging directories left: %v, %v", staged, err)
 	}

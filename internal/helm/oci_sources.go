@@ -29,13 +29,13 @@ const ociProbeTimeout = 5 * time.Second
 // shows "source not tracked".
 //
 // A registered OCI prefix is the OCI analog of `helm repo add`: the user declares
-// once where their charts live (e.g. "oci://ghcr.io/myorg/charts"), and Radar
+// once where their charts live (e.g. "oci://ghcr.io/myorg/charts"), and KubeAtlas
 // probes "<prefix>/<chartName>" to discover newer versions. Because matching is by
 // chart name at query time, no per-release mapping is persisted — which also means
-// prefixes are global to the Radar instance, not cluster-scoped.
+// prefixes are global to the KubeAtlas instance, not cluster-scoped.
 //
 // Credentials are reused from the user's existing `helm registry login` store
-// (settings.RegistryConfig); Radar stores no registry secrets of its own.
+// (settings.RegistryConfig); KubeAtlas stores no registry secrets of its own.
 
 // normalizeOCIPrefix validates and canonicalizes a registered prefix. It must be
 // an oci:// reference with at least a host; the trailing slash is trimmed so
@@ -167,7 +167,7 @@ type ociTagLister interface {
 }
 
 // newRegistryClientConcrete builds the timeout-bounded helm OCI registry client
-// used for registry probes. Radar stores no registry secrets of its own.
+// used for registry probes. KubeAtlas stores no registry secrets of its own.
 func (c *Client) newRegistryClientConcrete() (*registry.Client, error) {
 	return registry.NewClient(
 		registry.ClientOptEnableCache(true),

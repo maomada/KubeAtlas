@@ -131,9 +131,9 @@ func (a *requestAccess) Namespaces() ([]string, bool) {
 
 // relationshipsFor is a fetched resource's Related Resources: the links the
 // relationship graph holds, with ownership answered from owner references
-// for the request's user. It is nil when Radar has no graph and can't build
+// for the request's user. It is nil when KubeAtlas has no graph and can't build
 // one, as before it connects or when a context switch overtakes the build:
-// without one Radar can't say what manages the object, and the UI reads a missing field as owners not mapped
+// without one KubeAtlas can't say what manages the object, and the UI reads a missing field as owners not mapped
 // yet, which its GitOps write guard warns about.
 func (s *Server) relationshipsFor(r *http.Request, kind, namespace, name string, resource any) *topology.Relationships {
 	cache := k8s.GetResourceCache()

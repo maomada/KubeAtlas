@@ -1,5 +1,4 @@
 # Binaries
-/radar
 /kubeatlas
 /kubeatlas-portal
 /kubeatlas-desktop
@@ -50,7 +49,7 @@ dist/
 # Visual-test + scratch artifacts
 .playwright-mcp/
 tmp/
-/radar-amd64
+/kubeatlas-amd64
 /*.png
 /AGENTS.md
 
@@ -74,3 +73,7 @@ ds-bundle/
 packages/k8s-ui/.ds-sync-pkg/
 packages/k8s-ui/.ds-sync-styles.css
 packages/k8s-ui/.ds-sync-additions.tsx
+
+# Python bytecode
+__pycache__/
+*.pyc

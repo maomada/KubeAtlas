@@ -140,7 +140,7 @@ func TestMemoizer_ConcurrentColdReadsBuildOnce(t *testing.T) {
 
 // TestMemoizer_EvictsStaleEntries pins the bounded-map invariant. store()
 // walks the map on every write and drops entries older than 2× the TTL.
-// Without this, a Radar process whose namespace filter rotates (or whose
+// Without this, a KubeAtlas process whose namespace filter rotates (or whose
 // users hit many distinct paths over its lifetime) would accumulate
 // Topology pointers indefinitely — invisible in short-lived dev binaries,
 // a memory leak in long-running in-cluster deployments.

@@ -142,7 +142,7 @@ func CLISessionFromConfig(configPath string) (*CLISession, error) {
 		return nil, nil
 	}
 	// A loopback server is a port-forward artifact: the address is only valid
-	// while that specific forward runs, which is almost never true when Radar
+	// while that specific forward runs, which is almost never true when KubeAtlas
 	// reads the config later. Offering it would just fail "unreachable" on
 	// click, so don't — the user connects via the URL field instead.
 	if isLoopbackHost(match.Server) {

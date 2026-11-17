@@ -269,7 +269,7 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
                     type="button"
                     onClick={() =>
                       window.dispatchEvent(
-                        new CustomEvent('radar:open-settings', { detail: { section: 'prometheus' } }),
+                        new CustomEvent('kubeatlas:open-settings', { detail: { section: 'prometheus' } }),
                       )
                     }
                     className="btn-brand px-4 py-2 text-sm font-medium"

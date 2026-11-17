@@ -11,7 +11,7 @@ import {
   type FilterValues,
 } from './filter-state-core'
 
-// Shared filter-state contract for Radar's list views (OSS + Hub).
+// Shared filter-state contract for KubeAtlas's list views (OSS + Hub).
 //
 // The consolidation center is BEHAVIOR, not components: one place owns how a
 // view's filters serialize to the URL, what "cleared" means, and how defaults
@@ -76,7 +76,7 @@ export function useFilterState<S extends FilterSchema>(schema: S): FilterState<S
   // Graceful fallback: without a provider, keep filter state locally (still
   // works, just not URL-synced). This lets a shared view adopt the contract
   // before every host has wired a FilterLocationBridge — a host that hasn't
-  // (e.g. Radar Hub, until it picks up a published build) keeps its prior local
+  // (e.g. KubeAtlas Hub, until it picks up a published build) keeps its prior local
   // behavior instead of crashing. A one-time warning flags the missing wiring.
   const [localParams, setLocalParams] = useState(() => new URLSearchParams())
   const warned = useRef(false)

@@ -12,7 +12,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
-// Transport failures between Radar and the Kubernetes API, as client-go words
+// Transport failures between KubeAtlas and the Kubernetes API, as client-go words
 // them. None of these can come back from the Pod through the proxy.
 var cnpgAPITransportHints = []string{
 	"i/o timeout",
@@ -94,7 +94,7 @@ func cnpgPostgresSentence(raw string) (string, bool) {
 	return "", false
 }
 
-// PostgreSQL conditions Radar names from a relayed SQLSTATE: the ones an
+// PostgreSQL conditions KubeAtlas names from a relayed SQLSTATE: the ones an
 // operator can act on. Other codes add nothing.
 var cnpgSQLStateNames = map[string]string{
 	"53000": "insufficient_resources",
@@ -127,7 +127,7 @@ var cnpgSQLStateNames = map[string]string{
 	"XX002": "index_corrupted",
 }
 
-// PostgreSQL messages Radar recognizes, each replaced by a fixed phrase.
+// PostgreSQL messages KubeAtlas recognizes, each replaced by a fixed phrase.
 // Matching text is never echoed: it can sit next to user names, hosts and
 // connection strings.
 var cnpgPostgresPhrases = []struct{ match, phrase string }{
@@ -182,7 +182,7 @@ const cnpgPromHTTPErrorPrefix = "An error has occurred while serving metrics"
 // pods/proxy means. A relayed body proves nothing about where it came from:
 // a gateway or the apiserver's own timeout page carries the same shape. So
 // the instance manager or exporter is named only when the body says so —
-// a PostgreSQL failure Radar recognizes on the status port, or client_golang's
+// a PostgreSQL failure KubeAtlas recognizes on the status port, or client_golang's
 // error page on a metrics port. Anything else is worded without an origin.
 // The body can name sockets and connection strings; callers log it instead.
 // ok is false for errors that are not a relayed 5xx.
@@ -204,7 +204,7 @@ func cnpgRelayedPodSentence(err error, port int) (string, bool) {
 	} else if strings.HasPrefix(strings.TrimSpace(body), cnpgPromHTTPErrorPrefix) {
 		return fmt.Sprintf("the metrics endpoint on port %d answered with an error (HTTP %d)", port, code), true
 	}
-	return fmt.Sprintf("the read through the Kubernetes API failed with HTTP %d (from a gateway or the Pod; Radar can't tell which)", code), true
+	return fmt.Sprintf("the read through the Kubernetes API failed with HTTP %d (from a gateway or the Pod; KubeAtlas can't tell which)", code), true
 }
 
 // cnpgRelayedPodBody is the body of an answer the apiserver relayed from the

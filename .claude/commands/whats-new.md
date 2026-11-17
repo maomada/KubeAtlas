@@ -1,5 +1,5 @@
 ---
-description: Prepare, audit, or preview Radar's in-app What's New release notes
+description: Prepare, audit, or preview KubeAtlas's in-app What's New release notes
 argument-hint: "[target-version] [focus]"
 ---
 

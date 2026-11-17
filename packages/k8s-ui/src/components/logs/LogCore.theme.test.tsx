@@ -63,13 +63,13 @@ describe('LogCore theme', () => {
   })
 
   it('prefers the saved toggle choice over defaultDark', async () => {
-    localStorage.setItem('radar-logs-dark', 'true')
+    localStorage.setItem('kubeatlas-logs-dark', 'true')
     await render({ defaultDark: false })
     expect(toggle()?.getAttribute('aria-label')).toBe('Switch log viewer to light mode')
   })
 
   it('returns to the saved choice when a forceDark pin is lifted', async () => {
-    localStorage.setItem('radar-logs-dark', 'false')
+    localStorage.setItem('kubeatlas-logs-dark', 'false')
     await render({ forceDark: true, defaultDark: false })
     expect(toggle()).toBeNull()
     await render({ defaultDark: false })
@@ -77,7 +77,7 @@ describe('LogCore theme', () => {
   })
 
   it('ignores a saved value that is not a palette choice', async () => {
-    localStorage.setItem('radar-logs-dark', 'garbage')
+    localStorage.setItem('kubeatlas-logs-dark', 'garbage')
     await render({ defaultDark: false })
     expect(toggle()?.getAttribute('aria-label')).toBe('Switch log viewer to dark mode')
   })
@@ -126,7 +126,7 @@ it('still stops an existing stream when its source becomes unavailable', async (
 })
 
 it.each([true, false])('wraps non-CNPG plain logs at words with ANSI enabled=%s', async (ansi) => {
-  localStorage.setItem('radar-logs-ansi', String(ansi))
+  localStorage.setItem('kubeatlas-logs-ansi', String(ansi))
   await render({ entries: [{ id: 1, timestamp: '', content: 'nginx serving requests', container: 'nginx', isJson: false, isLogfmt: false, level: 'info', levelSource: 'keyword' }] })
   const line = [...element.querySelectorAll('span')].find((el) => el.textContent === 'nginx serving requests' && el.classList.contains('whitespace-pre-wrap'))!
   expect(line.classList.contains('[overflow-wrap:anywhere]')).toBe(true)

@@ -97,7 +97,7 @@ export function TraefikMiddlewareRenderer({ data, onNavigate }: TraefikMiddlewar
         <AlertBanner
           variant="info"
           title="Unrecognized middleware type"
-          message="This middleware uses a type Radar doesn't render specially (e.g. a plugin or a newer/commercial middleware). The raw configuration is shown below."
+          message="This middleware uses a type KubeAtlas doesn't render specially (e.g. a plugin or a newer/commercial middleware). The raw configuration is shown below."
         />
       )}
 

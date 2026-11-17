@@ -315,7 +315,7 @@ func TestWriteEvidenceIgnoreRulesMatchAResourceNameRequest(t *testing.T) {
 	}
 }
 
-// Radar doesn't evaluate jq, so a matching jq rule leaves coverage open
+// KubeAtlas doesn't evaluate jq, so a matching jq rule leaves coverage open
 // rather than reading as "not ignored".
 func TestWriteEvidenceArgoJQRuleIsUnevaluated(t *testing.T) {
 	ignore := []any{map[string]any{"group": "apps", "kind": "Deployment", "jqPathExpressions": []any{".spec.replicas"}}}
@@ -333,8 +333,8 @@ func TestWriteEvidenceArgoJQRuleIsUnevaluated(t *testing.T) {
 }
 
 // Argo matches managedFieldsManagers against the field's live owner, and the
-// write itself moves ownership to Radar: a rule naming another manager stops
-// covering the field, one naming Radar's may keep covering it.
+// write itself moves ownership to KubeAtlas: a rule naming another manager stops
+// covering the field, one naming KubeAtlas's may keep covering it.
 func TestWriteEvidenceArgoManagerRuleDoesNotCoverAWrite(t *testing.T) {
 	managed := []metav1.ManagedFieldsEntry{
 		fieldsEntry(t, "image-updater", metav1.ManagedFieldsOperationUpdate, map[string]any{
@@ -359,11 +359,11 @@ func TestWriteEvidenceArgoManagerRuleDoesNotCoverAWrite(t *testing.T) {
 		}
 	}
 
-	radar := []any{map[string]any{"group": "apps", "kind": "Deployment", "managedFieldsManagers": []any{"radar"}}}
+	kubeatlas := []any{map[string]any{"group": "apps", "kind": "Deployment", "managedFieldsManagers": []any{"kubeatlas"}}}
 	resp = buildGitOpsWriteEvidence(evidenceTarget(t, nil, managed), deploymentRef, paths[2:], argoOwner,
-		evidenceArgoApp(map[string]any{"syncOptions": []any{"RespectIgnoreDifferences=true"}}, radar), nil)
+		evidenceArgoApp(map[string]any{"syncOptions": []any{"RespectIgnoreDifferences=true"}}, kubeatlas), nil)
 	if got := resp.Paths[0]; got.Ignored != "unevaluated" || got.IgnoredBy != "spec.ignoreDifferences managedFieldsManagers" {
-		t.Errorf("a rule naming Radar's own manager: %+v", got)
+		t.Errorf("a rule naming KubeAtlas's own manager: %+v", got)
 	}
 }
 

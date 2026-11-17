@@ -538,7 +538,7 @@ export function ConsentCard({
 }) {
   const chrome = { onOpenSettings, onApprove, onCancel, error };
 
-  // Tier 1: a host (e.g. radar-hub-web) supplied its own copy — use it verbatim.
+  // Tier 1: a host (e.g. kubeatlas-hub-web) supplied its own copy — use it verbatim.
   if (copy) return <ConsentCardShell {...copy} {...chrome} />;
 
   return (

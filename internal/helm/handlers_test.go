@@ -73,7 +73,7 @@ func TestChartSourceRoutesAndWriteAuthorization(t *testing.T) {
 		{http.MethodPost, "/helm/repositories", `{"name":"repo","url":"https://example.test","namespace":"default","releaseName":"example"}`},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, strings.NewReader(tc.body))
-		req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{Username: "chart-source-viewer", Groups: []string{"radar:viewer"}}))
+		req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{Username: "chart-source-viewer", Groups: []string{"kubeatlas:viewer"}}))
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		if rec.Code != http.StatusForbidden {
@@ -195,7 +195,7 @@ func TestDecodeApplyValuesRequest(t *testing.T) {
 }
 
 // TestHelmHandlers_NotGatedOnCloudRole pins that Helm operations are not
-// refused on the caller's Radar Cloud role. They run as the impersonated user,
+// refused on the caller's KubeAtlas Cloud role. They run as the impersonated user,
 // so Kubernetes RBAC decides; a role check here would override IdP-group
 // bindings that grant the user access (a viewer whose group can edit a
 // namespace must be able to roll back there). Other refusals (no Helm client,
@@ -231,14 +231,14 @@ func TestHelmHandlers_NotGatedOnCloudRole(t *testing.T) {
 			req := httptest.NewRequest(tc.method, "/test", nil)
 			req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{
 				Username: "viewer-test",
-				Groups:   []string{"radar:viewer", "radar:idp:team-a-devs"},
+				Groups:   []string{"kubeatlas:viewer", "kubeatlas:idp:team-a-devs"},
 			}))
 			rec := httptest.NewRecorder()
 
 			tc.handler(rec, req)
 
 			body := rec.Body.String()
-			if strings.Contains(body, auth.ErrCodeCloudRoleInsufficient) || strings.Contains(body, "Radar Cloud role") {
+			if strings.Contains(body, auth.ErrCodeCloudRoleInsufficient) || strings.Contains(body, "KubeAtlas Cloud role") {
 				t.Fatalf("status = %d body = %s; a Cloud viewer must reach Kubernetes RBAC, not a role gate", rec.Code, body)
 			}
 		})

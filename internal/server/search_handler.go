@@ -25,7 +25,7 @@ import (
 //	namespace, namespaces — explicit namespace names, unioned with ns: terms
 //
 // The returned shape is a search.Result. Per-cluster, no cross-cluster
-// concerns — radar-hub is responsible for fan-out and re-ranking.
+// concerns — kubeatlas-hub is responsible for fan-out and re-ranking.
 func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	if !s.requireConnected(w) {
 		return
@@ -49,7 +49,7 @@ func (s *Server) handleSearch(w http.ResponseWriter, r *http.Request) {
 	// explicit namespace names in query terms or URL parameters. A named
 	// namespace outside the pin is reported as outside_namespace_pin;
 	// cluster-scoped kinds are still searched under the
-	// pin, gated per kind. globalNs=1 (the omnibar's ⌘K and Radar Hub's fleet
+	// pin, gated per kind. globalNs=1 (the omnibar's ⌘K and KubeAtlas Hub's fleet
 	// search) is accepted and asks for exactly this.
 	ceiling, namespaceCheckFailed := s.getUserNamespacesWithStatus(r, nil)
 

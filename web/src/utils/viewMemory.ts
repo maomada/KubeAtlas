@@ -33,7 +33,7 @@ function listSearch(view: string, search: string): string {
  */
 export function createViewMemory(cluster: string) {
   const sections = createTabStorage()
-  const sectionKey = (view: string) => `radar-section:${cluster}:${view}`
+  const sectionKey = (view: string) => `kubeatlas-section:${cluster}:${view}`
 
   return {
     /** Records a location. Only list routes are remembered, not detail pages. */

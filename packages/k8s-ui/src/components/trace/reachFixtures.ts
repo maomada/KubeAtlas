@@ -25,7 +25,7 @@ export const DEV_STATES: { id: DevState; label: string }[] = [
   { id: 'running', label: 'Probe running' },
   { id: 'stale', label: 'Stale + changed' },
   { id: 'rbac', label: 'Probe not permitted' },
-  { id: 'hosted', label: 'Radar runs in-cluster' },
+  { id: 'hosted', label: 'KubeAtlas runs in-cluster' },
 ]
 
 const NS = 'payments'
@@ -223,7 +223,7 @@ export function devTrace(state: DevState): Trace {
     return {
       ...t,
       verdict: 'degraded',
-      headline: 'Only control-plane evidence — Radar is not permitted to probe the dataplane',
+      headline: 'Only control-plane evidence — KubeAtlas is not permitted to probe the dataplane',
       coverage: { tested: 1, passed: 1, failed: 0, skipped: 2 },
       downstream: [
         serviceHop(),
@@ -234,9 +234,9 @@ export function devTrace(state: DevState): Trace {
     }
   }
 
-  // Radar deployed as a Pod - the hosted and self-hosted-in-cluster shape. The
+  // KubeAtlas deployed as a Pod - the hosted and self-hosted-in-cluster shape. The
   // only way to see the vantage rail as those users see it without running a
-  // cluster-side Radar: no workstation vantage exists there, and Radar's own
+  // cluster-side KubeAtlas: no workstation vantage exists there, and KubeAtlas's own
   // process is a first-class origin rather than the throwaway Job.
   if (state === 'hosted') {
     return {
@@ -247,7 +247,7 @@ export function devTrace(state: DevState): Trace {
       downstream: [
         serviceHop(),
         podsHop(PODS, [
-          ...okProbes.map((p) => ({ ...p, source: 'radar' as const })),
+          ...okProbes.map((p) => ({ ...p, source: 'kubeatlas' as const })),
           probe({ path: 'apiserver', target: 'checkout-api port 80', detail: 'HTTP 200 via proxy', latencyNs: 12_000_000 }),
         ]),
       ],

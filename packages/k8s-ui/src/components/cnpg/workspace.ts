@@ -1,4 +1,5 @@
 import { cnpgBackupDeclaration, cnpgBarmanPlugin } from '../../utils/cnpg-backup'
+import { readRestoreValidation } from '../../utils/legacy-brand'
 // CloudNativePG workspace model: pure derivations over the /api/cnpg/workspace
 // payload. Every fact here is something the cluster actually reports; when it
 // does not report something the value is "unknown", never zero or healthy.
@@ -49,7 +50,7 @@ export interface CNPGKindCoverage {
   state: CNPGCoverageState
   /** Denied namespaces, named only when the caller supplied the candidate list. */
   deniedNamespaces?: string[]
-  /** Namespaces the caller may read but Radar's cache does not hold, named under the same rule. */
+  /** Namespaces the caller may read but KubeAtlas's cache does not hold, named under the same rule. */
   uncachedNamespaces?: string[]
   /** For partial coverage: the namespaces that were read. */
   allowedNamespaces?: string[]
@@ -95,7 +96,7 @@ export interface CNPGWorkspaceResponse {
   managedBy?: Record<string, ResourceRef>
   /** Pods of the Jobs a Cluster controls (initdb, join, restore…), never counted as instances. */
   jobPods?: any[]
-  /** Where the caller's Jobs were read; a Job Pod is returned only there. Absent from a Radar that predates it. */
+  /** Where the caller's Jobs were read; a Job Pod is returned only there. Absent from a KubeAtlas that predates it. */
   jobCoverage?: CNPGKindCoverage
 }
 
@@ -347,8 +348,8 @@ function backupTimesOf(cluster: any, backups: any[]): Map<string, number> {
 
 // Each entry names what the Go detector (internal/issues/source_cnpg*.go and
 // the Pod detector) actually reads. "Reported by CNPG" only where the operator
-// itself wrote the failure; a threshold or comparison Radar applies is a
-// "Radar check".
+// itself wrote the failure; a threshold or comparison KubeAtlas applies is a
+// "KubeAtlas check".
 const CNPG_CONDITION_ORIGINS: Record<string, string> = {
   CNPGLastBackupFailed: 'Cluster LastBackupSucceeded condition',
   CNPGClusterTerminal: 'Cluster status.phase',
@@ -362,17 +363,17 @@ const CNPG_CONDITION_ORIGINS: Record<string, string> = {
 const POD_ORIGINS: Record<string, ProblemOrigin> = {
   ReadinessProbeFailed: { label: 'Pod readiness probe', detail: 'Kubelet probe-failure events and the Pod\'s Ready condition' },
   LivenessProbeFailed: { label: 'Pod liveness probe', detail: 'Kubelet probe-failure events and container restarts' },
-  ReadinessProbeInvalid: { label: 'Radar check of the probe', detail: 'The readiness probe names a port the container does not declare' },
-  LivenessProbeInvalid: { label: 'Radar check of the probe', detail: 'The liveness probe names a port the container does not declare' },
-  HighRestartCount: { label: 'Radar check of restarts', detail: 'More than 3 restarts on a container that is still unhealthy' },
-  InitContainerStalled: { label: 'Radar check of init containers', detail: 'An init container has not finished' },
+  ReadinessProbeInvalid: { label: 'KubeAtlas check of the probe', detail: 'The readiness probe names a port the container does not declare' },
+  LivenessProbeInvalid: { label: 'KubeAtlas check of the probe', detail: 'The liveness probe names a port the container does not declare' },
+  HighRestartCount: { label: 'KubeAtlas check of restarts', detail: 'More than 3 restarts on a container that is still unhealthy' },
+  InitContainerStalled: { label: 'KubeAtlas check of init containers', detail: 'An init container has not finished' },
   Unschedulable: { label: 'Kubernetes scheduler', detail: "The Pod's PodScheduled condition (reason Unschedulable) and the scheduler's message" },
 }
 
 /**
  * Where an issue's evidence comes from, in user terms: what CloudNativePG
- * reported, a Backup's or Pod's own status, or Radar's own check. A reason this
- * does not know reads "Detected by Radar" rather than a guessed source.
+ * reported, a Backup's or Pod's own status, or KubeAtlas's own check. A reason this
+ * does not know reads "Detected by KubeAtlas" rather than a guessed source.
  */
 export function cnpgIssueOrigin(issue: Pick<CNPGWorkspaceIssue, 'kind' | 'reason'>): ProblemOrigin {
   const condition = CNPG_CONDITION_ORIGINS[issue.reason]
@@ -385,23 +386,23 @@ export function cnpgIssueOrigin(issue: Pick<CNPGWorkspaceIssue, 'kind' | 'reason
     case 'CNPGBackupFailed':
       return { label: 'Backup status', detail: 'Backup status.phase and status.error' }
     case 'CNPGClusterDegraded':
-      return { label: 'Radar check of ready instances', detail: 'spec.instances against status.readyInstances, unless the phase, hibernation or fencing explains it' }
+      return { label: 'KubeAtlas check of ready instances', detail: 'spec.instances against status.readyInstances, unless the phase, hibernation or fencing explains it' }
     case 'CNPGScheduleDestinationMissing':
-      return { label: 'Radar check of the backup destination', detail: 'ScheduledBackup method against its target Cluster spec' }
+      return { label: 'KubeAtlas check of the backup destination', detail: 'ScheduledBackup method against its target Cluster spec' }
     case 'CNPGInstanceReadinessMismatch':
-      return { label: 'Radar check of instance readiness', detail: 'Instance Pod Ready conditions against Cluster status.readyInstances' }
+      return { label: 'KubeAtlas check of instance readiness', detail: 'Instance Pod Ready conditions against Cluster status.readyInstances' }
     case 'CNPGPrimaryLabelMismatch':
-      return { label: 'Radar check of the primary', detail: 'Instance Pod role labels against Cluster status.currentPrimary' }
+      return { label: 'KubeAtlas check of the primary', detail: 'Instance Pod role labels against Cluster status.currentPrimary' }
     case 'CNPGScheduledRunNoBackup':
-      return { label: 'Radar check of the backup schedule', detail: 'The schedule, read as the operator does, against the cluster\'s newest successful backup' }
+      return { label: 'KubeAtlas check of the backup schedule', detail: 'The schedule, read as the operator does, against the cluster\'s newest successful backup' }
     case 'CNPGScheduledBackupMissed':
-      return { label: 'Radar check of the backup schedule', detail: 'ScheduledBackup status.nextScheduleTime passed more than 10 minutes ago' }
+      return { label: 'KubeAtlas check of the backup schedule', detail: 'ScheduledBackup status.nextScheduleTime passed more than 10 minutes ago' }
     case 'CNPGCertificateExpiring':
     case 'CNPGCertificateExpired':
       return { label: 'Certificate expiry (from Cluster status)', detail: 'Cluster status.certificates.expirations, compared with now' }
   }
   if (issue.kind === 'Pod') return POD_ORIGINS[issue.reason] ?? { label: 'Pod status' }
-  return { label: 'Detected by Radar' }
+  return { label: 'Detected by KubeAtlas' }
 }
 
 /** The headline alone; see cnpgIssueText. */
@@ -455,21 +456,21 @@ export function coverageReadable(cov: CNPGKindCoverage, namespace?: string): boo
 
 /**
  * Why a kind's objects were not read (in `namespace`, when given), worded for
- * a fact. A namespace Radar's cache does not hold is never called "no access";
+ * a fact. A namespace KubeAtlas's cache does not hold is never called "no access";
  * a partial read that names neither cause says only that it was not read.
  */
 export function cnpgCoverageGap(cov: CNPGKindCoverage, what: string, namespace?: string, notInstalled = 'Not installed'): string {
   // A namespace the server names wins over the kind's overall state: an
   // uncached scope can still name namespaces the caller was denied.
   if (namespace && cov.deniedNamespaces?.includes(namespace)) return `No access to ${what}`
-  if (namespace && cov.uncachedNamespaces?.includes(namespace)) return `Radar does not cache ${what} in ${namespace}`
+  if (namespace && cov.uncachedNamespaces?.includes(namespace)) return `KubeAtlas does not cache ${what} in ${namespace}`
   switch (cov.state) {
     case 'denied':
       return `No access to ${what}`
     case 'partial':
       return namespace ? `${what} not read in ${namespace}` : `${what} not read`
     case 'uncached':
-      return `Radar does not cache ${what}`
+      return `KubeAtlas does not cache ${what}`
     case 'syncing':
       return 'Loading…'
     case 'error':
@@ -645,8 +646,8 @@ function walFact(cluster: any): CNPGProtectionFacts['walArchiving'] {
   return { state: 'unknown', text: 'Unknown', tone: 'unknown', source: 'ContinuousArchiving condition' }
 }
 
-export const CNPG_RESTORE_VALIDATION_ANNOTATION = 'radar.skyhook.io/restore-validation'
-/** Radars of other versions read the note on the Cluster; a format this one does not know is skipped. */
+export const CNPG_RESTORE_VALIDATION_ANNOTATION = 'kubeatlas.io/restore-validation'
+/** KubeAtlas instances of other versions read the note on the Cluster; a format this one does not know is skipped. */
 export const CNPG_RESTORE_VALIDATION_VERSION = 1
 
 export interface CNPGRestoreValidationNote {
@@ -661,7 +662,7 @@ export interface CNPGRestoreValidationNote {
 
 /** The validation note recorded on a restored Cluster, or null when absent, malformed or in another format. */
 export function getCNPGRestoreValidation(cluster: any): CNPGRestoreValidationNote | null {
-  const raw = cluster?.metadata?.annotations?.[CNPG_RESTORE_VALIDATION_ANNOTATION]
+  const raw = readRestoreValidation(cluster?.metadata?.annotations)
   if (typeof raw !== 'string' || !raw.trim()) return null
   try {
     const v = JSON.parse(raw)
@@ -721,12 +722,12 @@ function restoreValidationFact(
     .sort((a, b) => Date.parse(b.note.recordedAt) - Date.parse(a.note.recordedAt))[0]
   if (noted) {
     const rname = noted.c.metadata?.name
-    const by = noted.note.recordedBy ? `by ${noted.note.recordedBy}` : 'by a user Radar could not identify'
+    const by = noted.note.recordedBy ? `by ${noted.note.recordedBy}` : 'by a user KubeAtlas could not identify'
     return {
       text: 'Validation recorded',
       tone: 'neutral',
       at: noted.note.recordedAt,
-      source: `Recorded ${by} on ${rname}${noted.note.targetTime ? ` (target ${noted.note.targetTime})` : ''}: ${noted.note.checked.length > 140 ? `${noted.note.checked.slice(0, 140)}…` : noted.note.checked}. A person's note, not a check Radar ran.`,
+      source: `Recorded ${by} on ${rname}${noted.note.targetTime ? ` (target ${noted.note.targetTime})` : ''}: ${noted.note.checked.length > 140 ? `${noted.note.checked.slice(0, 140)}…` : noted.note.checked}. A person's note, not a check KubeAtlas ran.`,
       restoredInto: { namespace: noted.c.metadata?.namespace, name: rname },
     }
   }
@@ -734,7 +735,7 @@ function restoreValidationFact(
   if (!restored) {
     // A recovery by Backup name is only attributable when that Backup could be read.
     const unresolved = !backupsReadable && allClusters.some((c) => c !== cluster && c.metadata?.namespace === ns && c.spec?.bootstrap?.recovery?.backup?.name)
-    if (unresolved) return { text: 'Unknown: no access to Backups', tone: 'unknown', source: `A Cluster in ${ns} recovers from a Backup Radar cannot read` }
+    if (unresolved) return { text: 'Unknown: no access to Backups', tone: 'unknown', source: `A Cluster in ${ns} recovers from a Backup KubeAtlas cannot read` }
     return { text: 'None recorded', tone: 'unknown', source: 'Kubernetes does not record restore tests' }
   }
   const rname = restored.metadata?.name
@@ -788,7 +789,7 @@ function replicationFact(cluster: any, pods: CNPGInstance[], hibernated: boolean
   const desired = cluster?.spec?.instances
   if (desired === 1) {
     return getCNPGClusterIsReplica(cluster)
-      ? { text: 'Single instance · upstream feed not assessed', tone: 'unknown', source: 'The designated primary replays WAL from an external cluster; Radar does not assess that feed' }
+      ? { text: 'Single instance · upstream feed not assessed', tone: 'unknown', source: 'The designated primary replays WAL from an external cluster; KubeAtlas does not assess that feed' }
       : { text: 'Single instance', tone: 'neutral' }
   }
   if (!coverageReadable(podsCov, cluster?.metadata?.namespace)) {
@@ -1425,7 +1426,7 @@ function capitalize(s: string): string {
   return s ? s[0].toUpperCase() + s.slice(1) : s
 }
 
-/** The short per-fact source when Radar has no Prometheus; the reason goes in `detail`. */
+/** The short per-fact source when KubeAtlas has no Prometheus; the reason goes in `detail`. */
 export const CNPG_PROMETHEUS_NOT_CONNECTED = 'Prometheus not connected'
 
 const CNPG_LAG_UNMEASURED_SOURCE = 'Pod readiness does not show whether a replica is streaming'
@@ -1488,7 +1489,7 @@ function isolationCaveat(iso: CNPGMetricIsolation | undefined): string {
 }
 
 export interface CNPGFleetMetricsSources {
-  /** prometheus, or none when Radar has no Prometheus (`reason` says why). */
+  /** prometheus, or none when KubeAtlas has no Prometheus (`reason` says why). */
   source: 'prometheus' | 'none'
   reason?: string
   lagSource?: string
@@ -1554,7 +1555,7 @@ function measuredReplication(base: Fact, reading: CNPGFleetMetricsReading | unde
       return {
         text: `${prefix} · lag ${cnpgFormatLag(lag.seconds)}${coverage}${lag.receiverUnknown ? ' · streaming unverified' : ''}${upstream ? ' · upstream feed not assessed' : ''}`,
         tone: lag.receiverUnknown || ((partial || upstream) && lagTone === 'healthy') ? 'unknown' : lagTone,
-        source: `Largest standby replay lag, ${lag.pod ?? 'a standby'} · ${src.lagSource ?? 'Prometheus'}.${lag.receiverUnknown ? ' The exporter reported no WAL receiver state, and a standby that receives nothing also reads 0.' : ''}${upstream ? ' The designated primary replays WAL from an external cluster; Radar does not assess that feed.' : ''}${isolationCaveat(lag.isolation)}`,
+        source: `Largest standby replay lag, ${lag.pod ?? 'a standby'} · ${src.lagSource ?? 'Prometheus'}.${lag.receiverUnknown ? ' The exporter reported no WAL receiver state, and a standby that receives nothing also reads 0.' : ''}${upstream ? ' The designated primary replays WAL from an external cluster; KubeAtlas does not assess that feed.' : ''}${isolationCaveat(lag.isolation)}`,
       }
     }
     case 'noStandby':

@@ -39,7 +39,7 @@ describe('local operation presentation', () => {
     ).toBe('newer')
   })
 
-  it('keeps Radar Hub clusters apart although every in-cluster KubeAtlas reports the same context', () => {
+  it('keeps KubeAtlas Hub clusters apart although every in-cluster KubeAtlas reports the same context', () => {
     const hub = { ...operation, context: 'in-cluster', apiBase: '/c/east/api' }
     const west = { apiBase: '/c/west/api', context: 'in-cluster', namespace: 'db', name: 'pg', uid: 'uid' }
     expect(cnpgOperationsForCluster([hub], west)).toEqual([])
@@ -66,7 +66,7 @@ describe('local operation presentation', () => {
           { label: 'Backup finished', done: false },
         ],
       },
-      'https://radar.example/c/db/cnpg/clusters/db/pg?ctx=kind-db',
+      'https://kubeatlas.example/c/db/cnpg/clusters/db/pg?ctx=kind-db',
     )
     expect(text).toContain('Context: kind-db')
     expect(text).toContain('Cluster UID: uid')

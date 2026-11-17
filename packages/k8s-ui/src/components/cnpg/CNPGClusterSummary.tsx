@@ -192,7 +192,7 @@ export function CNPGClusterSummary({
   const top = row.problems[0]
   const rest = row.problems.length - 1
   const ns = row.namespace
-  const radarFindings = row.problems.some((x) => x.severity !== 'posture')
+  const kubeatlasFindings = row.problems.some((x) => x.severity !== 'posture')
   const phase = typeof row.cluster?.status?.phase === 'string' ? row.cluster.status.phase : ''
   const blocked = classifyCNPGClusterPhase(phase) === 'terminal' ? cnpgBlockedPhaseExplanation(phase, row.cluster?.status?.phaseReason) : null
   const [showRest, setShowRest] = useState(initialProblemsExpanded)
@@ -266,7 +266,7 @@ export function CNPGClusterSummary({
                 {phase || 'Not reported'}
               </Badge>
               <span className="text-xs text-theme-text-tertiary">
-                {radarFindings ? 'reported by CNPG · Radar findings above are separate' : 'reported by CNPG'}
+                {kubeatlasFindings ? 'reported by CNPG · KubeAtlas findings above are separate' : 'reported by CNPG'}
               </span>
               {onOpenOperator && (row.controllerStatus.level === 'unhealthy' || row.controllerStatus.level === 'degraded') && (
                 <button type="button" onClick={onOpenOperator} className="text-xs text-accent-text hover:underline">

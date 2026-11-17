@@ -1,7 +1,7 @@
 package server
 
 // In-product Cloud Connect: the modal's "Connect this cluster" button drives
-// the same device-flow install the `radar cloud install` CLI performs, through
+// the same device-flow install the `kubeatlas cloud install` CLI performs, through
 // a server-side single-flight flow manager. The driver lane runs where the UI
 // user already wields the server's kubeconfig through existing endpoints
 // (/api/resources/apply, pods/exec): a local deployment, auth disabled, no
@@ -183,8 +183,8 @@ type cloudInstallPlanSummary struct {
 	PreservedImageRepository string   `json:"preservedImageRepository,omitempty"`
 	Uncertainty              string   `json:"uncertainty,omitempty"`
 	Advisories               []string `json:"advisories,omitempty"`
-	// SharedListener is true when Radar answers beyond loopback: anyone who can
-	// open this page can approve the connection into their own Radar org.
+	// SharedListener is true when KubeAtlas answers beyond loopback: anyone who can
+	// open this page can approve the connection into their own KubeAtlas org.
 	SharedListener bool `json:"sharedListener,omitempty"`
 }
 
@@ -199,7 +199,7 @@ type cloudInstallBlocked struct {
 	// person hands to an admin can name it without parsing a refusal line.
 	Identity string `json:"identity,omitempty"`
 	// Attempted is the Helm operation preflight dry-ran, so the card can say
-	// what Radar tried before saying why it stopped; the plan card that would
+	// what KubeAtlas tried before saying why it stopped; the plan card that would
 	// have shown it never renders when preflight blocks.
 	Attempted *cloudInstallAttempted `json:"attempted,omitempty"`
 	Message   string                 `json:"message"`
@@ -213,17 +213,17 @@ type cloudInstallAttempted struct {
 	// Method is the Hub install-page tab a GitOps-managed release belongs to
 	// (argocd | flux), from its verified owning controller; empty when the
 	// owner is unverified or unrecognized, in which case the card offers the
-	// generic Radar Cloud entry rather than a values patch for the wrong tool.
+	// generic KubeAtlas Cloud entry rather than a values patch for the wrong tool.
 	Method string `json:"method,omitempty"`
-	// Stage is how far Radar got before stopping — inspect (reading the
+	// Stage is how far KubeAtlas got before stopping — inspect (reading the
 	// release's Helm state), prepare (rendering the chart), preflight (the dry
 	// run) — so the card describes what was done, not what was planned.
 	Stage string `json:"stage"`
 	// PartialScan: discovery could only see the default namespace, so a fresh
-	// plan does not establish that no Radar exists elsewhere. The card still
+	// plan does not establish that no KubeAtlas exists elsewhere. The card still
 	// tells what was attempted but offers no install link.
 	PartialScan bool `json:"partialScan,omitempty"`
-	// ReleaseUnread: a complete scan found no Radar running, but reading Helm's
+	// ReleaseUnread: a complete scan found no KubeAtlas running, but reading Helm's
 	// release records was refused, so a leftover release (its Deployment
 	// deleted) cannot be ruled out. A fresh install is offered with a
 	// "confirm nothing is installed first" — the harm case is a not-running
@@ -243,11 +243,11 @@ const (
 func preflightBlockedMessage(cause cloudinstall.BlockCause) string {
 	switch cause {
 	case cloudinstall.BlockCausePermissions:
-		return "Your Kubernetes credentials lack permissions this install needs. Have a cluster admin get the install command from Radar Cloud's install page (Helm, Argo CD or Flux) and connect this cluster."
+		return "Your Kubernetes credentials lack permissions this install needs. Have a cluster admin get the install command from KubeAtlas Cloud's install page (Helm, Argo CD or Flux) and connect this cluster."
 	case cloudinstall.BlockCauseVerification:
-		return "This version of Radar can't confirm every change the current chart would make, so it won't install it from here. Radar Cloud's install page installs the same chart with Helm directly."
+		return "This version of KubeAtlas can't confirm every change the current chart would make, so it won't install it from here. KubeAtlas Cloud's install page installs the same chart with Helm directly."
 	default:
-		return "Something already on the cluster, or a cluster policy, refused the changes listed below. Have a cluster admin resolve them and connect this cluster from Radar Cloud's install page."
+		return "Something already on the cluster, or a cluster policy, refused the changes listed below. Have a cluster admin resolve them and connect this cluster from KubeAtlas Cloud's install page."
 	}
 }
 
@@ -283,7 +283,7 @@ type cloudInstallManager struct {
 	flow    *cloudInstallFlow
 	backend cloudInstallBackend
 	cfg     CloudConnectConfig
-	// sharedListener reports whether Radar answers beyond loopback, so the
+	// sharedListener reports whether KubeAtlas answers beyond loopback, so the
 	// plan card can name that exposure before anyone approves.
 	sharedListener func() bool
 }
@@ -322,7 +322,7 @@ func newCloudInstallManager(cfg CloudConnectConfig) *cloudInstallManager {
 			return cloudinstall.InspectInstallPlan(ctx, c.Kubernetes, c.Dynamic, c.Helm, namespace, release, false)
 		},
 		discover: func(ctx context.Context, c cloudInstallClients) (cloudinstall.DiscoveryResult, error) {
-			return cloudinstall.DiscoverRadarTargets(ctx, c.Kubernetes, c.Dynamic, cloudinstall.DiscoveryOptions{
+			return cloudinstall.DiscoverKubeAtlasTargets(ctx, c.Kubernetes, c.Dynamic, cloudinstall.DiscoveryOptions{
 				Namespace: cloudinstall.DefaultInstallNamespace, ReleaseName: cloudinstall.DefaultReleaseName, ClusterWide: true,
 			})
 		},
@@ -369,10 +369,10 @@ func newCloudInstallManager(cfg CloudConnectConfig) *cloudInstallManager {
 		},
 		connectMetadata: func(ctx context.Context, c cloudInstallClients, clusterName string) cloud.ConnectMetadata {
 			meta := cloud.ConnectMetadata{
-				DeploymentMode: "in-cluster",
-				ClusterName:    clusterName,
-				RadarVersion:   cloud.Version,
-				Scope:          "cluster",
+				DeploymentMode:   "in-cluster",
+				ClusterName:      clusterName,
+				KubeAtlasVersion: cloud.Version,
+				Scope:            "cluster",
 			}
 			probeCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
@@ -415,18 +415,18 @@ func (m *cloudInstallManager) commandTarget(contextName string) cloudinstall.Com
 // by a colleague, or by themselves from another machine — is told so and
 // pointed at it, instead of being offered an install that would be refused.
 type cloudInstallDiscovered struct {
-	Connected []cloudInstallConnectedRadar `json:"connected"`
+	Connected []cloudInstallConnectedKubeAtlas `json:"connected"`
 	// PartialScan: listing Deployments cluster-wide was refused, so only the
 	// default namespace was checked.
 	PartialScan bool `json:"partialScan"`
 }
 
-type cloudInstallConnectedRadar struct {
+type cloudInstallConnectedKubeAtlas struct {
 	Namespace  string `json:"namespace"`
 	Deployment string `json:"deployment"`
 	Release    string `json:"release,omitempty"`
 	// HubHost is the Hub the Deployment's --cloud-url names, when it is one
-	// other than the Hub this Radar is configured for.
+	// other than the Hub this KubeAtlas is configured for.
 	HubHost string `json:"hubHost,omitempty"`
 	// ClusterURL is the cluster's page in the configured Hub's frontend, when
 	// the Deployment names that Hub and its cluster id is a literal value.
@@ -442,12 +442,12 @@ func (m *cloudInstallManager) discoverConnected(ctx context.Context) (*cloudInst
 	if err != nil {
 		return nil, err
 	}
-	out := &cloudInstallDiscovered{Connected: []cloudInstallConnectedRadar{}, PartialScan: result.ClusterWideError != nil}
+	out := &cloudInstallDiscovered{Connected: []cloudInstallConnectedKubeAtlas{}, PartialScan: result.ClusterWideError != nil}
 	for _, t := range cloudinstall.DiscoveredTargets(result, false) {
 		if !t.Runtime.AlreadyCloud {
 			continue
 		}
-		out.Connected = append(out.Connected, m.connectedRadar(t))
+		out.Connected = append(out.Connected, m.connectedKubeAtlas(t))
 	}
 	// The dialog leads with the first entry: one it can link to, before one
 	// it can only name, before one whose settings say nothing about where.
@@ -457,7 +457,7 @@ func (m *cloudInstallManager) discoverConnected(ctx context.Context) (*cloudInst
 	return out, nil
 }
 
-func connectedRank(c cloudInstallConnectedRadar) int {
+func connectedRank(c cloudInstallConnectedKubeAtlas) int {
 	switch {
 	case c.ClusterURL != "":
 		return 0
@@ -468,12 +468,12 @@ func connectedRank(c cloudInstallConnectedRadar) int {
 	}
 }
 
-// connectedRadar links a Deployment to its cluster page only when its
-// --cloud-url names the Hub this Radar is configured for: the frontend origin
+// connectedKubeAtlas links a Deployment to its cluster page only when its
+// --cloud-url names the Hub this KubeAtlas is configured for: the frontend origin
 // of any other Hub is not derivable from its API origin, so that one is named
 // by host and not linked.
-func (m *cloudInstallManager) connectedRadar(t cloudinstall.RadarTarget) cloudInstallConnectedRadar {
-	c := cloudInstallConnectedRadar{Namespace: t.Namespace, Deployment: t.DeploymentName, Release: t.ReleaseName}
+func (m *cloudInstallManager) connectedKubeAtlas(t cloudinstall.KubeAtlasTarget) cloudInstallConnectedKubeAtlas {
+	c := cloudInstallConnectedKubeAtlas{Namespace: t.Namespace, Deployment: t.DeploymentName, Release: t.ReleaseName}
 	rt := t.Runtime
 	if !rt.CloudURLConfigured || rt.CloudURLUnresolved || rt.CloudURL == "" {
 		return c
@@ -559,7 +559,7 @@ func connectRequestFailure(err error) *cloudInstallFailure {
 	case errors.As(err, &unreachable):
 		return &cloudInstallFailure{
 			Kind:    cloudFailConnectRequest,
-			Message: "Radar couldn't reach Radar Hub, so no connection was requested.",
+			Message: "KubeAtlas couldn't reach KubeAtlas Hub, so no connection was requested.",
 			Guidance: &cloudinstall.RecoveryGuidance{
 				Summary: fmt.Sprintf("Check that this machine can reach %s (VPN, proxy, firewall), then start over.", unreachable.HubBase),
 				Inspect: []string{err.Error()},
@@ -570,7 +570,7 @@ func connectRequestFailure(err error) *cloudInstallFailure {
 		if status, declined := cloud.HubDeclinedStatus(err); declined {
 			return &cloudInstallFailure{
 				Kind:    cloudFailConnectRequest,
-				Message: fmt.Sprintf("Radar Hub declined the connection request (HTTP %d).", status),
+				Message: fmt.Sprintf("KubeAtlas Hub declined the connection request (HTTP %d).", status),
 				Guidance: &cloudinstall.RecoveryGuidance{
 					Summary: "Nothing was created. If this keeps happening, the Hub's response below says why.",
 					Inspect: []string{err.Error()},
@@ -580,7 +580,7 @@ func connectRequestFailure(err error) *cloudInstallFailure {
 		}
 		return &cloudInstallFailure{
 			Kind:    cloudFailConnectRequest,
-			Message: "Radar couldn't start the connection request.",
+			Message: "KubeAtlas couldn't start the connection request.",
 			Guidance: &cloudinstall.RecoveryGuidance{
 				Summary: "Nothing was created; it is safe to start over.",
 				Inspect: []string{err.Error()},
@@ -594,9 +594,9 @@ func connectRequestFailure(err error) *cloudInstallFailure {
 // the existing install, reading its Helm state, preparing the chart — into
 // what the person can act on. A permission denial is the same story as a
 // denied preflight and gets the same card (cause permissions, nothing
-// attempted yet). Any other Kubernetes API error is Radar failing to inspect,
+// attempted yet). Any other Kubernetes API error is KubeAtlas failing to inspect,
 // which is a retryable failure, not a refusal. What remains is the inspection
-// itself refusing: several Radars, one already connected, ownership Radar
+// itself refusing: several KubeAtlas instances, one already connected, ownership KubeAtlas
 // will not guess at, an incompatible existing release.
 //
 // attempted is the plan when inspection already produced one: the handoff
@@ -619,9 +619,9 @@ func inspectBlocked(err error, attempted *cloudInstallAttempted) (*cloudInstallB
 	return &cloudInstallBlocked{Reason: "unsupported", Attempted: attempted, Message: err.Error()}, nil
 }
 
-// attemptedFor describes what Radar did with the plan. A fresh plan built on
+// attemptedFor describes what KubeAtlas did with the plan. A fresh plan built on
 // a discovery that could only see the default namespace is flagged: another
-// Radar may exist elsewhere, the plan card would have said so and asked for
+// KubeAtlas may exist elsewhere, the plan card would have said so and asked for
 // an acknowledgement, and the blocked card has no such step, so it must not
 // offer an install link — but it still tells the truth about the stage
 // reached, or its refusals below would describe a dry run it denied running.
@@ -647,7 +647,7 @@ func (m *cloudInstallManager) runPrepare(ctx context.Context, flow *cloudInstall
 		if errors.As(err, &multiple) {
 			return &cloudInstallBlocked{
 				Reason:  "unsupported",
-				Message: "Multiple Radar installations were found in this cluster. Use `radar cloud install --namespace <ns> --release <name>` in a terminal to pick one explicitly.",
+				Message: "Multiple KubeAtlas installations were found in this cluster. Use `kubeatlas cloud install --namespace <ns> --release <name>` in a terminal to pick one explicitly.",
 			}, nil
 		}
 		// Reading the release's Helm state was refused after discovery had run.
@@ -688,7 +688,7 @@ func (m *cloudInstallManager) runPrepare(ctx context.Context, flow *cloudInstall
 			Reason:    "gitops",
 			Attempted: attempted,
 			Message: fmt.Sprintf(
-				"This Radar install%s is managed by a GitOps controller, so connecting it means changing its source of truth — not applying a live mutation. The connection is a values change in your repository plus one command that creates the token Secret; Radar Cloud generates both, and so does `radar cloud install` in a terminal.",
+				"This KubeAtlas install%s is managed by a GitOps controller, so connecting it means changing its source of truth — not applying a live mutation. The connection is a values change in your repository plus one command that creates the token Secret; KubeAtlas Cloud generates both, and so does `kubeatlas cloud install` in a terminal.",
 				target,
 			),
 		}, nil
@@ -738,7 +738,7 @@ func (m *cloudInstallManager) runPrepare(ctx context.Context, flow *cloudInstall
 	}
 	if plan.ClusterWideScanError != nil {
 		summary.Uncertainty = fmt.Sprintf(
-			"Radar could not inspect all visible namespaces for an existing installation: %v. Another installation outside namespace %q could not be ruled out.",
+			"KubeAtlas could not inspect all visible namespaces for an existing installation: %v. Another installation outside namespace %q could not be ruled out.",
 			plan.ClusterWideScanError, prepared.Namespace(),
 		)
 	}
@@ -874,12 +874,12 @@ func (m *cloudInstallManager) run(ctx context.Context, flow *cloudInstallFlow, c
 		case errors.Is(err, cloud.ErrConnectRejected):
 			fail(cloudFailRejected, "The connection request was rejected in the browser. No cluster was created.", nil, true)
 		case errors.Is(err, cloud.ErrConnectPickupExpired):
-			fail(cloudFailPickupExpired, "The approval was granted but its pickup window lapsed before this Radar could collect credentials. Remove the pending cluster before starting a fresh connection.", &cloudinstall.RecoveryGuidance{
+			fail(cloudFailPickupExpired, "The approval was granted but its pickup window lapsed before this KubeAtlas could collect credentials. Remove the pending cluster before starting a fresh connection.", &cloudinstall.RecoveryGuidance{
 				Summary:    "An organization owner can remove the pending cluster:",
 				ClusterURL: clustersURL,
 			}, false)
 		case errors.Is(err, cloud.ErrConnectRecoveryTimeout):
-			fail(cloudFailApprovalUnknown, "Radar lost contact with the Hub before learning whether the connection was approved. An approval may have committed; check the clusters list before retrying.", &cloudinstall.RecoveryGuidance{
+			fail(cloudFailApprovalUnknown, "KubeAtlas lost contact with the Hub before learning whether the connection was approved. An approval may have committed; check the clusters list before retrying.", &cloudinstall.RecoveryGuidance{
 				Summary:    "Check for a pending cluster before starting a fresh connection:",
 				ClusterURL: clustersURL,
 			}, false)
@@ -894,7 +894,7 @@ func (m *cloudInstallManager) run(ctx context.Context, flow *cloudInstallFlow, c
 				ClusterURL: clustersURL,
 			}, false)
 		default:
-			fail(cloudFailApprovalPoll, "Radar lost track of the connection request while waiting for approval.", &cloudinstall.RecoveryGuidance{
+			fail(cloudFailApprovalPoll, "KubeAtlas lost track of the connection request while waiting for approval.", &cloudinstall.RecoveryGuidance{
 				Summary:    "An approval may have gone through. Check the clusters list before starting over:",
 				Inspect:    []string{err.Error()},
 				ClusterURL: clustersURL,
@@ -957,7 +957,7 @@ func (m *cloudInstallManager) run(ctx context.Context, flow *cloudInstallFlow, c
 		// The token is inside the Secret this step submits, so a rejection can
 		// echo it back — admission webhooks routinely quote the object they
 		// denied. Scrub before the message reaches a log or the status API,
-		// both of which are readable by anyone who can reach this Radar.
+		// both of which are readable by anyone who can reach this KubeAtlas.
 		safeErr := redactCloudToken(err.Error(), pr.Token)
 		log.Printf("[cloud-install] provisioning failed for cluster %s: %s", pr.ClusterID, safeErr)
 		g := cloudinstall.PostApprovalProvisionGuidance(pr.ClusterID, clusterURL, recovery, err, target)
@@ -1101,7 +1101,7 @@ var cloudConnectDeploymentMode = deploymentMode
 
 // cloudConnectDriverEnabled is the security boundary for the driver lane: a
 // local process, no auth, and no existing tunnel. Anyone who can reach an
-// unauthenticated Radar already wields the server's kubeconfig through
+// unauthenticated KubeAtlas already wields the server's kubeconfig through
 // /api/resources/apply and pods/exec — strictly more power than installing a
 // chart — so gating this lane on the listener address too would hold the
 // weaker capability to a higher bar than the stronger ones. A non-loopback
@@ -1114,7 +1114,7 @@ func (s *Server) cloudConnectDriverEnabled() bool {
 		!s.cloudConnectCfg.CloudTunnelConfigured
 }
 
-// sharedListener reports whether Radar answers beyond loopback, meaning
+// sharedListener reports whether KubeAtlas answers beyond loopback, meaning
 // someone other than the operator could reach the approval flow.
 func (s *Server) sharedListener() bool {
 	return !cloud.IsLoopbackHostname(s.listenAddress)
@@ -1165,7 +1165,7 @@ func (s *Server) handleCloudInstallDiscover(w http.ResponseWriter, r *http.Reque
 	discovered, err := s.cloudInstall.discoverConnected(ctx)
 	w.Header().Set("Cache-Control", "no-store")
 	if err != nil {
-		log.Printf("[cloud-install] Failed to discover Radar installs: %v", err)
+		log.Printf("[cloud-install] Failed to discover KubeAtlas installs: %v", err)
 		s.writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}

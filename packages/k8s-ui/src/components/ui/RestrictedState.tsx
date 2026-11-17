@@ -5,7 +5,7 @@ import { Collapse, CollapseChevron, useDisclosure } from './Collapse'
 
 // RestrictedState is the shared "you can't see this because of Kubernetes RBAC"
 // surface — distinct from EmptyState (which covers healthy / filtered / no-data).
-// It never claims WHY the SAR failed (Radar can't prove tier vs custom-role vs
+// It never claims WHY the SAR failed (KubeAtlas can't prove tier vs custom-role vs
 // disabled-value from a denied check); it states the fact and hands the operator
 // something to forward to whoever administers their cluster.
 //
@@ -20,8 +20,8 @@ interface Props {
   /** Plural resource name, e.g. "nodes". When omitted the snippet uses a
    *  placeholder the admin fills in. */
   resource?: string
-  /** Why the kind is hidden. "rbac_denied" (default): Radar can read it but the
-   *  user's RBAC can't — show the grant request. "unavailable": Radar's
+  /** Why the kind is hidden. "rbac_denied" (default): KubeAtlas can read it but the
+   *  user's RBAC can't — show the grant request. "unavailable": KubeAtlas's
    *  ServiceAccount can't read it at all (not installed / SA RBAC / feature off)
    *  — a user grant won't help, so show a different message and no snippet. */
   reason?: 'rbac_denied' | 'unavailable' | string
@@ -33,8 +33,8 @@ interface Props {
 function buildRbacRequest(group: string, resource: string): string {
   // resource is the placeholder when we don't have a confident API plural
   // (e.g. a CRD deep-link before discovery resolves the kind) — use a generic
-  // role name rather than radar-read-<Kind>.
-  const roleName = resource === '<resource>' ? 'radar-read-access' : `radar-read-${resource}`
+  // role name rather than kubeatlas-read-<Kind>.
+  const roleName = resource === '<resource>' ? 'kubeatlas-read-access' : `kubeatlas-read-${resource}`
   return [
     `apiVersion: rbac.authorization.k8s.io/v1`,
     `kind: ClusterRole`,
@@ -94,19 +94,19 @@ export function RestrictedState({ kindLabel, group = '', resource, reason, compa
     >
       <Shield className="w-8 h-8 text-amber-400 mb-2" />
       {isUnavailable ? (
-        // Radar's ServiceAccount can't read this kind — a user grant won't help.
+        // KubeAtlas's ServiceAccount can't read this kind — a user grant won't help.
         <>
           <p className="text-theme-text-secondary font-medium">{kindLabel} 在此处不可用</p>
           <p className="text-sm mt-1 max-w-md">
-            Radar 无法读取此集群中的 {kindLabel} 资源 — 该类型可能尚未安装，
-            或 Radar 的 ServiceAccount 尚未获授读取权限（某些类型，如 RBAC 对象和 Secret，除非在 Radar chart 中启用，否则默认关闭）。授予你自己的身份访问权限也不会使其显示。
+            KubeAtlas 无法读取此集群中的 {kindLabel} 资源 — 该类型可能尚未安装，
+            或 KubeAtlas 的 ServiceAccount 尚未获授读取权限（某些类型，如 RBAC 对象和 Secret，除非在 KubeAtlas chart 中启用，否则默认关闭）。授予你自己的身份访问权限也不会使其显示。
           </p>
         </>
       ) : (
         <>
           <p className="text-theme-text-secondary font-medium">你无权访问 {kindLabel}</p>
           <p className="text-sm mt-1 max-w-md">
-            你的 Kubernetes RBAC 不允许在此集群中列出 {kindLabel} 资源。这并不表示集群为空 — Radar 正在隐藏你的身份无权读取的内容。
+            你的 Kubernetes RBAC 不允许在此集群中列出 {kindLabel} 资源。这并不表示集群为空 — KubeAtlas 正在隐藏你的身份无权读取的内容。
           </p>
 
           <div className="mt-3 w-full max-w-md">

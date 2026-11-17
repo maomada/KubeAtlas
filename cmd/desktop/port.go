@@ -55,7 +55,7 @@ func lastDesktopPort(path string) int {
 func rememberDesktopPort(path string, remembered, actual int, owner func(port int) portOwnerKind, canBind func(port int) bool) {
 	if remembered != 0 && actual != remembered {
 		switch owner(remembered) {
-		case ownerRadar, ownerUnknown:
+		case ownerKubeAtlas, ownerUnknown:
 			return
 		case ownerSilent:
 			if canBind(remembered) {
@@ -71,7 +71,7 @@ type portOwnerKind int
 const (
 	ownerUnknown portOwnerKind = iota // no answer in time: maybe a busy KubeAtlas
 	ownerSilent                       // nothing accepted the connection
-	ownerRadar
+	ownerKubeAtlas
 	ownerOther
 )
 
@@ -105,7 +105,7 @@ func portOwner(port int) portOwnerKind {
 	if resp.StatusCode == http.StatusOK &&
 		json.NewDecoder(io.LimitReader(resp.Body, 1<<16)).Decode(&status) == nil &&
 		status.State != nil {
-		return ownerRadar
+		return ownerKubeAtlas
 	}
 	return ownerOther
 }

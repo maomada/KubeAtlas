@@ -35,7 +35,7 @@ import { useDisclosureReveal } from "./useDisclosureReveal";
 import { FollowupAnswer } from "./ActivityTurn";
 import { ApplyOutcomeCard } from "./ApplyDialog";
 import {
-  type AssessmentCopyRadar,
+  type AssessmentCopyKubeAtlas,
   CERTAINTY_LABEL,
   STEP_KIND_LABEL,
   assessmentCopyText,
@@ -88,7 +88,7 @@ export function ResultCard({
   revisedAfter?: string;
   /** Reads KubeAtlas could not complete for this assessment; listed under Still open. */
   assessmentLimits?: string[];
-  assessmentCopy?: Pick<AssessmentCopyRadar, "context" | "receipts">;
+  assessmentCopy?: Pick<AssessmentCopyKubeAtlas, "context" | "receipts">;
   healthSignals?: InvestigationHealthSignal[];
   onRevealSource?: (sourceId: string) => void;
   onCheckStatus?: () => void;
@@ -291,7 +291,7 @@ function AssessmentHeadline({
   /** Adverse KubeAtlas cards nothing explains; shown above a healthy verdict, copied with it. */
   flags?: string[];
   /** Context and receipts for the channel copy. */
-  copy?: Pick<AssessmentCopyRadar, "context" | "receipts">;
+  copy?: Pick<AssessmentCopyKubeAtlas, "context" | "receipts">;
 }) {
   const summary = diagnosis.summary?.trim();
   if (!summary) return null;
@@ -910,7 +910,7 @@ function DiagnosisResult({
   revisedAfter?: string;
   /** Reads KubeAtlas could not complete for this assessment; listed under Still open. */
   assessmentLimits?: string[];
-  assessmentCopy?: Pick<AssessmentCopyRadar, "context" | "receipts">;
+  assessmentCopy?: Pick<AssessmentCopyKubeAtlas, "context" | "receipts">;
 }) {
   // The story contract: a summary headline above, the story rendered by the
   // host (or inline as plain prose), typed steps below.
@@ -1272,7 +1272,7 @@ export function AllClearCard({
   revisedAfter?: string;
   /** Reads KubeAtlas could not complete for this assessment; listed under Still open. */
   assessmentLimits?: string[];
-  assessmentCopy?: Pick<AssessmentCopyRadar, "context" | "receipts">;
+  assessmentCopy?: Pick<AssessmentCopyKubeAtlas, "context" | "receipts">;
   /** Adverse KubeAtlas cards with the agent's position on each (story shape). */
   healthSignals?: InvestigationHealthSignal[];
   onRevealSource?: (sourceId: string) => void;
@@ -1470,7 +1470,7 @@ export function InconclusiveCard({
   assessmentAction?: ReactNode;
   /** Reads KubeAtlas could not complete for this assessment; listed under Still open. */
   assessmentLimits?: string[];
-  assessmentCopy?: Pick<AssessmentCopyRadar, "context" | "receipts">;
+  assessmentCopy?: Pick<AssessmentCopyKubeAtlas, "context" | "receipts">;
 }) {
   const storyShape = diagnosisHasStoryShape(diagnosis);
   const text =

@@ -1647,7 +1647,7 @@ func recentChange(kind, namespace, name string, at time.Time, fieldPath string) 
 
 // With PostgreSQL configured and unreachable, the error reaches the Diagnose
 // evidence panel and MCP clients verbatim. "store not initialized" reads like a
-// Radar bug; it has to name the database.
+// KubeAtlas bug; it has to name the database.
 func TestRecentNamesTheUnreachableDatabase(t *testing.T) {
 	timeline.ResetStore()
 	t.Cleanup(func() {
@@ -1659,7 +1659,7 @@ func TestRecentNamesTheUnreachableDatabase(t *testing.T) {
 	// Port 1 refuses at once, so the first attempt fails without a timeout.
 	if err := timeline.InitStore(timeline.StoreConfig{
 		Type: timeline.StoreTypePostgres,
-		DSN:  "postgres://radar:pw@127.0.0.1:1/radar?connect_timeout=2",
+		DSN:  "postgres://kubeatlas:pw@127.0.0.1:1/kubeatlas?connect_timeout=2",
 	}); err != nil {
 		t.Fatalf("InitStore: %v", err)
 	}

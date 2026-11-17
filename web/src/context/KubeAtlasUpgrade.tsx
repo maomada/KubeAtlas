@@ -1,8 +1,8 @@
 import { useMemo, type ReactNode } from 'react'
-import { RadarUpgradeContext, type RadarUpgradeActions } from '@maomada/k8s-ui'
+import { KubeAtlasUpgradeContext, type KubeAtlasUpgradeActions } from '@maomada/k8s-ui'
 import { useCapabilities, useVersionCheck } from '../api/client'
 import { IN_CLUSTER_UPGRADE_URL } from '../utils/version'
-import { useRadarUpgradeHost } from './RadarUpgradeHost'
+import { useKubeAtlasUpgradeHost } from './KubeAtlasUpgradeHost'
 
 /**
  * Supplies the "Upgrade KubeAtlas" action to the inline notes k8s-ui renders for
@@ -10,8 +10,8 @@ import { useRadarUpgradeHost } from './RadarUpgradeHost'
  * (upstream Cloud) gets the request; standalone KubeAtlas links to the instructions
  * for how it was installed.
  */
-export function RadarUpgradeProvider({ children }: { children: ReactNode }) {
-  const { onRequestRadarUpgrade } = useRadarUpgradeHost()
+export function KubeAtlasUpgradeProvider({ children }: { children: ReactNode }) {
+  const { onRequestKubeAtlasUpgrade } = useKubeAtlasUpgradeHost()
   const { data: capabilities } = useCapabilities()
   const { data: versionInfo } = useVersionCheck()
   const mode = capabilities?.deployment?.mode ?? 'local'
@@ -21,10 +21,10 @@ export function RadarUpgradeProvider({ children }: { children: ReactNode }) {
     ? versionInfo.releaseUrl
     : `${IN_CLUSTER_UPGRADE_URL}#upgrading`
 
-  const value = useMemo<RadarUpgradeActions>(
-    () => (onRequestRadarUpgrade ? { onRequestUpgrade: onRequestRadarUpgrade } : { upgradeHref }),
-    [onRequestRadarUpgrade, upgradeHref],
+  const value = useMemo<KubeAtlasUpgradeActions>(
+    () => (onRequestKubeAtlasUpgrade ? { onRequestUpgrade: onRequestKubeAtlasUpgrade } : { upgradeHref }),
+    [onRequestKubeAtlasUpgrade, upgradeHref],
   )
 
-  return <RadarUpgradeContext.Provider value={value}>{children}</RadarUpgradeContext.Provider>
+  return <KubeAtlasUpgradeContext.Provider value={value}>{children}</KubeAtlasUpgradeContext.Provider>
 }

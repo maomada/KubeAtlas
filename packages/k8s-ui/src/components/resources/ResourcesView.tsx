@@ -1,3 +1,4 @@
+import { readProductStorage, removeProductStorage } from '../../utils/legacy-brand'
 import type { ResourceCoverage } from '../../types/resource-coverage'
 import { resourceCoverageNotice, resourceEmptyMessage, resourceNarrowedNotice } from '../../utils/resource-coverage'
 import React, { useState, useMemo, useEffect, useCallback, useDeferredValue, useRef, useContext, useId } from 'react'
@@ -2864,12 +2865,12 @@ function isCuratedUnboundedGroup(key: string, group: string): boolean {
 /**
  * Which API group(s) each curated column set was written for.
  *
- * A CRD is not the kind Radar curated just because it reuses its plural:
+ * A CRD is not the kind KubeAtlas curated just because it reuses its plural:
  * chaos-mesh ships workflows.chaos-mesh.org, Istio ships gateways, and Flux
  * ships providers. Rendering Argo's or Gateway API's columns for those reads
  * every field off a schema the object does not have. Anything not claimed here
  * falls through to the generic set (and, for a CRD, to its own printer
- * columns), which is the honest answer for a kind Radar has never seen.
+ * columns), which is the honest answer for a kind KubeAtlas has never seen.
  *
  * Core kinds need no entry: the API server reserves their groups, so a CRD
  * cannot occupy one. See CORE_API_GROUPS.
@@ -3102,7 +3103,7 @@ function getColumnsForKind(kind: string, group?: string): Column[] {
 }
 
 /**
- * Whether Radar hand-curates this kind's columns. The single definition of
+ * Whether KubeAtlas hand-curates this kind's columns. The single definition of
  * "curated": the printer-column XOR, the storage-key qualifier, and the host's
  * decision whether to request table mode at all must all agree, or the server
  * does work the client throws away — or worse, they disagree about which set a
@@ -3177,7 +3178,7 @@ function buildPrinterColumn(def: PrinterColumnDef, index: number, table: Printer
   }
 }
 
-// Printer columns fill in only where Radar has no curated set for the kind —
+// Printer columns fill in only where KubeAtlas has no curated set for the kind —
 // the two are exclusive, never merged. A curated set is hand-tuned and often
 // encodes why a vendor-obvious field is the wrong one to show, so it wins.
 function buildPrinterColumns(
@@ -3195,7 +3196,7 @@ function buildPrinterColumns(
 // Name/Namespace/Status/Age set rather than joining it: the vendor's columns
 // are the answer to the same question the generic Status column was guessing
 // at, and showing both would ask the reader which one to believe. Name,
-// Namespace and Age stay because Radar renders those itself (the server drops
+// Namespace and Age stay because KubeAtlas renders those itself (the server drops
 // the CRD's own duplicates of them before sending).
 function columnsForKindWithPrinter(
   kind: string,
@@ -3286,8 +3287,8 @@ function filterHostExtras(
 }
 
 // localStorage helpers for column settings
-const COLUMN_SETTINGS_PREFIX = 'radar-columns-'
-const CHECKBOX_VISIBILITY_KEY = 'radar-resource-checkboxes'
+const COLUMN_SETTINGS_PREFIX = 'kubeatlas-columns-'
+const CHECKBOX_VISIBILITY_KEY = 'kubeatlas-resource-checkboxes'
 
 // Storage identity for a kind's column settings. normalizeKindToPlural falls
 // through to the bare plural for anything outside the curated collision
@@ -3320,7 +3321,7 @@ interface ColumnSettings {
 function loadColumnSettings(kind: string, group?: string): ColumnSettings | null {
   try {
     const key = COLUMN_SETTINGS_PREFIX + columnSettingsKey(kind, group)
-    const raw = localStorage.getItem(key)
+    const raw = readProductStorage(localStorage, key)
     if (raw) return JSON.parse(raw)
   } catch { /* ignore */ }
   return null
@@ -3333,14 +3334,14 @@ function saveColumnSettings(kind: string, group: string | undefined, settings: C
   } catch { /* ignore */ }
 }
 
-const SORT_SETTINGS_PREFIX = 'radar-sort-'
+const SORT_SETTINGS_PREFIX = 'kubeatlas-sort-'
 
 // Kept apart from the column record on purpose: a column record's existence
 // is read as "the user chose columns" (GPU auto-show stands down, the
 // stale-defaults migration is skipped), and a sort alone is not that choice.
 function loadSavedSort(kind: string, group?: string): { column: string; direction: 'asc' | 'desc' } | null {
   try {
-    const raw = localStorage.getItem(SORT_SETTINGS_PREFIX + columnSettingsKey(kind, group))
+    const raw = readProductStorage(localStorage, SORT_SETTINGS_PREFIX + columnSettingsKey(kind, group))
     return raw ? sanitizeSavedSort(JSON.parse(raw)) : null
   } catch { return null }
 }
@@ -3349,14 +3350,14 @@ function saveSavedSort(kind: string, group: string | undefined, sort: { column: 
   try {
     const key = SORT_SETTINGS_PREFIX + columnSettingsKey(kind, group)
     if (sort) localStorage.setItem(key, JSON.stringify(sort))
-    else localStorage.removeItem(key)
+    else removeProductStorage(localStorage, key)
   } catch { /* ignore */ }
 }
 
 function clearColumnSettings(kind: string, group?: string) {
   try {
     const key = COLUMN_SETTINGS_PREFIX + columnSettingsKey(kind, group)
-    localStorage.removeItem(key)
+    removeProductStorage(localStorage, key)
   } catch { /* ignore */ }
 }
 
@@ -3487,7 +3488,7 @@ interface ResourcesViewProps {
    *  When undefined, behavior is byte-identical to single-cluster mode. */
   extraLeadingColumns?: ExtraColumn[]
   /** Vendor-declared columns from the kind's CRD (additionalPrinterColumns),
-   *  evaluated server-side. Used ONLY for kinds Radar has no curated column
+   *  evaluated server-side. Used ONLY for kinds KubeAtlas has no curated column
    *  set for — the two are exclusive. Hosts that don't fetch them get the
    *  generic columns and nothing changes. */
   printerTable?: PrinterTable | null
@@ -3519,7 +3520,7 @@ interface ResourcesViewProps {
   /**
    * Overrides the default compare-mode submit (which navigates to
    * `/compare?kind=...&a=...&b=...`). Hosts use this to route to a
-   * different URL — e.g. Radar Hub's `/fleet/compare` with cluster IDs.
+   * different URL — e.g. KubeAtlas Hub's `/fleet/compare` with cluster IDs.
    * Picks arrive in click order, each carrying `clusterId`/`clusterName`
    * when `resolveRowCluster` is set (which is what keeps cross-cluster
    * picks distinct in the equality check).
@@ -3894,7 +3895,7 @@ export function ResourcesView({
   const [ownerName, setOwnerName] = useState<string>(initialFilters.ownerName)
 
   const [showCheckboxes, setShowCheckboxes] = useState(() => {
-    try { return localStorage.getItem(CHECKBOX_VISIBILITY_KEY) === 'true' }
+    try { return readProductStorage(localStorage, CHECKBOX_VISIBILITY_KEY) === 'true' }
     catch { return false }
   })
   const [checkedResources, setCheckedResources] = useState<Set<string>>(new Set())
@@ -4384,7 +4385,7 @@ export function ResourcesView({
   // Compare mode is only meaningful when the host can route picks. Either
   // path qualifies: onNavigate for the default same-cluster `/compare?...`
   // URL, or onCompareSubmit for hosts that build their own URL (e.g.
-  // Radar Hub's `/fleet/compare` with cluster IDs).
+  // KubeAtlas Hub's `/fleet/compare` with cluster IDs).
   const compareEnabled = !!onNavigate || !!onCompareSubmit
   const [compareMode, setCompareMode] = useState(false)
   const [comparePicks, setComparePicks] = useState<CompareTrayPick[]>([])
@@ -4969,7 +4970,7 @@ export function ResourcesView({
     // stay as replace because they don't represent a destination the user wants to "go back" to.
     const targetPath = `${basePath}/${selectedKind.name}`
     // Compare basename-relative paths. Hosts that mount the app under a non-empty basename
-    // (e.g. Radar Hub at /c/{cluster}) inject `locationPathname` from useLocation(), which strips
+    // (e.g. KubeAtlas Hub at /c/{cluster}) inject `locationPathname` from useLocation(), which strips
     // the basename — `window.location.pathname` still includes it, so reading window directly
     // would never match `targetPath` (basename-relative) and force every URL write to push.
     const currentPath =
@@ -6752,13 +6753,13 @@ export function ResourcesView({
               </p>
               <p className="text-sm mt-1 max-w-xl">
                 {largeListGuard.reason === 'count-unavailable'
-                  ? 'Radar could not verify this list is small enough to load. Choose a namespace or smaller namespace set to try again.'
+                  ? 'KubeAtlas could not verify this list is small enough to load. Choose a namespace or smaller namespace set to try again.'
                   : largeListGuard.count == null
                     ? 'This list exceeds the resource limit. Choose a namespace or smaller namespace set to load this view.'
                     : `${largeListGuard.count.toLocaleString()} ${largeListGuard.kind.toLowerCase()} were read in the current scope. Choose a namespace or smaller namespace set to load this view.`}
               </p>
               <p className="text-xs mt-2 text-theme-text-disabled">
-                Radar limits full table loads to {largeListGuard.limit.toLocaleString()} resources to keep the UI responsive.
+                KubeAtlas limits full table loads to {largeListGuard.limit.toLocaleString()} resources to keep the UI responsive.
               </p>
               <p className="text-xs mt-2 text-theme-text-disabled">
                 Scope: {formatLargeListScope(largeListGuard.namespaces)}

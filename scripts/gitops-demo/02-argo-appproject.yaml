@@ -1,14 +1,14 @@
 # Custom AppProject that scopes the demo apps to the public
 # argocd-example-apps repo + this cluster. Exists primarily to give
 # the GitOps fleet view a non-default Project to filter on. Most
-# demo Applications below set spec.project: radar-demo to use it.
+# demo Applications below set spec.project: kubeatlas-demo to use it.
 apiVersion: argoproj.io/v1alpha1
 kind: AppProject
 metadata:
-  name: radar-demo
+  name: kubeatlas-demo
   namespace: argocd
 spec:
-  description: Curated radar visual-test scenarios
+  description: Curated kubeatlas visual-test scenarios
   sourceRepos:
     - https://github.com/argoproj/argocd-example-apps
     - https://github.com/argoproj/argocd-example-apps.git
@@ -38,5 +38,5 @@ spec:
       kind: '*'
     - group: networking.k8s.io
       kind: '*'
-    - group: radar.demo
+    - group: kubeatlas.demo
       kind: '*'

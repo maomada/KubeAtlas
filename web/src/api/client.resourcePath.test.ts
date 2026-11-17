@@ -25,7 +25,7 @@ vi.mock('@tanstack/react-query', async (original) => ({
 
 afterEach(() => { vi.clearAllMocks(); vi.unstubAllGlobals() })
 
-function connectedRadar(capabilities: Partial<Capabilities> | undefined) {
+function connectedKubeAtlas(capabilities: Partial<Capabilities> | undefined) {
   vi.mocked(useQuery).mockImplementation(((options: { queryKey: unknown[] }) =>
     options.queryKey[0] === 'capabilities' ? { data: capabilities, isPending: false } : {}) as unknown as typeof useQuery)
 }
@@ -89,11 +89,11 @@ const refs: Ref[] = [
 ]
 
 describe.each([
-  { radar: 'a KubeAtlas that reads "_" as cluster-scoped', capabilities: { features: { clusterScopedPlaceholder: true } }, emptyWriteSegment: '_' },
-  { radar: 'an older KubeAtlas without the flag', capabilities: { features: {} }, emptyWriteSegment: '' },
-  { radar: 'a KubeAtlas whose capability request failed', capabilities: undefined, emptyWriteSegment: '' },
-])('$radar', ({ capabilities, emptyWriteSegment }) => {
-  beforeEach(() => connectedRadar(capabilities))
+  { kubeatlas: 'a KubeAtlas that reads "_" as cluster-scoped', capabilities: { features: { clusterScopedPlaceholder: true } }, emptyWriteSegment: '_' },
+  { kubeatlas: 'an older KubeAtlas without the flag', capabilities: { features: {} }, emptyWriteSegment: '' },
+  { kubeatlas: 'a KubeAtlas whose capability request failed', capabilities: undefined, emptyWriteSegment: '' },
+])('$kubeatlas', ({ capabilities, emptyWriteSegment }) => {
+  beforeEach(() => connectedKubeAtlas(capabilities))
 
   it.each(refs)('addresses $kind "$namespace"/$name', async (ref) => {
     const { kind, namespace, name } = ref

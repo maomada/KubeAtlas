@@ -12,7 +12,7 @@ import { Input } from './Input'
 //
 // PURE + host-agnostic: it knows nothing about search execution, results, or any
 // app's data layer — the host injects `modifierOptions` and reads the structured
-// query back via onChange. Shared so Radar (standalone) and Radar Cloud can both
+// query back via onChange. Shared so KubeAtlas (standalone) and KubeAtlas Cloud can both
 // build their own results surface on top of the same advanced-search field.
 
 export interface SearchModifier {

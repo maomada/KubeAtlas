@@ -32,7 +32,7 @@ authority. Missing or malformed revision metadata fails closed in the UI.
 The `kubeatlas-portal` binary name is retained for a self-hosted Cloud Hub that
 serves the Cloud UI, member identity, browser proxy, and live MCP transport.
 It is separate from the native KubeAtlas Agent. This repository does not
-provide a hosted Radar Cloud service.
+provide a hosted KubeAtlas Cloud service.
 
 The Hub uses connected Agents for live cluster access. It does not read remote
 kubeconfigs or make Kubernetes API requests itself, and it does not collect or

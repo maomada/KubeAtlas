@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 import { CNPGConnectSection } from './CNPGConnectSection'
 
-const cluster = { metadata: { name: 'orders', namespace: 'radar-cnpg-prod' }, spec: { bootstrap: { initdb: { database: 'appdb', owner: 'app' } } } }
+const cluster = { metadata: { name: 'orders', namespace: 'kubeatlas-cnpg-prod' }, spec: { bootstrap: { initdb: { database: 'appdb', owner: 'app' } } } }
 ;(globalThis as any).IS_REACT_ACT_ENVIRONMENT = true
 
 it('pairs a namespace-qualified port-forward with matching loopback templates and copies each', async () => {
@@ -16,7 +16,7 @@ it('pairs a namespace-qualified port-forward with matching loopback templates an
   expect(host.textContent).toContain('Inside Kubernetes')
   expect(host.textContent).toContain('From this computer')
   for (const [label, expected] of [
-    ['port-forward command', 'kubectl -n radar-cnpg-prod port-forward service/orders-rw 5432:5432'],
+    ['port-forward command', 'kubectl -n kubeatlas-cnpg-prod port-forward service/orders-rw 5432:5432'],
     ['local psql command', 'psql -h 127.0.0.1 -p 5432 -U app -d appdb'],
     ['local connection string', 'postgresql://app:<password>@127.0.0.1:5432/appdb'],
   ]) {
@@ -27,7 +27,7 @@ it('pairs a namespace-qualified port-forward with matching loopback templates an
 })
 
 it('uses one three-column grid with every explanation under its own host', () => {
-  const html = renderToStaticMarkup(<CNPGConnectSection cluster={cluster} poolers={[{ metadata: { name: 'orders-pooler', namespace: 'radar-cnpg-prod' }, spec: { cluster: { name: 'orders' } } }]} onOpenReachability={() => {}} />)
+  const html = renderToStaticMarkup(<CNPGConnectSection cluster={cluster} poolers={[{ metadata: { name: 'orders-pooler', namespace: 'kubeatlas-cnpg-prod' }, spec: { cluster: { name: 'orders' } } }]} onOpenReachability={() => {}} />)
   const host = document.createElement('div'); host.innerHTML = html
   const list = host.querySelector('ul')!
   expect(list.className).toContain('grid-cols-[5rem_minmax(0,1fr)_auto]')
@@ -58,7 +58,7 @@ it('keeps the unavailable reason beside each unchecked Service', () => {
   const host = document.createElement('div')
   host.innerHTML = renderToStaticMarkup(<CNPGConnectSection cluster={cluster} haUnavailableReason="Availability could not be read: timeout" />)
   for (const li of host.querySelectorAll('li')) expect(li.textContent).toContain('Not checked · Availability could not be read: timeout')
-  host.innerHTML = renderToStaticMarkup(<CNPGConnectSection cluster={cluster} ha={{ rwEndpoints: { state: 'denied', grant: { verb: 'list', resource: 'endpointslices', group: 'discovery.k8s.io', namespace: 'radar-cnpg-prod' } }, pods: { state: 'denied', grant: { verb: 'list', resource: 'pods', namespace: 'radar-cnpg-prod' } }, instances: [] } as any} />)
-  expect(host.querySelector('li')!.textContent).toContain('needs list endpointslices (discovery.k8s.io) in namespace radar-cnpg-prod')
-  expect(host.querySelectorAll('li')[1].textContent).toContain('needs list pods in namespace radar-cnpg-prod')
+  host.innerHTML = renderToStaticMarkup(<CNPGConnectSection cluster={cluster} ha={{ rwEndpoints: { state: 'denied', grant: { verb: 'list', resource: 'endpointslices', group: 'discovery.k8s.io', namespace: 'kubeatlas-cnpg-prod' } }, pods: { state: 'denied', grant: { verb: 'list', resource: 'pods', namespace: 'kubeatlas-cnpg-prod' } }, instances: [] } as any} />)
+  expect(host.querySelector('li')!.textContent).toContain('needs list endpointslices (discovery.k8s.io) in namespace kubeatlas-cnpg-prod')
+  expect(host.querySelectorAll('li')[1].textContent).toContain('needs list pods in namespace kubeatlas-cnpg-prod')
 })

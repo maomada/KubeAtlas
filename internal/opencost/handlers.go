@@ -132,7 +132,7 @@ func handleWorkloadsScoped(w http.ResponseWriter, r *http.Request, resolveCurren
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// BuildPodOwnerLookup snapshots radar's pod informer for `ns` so
+// BuildPodOwnerLookup snapshots kubeatlas's pod informer for `ns` so
 // pkg/opencost.ComputeWorkloadsFromProm can resolve pod→workload without
 // depending on client-go.
 func BuildPodOwnerLookup(ns string) pkgopencost.PodOwnerLookup {

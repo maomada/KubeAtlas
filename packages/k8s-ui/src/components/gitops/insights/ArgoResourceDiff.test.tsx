@@ -45,7 +45,7 @@ describe('ArgoResourceDiff field list', () => {
     expect(html).not.toContain('Field diff')
   })
 
-  test('treats a null field list (sent by older Radars) as empty instead of crashing', () => {
+  test('treats a null field list (sent by older KubeAtlas instances) as empty instead of crashing', () => {
     const html = renderToStaticMarkup(<ArgoResourceDiff diff={{ ...argoDiff, fieldEntries: null }} loading={false} fallbackDrift={lastApplied} />)
     expect(html).not.toContain('Field diff')
     expect(html).toContain('desired (Git-rendered)')

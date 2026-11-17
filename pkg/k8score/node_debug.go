@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"regexp"
 	"strings"
 	"time"
@@ -69,15 +70,15 @@ func CreateNodeDebugPod(ctx context.Context, client kubernetes.Interface, nodeNa
 	containerName := "debug"
 	sanitized := sanitizeNodeName(nodeName)
 	labelValue := sanitizeLabelValue(nodeName)
-	podName := fmt.Sprintf("radar-node-debug-%s-%d", sanitized, time.Now().Unix())
+	podName := fmt.Sprintf("kubeatlas-node-debug-%s-%d", sanitized, time.Now().Unix())
 
 	pod := &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      podName,
 			Namespace: "default",
 			Labels: map[string]string{
-				"app.kubernetes.io/managed-by": "radar",
-				"radarhq.io/debug-node":        labelValue,
+				"app.kubernetes.io/managed-by": "kubeatlas",
+				"kubeatlas.io/debug-node":      labelValue,
 			},
 		},
 		Spec: corev1.PodSpec{
@@ -159,8 +160,7 @@ func WaitForPodRunning(ctx context.Context, client kubernetes.Interface, namespa
 // DeleteNodeDebugPods is a node-wide maintenance operation, not terminal cleanup.
 // Interactive callers must use DeleteNodeDebugPod with the creation result.
 // It deletes all debug pods for the given node. Matches both
-// the current "radarhq.io/debug-node" label and the legacy "radar.skyhook.io/
-// debug-node" label so a Radar binary upgraded mid-debug-session can still
+// the current owned debug-node label and both deployed compatibility labels so a KubeAtlas binary upgraded mid-debug-session can still
 // GC in-flight privileged pods created by the prior version.
 //
 // TODO(2026-Q3): drop the legacy selector once the migration window is done
@@ -172,8 +172,9 @@ func DeleteNodeDebugPods(ctx context.Context, client kubernetes.Interface, nodeN
 
 	gracePeriod := int64(0)
 	selectors := []string{
-		fmt.Sprintf("radarhq.io/debug-node=%s", sanitizeLabelValue(nodeName)),
-		fmt.Sprintf("radar.skyhook.io/debug-node=%s", sanitizeLabelValue(nodeName)),
+		fmt.Sprintf("kubeatlas.io/debug-node=%s", sanitizeLabelValue(nodeName)),
+		fmt.Sprintf("%s=%s", compat.LegacyDebugNodeLabel, sanitizeLabelValue(nodeName)),
+		fmt.Sprintf("%s=%s", compat.OlderDebugNodeLabel, sanitizeLabelValue(nodeName)),
 	}
 	var errs []error
 	for _, sel := range selectors {

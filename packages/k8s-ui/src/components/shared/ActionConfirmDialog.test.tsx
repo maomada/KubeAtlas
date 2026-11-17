@@ -74,13 +74,13 @@ describe('ActionConfirmDialog', () => {
   it('locks resubmission for an unknown or partial result without claiming no write happened', () => {
     render({ result: { state: 'unknown', message: 'Refresh the target before another attempt.' } })
     expect(button('Scale').disabled).toBe(true)
-    expect(document.body.textContent).toContain('Radar 无法确定此操作是否已生效')
+    expect(document.body.textContent).toContain('KubeAtlas 无法确定此操作是否已生效')
     expect(document.body.textContent).not.toContain('The write did not happen')
   })
   it('locks an unknown result even without an error string', () => {
     render({ result: { state: 'unknown' } })
     expect(button('Scale').disabled).toBe(true)
-    expect(document.body.textContent).toContain('Radar 无法确定此操作是否已生效')
+    expect(document.body.textContent).toContain('KubeAtlas 无法确定此操作是否已生效')
     expect(document.body.textContent).toContain('请先检查对象的当前状态，再尝试其他操作。')
   })
   it('allows retry after a known refusal, using neutral default error copy', () => {

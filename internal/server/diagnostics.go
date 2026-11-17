@@ -43,13 +43,13 @@ type DiagConfig struct {
 
 // DiagnosticsSnapshot is the top-level diagnostics response.
 type DiagnosticsSnapshot struct {
-	Timestamp    string `json:"timestamp"`
-	RadarVersion string `json:"radarVersion"`
-	GoVersion    string `json:"goVersion"`
-	GOOS         string `json:"goos"`
-	GOARCH       string `json:"goarch"`
-	Uptime       string `json:"uptime"`
-	UptimeSec    int64  `json:"uptimeSec"`
+	Timestamp        string `json:"timestamp"`
+	KubeAtlasVersion string `json:"kubeatlasVersion"`
+	GoVersion        string `json:"goVersion"`
+	GOOS             string `json:"goos"`
+	GOARCH           string `json:"goarch"`
+	Uptime           string `json:"uptime"`
+	UptimeSec        int64  `json:"uptimeSec"`
 
 	Connection          *DiagConnection              `json:"connection,omitempty"`
 	Kubeconfig          *DiagKubeconfig              `json:"kubeconfig,omitempty"`
@@ -86,7 +86,7 @@ type DiagConnection struct {
 // includes resolved file paths — only counts, mode flags, and exec plugin
 // command basenames suitable for inclusion in a public bug report. Helps
 // triage issues like "some clusters don't show up in the switcher" or
-// "can't switch clusters on the desktop app" (radar#411) — the answer
+// "can't switch clusters on the desktop app" (kubeatlas#411) — the answer
 // typically lives in one of: kubeconfig loading mode, context-name
 // collisions, shell env enrichment, or an exec auth plugin missing from
 // the desktop app's PATH.
@@ -223,13 +223,13 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 	uptime := now.Sub(s.startTime)
 
 	snap := DiagnosticsSnapshot{
-		Timestamp:    now.Format(time.RFC3339),
-		RadarVersion: version.Current,
-		GoVersion:    runtime.Version(),
-		GOOS:         runtime.GOOS,
-		GOARCH:       runtime.GOARCH,
-		Uptime:       uptime.Truncate(time.Second).String(),
-		UptimeSec:    int64(uptime.Seconds()),
+		Timestamp:        now.Format(time.RFC3339),
+		KubeAtlasVersion: version.Current,
+		GoVersion:        runtime.Version(),
+		GOOS:             runtime.GOOS,
+		GOARCH:           runtime.GOARCH,
+		Uptime:           uptime.Truncate(time.Second).String(),
+		UptimeSec:        int64(uptime.Seconds()),
 	}
 
 	var errs []string
@@ -239,7 +239,7 @@ func (s *Server) handleDiagnostics(w http.ResponseWriter, r *http.Request) {
 		status := k8s.GetConnectionStatus()
 		connectionError := status.Error
 		if status.ErrorType == "config" && connectionError != "" {
-			connectionError = "Kubeconfig initialization failed; see local Radar logs for details"
+			connectionError = "Kubeconfig initialization failed; see local KubeAtlas logs for details"
 		}
 		snap.Connection = &DiagConnection{
 			State:       string(status.State),

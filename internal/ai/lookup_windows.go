@@ -8,7 +8,7 @@ import (
 )
 
 // agentBinDirs lists the install locations probed after PATH. Fixed literals,
-// so the fallback widens where Radar looks without widening what it will run.
+// so the fallback widens where KubeAtlas looks without widening what it will run.
 func agentBinDirs() []string {
 	var dirs []string
 	if local := os.Getenv("LOCALAPPDATA"); local != "" {
@@ -25,7 +25,7 @@ func agentBinDirs() []string {
 }
 
 // executableNames is the set of filenames an agent CLI can have in a directory.
-// Only .exe, because Radar spawns the CLI directly: os/exec hands the resolved
+// Only .exe, because KubeAtlas spawns the CLI directly: os/exec hands the resolved
 // path to CreateProcess with no batch-file handling of its own, so a .cmd or
 // .bat shim is not something this process can start.
 //

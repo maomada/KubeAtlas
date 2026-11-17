@@ -131,7 +131,7 @@ func TestResourceListCoverageDistinguishesEmptyAndUnread(t *testing.T) {
 			}{
 				{"?namespace=alpha", "namespaces", false, nil},
 				{"?namespaces=alpha,beta", "namespaces", true, []string{"beta"}},
-				// An unscoped list is narrowed to what Radar collects, and
+				// An unscoped list is narrowed to what KubeAtlas collects, and
 				// complete within it.
 				{"", "namespaces", false, nil},
 				{"?namespaces=alpha,beta&table=1", "namespaces", true, []string{"beta"}},
@@ -160,7 +160,7 @@ func TestResourceListCoverageDistinguishesEmptyAndUnread(t *testing.T) {
 						t.Fatalf("read scope = %+v", body.Coverage.Read)
 					}
 					if tc.partial {
-						if len(body.Coverage.Gaps) != 1 || body.Coverage.Gaps[0].Code != "radar_namespace_not_collected" {
+						if len(body.Coverage.Gaps) != 1 || body.Coverage.Gaps[0].Code != "kubeatlas_namespace_not_collected" {
 							t.Fatalf("gaps = %+v", body.Coverage.Gaps)
 						}
 						gap := body.Coverage.Gaps[0].Namespaces
@@ -180,7 +180,7 @@ func TestResourceListCoverageDistinguishesEmptyAndUnread(t *testing.T) {
 			}
 			resp := get(t, "/api/resources/pods?namespace=beta")
 			defer resp.Body.Close()
-			assertResourceReadError(t, resp, 409, "radar_namespace_not_collected")
+			assertResourceReadError(t, resp, 409, "kubeatlas_namespace_not_collected")
 		})
 	}
 }
@@ -194,7 +194,7 @@ func TestResourceGetCoverageBeforeNotFound(t *testing.T) {
 	}
 	resp := get(t, "/api/resources/pods/beta/missing")
 	defer resp.Body.Close()
-	assertResourceReadError(t, resp, 409, "radar_namespace_not_collected")
+	assertResourceReadError(t, resp, 409, "kubeatlas_namespace_not_collected")
 	resp = get(t, "/api/resources/pods/alpha/missing")
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
@@ -213,7 +213,7 @@ func TestResourceMissingCollectorInformerIsNotEmptyOrNotFound(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			resp := get(t, path)
 			defer resp.Body.Close()
-			assertResourceReadError(t, resp, 503, "radar_kind_not_collected")
+			assertResourceReadError(t, resp, 503, "kubeatlas_kind_not_collected")
 		})
 	}
 }
@@ -238,12 +238,12 @@ func TestAIResourceReadKeepsArrayAndRejectsIncompleteScope(t *testing.T) {
 		t.Run(path, func(t *testing.T) {
 			resp := get(t, path)
 			defer resp.Body.Close()
-			assertResourceReadError(t, resp, 409, "radar_namespace_not_collected")
+			assertResourceReadError(t, resp, 409, "kubeatlas_namespace_not_collected")
 		})
 	}
 }
 
-// A namespace Radar collects but the caller can't see reads exactly like one
+// A namespace KubeAtlas collects but the caller can't see reads exactly like one
 // that doesn't exist: the caller gets back the name they sent, as a
 // namespace_not_visible gap, and nothing that tells the two apart.
 func TestResourceListCoverageContainsOnlyCallerVisibleNamespaces(t *testing.T) {
@@ -366,7 +366,7 @@ func TestResourceCountsKeepPartialScopeCountUsable(t *testing.T) {
 	}
 	var unread ResourceCountsResponse
 	assertOK(t, get(t, "/api/resource-counts?namespace=beta"), &unread)
-	if _, exists := unread.Counts["Pod"]; exists || !containsString(unread.Unavailable, "Pod") || unread.Reasons["Pod"] != "radar_namespace_not_collected" {
+	if _, exists := unread.Counts["Pod"]; exists || !containsString(unread.Unavailable, "Pod") || unread.Reasons["Pod"] != "kubeatlas_namespace_not_collected" {
 		t.Fatalf("unread count became zero: %+v", unread)
 	}
 }
@@ -558,12 +558,12 @@ func TestResourceDynamicNamespaceCoverageDoesNotBorrowAnotherInformer(t *testing
 	}
 	var result testResourceListEnvelope
 	assertOK(t, get(t, "/api/resources/widgets?group=example.com&namespaces=alpha,beta"), &result)
-	if result.Coverage.Status != resourceapi.CoveragePartial || len(result.Items) != 0 || result.Items == nil || len(result.Coverage.Gaps) != 1 || result.Coverage.Gaps[0].Code != "radar_forbidden" {
+	if result.Coverage.Status != resourceapi.CoveragePartial || len(result.Items) != 0 || result.Items == nil || len(result.Coverage.Gaps) != 1 || result.Coverage.Gaps[0].Code != "kubeatlas_forbidden" {
 		t.Fatalf("dynamic empty partial = %+v", result)
 	}
 	resp := get(t, "/api/resources/widgets/beta/missing?group=example.com")
 	defer resp.Body.Close()
-	assertResourceReadError(t, resp, 503, "radar_forbidden")
+	assertResourceReadError(t, resp, 503, "kubeatlas_forbidden")
 	resp = get(t, "/api/resources/widgets/alpha/missing?group=example.com")
 	defer resp.Body.Close()
 	if resp.StatusCode != 404 {
@@ -806,7 +806,7 @@ func TestResourceReadPreservesKnownExclusionBeforeInitialSync(t *testing.T) {
 		namespaces []string
 		reason     readreason.Code
 	}{
-		{[]string{"beta"}, readreason.RadarNamespaceNotCollected},
+		{[]string{"beta"}, readreason.KubeAtlasNamespaceNotCollected},
 		{[]string{"alpha"}, readreason.KindSyncPending},
 		{[]string{"alpha", "beta"}, readreason.KindSyncPending},
 		{nil, readreason.KindSyncPending},
@@ -819,7 +819,7 @@ func TestResourceReadPreservesKnownExclusionBeforeInitialSync(t *testing.T) {
 		if len(tc.namespaces) == 2 {
 			var scope *resourceapi.Gap
 			for i := range failure.gaps {
-				if failure.gaps[i].Code == readreason.RadarNamespaceNotCollected {
+				if failure.gaps[i].Code == readreason.KubeAtlasNamespaceNotCollected {
 					scope = &failure.gaps[i]
 				}
 			}
@@ -847,7 +847,7 @@ func TestPendingResourceCountsRetainKnownScopeGaps(t *testing.T) {
 		t.Fatal(err)
 	}
 	coverage := response.Coverage["Pod"]
-	scopeGap := slices.IndexFunc(coverage.Gaps, func(gap resourceapi.Gap) bool { return gap.Code == readreason.RadarNamespaceNotCollected })
+	scopeGap := slices.IndexFunc(coverage.Gaps, func(gap resourceapi.Gap) bool { return gap.Code == readreason.KubeAtlasNamespaceNotCollected })
 	if w.Code != 200 || !slices.Contains(response.Unavailable, "Pod") || response.Reasons["Pod"] != string(readreason.KindSyncPending) || coverage.Status != resourceapi.CoveragePartial || len(coverage.Gaps) != 2 || scopeGap < 0 || !slices.Equal(coverage.Gaps[scopeGap].Namespaces.Names, []string{"beta"}) {
 		t.Fatalf("counts lost unread scope facts: status=%d %+v", w.Code, response)
 	}
@@ -857,7 +857,7 @@ func TestPendingResourceCountsRetainKnownScopeGaps(t *testing.T) {
 }
 
 // A namespace whose access check Kubernetes answered with a credential
-// rejection is a gap with that cause, never a limit of what Radar collects.
+// rejection is a gap with that cause, never a limit of what KubeAtlas collects.
 func TestTypedReadKeepsRecordedCredentialRejections(t *testing.T) {
 	client := fake.NewClientset(&corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Namespace: "alpha", Name: "alpha-cm"}})
 	t.Cleanup(func() {
@@ -883,13 +883,13 @@ func TestTypedReadKeepsRecordedCredentialRejections(t *testing.T) {
 	cache := k8s.GetResourceCache()
 	rejected := func(gaps []resourceapi.Gap) bool {
 		return slices.ContainsFunc(gaps, func(gap resourceapi.Gap) bool {
-			return gap.Code == readreason.RadarCredentialsRejected && gap.Namespaces != nil && slices.Equal(gap.Namespaces.Names, []string{"beta"})
-		}) && !slices.ContainsFunc(gaps, func(gap resourceapi.Gap) bool { return gap.Code == readreason.RadarNamespaceNotCollected })
+			return gap.Code == readreason.KubeAtlasCredentialsRejected && gap.Namespaces != nil && slices.Equal(gap.Namespaces.Names, []string{"beta"})
+		}) && !slices.ContainsFunc(gaps, func(gap resourceapi.Gap) bool { return gap.Code == readreason.KubeAtlasNamespaceNotCollected })
 	}
 
 	_, err := typedReadCoverage(cache, "configmaps", []string{"beta"}, false, true)
 	var failure *resourceReadFailure
-	if !errors.As(err, &failure) || failure.code != readreason.RadarCredentialsRejected || !rejected(failure.gaps) {
+	if !errors.As(err, &failure) || failure.code != readreason.KubeAtlasCredentialsRejected || !rejected(failure.gaps) {
 		t.Fatalf("named rejected namespace: %v", err)
 	}
 	plan, err := typedReadCoverage(cache, "configmaps", []string{"alpha", "beta"}, false, true)
@@ -902,7 +902,7 @@ func TestTypedReadKeepsRecordedCredentialRejections(t *testing.T) {
 	}
 }
 
-// While Radar is still retrying an access check that got no answer, a kind
+// While KubeAtlas is still retrying an access check that got no answer, a kind
 // with no informer yet is still loading, not a failed read.
 func TestDynamicListWhileTheAccessCheckRetries(t *testing.T) {
 	useTestResourceCache(t, fake.NewClientset())
@@ -1010,8 +1010,8 @@ func TestUnansweredProbeCodePrefersRejectedCredentials(t *testing.T) {
 		observation k8score.DynamicResourceObservation
 		want        readreason.Code
 	}{
-		{k8score.DynamicResourceObservation{ReasonCode: "credentials_rejected", ProbeRetrying: true, UnansweredNamespaces: []string{"beta"}}, readreason.RadarCredentialsRejected},
-		{k8score.DynamicResourceObservation{ReasonCode: "credentials_rejected", UnansweredNamespaces: []string{"beta"}}, readreason.RadarCredentialsRejected},
+		{k8score.DynamicResourceObservation{ReasonCode: "credentials_rejected", ProbeRetrying: true, UnansweredNamespaces: []string{"beta"}}, readreason.KubeAtlasCredentialsRejected},
+		{k8score.DynamicResourceObservation{ReasonCode: "credentials_rejected", UnansweredNamespaces: []string{"beta"}}, readreason.KubeAtlasCredentialsRejected},
 		{k8score.DynamicResourceObservation{ProbeRetrying: true, UnansweredNamespaces: []string{"beta"}}, readreason.KindSyncPending},
 		{k8score.DynamicResourceObservation{UnansweredNamespaces: []string{"beta"}}, readreason.ReadError},
 	} {

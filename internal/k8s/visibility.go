@@ -6,7 +6,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/k8score"
 )
 
-// VisibilitySummary explains when Radar is connected but cannot see enough
+// VisibilitySummary explains when KubeAtlas is connected but cannot see enough
 // core workload resources to make dashboard/issue results complete.
 type VisibilitySummary struct {
 	State                string            `json:"state"`
@@ -67,7 +67,7 @@ func BuildVisibilitySummary(result *PermissionCheckResult, namespace string) *Vi
 	impact := ""
 	if !podsVisible && !deploymentsVisible {
 		state = "degraded"
-		impact = "Radar cannot read core workload resources for this scope; pod health, workload status, topology, and issue detection may be empty or misleading."
+		impact = "KubeAtlas cannot read core workload resources for this scope; pod health, workload status, topology, and issue detection may be empty or misleading."
 	} else if core["pods"] != "allowed" || core["deployments"] != "allowed" || core["services"] != "allowed" || len(missingOptional) > 0 {
 		state = "limited"
 		impact = "Some related resource types are unavailable; diagnostics may omit supporting context."

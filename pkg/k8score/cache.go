@@ -26,7 +26,7 @@ import (
 )
 
 // ResourceCache provides fast, eventually-consistent access to K8s resources
-// using SharedInformers. It is the shared core used by both Radar and
+// using SharedInformers. It is the shared core used by both KubeAtlas and
 // skyhook-connector.
 type ResourceCache struct {
 	factory        informers.SharedInformerFactory            // cluster-wide factory (always present)

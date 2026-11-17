@@ -9,7 +9,7 @@ const (
 	KindCoverageFull    = "full"
 	KindCoveragePartial = "partial"
 	KindCoverageDenied  = "denied"
-	// KindCoverageUncached: the caller may list the kind, but Radar's informer
+	// KindCoverageUncached: the caller may list the kind, but KubeAtlas's informer
 	// holds none of the Namespaces in scope, so nothing was read.
 	KindCoverageUncached     = "uncached"
 	KindCoverageNotInstalled = "notInstalled"
@@ -19,7 +19,7 @@ const (
 
 // KindCoverage states how much of one kind the caller could see.
 // DeniedNamespaces (the caller may not list there) and UncachedNamespaces
-// (the caller may, but Radar's informer does not hold them) list only
+// (the caller may, but KubeAtlas's informer does not hold them) list only
 // Namespaces already in the caller's scope, so either may be omitted on a
 // partial State; AllowedNamespaces is always set on a partial State and is
 // the authority for which Namespaces were read.

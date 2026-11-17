@@ -35,7 +35,7 @@ func TestParse_ParsesJSONBlock(t *testing.T) {
 }
 
 func TestParse_CertaintyRequiresSummary(t *testing.T) {
-	for _, summary := range []string{"", "   ", "[[radar:evidence=0]]"} {
+	for _, summary := range []string{"", "   ", "[[kubeatlas:evidence=0]]"} {
 		for _, certainty := range []string{"established", "likely", "suspected"} {
 			fields, _ := json.Marshal(map[string]any{"summary": summary, "certainty": certainty, "revises_assessment": false})
 			d := Parse("```json\n" + string(fields) + "\n```\nA conversational answer.").Verdict
@@ -153,7 +153,7 @@ func TestParse_FreeTextIsReportNotRootCause(t *testing.T) {
 }
 
 func TestParse_StoryFields(t *testing.T) {
-	text := "The app crashes on start.\n\n[[radar:evidence=0]]\n\nSo the build changed.\n\n" + verdictJSON(
+	text := "The app crashes on start.\n\n[[kubeatlas:evidence=0]]\n\nSo the build changed.\n\n" + verdictJSON(
 		`"summary":"  The app cannot log in to its database, and it started with the last deploy.  ",`+
 			`"certainty":"Likely","unresolved":["Atlas password rotated?","","what would settle it","a fourth item"],`+
 			`"root_cause":"Auth fails after revision 8.",`+
@@ -187,7 +187,7 @@ func TestParse_StoryFields(t *testing.T) {
 	if !d.RevisesAssessment {
 		t.Fatal("revises_assessment not parsed")
 	}
-	if !strings.Contains(d.Report, "[[radar:evidence=0]]") || strings.Contains(d.Report, "```json") {
+	if !strings.Contains(d.Report, "[[kubeatlas:evidence=0]]") || strings.Contains(d.Report, "```json") {
 		t.Fatalf("report must keep placement markers and lose the verdict block: %q", d.Report)
 	}
 }
@@ -205,8 +205,8 @@ func TestParse_EstablishedCannotCoexistWithUnresolved(t *testing.T) {
 
 func TestParse_VerdictBlockDividesNotesFromStory(t *testing.T) {
 	block := "```json\n{\"summary\":\"s\",\"root_cause\":\"x\"}\n```"
-	d := Parse("Notes: one restart, one exit.\n\n" + block + "\n\nThe story.\n\n[[radar:evidence=0]]").Verdict
-	if d.Notes != "Notes: one restart, one exit." || d.Report != "The story.\n\n[[radar:evidence=0]]" {
+	d := Parse("Notes: one restart, one exit.\n\n" + block + "\n\nThe story.\n\n[[kubeatlas:evidence=0]]").Verdict
+	if d.Notes != "Notes: one restart, one exit." || d.Report != "The story.\n\n[[kubeatlas:evidence=0]]" {
 		t.Fatalf("notes=%q report=%q", d.Notes, d.Report)
 	}
 	old := Parse("The story.\n\n" + block).Verdict
@@ -262,8 +262,8 @@ func TestParse_RecommendedIndexFollowsTheStepTheAgentNamed(t *testing.T) {
 }
 
 func TestStripPlacementMarkers_HandlesCompact(t *testing.T) {
-	got := StripPlacementMarkers("A.\n\n[[radar:evidence=0|compact]]\n\nB [[radar:evidence=1]].")
-	if strings.Contains(got, "radar:evidence") {
+	got := StripPlacementMarkers("A.\n\n[[kubeatlas:evidence=0|compact]]\n\nB [[kubeatlas:evidence=1]].")
+	if strings.Contains(got, "kubeatlas:evidence") {
 		t.Fatalf("marker leaked into the explanation source: %q", got)
 	}
 }
@@ -327,7 +327,7 @@ func TestParse_InconclusiveSurvivesTypedSteps(t *testing.T) {
 func TestParse_RefMarkersBecomeIndexMarkersAndLeaveTheHeadline(t *testing.T) {
 	ref := testRef('a', 'b')
 	other := testRef('c', 'd')
-	body := "```json\n{\"summary\":\"The pod crashes [[radar:evidence-ref=" + ref + "]].\",\"root_cause\":\"nginx exits [[radar:evidence-ref=" + ref + "]] on start.\",\"certainty\":\"established\",\"evidence\":[{\"ref\":\"" + ref + "\",\"role\":\"cause\",\"claim\":\"The log names it.\"}]}\n```\nThe log shows it:\n\n[[radar:evidence-ref=" + ref + "]]\n\nAlso [[radar:evidence-ref=" + ref + "|compact]] inline, and one nothing cites [[radar:evidence-ref=" + other + "]]."
+	body := "```json\n{\"summary\":\"The pod crashes [[kubeatlas:evidence-ref=" + ref + "]].\",\"root_cause\":\"nginx exits [[kubeatlas:evidence-ref=" + ref + "]] on start.\",\"certainty\":\"established\",\"evidence\":[{\"ref\":\"" + ref + "\",\"role\":\"cause\",\"claim\":\"The log names it.\"}]}\n```\nThe log shows it:\n\n[[kubeatlas:evidence-ref=" + ref + "]]\n\nAlso [[kubeatlas:evidence-ref=" + ref + "|compact]] inline, and one nothing cites [[kubeatlas:evidence-ref=" + other + "]]."
 	d := Parse(body).Verdict
 	if d.Summary != "The pod crashes." {
 		t.Fatalf("summary kept a marker: %q", d.Summary)
@@ -335,18 +335,18 @@ func TestParse_RefMarkersBecomeIndexMarkersAndLeaveTheHeadline(t *testing.T) {
 	if d.RootCause != "nginx exits on start." {
 		t.Fatalf("root_cause kept a marker: %q", d.RootCause)
 	}
-	if !strings.Contains(d.Report, "\n[[radar:evidence=0]]\n") || !strings.Contains(d.Report, "[[radar:evidence=0|compact]]") {
+	if !strings.Contains(d.Report, "\n[[kubeatlas:evidence=0]]\n") || !strings.Contains(d.Report, "[[kubeatlas:evidence=0|compact]]") {
 		t.Fatalf("ref markers not canonicalised: %q", d.Report)
 	}
-	if !strings.Contains(d.Report, "[[radar:evidence-ref="+other+"]]") {
+	if !strings.Contains(d.Report, "[[kubeatlas:evidence-ref="+other+"]]") {
 		t.Fatalf("an uncited ref must stay for the renderer to flag: %q", d.Report)
 	}
 }
 
 func TestParse_RefMarkerStaysWhenAmbiguousOrQuoted(t *testing.T) {
 	ref := testRef('a', 'b')
-	body := "```json\n{\"summary\":\"x\",\"root_cause\":\"y\",\"evidence\":[{\"ref\":\"" + ref + "\",\"role\":\"cause\",\"claim\":\"logs\",\"subject\":{\"kind\":\"Pod\",\"name\":\"a\",\"observation\":\"logs\"}},{\"ref\":\"" + ref + "\",\"role\":\"symptom\",\"claim\":\"events\",\"subject\":{\"kind\":\"Pod\",\"name\":\"a\",\"observation\":\"events\"}}]}\n```\nSee [[radar:evidence-ref=" + ref + "]] here, and `[[radar:evidence-ref=" + ref + "]]` quoted, and\n```\n[[radar:evidence-ref=" + ref + "]]\n```\n"
-	if d := Parse(body).Verdict; strings.Contains(d.Report, "[[radar:evidence=") {
+	body := "```json\n{\"summary\":\"x\",\"root_cause\":\"y\",\"evidence\":[{\"ref\":\"" + ref + "\",\"role\":\"cause\",\"claim\":\"logs\",\"subject\":{\"kind\":\"Pod\",\"name\":\"a\",\"observation\":\"logs\"}},{\"ref\":\"" + ref + "\",\"role\":\"symptom\",\"claim\":\"events\",\"subject\":{\"kind\":\"Pod\",\"name\":\"a\",\"observation\":\"events\"}}]}\n```\nSee [[kubeatlas:evidence-ref=" + ref + "]] here, and `[[kubeatlas:evidence-ref=" + ref + "]]` quoted, and\n```\n[[kubeatlas:evidence-ref=" + ref + "]]\n```\n"
+	if d := Parse(body).Verdict; strings.Contains(d.Report, "[[kubeatlas:evidence=") {
 		t.Fatalf("an ambiguous or quoted ref must not be rewritten: %q", d.Report)
 	}
 }
@@ -354,12 +354,12 @@ func TestParse_RefMarkerStaysWhenAmbiguousOrQuoted(t *testing.T) {
 func TestCanonicalStoryMarkers_RespectsCodeSpansAndFences(t *testing.T) {
 	ref := testRef('a', 'b')
 	items := []caseItemRequest{{ref: ref, valid: true}}
-	in := "A `` [[radar:evidence-ref=" + ref + "]] `` span, then [[radar:evidence-ref=" + ref + "]] out.\n~~~\n[[radar:evidence-ref=" + ref + "]]\n~~~\n[[radar:evidence-ref=" + ref + "]]"
+	in := "A `` [[kubeatlas:evidence-ref=" + ref + "]] `` span, then [[kubeatlas:evidence-ref=" + ref + "]] out.\n~~~\n[[kubeatlas:evidence-ref=" + ref + "]]\n~~~\n[[kubeatlas:evidence-ref=" + ref + "]]"
 	out := canonicalStoryMarkers(in, items)
-	if strings.Count(out, "[[radar:evidence=0]]") != 2 {
+	if strings.Count(out, "[[kubeatlas:evidence=0]]") != 2 {
 		t.Fatalf("expected the two markers outside code to be rewritten, got %q", out)
 	}
-	if strings.Count(out, "[[radar:evidence-ref=") != 2 {
+	if strings.Count(out, "[[kubeatlas:evidence-ref=") != 2 {
 		t.Fatalf("expected the two quoted markers to stay, got %q", out)
 	}
 }
@@ -367,19 +367,19 @@ func TestCanonicalStoryMarkers_RespectsCodeSpansAndFences(t *testing.T) {
 func TestCanonicalStoryMarkers_FenceAndBlankLineCloseASpan(t *testing.T) {
 	ref := testRef('a', 'b')
 	items := []caseItemRequest{{ref: ref, valid: true}}
-	marker := "[[radar:evidence-ref=" + ref + "]]"
+	marker := "[[kubeatlas:evidence-ref=" + ref + "]]"
 	for _, in := range []string{
 		"Quoted `example\n~~~\nx\n~~~\n" + marker,
 		"Quoted `example\n    \n" + marker,
 	} {
-		if out := canonicalStoryMarkers(in, items); !strings.HasSuffix(out, "\n[[radar:evidence=0]]") {
+		if out := canonicalStoryMarkers(in, items); !strings.HasSuffix(out, "\n[[kubeatlas:evidence=0]]") {
 			t.Fatalf("expected the marker after the break to be rewritten, got %q", out)
 		}
 	}
-	if out := canonicalStoryMarkers("\t~~~\n"+marker+"\n\t~~~", items); !strings.Contains(out, "\n[[radar:evidence=0]]\n") {
+	if out := canonicalStoryMarkers("\t~~~\n"+marker+"\n\t~~~", items); !strings.Contains(out, "\n[[kubeatlas:evidence=0]]\n") {
 		t.Fatalf("expected a tab-indented fence to be indented code, not a fence, got %q", out)
 	}
-	if out := canonicalStoryMarkers("\t"+marker, items); strings.Contains(out, "[[radar:evidence=0]]") {
+	if out := canonicalStoryMarkers("\t"+marker, items); strings.Contains(out, "[[kubeatlas:evidence=0]]") {
 		t.Fatalf("expected tab-indented code to stay literal, got %q", out)
 	}
 }
@@ -387,7 +387,7 @@ func TestCanonicalStoryMarkers_FenceAndBlankLineCloseASpan(t *testing.T) {
 func TestCanonicalStoryMarkers_SpansAcrossLinesAndQuotedBlocks(t *testing.T) {
 	ref := testRef('a', 'b')
 	items := []caseItemRequest{{ref: ref, valid: true}}
-	marker := "[[radar:evidence-ref=" + ref + "]]"
+	marker := "[[kubeatlas:evidence-ref=" + ref + "]]"
 	in := strings.Join([]string{
 		"Quoted `example",
 		marker,
@@ -399,10 +399,10 @@ func TestCanonicalStoryMarkers_SpansAcrossLinesAndQuotedBlocks(t *testing.T) {
 		marker,
 	}, "\n")
 	out := canonicalStoryMarkers(in, items)
-	if strings.Count(out, "[[radar:evidence=0]]") != 1 {
+	if strings.Count(out, "[[kubeatlas:evidence=0]]") != 1 {
 		t.Fatalf("expected only the marker after the indented non-fence to be rewritten, got %q", out)
 	}
-	if !strings.HasSuffix(out, "\n[[radar:evidence=0]]") {
+	if !strings.HasSuffix(out, "\n[[kubeatlas:evidence=0]]") {
 		t.Fatalf("expected the last line rewritten, got %q", out)
 	}
 }
@@ -539,14 +539,14 @@ func TestParse_CaseCapsAndMalformedArrays(t *testing.T) {
 // the argument, so a cause may come without a claim; the qualifying roles may
 // not, since a bare "benign" would satisfy the banner's explained-by check
 // while saying nothing. Only the marker wrapper is unwrapped, because that
-// text is Radar's own, quoted back.
+// text is KubeAtlas's own, quoted back.
 func TestParse_CaseRejectsEmptyClaimAndUnwrapsMarkerRef(t *testing.T) {
 	ref := testRef('a', 'b')
 	long := strings.Repeat("x", 1000)
 	items := Parse(verdictJSON(`"root_cause":"x","evidence":[` +
 		`{"ref":"` + ref + `","role":"benign","claim":""},` +
 		`{"ref":"` + ref + `","role":"cause","claim":"   "},` +
-		`{"ref":"[[radar:evidence-ref=` + ref + `]]","role":"cause","claim":"Pasted the whole marker."},` +
+		`{"ref":"[[kubeatlas:evidence-ref=` + ref + `]]","role":"cause","claim":"Pasted the whole marker."},` +
 		`{"ref":"` + ref + `","role":"benign","claim":"` + long + `"},` +
 		`{"ref":"` + ref + `","role":"verdict","claim":"An unknown role."},` +
 		`{"ref":"` + ref + `","role":"demoted","claim":""},` +
@@ -583,20 +583,20 @@ func TestParse_CaseRejectsEmptyClaimAndUnwrapsMarkerRef(t *testing.T) {
 func TestUnwrapRefTakesOnlyAWholeMarker(t *testing.T) {
 	ref := testRef('a', 'b')
 	other := testRef('c', 'd')
-	if got := unwrapRef("[[radar:evidence-ref=" + ref + "]]"); got != ref {
+	if got := unwrapRef("[[kubeatlas:evidence-ref=" + ref + "]]"); got != ref {
 		t.Fatalf("whole marker: got %q", got)
 	}
-	if got := unwrapRef("  [[radar:evidence-ref=" + ref + "]]  "); got != ref {
+	if got := unwrapRef("  [[kubeatlas:evidence-ref=" + ref + "]]  "); got != ref {
 		t.Fatalf("padded marker: got %q", got)
 	}
 	if got := unwrapRef(ref); got != ref {
 		t.Fatalf("bare ref: got %q", got)
 	}
-	two := "[[radar:evidence-ref=" + ref + "]] or [[radar:evidence-ref=" + other + "]]"
+	two := "[[kubeatlas:evidence-ref=" + ref + "]] or [[kubeatlas:evidence-ref=" + other + "]]"
 	if got := unwrapRef(two); got != two {
 		t.Fatalf("two markers should not resolve to one: got %q", got)
 	}
-	prose := "see [[radar:evidence-ref=" + ref + "]] for this"
+	prose := "see [[kubeatlas:evidence-ref=" + ref + "]] for this"
 	if got := unwrapRef(prose); got != prose {
 		t.Fatalf("a marker in prose should not be unwrapped: got %q", got)
 	}

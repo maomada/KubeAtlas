@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Fail-closed GHCR collision checks for an owned Radar release."""
+"""Fail-closed GHCR collision checks for an owned KubeAtlas release."""
 
 import argparse
 import re

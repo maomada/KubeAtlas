@@ -37,7 +37,7 @@ function tool(
     summary: JSON.stringify({ namespace: "shop", name: "api" }),
     result: JSON.stringify(result),
     isError: false,
-    radarEvidence: true,
+    kubeatlasEvidence: true,
     ...patch,
   };
 }
@@ -101,7 +101,7 @@ describe("InvestigationEvidencePane under a story", () => {
 
   it("places the cited card in the story, marks it in the inventory, and puts next steps before it", () => {
     const html = render(
-      "The container keeps dying.\n\n[[radar:evidence=0]]\n\nThat is the whole story.",
+      "The container keeps dying.\n\n[[kubeatlas:evidence=0]]\n\nThat is the whole story.",
     );
     expect(html).toContain("data-story");
     expect(html).toContain('id="story-');
@@ -125,7 +125,7 @@ describe("InvestigationEvidencePane under a story", () => {
 
   it("shows lost support at the sentence and opens the inventory when nothing was placed", () => {
     const html = render(
-      "Nothing placed, but see [[radar:evidence=1]] and [[radar:evidence=7]].",
+      "Nothing placed, but see [[kubeatlas:evidence=1]] and [[kubeatlas:evidence=7]].",
     );
     expect(html).toContain('data-story-lost-support="unlinked"');
     expect(html).toContain('data-story-lost-support="invalid"');
@@ -176,7 +176,7 @@ describe("InvestigationEvidencePane under a story", () => {
           0,
         )}
         story={{
-          report: "No metrics-server anywhere.\n\n[[radar:evidence=0]]",
+          report: "No metrics-server anywhere.\n\n[[kubeatlas:evidence=0]]",
           evidence: items,
         }}
         collecting={false}
@@ -230,7 +230,7 @@ describe("InvestigationEvidencePane under a story", () => {
         projection={bundle}
         investigationCase={bundleCase}
         story={{
-          report: "KubeAtlas's bundle says so.\n\n[[radar:evidence=0]]",
+          report: "KubeAtlas's bundle says so.\n\n[[kubeatlas:evidence=0]]",
           evidence: items,
         }}
         collecting={false}
@@ -297,7 +297,7 @@ describe("InvestigationEvidencePane under a story", () => {
           1,
         )}
         story={{
-          report: "It was crashing then.\n\n[[radar:evidence=0]]",
+          report: "It was crashing then.\n\n[[kubeatlas:evidence=0]]",
           evidence: items,
         }}
         collecting={false}
@@ -355,7 +355,7 @@ describe("InvestigationEvidencePane under a story", () => {
           1,
         )}
         story={{
-          report: "Then it was down.\n\n[[radar:evidence=0]]",
+          report: "Then it was down.\n\n[[kubeatlas:evidence=0]]",
           evidence: items,
         }}
         collecting={false}
@@ -450,7 +450,7 @@ describe("story log card", () => {
       projection={projection}
       investigationCase={investigationCase}
       story={{
-        report: "The API cannot log in.\n\n[[radar:evidence=0]]\n",
+        report: "The API cannot log in.\n\n[[kubeatlas:evidence=0]]\n",
         evidence,
       }}
       collecting={false}
@@ -518,11 +518,11 @@ describe("story card gap clause", () => {
           onViewActivity={() => {}}
         />,
       );
-    const compact = render("It crashes.\n\n[[radar:evidence=0|compact]]");
+    const compact = render("It crashes.\n\n[[kubeatlas:evidence=0|compact]]");
     expect(compact).toContain("data-agent-gap-hint");
     expect(compact).toContain("this pod only, not the other replicas");
     expect(compact).not.toContain("not shown");
-    const full = render("It crashes.\n\n[[radar:evidence=0]]");
+    const full = render("It crashes.\n\n[[kubeatlas:evidence=0]]");
     // The record under Captured results keeps its labelled form.
     const story = full.slice(0, full.indexOf("Captured results"));
     expect(story).toMatch(
@@ -582,7 +582,7 @@ describe("story card defaults", () => {
           0,
         )}
         story={{
-          report: "The config exists.\n\n[[radar:evidence=0]]",
+          report: "The config exists.\n\n[[kubeatlas:evidence=0]]",
           evidence,
         }}
         collecting={false}
@@ -757,7 +757,7 @@ describe("story card defaults", () => {
           { evidence },
           0,
         )}
-        story={{ report: "Memory climbs.\n\n[[radar:evidence=0]]", evidence }}
+        story={{ report: "Memory climbs.\n\n[[kubeatlas:evidence=0]]", evidence }}
         collecting={false}
         animateGroupIds={new Set()}
         onViewSource={() => {}}

@@ -15,7 +15,7 @@ import (
 // detectExternalManager inspects labels and annotations for evidence that
 // Helm, Argo CD, Flux, or another controller manages the resource. Returns
 // the manager display name and a best-effort instance identifier; both empty
-// when nothing was detected. Detection is deliberately conservative — radar and
+// when nothing was detected. Detection is deliberately conservative — kubeatlas and
 // kubectl are not considered "external".
 func detectExternalManager(obj *unstructured.Unstructured) (string, string) {
 	if c := externalManagers(obj); len(c) > 0 {
@@ -79,7 +79,7 @@ func externalManagers(obj *unstructured.Unstructured) []externalManager {
 
 	if mb := labels["app.kubernetes.io/managed-by"]; mb != "" && !strings.EqualFold(mb, "Helm") {
 		low := strings.ToLower(mb)
-		if low != "kubectl" && low != "radar" {
+		if low != "kubectl" && low != "kubeatlas" {
 			out = append(out, externalManager{mb, labels["app.kubernetes.io/instance"], false})
 		}
 	}
@@ -135,7 +135,7 @@ func checkFieldRemoval(submitted, pre, post *unstructured.Unstructured) []string
 		return nil
 	}
 
-	otherManagers := nonRadarManagers(post)
+	otherManagers := nonKubeAtlasManagers(post)
 
 	var warnings []string
 
@@ -297,10 +297,10 @@ func containersByName(cs []any) map[string]map[string]any {
 	return out
 }
 
-// nonRadarManagers returns the names of field managers on the object other
-// than radar itself, deduplicated and sorted for stable output. Used to tell
+// nonKubeAtlasManagers returns the names of field managers on the object other
+// than kubeatlas itself, deduplicated and sorted for stable output. Used to tell
 // the agent who else owns fields on the resource.
-func nonRadarManagers(obj *unstructured.Unstructured) []string {
+func nonKubeAtlasManagers(obj *unstructured.Unstructured) []string {
 	if obj == nil {
 		return nil
 	}
@@ -315,7 +315,7 @@ func nonRadarManagers(obj *unstructured.Unstructured) []string {
 			continue
 		}
 		name, _ := em["manager"].(string)
-		if name == "" || strings.EqualFold(name, "radar") {
+		if name == "" || strings.EqualFold(name, "kubeatlas") {
 			continue
 		}
 		seen[name] = struct{}{}

@@ -24,14 +24,14 @@ func TestAdoptionPreflight_DryRunsExactMutationSetAndStorage(t *testing.T) {
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: radar-config
+  name: kubeatlas-config
 data:
   mode: oss
 ---
 apiVersion: v1
 kind: Service
 metadata:
-  name: radar-old
+  name: kubeatlas-old
 spec:
   ports:
   - port: 80
@@ -39,7 +39,7 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: radar
+  name: kubeatlas
 rules:
 - apiGroups: [""]
   resources: ["pods"]
@@ -49,19 +49,19 @@ rules:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: radar-config
+  name: kubeatlas-config
 data:
   mode: cloud
 ---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: radar-upgrader
+  name: kubeatlas-upgrader
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: radar
+  name: kubeatlas
 rules:
 - apiGroups: [""]
   resources: ["pods", "secrets"]
@@ -70,21 +70,21 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: radar-cloud-owner
+  name: kubeatlas-cloud-owner
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: admin
 subjects:
 - kind: Group
-  name: radar:owner
+  name: kubeatlas:owner
   apiGroup: rbac.authorization.k8s.io
 `
 
 	dc := adoptionDynamicClient(
-		adoptionObject("v1", "ConfigMap", "radar", "radar-config", map[string]any{"data": map[string]any{"mode": "oss"}}),
-		adoptionObject("v1", "Service", "radar", "radar-old", map[string]any{"spec": map[string]any{"ports": []any{map[string]any{"port": int64(80)}}}}),
-		adoptionObject("rbac.authorization.k8s.io/v1", "ClusterRole", "", "radar", map[string]any{
+		adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", map[string]any{"data": map[string]any{"mode": "oss"}}),
+		adoptionObject("v1", "Service", "kubeatlas", "kubeatlas-old", map[string]any{"spec": map[string]any{"ports": []any{map[string]any{"port": int64(80)}}}}),
+		adoptionObject("rbac.authorization.k8s.io/v1", "ClusterRole", "", "kubeatlas", map[string]any{
 			"rules": []any{map[string]any{"apiGroups": []any{""}, "resources": []any{"pods"}, "verbs": []any{"get"}}},
 		}),
 	)
@@ -131,10 +131,10 @@ subjects:
 	kc := adoptionKubeClient(t, func(attrs authv1.ResourceAttributes) bool {
 		reviews = append(reviews, attrs)
 		return true
-	}, currentHelmSecret("radar", "radar", 3))
+	}, currentHelmSecret("kubeatlas", "kubeatlas", 3))
 
 	result, err := AdoptionPreflight(context.Background(), kc, dc, adoptionDiscovery(), AdoptionPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", CurrentRevision: 3,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 3,
 		CurrentManifest: currentManifest, TargetManifest: targetManifest,
 	})
 	if err != nil {
@@ -153,8 +153,8 @@ subjects:
 	}
 	assertSecretDryRuns(t, kc.Actions())
 	assertReviewed(t, reviews, "delete", "secrets", CloudTokenSecretName)
-	assertReviewed(t, reviews, "update", "secrets", helmReleaseSecretName("radar", 4))
-	assertReviewed(t, reviews, "update", "secrets", helmReleaseSecretName("radar", 5))
+	assertReviewed(t, reviews, "update", "secrets", helmReleaseSecretName("kubeatlas", 4))
+	assertReviewed(t, reviews, "update", "secrets", helmReleaseSecretName("kubeatlas", 5))
 	assertReviewed(t, reviews, "delete", "secrets", "")
 	assertReviewed(t, reviews, "list", "pods", "")
 }
@@ -173,17 +173,17 @@ func TestAdoptionPreflight_RBACAdmissionDenialsAreBlocking(t *testing.T) {
 			name: "escalate role patch",
 			current: `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: radar}
+metadata: {name: kubeatlas}
 rules: []`,
 			target: `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: radar}
+metadata: {name: kubeatlas}
 rules:
 - apiGroups: [""]
   resources: ["users"]
   verbs: ["impersonate"]`,
 			live: []*unstructured.Unstructured{
-				adoptionObject("rbac.authorization.k8s.io/v1", "ClusterRole", "", "radar", map[string]any{"rules": []any{}}),
+				adoptionObject("rbac.authorization.k8s.io/v1", "ClusterRole", "", "kubeatlas", map[string]any{"rules": []any{}}),
 			},
 			verb: "patch", resource: "clusterroles", wantMessage: "patch ClusterRole",
 		},
@@ -191,24 +191,24 @@ rules:
 			name: "bind cluster role create",
 			current: `apiVersion: v1
 kind: ConfigMap
-metadata: {name: radar-config}`,
+metadata: {name: kubeatlas-config}`,
 			target: `apiVersion: v1
 kind: ConfigMap
-metadata: {name: radar-config}
+metadata: {name: kubeatlas-config}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
-metadata: {name: radar-cloud-owner}
+metadata: {name: kubeatlas-cloud-owner}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: admin
 subjects:
 - kind: Group
-  name: radar:owner
+  name: kubeatlas:owner
   apiGroup: rbac.authorization.k8s.io`,
 			live: []*unstructured.Unstructured{
-				adoptionObject("v1", "ConfigMap", "radar", "radar-config", nil),
+				adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", nil),
 			},
 			verb: "create", resource: "clusterrolebindings", wantMessage: "create ClusterRoleBinding",
 		},
@@ -220,11 +220,11 @@ subjects:
 			dc.PrependReactor(tt.verb, tt.resource, func(action k8stesting.Action) (bool, runtime.Object, error) {
 				return true, nil, apierrors.NewForbidden(
 					schema.GroupResource{Group: action.GetResource().Group, Resource: action.GetResource().Resource},
-					"radar", errors.New("RBAC admission denied bind/escalate"))
+					"kubeatlas", errors.New("RBAC admission denied bind/escalate"))
 			})
-			kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("radar", "radar", 2))
+			kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("kubeatlas", "kubeatlas", 2))
 			result, err := AdoptionPreflight(context.Background(), kc, dc, adoptionDiscovery(), AdoptionPreflightOptions{
-				Namespace: "radar", ReleaseName: "radar", CurrentRevision: 2,
+				Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 2,
 				CurrentManifest: tt.current, TargetManifest: tt.target,
 			})
 			if err != nil {
@@ -240,21 +240,21 @@ subjects:
 func TestAdoptionPreflight_RequiresAtomicRollbackInversePermissions(t *testing.T) {
 	base := `apiVersion: v1
 kind: ConfigMap
-metadata: {name: radar-config}
+metadata: {name: kubeatlas-config}
 `
 	t.Run("delete newly created resource", func(t *testing.T) {
 		target := base + `---
 apiVersion: v1
 kind: ServiceAccount
-metadata: {name: radar-new}
+metadata: {name: kubeatlas-new}
 `
 		kc := adoptionKubeClient(t, func(attrs authv1.ResourceAttributes) bool {
-			return !(attrs.Verb == "delete" && attrs.Resource == "serviceaccounts" && attrs.Name == "radar-new")
-		}, currentHelmSecret("radar", "radar", 3))
+			return !(attrs.Verb == "delete" && attrs.Resource == "serviceaccounts" && attrs.Name == "kubeatlas-new")
+		}, currentHelmSecret("kubeatlas", "kubeatlas", 3))
 		result, err := AdoptionPreflight(context.Background(), kc, adoptionDynamicClient(
-			adoptionObject("v1", "ConfigMap", "radar", "radar-config", nil),
+			adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", nil),
 		), adoptionDiscovery(), AdoptionPreflightOptions{
-			Namespace: "radar", ReleaseName: "radar", CurrentRevision: 3,
+			Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 3,
 			CurrentManifest: base, TargetManifest: target,
 		})
 		if err != nil {
@@ -270,20 +270,20 @@ metadata: {name: radar-new}
 		current := base + `---
 apiVersion: v1
 kind: Service
-metadata: {name: radar-old}
+metadata: {name: kubeatlas-old}
 spec:
   ports: [{port: 80}]
 `
 		kc := adoptionKubeClient(t, func(attrs authv1.ResourceAttributes) bool {
 			return !(attrs.Verb == "create" && attrs.Resource == "services" && attrs.Name == "")
-		}, currentHelmSecret("radar", "radar", 3))
+		}, currentHelmSecret("kubeatlas", "kubeatlas", 3))
 		result, err := AdoptionPreflight(context.Background(), kc, adoptionDynamicClient(
-			adoptionObject("v1", "ConfigMap", "radar", "radar-config", nil),
-			adoptionObject("v1", "Service", "radar", "radar-old", map[string]any{
+			adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", nil),
+			adoptionObject("v1", "Service", "kubeatlas", "kubeatlas-old", map[string]any{
 				"spec": map[string]any{"ports": []any{map[string]any{"port": int64(80)}}},
 			}),
 		), adoptionDiscovery(), AdoptionPreflightOptions{
-			Namespace: "radar", ReleaseName: "radar", CurrentRevision: 3,
+			Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 3,
 			CurrentManifest: current, TargetManifest: base,
 		})
 		if err != nil {
@@ -299,17 +299,17 @@ spec:
 		current := base + `---
 apiVersion: v1
 kind: Service
-metadata: {name: radar-drifted-away}
+metadata: {name: kubeatlas-drifted-away}
 spec:
   ports: [{port: 80}]
 `
 		kc := adoptionKubeClient(t, func(attrs authv1.ResourceAttributes) bool {
 			return !(attrs.Verb == "create" && attrs.Resource == "services" && attrs.Name == "")
-		}, currentHelmSecret("radar", "radar", 3))
+		}, currentHelmSecret("kubeatlas", "kubeatlas", 3))
 		result, err := AdoptionPreflight(context.Background(), kc, adoptionDynamicClient(
-			adoptionObject("v1", "ConfigMap", "radar", "radar-config", nil),
+			adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", nil),
 		), adoptionDiscovery(), AdoptionPreflightOptions{
-			Namespace: "radar", ReleaseName: "radar", CurrentRevision: 3,
+			Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 3,
 			CurrentManifest: current, TargetManifest: base,
 		})
 		if err != nil {
@@ -325,12 +325,12 @@ spec:
 func TestAdoptionPreflight_GeneratedRoleBindingUsesProvenRoleCreate(t *testing.T) {
 	current := `apiVersion: v1
 kind: ConfigMap
-metadata: {name: radar-config}`
+metadata: {name: kubeatlas-config}`
 	target := current + `
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: radar-generated}
+metadata: {name: kubeatlas-generated}
 rules:
 - apiGroups: [""]
   resources: ["pods"]
@@ -338,30 +338,30 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
-metadata: {name: radar-generated}
+metadata: {name: kubeatlas-generated}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: radar-generated
+  name: kubeatlas-generated
 subjects:
 - kind: ServiceAccount
-  name: radar
-  namespace: radar`
-	liveConfig := adoptionObject("v1", "ConfigMap", "radar", "radar-config", nil)
+  name: kubeatlas
+  namespace: kubeatlas`
+	liveConfig := adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", nil)
 	liveConfig.SetLabels(map[string]string{"app.kubernetes.io/managed-by": "Helm"})
 	liveConfig.SetAnnotations(map[string]string{
-		"meta.helm.sh/release-name": "radar", "meta.helm.sh/release-namespace": "radar",
+		"meta.helm.sh/release-name": "kubeatlas", "meta.helm.sh/release-namespace": "kubeatlas",
 	})
 	dc := adoptionDynamicClient(liveConfig)
 	dc.PrependReactor("create", "clusterrolebindings", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewNotFound(
 			schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"},
-			"radar-generated")
+			"kubeatlas-generated")
 	})
-	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("radar", "radar", 2))
+	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("kubeatlas", "kubeatlas", 2))
 
 	result, err := AdoptionPreflight(context.Background(), kc, dc, adoptionDiscovery(), AdoptionPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", CurrentRevision: 2,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 2,
 		CurrentManifest: current, TargetManifest: target,
 	})
 	if err != nil || !result.OK() {
@@ -375,20 +375,20 @@ subjects:
 func TestAdoptionPreflight_TransientMutationFailureIsInfrastructureError(t *testing.T) {
 	manifest := `apiVersion: v1
 kind: ConfigMap
-metadata: {name: radar-config}
+metadata: {name: kubeatlas-config}
 data: {mode: oss}`
 	target := strings.Replace(manifest, "mode: oss", "mode: cloud", 1)
-	dc := adoptionDynamicClient(adoptionObject("v1", "ConfigMap", "radar", "radar-config", map[string]any{
+	dc := adoptionDynamicClient(adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", map[string]any{
 		"data": map[string]any{"mode": "oss"},
 	}))
 	want := errors.New("connection reset")
 	dc.PrependReactor("patch", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, want
 	})
-	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("radar", "radar", 1))
+	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("kubeatlas", "kubeatlas", 1))
 
 	result, err := AdoptionPreflight(context.Background(), kc, dc, adoptionDiscovery(), AdoptionPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", CurrentRevision: 1,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 1,
 		CurrentManifest: manifest, TargetManifest: target,
 	})
 	if !errors.Is(err, want) {
@@ -399,7 +399,7 @@ data: {mode: oss}`
 func TestAdoptionPreflight_SecretAndWaitPermissionsBlockBeforeEnrollment(t *testing.T) {
 	manifest := `apiVersion: v1
 kind: ConfigMap
-metadata: {name: radar-config}`
+metadata: {name: kubeatlas-config}`
 	tests := []struct {
 		name        string
 		configure   func(*kubernetesfake.Clientset)
@@ -440,11 +440,11 @@ metadata: {name: radar-config}`
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			dc := adoptionDynamicClient(adoptionObject("v1", "ConfigMap", "radar", "radar-config", nil))
-			kc := adoptionKubeClient(t, tt.allow, currentHelmSecret("radar", "radar", 1))
+			dc := adoptionDynamicClient(adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", nil))
+			kc := adoptionKubeClient(t, tt.allow, currentHelmSecret("kubeatlas", "kubeatlas", 1))
 			tt.configure(kc)
 			result, err := AdoptionPreflight(context.Background(), kc, dc, adoptionDiscovery(), AdoptionPreflightOptions{
-				Namespace: "radar", ReleaseName: "radar", CurrentRevision: 1,
+				Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 1,
 				CurrentManifest: manifest, TargetManifest: manifest,
 			})
 			if err != nil {
@@ -460,20 +460,20 @@ metadata: {name: radar-config}`
 func TestAdoptionPreflight_ExistingUnownedTargetIsBlocking(t *testing.T) {
 	current := `apiVersion: v1
 kind: Service
-metadata: {name: radar}`
+metadata: {name: kubeatlas}`
 	target := current + `
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata: {name: collision}`
 	dc := adoptionDynamicClient(
-		adoptionObject("v1", "Service", "radar", "radar", nil),
-		adoptionObject("v1", "ConfigMap", "radar", "collision", nil),
+		adoptionObject("v1", "Service", "kubeatlas", "kubeatlas", nil),
+		adoptionObject("v1", "ConfigMap", "kubeatlas", "collision", nil),
 	)
-	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("radar", "radar", 1))
+	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("kubeatlas", "kubeatlas", 1))
 
 	result, err := AdoptionPreflight(context.Background(), kc, dc, adoptionDiscovery(), AdoptionPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", CurrentRevision: 1,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 1,
 		CurrentManifest: current, TargetManifest: target,
 	})
 	if err != nil {
@@ -490,14 +490,14 @@ kind: ConfigMap
 metadata: {name: retained}`
 	target := `apiVersion: v1
 kind: ServiceAccount
-metadata: {name: radar}`
-	retained := adoptionObject("v1", "ConfigMap", "radar", "retained", nil)
+metadata: {name: kubeatlas}`
+	retained := adoptionObject("v1", "ConfigMap", "kubeatlas", "retained", nil)
 	retained.SetAnnotations(map[string]string{"helm.sh/resource-policy": "keep"})
 	dc := adoptionDynamicClient(retained)
-	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("radar", "radar", 1))
+	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("kubeatlas", "kubeatlas", 1))
 
 	result, err := AdoptionPreflight(context.Background(), kc, dc, adoptionDiscovery(), AdoptionPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", CurrentRevision: 1,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 1,
 		CurrentManifest: current, TargetManifest: target,
 	})
 	if err != nil || !result.OK() {
@@ -514,8 +514,8 @@ func TestAdoptionPreflight_HiddenChartSecretFailsClosed(t *testing.T) {
 	result, err := AdoptionPreflight(context.Background(),
 		adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }),
 		adoptionDynamicClient(), adoptionDiscovery(), AdoptionPreflightOptions{
-			Namespace: "radar", ReleaseName: "radar", CurrentRevision: 1,
-			CurrentManifest: "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: radar}",
+			Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 1,
+			CurrentManifest: "apiVersion: v1\nkind: ConfigMap\nmetadata: {name: kubeatlas}",
 			TargetManifest:  "---\n# HIDDEN: The Secret output has been suppressed\n",
 		})
 	if err != nil {
@@ -644,12 +644,12 @@ func assertSecretDryRuns(t *testing.T, actions []k8stesting.Action) {
 			updated[update.GetObject().(*corev1.Secret).Name] = true
 		}
 	}
-	for _, name := range []string{CloudTokenSecretName, helmReleaseSecretName("radar", 4), helmReleaseSecretName("radar", 5)} {
+	for _, name := range []string{CloudTokenSecretName, helmReleaseSecretName("kubeatlas", 4), helmReleaseSecretName("kubeatlas", 5)} {
 		if !created[name] {
 			t.Errorf("missing dry-run create for Secret %q; got %v", name, created)
 		}
 	}
-	if !updated[helmReleaseSecretName("radar", 3)] {
+	if !updated[helmReleaseSecretName("kubeatlas", 3)] {
 		t.Errorf("missing dry-run update for current Helm Secret; got %v", updated)
 	}
 }
@@ -685,12 +685,12 @@ func listContainsSubstring(values []string, want string) bool {
 func TestAdoptionPreflight_DeniedRoleDoesNotMakeItsBindingAClusterRefusal(t *testing.T) {
 	current := `apiVersion: v1
 kind: ConfigMap
-metadata: {name: radar-config}`
+metadata: {name: kubeatlas-config}`
 	target := current + `
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: radar-generated}
+metadata: {name: kubeatlas-generated}
 rules:
 - apiGroups: [""]
   resources: ["secrets"]
@@ -698,35 +698,35 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
-metadata: {name: radar-generated}
+metadata: {name: kubeatlas-generated}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: radar-generated
+  name: kubeatlas-generated
 subjects:
 - kind: ServiceAccount
-  name: radar
-  namespace: radar`
-	liveConfig := adoptionObject("v1", "ConfigMap", "radar", "radar-config", nil)
+  name: kubeatlas
+  namespace: kubeatlas`
+	liveConfig := adoptionObject("v1", "ConfigMap", "kubeatlas", "kubeatlas-config", nil)
 	liveConfig.SetLabels(map[string]string{"app.kubernetes.io/managed-by": "Helm"})
 	liveConfig.SetAnnotations(map[string]string{
-		"meta.helm.sh/release-name": "radar", "meta.helm.sh/release-namespace": "radar",
+		"meta.helm.sh/release-name": "kubeatlas", "meta.helm.sh/release-namespace": "kubeatlas",
 	})
 	dc := adoptionDynamicClient(liveConfig)
 	dc.PrependReactor("create", "clusterroles", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewForbidden(
-			schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"}, "radar-generated",
+			schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"}, "kubeatlas-generated",
 			errors.New(`user "dev" (groups=["system:authenticated"]) is attempting to grant RBAC permissions not currently held: {APIGroups:[""], Resources:["secrets"], Verbs:["get"]}`))
 	})
 	dc.PrependReactor("create", "clusterrolebindings", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewNotFound(
 			schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"},
-			"radar-generated")
+			"kubeatlas-generated")
 	})
-	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("radar", "radar", 2))
+	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }, currentHelmSecret("kubeatlas", "kubeatlas", 2))
 
 	result, err := AdoptionPreflight(context.Background(), kc, dc, adoptionDiscovery(), AdoptionPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", CurrentRevision: 2,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", CurrentRevision: 2,
 		CurrentManifest: current, TargetManifest: target,
 	})
 	if err != nil {

@@ -1,9 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { CNPGKindCoverage, CNPGSchedulePreview, CNPGWorkspaceResponse, Grant, TimelineEvent } from '@maomada/k8s-ui'
-import { fetchJSON, useRadarFeature } from './client'
+import { fetchJSON, useKubeAtlasFeature } from './client'
 import { apiUrl } from './config'
 import { useReviewedActionMutation } from './reviewedActionMutation'
-import { shouldRetryRadarQuery } from './radarFeatures'
+import { shouldRetryKubeAtlasQuery } from './kubeatlasFeatures'
 import type { CNPGOperatorDiagnosis } from './cnpg-recovery'
 import type { CNPGPoolerFacts } from './cnpg-sessions'
 import { actionErrorCode, type ActionCapability, type ActionErrorCode, type ActionRequest } from './actions'
@@ -23,7 +23,7 @@ export function useCNPGWorkspace(namespaces: string[], options?: { enabled?: boo
     staleTime: 10_000,
     refetchInterval: 30_000,
     placeholderData: (prev) => prev,
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
   })
 }
 
@@ -91,7 +91,7 @@ export function useCNPGOperator(options?: { enabled?: boolean }) {
     enabled: options?.enabled ?? true,
     staleTime: 30_000,
     refetchInterval: 60_000,
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
   })
 }
 
@@ -113,7 +113,7 @@ export interface CNPGOperatorVerdict {
 //
 // The cheap operator verdict for the fleet and cluster pages, keyed by namespace.
 export function useCNPGOperatorStatus(namespaces: string[], options?: { enabled?: boolean }) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   const ns = [...new Set(namespaces)].sort().join(',')
   return useQuery<{ namespaces: Record<string, CNPGOperatorVerdict> }>({
     queryKey: ['cnpg', 'operator-status', ns, ...gatedKey],
@@ -122,7 +122,7 @@ export function useCNPGOperatorStatus(namespaces: string[], options?: { enabled?
     staleTime: 10_000,
     refetchInterval: 30_000,
     placeholderData: (prev) => prev,
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
   })
 }
 
@@ -149,7 +149,7 @@ export function useCNPGClusterActivity(namespace: string, name: string, sinceHou
     },
     staleTime: 10_000,
     refetchInterval: 30_000,
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
   })
 }
 
@@ -269,7 +269,7 @@ export function cnpgPath(kind: 'clusters' | 'scheduledbackups' | 'poolers', name
 }
 
 export function useCNPGClusterCapabilities(namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGClusterCapabilities>({
     queryKey: ['cnpg', 'capabilities', 'clusters', namespace, name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGClusterCapabilities>(`${cnpgPath('clusters', namespace, name)}/capabilities`, signal)),
@@ -282,7 +282,7 @@ export function useCNPGClusterCapabilities(namespace: string, name: string, enab
 // Parsed server-side with the operator's cron semantics; runs counted from the
 // schedule's own lastCheckTime. Pure computation: writes nothing.
 export function useCNPGSchedulePreview(namespace: string, name: string, schedule: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGSchedulePreview>({
     queryKey: ['cnpg', 'schedule-preview', namespace, name, schedule, ...gatedKey],
     queryFn: ({ signal }) => guard(() =>
@@ -295,7 +295,7 @@ export function useCNPGSchedulePreview(namespace: string, name: string, schedule
 }
 
 export function useCNPGScheduleCapabilities(namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGScheduleCapabilities>({
     queryKey: ['cnpg', 'capabilities', 'scheduledbackups', namespace, name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGScheduleCapabilities>(`${cnpgPath('scheduledbackups', namespace, name)}/capabilities`, signal)),
@@ -326,7 +326,7 @@ type CNPGActionMutation = {
 }
 
 export function useCNPGAction<Kind extends keyof CNPGActionMutation>(kind: Kind, namespace: string, name: string, reviewedContext: string | undefined) {
-  const { guard } = useRadarFeature('cnpgWorkspace')
+  const { guard } = useKubeAtlasFeature('cnpgWorkspace')
   const queryClient = useQueryClient()
   return useReviewedActionMutation<CNPGActionResult, CNPGActionMutation[Kind]>(apiUrl(cnpgPath(kind, namespace, name)), reviewedContext, {
     mutationFn: ({ action, request }) => guard(() =>
@@ -472,7 +472,7 @@ export interface CNPGRuntimeResponse {
 // /api/cnpg/clusters/{ns}/{name}/runtime — live instance-manager status and
 // exporter metrics read through pods/proxy. Polled only while visible.
 export function useCNPGRuntime(namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGRuntimeResponse>({
     queryKey: ['cnpg', 'runtime', namespace, name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGRuntimeResponse>(`/cnpg/clusters/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/runtime`, signal)),
@@ -500,7 +500,7 @@ export interface CNPGPoolerRuntimeResponse {
 }
 
 export function useCNPGPoolerRuntime(namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGPoolerRuntimeResponse>({
     queryKey: ['cnpg', 'pooler-runtime', namespace, name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGPoolerRuntimeResponse>(`/cnpg/poolers/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/runtime`, signal)),

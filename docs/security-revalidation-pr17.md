@@ -109,5 +109,5 @@ payload instead of rejecting its declared size. These are unit/mock-transport
 results, not a complete Linux suite or Kubernetes acceptance.
 
 No new Kubernetes or browser acceptance is claimed. The repository's
-`test-radar` workflow stops when Playwright MCP is unavailable in this session.
+`test-kubeatlas` workflow stops when Playwright MCP is unavailable in this session.
 Historical browser and cluster evidence remains bound to its historical SHAs.

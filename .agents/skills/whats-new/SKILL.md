@@ -1,9 +1,9 @@
 ---
 name: whats-new
-description: Prepare, update, audit, or preview Radar's in-app What's New release notes. Use when selecting release highlights from merged work, scoring cards, checking upgrade announcements, coordinating optional docs/changelog coverage, or showing the dialog locally.
+description: Prepare, update, audit, or preview KubeAtlas's in-app What's New release notes. Use when selecting release highlights from merged work, scoring cards, checking upgrade announcements, coordinating optional docs/changelog coverage, or showing the dialog locally.
 ---
 
-# Radar What's New
+# KubeAtlas What's New
 
 Turn the release's actual work into useful, accurate highlights. Start with the
 whole release range, group related changes by user benefit, and use the existing
@@ -13,9 +13,9 @@ scoring and acknowledgement model. Paths below are relative to the repo root.
 
 Unless the request or earlier instructions already answer these, ask together:
 
-1. Should this also check for missing or outdated documentation in Radar OSS,
-   `radar-docs`, or both?
-2. Should this also check the Radar changelog in `marketing`, and is the scope
+1. Should this also check for missing or outdated documentation in KubeAtlas OSS,
+   `kubeatlas-docs`, or both?
+2. Should this also check the KubeAtlas changelog in `marketing`, and is the scope
    audit-only or preparing/updating entries?
 
 Honor explicit inclusions and skips; do not ask again when already instructed.

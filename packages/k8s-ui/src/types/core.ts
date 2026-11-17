@@ -38,9 +38,9 @@ export interface ResourcePermissions {
   verticalPodAutoscalers: boolean
 }
 
-// Keys in ResourcePermissions that represent optional CRDs Radar can monitor
+// Keys in ResourcePermissions that represent optional CRDs KubeAtlas can monitor
 // when they're installed in the cluster. A `false` here means "CRD not
-// installed (or RBAC denied)" — NOT "Radar is missing data the user expects",
+// installed (or RBAC denied)" — NOT "KubeAtlas is missing data the user expects",
 // so banners about RBAC restrictions should ignore these keys.
 //
 // Keep in sync with dynamicCapabilityKinds in internal/k8s/capabilities_alignment_test.go.
@@ -133,13 +133,13 @@ export interface Capabilities {
   // same newer-frontend/older-backend reason as `deployment` below — consumers
   // must treat absence as "unknown" and fall back to discovery signals.
   karpenter?: IntegrationCapability
-  // How / where this Radar binary is running. Optional on the wire so a
-  // newer frontend (e.g. radar-hub-web bundling a fresher @maomada/kubeatlas-app)
+  // How / where this KubeAtlas binary is running. Optional on the wire so a
+  // newer frontend (e.g. kubeatlas-hub-web bundling a fresher @maomada/kubeatlas-app)
   // doesn't crash against an older backend that hasn't shipped the field yet —
   // consumers should default to { mode: 'local' } when absent.
   deployment?: Deployment
-  // Optional because Radar Hub can embed a newer frontend against an older
-  // in-cluster Radar agent. Features require an explicit server advertisement.
+  // Optional because KubeAtlas Hub can embed a newer frontend against an older
+  // in-cluster KubeAtlas agent. Features require an explicit server advertisement.
   features?: FeatureCapabilities
   resources?: ResourcePermissions // Per-resource-type permissions
   authEnabled?: boolean   // Auth is enabled on the backend
@@ -181,10 +181,10 @@ export interface FeatureCapabilities {
   clusterScopedPlaceholder?: boolean
 }
 
-// DeploymentMode is the closed set of topologies Radar can run in.
+// DeploymentMode is the closed set of topologies KubeAtlas can run in.
 // `local` is a developer's machine with a kubeconfig (most OSS use).
-// `in-cluster` is a Radar pod inside the cluster, no kubeconfig.
-// `cloud` is in-cluster + tunneled to Radar Cloud's hub — UI suppresses
+// `in-cluster` is a KubeAtlas pod inside the cluster, no kubeconfig.
+// `cloud` is in-cluster + tunneled to KubeAtlas Cloud's hub — UI suppresses
 // chrome the hub already renders (cluster headline, local-MCP card).
 export type DeploymentMode = 'local' | 'in-cluster' | 'cloud'
 
@@ -699,7 +699,7 @@ export interface Relationships {
   resourceClaims?: ResourceRef[]    // For Pods: DRA ResourceClaims (direct + template-generated)
 }
 
-/** A kind Radar couldn't read, in namespace or (without one) in several or all of them, or the cluster for a cluster-scoped kind; reason is a readreason code. No kind stands for kinds discovery didn't list; no group is the core group. */
+/** A kind KubeAtlas couldn't read, in namespace or (without one) in several or all of them, or the cluster for a cluster-scoped kind; reason is a readreason code. No kind stands for kinds discovery didn't list; no group is the core group. */
 export interface OwnershipGap {
   group?: string
   kind?: string
@@ -734,21 +734,21 @@ export interface OwnershipCoverage {
   }
   /** Set when the search for the GitOps managers whose status lists this resource, for `managers`, couldn't settle every one the viewer may read. */
   managers?: {
-    /** Managers with a member list Radar can't read, any of which may list this resource. */
+    /** Managers with a member list KubeAtlas can't read, any of which may list this resource. */
     unreadable?: number
-    /** Managers listing this resource's coordinates for a cluster Radar can't confirm is this one. */
+    /** Managers listing this resource's coordinates for a cluster KubeAtlas can't confirm is this one. */
     remote?: number
     notChecked?: OwnershipGap[]
   }
-  /** What manages this resource, from its own evidence or its nearest controller ancestor's. Absent means no answer (a Radar that predates it, or unavailableReason), never "none". */
+  /** What manages this resource, from its own evidence or its nearest controller ancestor's. Absent means no answer (a KubeAtlas that predates it, or unavailableReason), never "none". */
   manager?: ManagerAnswer
-  /** A readreason code when Radar couldn't answer at all. */
+  /** A readreason code when KubeAtlas couldn't answer at all. */
   unavailableReason?: string
 }
 
 /** What manages a resource: the managers whose status lists name it and what its metadata claims. It names no winner the evidence doesn't support. */
 export interface ManagerAnswer {
-  /** none: no evidence in what Radar collects and the viewer may read, never "unmanaged". */
+  /** none: no evidence in what KubeAtlas collects and the viewer may read, never "unmanaged". */
   state: 'shared' | 'disagree' | 'agree' | 'listed' | 'claimed' | 'unknown' | 'none'
   /** The manager to show first, never a verdict: the recorder for agree/listed; for shared, the one recorder a claim names, if exactly one; for claimed, the manager every claim names, if they agree. Its namespace is "" when it comes from a claim that names none. */
   lead?: ResourceRef
@@ -782,7 +782,7 @@ export interface ManagerEvidence {
   claims?: ManagerClaim[]
 }
 
-/** source, check, and the answer's state and chainEnd may gain values in newer Radars: show an unfamiliar one generically and never treat it as confirming. */
+/** source, check, and the answer's state and chainEnd may gain values in newer KubeAtlas instances: show an unfamiliar one generically and never treat it as confirming. */
 export interface ManagerClaim {
   /** Its namespace is "" when the metadata doesn't say. */
   manager: ResourceRef
@@ -838,7 +838,7 @@ export interface HPABounds {
 }
 
 // The subset of an HPA diagnosis that HPADiagnosisSummary presents. Producers
-// that carry a richer or looser envelope (Radar's own HPADiagnosis, the
+// that carry a richer or looser envelope (KubeAtlas's own HPADiagnosis, the
 // investigation evidence projection) extend this so the presentation rules —
 // state severity, state label, reason redundancy — cannot drift per surface.
 export interface HPADiagnosisView {
@@ -940,7 +940,7 @@ export interface HelmRelease {
   healthSummary?: string  // Brief summary like "2/3 pods ready"
   // When set, this release was installed by Flux's helm-controller — the
   // user should manage it via the named HelmRelease CR (GitOps tab) rather
-  // than helm CLI / Radar's Helm view, since changes here would get
+  // than helm CLI / KubeAtlas's Helm view, since changes here would get
   // reverted at the next reconcile. Format: "namespace/name".
   managedByFluxHelmRelease?: string
 }
@@ -1622,7 +1622,7 @@ export interface TrafficFlowsResponse {
   flows: TrafficFlow[]
   aggregated: AggregatedFlow[]
   /** L7 responses run caller → callee on the server's port, like their request.
-   *  Absent from a Radar that sent them server → client. */
+   *  Absent from a KubeAtlas that sent them server → client. */
   l7ResponsesCallerOriented?: boolean
   /** When the flows start being complete: some node returned its full
    *  nodeFlowLimit, so older traffic in the window did not fit. */
@@ -1632,7 +1632,7 @@ export interface TrafficFlowsResponse {
    *  window is then complete only from coveredSince. */
   flowLimit?: number
   /** How many records the aggregation covers. `flows` holds only the newest of
-   *  them; a Radar that predates the cap omits this and sends every record. */
+   *  them; a KubeAtlas that predates the cap omits this and sends every record. */
   flowsTotal?: number
   warning?: string  // Non-fatal warning (e.g., query errors)
   /** 'transient' (or absent) means the condition may clear on its own and a
@@ -1676,7 +1676,7 @@ export interface TrafficFilters {
 }
 
 // Main view type now includes 'traffic', 'cost', 'capacity', 'checks', 'gitops'.
-// Library consumers (Radar Hub) get all GitOps surfaces — the package
+// Library consumers (KubeAtlas Hub) get all GitOps surfaces — the package
 // IS the public surface, so adding new top-level views must extend
 // this type rather than rely on app-local extensions.
 export type ExtendedMainView = MainView | 'traffic' | 'cost' | 'capacity' | 'checks' | 'gitops' | 'issues' | 'applications'

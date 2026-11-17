@@ -71,7 +71,7 @@ func TestGetUpdateCommand(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := getUpdateCommandForOS(tt.method, tt.goos, "/opt/homebrew/Cellar/radar/1.0/bin/kubectl-kubeatlas")
+			got := getUpdateCommandForOS(tt.method, tt.goos, "/opt/homebrew/Cellar/kubeatlas/1.0/bin/kubectl-kubeatlas")
 			if got != tt.want {
 				t.Errorf("getUpdateCommandForOS(%q, %q, tap path) = %q, want %q", tt.method, tt.goos, got, tt.want)
 			}
@@ -88,8 +88,8 @@ func TestHomebrewUpgradeCommand(t *testing.T) {
 		{"core on Apple Silicon", "/opt/homebrew/Cellar/kubectl-kubeatlas/1.16.0/bin/kubectl-kubeatlas", ""},
 		{"core on Intel", "/usr/local/Cellar/kubectl-kubeatlas/1.16.0/bin/kubectl-kubeatlas", ""},
 		{"core on Linux", "/home/linuxbrew/.linuxbrew/Cellar/kubectl-kubeatlas/1.16.0/bin/kubectl-kubeatlas", ""},
-		{"tap", "/opt/homebrew/Cellar/radar/1.16.0/bin/kubectl-kubeatlas", ""},
-		{"unresolved link falls back to tap", "/opt/homebrew/bin/radar", ""},
+		{"tap", "/opt/homebrew/Cellar/kubeatlas/1.16.0/bin/kubectl-kubeatlas", ""},
+		{"unresolved link falls back to tap", "/opt/homebrew/bin/kubeatlas", ""},
 		{"unknown path falls back to tap", "", ""},
 	}
 
@@ -135,9 +135,9 @@ func TestInstallLayouts(t *testing.T) {
 			name: "homebrew-core on Apple Silicon",
 			setup: func(t *testing.T, root string) string {
 				binary(t, root+"/opt/homebrew/Cellar/kubectl-kubeatlas/1.16.0/bin/kubectl-kubeatlas")
-				link(t, "kubectl-kubeatlas", root+"/opt/homebrew/Cellar/kubectl-kubeatlas/1.16.0/bin/radar")
-				link(t, "../Cellar/kubectl-kubeatlas/1.16.0/bin/radar", root+"/opt/homebrew/bin/radar")
-				return root + "/opt/homebrew/bin/radar"
+				link(t, "kubectl-kubeatlas", root+"/opt/homebrew/Cellar/kubectl-kubeatlas/1.16.0/bin/kubeatlas")
+				link(t, "../Cellar/kubectl-kubeatlas/1.16.0/bin/kubeatlas", root+"/opt/homebrew/bin/kubeatlas")
+				return root + "/opt/homebrew/bin/kubeatlas"
 			},
 			wantMethod:  InstallHomebrew,
 			wantCommand: "",
@@ -146,9 +146,9 @@ func TestInstallLayouts(t *testing.T) {
 			name: "homebrew-core on Intel, previously reported as a direct install",
 			setup: func(t *testing.T, root string) string {
 				binary(t, root+"/usr/local/Cellar/kubectl-kubeatlas/1.16.0/bin/kubectl-kubeatlas")
-				link(t, "kubectl-kubeatlas", root+"/usr/local/Cellar/kubectl-kubeatlas/1.16.0/bin/radar")
-				link(t, "../Cellar/kubectl-kubeatlas/1.16.0/bin/radar", root+"/usr/local/bin/radar")
-				return root + "/usr/local/bin/radar"
+				link(t, "kubectl-kubeatlas", root+"/usr/local/Cellar/kubectl-kubeatlas/1.16.0/bin/kubeatlas")
+				link(t, "../Cellar/kubectl-kubeatlas/1.16.0/bin/kubeatlas", root+"/usr/local/bin/kubeatlas")
+				return root + "/usr/local/bin/kubeatlas"
 			},
 			wantMethod:  InstallHomebrew,
 			wantCommand: "",
@@ -176,10 +176,10 @@ func TestInstallLayouts(t *testing.T) {
 		{
 			name: "skyhook-io tap",
 			setup: func(t *testing.T, root string) string {
-				binary(t, root+"/opt/homebrew/Cellar/radar/1.16.0/bin/kubectl-kubeatlas")
-				link(t, "kubectl-kubeatlas", root+"/opt/homebrew/Cellar/radar/1.16.0/bin/radar")
-				link(t, "../Cellar/radar/1.16.0/bin/radar", root+"/opt/homebrew/bin/radar")
-				return root + "/opt/homebrew/bin/radar"
+				binary(t, root+"/opt/homebrew/Cellar/kubeatlas/1.16.0/bin/kubectl-kubeatlas")
+				link(t, "kubectl-kubeatlas", root+"/opt/homebrew/Cellar/kubeatlas/1.16.0/bin/kubeatlas")
+				link(t, "../Cellar/kubeatlas/1.16.0/bin/kubeatlas", root+"/opt/homebrew/bin/kubeatlas")
+				return root + "/opt/homebrew/bin/kubeatlas"
 			},
 			wantMethod:  InstallHomebrew,
 			wantCommand: "",
@@ -188,8 +188,8 @@ func TestInstallLayouts(t *testing.T) {
 			name: "own symlink to a Homebrew install",
 			setup: func(t *testing.T, root string) string {
 				binary(t, root+"/opt/homebrew/Cellar/kubectl-kubeatlas/1.16.0/bin/kubectl-kubeatlas")
-				link(t, root+"/opt/homebrew/Cellar/kubectl-kubeatlas/1.16.0/bin/kubectl-kubeatlas", root+"/home/user/bin/radar")
-				return root + "/home/user/bin/radar"
+				link(t, root+"/opt/homebrew/Cellar/kubectl-kubeatlas/1.16.0/bin/kubectl-kubeatlas", root+"/home/user/bin/kubeatlas")
+				return root + "/home/user/bin/kubeatlas"
 			},
 			wantMethod:  InstallHomebrew,
 			wantCommand: "",
@@ -198,8 +198,8 @@ func TestInstallLayouts(t *testing.T) {
 			name: "install script shorthand link",
 			setup: func(t *testing.T, root string) string {
 				binary(t, root+"/usr/local/bin/kubectl-kubeatlas")
-				link(t, "kubectl-kubeatlas", root+"/usr/local/bin/radar")
-				return root + "/usr/local/bin/radar"
+				link(t, "kubectl-kubeatlas", root+"/usr/local/bin/kubeatlas")
+				return root + "/usr/local/bin/kubeatlas"
 			},
 			wantMethod:  InstallDirect,
 			wantCommand: "curl -fsSL https://raw.githubusercontent.com/maomada/KubeAtlas/main/install.sh | sh",
@@ -207,8 +207,8 @@ func TestInstallLayouts(t *testing.T) {
 		{
 			name: "krew",
 			setup: func(t *testing.T, root string) string {
-				binary(t, root+"/home/user/.krew/store/radar/v1.16.0/kubectl-kubeatlas")
-				link(t, "../store/radar/v1.16.0/kubectl-kubeatlas", root+"/home/user/.krew/bin/kubectl-kubeatlas")
+				binary(t, root+"/home/user/.krew/store/kubeatlas/v1.16.0/kubectl-kubeatlas")
+				link(t, "../store/kubeatlas/v1.16.0/kubectl-kubeatlas", root+"/home/user/.krew/bin/kubectl-kubeatlas")
 				return root + "/home/user/.krew/bin/kubectl-kubeatlas"
 			},
 			wantMethod:  InstallKrew,
@@ -217,9 +217,9 @@ func TestInstallLayouts(t *testing.T) {
 		{
 			name: "scoop current link",
 			setup: func(t *testing.T, root string) string {
-				binary(t, root+"/home/user/scoop/apps/radar/1.16.0/radar")
-				link(t, "1.16.0", root+"/home/user/scoop/apps/radar/current")
-				return root + "/home/user/scoop/apps/radar/current/radar"
+				binary(t, root+"/home/user/scoop/apps/kubeatlas/1.16.0/kubeatlas")
+				link(t, "1.16.0", root+"/home/user/scoop/apps/kubeatlas/current")
+				return root + "/home/user/scoop/apps/kubeatlas/current/kubeatlas"
 			},
 			wantMethod:  InstallScoop,
 			wantCommand: "",
@@ -227,8 +227,8 @@ func TestInstallLayouts(t *testing.T) {
 		{
 			name: "plain binary, no links",
 			setup: func(t *testing.T, root string) string {
-				binary(t, root+"/home/user/bin/radar")
-				return root + "/home/user/bin/radar"
+				binary(t, root+"/home/user/bin/kubeatlas")
+				return root + "/home/user/bin/kubeatlas"
 			},
 			wantMethod:  InstallDirect,
 			wantCommand: "curl -fsSL https://raw.githubusercontent.com/maomada/KubeAtlas/main/install.sh | sh",
@@ -236,8 +236,8 @@ func TestInstallLayouts(t *testing.T) {
 		{
 			name: "dangling link keeps the original path",
 			setup: func(t *testing.T, root string) string {
-				link(t, "missing", root+"/opt/homebrew/bin/radar")
-				return root + "/opt/homebrew/bin/radar"
+				link(t, "missing", root+"/opt/homebrew/bin/kubeatlas")
+				return root + "/opt/homebrew/bin/kubeatlas"
 			},
 			wantMethod:  InstallHomebrew,
 			wantCommand: "",
@@ -270,16 +270,16 @@ func TestDetectInstallMethodFromPath(t *testing.T) {
 		path string
 		want InstallMethod
 	}{
-		{"homebrew mac arm", "/opt/homebrew/bin/radar", InstallHomebrew},
-		{"homebrew cellar", "/usr/local/Cellar/radar/1.0/bin/radar", InstallHomebrew},
-		{"linuxbrew", "/home/linuxbrew/.linuxbrew/bin/radar", InstallHomebrew},
-		{"krew", "/home/user/.krew/store/radar/v1.0/radar", InstallKrew},
-		{"scoop unix", "/home/user/scoop/apps/radar/current/radar", InstallScoop},
-		{"scoop windows", `C:\Users\user\scoop\apps\radar\current\radar.exe`, InstallScoop},
-		{"direct /usr/local/bin", "/usr/local/bin/radar", InstallDirect},
-		{"direct home", "/home/user/bin/radar", InstallDirect},
-		{"direct tmp", "/tmp/radar", InstallDirect},
-		{"mixed case Homebrew", "/opt/Homebrew/bin/radar", InstallHomebrew},
+		{"homebrew mac arm", "/opt/homebrew/bin/kubeatlas", InstallHomebrew},
+		{"homebrew cellar", "/usr/local/Cellar/kubeatlas/1.0/bin/kubeatlas", InstallHomebrew},
+		{"linuxbrew", "/home/linuxbrew/.linuxbrew/bin/kubeatlas", InstallHomebrew},
+		{"krew", "/home/user/.krew/store/kubeatlas/v1.0/kubeatlas", InstallKrew},
+		{"scoop unix", "/home/user/scoop/apps/kubeatlas/current/kubeatlas", InstallScoop},
+		{"scoop windows", `C:\Users\user\scoop\apps\kubeatlas\current\kubeatlas.exe`, InstallScoop},
+		{"direct /usr/local/bin", "/usr/local/bin/kubeatlas", InstallDirect},
+		{"direct home", "/home/user/bin/kubeatlas", InstallDirect},
+		{"direct tmp", "/tmp/kubeatlas", InstallDirect},
+		{"mixed case Homebrew", "/opt/Homebrew/bin/kubeatlas", InstallHomebrew},
 	}
 
 	for _, tt := range tests {
@@ -532,14 +532,14 @@ func TestBuildChannel(t *testing.T) {
 		"1.2.3-alphabet":              buildChannelCustom,
 		"1.2.3-alpha.foo":             buildChannelCustom,
 		"1.8.6-pg.2":                  buildChannelCustom,
-		"acme-radar":                  buildChannelCustom,
+		"acme-kubeatlas":              buildChannelCustom,
 		"1.2.3+vendor.1":              buildChannelCustom,
 		"1.2.3-rc.01":                 buildChannelCustom,
 		"dev":                         buildChannelDevelopment,
 		"dev-a1b2c3d":                 buildChannelDevelopment,
 		"1.2.3-dirty":                 buildChannelDevelopment,
 		"k8s-ui-v1.13.3":              buildChannelDevelopment,
-		"radar-app-v1.2.3":            buildChannelDevelopment,
+		"kubeatlas-app-v1.2.3":        buildChannelDevelopment,
 		"pkg/v1.12.1":                 buildChannelDevelopment,
 		"k8s-ui-v1.13.3-27-g1197bab6": buildChannelDevelopment,
 		"1197bab6043c723e557714620758ace2dad36354": buildChannelDevelopment,
@@ -758,7 +758,7 @@ func TestManualUpdateCheckPreservesAutomaticOptOut(t *testing.T) {
 				t.Fatal("failed manual check changed the opt-out")
 			}
 			status.Store(http.StatusOK)
-			for _, current := range []string{"dev", "1.6.0-37-g8b325b372", "abc1234", "radar-app-v0.3.1"} {
+			for _, current := range []string{"dev", "1.6.0-37-g8b325b372", "abc1234", "kubeatlas-app-v0.3.1"} {
 				SetCurrent(current)
 				if info := CheckForUpdateManual(context.Background()); info.Error != "" || info.LatestVersion != "1.5.0" || info.UpdateAvail || info.BuildChannel != "development" {
 					t.Fatalf("development build manual result: %+v", info)

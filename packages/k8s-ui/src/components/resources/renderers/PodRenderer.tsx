@@ -23,8 +23,8 @@ import type {
   RBACPolicyRule,
 } from '../../../types'
 import { Tooltip } from '../../ui/Tooltip'
-import { RadarUpgradeNote } from '../../ui/RadarUpgradeNote'
-import { getRadarUpgradeRequirement, type RadarUpgradeRequirement } from '../../../types/fetch-error'
+import { KubeAtlasUpgradeNote } from '../../ui/KubeAtlasUpgradeNote'
+import { getKubeAtlasUpgradeRequirement, type KubeAtlasUpgradeRequirement } from '../../../types/fetch-error'
 import { MetricsChart } from '../../ui/MetricsChart'
 import { Badge } from '../../ui/Badge'
 import { MetricsUnavailableNotice } from './MetricsUnavailableNotice'
@@ -196,7 +196,7 @@ function EnvVarsSection({
   initContainers: any[]
   containers: any[]
   resolvedEnvFrom?: ResolvedEnvFrom
-  upgrade?: RadarUpgradeRequirement | null
+  upgrade?: KubeAtlasUpgradeRequirement | null
 }) {
   const allContainers = [...initContainers, ...containers]
   const containersWithEnv = allContainers.filter((c: any) => c.env?.length > 0 || c.envFrom?.length > 0)
@@ -207,7 +207,7 @@ function EnvVarsSection({
   return (
     <Section title={`环境变量  ·  ${subtitle}`} icon={List} defaultExpanded={false}>
       <div className="space-y-4">
-        {upgrade && <RadarUpgradeNote requirement={upgrade} />}
+        {upgrade && <KubeAtlasUpgradeNote requirement={upgrade} />}
         {allContainers.map((container: any) => {
           const envVars: any[] = container.env || []
           const envFrom: any[] = container.envFrom || []
@@ -318,8 +318,8 @@ export function PodRenderer({
   const hasResolvedEnvironmentRows = environment?.containers.some(
     container => container.rows.length > 0 || container.truncated,
   ) ?? false
-  // An older Radar can't resolve variable sources; fall back to the spec view.
-  const environmentUpgrade = getRadarUpgradeRequirement(environmentError)
+  // An older KubeAtlas can't resolve variable sources; fall back to the spec view.
+  const environmentUpgrade = getKubeAtlasUpgradeRequirement(environmentError)
 
   const namespace = data.metadata?.namespace
   const podName = data.metadata?.name

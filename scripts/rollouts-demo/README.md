@@ -1,7 +1,7 @@
 # Argo Rollouts Demo Cluster
 
 Bootstraps a `kind` cluster with Argo Rollouts installed and a set of
-Rollouts parked in the states Radar's control surface has to handle. Use it
+Rollouts parked in the states KubeAtlas's control surface has to handle. Use it
 for visual-testing the Rollout actions row, revision history, and the
 AnalysisRun drill-down without needing a real progressive-delivery cluster.
 
@@ -12,8 +12,8 @@ AnalysisRun drill-down without needing a real progressive-delivery cluster.
 ./scripts/rollouts-demo.sh up        # ~4 minutes on first run
 ./scripts/rollouts-demo.sh status    # inventory Rollouts + AnalysisRuns
 
-# Run Radar against it
-kubectl config use-context kind-radar-rollouts-demo
+# Run KubeAtlas against it
+kubectl config use-context kind-kubeatlas-rollouts-demo
 ./scripts/visual-test-start.sh
 
 # When done
@@ -34,7 +34,7 @@ All fixtures live in namespace `demo-rollouts`.
 | `success-rate-pass` | AnalysisTemplate | Web metric returning `1` → Successful. |
 | `success-rate-inconclusive` | AnalysisTemplate | Web metric returning `2` → matches neither condition → Inconclusive. |
 | `success-rate-fail` | AnalysisTemplate | Web metric returning `0` → Failed, which aborts the Rollout. |
-| `radar-demo-smoke-test` | ClusterAnalysisTemplate | Job provider, cluster-scoped — covers the cluster-scoped analysis kind. |
+| `kubeatlas-demo-smoke-test` | ClusterAnalysisTemplate | Job provider, cluster-scoped — covers the cluster-scoped analysis kind. |
 | `metric-endpoint` | Deployment + Service + ConfigMap | nginx serving three static JSON files. Lets the web metric provider produce every verdict with no Prometheus in the cluster. |
 | `rollout-visibility` | Deployment + StatefulSet + DaemonSet | One grouped Application with a paused Deployment, OnDelete StatefulSet and DaemonSet waiting for manual Pod restarts, and a Deployment whose updated revision fails image pull while its old revision stays available. Covers Applications, resource tables, drawers, and full WorkloadView. |
 
@@ -49,7 +49,7 @@ real traffic.
 
 ## Re-parking after you drive a Rollout from the UI
 
-Promoting or aborting `canary-manual` in Radar consumes the fixture. To get
+Promoting or aborting `canary-manual` in KubeAtlas consumes the fixture. To get
 it back into a paused mid-canary state:
 
 ```bash
@@ -64,7 +64,7 @@ its own end state first, so nothing is rebuilt unnecessarily.
 
 - **Capability gating** is per-verb and probed live against
   `patch rollouts` + `patch rollouts/status`. kind gives you cluster-admin,
-  so all verbs appear. To exercise the denied path, run Radar with a
+  so all verbs appear. To exercise the denied path, run KubeAtlas with a
   restricted kubeconfig or in-cluster with a narrowed ServiceAccount.
 - **Timeline** events come from `diffRollout`; every image bump the script
   performs produces step-index, weight, and pause-condition entries.

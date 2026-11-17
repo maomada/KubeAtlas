@@ -18,7 +18,7 @@ export function CostConnectionAction({ reason, children }: { reason?: CostUnavai
       <div className="flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent('radar:open-settings', { detail: { section: action.section } }))}
+          onClick={() => window.dispatchEvent(new CustomEvent('kubeatlas:open-settings', { detail: { section: action.section } }))}
           className="btn-brand px-3 py-1.5 text-xs font-medium"
         >
           {configManagement === 'operator' || configManagement === 'cloud' ? 'View connection settings' : action.label}

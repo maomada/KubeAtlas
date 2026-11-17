@@ -16,14 +16,14 @@ import (
 	pkgopencost "github.com/maomada/KubeAtlas/pkg/opencost"
 )
 
-// Reasons Radar's MCP layer assigns on top of the engine's own, so a partial
+// Reasons KubeAtlas's MCP layer assigns on top of the engine's own, so a partial
 // state always names its cause.
 const (
 	reasonRowEvidenceIncomplete = "row_evidence_incomplete"
 	reasonNamespaceScopeLimited = "namespace_scope_limited"
 	reasonNamespacesExcluded    = "requested_namespaces_excluded"
 	// excludedNamespaces reasons. access_denied is this identity's own limit;
-	// not_cached is Radar's, whose informer cache holds no workload kind for
+	// not_cached is KubeAtlas's, whose informer cache holds no workload kind for
 	// that namespace however much the caller may read there.
 	reasonNamespaceAccessDenied = pkgopencost.ReasonAccessDenied
 	reasonNamespaceNotCached    = "not_cached"
@@ -61,7 +61,7 @@ type rightsizingRowDTO struct {
 	CurrentRequest *string                             `json:"currentRequest,omitempty"`
 	CurrentLimit   *string                             `json:"currentLimit,omitempty"`
 	// No omitempty: a withheld recommendation must arrive as an explicit null
-	// beside its recommendationReason. Omitting the field turns "Radar declined
+	// beside its recommendationReason. Omitting the field turns "KubeAtlas declined
 	// to recommend, and here is why" into a key the reader never sees.
 	RecommendedRequest   *string `json:"recommendedRequest"`
 	Observed             string  `json:"observed,omitempty"`
@@ -286,7 +286,7 @@ func rightsizingWorkloadScope(ctx context.Context, input getRightsizingInput) (*
 		return toJSONResult(rightsizingUnavailable("workload", ReasonOutsideNamespacePin))
 	}
 
-	// The informer cache reads under Radar's ServiceAccount, so without this
+	// The informer cache reads under KubeAtlas's ServiceAccount, so without this
 	// gate any caller could fetch any namespace's container spec and P95 by
 	// guessing names. Both checks, like the REST route's prometheusAuthGate:
 	// the namespace allow-list, and an exact "get" SAR on the workload kind.
@@ -526,7 +526,7 @@ func rightsizingScanScope(ctx context.Context, input getRightsizingInput, scope 
 		}
 	}
 	// A narrowed scope is worth naming whether or not something else already
-	// flipped the state, or a pinned Radar reports partial with no reason.
+	// flipped the state, or a pinned KubeAtlas reports partial with no reason.
 	if scope == "cluster" && len(out.NamespaceScope) > 0 {
 		out.State = prometheuspkg.RightsizingScanPartial
 		// no_workloads claims the requested scope was covered; for a cluster
@@ -1013,9 +1013,9 @@ func rightsizingRemediation(scope, reason string) string {
 
 	switch rightsizingReasonCode(reason) {
 	case "pod_inventory_unreadable":
-		return "Restore Radar access to list pods for this workload, then retry; current pod OOM status is unknown."
+		return "Restore KubeAtlas access to list pods for this workload, then retry; current pod OOM status is unknown."
 	case "prometheus_unavailable":
-		return "No Prometheus found. Radar auto-discovers it, or start radar with --prometheus-url. Recommendations also need kube-state-metrics for 7 days of workload history."
+		return "No Prometheus found. KubeAtlas auto-discovers it, or start kubeatlas with --prometheus-url. Recommendations also need kube-state-metrics for 7 days of workload history."
 	case "owner_metrics_query_failed", "deployment_owner_metrics_query_failed":
 		return "The workload-ownership query failed. Prometheus may be unreachable, unhealthy, or not scraping kube-state-metrics — the warnings carry the query error, which says which."
 	case "owner_metrics_missing":
@@ -1023,7 +1023,7 @@ func rightsizingRemediation(scope, reason string) string {
 	case "deployment_owner_metrics_missing":
 		return "kube_pod_owner is present but kube_replicaset_owner is not, so Deployments cannot be mapped through their ReplicaSets. Check that kube-state-metrics exposes ReplicaSet metrics; StatefulSets and DaemonSets are unaffected."
 	case "resource_cache_unavailable":
-		return "Radar is not connected to a cluster yet. Retry once the resource cache has synced."
+		return "KubeAtlas is not connected to a cluster yet. Retry once the resource cache has synced."
 	case "workload_kinds_unavailable":
 		return "Deployments, StatefulSets, and DaemonSets are all unreadable in the requested scope — either this identity cannot list them, or the informer cache has not synced them. coverage.restrictedKinds and coverage.unavailableKinds separate the two."
 	case reasonRowEvidenceIncomplete:
@@ -1054,10 +1054,10 @@ func rightsizingRemediation(scope, reason string) string {
 	case "no_usage_samples":
 		return "Prometheus answered but held no workload usage samples for the 7-day window. Check that it is scraping cAdvisor/kubelet metrics and has 7 days of retention."
 	case reasonNamespacesExcluded:
-		return "Some requested namespaces were not scanned. excludedNamespaces names each one: access_denied means this identity cannot list workloads there; outside_namespace_pin means radar is pinned with --namespace-scope; not_cached means radar's informer cache does not hold workloads for that namespace (see coverage.partiallyCachedKinds), which is a limit of radar's own access, not this identity's. The rows cover effectiveNamespaces only."
+		return "Some requested namespaces were not scanned. excludedNamespaces names each one: access_denied means this identity cannot list workloads there; outside_namespace_pin means kubeatlas is pinned with --namespace-scope; not_cached means kubeatlas's informer cache does not hold workloads for that namespace (see coverage.partiallyCachedKinds), which is a limit of kubeatlas's own access, not this identity's. The rows cover effectiveNamespaces only."
 	case reasonNamespaceScopeLimited:
 		if pinned, ok := NamespacePinned(); ok {
-			return fmt.Sprintf("The scan succeeded but reached only namespace %s, which radar is pinned to with --namespace-scope. Report it as that scope; this identity's permissions are not the limit.", pinned)
+			return fmt.Sprintf("The scan succeeded but reached only namespace %s, which kubeatlas is pinned to with --namespace-scope. Report it as that scope; this identity's permissions are not the limit.", pinned)
 		}
 		return "The scan succeeded but reached only the namespaces in effectiveNamespaces — scope was resolved from this identity's per-namespace access rather than a cluster-wide grant, so namespaces outside that list were not scanned."
 	case reasonNamespaceAccessDenied:
@@ -1065,7 +1065,7 @@ func rightsizingRemediation(scope, reason string) string {
 	case ReasonOutsideNamespacePin:
 		// The pinned namespace is not named: this caller was denied, and may have
 		// no access to it either.
-		return "radar is pinned to a single namespace with --namespace-scope, so the requested scope is outside what it can see. This is a startup flag, not a permissions problem — restart radar without --namespace-scope to scan cluster-wide."
+		return "kubeatlas is pinned to a single namespace with --namespace-scope, so the requested scope is outside what it can see. This is a startup flag, not a permissions problem — restart kubeatlas without --namespace-scope to scan cluster-wide."
 	case prometheuspkg.ReasonScanDeadlineExceeded:
 		return "The scan ran out of its three-minute budget before finishing. Narrow it with scope=\"namespace\", or target one workload with scope=\"workload\"."
 	default:
@@ -1145,7 +1145,7 @@ func rightsizingGuidance(in rightsizingGuidanceInput) []string {
 	}
 	if in.workloadsShown {
 		parts = append(parts, "requestDelta is replica-weighted request capacity, not bill savings. An absent cpu or memory delta means zero net change or no eligible evidence; read rows to distinguish them. Rows lacking evidence or needing manual review are excluded. If liveInventoryUnavailable=true, currentPodOOM being absent does not establish that no pod has OOMed.")
-		parts = append(parts, "managedBy names what owns a workload's spec: change requests at that source (Git, chart values, the controller's resource, the add-on configuration), not with a direct patch. A missing managedBy does not mean unmanaged — Argo CD label tracking, Terraform and kubectl apply leave no signal Radar reads.")
+		parts = append(parts, "managedBy names what owns a workload's spec: change requests at that source (Git, chart values, the controller's resource, the add-on configuration), not with a direct patch. A missing managedBy does not mean unmanaged — Argo CD label tracking, Terraform and kubectl apply leave no signal KubeAtlas reads.")
 	}
 	if in.scope != "workload" {
 		parts = append(parts, "classificationCounts counts all evaluated workloads before classification filtering, row omissions and limit, including those with missing evidence; it excludes workloads not evaluated. Use classification=increase or classification=review to inspect those classes if absent from the returned list. totalWorkloads counts workloads matching the selection before limit. evaluatedAt is evaluation time, not source freshness.")

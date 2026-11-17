@@ -36,7 +36,7 @@ import { DistributionBar } from '../ui/DistributionBar'
 import { RowActionMenu, type RowActionItem } from '../ui/RowActionMenu'
 import { BoardTableSkeleton, BoardRailSkeleton } from '../ui/BoardSkeleton'
 import { getGitOpsResourceStatus } from './detail-helpers'
-import { isArgoOperationInProgress, isArgoSuspendedByRadar } from '../resources/resource-utils-argo'
+import { isArgoOperationInProgress, isArgoSuspendedByKubeAtlas } from '../resources/resource-utils-argo'
 import { toggleSet } from './GitOpsGraphFilterRail'
 import { useFilterState, defineFilterSchema } from '../../filter-state'
 import { parseContextName } from '../../utils/context-name'
@@ -45,8 +45,8 @@ import { formatCompactAge, formatRelativeAgeTime } from '../../utils/format'
 // =============================================================================
 // GitOpsTableView — the canonical GitOps fleet list (Argo + Flux).
 //
-// Originally inline in radar/web/src/components/gitops/GitOpsView.tsx as the
-// per-cluster Radar UI. Extracted here so Radar Hub's cross-cluster fleet
+// Originally inline in kubeatlas/web/src/components/gitops/GitOpsView.tsx as the
+// per-cluster KubeAtlas UI. Extracted here so KubeAtlas Hub's cross-cluster fleet
 // GitOps view can mount the same component with different data wiring
 // rather than reinventing the table, filter sidebar, status distribution,
 // status pills, and tile view from scratch — bringing OSS and Hub to
@@ -62,7 +62,7 @@ import { formatCompactAge, formatRelativeAgeTime } from '../../utils/format'
 //     `row._cluster` / `row._destination` stamps. OSS rows leave these
 //     undefined; the cells fall back to the standard rendering.
 //   - Optional `crossClusterCount` + destination filter chips render only
-//     when the caller passes them (Hub-only — single-cluster Radar omits)
+//     when the caller passes them (Hub-only — single-cluster KubeAtlas omits)
 //   - All UI state (mode, search, filters, sort, view mode) is owned
 //     internally; caller doesn't need to thread state through props
 // =============================================================================
@@ -257,7 +257,7 @@ export interface GitOpsTableViewProps {
   emptyStateTitle?: ReactNode
   emptyStateBody?: ReactNode
   /**
-   * Which side the filter rail sits on. Default 'left' (OSS Radar, which
+   * Which side the filter rail sits on. Default 'left' (OSS KubeAtlas, which
    * has no app sidebar). A host with its own left navigation rail (the
    * Cloud hub) passes 'right' so the GitOps filters don't stack a second
    * column against that nav and instead match the host's other faceted
@@ -807,7 +807,7 @@ export function GitOpsTableView({
         </div>
 
         {coverageStatus === 'partial' && (
-          <p role="status" className="px-4 py-2 text-xs text-warning-text border-b border-theme-border">Partial results. Radar couldn't read every namespace for some GitOps resources or sources, so counts are lower bounds.</p>
+          <p role="status" className="px-4 py-2 text-xs text-warning-text border-b border-theme-border">Partial results. KubeAtlas couldn't read every namespace for some GitOps resources or sources, so counts are lower bounds.</p>
         )}
 
         {/* pb-20 keeps the last row (and its three-dot menu) scrollable clear
@@ -1676,12 +1676,12 @@ function GitOpsTile({
 //     show muted "same cluster" — the workload lives where the controller
 //     lives.
 //   - Fleet stamp with `inferred` match: clickable chip with the
-//     destination cluster's Radar-known name. Click stops row propagation
+//     destination cluster's KubeAtlas-known name. Click stops row propagation
 //     and calls `onDestinationClick` (caller routes to the destination
 //     cluster's workloads view).
 //   - Fleet stamp with `unmatched`: amber chip with the raw Argo
 //     destination name + warning icon — signals the destination isn't a
-//     Radar-connected cluster (onboarding hook).
+//     KubeAtlas-connected cluster (onboarding hook).
 function DestinationCell({
   row,
   onDestinationClick,
@@ -1750,7 +1750,7 @@ function DestinationCell({
   return (
     <span
       className="flex min-w-0 items-center gap-1 text-xs text-amber-600 dark:text-amber-300"
-      title={`Not a Radar-connected cluster. Connect ${rawLabel} to see workloads.`}
+      title={`Not a KubeAtlas-connected cluster. Connect ${rawLabel} to see workloads.`}
     >
       <AlertTriangle className="h-3 w-3 shrink-0" />
       <span className="block truncate">{shortClusterName(rawLabel)}</span>
@@ -1907,7 +1907,7 @@ function countMap(values: string[]) {
 function noApplicationsMessage(hasRows: boolean, coverageStatus: GitOpsTableViewProps['coverageStatus'], namespaceFiltered: boolean): string {
   if (hasRows) return 'No applications match the current filters.'
   if (coverageStatus === 'complete') return 'No applications found in the requested scope.'
-  if (coverageStatus === 'partial') return 'No applications found in the namespaces Radar could read.'
+  if (coverageStatus === 'partial') return 'No applications found in the namespaces KubeAtlas could read.'
   return namespaceFiltered ? 'No applications match the current filters.' : 'No applications found.'
 }
 
@@ -1965,7 +1965,7 @@ function pendingFor(startedAt?: string): string {
 // =============================================================================
 // Normalize helpers — convert raw Argo / Flux unstructured CRDs into the
 // GitOpsRow shape the table consumes. Exported so callers do their own
-// fetch+normalize pipeline (OSS fetches per-kind from the radar API;
+// fetch+normalize pipeline (OSS fetches per-kind from the kubeatlas API;
 // hub-web fetches via the fleet endpoint then maps the response).
 // =============================================================================
 
@@ -1993,7 +1993,7 @@ export function normalizeArgoApplication(resource: any): GitOpsRow {
     health: status?.health ?? 'Unknown',
     reconciling: status?.reconciling,
     reconcilingSince: status?.reconcilingSince,
-    suspended: (status?.suspended ?? false) || isArgoSuspendedByRadar(resource),
+    suspended: (status?.suspended ?? false) || isArgoSuspendedByKubeAtlas(resource),
     repository: resource.spec?.source?.repoURL ?? '',
     targetRevision: resource.spec?.source?.targetRevision ?? '',
     path: resource.spec?.source?.path ?? '',

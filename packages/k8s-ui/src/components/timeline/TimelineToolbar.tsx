@@ -96,7 +96,7 @@ export interface TimelineToolbarProps {
   view?: 'list' | 'swimlane'
   onViewChange?: (view: 'list' | 'swimlane') => void
 
-  // Manual refresh button. Radar's own timeline omits it (the view is live);
+  // Manual refresh button. KubeAtlas's own timeline omits it (the view is live);
   // hosts whose data is a one-shot load can wire it.
   onRefresh?: () => void
 

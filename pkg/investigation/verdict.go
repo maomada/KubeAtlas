@@ -33,7 +33,7 @@ type RootCauseEvidence struct {
 	Refs   []string   `json:"refs,omitempty"`
 }
 
-// EvidenceRole is how the agent frames one cited Radar result. Roles order
+// EvidenceRole is how the agent frames one cited KubeAtlas result. Roles order
 // the Findings list and label cards; they can never hide, collapse, or recolor
 // a card.
 type EvidenceRole string
@@ -141,12 +141,12 @@ type Verdict struct {
 	RootCause    string `json:"rootCause"`
 	// Summary is the plain-language headline a person reads first; RootCause
 	// stays the technical one-liner that explanations, previews and Apply
-	// consume. Report is the story: the agent's prose, which may place Radar
-	// results with [[radar:evidence=N]] markers the frontend resolves against
+	// consume. Report is the story: the agent's prose, which may place KubeAtlas
+	// results with [[kubeatlas:evidence=N]] markers the frontend resolves against
 	// Evidence by index.
 	Summary string `json:"summary,omitempty"`
 	// Certainty qualifies Summary in the agent's own words and is rendered as
-	// such; it never becomes a Radar mark.
+	// such; it never becomes a KubeAtlas mark.
 	Certainty Certainty `json:"certainty,omitempty"`
 	// Unresolved lists what would change the answer or could not be verified.
 	// The UI renders it above the story fold whenever it is present, and shows
@@ -165,7 +165,7 @@ type Verdict struct {
 	// ledger, kept in Activity and out of Findings.
 	Notes             string             `json:"notes,omitempty"`
 	RootCauseEvidence *RootCauseEvidence `json:"rootCauseEvidence,omitempty"`
-	// Evidence is the agent's case over Radar's facts: role + one-sentence
+	// Evidence is the agent's case over KubeAtlas's facts: role + one-sentence
 	// claim per cited result, bound for every assessment including healthy and
 	// inconclusive ones. RootCauseEvidence is unchanged by it.
 	Evidence []EvidenceItem `json:"evidence,omitempty"`

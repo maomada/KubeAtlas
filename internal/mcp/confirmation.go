@@ -101,7 +101,7 @@ func verifyMutationConfirmation(ctx context.Context, action, token string) (stri
 	mac.Write(raw)
 	if !hmac.Equal(signature, mac.Sum(nil)) {
 		// The signing key lives for one process, so a restart lands here too.
-		return "", fmt.Errorf("confirm is invalid, or Radar restarted since the preview; run dry_run=true again and review the new preview")
+		return "", fmt.Errorf("confirm is invalid, or KubeAtlas restarted since the preview; run dry_run=true again and review the new preview")
 	}
 	var binding mutationConfirmation
 	if json.Unmarshal(raw, &binding) != nil || binding.Action == "" || binding.CallerDigest == "" || binding.Target == "" || binding.Expires == 0 {

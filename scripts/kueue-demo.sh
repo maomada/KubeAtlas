@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Controller-backed Kueue admission fixtures for Radar. This complements the
+# Controller-backed Kueue admission fixtures for KubeAtlas. This complements the
 # controller-free 37-kind GPU ecosystem demo; it does not emulate GPU hardware.
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-kueue-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-kueue-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 KUEUE_VERSION="${KUEUE_VERSION:-v0.19.2}"
 KUEUE_MANIFEST="https://github.com/kubernetes-sigs/kueue/releases/download/${KUEUE_VERSION}/manifests.yaml"
@@ -13,8 +13,8 @@ KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.36.1@sha256:3489c7674813ba5d
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/kueue-demo"
 DEMO_NS="kueue-demo"
-MARKER_NAME="radar-kueue-demo-owner"
-MARKER_VALUE="skyhook-radar-kueue-demo-v1"
+MARKER_NAME="kubeatlas-kueue-demo-owner"
+MARKER_VALUE="skyhook-kubeatlas-kueue-demo-v1"
 WAIT_SECONDS="${WAIT_SECONDS:-300}"
 KUBEATLAS_URL="${KUBEATLAS_URL:-http://127.0.0.1:9280}"
 PREVIOUS_CONTEXT=''
@@ -180,7 +180,7 @@ kueue_webhook_ready() {
 apiVersion: kueue.x-k8s.io/v1beta2
 kind: ResourceFlavor
 metadata:
-  name: radar-kueue-demo-webhook-probe
+  name: kubeatlas-kueue-demo-webhook-probe
 spec:
   nodeLabels:
     kubernetes.io/os: linux
@@ -314,27 +314,27 @@ mcp_get_workload() {
   jq -er '.result.content[0].text | fromjson' <<<"${event}"
 }
 
-radar_health_ready() {
+kubeatlas_health_ready() {
   curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/health" 2>/dev/null | \
     jq -e '.status == "healthy"' >/dev/null 2>&1
 }
 
-radar_crd_discovery_ready() {
+kubeatlas_crd_discovery_ready() {
   curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/cluster-info" 2>/dev/null | \
     jq -e '.crdDiscoveryStatus == "ready"' >/dev/null 2>&1
 }
 
-radar_workloads_ready() {
+kubeatlas_workloads_ready() {
   curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/resources/workloads?group=kueue.x-k8s.io&namespaces=${DEMO_NS}" 2>/dev/null | \
-    jq -e 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end | type == "array" and length == 3 and all(.[]; .apiVersion == "kueue.x-k8s.io/v1beta2")' >/dev/null 2>&1
+    jq -e 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end | type == "array" and length == 3 and all(.[]; .apiVersion == "kueue.x-k8s.io/v1beta2")' >/dev/null 2>&1
 }
 
-radar_clusterqueues_ready() {
+kubeatlas_clusterqueues_ready() {
   curl -fsS --connect-timeout 2 --max-time 5 "${KUBEATLAS_URL}/api/resources/clusterqueues?group=kueue.x-k8s.io" 2>/dev/null | \
-    jq -e 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end | type == "array" and length == 2 and all(.[]; .apiVersion == "kueue.x-k8s.io/v1beta2")' >/dev/null 2>&1
+    jq -e 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end | type == "array" and length == 2 and all(.[]; .apiVersion == "kueue.x-k8s.io/v1beta2")' >/dev/null 2>&1
 }
 
-assert_radar_scheduling() {
+assert_kubeatlas_scheduling() {
   local job="$1" decision="$2" phase="$3" condition_type="$4" condition_status="$5" condition_reason="$6"
   local submission_queue="$7" entitlement_queue="${8:-}" workload rest_response mcp_response rest_scheduling mcp_scheduling
   if ! workload="$(workload_for_job "${job}")"; then
@@ -344,7 +344,7 @@ assert_radar_scheduling() {
 
   rest_response="$(curl -fsS --connect-timeout 5 --max-time 15 \
     "${KUBEATLAS_URL}/api/ai/resources/workloads/${DEMO_NS}/${workload}?group=kueue.x-k8s.io")" || \
-    fail "Radar AI resource request failed for ${job}'s Workload '${workload}'"
+    fail "KubeAtlas AI resource request failed for ${job}'s Workload '${workload}'"
 
   jq -e \
     --arg namespace "${DEMO_NS}" \
@@ -388,7 +388,7 @@ assert_radar_scheduling() {
         end)
       )' <<<"${rest_response}" >/dev/null || {
     jq -c '.resourceContext.scheduling' <<<"${rest_response}" >&2
-    fail "Radar scheduling projection did not match ${job}'s controller-owned state"
+    fail "KubeAtlas scheduling projection did not match ${job}'s controller-owned state"
   }
 
   if ! mcp_response="$(mcp_get_workload "${workload}")"; then
@@ -405,46 +405,46 @@ assert_radar_scheduling() {
   ok "${job}: REST and MCP agree on ${decision}/${phase} from ${condition_type}=${condition_reason}"
 }
 
-cmd_verify_radar() {
+cmd_verify_kubeatlas() {
   require_cmd kind "https://kind.sigs.k8s.io/"
   require_cmd kubectl "https://kubernetes.io/docs/tasks/tools/"
   require_cmd curl "https://curl.se/download.html"
   require_cmd jq "https://jqlang.github.io/jq/download/"
   require_owned_cluster
   assert_cluster_contract
-  step "Verifying Radar API at ${KUBEATLAS_URL}"
+  step "Verifying KubeAtlas API at ${KUBEATLAS_URL}"
 
   local response
-  wait_until "Radar health endpoint" radar_health_ready
+  wait_until "KubeAtlas health endpoint" kubeatlas_health_ready
 
   response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/cluster-info")" || \
-    fail "Radar cluster-info request failed"
+    fail "KubeAtlas cluster-info request failed"
   jq -e --arg context "${KUBECTL_CTX}" '.context == $context and .cluster == $context' <<<"${response}" >/dev/null || \
-    fail "Radar is not connected to the expected context and cluster '${KUBECTL_CTX}'"
-  wait_until "Radar CRD discovery" radar_crd_discovery_ready
+    fail "KubeAtlas is not connected to the expected context and cluster '${KUBECTL_CTX}'"
+  wait_until "KubeAtlas CRD discovery" kubeatlas_crd_discovery_ready
 
-  wait_until "Radar to cache the three Kueue Workloads" radar_workloads_ready
-  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/workloads?group=kueue.x-k8s.io&namespaces=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || \
-    fail "Radar Workload list request failed"
+  wait_until "KubeAtlas to cache the three Kueue Workloads" kubeatlas_workloads_ready
+  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/workloads?group=kueue.x-k8s.io&namespaces=${DEMO_NS}" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || \
+    fail "KubeAtlas Workload list request failed"
   jq -e 'type == "array" and length == 3 and all(.[]; .apiVersion == "kueue.x-k8s.io/v1beta2")' <<<"${response}" >/dev/null || \
-    fail "Radar did not return the three group-pure Kueue Workloads"
+    fail "KubeAtlas did not return the three group-pure Kueue Workloads"
   jq -e 'any(.[]; any(.metadata.ownerReferences[]?; .kind == "Job" and .name == "admitted-running") and any(.status.conditions[]?; .type == "Admitted" and .status == "True"))' <<<"${response}" >/dev/null || \
-    fail "Radar did not expose admitted-running's admitted Workload"
+    fail "KubeAtlas did not expose admitted-running's admitted Workload"
   jq -e 'any(.[]; any(.metadata.ownerReferences[]?; .kind == "Job" and .name == "quota-blocked") and any(.status.conditions[]?; .type == "QuotaReserved" and .status == "False"))' <<<"${response}" >/dev/null || \
-    fail "Radar did not expose quota-blocked's pending Workload"
+    fail "KubeAtlas did not expose quota-blocked's pending Workload"
   jq -e 'any(.[]; any(.metadata.ownerReferences[]?; .kind == "Job" and .name == "queue-held") and any(.status.conditions[]?; .type == "QuotaReserved" and .status == "False" and .reason == "Inadmissible" and ((.message // "") | contains("ClusterQueue admission-held is inactive"))))' <<<"${response}" >/dev/null || \
-    fail "Radar did not expose queue-held's inactive-queue Workload"
+    fail "KubeAtlas did not expose queue-held's inactive-queue Workload"
 
-  wait_until "Radar to cache the two Kueue ClusterQueues" radar_clusterqueues_ready
-  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/clusterqueues?group=kueue.x-k8s.io" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" || \
-    fail "Radar ClusterQueue list request failed"
+  wait_until "KubeAtlas to cache the two Kueue ClusterQueues" kubeatlas_clusterqueues_ready
+  response="$(curl -fsS --connect-timeout 5 --max-time 15 "${KUBEATLAS_URL}/api/resources/clusterqueues?group=kueue.x-k8s.io" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" || \
+    fail "KubeAtlas ClusterQueue list request failed"
   jq -e 'type == "array" and length == 2 and all(.[]; .apiVersion == "kueue.x-k8s.io/v1beta2")' <<<"${response}" >/dev/null || \
-    fail "Radar did not return the two group-pure ClusterQueues"
+    fail "KubeAtlas did not return the two group-pure ClusterQueues"
 
-  assert_radar_scheduling admitted-running satisfied admitted Admitted True Admitted ready admission-ready
-  assert_radar_scheduling quota-blocked unsatisfied pending QuotaReserved False Pending ready
-  assert_radar_scheduling queue-held unsatisfied pending QuotaReserved False Inadmissible held
-  ok "Radar returned real Kueue admission states with matching REST and MCP scheduling context"
+  assert_kubeatlas_scheduling admitted-running satisfied admitted Admitted True Admitted ready admission-ready
+  assert_kubeatlas_scheduling quota-blocked unsatisfied pending QuotaReserved False Pending ready
+  assert_kubeatlas_scheduling queue-held unsatisfied pending QuotaReserved False Inadmissible held
+  ok "KubeAtlas returned real Kueue admission states with matching REST and MCP scheduling context"
 }
 
 cmd_up() {
@@ -472,7 +472,7 @@ cmd_up() {
   install_kueue
   apply_fixtures
   cmd_verify
-  note "See ${FIXTURES_DIR}/README.md for the isolated-kubeconfig Radar smoke test."
+  note "See ${FIXTURES_DIR}/README.md for the isolated-kubeconfig KubeAtlas smoke test."
 }
 
 cmd_down() {
@@ -523,18 +523,18 @@ Commands:
   reset          Safely recreate the owned cluster and all scenarios
   status         Show the controller, queues, Jobs, Workloads, and Pods
   verify         Assert controller-earned admitted, quota-blocked, and held states
-  verify-radar   Assert a running Radar exposes the real Kueue states
+  verify-kubeatlas   Assert a running KubeAtlas exposes the real Kueue states
   help           Show this message
 
 Environment:
-  CLUSTER_NAME   kind cluster name (default: radar-kueue-demo)
+  CLUSTER_NAME   kind cluster name (default: kubeatlas-kueue-demo)
   KUEUE_VERSION  pinned Kueue release (default: v0.19.2)
   KUBERNETES_VERSION expected Kubernetes server version (default: v1.36.1)
   KIND_NODE_IMAGE immutable kind node image (default: kindest/node v1.36.1 digest)
   WAIT_SECONDS   maximum wait per reconciled state (default: 300)
-  KUBEATLAS_URL      running Radar base URL for verify-radar (default: http://127.0.0.1:9280)
+  KUBEATLAS_URL      running KubeAtlas base URL for verify-kubeatlas (default: http://127.0.0.1:9280)
 
-This validates Kueue controller reconciliation and Radar's read path. It does not
+This validates Kueue controller reconciliation and KubeAtlas's read path. It does not
 validate GPU hardware, device plugins, DRA allocation, utilization, or cost.
 EOF
 }
@@ -545,7 +545,7 @@ case "${1:-help}" in
   reset) cmd_reset ;;
   status) cmd_status ;;
   verify) cmd_verify ;;
-  verify-radar) cmd_verify_radar ;;
+  verify-kubeatlas) cmd_verify_kubeatlas ;;
   help|-h|--help) usage ;;
   *) fail "unknown subcommand: $1 (try '$0 help')" ;;
 esac

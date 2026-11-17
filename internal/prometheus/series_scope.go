@@ -93,7 +93,7 @@ func pvcScopeProbe(namespace string, claims []string, window time.Duration) scop
 		metric: "kubelet_volume_stats_capacity_bytes", additionalMetrics: []string{"kubelet_volume_stats_used_bytes"},
 		selectors: ClaimSelectors(namespace, claims), window: window,
 		allowUnlabeledProof: true, allowUnlabeledDuplicate: true, singlePartition: true,
-		unverifiedNote: "Matched by namespace and claim names. Radar couldn't confirm these volume stats belong to this exact cluster (no cluster label it could check)",
+		unverifiedNote: "Matched by namespace and claim names. KubeAtlas couldn't confirm these volume stats belong to this exact cluster (no cluster label it could check)",
 	}
 }
 
@@ -147,7 +147,7 @@ func (client *Client) resolveScope(ctx context.Context, namespace string, probe 
 		for i, label := range partitionLabels {
 			matchers[i] = label + `=""`
 		}
-		iso := SeriesIsolation{Mode: SeriesIsolationUnverified, Note: "Matched to stats without cluster identity labels, like this namespace's kube-state-metrics Pod evidence. Radar cannot distinguish unlabeled stats from another cluster"}
+		iso := SeriesIsolation{Mode: SeriesIsolationUnverified, Note: "Matched to stats without cluster identity labels, like this namespace's kube-state-metrics Pod evidence. KubeAtlas cannot distinguish unlabeled stats from another cluster"}
 		return decideVerifiedScope(ctx, client, probe, strings.Join(matchers, ","), iso)
 	}
 	return decideScope(ctx, client, probe, verified)
@@ -181,7 +181,7 @@ func decideScope(ctx context.Context, q seriesQuerier, probe scopeProbe, verifie
 			}
 		}
 	}
-	note := "Matched by namespace and Pod names. Radar couldn't confirm these series belong to this exact cluster (no cluster label it could check)"
+	note := "Matched by namespace and Pod names. KubeAtlas couldn't confirm these series belong to this exact cluster (no cluster label it could check)"
 	if probe.unverifiedNote != "" {
 		note = probe.unverifiedNote
 	}

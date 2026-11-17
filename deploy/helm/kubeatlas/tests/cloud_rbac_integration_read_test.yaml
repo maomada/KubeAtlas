@@ -1,4 +1,4 @@
-suite: Radar Cloud integration read baseline
+suite: KubeAtlas Cloud integration read baseline
 templates:
   - cloud-rbac-integration-read.yaml
 set:
@@ -6,12 +6,12 @@ set:
   cloud.token: dummy
   cloud.url: wss://cloud.example
   cloud.clusterName: test
-  # Tier behavior only; radar:system's and radar:ai:reader's own bindings are covered
+  # Tier behavior only; kubeatlas:system's and kubeatlas:ai:reader's own bindings are covered
   # below, in cloud_rbac_system_test.yaml and in cloud_rbac_ai_test.yaml.
   cloud.systemRbac: false
   cloud.aiRbac: false
 tests:
-  - it: keeps both add-ons for radar:system when the tiers are off
+  - it: keeps both add-ons for kubeatlas:system when the tiers are off
     set:
       cloud.systemRbac: true
       cloud.defaultRbac.create: false
@@ -54,7 +54,7 @@ tests:
           path: subjects
           content:
             kind: Group
-            name: radar:viewer
+            name: kubeatlas:viewer
             apiGroup: rbac.authorization.k8s.io
   - it: drops both viewer bindings when its integration addon is off
     set:

@@ -4,7 +4,7 @@ metadata:
   name: shared-llm-pool
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   selector:
     matchLabels:
@@ -45,7 +45,7 @@ metadata:
   name: premium-traffic
   namespace: gpu-demo
   labels:
-    radar.skyhook.io/test-fixture: gpu-ecosystem
+    kubeatlas.io/test-fixture: gpu-ecosystem
 spec:
   priority: 100
   poolRef:

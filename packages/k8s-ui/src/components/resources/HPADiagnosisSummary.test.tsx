@@ -105,10 +105,10 @@ describe("HPADiagnosisSummary", () => {
   });
 
   // `detail` is the controller's sentence only on a condition-built reason.
-  // On the others it is Radar's own — a metric-name list, a note about an
+  // On the others it is KubeAtlas's own — a metric-name list, a note about an
   // unobserved generation — and quoting it as Kubernetes invents a quote.
-  it("never attributes Radar's own detail to Kubernetes", () => {
-    const radarDetail: HPADiagnosisView = {
+  it("never attributes KubeAtlas's own detail to Kubernetes", () => {
+    const kubeatlasDetail: HPADiagnosisView = {
       state: "stale_status",
       summary: "HPA status has not observed the latest spec generation yet",
       bounds: { min: 1, max: 10, current: 3, desired: 3 },
@@ -129,7 +129,7 @@ describe("HPADiagnosisSummary", () => {
 
     for (const variant of ["detail", "inline"] as const) {
       const html = render(
-        <HPADiagnosisSummary diagnosis={radarDetail} variant={variant} />,
+        <HPADiagnosisSummary diagnosis={kubeatlasDetail} variant={variant} />,
       );
       expect(html, variant).toContain(
         "the controller has recorded no status for generation 7",

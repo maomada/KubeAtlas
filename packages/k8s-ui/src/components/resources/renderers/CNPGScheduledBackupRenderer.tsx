@@ -68,7 +68,7 @@ export function CNPGScheduledBackupRenderer({ data, onNavigate }: CNPGScheduledB
           {schedulePlugin && (
             <Property
               label="Destination"
-              value={schedulePlugin.name === CNPG_BARMAN_PLUGIN_NAME ? "From the Cluster's barman-cloud plugin" : 'Unknown: Radar does not model this plugin’s destination'}
+              value={schedulePlugin.name === CNPG_BARMAN_PLUGIN_NAME ? "From the Cluster's barman-cloud plugin" : 'Unknown: KubeAtlas does not model this plugin’s destination'}
             />
           )}
           {schedulePlugin?.name === CNPG_BARMAN_PLUGIN_NAME && schedulePlugin.parameters && Object.keys(schedulePlugin.parameters).length > 0 && (
