@@ -126,7 +126,7 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
       <label className="mt-4 block text-sm">MCP Token<input aria-label="新生成的 MCP Token" type="password" readOnly autoComplete="off" spellCheck={false} className="portal-control portal-mono mt-2 w-full" value={issued.token} onFocus={event => event.target.select()} /></label>
       <div className="mt-4 flex flex-wrap items-start gap-3"><CopyValue value={issued.token} label="复制 Token" /><button type="button" className="portal-control" onClick={() => setIssued(undefined)}>已保存，关闭原文</button></div>
     </section>}
-    <div className="grid grid-cols-1 items-start gap-6 xl:grid-cols-2">
+    <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
       <section className="portal-card min-w-0 p-5 lg:p-6" aria-labelledby="create-credential-title">
         <h2 id="create-credential-title" className="flex items-center gap-2 text-lg font-semibold"><ShieldCheck size={20} className="text-accent-text" />生成访问凭据</h2>
         <p className="mt-3 text-sm text-theme-text-secondary">当前组织：<strong>{organizationName}</strong></p>
