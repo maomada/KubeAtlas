@@ -123,7 +123,7 @@ export function OrganizationSelection({ organizations, activeOrganizationId, pla
       <label>组织<select className="portal-control" required value={organizationId} disabled={busy} onChange={event => setOrganizationId(event.target.value)}><option value="">选择组织</option>{organizations.map(organization => <option key={organization.id} value={organization.id}>{organization.name} · {organization.role === 'owner' ? '组织 Owner' : organization.role === 'member' ? '成员' : '只读成员'}</option>)}</select></label>
       <button className="cloud-button cloud-primary" disabled={busy || !organizationId}>{busy ? '正在切换…' : '进入组织'}</button>
     </form></section> : <section className="cloud-card"><h2>暂无组织成员资格</h2><p>当前没有可用组织。请联系平台 Owner 添加或审批成员资格。</p></section>}
-    {platformOwner && <CloudLink href="/settings/platform" className="cloud-button mt-4">打开平台管理</CloudLink>}
+    {platformOwner && <CloudLink href="/platform" className="cloud-button mt-4">平台管理</CloudLink>}
     {error !== undefined && <CloudError error={error} />}
     <div className="mt-5 flex items-center gap-3"><ThemeToggle /><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>退出登录</button></div>
   </div>

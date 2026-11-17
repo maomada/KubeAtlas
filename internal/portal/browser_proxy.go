@@ -26,6 +26,7 @@ const (
 var clusterIDPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
 var hubPagePaths = map[string]struct{}{
+	"/platform": {},
 	"/clusters": {}, "/install": {}, "/agents": {}, "/issues": {}, "/investigations": {},
 	"/applications": {}, "/alerts": {}, "/gitops": {}, "/certs": {}, "/checks": {},
 	"/resources": {}, "/topology": {}, "/traffic": {}, "/cost": {}, "/capacity": {},

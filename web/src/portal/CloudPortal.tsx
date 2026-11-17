@@ -19,7 +19,6 @@ import { CloudApplications, CloudCertificates, CloudChecks, CloudIssues, resourc
 import { MCPCredentials } from './MCPCredentials'
 import { CloudPlatform } from './CloudPlatform'
 import { replacePortalLocation } from './portalNavigation'
-import { credentialStatus, type MCPCredential } from './credentials'
 import { cloudViewHref, navigateCloud, useCloudLocation } from './cloudNavigation'
 import { usePortalTheme } from './usePortalTheme'
 import { ConnectionProfilesProvider } from './ConnectionProfiles'
@@ -73,6 +72,10 @@ export function PortalEntry() {
 function PortalRoutes({ queryClient }: { queryClient: QueryClient }) {
   usePortalTheme()
   const location = useCloudLocation()
+  useEffect(() => {
+    if (location.pathname === '/settings/platform') navigateCloud(`/platform${location.search}${location.hash}`, true)
+  }, [location.pathname, location.search, location.hash])
+  if (location.pathname === '/settings/platform') return <CloudLoading label="正在打开平台管理…" />
   if (location.pathname === '/login') return <Login />
   if (location.pathname === '/register') return <Register />
   return <PortalMode path={location.pathname} queryClient={queryClient} />
@@ -97,7 +100,7 @@ function PortalMode({ path, queryClient }: { path: string; queryClient: QueryCli
   const authorityHub = isHubContext(mode.data) ? mode.data : undefined
   const hub = authorityHub?.enabled === true ? authorityHub : undefined
   const hasActiveShell = !!hub && (hub.member?.status === 'active' || hub.platformOwner) && hub.organizations.some(item => item.id === hub.activeOrganizationId)
-  const shouldTrackAuthorizationContext = hasActiveShell || !!hub && hub.platformOwner && path === '/settings/platform'
+  const shouldTrackAuthorizationContext = hasActiveShell || !!hub && hub.platformOwner && path === '/platform'
   const currentAuthorizationContext = authorityHub ? authorizationContextKey(authorityHub) : undefined
   const draftAuthority = currentAuthorizationContext === undefined ? undefined : JSON.stringify({ authorization: currentAuthorizationContext, enabled: authorityHub?.enabled })
   const draftReconcileKey = draftAuthority === undefined ? undefined : JSON.stringify([draftAuthority, nativeClusterScope ?? null])
@@ -159,7 +162,7 @@ function PortalMode({ path, queryClient }: { path: string; queryClient: QueryCli
     currentNativeClient.clear()
     replacePortalLocation('/')
   }} /></ConnectionProfilesProvider>
-  if (currentHub.platformOwner && path === '/settings/platform') return <PlatformOnly path={path} hub={currentHub} />
+  if (currentHub.platformOwner && path === '/platform') return <PlatformOnly hub={currentHub} />
   return <OrganizationSelection organizations={currentHub.organizations} activeOrganizationId={currentHub.activeOrganizationId} platformOwner={currentHub.platformOwner} />
 }
 
@@ -208,9 +211,10 @@ function authorizationContextKey(hub: HubContext): string {
   })
 }
 
-function PlatformOnly({ path, hub }: { path: string; hub: HubContext }) {
+function PlatformOnly({ hub }: { hub: HubContext }) {
   const [error, setError] = useState<unknown>()
-  return <div className="cloud-platform-only"><header className="cloud-topbar"><CloudLink href="/" className="cloud-brand"><span className="cloud-brand-mark"><Layers size={21} /></span><strong>KubeAtlas</strong><small>HUB</small></CloudLink><span>平台管理</span><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>退出登录</button></header>{error !== undefined && <CloudError error={error} />}<main className="cloud-content">{path === '/settings/platform' ? <CloudPlatform platformOwner={hub.platformOwner} /> : <div className="cloud-page"><h1>平台 Owner 权限</h1><p>当前未选择组织。平台管理可在不加载组织资源的情况下使用。</p><CloudLink className="cloud-button cloud-primary" href="/settings/platform">打开平台管理</CloudLink></div>}</main></div>
+  useEffect(() => { document.title = '平台管理 — KubeAtlas' }, [])
+  return <div className="cloud-platform-only"><header className="cloud-topbar"><CloudLink href="/" className="cloud-brand"><span className="cloud-brand-mark"><Layers size={21} /></span><strong>KubeAtlas</strong><small>HUB</small></CloudLink><span>平台管理</span><button className="cloud-button" onClick={() => { void logoutPortal().catch(setError) }}>退出登录</button></header>{error !== undefined && <CloudError error={error} />}<main className="cloud-content"><CloudPlatform platformOwner={hub.platformOwner} /></main></div>
 }
 
 function ClusterNamespacePicker({ id, client, connected, view, search, pending, onApply, onError }: {
@@ -260,14 +264,13 @@ function CloudShell({ hub, queryClient, nativeClient, yamlDraftScope, yamlReadOn
   const canManage = canManageOrganization(member, platformOwner, hub.activeOrganizationId)
   const location = useCloudLocation()
   const directory = useCloudQuery<{ clusters: HubCluster[] }>('/hub/clusters')
-  const credentials = useCloudQuery<{ credentials: MCPCredential[]; serverTime: string }>('/mcp/credentials')
   const clusters = directory.data?.clusters ?? []
   const id = selectedCluster(location.pathname)
   const cluster = clusters.find(item => item.id === id)
   const view = id ? clusterView(location.pathname) : location.pathname
   const [menuOpen, setMenuOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const [panel, setPanel] = useState<'help' | 'account' | 'setup'>()
+  const [panel, setPanel] = useState<'help' | 'account'>()
   const [dark, setDark] = usePortalTheme()
   const [actionError, setActionError] = useState<unknown>()
   const [namespaceError, setNamespaceError] = useState<{ client: QueryClient; error: unknown }>()
@@ -281,8 +284,6 @@ function CloudShell({ hub, queryClient, nativeClient, yamlDraftScope, yamlReadOn
   const chosenID = id ?? location.searchParams.get('cluster') ?? ''
   const fleetScope = chosenID ? clusters.filter(item => item.id === chosenID) : clusters
   const missingSelection = chosenID && !clusters.some(item => item.id === chosenID)
-  const credentialTime = Date.parse(credentials.data?.serverTime ?? '')
-  const setupDone = Number(clusters.some(item => item.state === 'connected')) + Number(credentials.data?.credentials.some(credential => credentialStatus(credential, credentialTime) === 'active') ?? false)
 
   useEffect(() => {
     const openSearch = (event: KeyboardEvent) => {
@@ -350,13 +351,14 @@ function CloudShell({ hub, queryClient, nativeClient, yamlDraftScope, yamlReadOn
   }
 
   const investigationView = view === '/investigations' || view.startsWith('/investigations/')
-  const title = investigationView ? 'AI 调查' : navigation.find(item => item.path === view || item.path !== '/' && view.startsWith(item.path + '/'))?.label ?? (view.startsWith('/settings') ? '设置' : view === '/agents' ? 'Agent' : view === '/install' ? '连接集群' : '集群')
+  const title = investigationView ? 'AI 调查' : navigation.find(item => item.path === view || item.path !== '/' && view.startsWith(item.path + '/'))?.label ?? (view === '/platform' ? '平台管理' : view.startsWith('/settings') ? '设置' : view === '/agents' ? 'Agent' : view === '/install' ? '连接集群' : '集群')
   useEffect(() => { document.title = `${cluster ? cluster.name + ' · ' : ''}${title} — KubeAtlas` }, [title, cluster])
   const isHome = location.pathname === '/'
   const search = <FleetSearch refHandle={searchRef} clusters={clusters} commands={commands} hero={isHome} />
   const nativePath = id && !!cluster && cluster.state === 'connected'
   let content
-  if (directory.isPending) content = <CloudLoading label="正在读取集群目录…" />
+  if (view === '/platform') content = <CloudPlatform platformOwner={platformOwner} />
+  else if (directory.isPending) content = <CloudLoading label="正在读取集群目录…" />
   else if (directory.error) content = <CloudError error={directory.error} retry={() => { void directory.refetch() }} />
   else if (location.pathname.startsWith('/c/') && !id || missingSelection) content = <CloudError error={new Error('所选集群无效或不存在')} />
   else if (id && !nativePath) content = <div className="cloud-page"><CloudError error={new Error(cluster?.revokedAt ? 'Agent 访问已撤销。重新连接前必须明确重新配对。' : '集群当前离线。实时数据不可用；不会以快照代替。')} /><CloudLink href="/clusters" className="cloud-button">管理集群</CloudLink></div>
@@ -387,8 +389,7 @@ function CloudShell({ hub, queryClient, nativeClient, yamlDraftScope, yamlReadOn
         <CloudLink href="/clusters" className="cloud-nav-item" aria-label="集群" aria-current={view === '/clusters' ? 'page' : undefined}><Server size={17} /><span>集群</span><small>{clusters.length}</small></CloudLink>
         <CloudLink href="/agents" className="cloud-nav-item" aria-label="Agent" aria-current={view === '/agents' || view === '/mcp-access' ? 'page' : undefined}><Bot size={17} /><span>Agent</span></CloudLink>
         <CloudLink href="/settings" className="cloud-nav-item" aria-label="设置" aria-current={view.startsWith('/settings') ? 'page' : undefined}><Settings size={17} /><span>设置</span></CloudLink>
-        {platformOwner && <CloudLink href="/settings/platform" className="cloud-nav-item" aria-label="平台管理" aria-current={view === '/settings/platform' ? 'page' : undefined}><ShieldCheck size={17} /><span>平台管理</span></CloudLink>}
-        {canManage && <button className="cloud-setup" onClick={() => setPanel('setup')}><span>入门设置</span><small>{credentials.isSuccess ? `已完成 ${setupDone}/2 项` : '正在检查访问权限…'}</small><span className="cloud-setup-bar"><i style={{ width: `${setupDone * 50}%` }} /></span></button>}
+        {platformOwner && <CloudLink href="/platform" className="cloud-nav-item" aria-label="平台管理" aria-current={view === '/platform' ? 'page' : undefined}><ShieldCheck size={17} /><span>平台管理</span></CloudLink>}
         <div className="cloud-sidebar-footer"><button aria-label={dark ? '切换浅色主题' : '切换深色主题'} onClick={() => setDark(!dark)}>{dark ? <Sun size={17} /> : <Moon size={17} />}</button><button aria-label={collapsed ? '展开导航' : '收起导航'} onClick={() => setCollapsed(!collapsed)}><ChevronsLeft size={17} /></button></div>
       </div>
     </aside>
@@ -407,7 +408,6 @@ function CloudShell({ hub, queryClient, nativeClient, yamlDraftScope, yamlReadOn
     </div>
     {panel === 'help' && <CloudDialog title="帮助" onClose={() => setPanel(undefined)}><div className="cloud-form"><p>这是自托管 KubeAtlas Hub。集群当前状态通过各集群主动连接的 Agent 查询。</p><a className="cloud-button" target="_blank" rel="noopener noreferrer" href="https://github.com/maomada/KubeAtlas/tree/main/docs">项目文档<ExternalLink size={14} /></a><p>键盘快捷键：Ctrl/Cmd+K 或 / 打开集群搜索。按 Escape 关闭菜单。</p></div></CloudDialog>}
     {panel === 'account' && <CloudDialog title="账户" onClose={() => setPanel(undefined)}><div className="cloud-form">{member && <strong>{member.displayName} · {member.role}</strong>}<code className="cloud-account-identity">{userId}</code><p>当前为已认证的 Portal 会话。MCP Token 有独立有效期，不与此会话共用。</p><CloudLink href="/settings" className="cloud-button">偏好设置</CloudLink><button className="cloud-button" onClick={() => { void logout() }}><LogOut size={16} />退出登录</button></div></CloudDialog>}
-    {panel === 'setup' && <CloudDialog title="设置自托管 Hub" onClose={() => setPanel(undefined)}><div className="cloud-form"><CloudLink href="/install" className="cloud-button"><Server size={16} />1. 生成配对命令</CloudLink><CloudLink href="/agents" className="cloud-button"><Bot size={16} />2. 配置限定范围的 MCP 访问</CloudLink><p>审批记录与安装或连接状态相互独立。只有实时集群目录会报告已连接状态。</p></div></CloudDialog>}
   </div>{organizationSwitchPending && <div className="cloud-switching-overlay" role="status"><CloudLoading label="正在切换组织并清除缓存…" /></div>}</></FilterLocationProvider>
 }
 
@@ -449,7 +449,6 @@ const settingGroups = [
 
 function CloudSettings({ path, dark, onTheme, onLogout, hub }: { path: string; dark: boolean; onTheme: () => void; onLogout: () => void; hub: HubContext }) {
   const member = hub.member
-  const groups = hub.platformOwner ? [...settingGroups, { label: '平台', items: [['/platform', '平台管理']] }] : settingGroups
   let content: ReactNode
   if (path === '/settings') content = <div className="cloud-page"><div className="cloud-page-heading"><div><h1>偏好设置</h1><p>自定义此浏览器中的工作区。</p></div></div><section className="cloud-card"><h2>外观</h2><div className="cloud-preference"><div><strong>主题</strong><p>Portal 与嵌入式集群视图共用此主题。</p></div><button className="cloud-button" onClick={onTheme}>{dark ? <Sun size={16} /> : <Moon size={16} />}{dark ? '切换为浅色' : '切换为深色'}</button></div></section></div>
   else if (path === '/settings/sessions') content = <div className="cloud-page"><h1>会话</h1><section className="cloud-card"><h2>当前浏览器会话</h2><p>退出登录会撤销此会话并关闭其实时数据流，但不会撤销独立的 MCP 凭据。</p><button onClick={onLogout} className="cloud-button">退出登录</button></section></div>
@@ -457,7 +456,6 @@ function CloudSettings({ path, dark, onTheme, onLogout, hub }: { path: string; d
   else if (path === '/settings/organization/members') content = <CloudMembers member={member} platformOwner={hub.platformOwner} activeOrganizationId={hub.activeOrganizationId} />
   else if (path === '/settings/organization/sso') content = <CloudSSO />
   else if (path === '/settings/organization/agent-access') content = <CloudAgents hub={hub} readOnlyOnly={member?.role === 'viewer'} />
-  else if (path === '/settings/platform') content = hub.platformOwner ? <CloudPlatform platformOwner={hub.platformOwner} /> : <CloudError error={new Error('平台管理需要明确的平台 Owner 权限。')} />
   else content = <CloudPageNotFound />
-  return <div className="cloud-settings"><aside><h1>设置</h1>{groups.map(group => <section key={group.label}><h2>{group.label}</h2>{group.items.map(([suffix, label]) => <CloudLink key={suffix} href={`/settings${suffix}`} aria-current={path === `/settings${suffix}` ? 'page' : undefined}>{label}</CloudLink>)}</section>)}</aside><div className="cloud-settings-main">{content}</div></div>
+  return <div className="cloud-settings"><aside><h1>设置</h1>{settingGroups.map(group => <section key={group.label}><h2>{group.label}</h2>{group.items.map(([suffix, label]) => <CloudLink key={suffix} href={`/settings${suffix}`} aria-current={path === `/settings${suffix}` ? 'page' : undefined}>{label}</CloudLink>)}</section>)}</aside><div className="cloud-settings-main">{content}</div></div>
 }

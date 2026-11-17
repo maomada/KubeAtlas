@@ -605,7 +605,7 @@ func TestPortalSessionExpiryCancelsRequestContext(t *testing.T) {
 func TestHubPageRoutesAreExplicit(t *testing.T) {
 	for _, path := range []string{
 		"/investigations", "/install", "/settings/sessions", "/settings/security",
-		"/settings/platform", "/settings/organization", "/settings/organization/members",
+		"/platform", "/settings/platform", "/settings/organization", "/settings/organization/members",
 		"/settings/organization/agent-access", "/settings/organization/enrollment-keys",
 		"/settings/organization/activity", "/settings/organization/issues",
 		"/settings/organization/checks", "/settings/organization/sso",
@@ -617,7 +617,7 @@ func TestHubPageRoutesAreExplicit(t *testing.T) {
 		}
 	}
 	for _, path := range []string{
-		"/arbitrary", "/settings/unknown", "/settings/organization/unknown",
+		"/arbitrary", "/platform/unknown", "/platform/api/users", "/settings/unknown", "/settings/organization/unknown",
 		"/c/alpha/api/resources", "/c/alpha/assets/missing.js", "/c/../clusters",
 	} {
 		if isHubPageRoute(httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)) {
@@ -636,17 +636,34 @@ func TestPublicRegistrationAndProtectedPlatformPageRoutes(t *testing.T) {
 		t.Fatalf("public registration page status=%d body=%q", register.Code, register.Body.String())
 	}
 
-	settings := httptest.NewRecorder()
-	h.ServeHTTP(settings, httptest.NewRequest(http.MethodGet, "http://localhost/settings/platform", nil))
-	if settings.Code != http.StatusUnauthorized {
-		t.Fatalf("unauthenticated platform settings status=%d, want %d", settings.Code, http.StatusUnauthorized)
-	}
-	settings = httptest.NewRecorder()
-	request := httptest.NewRequest(http.MethodGet, "http://localhost/settings/platform", nil)
-	request.AddCookie(loginForTest(t, h))
-	h.ServeHTTP(settings, request)
-	if settings.Code != http.StatusOK || settings.Body.String() != "portal shell" {
-		t.Fatalf("authenticated platform settings status=%d body=%q", settings.Code, settings.Body.String())
+	cookie := loginForTest(t, h)
+	for _, path := range []string{"/platform", "/platform?source=bookmark", "/settings/platform"} {
+		t.Run(path, func(t *testing.T) {
+			anonymous := httptest.NewRecorder()
+			h.ServeHTTP(anonymous, httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil))
+			if anonymous.Code != http.StatusUnauthorized || anonymous.Header().Get("Location") != "" {
+				t.Fatalf("unauthenticated platform page status=%d location=%q, want %d without redirect", anonymous.Code, anonymous.Header().Get("Location"), http.StatusUnauthorized)
+			}
+
+			request := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
+			request.AddCookie(cookie)
+			authenticated := httptest.NewRecorder()
+			h.ServeHTTP(authenticated, request)
+			if authenticated.Code != http.StatusOK || authenticated.Body.String() != "portal shell" || authenticated.Header().Get("Location") != "" {
+				t.Fatalf("authenticated platform page status=%d location=%q body=%q", authenticated.Code, authenticated.Header().Get("Location"), authenticated.Body.String())
+			}
+
+			documentRequest := httptest.NewRequest(http.MethodGet, "http://localhost"+path, nil)
+			documentRequest.Header.Set("Accept", "text/html")
+			documentRequest.Header.Set("Sec-Fetch-Site", "same-origin")
+			documentRequest.Header.Set("Sec-Fetch-Mode", "navigate")
+			documentRequest.Header.Set("Sec-Fetch-Dest", "document")
+			documentResponse := httptest.NewRecorder()
+			h.ServeHTTP(documentResponse, documentRequest)
+			if documentResponse.Code != http.StatusSeeOther || documentResponse.Header().Get("Location") != "/login" {
+				t.Fatalf("unauthenticated platform document status=%d location=%q", documentResponse.Code, documentResponse.Header().Get("Location"))
+			}
+		})
 	}
 }
 
