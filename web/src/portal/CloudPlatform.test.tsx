@@ -230,6 +230,11 @@ it('transfers any cluster to a selected third organization using the frozen resp
   expect(namedGroup('Organization One', clusterGroups).querySelectorAll('.cloud-platform-cluster')).toHaveLength(0)
   expect(groupCount(namedGroup('Organization One', clusterGroups))).toBe(0)
   expect(groupCount(namedGroup('Organization Three', clusterGroups))).toBe(1)
+  const targetButton = namedGroup('Organization Three', clusterGroups).querySelector<HTMLButtonElement>('.cloud-platform-cluster button')!
+  await act(async () => vi.waitFor(() => {
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(targetButton)
+  }))
   expect(fetch.mock.calls.filter(([url, init]) => String(url) === '/api/hub/platform/clusters' && init?.method === 'GET').length).toBeGreaterThanOrEqual(2)
 })
 

@@ -1,4 +1,4 @@
-import { useId, useState, type FormEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Badge } from '@maomada/k8s-ui'
 import { ArrowRightLeft, Building2, ShieldCheck, Users } from 'lucide-react'
@@ -46,6 +46,13 @@ export function CloudPlatform({ platformOwner }: { platformOwner: boolean }) {
   const [error, setError] = useState<unknown>()
   const usersTitleId = useId()
   const clustersTitleId = useId()
+  const transferredFocus = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!transfer && transferredFocus.current) {
+      document.getElementById(`${clustersTitleId}-${transferredFocus.current}`)?.focus()
+      transferredFocus.current = undefined
+    }
+  }, [transfer, clustersTitleId])
   if (!platformOwner) return <div className="cloud-page"><CloudError error={new Error('平台管理仅对具有明确 platformOwner 权限的账号开放。')} /></div>
 
   const organizationRows = organizations.data?.organizations ?? []
@@ -137,6 +144,7 @@ export function CloudPlatform({ platformOwner }: { platformOwner: boolean }) {
       const { cluster: result } = await cloudRequest<{ cluster: PlatformCluster }>(`/hub/clusters/${encodeURIComponent(transfer.cluster.id)}/transfer`, { method: 'POST', body: { organizationId: transfer.organizationId } })
       client.setQueryData<{ clusters: PlatformCluster[] }>(['portal', '/api', '/hub/platform/clusters'], previous => previous ? { clusters: previous.clusters.map(cluster => cluster.id === result.id ? result : cluster) } : previous)
       await invalidatePortalData()
+      transferredFocus.current = result.id
       setTransfer(undefined)
     } catch (failure) { setError(failure) } finally { setBusy('') }
   }
@@ -187,7 +195,7 @@ export function CloudPlatform({ platformOwner }: { platformOwner: boolean }) {
         {group.clusters.length ? <ul role="list" className="m-0 list-none p-0">{group.clusters.map(cluster => <li key={cluster.id} className="cloud-platform-cluster">
           <div className="min-w-0"><strong className="break-words">{cluster.name}</strong><div className="cloud-member-id portal-mono">{cluster.id}</div></div>
           <Badge severity={cluster.state === 'connected' ? 'success' : cluster.state === 'revoked' ? 'neutral' : 'warning'}>{cluster.state === 'connected' ? '已连接' : cluster.state === 'revoked' ? '已撤销' : '离线'}</Badge>
-          <button className="cloud-button" aria-label={`转移集群：${cluster.name} · ${cluster.id}`} disabled={!!busy || !organizationRows.some(item => item.id !== cluster.organizationId)} onClick={() => { setError(undefined); setTransfer({ cluster, organizationId: organizationRows.find(item => item.id !== cluster.organizationId)?.id ?? '' }) }}>转移</button>
+          <button id={`${clustersTitleId}-${cluster.id}`} className="cloud-button" aria-label={`转移集群：${cluster.name} · ${cluster.id}`} disabled={!!busy || !organizationRows.some(item => item.id !== cluster.organizationId)} onClick={() => { setError(undefined); setTransfer({ cluster, organizationId: organizationRows.find(item => item.id !== cluster.organizationId)?.id ?? '' }) }}>转移</button>
         </li>)}</ul> : <p className="mt-3 text-sm text-theme-text-secondary">暂无集群。</p>}
       </PlatformGroup>)}
       {!loading && !clusters.error && !clusters.data?.clusters.length && <p>暂无集群。</p>}
