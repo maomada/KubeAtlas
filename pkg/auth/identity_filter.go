@@ -61,8 +61,8 @@ func IsKubeAtlasVocabularyGroup(group string) bool {
 //   - reserved-principal rejection (every mode): username and every group must
 //     be outside the reserved K8s namespaces (blocks system:masters etc.);
 //   - vocabulary allowlist (Cloud only): username must be a Cloud identity and
-//     every group must be kubeatlas:*/cloud:* or exactly kubeatlas:hub:owner,
-//     kubeatlas:hub:member, or kubeatlas:hub:viewer.
+//     every group must be a defined tier, service identity or owned identity
+//     metadata field. Unknown reserved groups never become Kubernetes grants.
 //
 // Returns false to reject the whole identity — never silently drops values,
 // which would quietly change what the user is authorized to do.
@@ -82,12 +82,38 @@ func ForwardedIdentityAllowed(username string, groups []string, cloudMode bool) 
 		return false
 	}
 	for _, g := range groups {
-		if !IsKubeAtlasVocabularyGroup(g) && g != "kubeatlas:hub:owner" &&
-			g != "kubeatlas:hub:member" && g != "kubeatlas:hub:viewer" {
+		if !isForwardedCloudGroup(g) {
 			return false
 		}
 	}
 	return true
+}
+
+// Keep reservation detection broad, but accepted forwarded vocabulary finite.
+// Org/user/IdP/email claims are the existing metadata namespaces, not role names.
+func isForwardedCloudGroup(group string) bool {
+	if group == "kubeatlas:hub:owner" || group == "kubeatlas:hub:member" || group == "kubeatlas:hub:viewer" {
+		return true
+	}
+	for _, prefix := range kubeatlasVocabularyPrefixes {
+		if !strings.HasPrefix(group, prefix) {
+			continue
+		}
+		value := strings.TrimPrefix(group, prefix)
+		switch value {
+		case "owner", "member", "viewer":
+			return true
+		case "system", "ai:reader":
+			return prefix != "cloud:"
+		}
+		for _, field := range []string{"org:", "user:", "idp:", "email:"} {
+			if strings.HasPrefix(value, field) && len(value) > len(field) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
 }
 
 // isCloudUsername reports whether a username is one the KubeAtlas Cloud control

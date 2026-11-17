@@ -1,6 +1,9 @@
 package auth
 
-import "testing"
+import (
+	"github.com/maomada/KubeAtlas/pkg/compat"
+	"testing"
+)
 
 func TestForwardedIdentityAllowed(t *testing.T) {
 	cases := []struct {
@@ -62,6 +65,31 @@ func TestIsReservedPrincipal(t *testing.T) {
 	for _, p := range notReserved {
 		if IsReservedPrincipal(p) {
 			t.Errorf("IsReservedPrincipal(%q) = true, want false", p)
+		}
+	}
+}
+
+func TestForwardedIdentityRejectsUnknownReservedVocabulary(t *testing.T) {
+	for _, prefix := range []string{"kubeatlas:", compat.LegacyTierPrefix, "cloud:"} {
+		for _, role := range []string{"owner", "member", "viewer"} {
+			if !ForwardedIdentityAllowed("fixture", []string{prefix + role}, true) {
+				t.Fatalf("known tier rejected:%s%s", prefix, role)
+			}
+		}
+		for _, field := range []string{"org:", "user:", "idp:", "email:"} {
+			if !ForwardedIdentityAllowed("fixture", []string{prefix + field + "fixture"}, true) {
+				t.Fatalf("known identity metadata rejected:%s%s", prefix, field)
+			}
+		}
+		for _, groups := range [][]string{{prefix + "evil"}, {prefix + "owner", prefix + "evil"}, {prefix + "org:"}, {prefix + "ai:owner"}} {
+			if ForwardedIdentityAllowed("fixture", groups, true) {
+				t.Fatalf("unknown reserved vocabulary accepted:%v", groups)
+			}
+		}
+	}
+	for _, pair := range [][2]string{{"kubeatlas:system:fixture", "kubeatlas:system"}, {"kubeatlas:ai:fixture", "kubeatlas:ai:reader"}, {compat.LegacySystemUserPrefix + "fixture", compat.LegacySystemGroup}, {compat.LegacyAIUserPrefix + "fixture", compat.LegacyAIReaderGroup}} {
+		if !ForwardedIdentityAllowed(pair[0], []string{pair[1]}, true) {
+			t.Fatal("defined background identity rejected")
 		}
 	}
 }

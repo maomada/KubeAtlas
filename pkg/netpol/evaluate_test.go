@@ -349,7 +349,7 @@ func TestEvaluate(t *testing.T) {
 				policy("monitoring", "shard-b-from-kubeatlas", map[string]string{"shard": "b"}, ingressT,
 					[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromKubeAtlasNs}}}, nil),
 			},
-			want: Verdict{Kind: Denied, Direction: DirectionBoth, Policies: []string{"monitoring/deny-all", "monitoring/shard-b-from-kubeatlas", "kubeatlas/egress-shard-a"}},
+			want: Verdict{Kind: Denied, Direction: DirectionBoth, Policies: []string{"kubeatlas/egress-shard-a", "monitoring/deny-all", "monitoring/shard-b-from-kubeatlas"}},
 		},
 		{
 			name: "an unset backend protocol means TCP",

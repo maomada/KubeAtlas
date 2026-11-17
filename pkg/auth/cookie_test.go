@@ -30,6 +30,11 @@ func mainCookie(t *testing.T, cookies []*http.Cookie) *http.Cookie {
 // back all cookies the server previously set.
 func addCookies(req *http.Request, cookies []*http.Cookie) {
 	for _, c := range cookies {
+		// A browser removes deletion cookies instead of returning them alongside
+		// an existing main cookie. Raw duplicates are exercised separately.
+		if c.MaxAge < 0 {
+			continue
+		}
 		req.AddCookie(c)
 	}
 }

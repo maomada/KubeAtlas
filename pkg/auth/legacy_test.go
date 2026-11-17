@@ -88,3 +88,16 @@ func TestCloudSystemIdentityWithEmptyHubGroupsIsReadOnly(t *testing.T) {
 		}
 	}
 }
+
+func TestDuplicateMainCookieWithEmptyDeletionValueStillRejected(t *testing.T) {
+	const secret = "fixture-signing-key"
+	primary := mainCookie(t, CreateSessionCookie(&User{Username: "fixture"}, NewSessionID(), "", secret, time.Hour, false))
+	for _, name := range []string{DefaultCookieName, compat.LegacySessionCookie} {
+		r := httptest.NewRequest("GET", "http://localhost", nil)
+		r.AddCookie(&http.Cookie{Name: name, Value: primary.Value})
+		r.AddCookie(&http.Cookie{Name: name, Value: ""})
+		if ParseSessionCookie(r, secret) != nil {
+			t.Fatal("raw duplicate main cookie with empty value accepted")
+		}
+	}
+}
