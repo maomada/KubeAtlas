@@ -18,7 +18,7 @@ if ($Scenario) {
     $Checksum = Join-Path $env:KUBEATLAS_FIXTURE_ROOT "checksums.txt"
     $Latest = "https://github.com/maomada/KubeAtlas/releases/latest"
     $Tag = if ($Scenario -eq "upstream") {
-        "https://github.com/skyhook-io/kubeatlas/releases/tag/v0.0.0"
+        "https://github.com/untrusted/example-project/releases/tag/v0.0.0"
     } elseif ($Scenario -eq "unknown") {
         "https://example.com/releases/tag/v0.0.0"
     } else {

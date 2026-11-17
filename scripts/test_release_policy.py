@@ -25,7 +25,7 @@ class ReleasePolicyTests(unittest.TestCase):
         for version in ("0.1.0", "2.0.0-rc.1"):
             policy.validate_inputs(policy.REPOSITORY, "refs/heads/main", SHA, version)
         for repository, ref, sha, version in (
-            ("skyhook-io/kubeatlas", "refs/heads/main", SHA, "1.0.0"),
+            ("untrusted/example-project", "refs/heads/main", SHA, "1.0.0"),
             ("maomada/kubeatlas", "refs/heads/main", SHA, "1.0.0"),
             (policy.REPOSITORY, "refs/heads/test", SHA, "1.0.0"),
             (policy.REPOSITORY, "refs/heads/main", "main", "1.0.0"),

@@ -47,7 +47,7 @@ prefix='https://github.com/maomada/KubeAtlas/releases/download/v0.0.0/'
 case "$url" in
   "$latest")
     case "${MOCK_MODE:-owned}" in
-      upstream) printf '%s' 'https://github.com/skyhook-io/kubeatlas/releases/tag/v0.0.0' ;;
+      upstream) printf '%s' 'https://github.com/untrusted/example-project/releases/tag/v0.0.0' ;;
       unknown) printf '%s' 'https://example.com/releases/tag/v0.0.0' ;;
       *) printf '%s' "$tag" ;;
     esac

@@ -11,7 +11,7 @@ tests:
           value: |
             Access via port-forward:
 
-              kubectl port-forward svc/kubeatlas-kubeatlas 9280:9280 -n kubeatlas
+              kubectl port-forward svc/kubeatlas 9280:9280 -n kubeatlas
               open http://localhost:9280
 
   - it: ClusterIP follows release namespace, fullname, service port and basePath
@@ -36,7 +36,7 @@ tests:
         type: LoadBalancer
     asserts:
       - matchRegexRaw:
-          pattern: "^Access via port-forward:\n\n  kubectl port-forward svc/kubeatlas-kubeatlas 9280:9280 -n kubeatlas\n  open http://localhost:9280\n\nWarning: no auth"
+          pattern: "^Access via port-forward:\n\n  kubectl port-forward svc/kubeatlas 9280:9280 -n kubeatlas\n  open http://localhost:9280\n\nWarning: no auth"
       - notMatchRegexRaw:
           pattern: (SERVICE_IP|NODE_PORT)
 
@@ -46,7 +46,7 @@ tests:
         type: NodePort
     asserts:
       - matchRegexRaw:
-          pattern: kubectl port-forward svc/kubeatlas-kubeatlas 9280:9280 -n kubeatlas
+          pattern: kubectl port-forward svc/kubeatlas 9280:9280 -n kubeatlas
       - matchRegexRaw:
           pattern: "Warning: no auth"
 

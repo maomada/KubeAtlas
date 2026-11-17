@@ -479,10 +479,8 @@ Any other MCP client that supports the Streamable HTTP transport can connect to 
 ## Container use
 
 This repository does not currently publish a separate MCP registry entry or
-CLI release archives. The older `io.github.skyhook-io/kubeatlas` registry identity
-and `ghcr.io/maomada/kubeatlas` image belong to the upstream project; they are
-not releases of this independently maintained repository. Use a locally built
-KubeAtlas binary or an owned OCI image only after it has been published as
+CLI release archives. Use a locally built KubeAtlas binary or an owned OCI image
+published by this repository and verified against its release provenance, as
 described in [CI/CD](ci-cd.md).
 
 When using a compatible distroless KubeAtlas image, note these limitations:

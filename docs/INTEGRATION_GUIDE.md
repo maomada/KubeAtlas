@@ -350,10 +350,9 @@ own owners.
 - [ ] State remaining scope in the PR. Each slice should work and include its tests;
   you don't need every CRD in an ecosystem before the first slice can land.
 
-**Maintainer docs publishing:** `kubeatlas-docs` splits `integrations.md` at `##`
-headings. A new heading needs matching `INTEGRATION_META` and `docs.json` navigation
-in that internal repository before sync. On rename, retain the published slug;
-unmatched headings fail sync and the orphan sweep removes old generated pages.
-External contributors only need to flag the new/renamed section for maintainers.
+**Maintainer docs publishing:** This repository's `docs/` is authoritative. If a
+separate documentation publisher is configured, follow its actual sync mapping
+and navigation rules. Flag new or renamed integration headings for maintainers,
+and preserve existing published slugs when applicable.
 
 Workspace presentation is shared in k8s-ui: `FactValue`/`FactSource` retain unknown values and their provenance; `WorkspaceProblemCallout` presents host-classified findings; `ActionConfirmDialog` presents the writes and acknowledgement a host asks the user to review. Hosts own fetching, authorization and action-result classification. These components do not establish that evidence is complete or that a write is safe to retry.

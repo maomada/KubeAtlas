@@ -277,7 +277,7 @@ func TestDetectPodOS(t *testing.T) {
 }
 
 // TestDefaultShellScript is a tripwire that pins the exact script content.
-// The script is load-bearing for skyhook-io/kubeatlas#452 — any edit should be
+// The script is load-bearing for the historical upstream issue #452 — any edit should be
 // manually re-verified against the scenarios documented in the PR that
 // introduced it (bash present, ash-only, sh-only, --pod-shell-default
 // override, multi-container pod). If you're here because this test failed,
@@ -302,7 +302,7 @@ func TestDefaultShellScript(t *testing.T) {
 		t.Error("defaultShellScript must detect bash with `command -v` before exec'ing — naive `exec bash || ...` fails under POSIX because non-interactive shells exit on exec-not-found")
 	}
 	if !strings.Contains(defaultShellScript, "bash -il") {
-		t.Error("defaultShellScript must run bash as `-il` (interactive login) so it sources the image's startup files and picks up a PS1 with \\w — that's the PWD-in-prompt fix from skyhook-io/kubeatlas#452")
+		t.Error("defaultShellScript must run bash as `-il` (interactive login) so it sources the image's startup files and picks up a PS1 with \\w — that's the PWD-in-prompt fix from the historical upstream issue #452")
 	}
 }
 

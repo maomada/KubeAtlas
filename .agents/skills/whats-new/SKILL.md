@@ -14,7 +14,7 @@ scoring and acknowledgement model. Paths below are relative to the repo root.
 Unless the request or earlier instructions already answer these, ask together:
 
 1. Should this also check for missing or outdated documentation in KubeAtlas OSS,
-   `kubeatlas-docs`, or both?
+   a separately configured docs repository, or both?
 2. Should this also check the KubeAtlas changelog in `marketing`, and is the scope
    audit-only or preparing/updating entries?
 
