@@ -29,15 +29,15 @@ func TestEnrollmentHTTPActiveClusterTransferRetainsItsOriginalTokenWithoutReenro
 	if err != nil || cluster.OrganizationID != organization.ID || cluster.RevokedAt != nil {
 		t.Fatalf("active transfer invalidated the original Agent token: %v", err)
 	}
+	replay := enrollmentClaim(t, h, initial.ID, initial.DeviceSecret)
+	assertEnrollmentStatus(t, replay, http.StatusConflict)
+	assertNoEnrollmentSecrets(t, replay)
 	for _, organizationID := range []string{"self-hosted", organization.ID} {
 		request := createEnrollmentHTTP(t, h, "")
 		approval := enrollmentApprove(t, h, ownerCookie, request.ID, request.UserCode, organizationID, issued.ClusterID)
 		assertEnrollmentStatus(t, approval, http.StatusConflict)
 		assertNoEnrollmentSecrets(t, approval)
 	}
-	replay := enrollmentClaim(t, h, initial.ID, initial.DeviceSecret)
-	assertEnrollmentStatus(t, replay, http.StatusConflict)
-	assertNoEnrollmentSecrets(t, replay)
 	if current, err := h.liveHub.store.AuthenticateAgent(issued.AgentToken, issued.ClusterID); err != nil || current.OrganizationID != organization.ID {
 		t.Fatal("rejected approval or consumed-claim replay changed the retained Agent credential")
 	}
