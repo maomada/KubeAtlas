@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Check, Copy, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge } from '@maomada/k8s-ui/components/ui/Badge'
-import { Disclosure } from '@maomada/k8s-ui/components/ui/Disclosure'
 import { copyText } from '@maomada/k8s-ui/utils/clipboard'
-import { credentialClusters, credentialStatus, credentialsRequest, openCodeCloudConfig } from './credentials'
+import { credentialClusters, credentialStatus, credentialsRequest, mcpConnectionInfo } from './credentials'
 import type { CredentialCluster, IssuedCredential, MCPCredential } from './credentials'
 import { ConnectionProfileSelector, useConnectionProfiles } from './ConnectionProfiles'
 
@@ -14,17 +13,22 @@ const errorMessage = (error: unknown) => error instanceof Error ? error.message 
 
 function CopyValue({ value, label }: { value: string; label: string }) {
   const [status, setStatus] = useState('')
-  useEffect(() => {
-    if (!status) return
-    const timeout = window.setTimeout(() => setStatus(''), 4000)
-    return () => window.clearTimeout(timeout)
-  }, [status])
+  const timeout = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(timeout.current), [])
+
+  async function copy() {
+    const copied = await copyText(value).catch(() => false)
+    const message = copied ? '已复制' : '复制失败，请手动复制。'
+    setStatus(current => current === message ? `${message}\u00a0` : message)
+    window.clearTimeout(timeout.current)
+    timeout.current = window.setTimeout(() => setStatus(''), 4000)
+  }
+
   return <div className="space-y-1">
-    <button type="button" className="portal-control inline-flex items-center gap-2" onClick={async () => {
-      try { setStatus(await copyText(value) ? '已复制' : '复制失败，请手动复制。') }
-      catch { setStatus('复制失败，请手动复制。') }
-    }}>{status === '已复制' ? <Check size={15} /> : <Copy size={15} />}{label}</button>
-    {status && <p role="status" className="text-xs text-theme-text-secondary">{status}</p>}
+    <button type="button" className="portal-control inline-flex min-h-6 min-w-6 items-center gap-2" onClick={copy}>
+      {status.startsWith('已复制') ? <Check size={15} aria-hidden="true" /> : <Copy size={15} aria-hidden="true" />}{label}
+    </button>
+    <p role="status" aria-atomic="true" className="text-xs text-theme-text-secondary">{status}</p>
   </div>
 }
 
@@ -41,7 +45,7 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
   const [revision, setRevision] = useState(0)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState('')
-  const [label, setLabel] = useState('OpenCode')
+  const [label, setLabel] = useState('')
   const [clusterIds, setClusterIds] = useState<string[]>([])
   const [readOnly, setReadOnly] = useState(true)
   const [ttlSeconds, setTTL] = useState(28800)
@@ -49,6 +53,7 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
   const [revokeID, setRevokeID] = useState('')
   const [now, setNow] = useState(NaN)
   const clock = useRef({ server: NaN, received: 0 })
+  const confirmedRevokedIDs = useRef(new Set<string>())
   const availableIDs = new Set(clusters.map(cluster => cluster.id))
   const selectedIDs = clusterIds.filter(id => availableIDs.has(id))
   const clusterLabel = (id: string) => {
@@ -78,7 +83,8 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
       if (!Array.isArray(data.credentials) || !Number.isFinite(Date.parse(data.serverTime))) throw new Error('门户返回的凭据列表无效。')
       clock.current = { server: Date.parse(data.serverTime), received: Date.now() }
       setNow(clock.current.server)
-      setCredentials(data.credentials)
+      setCredentials(data.credentials.filter(credential => !credential.revokedAt && !confirmedRevokedIDs.current.has(credential.id)))
+      setIssued(current => current && data.credentials.some(credential => credential.id === current.credential.id && credential.revokedAt) ? undefined : current)
       setLoadError('')
     }).catch(error => { if (!controller.signal.aborted) setLoadError(errorMessage(error)) })
       .finally(() => { if (!controller.signal.aborted) setLoading(false) })
@@ -105,6 +111,8 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
     setActionError('')
     try {
       await credentialsRequest(`/${encodeURIComponent(id)}/revoke`, 'POST', {})
+      confirmedRevokedIDs.current.add(id)
+      setCredentials(current => current?.filter(credential => credential.id !== id))
       if (issued?.credential.id === id) setIssued(undefined)
       setRevokeID('')
       setRevision(value => value + 1)
@@ -112,10 +120,10 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
     finally { setBusy('') }
   }
 
-  let config = ''
+  let connectionInfo = ''
   let endpointError = ''
   if (!profile.mcpURL) endpointError = '所选局域网/公网配置未填写 MCP 地址。'
-  else { try { config = openCodeCloudConfig(profile.mcpURL) } catch (error) { endpointError = errorMessage(error) } }
+  else { try { connectionInfo = mcpConnectionInfo(profile.mcpURL, issued?.token ?? '<Token>') } catch (error) { endpointError = errorMessage(error) } }
 
   return <div className="space-y-6">
     <div className="cloud-page-heading"><div><h1>Agent</h1><p>仅可访问你在当前组织获授权的集群，操作受你的组织和集群权限约束。</p></div></div>
@@ -124,7 +132,11 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
       <h2 className="flex items-center gap-2 font-semibold"><KeyRound size={19} className="text-accent-text" />凭据已生成 · 原文仅此次可见</h2>
       <p className="mt-2 text-sm text-theme-text-secondary">请保存 Token，关闭后无法再次查看。有效至 {formatDate(issued.credential.expiresAt)}。</p>
       <label className="mt-4 block text-sm">MCP Token<input aria-label="新生成的 MCP Token" type="password" readOnly autoComplete="off" spellCheck={false} className="portal-control portal-mono mt-2 w-full" value={issued.token} onFocus={event => event.target.select()} /></label>
-      <div className="mt-4 flex flex-wrap items-start gap-3"><CopyValue value={issued.token} label="复制 Token" /><button type="button" className="portal-control" onClick={() => setIssued(undefined)}>已保存，关闭原文</button></div>
+      <div className="mt-4 flex flex-wrap items-start gap-3">
+        {!endpointError && <CopyValue value={connectionInfo} label="复制连接信息" />}
+        <CopyValue value={issued.token} label="复制 Token" />
+        <button type="button" className="portal-control" onClick={() => setIssued(undefined)}>已保存，关闭原文</button>
+      </div>
     </section>}
     <div className="grid grid-cols-1 items-start gap-6 md:grid-cols-2">
       <section className="portal-card min-w-0 p-5 lg:p-6" aria-labelledby="create-credential-title">
@@ -133,7 +145,7 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
         <form onSubmit={create} className="mt-5 space-y-4">
           <fieldset disabled={Boolean(busy || issued || loading || directoryLoading || loadError || directoryError)} className="min-w-0 space-y-4">
             <legend className="sr-only">MCP 凭据配置</legend>
-            <label className="block text-sm">名称<input required maxLength={100} value={label} onChange={event => setLabel(event.target.value)} className="portal-control mt-2 w-full" placeholder="例如：我的 OpenCode" /></label>
+            <label className="block text-sm">名称<input required maxLength={100} value={label} onChange={event => setLabel(event.target.value)} className="portal-control mt-2 w-full" placeholder="输入凭据名称" /></label>
             <label className="block text-sm">有效期<select value={ttlSeconds} onChange={event => setTTL(Number(event.target.value))} className="portal-control mt-2 w-full"><option value={900}>15 分钟</option><option value={3600}>1 小时</option><option value={28800}>8 小时</option><option value={86400}>24 小时</option><option value={604800}>7 天</option></select></label>
             <fieldset className="min-w-0"><legend className="mb-2 text-sm">允许访问的集群 · 至少选择一个</legend>
               {directoryError && <p role="alert" className="mb-2 text-xs text-warning-text">集群目录读取失败：{directoryError}。请恢复连接后刷新。</p>}
@@ -150,15 +162,15 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
         </form>
       </section>
       <section className="portal-card min-w-0 p-5 lg:p-6" aria-labelledby="client-config-title">
-        <h2 id="client-config-title" className="text-lg font-semibold">接入 OpenCode</h2>
+        <h2 id="client-config-title" className="text-lg font-semibold">连接 AI Agent</h2>
         <ConnectionProfileSelector />
-        <div className="cloud-endpoint"><code>{profile.mcpURL || '未配置 MCP 地址'}</code>{profile.mcpURL && <CopyValue value={profile.mcpURL} label="复制端点" />}</div>
+        <div className="cloud-endpoint"><code>{profile.mcpURL || '未配置 MCP 地址'}</code>{!endpointError && <CopyValue value={profile.mcpURL} label="复制地址" />}</div>
         {endpointError ? <p role="alert" className="mt-2 text-sm text-warning-text">{endpointError}</p> : <>
-          <Disclosure className="mt-5" summary="查看客户端配置" summaryClassName="py-2 text-sm text-accent-text">
-          <p className="mt-3 text-sm text-theme-text-secondary">将 Token 填入环境变量 <code className="portal-mono">KUBEATLAS_MCP_TOKEN</code>，复制以下配置后重启客户端。</p>
-          <pre className="portal-mono my-4 overflow-auto rounded-lg bg-theme-base p-4 text-xs leading-relaxed" aria-label="OpenCode 配置">{config}</pre>
-          <CopyValue value={config} label="复制 OpenCode 配置" />
-          </Disclosure>
+          <dl className="mt-5 space-y-3 text-sm">
+            <div className="flex flex-wrap justify-between gap-2"><dt className="text-theme-text-secondary">传输协议</dt><dd>Streamable HTTP</dd></div>
+            <div className="flex flex-wrap justify-between gap-2"><dt className="text-theme-text-secondary">认证方式</dt><dd>Bearer Token</dd></div>
+          </dl>
+          <p className="mt-5 text-sm text-theme-text-secondary">生成凭据后，复制连接信息交给你的 AI Agent。</p>
         </>}
       </section>
     </div>
@@ -166,7 +178,7 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
       <div className="flex flex-wrap items-center justify-between gap-3"><h2 className="text-lg font-semibold">已签发凭据</h2><button type="button" className="portal-control inline-flex items-center gap-2" disabled={loading || Boolean(busy)} onClick={() => setRevision(value => value + 1)}><RefreshCw size={15} className={loading ? 'animate-spin' : ''} />刷新列表</button></div>
       {loadError && <p role="alert" className="mt-4 text-sm text-warning-text">{loadError}{credentials ? ' 以下是上次读取的记录，当前状态未确认。' : ''}</p>}
       {!credentials && loading && <p role="status" className="py-8 text-sm text-theme-text-secondary">正在读取凭据…</p>}
-      {credentials?.length === 0 && <p className="py-8 text-sm text-theme-text-secondary">尚未签发凭据。选择集群与有效期后生成第一个 Token。</p>}
+      {credentials?.length === 0 && <p className="py-8 text-sm text-theme-text-secondary">暂无凭据。</p>}
       <div className="mt-4 grid grid-cols-1 gap-3 lg:grid-cols-2">
         {credentials?.map(credential => {
           const status = credentialStatus(credential, now)

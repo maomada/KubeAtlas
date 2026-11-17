@@ -105,6 +105,12 @@ can be revoked or refreshed through the authenticated Hub API. The live path
 uses the member's principal and tunneled Kubernetes identity; it does not
 fall back to cached snapshots or direct Fleet tools.
 
+The Agent page provides client-neutral Streamable HTTP connection details.
+After issuance, the one-time copy action includes the endpoint and the
+`Authorization: Bearer` header. Tokens are never appended to URLs. Credential
+names start empty, and confirmed revocations disappear from the page while
+the backend retains the revoked metadata for its normal retention period.
+
 See [Hub state](hub-state.md) for persistence and validation,
 [self-hosted identity](self-hosted-hub-identity.md) for login and membership,
 [live Hub MCP](hub-live-mcp.md) for transport and authorization, and
