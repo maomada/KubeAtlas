@@ -48,7 +48,7 @@ export KUBEATLAS_HUB_URL=https://hub.example.test
 export ANTHROPIC_AUTH_TOKEN='fake=token=='
 export CLAUDE_CODE_USE_BEDROCK=1
 export ANTHROPIC_CUSTOM_HEADERS=$'  first=value\nKUBECONFIG=/tmp/wrong\nANTHROPIC_FAKE_NAME=not-a-variable\nlast=value  \n'
-export ANTHROPIC_MARKERS='__KUBEATLAS_ENV_START____RADAR_ENV_END__'
+export ANTHROPIC_MARKERS='__KUBEATLAS_ENV_START____KUBEATLAS_ENV_END__'
 export ANTHROPIC_CONTROL_BYTES=$'one\001two\002UNRELATED\001three'
 ANTHROPIC_UNEXPORTED=not-captured
 export UNRELATED=not-captured
@@ -66,7 +66,7 @@ export UNRELATED=not-captured
 				"ANTHROPIC_AUTH_TOKEN":     "fake=token==",
 				"CLAUDE_CODE_USE_BEDROCK":  "1",
 				"ANTHROPIC_CUSTOM_HEADERS": "  first=value\nKUBECONFIG=/tmp/wrong\nANTHROPIC_FAKE_NAME=not-a-variable\nlast=value  \n",
-				"ANTHROPIC_MARKERS":        "__KUBEATLAS_ENV_START____RADAR_ENV_END__",
+				"ANTHROPIC_MARKERS":        "__KUBEATLAS_ENV_START____KUBEATLAS_ENV_END__",
 				"ANTHROPIC_CONTROL_BYTES":  "one\x01two\x02UNRELATED\x01three",
 			}
 			for _, key := range shellEnvVars {
