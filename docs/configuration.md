@@ -20,6 +20,11 @@ allows existing Agents and stored data to keep working during upgrades. Conflict
 identity or ownership claims are rejected. Historical SQL migrations retain their
 original identifiers; no database rename or credential rotation is required.
 
+Cloud-forwarded identities accept defined roles and nonempty `org:`, `user:`,
+`idp:` or `email:` claims within the product namespace. Use the `idp:` claim for
+custom identity-provider groups; unknown reserved group names are rejected.
+Existing Kubernetes group values are never rewritten automatically.
+
 Browser preferences migrate from an explicit allowlist. Old YAML drafts are
 purged rather than copied into a new authorization scope, and the existing
 cross-tab purge channel remains stable so already-open tabs receive invalidations.

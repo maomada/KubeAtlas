@@ -311,7 +311,7 @@ func TestPortalClusterAPIUsesSelectedClusterAndSanitizesIdentity(t *testing.T) {
 	}
 	if _, _, err := h.liveHub.store.UpdateMember(memberID, hubstate.MemberInput{
 		Role: "viewer", Status: "active", ClusterIDs: []string{"alpha"},
-		KubernetesGroups: []string{"kubeatlas:readonly"},
+		KubernetesGroups: []string{"kubeatlas:idp:readonly"},
 	}); err != nil {
 		t.Fatal(err)
 	}
