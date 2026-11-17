@@ -32,7 +32,11 @@ func TestPrincipalReservedTierNamespacesRemainClosed(t *testing.T) {
 				t.Fatalf("known tier rejected:%s%s", prefix, role)
 			}
 		}
-		for _, groups := range [][]string{{prefix + "evil"}, {prefix + "owner", prefix + "evil"}, {prefix + "viewer", prefix + "owner"}} {
+		invalid := [][]string{{prefix + "viewer", prefix + "owner"}, {prefix + "org:"}}
+		if prefix == "kubeatlas:" || prefix == "kubeatlas:hub:" {
+			invalid = append(invalid, []string{prefix + "evil"}, []string{prefix + "owner", prefix + "evil"})
+		}
+		for _, groups := range invalid {
 			p := Principal{UserID: "fixture", Groups: groups, ClusterIDs: []string{"alpha"}}
 			if principalAllowed(p, "alpha") {
 				t.Fatalf("unknown or conflicting reserved tier accepted:%v", groups)
@@ -62,6 +66,19 @@ func TestPrincipalIdentityMetadataIsNotAnUnknownRole(t *testing.T) {
 			if principalAllowed(Principal{UserID: "fixture", Groups: []string{prefix + field, "kubeatlas:hub:viewer"}, ClusterIDs: []string{"alpha"}}, "alpha") {
 				t.Fatal("empty identity metadata accepted")
 			}
+		}
+	}
+}
+
+func TestPrincipalDeployedCustomGroupsRemainOpaque(t *testing.T) {
+	for _, prefix := range []string{compat.LegacyTierPrefix, "cloud:"} {
+		for _, groups := range [][]string{{prefix + "custom-readers"}, {prefix + "custom-readers", "kubeatlas:hub:viewer"}} {
+			if !principalAllowed(Principal{UserID: "fixture", Groups: groups, ClusterIDs: []string{"alpha"}}, "alpha") {
+				t.Fatalf("deployed custom group rejected:%v", groups)
+			}
+		}
+		if principalAllowed(Principal{UserID: "fixture", Groups: []string{prefix + "custom-readers", "kubeatlas:hub:viewer", prefix + "owner"}, ClusterIDs: []string{"alpha"}}, "alpha") {
+			t.Fatal("opaque group bypassed conflicting-tier check")
 		}
 	}
 }

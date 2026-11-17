@@ -123,8 +123,38 @@ func TestIdentityMetadataDoesNotBecomeATierOrChangeKubernetesGroups(t *testing.T
 		if IsIdentityMetadataGroup(prefix + "evil") {
 			t.Fatal("unknown field classified as metadata")
 		}
-		if _, _, ok := OutboundIdentity("fixture", []string{prefix + "evil", "kubeatlas:hub:viewer"}); ok {
-			t.Fatal("unknown group plus tier accepted")
+		if prefix == "kubeatlas:" {
+			if _, _, ok := OutboundIdentity("fixture", []string{prefix + "evil", "kubeatlas:hub:viewer"}); ok {
+				t.Fatal("unknown canonical group plus tier accepted")
+			}
 		}
+	}
+}
+
+func TestDeployedOpaqueGroupsStayUnchangedAndNeverBecomeTiers(t *testing.T) {
+	for _, prefix := range []string{LegacyTierPrefix, "cloud:"} {
+		old := prefix + "custom-reader/team"
+		if !IsLegacyOpaqueIdentityGroup(old) {
+			t.Fatal("deployed custom group lost")
+		}
+		original := []string{old, "kubeatlas:hub:viewer"}
+		_, groups, ok := OutboundIdentity("fixture", original)
+		if !ok || len(groups) != 3 || groups[0] != old || groups[1] != original[1] || groups[2] != LegacyTierPrefix+"viewer" {
+			t.Fatalf("deployed group rewritten:%v", groups)
+		}
+		if _, _, ok := OutboundIdentity("fixture", []string{old}); ok {
+			t.Fatal("opaque group created a missing-role bypass")
+		}
+		if _, _, ok := OutboundIdentity("fixture", []string{old, "kubeatlas:hub:viewer", prefix + "owner"}); ok {
+			t.Fatal("opaque group bypassed contradictory-tier guard")
+		}
+		for _, value := range []string{"", "org:", "idp:", "owner:bad", "system:bad", "ai:owner", "custom,owner", "custom\nowner"} {
+			if IsLegacyOpaqueIdentityGroup(prefix + value) {
+				t.Fatalf("malformed owned or header metadata accepted:%q", value)
+			}
+		}
+	}
+	if IsLegacyOpaqueIdentityGroup("kubeatlas:custom-reader") {
+		t.Fatal("new canonical group acquired legacy broad scope")
 	}
 }

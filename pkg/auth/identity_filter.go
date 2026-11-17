@@ -92,7 +92,7 @@ func ForwardedIdentityAllowed(username string, groups []string, cloudMode bool) 
 // Keep reservation detection broad, but accepted forwarded vocabulary finite.
 // Org/user/IdP/email claims are the existing metadata namespaces, not role names.
 func isForwardedCloudGroup(group string) bool {
-	if compat.IsIdentityMetadataGroup(group) {
+	if compat.IsIdentityMetadataGroup(group) || compat.IsLegacyOpaqueIdentityGroup(group) {
 		return true
 	}
 	if group == "kubeatlas:hub:owner" || group == "kubeatlas:hub:member" || group == "kubeatlas:hub:viewer" {

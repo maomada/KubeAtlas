@@ -8,6 +8,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/maomada/KubeAtlas/pkg/compat"
 )
 
 // seenMarkFixture is a store installed behind a proxy that can take the
@@ -82,7 +84,7 @@ func (f *seenMarkFixture) markedInDatabase(name string) bool {
 	f.t.Helper()
 	var n int
 	key := []byte(SeenResourceKey("ctx", "apps", "Deployment", "shop", name))
-	if err := f.direct.QueryRow("SELECT COUNT(*) FROM kubeatlas_timeline_seen_resources WHERE resource_key = $1", key).Scan(&n); err != nil {
+	if err := f.direct.QueryRow(compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_seen_resources WHERE resource_key = $1"), key).Scan(&n); err != nil {
 		f.t.Fatalf("read seen mark: %v", err)
 	}
 	return n > 0
@@ -281,7 +283,7 @@ func TestClearRejectedWhileTheDatabaseAnswersIsRetried(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if _, err := tx.Exec("LOCK TABLE kubeatlas_timeline_seen_resources IN ACCESS EXCLUSIVE MODE"); err != nil {
+	if _, err := tx.Exec(compat.PhysicalTimelineSQL("LOCK TABLE kubeatlas_timeline_seen_resources IN ACCESS EXCLUSIVE MODE")); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("lock: %v", err)
 	}
@@ -290,7 +292,7 @@ func TestClearRejectedWhileTheDatabaseAnswersIsRetried(t *testing.T) {
 	// so the row is still there however many have run.
 	key := []byte(SeenResourceKey("ctx", "apps", "Deployment", "shop", "web"))
 	var rows int
-	if err := tx.QueryRow("SELECT COUNT(*) FROM kubeatlas_timeline_seen_resources WHERE resource_key = $1", key).Scan(&rows); err != nil {
+	if err := tx.QueryRow(compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_seen_resources WHERE resource_key = $1"), key).Scan(&rows); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("read seen mark: %v", err)
 	}
@@ -304,7 +306,7 @@ func TestClearRejectedWhileTheDatabaseAnswersIsRetried(t *testing.T) {
 
 	waitFor(t, "the rejected clear to be retried", func() bool {
 		var n int
-		if err := direct.QueryRow("SELECT COUNT(*) FROM kubeatlas_timeline_seen_resources WHERE resource_key = $1", key).Scan(&n); err != nil {
+		if err := direct.QueryRow(compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_seen_resources WHERE resource_key = $1"), key).Scan(&n); err != nil {
 			t.Fatalf("read seen mark: %v", err)
 		}
 		return n == 0
@@ -432,7 +434,7 @@ func TestClosingTheStoreAppliesClearsStillWaitingForARetry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("begin: %v", err)
 	}
-	if _, err := tx.Exec("LOCK TABLE kubeatlas_timeline_seen_resources IN ACCESS EXCLUSIVE MODE"); err != nil {
+	if _, err := tx.Exec(compat.PhysicalTimelineSQL("LOCK TABLE kubeatlas_timeline_seen_resources IN ACCESS EXCLUSIVE MODE")); err != nil {
 		_ = tx.Rollback()
 		t.Fatalf("lock: %v", err)
 	}
@@ -444,7 +446,7 @@ func TestClosingTheStoreAppliesClearsStillWaitingForARetry(t *testing.T) {
 	ResetStore()
 	var n int
 	key := []byte(SeenResourceKey("ctx", "apps", "Deployment", "shop", "web"))
-	if err := direct.QueryRow("SELECT COUNT(*) FROM kubeatlas_timeline_seen_resources WHERE resource_key = $1", key).Scan(&n); err != nil {
+	if err := direct.QueryRow(compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_seen_resources WHERE resource_key = $1"), key).Scan(&n); err != nil {
 		t.Fatalf("read seen mark: %v", err)
 	}
 	if n != 0 {

@@ -27,7 +27,7 @@ func TestHubMemberScopeAndAuthorization(t *testing.T) {
 	}
 	if _, _, err := h.liveHub.store.UpdateMember(memberID, hubstate.MemberInput{
 		Role: "viewer", Status: "active", ClusterIDs: []string{"alpha"},
-		KubernetesGroups: []string{"kubeatlas:readers"},
+		KubernetesGroups: []string{"kubeatlas:idp:readers"},
 	}); err != nil {
 		t.Fatal(err)
 	}

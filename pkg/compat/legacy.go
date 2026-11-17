@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"reflect"
 	"strings"
+	"unicode"
 )
 
 var ErrAmbiguousCookie = errors.New("ambiguous cookie names")
@@ -179,6 +180,28 @@ func IsIdentityMetadataGroup(group string) bool {
 	return false
 }
 
+// IsLegacyOpaqueIdentityGroup preserves custom Kubernetes groups accepted by
+// deployed peers. It never interprets their value as a role or renames it.
+// Canonical groups and malformed owned metadata do not use this boundary.
+func IsLegacyOpaqueIdentityGroup(group string) bool {
+	for _, prefix := range []string{LegacyTierPrefix, "cloud:"} {
+		if !strings.HasPrefix(group, prefix) {
+			continue
+		}
+		value := strings.TrimPrefix(group, prefix)
+		if value == "" || strings.TrimSpace(value) != value || strings.ContainsRune(value, ',') || strings.IndexFunc(value, unicode.IsControl) >= 0 {
+			return false
+		}
+		namespace, _, _ := strings.Cut(value, ":")
+		switch namespace {
+		case "owner", "member", "viewer", "system", "ai", "org", "user", "idp", "email":
+			return false
+		}
+		return true
+	}
+	return false
+}
+
 // OutboundIdentity keeps the deployed cluster RBAC vocabulary until Agents and
 // their bindings are upgraded together. Existing kubeatlas:hub roles are stable.
 func OutboundIdentity(username string, groups []string) (string, []string, bool) {
@@ -196,7 +219,7 @@ func OutboundIdentity(username string, groups []string) (string, []string, bool)
 	}
 	tier := ""
 	for _, group := range groups {
-		if IsIdentityMetadataGroup(group) {
+		if IsIdentityMetadataGroup(group) || IsLegacyOpaqueIdentityGroup(group) {
 			continue
 		}
 		for _, prefix := range []string{"kubeatlas:hub:", "kubeatlas:", LegacyTierPrefix, "cloud:"} {

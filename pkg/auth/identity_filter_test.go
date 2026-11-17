@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"github.com/maomada/KubeAtlas/pkg/compat"
 	"testing"
 )
@@ -81,7 +82,11 @@ func TestForwardedIdentityRejectsUnknownReservedVocabulary(t *testing.T) {
 				t.Fatalf("known identity metadata rejected:%s%s", prefix, field)
 			}
 		}
-		for _, groups := range [][]string{{prefix + "evil"}, {prefix + "owner", prefix + "evil"}, {prefix + "org:"}, {prefix + "ai:owner"}} {
+		invalid := [][]string{{prefix + "org:"}, {prefix + "ai:owner"}}
+		if prefix == "kubeatlas:" {
+			invalid = append(invalid, []string{prefix + "evil"}, []string{prefix + "owner", prefix + "evil"})
+		}
+		for _, groups := range invalid {
 			if ForwardedIdentityAllowed("fixture", groups, true) {
 				t.Fatalf("unknown reserved vocabulary accepted:%v", groups)
 			}
@@ -90,6 +95,23 @@ func TestForwardedIdentityRejectsUnknownReservedVocabulary(t *testing.T) {
 	for _, pair := range [][2]string{{"kubeatlas:system:fixture", "kubeatlas:system"}, {"kubeatlas:ai:fixture", "kubeatlas:ai:reader"}, {compat.LegacySystemUserPrefix + "fixture", compat.LegacySystemGroup}, {compat.LegacyAIUserPrefix + "fixture", compat.LegacyAIReaderGroup}} {
 		if !ForwardedIdentityAllowed(pair[0], []string{pair[1]}, true) {
 			t.Fatal("defined background identity rejected")
+		}
+	}
+}
+
+func TestLegacyOpaqueGroupsRetainNamesWithoutCreatingCloudRoles(t *testing.T) {
+	for _, prefix := range []string{compat.LegacyTierPrefix, "cloud:"} {
+		group := prefix + "custom-readers"
+		if !ForwardedIdentityAllowed("fixture", []string{group}, true) {
+			t.Fatal("deployed opaque group rejected")
+		}
+		user := &User{Username: "fixture", Groups: []string{group}, Cloud: true}
+		role := CloudRoleFromContext(ContextWithUser(context.Background(), user))
+		if role != RoleDenied || role.AtLeast(RoleViewer) || role.AtLeast(RoleOwner) {
+			t.Fatalf("opaque group became role %q", role)
+		}
+		if ForwardedIdentityAllowed("fixture", []string{group, "system:masters"}, true) {
+			t.Fatal("legacy group bypassed Kubernetes reserved-group guard")
 		}
 	}
 }
