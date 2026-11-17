@@ -248,7 +248,7 @@ func (s *Store) MembersForOrganization(organizationID string) []Member {
 	entries := s.data.Memberships[organizationID]
 	members := make([]Member, 0, len(entries))
 	for id, membership := range entries {
-		if account, ok := s.data.Accounts[id]; ok {
+		if account, ok := s.data.Accounts[id]; ok && !account.Local && !account.PlatformOwner {
 			members = append(members, memberFrom(account, membership))
 		}
 	}
@@ -327,7 +327,7 @@ func (s *Store) UpdateOrganizationMemberRole(organizationID, accountID, role str
 	defer s.mu.Unlock()
 	account, ok := s.data.Accounts[accountID]
 	membership, exists := s.data.Memberships[organizationID][accountID]
-	if !ok || account.Status != "active" || !exists {
+	if !ok || account.Status != "active" || account.Local || account.PlatformOwner || !exists {
 		return Member{}, false, failure("member_not_found")
 	}
 	if membership.Role == role {
@@ -359,7 +359,10 @@ func (s *Store) RemoveOrganizationMember(organizationID, accountID string) (bool
 	if !ok {
 		return false, failure("member_not_found")
 	}
-	account := s.data.Accounts[accountID]
+	account, exists := s.data.Accounts[accountID]
+	if !exists || account.Local || account.PlatformOwner {
+		return false, failure("member_not_found")
+	}
 	if membership.Role == "owner" && account.Status == "active" && !hasOtherActiveOwner(s.data, organizationID, accountID) {
 		return false, failure("last_owner")
 	}
@@ -500,7 +503,7 @@ func (s *Store) PlatformUsers() []PlatformUser {
 func hasOtherActiveOwner(file storeFile, organizationID, excluding string) bool {
 	for accountID, membership := range file.Memberships[organizationID] {
 		account := file.Accounts[accountID]
-		if accountID != excluding && membership.Role == "owner" && account.Status == "active" {
+		if accountID != excluding && membership.Role == "owner" && account.Status == "active" && !account.Local && !account.PlatformOwner {
 			return true
 		}
 	}

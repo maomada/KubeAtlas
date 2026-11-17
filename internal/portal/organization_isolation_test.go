@@ -324,6 +324,8 @@ func TestOrganizationAuthorizationMutationsCancelAndRevokeMCP(t *testing.T) {
 	id := "oidc:" + strings.Repeat("c", 64)
 	memberships := []hubstate.OrganizationMembership{{OrganizationID: orgA, Role: "owner"}, {OrganizationID: orgB, Role: "viewer"}}
 	addOrganizationAccount(t, h, id, memberships...)
+	// Recovery access is not an ordinary organization Owner quorum vote.
+	addOrganizationAccount(t, h, "oidc:"+strings.Repeat("e", 64), hubstate.OrganizationMembership{OrganizationID: orgA, Role: "owner"})
 	mutationSets := []struct {
 		name        string
 		status      string

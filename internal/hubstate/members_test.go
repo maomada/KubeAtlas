@@ -245,6 +245,7 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	if err := migrated.EnsurePlatformOwner("portal:recovery", "kubeatlas:recovery", "Recovery"); err != nil {
 		t.Fatal(err)
 	}
+	addOrganizationBoundaryAccount(t, migrated, "oidc:"+strings.Repeat("e", 64), "active", OrganizationMembership{OrganizationID: "self-hosted", Role: "owner"})
 	if _, _, err := migrated.UpdateOrganizationMemberRole("self-hosted", adminID, "member"); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +274,7 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	}
 	reopened.now = store.now
 	if organization := reopened.Organization(); organization.Name != "KubeAtlas Local" ||
-		len(reopened.Clusters()) != 2 || len(reopened.Members()) != 4 {
+		len(reopened.Clusters()) != 2 || len(reopened.Members()) != 5 {
 		t.Fatalf("migrated state did not survive restart: organization=%#v", organization)
 	}
 	if _, err := reopened.Authenticate(issued.Token, "owner"); err != nil {

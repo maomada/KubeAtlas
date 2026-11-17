@@ -121,17 +121,13 @@ func TestHubOrganizationRolesAndAdminResponseEnvelopes(t *testing.T) {
 	if err := json.Unmarshal(localMembers.Body.Bytes(), &localEnvelope); err != nil {
 		t.Fatal(err)
 	}
-	localRecoveryFound := false
 	for _, member := range localEnvelope.Members {
-		if member.ID == hubstate.LocalMemberID {
-			localRecoveryFound = true
-			if member.Role != "owner" {
-				t.Fatalf("public local recovery role = %q", member.Role)
-			}
+		if member.ID == hubstate.LocalMemberID || member.ID == h.liveHub.ownerID {
+			t.Fatal("organization member response exposed the platform recovery account")
 		}
 	}
-	if !localRecoveryFound {
-		t.Fatalf("organization member list did not expose public local ID: %s", localMembers.Body.String())
+	if len(localEnvelope.Members) != 0 {
+		t.Fatal("fresh organization should have no ordinary members")
 	}
 	hubRequest(t, h, localCookie, "", http.MethodPut, "/api/hub/members/local", `{"role":"member"}`, http.StatusForbidden)
 	hubRequest(t, h, localCookie, "", http.MethodDelete, "/api/hub/members/local", "", http.StatusForbidden)
@@ -158,6 +154,8 @@ func TestHubOrganizationRolesAndAdminResponseEnvelopes(t *testing.T) {
 	if _, err := h.liveHub.store.UpdatePlatformUser(memberID, "active", memberships); err != nil {
 		t.Fatal(err)
 	}
+	// This envelope test later demotes memberID; keep an ordinary backup Owner.
+	addOrganizationAccount(t, h, "oidc:"+strings.Repeat("e", 64), hubstate.OrganizationMembership{OrganizationID: "self-hosted", Role: "owner"})
 	organizationResponse := hubRequest(t, h, hubTestMemberSession(t, h, memberID), "", http.MethodGet, "/api/hub/organizations", "", http.StatusOK)
 	var organizationEnvelope map[string]json.RawMessage
 	if err := json.Unmarshal(organizationResponse.Body.Bytes(), &organizationEnvelope); err != nil {

@@ -3,8 +3,13 @@
 Public registrations create pending accounts with no organization membership or
 active session. The platform owner approves pending accounts and grants initial
 membership; organization owners manage roles and scope for existing approved
-members in their organization. The configured recovery identity is the only
-platform owner; only its exact local `User` identity receives `cluster-admin`.
+members in their organization. Organization member lists and counts exclude
+platform administrators and local recovery accounts. Organization member
+updates and removals reject those platform identities, and last-owner
+protection counts only active ordinary organization owners. Existing internal
+recovery memberships remain compatible; they do not grant visibility or editing
+through the organization member directory. The configured recovery identity is
+the only platform owner; only its exact local `User` identity receives `cluster-admin`.
 The chart maps organization role groups to `admin`, `edit`, or `view`, plus
 limited infrastructure-read access. Existing Agent deployments need an
 operator-controlled chart rollout to apply those bindings; the Hub does not
