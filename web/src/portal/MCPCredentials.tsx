@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { Check, Copy, KeyRound, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Badge } from '@maomada/k8s-ui/components/ui/Badge'
+import { Disclosure } from '@maomada/k8s-ui/components/ui/Disclosure'
 import { copyText } from '@maomada/k8s-ui/utils/clipboard'
 import { credentialClusters, credentialStatus, credentialsRequest, openCodeCloudConfig } from './credentials'
 import type { CredentialCluster, IssuedCredential, MCPCredential } from './credentials'
@@ -153,11 +154,11 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
         <ConnectionProfileSelector />
         <div className="cloud-endpoint"><code>{profile.mcpURL || '未配置 MCP 地址'}</code>{profile.mcpURL && <CopyValue value={profile.mcpURL} label="复制端点" />}</div>
         {endpointError ? <p role="alert" className="mt-2 text-sm text-warning-text">{endpointError}</p> : <>
-          <details className="portal-client-details mt-5"><summary>查看客户端配置</summary>
+          <Disclosure className="mt-5" summary="查看客户端配置" summaryClassName="py-2 text-sm text-accent-text">
           <p className="mt-3 text-sm text-theme-text-secondary">将 Token 填入环境变量 <code className="portal-mono">KUBEATLAS_MCP_TOKEN</code>，复制以下配置后重启客户端。</p>
           <pre className="portal-mono my-4 overflow-auto rounded-lg bg-theme-base p-4 text-xs leading-relaxed" aria-label="OpenCode 配置">{config}</pre>
           <CopyValue value={config} label="复制 OpenCode 配置" />
-          </details>
+          </Disclosure>
         </>}
       </section>
     </div>
