@@ -805,7 +805,7 @@ func TestScaleDownObservationsFromBothFormatsReachGroupWire(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			payload := string(raw)
+			payload := strings.ReplaceAll(string(raw), "\r\n", "\n")
 			if strings.HasSuffix(fixture, ".yaml") {
 				payload = strings.ReplaceAll(payload, "scaleDown:\n", "scaleDown:\n    candidates: 2\n")
 				payload = strings.ReplaceAll(payload, "NoCandidates", "CandidatesPresent")

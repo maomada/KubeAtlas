@@ -83,6 +83,14 @@ func CloudRoleFromContext(ctx context.Context) CloudRole {
 	if user == nil {
 		return RoleNone
 	}
+	if user.Cloud && user.System {
+		// User-token mode keeps HubGroups empty for verified service identities.
+		// Their dedicated Kubernetes identity permits reads, never owner actions.
+		if IsSystemIdentity(user.Username, user.Groups) {
+			return RoleViewer
+		}
+		return RoleDenied
+	}
 	groups := user.Groups
 	if user.HubGroups != nil {
 		groups = user.HubGroups

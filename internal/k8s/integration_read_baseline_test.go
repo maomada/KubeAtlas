@@ -222,7 +222,7 @@ func TestIntegrationReadBindings(t *testing.T) {
 					continue
 				}
 				wantDocs += 1 + len(tiers)
-				roleName := "kubeatlas-kubeatlas-integration-read-" + scope
+				roleName := "kubeatlas-integration-read-" + scope
 				foundRole := false
 				for _, doc := range docs {
 					if doc.Kind == "ClusterRole" && doc.Name == roleName {
@@ -235,7 +235,7 @@ func TestIntegrationReadBindings(t *testing.T) {
 				for _, tier := range tiers {
 					found := false
 					for _, doc := range docs {
-						if doc.Kind != "ClusterRoleBinding" || doc.Name != "kubeatlas-kubeatlas-cloud-"+tier+"-integration-read-"+scope {
+						if doc.Kind != "ClusterRoleBinding" || doc.Name != "kubeatlas-cloud-"+tier+"-integration-read-"+scope {
 							continue
 						}
 						found = true
@@ -290,7 +290,7 @@ func assertIntegrationReadRules(t *testing.T, docs []integrationRBACDocument, en
 			for _, resource := range rule.Resources {
 				key := rule.APIGroups[0] + "/" + resource
 				scope, ok := want[key]
-				if !ok || doc.Name != "kubeatlas-kubeatlas-integration-read-"+scope {
+				if !ok || doc.Name != "kubeatlas-integration-read-"+scope {
 					t.Errorf("unapproved, duplicate or wrong-scope grant %s in %s", key, doc.Name)
 				}
 				delete(want, key)
@@ -333,7 +333,7 @@ func TestIntegrationReadRulesAndCollectionGates(t *testing.T) {
 	for _, key := range []string{"monitoring.coreos.com/prometheusrules", "cilium.io/ciliumnetworkpolicies"} {
 		found := false
 		for _, doc := range clusterOff {
-			if doc.Name != "kubeatlas-kubeatlas-integration-read-namespaced" {
+			if doc.Name != "kubeatlas-integration-read-namespaced" {
 				continue
 			}
 			for _, rule := range doc.Rules {

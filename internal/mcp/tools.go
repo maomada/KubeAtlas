@@ -96,7 +96,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 
 	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
 		Name: "get_dashboard",
-		Description: "Use for inventory-style cluster or namespace health triage, like " +
+		Description: "Inventory-style cluster or namespace health triage: " +
 			"`kubectl get all` plus detected problems and warning events in one call. " +
 			"Returns resource counts, failing pods, unhealthy workloads, Warning-event " +
 			"groups (warningGroups: up to 20, ordered by lastSeen descending; use " +
@@ -104,7 +104,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 			"objectCount for breadth — objects is a capped sample of up to 3 involved " +
 			"resources, objectsTruncated flags more; if warningGroupsTruncated, more " +
 			"groups exist — use get_events with namespace/kind/name and a higher limit), " +
-			"and Helm release status so you can rank likely suspects before " +
+			"and Helm release status to rank suspects before " +
 			"calling get_resource or logs. Routing: unknown broken thing -> issues; " +
 			"content/name search -> search; service routing/dependencies -> get_topology " +
 			"or get_neighborhood; inventory/counts/Helm/events overview -> get_dashboard. " +
@@ -265,8 +265,8 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 
 	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
 		Name: "list_namespaces",
-		Description: "List all Kubernetes namespaces with their status. " +
-			"Use to discover available namespaces before filtering other queries.",
+		Description: "List Kubernetes namespaces and status. " +
+			"Discover namespaces before filtering other queries.",
 		Annotations: readOnly,
 	}, logToolCall("list_namespaces", handleListNamespaces))
 
@@ -517,7 +517,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 		Name: "query_prometheus",
 		Description: "Use when the question needs metric VALUES or history: CPU/memory over time, " +
 			"request rates, error ratios, saturation, restarts trend, 'was there a spike?'. Executes " +
-			"PromQL against the cluster's Prometheus (auto-discovered or configured in KubeAtlas; also " +
+			"PromQL against the cluster's Prometheus (auto-discovered or configured; also " +
 			"works with PromQL-compatible backends: Thanos, VictoriaMetrics, Mimir). " +
 			"type=instant returns current values; type=range returns time series for a window " +
 			"(since=1h default). For live top-N snapshots prefer top_resources; for metric/label " +

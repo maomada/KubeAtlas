@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"github.com/maomada/KubeAtlas/pkg/probe"
 	authzv1 "k8s.io/api/authorization/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -100,7 +101,7 @@ func DefaultImage() string {
 
 // selfPodImage reads KubeAtlas's own pod (named by the MY_POD_NAME /
 // MY_POD_NAMESPACE downward-API env the chart injects) and returns the image of
-// its "kubeatlas" container, or the legacy "kubeatlas" container. It trusts the
+// its "kubeatlas" container, or its deployed legacy container name. It trusts the
 // first container only when it is the sole container. Returns "" when the env
 // is unset, the client is nil, the Get fails (e.g. no get-pods RBAC), or the pod
 // has no containers - every such case falls through to the next image source.
@@ -119,7 +120,7 @@ func selfPodImage(ctx context.Context, selfClient kubernetes.Interface) string {
 		}
 	}
 	for _, c := range pod.Spec.Containers {
-		if c.Name == "kubeatlas" {
+		if c.Name == compat.LegacyContainerName {
 			return c.Image
 		}
 	}

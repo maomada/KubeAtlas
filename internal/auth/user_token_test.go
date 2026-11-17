@@ -15,6 +15,7 @@ import (
 
 	"github.com/maomada/KubeAtlas/internal/cloud"
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 )
 
 func TestUserTokenFailureLogsDoNotExposeClaimsOrReviewErrors(t *testing.T) {
@@ -183,6 +184,8 @@ func TestUserToken_SystemIdentityAllowList(t *testing.T) {
 		{"kubeatlas:system:hub-timeline-puller", "kubeatlas:system", true},
 		{"kubeatlas:system:alerts:org-1", "kubeatlas:system", true},
 		{"kubeatlas:ai:org-1", "kubeatlas:ai:reader", true},
+		{compat.LegacySystemUserPrefix + "fixture", compat.LegacySystemGroup, true},
+		{compat.LegacyAIUserPrefix + "fixture", compat.LegacyAIReaderGroup, true},
 		{"kubeatlas:system:alerts:org-1", "kubeatlas:system,kubeatlas:owner", false},
 		{"kubeatlas:ai:org-1", "kubeatlas:system", false},
 		{"oidc:alice@example.com", "kubeatlas:system", false},
@@ -194,8 +197,14 @@ func TestUserToken_SystemIdentityAllowList(t *testing.T) {
 		if got.System != tc.system {
 			t.Errorf("%s/%s: system = %v, want %v", tc.user, tc.groups, got.System, tc.system)
 		}
-		if tc.system && CloudRoleFromContext(ContextWithUser(context.Background(), got)) != RoleNone {
-			t.Errorf("%s: system identity must carry no Hub role", tc.user)
+		if tc.system {
+			if len(got.HubGroups) != 0 || got.Token != "" || !got.Cloud {
+				t.Errorf("%s: service identity acquired Hub groups or a token", tc.user)
+			}
+			role := CloudRoleFromContext(ContextWithUser(context.Background(), got))
+			if role != RoleViewer || !role.AtLeast(RoleViewer) || role.AtLeast(RoleMember) || role.AtLeast(RoleOwner) {
+				t.Errorf("%s: service identity role=%q must allow reads and deny member/owner gates", tc.user, role)
+			}
 		}
 	}
 }

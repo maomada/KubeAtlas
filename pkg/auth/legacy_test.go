@@ -65,3 +65,26 @@ func TestSignedLegacySessionRotationAndMixedIdentityDenial(t *testing.T) {
 		t.Fatal("logout left old session representation")
 	}
 }
+
+func TestCloudSystemIdentityWithEmptyHubGroupsIsReadOnly(t *testing.T) {
+	for _, pair := range [][2]string{{"kubeatlas:system:fixture", "kubeatlas:system"}, {"kubeatlas:ai:fixture", "kubeatlas:ai:reader"}, {compat.LegacySystemUserPrefix + "fixture", compat.LegacySystemGroup}, {compat.LegacyAIUserPrefix + "fixture", compat.LegacyAIReaderGroup}} {
+		user := &User{Username: pair[0], Groups: []string{pair[1]}, HubGroups: []string{}, Cloud: true, System: true}
+		role := CloudRoleFromContext(ContextWithUser(context.Background(), user))
+		if role != RoleViewer || !role.AtLeast(RoleViewer) || role.AtLeast(RoleMember) || role.AtLeast(RoleOwner) {
+			t.Fatalf("service identity role=%q", role)
+		}
+		if len(user.HubGroups) != 0 {
+			t.Fatal("role resolution injected Hub groups")
+		}
+	}
+	for _, user := range []*User{
+		{Username: "kubeatlas:ai:fixture", Groups: []string{"kubeatlas:system"}, HubGroups: []string{}, Cloud: true, System: true},
+		{Username: "human", Groups: []string{"kubeatlas:owner"}, Cloud: true, System: true},
+		{Username: "kubeatlas:system:fixture", Groups: []string{"kubeatlas:system", "kubeatlas:owner"}, Cloud: true, System: true},
+		{Username: "human", Groups: []string{"kubeatlas:unknown"}, Cloud: true},
+	} {
+		if role := CloudRoleFromContext(ContextWithUser(context.Background(), user)); role != RoleDenied || role.AtLeast(RoleViewer) {
+			t.Fatalf("unverified service identity role=%q", role)
+		}
+	}
+}

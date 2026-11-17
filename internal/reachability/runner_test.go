@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"github.com/maomada/KubeAtlas/pkg/probe"
 	authzv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -506,7 +507,7 @@ func TestSelfPodImage(t *testing.T) {
 	// Prefer the "kubeatlas" container behind a sidecar when both names exist.
 	c := fake.NewSimpleClientset(kubeatlasPod("kubeatlas-ns",
 		corev1.Container{Name: "linkerd-proxy", Image: "proxy:1"},
-		corev1.Container{Name: "kubeatlas", Image: "kubeatlas:legacy"},
+		corev1.Container{Name: compat.LegacyContainerName, Image: "kubeatlas:legacy"},
 		corev1.Container{Name: "kubeatlas", Image: "kubeatlas:real"},
 	))
 	if got := selfPodImage(ctx, c); got != "kubeatlas:real" {
@@ -515,7 +516,7 @@ func TestSelfPodImage(t *testing.T) {
 	// Retain the legacy container name only when no "kubeatlas" container exists.
 	legacy := fake.NewSimpleClientset(kubeatlasPod("kubeatlas-ns",
 		corev1.Container{Name: "linkerd-proxy", Image: "proxy:1"},
-		corev1.Container{Name: "kubeatlas", Image: "kubeatlas:legacy"},
+		corev1.Container{Name: compat.LegacyContainerName, Image: "kubeatlas:legacy"},
 	))
 	if got := selfPodImage(ctx, legacy); got != "kubeatlas:legacy" {
 		t.Errorf("want the legacy kubeatlas container image, got %q", got)

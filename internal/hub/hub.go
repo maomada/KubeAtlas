@@ -448,6 +448,27 @@ func principalAllowed(principal Principal, clusterID string) bool {
 		len(principal.Groups) > 128 || !pkgauth.ForwardedIdentityAllowed(principal.UserID, principal.Groups, true) {
 		return false
 	}
+	serviceIdentity := pkgauth.IsSystemIdentity(principal.UserID, principal.Groups)
+	tier := ""
+	for _, group := range principal.Groups {
+		if serviceIdentity {
+			break
+		}
+		for _, prefix := range []string{"kubeatlas:hub:", "kubeatlas:", compat.LegacyTierPrefix, "cloud:"} {
+			if !strings.HasPrefix(group, prefix) {
+				continue
+			}
+			candidate := strings.TrimPrefix(group, prefix)
+			if candidate != "owner" && candidate != "member" && candidate != "viewer" {
+				return false
+			}
+			if tier != "" && tier != candidate {
+				return false
+			}
+			tier = candidate
+			break
+		}
+	}
 	groupBytes := 0
 	for _, id := range principal.ClusterIDs {
 		if !validClusterID(id) {

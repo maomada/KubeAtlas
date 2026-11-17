@@ -408,10 +408,11 @@ func loadKubeAtlasTestChart(t *testing.T) *chart.Chart {
 	for _, template := range loaded.Templates {
 		if strings.HasSuffix(template.Name, "templates/deployment.yaml") {
 			const guard = "{{- if .Values.cloud.enabled }}\n{{- fail \"cloud.enabled is unavailable in KubeAtlas\" }}\n{{- end }}\n"
-			if !strings.Contains(string(template.Data), guard) {
+			normalized := strings.ReplaceAll(string(template.Data), "\r\n", "\n")
+			if !strings.Contains(normalized, guard) {
 				t.Fatal("Cloud guard not found in KubeAtlas test chart")
 			}
-			template.Data = []byte(strings.Replace(string(template.Data), guard, "", 1))
+			template.Data = []byte(strings.Replace(normalized, guard, "", 1))
 			break
 		}
 	}
