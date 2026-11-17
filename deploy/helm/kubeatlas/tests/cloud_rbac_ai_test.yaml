@@ -35,7 +35,7 @@ tests:
       - notExists:
           path: metadata.labels["rbac.authorization.k8s.io/aggregate-to-admin"]
 
-  - it: binds only kubeatlas:ai:reader to the owned read role
+  - it: binds canonical and deployed AI readers to the owned read role
     template: cloud-rbac-ai.yaml
     documentIndex: 1
     asserts:
@@ -55,6 +55,9 @@ tests:
           value:
             - kind: Group
               name: kubeatlas:ai:reader
+              apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: radar:ai:reader
               apiGroup: rbac.authorization.k8s.io
 
   - it: keeps kubeatlas:ai:reader's read grant when the tier bindings are off
@@ -144,6 +147,9 @@ tests:
             - kind: Group
               name: kubeatlas:ai:reader
               apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: radar:ai:reader
+              apiGroup: rbac.authorization.k8s.io
         documentIndex: 1
 
   - it: gives kubeatlas:ai:reader the cluster-read add-on beside the tiers
@@ -183,6 +189,9 @@ tests:
             - kind: Group
               name: kubeatlas:ai:reader
               apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: radar:ai:reader
+              apiGroup: rbac.authorization.k8s.io
         documentSelector:
           path: metadata.name
           value: RELEASE-NAME-kubeatlas-cloud-ai-integration-read-namespaced
@@ -191,6 +200,9 @@ tests:
           value:
             - kind: Group
               name: kubeatlas:ai:reader
+              apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: radar:ai:reader
               apiGroup: rbac.authorization.k8s.io
         documentSelector:
           path: metadata.name

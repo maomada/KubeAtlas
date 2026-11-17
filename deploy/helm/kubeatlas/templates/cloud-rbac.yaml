@@ -39,6 +39,9 @@ subjects:
     name: kubeatlas:owner
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "owner" | quote }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
     name: cloud:owner
     apiGroup: rbac.authorization.k8s.io
 ---
@@ -59,6 +62,9 @@ subjects:
     name: kubeatlas:member
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "member" | quote }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
     name: cloud:member
     apiGroup: rbac.authorization.k8s.io
 ---
@@ -77,6 +83,9 @@ roleRef:
 subjects:
   - kind: Group
     name: kubeatlas:viewer
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "viewer" | quote }}
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
     name: cloud:viewer

@@ -145,3 +145,10 @@ false
 {{- $e := .Values.cloud.enrollment | default dict -}}
 {{- $e.existingSecret | default (printf "%s-cloud-enrollment-key" (include "kubeatlas.fullname" .)) -}}
 {{- end -}}
+
+{{/* Deployed Cloud identities remain valid while Hub, Agent and chart upgrade independently. */}}
+{{- define "kubeatlas.legacyCloudGroup" -}}
+{{- $role := . -}}
+{{- if eq $role "ai" -}}{{- $role = "ai:reader" -}}{{- end -}}
+{{- printf "radar:%s" $role -}}
+{{- end -}}

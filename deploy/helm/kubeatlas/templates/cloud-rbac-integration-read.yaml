@@ -53,6 +53,9 @@ subjects:
   - kind: Group
     name: kubeatlas:{{ if eq $tier "ai" }}ai:reader{{ else }}{{ $tier }}{{ end }}
     apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" $tier | quote }}
+    apiGroup: rbac.authorization.k8s.io
 {{- if not (has $tier (list "system" "ai")) }}
   - kind: Group
     name: cloud:{{ $tier }}

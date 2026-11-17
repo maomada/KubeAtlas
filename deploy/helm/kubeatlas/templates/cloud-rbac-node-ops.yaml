@@ -55,6 +55,9 @@ subjects:
   - kind: Group
     name: kubeatlas:owner
     apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "owner" | quote }}
+    apiGroup: rbac.authorization.k8s.io
   # Legacy pre-rename vocabulary; kept for older hubs. Removed in v2.
   - kind: Group
     name: cloud:owner

@@ -178,6 +178,9 @@ subjects:
   - kind: Group
     name: kubeatlas:{{ $tier }}
     apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" $tier | quote }}
+    apiGroup: rbac.authorization.k8s.io
   # Legacy pre-rename vocabulary; kept for older hubs. Removed in v2.
   - kind: Group
     name: cloud:{{ $tier }}
@@ -200,6 +203,9 @@ subjects:
   - kind: Group
     name: kubeatlas:system
     apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "system" | quote }}
+    apiGroup: rbac.authorization.k8s.io
 {{- end }}
 {{- if $aiOn }}
 ---
@@ -216,6 +222,9 @@ roleRef:
 subjects:
   - kind: Group
     name: kubeatlas:ai:reader
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "ai:reader" | quote }}
     apiGroup: rbac.authorization.k8s.io
 {{- end }}
 {{- end -}}

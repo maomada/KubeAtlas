@@ -120,6 +120,9 @@ tests:
             - kind: Group
               name: kubeatlas:system
               apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: radar:system
+              apiGroup: rbac.authorization.k8s.io
 
   - it: binds only kubeatlas:system to the owned read role
     set:
@@ -147,6 +150,9 @@ tests:
           value:
             - kind: Group
               name: kubeatlas:system
+              apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: radar:system
               apiGroup: rbac.authorization.k8s.io
 
   # --reuse-values from a release predating systemRbac renders with the key
@@ -229,4 +235,7 @@ tests:
           value:
             - kind: Group
               name: kubeatlas:system
+              apiGroup: rbac.authorization.k8s.io
+            - kind: Group
+              name: radar:system
               apiGroup: rbac.authorization.k8s.io

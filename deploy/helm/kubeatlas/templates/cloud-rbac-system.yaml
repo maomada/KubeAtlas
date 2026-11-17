@@ -40,6 +40,9 @@ subjects:
   - kind: Group
     name: kubeatlas:system
     apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "system" | quote }}
+    apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -65,5 +68,8 @@ roleRef:
 subjects:
   - kind: Group
     name: kubeatlas:system
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "system" | quote }}
     apiGroup: rbac.authorization.k8s.io
 {{- end -}}

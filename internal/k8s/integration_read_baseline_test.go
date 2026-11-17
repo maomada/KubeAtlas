@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"github.com/maomada/KubeAtlas/pkg/topology"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
@@ -244,7 +245,12 @@ func TestIntegrationReadBindings(t *testing.T) {
 							group = "kubeatlas:ai:reader"
 						}
 						wantSubjects := []rbacv1.Subject{{Kind: "Group", Name: group, APIGroup: rbacv1.GroupName}}
-						// kubeatlas:system and kubeatlas:ai:reader have no legacy cloud:* twin.
+						legacyGroup := compat.LegacyTierPrefix + tier
+						if tier == "ai" {
+							legacyGroup = compat.LegacyAIReaderGroup
+						}
+						wantSubjects = append(wantSubjects, rbacv1.Subject{Kind: "Group", Name: legacyGroup, APIGroup: rbacv1.GroupName})
+						// Human tiers also retain the older cloud:* vocabulary.
 						if tier != "system" && tier != "ai" {
 							wantSubjects = append(wantSubjects, rbacv1.Subject{Kind: "Group", Name: "cloud:" + tier, APIGroup: rbacv1.GroupName})
 						}

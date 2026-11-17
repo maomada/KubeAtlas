@@ -47,4 +47,7 @@ subjects:
   - kind: Group
     name: kubeatlas:ai:reader
     apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "ai:reader" | quote }}
+    apiGroup: rbac.authorization.k8s.io
 {{- end -}}
