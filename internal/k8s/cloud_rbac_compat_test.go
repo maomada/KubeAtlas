@@ -76,10 +76,21 @@ func TestCloudBindingsRetainDeployedIdentitySubjects(t *testing.T) {
 	}
 	for _, flags := range []string{"cloud.systemRbac=false,cloud.aiRbac=false,cloud.defaultRbac.create=false", "rbac.create=false"} {
 		disabled := renderedCloudBindingDocuments(t, flags)
+		basic := map[string]string{}
 		for _, doc := range disabled {
 			if doc.Kind == "ClusterRoleBinding" && strings.HasPrefix(doc.Name, "kubeatlas-cloud-") {
-				t.Fatalf("opt-out %s retained %s", flags, doc.Name)
+				if flags != "rbac.create=false" {
+					t.Fatalf("opt-out %s retained %s", flags, doc.Name)
+				}
+				// Standard admin/edit/view bindings have their own defaultRbac
+				// switch; rbac.create only disables chart-owned add-on roles.
+				basic[doc.Name] = doc.RoleRef.Name
 			}
+		}
+		if flags == "rbac.create=false" && !reflect.DeepEqual(basic, map[string]string{
+			"kubeatlas-cloud-owner": "admin", "kubeatlas-cloud-member": "edit", "kubeatlas-cloud-viewer": "view",
+		}) {
+			t.Fatalf("rbac.create changed standard-role bindings or retained add-ons: %v", basic)
 		}
 	}
 }
