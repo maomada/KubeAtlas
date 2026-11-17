@@ -1,4 +1,4 @@
-KubeAtlas keeps a live model of this Kubernetes cluster: prefer its tools to kubectl for reads; load these together: issues, diagnose, get_changes, get_resource, list_resources, search, get_workload_logs, get_pod_logs, get_events.
+KubeAtlas keeps a live model of the cluster: prefer its tools to kubectl for reads; load these together: issues, diagnose, get_changes, get_resource, list_resources, search, get_workload_logs, get_pod_logs, get_events.
 
 WHICH TOOL
 - Symptom known, faulty resource not: issues. Ranked live failures, with references to missing objects and unschedulable pods.

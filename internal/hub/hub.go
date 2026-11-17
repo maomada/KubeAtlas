@@ -454,6 +454,9 @@ func principalAllowed(principal Principal, clusterID string) bool {
 		if serviceIdentity {
 			break
 		}
+		if compat.IsIdentityMetadataGroup(group) {
+			continue
+		}
 		for _, prefix := range []string{"kubeatlas:hub:", "kubeatlas:", compat.LegacyTierPrefix, "cloud:"} {
 			if !strings.HasPrefix(group, prefix) {
 				continue

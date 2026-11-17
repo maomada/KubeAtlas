@@ -161,6 +161,24 @@ func CanonicalReadReason(value string) string {
 	return value
 }
 
+// IsIdentityMetadataGroup recognizes existing identity metadata, never a role.
+// Values are preserved verbatim; callers still validate full identity shape.
+func IsIdentityMetadataGroup(group string) bool {
+	for _, prefix := range []string{"kubeatlas:", LegacyTierPrefix, "cloud:"} {
+		if !strings.HasPrefix(group, prefix) {
+			continue
+		}
+		value := strings.TrimPrefix(group, prefix)
+		for _, field := range []string{"org:", "user:", "idp:", "email:"} {
+			if strings.HasPrefix(value, field) && len(value) > len(field) {
+				return true
+			}
+		}
+		return false
+	}
+	return false
+}
+
 // OutboundIdentity keeps the deployed cluster RBAC vocabulary until Agents and
 // their bindings are upgraded together. Existing kubeatlas:hub roles are stable.
 func OutboundIdentity(username string, groups []string) (string, []string, bool) {
@@ -178,6 +196,9 @@ func OutboundIdentity(username string, groups []string) (string, []string, bool)
 	}
 	tier := ""
 	for _, group := range groups {
+		if IsIdentityMetadataGroup(group) {
+			continue
+		}
 		for _, prefix := range []string{"kubeatlas:hub:", "kubeatlas:", LegacyTierPrefix, "cloud:"} {
 			if !strings.HasPrefix(group, prefix) {
 				continue

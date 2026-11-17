@@ -350,7 +350,7 @@ func TestPrepareCloudUpgradePinsReleaseAndUpgradesToChartAppVersion(t *testing.T
 	if strings.Contains(prepared.TargetManifest(), "1.5.9-pinned") {
 		t.Fatal("target manifest retained the old image.tag pin")
 	}
-	if prepared.CurrentDeployment().Name != "kubeatlas-kubeatlas" || prepared.Deployment().Name != "kubeatlas-kubeatlas" {
+	if prepared.CurrentDeployment().Name != "kubeatlas" || prepared.Deployment().Name != "kubeatlas" {
 		t.Fatalf("workloads = current %+v, target %+v", prepared.CurrentDeployment(), prepared.Deployment())
 	}
 

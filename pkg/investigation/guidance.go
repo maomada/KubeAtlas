@@ -22,7 +22,7 @@ package investigation
 // GuidanceRouting says when to use KubeAtlas and which tool answers which
 // question. It names read tools only; GuidanceWriteRouting adds the write tools
 // where they are registered.
-const GuidanceRouting = `KubeAtlas keeps a live model of this Kubernetes cluster: prefer its tools to kubectl for reads; load these together: issues, diagnose, get_changes, get_resource, list_resources, search, get_workload_logs, get_pod_logs, get_events.
+const GuidanceRouting = `KubeAtlas keeps a live model of the cluster: prefer its tools to kubectl for reads; load these together: issues, diagnose, get_changes, get_resource, list_resources, search, get_workload_logs, get_pod_logs, get_events.
 
 WHICH TOOL
 - Symptom known, faulty resource not: issues. Ranked live failures, with references to missing objects and unschedulable pods.

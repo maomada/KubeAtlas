@@ -97,3 +97,34 @@ func TestDeployedBackgroundIdentityRetainsExactPair(t *testing.T) {
 		t.Fatal("exact background identity lost")
 	}
 }
+
+func TestIdentityMetadataDoesNotBecomeATierOrChangeKubernetesGroups(t *testing.T) {
+	for _, prefix := range []string{"kubeatlas:", LegacyTierPrefix, "cloud:"} {
+		for _, field := range []string{"org:", "user:", "idp:", "email:"} {
+			metadata := prefix + field + "fixture"
+			if !IsIdentityMetadataGroup(metadata) {
+				t.Fatalf("defined metadata rejected:%s", metadata)
+			}
+			original := []string{metadata, "custom-k8s-group", "kubeatlas:hub:viewer"}
+			user, groups, ok := OutboundIdentity("fixture", original)
+			if !ok || user != "fixture" || len(groups) != 4 || groups[0] != metadata || groups[1] != original[1] || groups[2] != original[2] || groups[3] != LegacyTierPrefix+"viewer" {
+				t.Fatalf("metadata or Kubernetes group changed:%v", groups)
+			}
+			if original[0] != metadata || len(original) != 3 {
+				t.Fatal("input groups mutated")
+			}
+			if IsIdentityMetadataGroup(prefix + field) {
+				t.Fatal("empty identity metadata accepted")
+			}
+			if _, _, ok := OutboundIdentity("fixture", []string{prefix + field, "kubeatlas:hub:viewer"}); ok {
+				t.Fatal("empty metadata plus tier accepted")
+			}
+		}
+		if IsIdentityMetadataGroup(prefix + "evil") {
+			t.Fatal("unknown field classified as metadata")
+		}
+		if _, _, ok := OutboundIdentity("fixture", []string{prefix + "evil", "kubeatlas:hub:viewer"}); ok {
+			t.Fatal("unknown group plus tier accepted")
+		}
+	}
+}

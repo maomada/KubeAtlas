@@ -48,3 +48,20 @@ func TestPrincipalReservedTierNamespacesRemainClosed(t *testing.T) {
 		t.Fatal("Kubernetes reserved group accepted")
 	}
 }
+
+func TestPrincipalIdentityMetadataIsNotAnUnknownRole(t *testing.T) {
+	for _, prefix := range []string{"kubeatlas:", compat.LegacyTierPrefix, "cloud:"} {
+		for _, field := range []string{"org:", "user:", "idp:", "email:"} {
+			metadata := prefix + field + "fixture"
+			for _, groups := range [][]string{{metadata}, {metadata, "kubeatlas:hub:viewer"}} {
+				p := Principal{UserID: "fixture", Groups: groups, ClusterIDs: []string{"alpha"}}
+				if !principalAllowed(p, "alpha") {
+					t.Fatalf("defined metadata rejected:%v", groups)
+				}
+			}
+			if principalAllowed(Principal{UserID: "fixture", Groups: []string{prefix + field, "kubeatlas:hub:viewer"}, ClusterIDs: []string{"alpha"}}, "alpha") {
+				t.Fatal("empty identity metadata accepted")
+			}
+		}
+	}
+}
