@@ -37,12 +37,12 @@ it('submits email and password once, reports pending, and does not create a sess
   const email = host.querySelector<HTMLInputElement>('input[type="email"]')!
   const password = host.querySelector<HTMLInputElement>('input[type="password"]')!
   await act(async () => setValue(email, 'person@example.test'))
-  await act(async () => setValue(password, 'strong-password-123'))
+  await act(async () => setValue(password, 'abc123'))
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   await act(async () => vi.waitFor(() => expect(host.textContent).toContain('注册申请已提交')))
   const registration = fetch.mock.calls.find(([url]) => String(url) === '/api/auth/register')
   expect(registration?.[1]?.method).toBe('POST')
-  expect(JSON.parse(registration?.[1]?.body as string)).toEqual({ email: 'person@example.test', password: 'strong-password-123' })
+  expect(JSON.parse(registration?.[1]?.body as string)).toEqual({ email: 'person@example.test', password: 'abc123' })
   expect(fetch.mock.calls.some(([url]) => String(url) === '/api/auth/session' || String(url) === '/api/auth/login')).toBe(false)
   expect(host.querySelector('input[type="password"]')).toBeNull()
   expect(host.querySelector('a[href="/login"]')).not.toBeNull()
@@ -59,14 +59,14 @@ it('fails closed when registration is disabled or provider configuration is unav
     })
     vi.stubGlobal('fetch', fetch)
     await act(async () => root.render(<Register key={providerResponse.status} />))
-    const expected = providerResponse.status === 200 ? '未开放公开注册' : '认证选项不可用'
+    const expected = providerResponse.status === 200 ? '暂未开放注册' : '认证选项不可用'
     await act(async () => vi.waitFor(() => expect(host.textContent).toContain(expected)))
     expect(host.querySelector('form')).toBeNull()
     expect(fetch.mock.calls.some(([url]) => String(url) === '/api/auth/register')).toBe(false)
   }
 })
 
-it('rejects passwords over the bcrypt UTF-8 byte bound before posting', async () => {
+it('keeps submission available and focuses an invalid password without posting', async () => {
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     if (String(input) === '/api/auth/providers') return response({ registrationEnabled: true })
     throw new Error('Unexpected request: ' + String(input))
@@ -77,21 +77,28 @@ it('rejects passwords over the bcrypt UTF-8 byte bound before posting', async ()
   const email = host.querySelector<HTMLInputElement>('input[type="email"]')!
   const password = host.querySelector<HTMLInputElement>('input[type="password"]')!
   await act(async () => setValue(email, 'person@example.test'))
+  await act(async () => setValue(password, 'abcde'))
+  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
+  expect(password.getAttribute('aria-invalid')).toBe('false')
+  await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  await act(async () => vi.waitFor(() => expect(document.activeElement).toBe(password)))
+  expect(host.textContent).toContain('密码至少需要 6 个字符')
+  expect(password.getAttribute('aria-invalid')).toBe('true')
+  await act(async () => setValue(password, '😀'.repeat(6)))
+  expect(password.getAttribute('aria-invalid')).toBe('false')
   await act(async () => setValue(password, 'é'.repeat(37)))
   expect(new TextEncoder().encode(password.value).length).toBe(74)
-  expect(host.querySelector('[role="alert"]')?.textContent).toContain('UTF-8 编码超过 72 字节')
-  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true)
-  await act(async () => setValue(password, '😀'.repeat(11)))
-  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(true)
-  await act(async () => setValue(password, '😀'.repeat(12)))
-  expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
+  expect(host.textContent).not.toContain('密码过长')
+  await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  expect(host.textContent).toContain('密码过长，请缩短后重试')
   await act(async () => setValue(password, 'é'.repeat(36)))
   expect(new TextEncoder().encode(password.value).length).toBe(72)
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
+  expect(password.getAttribute('aria-invalid')).toBe('false')
   expect(fetch.mock.calls.some(([url]) => String(url) === '/api/auth/register')).toBe(false)
 })
 
-it('clears a failed registration password and shows structured server details', async () => {
+it('clears a failed registration password and gives a concise recovery message', async () => {
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     if (String(input) === '/api/auth/providers') return response({ registrationEnabled: true })
     if (String(input) === '/api/auth/register') return response({ error_code: 'registration_closed', message: 'Registration is unavailable', requestId: 'req-42' }, 503)
@@ -104,8 +111,23 @@ it('clears a failed registration password and shows structured server details', 
   const password = host.querySelector<HTMLInputElement>('input[type="password"]')!
   await act(async () => setValue(password, 'strong-password-123'))
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
-  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('req-42')))
-  expect(host.textContent).toContain('registration_closed')
-  expect(host.textContent).toContain('Registration is unavailable')
+  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('暂未开放注册，请联系管理员')))
+  expect(host.textContent).not.toContain('registration_closed')
+  expect(host.textContent).not.toContain('req-42')
   expect(host.querySelector<HTMLInputElement>('input[type="password"]')?.value).toBe('')
+})
+
+it('distinguishes exhausted registration capacity from an existing email', async () => {
+  vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(async input => {
+    if (String(input) === '/api/auth/providers') return response({ registrationEnabled: true })
+    if (String(input) === '/api/auth/register') return response({ error_code: 'capacity_exceeded' }, 409)
+    throw new Error('Unexpected request')
+  }))
+  await act(async () => root.render(<Register />))
+  await act(async () => vi.waitFor(() => expect(host.querySelector('form')).not.toBeNull()))
+  await act(async () => setValue(host.querySelector<HTMLInputElement>('input[type="email"]')!, 'person@example.test'))
+  await act(async () => setValue(host.querySelector<HTMLInputElement>('input[type="password"]')!, 'abc123'))
+  await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('注册名额已满，请联系管理员')))
+  expect(host.textContent).not.toContain('该邮箱已注册')
 })

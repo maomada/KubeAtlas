@@ -20,23 +20,29 @@ func postRegistration(h *Handler, body []byte) *httptest.ResponseRecorder {
 	return response
 }
 
-func TestRegistrationRequiresTwelveUnicodeCharactersAndAtMost72Bytes(t *testing.T) {
+func TestRegistrationRequiresSixUnicodeCharactersAndAtMost72Bytes(t *testing.T) {
 	for _, test := range []struct {
 		password string
 		valid    bool
 	}{
-		{strings.Repeat("é", 12), true},
+		{"abcde", false},
+		{"abcdef", true},
+		{strings.Repeat("é", 5), false},
+		{strings.Repeat("é", 6), true},
+		{strings.Repeat("💩", 5), false},
+		{strings.Repeat("💩", 6), true},
 		{strings.Repeat("💩", 18), true},
-		{strings.Repeat("💩", 11), false},
 		{strings.Repeat("💩", 19), false},
-		{string([]byte{0xff}) + strings.Repeat("a", 12), false},
+		{strings.Repeat("a", 72), true},
+		{strings.Repeat("a", 73), false},
+		{string([]byte{0xff}) + strings.Repeat("a", 6), false},
 	} {
 		if got := validRegistrationPassword(test.password); got != test.valid {
 			t.Errorf("password bytes=%d, valid=%v; want %v", len(test.password), got, test.valid)
 		}
 	}
 	h, statePath := newPortalHubFixture(t, false)
-	password := strings.Repeat("💩", 12)
+	password := strings.Repeat("💩", 6)
 	body, err := json.Marshal(map[string]string{"email": " Alice@Example.COM ", "password": password})
 	if err != nil {
 		t.Fatal(err)
@@ -70,5 +76,40 @@ func TestRegistrationRequiresTwelveUnicodeCharactersAndAtMost72Bytes(t *testing.
 	}
 	if got := postRegistration(h, []byte("{\"email\":\"a@example.com\",\"email\":\"b@example.com\",\"password\":\"123456789012\"}")).Code; got != http.StatusBadRequest {
 		t.Fatalf("duplicate JSON key status=%d", got)
+	}
+}
+
+func TestRegistrationHTTPAcceptsSixCharactersAndRejectsFive(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		password string
+		status   int
+	}{
+		{"five ASCII characters", "abcde", http.StatusBadRequest},
+		{"six ASCII characters", "abcdef", http.StatusCreated},
+		{"five Unicode characters", strings.Repeat("😀", 5), http.StatusBadRequest},
+		{"six Unicode characters", strings.Repeat("😀", 6), http.StatusCreated},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			h, _ := newPortalHubFixture(t, false)
+			body, err := json.Marshal(map[string]string{"email": "boundary@example.test", "password": test.password})
+			if err != nil {
+				t.Fatal(err)
+			}
+			response := postRegistration(h, body)
+			if response.Code != test.status {
+				t.Fatalf("registration status=%d, want %d", response.Code, test.status)
+			}
+			if len(response.Result().Cookies()) != 0 {
+				t.Fatal("registration created a session")
+			}
+			account, exists := h.liveHub.store.AccountByEmail("boundary@example.test")
+			if exists != (test.status == http.StatusCreated) {
+				t.Fatalf("account exists=%v, want %v", exists, test.status == http.StatusCreated)
+			}
+			if exists && (account.Status != "pending" || len(h.liveHub.store.OrganizationsForAccount(account.ID)) != 0) {
+				t.Fatal("registration bypassed approval or assigned organization access")
+			}
+		})
 	}
 }

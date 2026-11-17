@@ -509,7 +509,7 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 }
 
 func validRegistrationPassword(password string) bool {
-	return utf8.ValidString(password) && utf8.RuneCountInString(password) >= 12 && len(password) <= 72
+	return utf8.ValidString(password) && utf8.RuneCountInString(password) >= 6 && len(password) <= 72
 }
 
 func (h *Handler) logout(w http.ResponseWriter, r *http.Request) {

@@ -232,11 +232,10 @@ export function CloudSSO() {
   if (configuration.error) return <CloudError error={configuration.error} retry={() => { void configuration.refetch() }} />
   const sso = configuration.data
   if (!sso) return null
-  return <div className="cloud-page cloud-narrow"><div className="cloud-page-heading"><div><h1>身份提供方</h1><p>查看自托管 Hub 的 OIDC 配置与审批边界。</p></div></div>
-    <section className="cloud-card"><h2>OIDC 配置</h2><p>配置已启用不代表身份提供方当前可用；这不是健康状态检查。</p><p>状态：{sso.enabled ? '已配置' : '未启用'}</p>
-      <dl className="cloud-sso-details"><dt>签发方（Issuer）</dt><dd>{sso.issuer || '未配置'}</dd><dt>客户端 ID</dt><dd>{sso.clientId || '未配置'}</dd><dt>回调地址</dt><dd>{sso.redirectUrl || '未配置'}</dd><dt>新账号开通</dt><dd>需平台 Owner 审批并分配组织成员资格</dd><dt>目录同步</dt><dd>{sso.directorySync ? '已配置' : '未启用'}</dd><dt>后端通道退出登录</dt><dd>{sso.backchannelLogout ? '已配置' : '未启用'}</dd></dl>
+  return <div className="cloud-page cloud-narrow"><div className="cloud-page-heading"><div><h1>单点登录</h1><p>使用组织身份提供方登录。</p></div></div>
+    <section className="cloud-card"><h2>OIDC 配置</h2><p>状态：{sso.enabled ? '已配置' : '未配置'}</p>
+      <dl className="cloud-sso-details"><dt>签发方（Issuer）</dt><dd>{sso.issuer || '未配置'}</dd><dt>客户端 ID</dt><dd>{sso.clientId || '未配置'}</dd><dt>回调地址</dt><dd>{sso.redirectUrl || '未配置'}</dd></dl>
       {sso.enabled && <p><a className="cloud-button mt-4" href="/api/auth/oidc/login">前往组织 SSO 登录</a></p>}
     </section>
-    <section className="cloud-card"><h2>同步与会话限制</h2><p>外部目录组不会自动成为 Hub 组织成员资格；新账号仍需平台 Owner 审批。组织成员和角色由 Hub 管理。</p><p>身份提供方退出不会立即撤销现有 Hub 会话或 MCP Token。</p><p>本页只显示服务器提供的配置，不提供私有 CA 上传或信任设置。</p></section>
   </div>
 }

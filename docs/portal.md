@@ -51,7 +51,7 @@ The local owner account is configured with
 `KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD`. The username must
 be 1–256 bytes without a colon or control characters, and the password must be
 16–4096 bytes; these existing recovery-login limits are unchanged. Public
-registration has a separate rule: passwords must contain at least 12 Unicode
+registration has a separate rule: passwords must contain at least 6 Unicode
 scalar values, be valid UTF-8, and contain at most 72 UTF-8 bytes because
 passwords are hashed with bcrypt. The owner can configure the organization,
 manage members and cluster assignments, and issue or revoke scoped MCP

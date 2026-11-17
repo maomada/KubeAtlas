@@ -56,6 +56,27 @@ it('generates an OpenCode environment reference, rejects credential-bearing URLs
   expect(credentialStatus({ ...credential, expiresAt: 'invalid' }, 0)).toBe('unknown')
 })
 
+it('distinguishes identically named clusters before issuing a scoped credential', async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>(async (input, init) => {
+    const url = String(input)
+    if (url === '/api/hub/connections') return response({ lanURL: 'https://hub.example.test', publicURL: '' })
+    if (url === '/api/hub') return response({ enabled: true })
+    if (url === '/api/hub/clusters') return response({ clusters: [{ id: 'east', name: 'Same name' }, { id: 'west', name: 'Same name' }] })
+    if (init?.method === 'POST') return response({ credential: { ...credential, clusterIds: ['west'] }, token: 'unit-test-only-token' })
+    return response({ credentials: [], serverTime: credential.createdAt })
+  })
+  vi.stubGlobal('fetch', fetch)
+  await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials organizationId="org-1" organizationName="Example organization" /></ConnectionProfilesProvider>))
+  const choices = host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]')
+  expect(choices).toHaveLength(2)
+  expect(choices[0].labels?.[0].textContent).toContain('Same name · east')
+  expect(choices[1].labels?.[0].textContent).toContain('Same name · west')
+  await act(async () => choices[1].click())
+  await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  const post = fetch.mock.calls.find(([, init]) => init?.method === 'POST')
+  expect(JSON.parse(post?.[1]?.body as string).clusterIds).toEqual(['west'])
+})
+
 it('issues scoped credentials once, hides the secret after dismissal, and confirms revocation', async () => {
   let records: MCPCredential[] = []
   const fetch = vi.fn((url: string, options?: RequestInit) => {
@@ -80,8 +101,7 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   const post = fetch.mock.calls.find(([, options]) => options?.method === 'POST')!
   expect(JSON.parse(post[1]!.body as string)).toEqual({ label: 'OpenCode', clusterIds: ['east'], readOnly: true, ttlSeconds: 28800 })
-  expect(host.textContent).toContain('不可变组织范围：Example organization')
-  expect(host.textContent).toContain('org-1')
+  expect(host.textContent).toContain('当前组织：Example organization')
   expect(host.querySelector<HTMLInputElement>('[aria-label="新生成的 MCP Token"]')!.type).toBe('password')
   expect(host.textContent).toContain('原文仅此次可见')
   expect(host.querySelector('pre')!.textContent).not.toContain('unit-test-token')

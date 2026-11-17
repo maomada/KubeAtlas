@@ -193,7 +193,7 @@ it('does not fetch member records for viewers or pending identities', async () =
   expect(fetch).not.toHaveBeenCalled()
 })
 
-it('loads OIDC response details, fixed login link, approval boundary, and sync limitations', async () => {
+it('loads OIDC response details and the fixed login link', async () => {
   const configuration = {
     enabled: true,
     issuer: 'https://issuer.example.test',
@@ -213,12 +213,7 @@ it('loads OIDC response details, fixed login link, approval boundary, and sync l
   expect(fetch.mock.calls[0]?.[0]).toBe('/api/hub/sso')
   expect(host.textContent).toContain('portal-client')
   expect(host.textContent).toContain('https://hub.example.test/api/auth/oidc/callback')
-  expect(host.textContent).toContain('配置已启用不代表身份提供方当前可用')
-  expect(host.textContent).toContain('目录同步')
   expect(host.textContent).not.toContain('\uFFFD')
-  expect(host.textContent).toContain('需平台 Owner 审批并分配组织成员资格')
-  expect(host.textContent).toContain('外部目录组不会自动成为 Hub 组织成员资格')
-  expect(host.textContent).toContain('身份提供方退出不会立即撤销现有 Hub 会话或 MCP Token')
   expect(host.querySelector('a[href="/api/auth/oidc/login"]')).not.toBeNull()
   expect(host.querySelector('input')).toBeNull()
 })
