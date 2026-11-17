@@ -1,16 +1,42 @@
 package k8s
 
 import (
+	"io"
 	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/maomada/KubeAtlas/pkg/compat"
 	rbacv1 "k8s.io/api/rbac/v1"
+	yamlutil "k8s.io/apimachinery/pkg/util/yaml"
 )
 
+func renderedCloudBindingDocuments(t *testing.T, overrides string) []integrationRBACDocument {
+	t.Helper()
+	rendered, _ := renderIntegrationReadChart(t, overrides, false, false)
+	var documents []integrationRBACDocument
+	for name, content := range rendered {
+		if !strings.HasPrefix(name, "kubeatlas/templates/cloud-rbac") {
+			continue
+		}
+		decoder := yamlutil.NewYAMLOrJSONDecoder(strings.NewReader(content), 4096)
+		for {
+			var document integrationRBACDocument
+			if err := decoder.Decode(&document); err == io.EOF {
+				break
+			} else if err != nil {
+				t.Fatal(err)
+			}
+			if document.Kind != "" {
+				documents = append(documents, document)
+			}
+		}
+	}
+	return documents
+}
+
 func TestCloudBindingsRetainDeployedIdentitySubjects(t *testing.T) {
-	_, docs := renderIntegrationReadChart(t, "cloud.systemRbac=true,cloud.aiRbac=true,rbac.helm=true,cloud.defaultRbac.nodeOps=true", false, false)
+	docs := renderedCloudBindingDocuments(t, "cloud.systemRbac=true,cloud.aiRbac=true,rbac.helm=true,cloud.defaultRbac.nodeOps=true")
 	counts := map[string]int{}
 	for _, doc := range docs {
 		if doc.Kind != "ClusterRoleBinding" || !strings.HasPrefix(doc.Name, "kubeatlas-cloud-") {
@@ -49,7 +75,7 @@ func TestCloudBindingsRetainDeployedIdentitySubjects(t *testing.T) {
 		t.Fatalf("missing or unexpected Cloud bindings: %v", counts)
 	}
 	for _, flags := range []string{"cloud.systemRbac=false,cloud.aiRbac=false,cloud.defaultRbac.create=false", "rbac.create=false"} {
-		_, disabled := renderIntegrationReadChart(t, flags, false, false)
+		disabled := renderedCloudBindingDocuments(t, flags)
 		for _, doc := range disabled {
 			if doc.Kind == "ClusterRoleBinding" && strings.HasPrefix(doc.Name, "kubeatlas-cloud-") {
 				t.Fatalf("opt-out %s retained %s", flags, doc.Name)
