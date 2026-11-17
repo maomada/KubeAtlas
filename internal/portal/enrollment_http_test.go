@@ -576,7 +576,7 @@ func TestEnrollmentHTTPRevalidatesApproverBeforeIssuance(t *testing.T) {
 	}
 }
 
-func TestEnrollmentHTTPTransferRequiresFreshReenrollment(t *testing.T) {
+func TestEnrollmentHTTPRevokedClusterTransferRequiresFreshReenrollment(t *testing.T) {
 	h, localCookie := newEnrollmentHTTPFixture(t)
 	created := createEnrollmentHTTP(t, h, "")
 	if approved := enrollmentApprove(t, h, localCookie, created.ID, created.UserCode, "self-hosted", ""); approved.Code != http.StatusOK {
@@ -588,6 +588,11 @@ func TestEnrollmentHTTPTransferRequiresFreshReenrollment(t *testing.T) {
 	if _, err := h.liveHub.store.AuthenticateAgent(first.AgentToken, first.ClusterID); err != nil {
 		t.Fatalf("initial agent token did not authenticate: %v", err)
 	}
+	if err := h.liveHub.store.RevokeAgentTokenForOrganization("self-hosted", first.ClusterID); err != nil {
+		t.Fatal(err)
+	}
+	oldApproval := createEnrollmentHTTP(t, h, "")
+	assertEnrollmentStatus(t, enrollmentApprove(t, h, localCookie, oldApproval.ID, oldApproval.UserCode, "self-hosted", first.ClusterID), http.StatusOK)
 
 	organizationResponse := enrollmentHTTP(h, localCookie, http.MethodPost, "/api/hub/organizations",
 		"{\"name\":\"Transferred\",\"ownerMemberId\":\"local\"}", nil, nil, "")
@@ -598,6 +603,9 @@ func TestEnrollmentHTTPTransferRequiresFreshReenrollment(t *testing.T) {
 	transfer := enrollmentHTTP(h, localCookie, http.MethodPost, "/api/hub/clusters/"+first.ClusterID+"/transfer",
 		"{\"organizationId\":\""+organization.ID+"\"}", nil, nil, "")
 	assertEnrollmentStatus(t, transfer, http.StatusOK)
+	staleClaim := enrollmentClaim(t, h, oldApproval.ID, oldApproval.DeviceSecret)
+	assertEnrollmentStatus(t, staleClaim, http.StatusConflict)
+	assertNoEnrollmentSecrets(t, staleClaim)
 	selectOrg := enrollmentHTTP(h, localCookie, http.MethodPost, "/api/hub/organization/select",
 		"{\"organizationId\":\""+organization.ID+"\"}", nil, nil, "")
 	assertEnrollmentStatus(t, selectOrg, http.StatusNoContent)

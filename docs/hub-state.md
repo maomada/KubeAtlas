@@ -123,8 +123,11 @@ writers can alter grants; protect it and its backups as authentication state.
   text cannot be whitespace-only.
 - `UpdateCluster` requires the input ID to equal the addressed ID. Agent token
   rotation preserves identity only for a cluster with an active token; it
-  cannot restore a revoked or transferred cluster. Those clusters require a
-  fresh approved enrollment and one-time claim.
+  cannot restore a revoked cluster, which requires a fresh approved enrollment
+  and one-time claim. Organization transfer preserves the Agent digest and its
+  existing revocation state. Active Agents reconnect using their original token;
+  a transfer never reactivates an already revoked Agent. The original
+  organization's group/member scopes and affected PATs are invalidated.
 - Group members must be unique, known cluster IDs and are sorted when saved.
   An empty group is valid and means **no clusters**, never all clusters.
 - Group changes do not expand existing PAT grants. PATs store explicit cluster

@@ -175,7 +175,9 @@ it('transfers any cluster to a selected third organization using the frozen resp
   await act(async () => [...clusterArticle.querySelectorAll('button')].find(button => button.textContent === '转移')!.click())
   const dialog = document.querySelector('[role="dialog"]')!
   expect(dialog.textContent).toContain('Organization One')
-  expect(dialog.textContent).toContain('远端 Secret 保持不变')
+  expect(dialog.textContent).toContain('Agent 会自动重连，无需重新配对')
+  expect(dialog.textContent).toContain('原组织的访问权限和相关 MCP 凭据将失效')
+  expect(dialog.textContent).not.toContain('必须明确批准重新配对')
   const target = dialog.querySelector<HTMLSelectElement>('[aria-label="转移目标组织"]')!
   expect([...target.options].map(option => option.value)).toContain('org-3')
   await act(async () => setValue(target, 'org-3'))
@@ -184,4 +186,31 @@ it('transfers any cluster to a selected third organization using the frozen resp
   expect(JSON.parse(request?.[1]?.body as string)).toEqual({ organizationId: 'org-3' })
   await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-platform-cluster')?.textContent).toContain('Organization Three')))
   expect(fetch.mock.calls.filter(([url, init]) => String(url) === '/api/hub/platform/clusters' && init?.method === 'GET').length).toBeGreaterThanOrEqual(2)
+})
+
+it('keeps a previously revoked cluster revoked when only its organization changes', async () => {
+  const revoked = { ...cluster, state: 'revoked' as const, revokedAt: '2026-01-01T00:00:00Z' }
+  let currentCluster = revoked
+  const fetch = stubDirectory((path, init) => {
+    if (path === '/api/hub/clusters/cluster-1/transfer' && init?.method === 'POST') {
+      currentCluster = { ...revoked, organizationId: 'org-3' }
+      return response({ cluster: currentCluster })
+    }
+    throw new Error('Unexpected request: ' + path)
+  }, () => users, () => organizations, () => [currentCluster])
+  await renderPlatform()
+  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('East cluster')))
+  const article = host.querySelector('.cloud-platform-cluster')!
+  await act(async () => [...article.querySelectorAll('button')].find(button => button.textContent === '转移')!.click())
+  const dialog = document.querySelector('[role="dialog"]')!
+  expect(dialog.textContent).toContain('此集群已撤销，本次仅变更归属')
+  expect(dialog.textContent).not.toContain('Agent 会自动重连')
+  await act(async () => setValue(dialog.querySelector<HTMLSelectElement>('[aria-label="转移目标组织"]')!, 'org-3'))
+  await act(async () => [...dialog.querySelectorAll('button')].find(button => button.textContent === '确认转移')!.click())
+  await act(async () => vi.waitFor(() => expect(host.querySelector('.cloud-platform-cluster')?.textContent).toContain('Organization Three')))
+  expect(host.querySelector('.cloud-platform-cluster')?.textContent).toContain('已撤销')
+  const posts = fetch.mock.calls.filter(([, init]) => init?.method === 'POST')
+  expect(posts).toHaveLength(1)
+  expect(posts[0][0]).toBe('/api/hub/clusters/cluster-1/transfer')
+  expect(JSON.parse(posts[0][1]!.body as string)).toEqual({ organizationId: 'org-3' })
 })
