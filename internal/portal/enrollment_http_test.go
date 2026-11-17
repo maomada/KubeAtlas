@@ -543,6 +543,7 @@ func TestEnrollmentHTTPRevalidatesApproverBeforeIssuance(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			h, _ := newEnrollmentHTTPFixture(t)
 			ownerID, ownerCookie := addEnrollmentAccount(t, h, "owner", "active")
+			addEnrollmentAccount(t, h, "owner", "active")
 			if test.clusterID != "" {
 				if _, err := h.liveHub.store.CreateClusterForOrganization("self-hosted", hubstate.ClusterInput{ID: test.clusterID, Name: test.clusterID}); err != nil {
 					t.Fatal(err)
