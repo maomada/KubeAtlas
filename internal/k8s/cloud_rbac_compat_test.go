@@ -25,7 +25,7 @@ func renderedCloudBindingDocuments(t *testing.T, overrides string) []integration
 			if err := decoder.Decode(&document); err == io.EOF {
 				break
 			} else if err != nil {
-				t.Fatal(err)
+				t.Fatalf("parse %s: %v", name, err)
 			}
 			if document.Kind != "" {
 				documents = append(documents, document)
