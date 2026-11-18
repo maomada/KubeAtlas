@@ -1,19 +1,15 @@
-## Description
+## Summary
 
-Brief description of the changes in this PR.
+Describe the problem and what changed. Link the related issue or discussion.
 
-## Type of change
+## Verification
 
-- [ ] Bug fix (non-breaking change that fixes an issue)
-- [ ] New feature (non-breaking change that adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to change)
-- [ ] Documentation update
+List the checks you ran, their results, and any upgrade or compatibility impact.
 
-## How has this been tested?
+<details>
+<summary>Maintainer verification</summary>
 
-### Engineering handoff
-
-Follow [the engineering workflow](../docs/engineering-workflow.md).
+Follow [the engineering workflow](https://github.com/maomada/KubeAtlas/blob/main/docs/engineering-workflow.md).
 
 - Scope/non-goals and task contract:
 - Base / PR head / tested merge SHA (full):
@@ -24,20 +20,4 @@ Follow [the engineering workflow](../docs/engineering-workflow.md).
 - Failed, blocked, untested cases and unresolved risks:
 - Owned resources / cleanup result / processes to reuse / next owner:
 
-Describe the tests you ran to verify your changes.
-
-- [ ] Tested locally with minikube/kind
-- [ ] Tested against a remote cluster
-- [ ] Added/updated unit tests
-
-## Checklist
-
-- [ ] My code follows the project's coding standards
-- [ ] I have performed a self-review of my code
-- [ ] I have added comments where necessary
-- [ ] My changes generate no new warnings
-- [ ] Any dependent changes have been merged
-
-## Related issues
-
-Fixes #(issue number)
+</details>
