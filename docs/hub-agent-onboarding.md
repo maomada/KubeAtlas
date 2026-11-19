@@ -56,6 +56,38 @@ Enrollment requests expire after about ten minutes. The device secret is never s
 
 The token is passed to `kubectl` only as a file path and is stored in a Secret mounted into the Agent as a file. It is never included in an argument value, URL, Helm release values, artifact, or generated log. Optional CA material is stored separately. The Agent chart requires the selected Hub origin, cluster ID, pinned image digest, token Secret, proxy authentication, and MCP; legacy `cloud.enabled` remains unavailable.
 
+For an HTTP Hub, bootstrap checks registry trust before creating an enrollment,
+and the installer repeats the check before Kubernetes writes. A blocking result
+requires proof that the selected cluster has exactly one Docker node, its boot
+identity matches this Linux host, and the explicitly selected local Unix Docker
+daemon has the node's name and kernel. Docker client host/context overrides are
+not used. The exact registry authority must be explicitly insecure or its IP
+must fall in a configured insecure-registry CIDR. If the client is remote,
+the cluster has multiple nodes, or the runtime/identity/policy is unavailable,
+the scripts explain the node-side prerequisite without treating client Docker
+settings as evidence for those nodes. This is a read-only preflight, not an image
+pull or an automatic runtime change.
+
+On a verified local Docker node with missing HTTP trust, ask its administrator to
+preserve the existing daemon settings and allow only the displayed authority.
+Validate the daemon's actual configuration before reloading it. Docker 24
+supports a SIGHUP reload of insecure registries; for a systemd `docker.service`,
+`sudo systemctl kill --kill-who=main --signal=HUP docker.service` sends that
+reload signal without restarting the service. Verify the resulting registry
+policy with `docker info`, then run the platform-generated command again.
+The scripts only print this guidance; they do not edit daemon settings or send
+signals. HTTPS still requires each node to trust the registry certificate.
+
+If a failure occurs after claiming enrollment, the one-time claim may already
+have created a Hub cluster record. Recovery output identifies the cluster,
+context, namespace and release without displaying credentials. Inspect that
+record and verify the displayed cluster identity before working on any retained
+resources. A Helm failure preserves partial resources for reconciliation; a
+fresh installer refuses to adopt their namespace. Resolve the existing install
+or explicitly approve a fresh pairing. The bootstrap deletes its temporary
+credential files and does not replay an approved claim or automatically delete
+existing resources.
+
 Hub mode binds `cluster-admin` only to the exact local Hub owner `User` identity returned by the Hub. It also binds the organization groups `kubeatlas:hub:owner`, `kubeatlas:hub:member`, and `kubeatlas:hub:viewer` to Kubernetes `admin`, `edit`, and `view`, respectively, plus a limited infrastructure-read role for get/list/watch on nodes, namespaces, storage classes, PVs, and PVCs—not Secrets or `nodes/proxy`. Those groups do not receive `cluster-admin`. Existing Agent deployments require an operator-controlled chart/Helm rollout to apply the new role bindings; the Hub does not change remote RBAC or Agent token Secrets. The Agent ServiceAccount also has Kubernetes impersonation permissions; possession of its token is highly privileged because Kubernetes cannot scope impersonation to a safe username/group set. Review the chart's RBAC and node image-pull trust before installation.
 
 Helm success means only that resources were deployed. Verify that the cluster reports Connected after the Agent authenticates. Rotation is available only while a cluster's token is active and invalidates the previous token; update the Secret file and restart the Agent. Revoked or transferred clusters cannot be rotated back to active: approve and claim a fresh pairing. Losing a claim response also requires a fresh pairing because the token cannot be recovered. There is no automatic Agent upgrade or Hub-side cluster, Secret, or RBAC mutation.

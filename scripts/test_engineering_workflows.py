@@ -115,6 +115,18 @@ class EngineeringWorkflowTests(unittest.TestCase):
         return (selected_by_patterns(path, ci_filter_patterns(self.ci, "ci"))
                 or selected_by_patterns(path, ci_filter_patterns(self.ci, selector)))
 
+    def test_hub_onboarding_shell_regressions_do_not_depend_on_go_path_selection(self):
+        # Script-only fixes must exercise the installer behavior even when the
+        # Go/backend path selector correctly omits unrelated compilation.
+        for path in ("scripts/bootstrap-hub-agent.sh", "scripts/install-hub-agent.sh"):
+            self.assertFalse(self.ci_selected("go", path))
+        job = job_block(self.ci, "engineering-tests")
+        self.assertNotRegex(job.split("    steps:", 1)[0], r"(?m)^\s+if:")
+        script = workflow_step_script(self.ci, "Run Hub Agent onboarding regressions")
+        self.assertIn("bash scripts/test-hub-agent-bootstrap.sh\n", script)
+        self.assertIn("bash scripts/test-hub-agent-installer.sh\n", script)
+        self.assertNotRegex(job, r"(?m)^\s+if:")
+
     def test_central_package_paths_cover_distribution_contracts(self):
         self.assertEqual(self.patterns(), EXPECTED_PACKAGE_PATHS)
         for path in (
