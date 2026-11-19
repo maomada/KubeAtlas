@@ -4,7 +4,10 @@ import (
 	"context"
 	"github.com/maomada/KubeAtlas/pkg/compat"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
+	"strconv"
+	"strings"
 	"testing"
 	"time"
 )
@@ -63,6 +66,83 @@ func TestSignedLegacySessionRotationAndMixedIdentityDenial(t *testing.T) {
 	}
 	if !seen[DefaultCookieName] || !seen[compat.LegacySessionCookie] || !seen[compat.LegacySessionCookie+cookieChunkCountSuffix] {
 		t.Fatal("logout left old session representation")
+	}
+}
+
+func TestLegacyChunkedSessionRefreshSurvivesCookieJar(t *testing.T) {
+	const secret = "fixture-signing-key"
+	for _, secure := range []bool{false, true} {
+		scheme := "http"
+		if secure {
+			scheme = "https"
+		}
+		for _, target := range []struct {
+			name string
+			user *User
+		}{
+			{"single", &User{Username: "alice@example.com", Groups: []string{"devs"}}},
+			{"chunked", hugeUser()},
+		} {
+			t.Run(scheme+"/"+target.name, func(t *testing.T) {
+				jar, err := cookiejar.New(nil)
+				if err != nil {
+					t.Fatal(err)
+				}
+				url := httptest.NewRequest(http.MethodGet, scheme+"://example.test/", nil).URL
+				request := func() *http.Request {
+					r := httptest.NewRequest(http.MethodGet, url.String(), nil)
+					for _, cookie := range jar.Cookies(url) {
+						r.AddCookie(cookie)
+					}
+					return r
+				}
+				oldUser := hugeUser()
+				sid := NewSessionID()
+				value := buildCookieValue(cookiePayload{
+					Username: oldUser.Username, Groups: oldUser.Groups,
+					SID: sid, ExpiresAt: time.Now().Add(time.Hour).Unix(),
+				}, secret)
+				jar.SetCookies(url, createChunkedCookies(compat.LegacySessionCookie, value, time.Hour, secure))
+				if got := ParseSessionCookie(request(), secret); got == nil || got.SID != sid {
+					t.Fatal("legacy chunked fixture did not authenticate before refresh")
+				}
+				// A prior larger session can leave a chunk outside the advertised
+				// count. Renewal must remove it without trusting the current count.
+				stale := compat.LegacySessionCookie + cookieChunkSuffix + strconv.Itoa(maxCookieChunks-1)
+				jar.SetCookies(url, []*http.Cookie{newSessionCookie(stale, "stale-fragment", time.Hour, secure)})
+				jar.SetCookies(url, CreateSessionCookie(target.user, sid, "", secret, time.Hour, secure))
+				got := ParseSessionCookie(request(), secret)
+				if got == nil || got.SID != sid || got.User.Username != target.user.Username || len(got.User.Groups) != len(target.user.Groups) {
+					t.Fatal("refreshed canonical session did not authenticate after legacy chunk migration")
+				}
+				for _, cookie := range jar.Cookies(url) {
+					if strings.HasPrefix(cookie.Name, compat.LegacySessionCookie) {
+						t.Errorf("refresh retained legacy cookie %q", cookie.Name)
+					}
+				}
+			})
+		}
+	}
+}
+
+func TestCanonicalLoginClearsLegacyChunksWithoutCount(t *testing.T) {
+	const secret = "fixture-signing-key"
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	url := httptest.NewRequest(http.MethodGet, "https://example.test/", nil).URL
+	for _, index := range []int{0, maxCookieChunks - 1} {
+		name := compat.LegacySessionCookie + cookieChunkSuffix + strconv.Itoa(index)
+		jar.SetCookies(url, []*http.Cookie{newSessionCookie(name, "orphaned-fragment", time.Hour, true)})
+	}
+	jar.SetCookies(url, CreateSessionCookie(&User{Username: "alice"}, NewSessionID(), "", secret, time.Hour, true))
+	r := httptest.NewRequest(http.MethodGet, url.String(), nil)
+	for _, cookie := range jar.Cookies(url) {
+		r.AddCookie(cookie)
+	}
+	if got := ParseSessionCookie(r, secret); got == nil || got.User.Username != "alice" {
+		t.Fatal("orphaned legacy chunks blocked a fresh canonical login")
 	}
 }
 

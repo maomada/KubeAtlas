@@ -77,6 +77,12 @@ func NewSessionID() string {
 func CreateSessionCookie(user *User, sid, idToken, secret string, ttl time.Duration, secure bool) (cookies []*http.Cookie) {
 	defer func() {
 		cookies = append(cookies, expireCookie(compat.LegacySessionCookie, secure), expireCookie(compat.LegacySessionCookie+cookieChunkCountSuffix, secure))
+		// Mixed naming families are rejected even when only an old chunk
+		// remains. Clear every valid index, including stale chunks beyond a
+		// smaller or missing legacy count, before issuing a canonical session.
+		for i := range maxCookieChunks {
+			cookies = append(cookies, expireCookie(fmt.Sprintf("%s%s%d", compat.LegacySessionCookie, cookieChunkSuffix, i), secure))
+		}
 	}()
 	if sid == "" {
 		panic(fmt.Sprintf("[auth] CreateSessionCookie called with empty sid for user %s", user.Username))
