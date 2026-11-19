@@ -115,7 +115,8 @@ apply_fixtures() {
 
   # Numeric order matters: namespace, then the metric endpoint the
   # AnalysisTemplates point at, then the templates, then the Rollouts.
-  for f in $(ls "${FIXTURES_DIR}"/*.yaml 2>/dev/null | sort); do
+  for f in "${FIXTURES_DIR}"/*.yaml; do
+    [ -f "$f" ] || continue
     note "applying $(basename "$f")"
     kc apply -f "$f" >/dev/null
   done
@@ -381,16 +382,16 @@ cmd_status() {
 
   step "Cluster: ${CLUSTER_NAME} (context ${KUBECTL_CTX})"
 
-  printf "\n${C_BLUE}Rollouts controller${C_RESET}\n"
+  printf '\n%bRollouts controller%b\n' "$C_BLUE" "$C_RESET"
   kc -n argo-rollouts get pods --no-headers 2>/dev/null \
     | awk '{ printf "    %s %s\n", $1, $3 }' || warn "controller not installed"
 
-  printf "\n${C_BLUE}Rollouts${C_RESET}\n"
+  printf '\n%bRollouts%b\n' "$C_BLUE" "$C_RESET"
   kc -n demo-rollouts get rollouts.argoproj.io -o \
     custom-columns='NAME:.metadata.name,PHASE:.status.phase,STEP:.status.currentStepIndex,ABORT:.status.abort,PAUSE:.status.pauseConditions[*].reason' \
     --no-headers 2>/dev/null | sed 's/^/    /' || note "(none)"
 
-  printf "\n${C_BLUE}AnalysisRuns${C_RESET}\n"
+  printf '\n%bAnalysisRuns%b\n' "$C_BLUE" "$C_RESET"
   kc -n demo-rollouts get analysisruns.argoproj.io -o \
     custom-columns='NAME:.metadata.name,PHASE:.status.phase,TRIGGER:.metadata.labels.rollout-type' \
     --no-headers 2>/dev/null | sed 's/^/    /' || note "(none)"

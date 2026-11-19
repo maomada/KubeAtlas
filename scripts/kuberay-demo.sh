@@ -452,7 +452,7 @@ kubeatlas_crd_discovery_ready() {
 
 kubeatlas_inventory_ready() {
   local kind="$1" group="$2" live cached projection
-  projection='map({metadata: (.metadata | {namespace, name, uid, generation, ownerReferences, labels}), selector: .spec.selector} + (if $dynamic then {apiVersion, kind} else {} end)) | sort_by(.metadata.name)'
+  projection="map({metadata: (.metadata | {namespace, name, uid, generation, ownerReferences, labels}), selector: .spec.selector} + (if \$dynamic then {apiVersion, kind} else {} end)) | sort_by(.metadata.name)"
   local dynamic=false
   [ -z "${group}" ] || dynamic=true
   live="$(kc -n "${DEMO_NS}" get "${kind}${group:+.${group}}" --request-timeout=10s -o json | jq -cS --argjson dynamic "${dynamic}" ".items | ${projection}")" || return 1

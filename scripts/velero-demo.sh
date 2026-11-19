@@ -189,7 +189,7 @@ stop_velero_controller() {
   k -n "${NS}" scale deployment/velero --replicas=0 >/dev/null
 
   sel="$(k -n "${NS}" get deployment velero \
-    -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}' 2>/dev/null | sed 's/,$//')"
+    -o go-template="{{range \$k, \$v := .spec.selector.matchLabels}}{{\$k}}={{\$v}},{{end}}" 2>/dev/null | sed 's/,$//')"
   [ -n "${sel}" ] || fail "could not read the velero Deployment's pod selector"
 
   k -n "${NS}" delete pod -l "${sel}" --grace-period=0 --force --ignore-not-found >/dev/null 2>&1 || true
@@ -273,7 +273,8 @@ apply_fixtures() {
   local tmp; tmp="$(mktemp -d)"
   RENDER_DIRS+=("${tmp}")
 
-  for f in $(ls "${FIXTURES_DIR}"/*.yaml 2>/dev/null | sort); do
+  for f in "${FIXTURES_DIR}"/*.yaml; do
+    [ -f "$f" ] || continue
     local base; base="$(basename "$f")"
     grep -q '^[[:space:]]*[^#[:space:]]' "$f" || { note "skipping ${base} (comments only)"; continue; }
 
@@ -312,7 +313,7 @@ verify_fixtures() {
   #    container, and Velero's grace period is an hour.
   local vsel vpods
   vsel="$(k -n "${NS}" get deployment velero \
-    -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}' 2>/dev/null | sed 's/,$//')"
+    -o go-template="{{range \$k, \$v := .spec.selector.matchLabels}}{{\$k}}={{\$v}},{{end}}" 2>/dev/null | sed 's/,$//')"
   vpods="$(k -n "${NS}" get pods -l "${vsel:-app.kubernetes.io/name=velero}" --no-headers 2>/dev/null | wc -l | tr -d ' ')"
   if [ "${vpods}" != "0" ]; then
     warn "${vpods} velero controller pod(s) present — fixtures will not survive"; errs=$((errs+1))
@@ -636,9 +637,11 @@ spec:
   includedNamespaces: ["demo-app"]
 EOF
   wait_for_restore_phase live-restore
-  k -n demo-app get cm app-config >/dev/null 2>&1 \
-    && ok "demo-app/app-config exists again — the restore recreated real objects" \
-    || warn "restore finished but app-config is absent"
+  if k -n demo-app get cm app-config >/dev/null 2>&1; then
+    ok "demo-app/app-config exists again — the restore recreated real objects"
+  else
+    warn "restore finished but app-config is absent"
+  fi
 
   # 2a. A backup that genuinely half-worked.
   #
@@ -867,7 +870,7 @@ print(int((datetime.datetime.now(datetime.timezone.utc) - started).total_seconds
 
 wait_for_restore_phase() {
   local name="$1" i phase
-  for i in $(seq 1 90); do
+  for ((i = 1; i <= 90; i++)); do
     phase="$(k -n "${NS}" get restores.velero.io "${name}" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
     case "${phase}" in Completed|PartiallyFailed|Failed|FailedValidation) ok "${name} reached ${phase}"; return 0 ;; esac
     sleep 2
@@ -964,7 +967,7 @@ verify_live() {
   # and Velero's grace period is an hour. Ask whether a pod exists.
   local vsel
   vsel="$(k -n "${NS}" get deployment velero \
-    -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}' 2>/dev/null | sed 's/,$//')"
+    -o go-template="{{range \$k, \$v := .spec.selector.matchLabels}}{{\$k}}={{\$v}},{{end}}" 2>/dev/null | sed 's/,$//')"
   [ -z "$(k -n "${NS}" get pods -l "${vsel:-app.kubernetes.io/name=velero}" -o name 2>/dev/null)" ] \
     || fail "a velero controller pod is still running, so the in-flight run is not stalled"
   ok "no controller pod, so the in-flight run cannot advance"

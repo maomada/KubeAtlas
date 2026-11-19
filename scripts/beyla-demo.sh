@@ -678,6 +678,7 @@ print("    beyla_-prefixed: %s" % ([n for n in d if n.startswith("beyla")] or "N
 ' || true
 
   step "Label names on beyla_network_flow_bytes_total"
+  # shellcheck disable=SC2016 # Python intentionally prints the literal "$0 default" hint.
   prom_query 'beyla_network_flow_bytes_total' | python3 -c '
 import json,sys
 try:
