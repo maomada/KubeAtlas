@@ -3,7 +3,7 @@ import { credentialStatus, mcpConnectionInfo } from './credentials'
 import type { MCPCredential } from './credentials'
 
 it('formats generic connection details with the credential only in the authorization header', () => {
-  for (const endpoint of ['https://hub.example.test/mcp', 'http://10.0.100.220:8080/mcp']) {
+  for (const endpoint of ['https://hub.example.test/mcp', 'http://192.0.2.220:8080/mcp']) {
     const token = 'unit-test-token-not-a-real-secret'
     const info = mcpConnectionInfo(endpoint, token)
     expect(info.split('\n')).toEqual([
