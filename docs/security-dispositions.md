@@ -47,6 +47,8 @@ or future changes. See [the source review](security-revalidation-pr17.md).
 
 [PR #19 revalidation](security-revalidation-pr19.md) records the first-release
 source mapping, the OpenCost archive bound, and the legacy cookie cleanup.
+[PR #22 revalidation](security-revalidation-pr22.md) records the source binding
+for the branding changes and the one relocated finding.
 
 ## Remaining-finding decisions
 
