@@ -172,9 +172,7 @@ connected across a window close — but it means a hidden KubeAtlas still:
 None of that stops until you quit. If you close the window expecting KubeAtlas to
 release its cluster access, quit explicitly.
 
-On Linux and Windows, closing the window always quits. Neither gives KubeAtlas
-anything to reopen from — no Dock, and Wails v2 ships no tray icon — so hiding
-there would leave a running process with no way to reach it.
+On Linux, closing the window quits KubeAtlas.
 
 ## AI Investigations Agent CLI
 
@@ -186,7 +184,6 @@ then in these install directories:
 | OS | Directories |
 |----|-------------|
 | macOS, Linux | `~/.local/bin`, `~/.claude/local`, `~/.opencode/bin`, `~/.volta/bin`, `/opt/homebrew/bin`, `/usr/local/bin`, `/home/linuxbrew/.linuxbrew/bin`, `/usr/bin` |
-| Windows | `%LOCALAPPDATA%\Microsoft\WinGet\Links`, `%LOCALAPPDATA%\cursor-agent`, `%LOCALAPPDATA%\Programs\OpenAI\Codex\bin`, `%USERPROFILE%\.local\bin` |
 
 KubeAtlas picks up a newly installed CLI automatically, or when you click **Check
 again** in AI investigations. The startup output has an `AI investigations`
@@ -373,8 +370,7 @@ This behavior matches `kubectl` and follows the [Kubernetes client-go precedence
 
 ## Multiple Kubeconfig Files
 
-`KUBECONFIG` can contain multiple file paths (colon-separated on Linux/macOS,
-semicolon-separated on Windows):
+On Linux and macOS, separate paths in `KUBECONFIG` with `:`.
 
 ```bash
 export KUBECONFIG=~/.kube/config:~/.kube/staging-config:~/.kube/prod-config
@@ -669,12 +665,7 @@ are plaintext, not encrypted: protect backups and your OS account. When creating
 or replacing the file manually on Unix, set `chmod 600 ~/.kubeatlas/clusters.json`;
 KubeAtlas does not change existing file permissions merely by reading it. Atomic
 replacement prevents partial writes but does not guarantee the latest save
-survives sudden power loss. On Windows,
-protect access with user-directory ACLs; Unix modes are not an ACL guarantee.
-Locking is intended for local filesystems, not validated for network homes.
-On Windows, an open reader or antivirus scanner may briefly prevent atomic
-replacement. A failed save leaves the previous file and running connection
-unchanged; reload and retry after that reader finishes.
+survives sudden power loss. The lock assumes a local filesystem.
 
 Shared OSS/Cloud configuration remains installation-scoped. A shared deployment's
 header-only configuration may still pair with its URL flag; changing a saved

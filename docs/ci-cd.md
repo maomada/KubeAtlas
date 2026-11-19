@@ -20,10 +20,10 @@ current source, ancestry, CI, Semgrep CE, artifact, and collision checks. A
 `publish=false` dispatch validates and builds immutable dry-run artifacts,
 then emits `release-approval.json`; it does not publish. Review the release
 manifest, exact artifact inventory, checksums, build metadata, and CI/Semgrep CE
-evidence before signing. Binary approval additionally requires the native
-`windows-latest` smoke of the actual Windows ZIP; that job checks its manifest
-hash, safely extracts it, and runs `kubeatlas.exe --version` and `--help` with
-checked exit codes. It does not configure kubeconfig or claim a cluster test.
+evidence before signing. Binary approval also requires native smoke tests on
+Linux amd64 and arm64. Each runner validates the staged package checksums and
+runs `--version` and `--help` from the DEB and RPM packages for both components.
+Cluster acceptance is a separate check.
 
 The approval binds the repository, action, channel, selected source and version,
 workflow path and SHA, dry-run run ID and attempt, CI/Semgrep CE run URLs,
@@ -63,7 +63,7 @@ full validation set. The PR plan balances pre-merge coverage and runner time:
 | Frontend application sources | Frontend/shared-UI tests, type checks, lint, builds and settings browser journeys |
 | Dockerfiles, image tooling or dependency manifests | Both amd64/arm64 image builds and OCI archive validation |
 | Distribution tooling, dependency manifests or packaged documentation | Full cross-platform binary/package matrix |
-| Installers or installer fixtures | POSIX and Windows installer regression tests |
+| Installers or installer fixtures | POSIX installer and OpenCost preparation regression tests |
 | CI orchestration or gate-plan inputs | All CI jobs and the package matrix |
 
 The image and package selectors intentionally omit ordinary application source
@@ -100,10 +100,9 @@ tools or reclaiming disk space. Go modules/builds, the pinned GoReleaser binary,
 Semgrep's Python dependencies, and container build layers are cached. Frontend
 type checking runs once in its job; Playwright owns its one application build.
 Caches accelerate execution and never substitute for test or artifact results.
-Engineering receipts are retained for seven days; release artifact retention,
-native Windows release smoke, exact-SHA main-push CI/Semgrep evidence,
-signatures, and publication gates are unchanged. CodeQL and both release
-workflows remain manual-only.
+Engineering receipts are retained for seven days. Release workflows require
+exact-SHA main-push CI and Semgrep evidence, signatures, and publication
+gates. CodeQL and both release workflows are manual-only.
 
 These controls reduce future repetition; they do not erase accrued charges,
 restore an exhausted Actions allowance, or change billing settings. Do not
@@ -298,14 +297,12 @@ It checks main ancestry and exact-SHA CI and Semgrep CE evidence before building
 Builds use trusted release tooling checked out separately from the selected
 source, have read-only permissions, and never log in to a registry.
 
-The hosted Actions workflow still validates the full 15-artifact GoReleaser
-matrix and uses its strict `local` publication profile: eight Linux DEB/RPM
-packages plus the KubeAtlas Windows amd64 ZIP, with a schema-2 manifest and
-checksums (11 files). The full 15-file `kubeatlas-binary-release` artifact is
-diagnostic evidence only. No macOS or Linux tar archive is published, and
-native Windows smoke remains required by that hosted profile. This unchanged
-hosted contract is distinct from the `local-linux-amd64` profile below and is not
-authorized for the scoped 0.1.0 local publication.
+The hosted workflow validates the full GoReleaser build, then stages the
+`local-linux` publication profile with eight Linux DEB and RPM packages, a
+schema-2 manifest, and checksums. The Linux amd64 and arm64 runners smoke-test
+the exact staged packages before the workflow creates an approval manifest.
+The full `kubeatlas-binary-release` artifact holds diagnostic evidence. Use a
+source revision with the current package matrix when dispatching a dry run.
 
 With `publish=true`, the publisher downloads the signed approval and
 `kubeatlas-binary-publication` from the specified dry-run run, never the
@@ -354,21 +351,16 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_local.py check \
   --source-sha "$SOURCE_SHA" --bundle "$BUNDLE" --rules-source "$RULES_SOURCE"
 ```
 
-The scoped 0.1.0 local profile is fixed to `local-linux-amd64`. The build still
-validates the full 15-artifact GoReleaser matrix as diagnostic evidence, but
-stages only four Linux amd64 DEB/RPM packages (KubeAtlas and Portal),
-`binary-manifest.json`, and `checksums.txt`. The bundle also contains two
+The scoped 0.1.0 local release uses the `local-linux-amd64` profile. The build
+validates the full GoReleaser matrix as diagnostic evidence and stages four
+Linux amd64 DEB/RPM packages (KubeAtlas and Portal), `binary-manifest.json`, and
+`checksums.txt`. The bundle also contains two
 linux/amd64-only OCI archives and two Helm charts staged with Linux amd64
 node selectors; hosted chart defaults remain unchanged. Both OCI indexes and
 single-image manifests are validated against this exact platform set, including
-config provenance and preserved digests. The Windows ZIP and all arm64
-distributions are deferred: they are not published or accepted by this local
-profile, and no native acceptance is claimed for them. macOS and Portal Windows
-distributions are excluded. `LICENSE` and `NOTICE`
-remain in the binary packages. This does not change the hosted Actions
-`local` profile described above. A candidate branch is not releasable:
-approval preparation and verification require that source and tooling are the
-same clean commit as a fresh read-only GitHub `main` query.
+config provenance and preserved digests. `LICENSE` and `NOTICE` remain in the
+binary packages. Approval preparation and verification require that source and
+tooling are the same clean commit as a fresh read-only GitHub `main` query.
 
 Prerequisites are the pinned Go/GoReleaser, Node, Helm 4.2.3, Helm 3.19.0,
 helm-unittest 1.1.0, helmfile, Docker Buildx, skopeo, ShellCheck, actionlint,
@@ -408,8 +400,8 @@ OCI/package validation, real-cluster acceptance, and four per-package
 installation gates. Each Linux package gate requires native amd64 execution
 and isolated install, version, uninstall, and no-autostart evidence with explicit
 architecture and distribution details. Emulated installation reports are rejected.
-Windows and arm64 are not active gates for this profile; their acceptance
-reports are rejected by its importer. Real-cluster
+The local profile's importer accepts evidence for its scoped Linux amd64 gates.
+Real-cluster
 evidence must report the Kubernetes context and version and the main and Portal
 flows, including read-only/security boundaries. Emulation is reported
 explicitly and cannot substitute for native execution where a gate requires

@@ -274,6 +274,22 @@ class ReleaseApprovalTests(unittest.TestCase):
         with self.assertRaisesRegex(approval.ApprovalError, "symlink"):
             self._verify(manifest_path, artifact_root, signature=signature)
 
+    def test_binaries_approval_binds_only_linux_packages(self):
+        manifest_path, artifact_root = self._create("binaries")
+        expected = {
+            f"{component}_{VERSION}_linux_{architecture}.{extension}"
+            for component in ("kubeatlas", "kubeatlas-portal")
+            for architecture in ("amd64", "arm64")
+            for extension in ("deb", "rpm")
+        } | {"binary-manifest.json", "checksums.txt"}
+        self.assertEqual({path.name for path in artifact_root.iterdir()}, expected)
+        signature = self._sign(manifest_path)
+        run = self._build_run("binaries")
+        self._verify(manifest_path, artifact_root, channel="binaries", signature=signature, run=run)
+        (artifact_root / f"kubeatlas_v{VERSION}_windows_amd64.zip").write_bytes(b"extra")
+        with self.assertRaisesRegex(approval.ApprovalError, "artifact set mismatch"):
+            self._verify(manifest_path, artifact_root, channel="binaries", signature=signature, run=run)
+
     def test_artifact_root_and_nested_directory_symlinks_are_rejected(self):
         manifest_path, artifact_root = self._create()
         signature = self._sign(manifest_path)

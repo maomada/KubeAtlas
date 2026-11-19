@@ -95,26 +95,33 @@ class ReleaseWorkflowTests(unittest.TestCase):
                 self.assertIn("if: always()", publish)
                 self.assertIn("if-no-files-found: warn", publish)
 
-    def test_binary_local_publication_profile_and_native_windows_smoke_gate_approval(self):
+    def test_binary_linux_publication_profile_and_native_smoke_gate_approval(self):
         workflow = (ROOT / ".github/workflows/release-binaries.yml").read_text()
-        build = workflow.split("\n  build:\n", 1)[1].split("\n  windows-smoke:\n", 1)[0]
-        smoke = workflow.split("\n  windows-smoke:\n", 1)[1].split("\n  dry-run:\n", 1)[0]
+        build = workflow.split("\n  build:\n", 1)[1].split("\n  linux-smoke:\n", 1)[0]
+        smoke = workflow.split("\n  linux-smoke:\n", 1)[1].split("\n  dry-run:\n", 1)[0]
         dry_run = workflow.split("\n  dry-run:\n", 1)[1].split("\n  publish:\n", 1)[0]
         publish = workflow.split("\n  publish:\n", 1)[1]
         self.assertIn("if: ${{ inputs.publish != true }}", build)
         self.assertIn("release_artifacts.py stage-local", build)
+        self.assertIn("--profile local-linux", build)
         self.assertIn("name: kubeatlas-binary-release", build)
         self.assertIn("name: kubeatlas-binary-publication", build)
-        self.assertIn("runs-on: windows-latest", smoke)
-        self.assertIn("release_windows_smoke.py", smoke)
-        self.assertIn("--version", (ROOT / "scripts/release_windows_smoke.py").read_text())
-        self.assertIn("--help", (ROOT / "scripts/release_windows_smoke.py").read_text())
-        self.assertIn("needs: [validate, build, windows-smoke]", dry_run)
-        self.assertIn("validate --profile local", dry_run)
+        self.assertNotIn("windows-latest", workflow)
+        self.assertIn("architecture: amd64\n            runner: ubuntu-24.04", smoke)
+        self.assertIn("architecture: arm64\n            runner: ubuntu-24.04-arm", smoke)
+        self.assertIn("runs-on: ${{ matrix.runner }}", smoke)
+        self.assertIn("name: kubeatlas-binary-publication", smoke)
+        self.assertIn("release_linux_smoke.py", smoke)
+        self.assertIn("needs: [validate, build, linux-smoke]", dry_run)
+        self.assertIn("validate --profile local-linux", dry_run)
         self.assertIn("--channel binaries", dry_run)
         self.assertIn("kubeatlas-binary-publication", publish)
         self.assertIn("release-approval", publish)
         self.assertNotIn("name: kubeatlas-binary-release\n", publish)
+        self.assertIn("validate --profile local-linux", publish)
+        self.assertIn('expected_artifact_paths("binaries", sys.argv[1])', publish)
+        self.assertIn('gh release upload "v$VERSION" "${assets[@]}"', publish)
+        self.assertNotIn("release/*", publish)
 
     def test_release_is_manual_and_write_permission_is_publish_only(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()

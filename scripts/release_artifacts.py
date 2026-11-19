@@ -22,13 +22,12 @@ from release_policy import validate_inputs
 
 REPOSITORY = "maomada/KubeAtlas"
 COMPONENTS = ("kubeatlas", "kubeatlas-portal")
-LOCAL_PROFILES = ("local", "local-linux", "local-linux-amd64")
+LOCAL_PROFILES = ("local-linux", "local-linux-amd64")
 ARCHIVES = (
     ("kubeatlas", "linux", "amd64", ".tar.gz"),
     ("kubeatlas", "linux", "arm64", ".tar.gz"),
     ("kubeatlas", "darwin", "amd64", ".tar.gz"),
     ("kubeatlas", "darwin", "arm64", ".tar.gz"),
-    ("kubeatlas", "windows", "amd64", ".zip"),
     ("kubeatlas-portal", "linux", "amd64", ".tar.gz"),
     ("kubeatlas-portal", "linux", "arm64", ".tar.gz"),
 )
@@ -60,7 +59,7 @@ def expected_names(version: str) -> set[str]:
     return names
 
 
-def local_asset_names(version: str, profile: str = "local") -> list[str]:
+def local_asset_names(version: str, profile: str = "local-linux") -> list[str]:
     if profile not in LOCAL_PROFILES:
         raise ValueError(f"unsupported binary publication profile: {profile}")
     names = {
@@ -68,12 +67,10 @@ def local_asset_names(version: str, profile: str = "local") -> list[str]:
         for component, _, architecture, suffix in PACKAGES
         if profile != "local-linux-amd64" or architecture == "amd64"
     }
-    if profile == "local":
-        names.add(f"kubeatlas_v{version}_windows_amd64.zip")
     return sorted(names)
 
 
-def local_publication_names(version: str, profile: str = "local") -> list[str]:
+def local_publication_names(version: str, profile: str = "local-linux") -> list[str]:
     return sorted({*local_asset_names(version, profile), "binary-manifest.json", "checksums.txt"})
 
 
@@ -442,7 +439,7 @@ def validate_local_staged(
     expected_source_sha: str | None = None,
     expected_version: str | None = None,
     evidence_urls: list[str] | None = None,
-    profile: str = "local",
+    profile: str = "local-linux",
 ) -> dict:
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("local publication directory must be a real directory")
@@ -583,7 +580,7 @@ def create_local_staged(
     source_sha: str,
     version: str,
     evidence_urls: list[str] | None = None,
-    profile: str = "local",
+    profile: str = "local-linux",
 ) -> dict:
     names = local_asset_names(version, profile)
     validate_staged(
@@ -654,7 +651,7 @@ def main() -> int:
     stage_local.add_argument("--source-sha", required=True)
     stage_local.add_argument("--version", required=True)
     stage_local.add_argument("--evidence-url", action="append", default=[])
-    stage_local.add_argument("--profile", choices=LOCAL_PROFILES, default="local")
+    stage_local.add_argument("--profile", choices=LOCAL_PROFILES, default="local-linux")
     validate = subparsers.add_parser("validate")
     validate.add_argument("--directory", type=Path, required=True)
     validate.add_argument("--source-sha")

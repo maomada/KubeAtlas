@@ -63,7 +63,6 @@ jobs:
               - 'install.sh'
               - 'install.ps1'
               - 'scripts/test-installers.sh'
-              - 'scripts/test-installers.ps1'
               - 'scripts/prepare-opencost-base.py'
               - 'scripts/test_prepare_hub_opencost.py'
               - 'deploy/helm/kubeatlas/files/prepare-opencost.py'

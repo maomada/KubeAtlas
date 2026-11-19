@@ -1070,8 +1070,8 @@ def _check_full_matrix(source_sha: str, repo_root: Path = ROOT) -> list[dict]:
         expected_source_sha=source_sha,
         expected_version=VERSION,
     )
-    if len(manifest["artifacts"]) != 15:
-        raise LocalReleaseError("the full 15-artifact GoReleaser matrix is incomplete")
+    if len(manifest["artifacts"]) != len(release_artifacts.expected_names(VERSION)):
+        raise LocalReleaseError("the full GoReleaser artifact matrix is incomplete")
     entries = []
     for name in sorted(release_artifacts.expected_names(VERSION)):
         size, digest = _hash_file(directory / name)
@@ -1524,8 +1524,8 @@ def _validate_built_artifacts(bundle: Path, source_sha: str, repo_root: Path = R
         expected_source_sha=source_sha,
         expected_version=VERSION,
     )
-    if len(full["artifacts"]) != 15:
-        raise LocalReleaseError("full 15-artifact matrix validation failed")
+    if len(full["artifacts"]) != len(release_artifacts.expected_names(VERSION)):
+        raise LocalReleaseError("full artifact matrix validation failed")
     selected = _validate_bundle_artifacts(bundle, source_sha)
     return {"full": full, **selected}
 
@@ -1628,7 +1628,6 @@ HELM_BIN="${HELM3_BIN:-helm3}" helmfile -f ./deploy/helm/ unittest"""
             "scripts/release_manifest.py",
             "scripts/release_policy.py",
             "scripts/release_registry.py",
-            "scripts/release_windows_smoke.py",
             "scripts/security_dispositions.py",
             "scripts/security_scan.py",
             "scripts/validate_oci_archive.py",
@@ -1701,7 +1700,7 @@ def _validate_build_report(bundle: Path, receipt: dict, context: dict) -> None:
         or report["version"] != VERSION
         or report["sourceSha"] != context["sourceSha"]
         or not isinstance(artifacts, list)
-        or len(artifacts) != 15
+        or len(artifacts) != len(expected)
         or any(
             not isinstance(item, dict)
             or set(item) != {"path", "size", "sha256"}
@@ -1714,7 +1713,7 @@ def _validate_build_report(bundle: Path, receipt: dict, context: dict) -> None:
         )
         or {item["path"] for item in artifacts} != expected
     ):
-        raise LocalReleaseError("full matrix inventory does not bind all 15 expected artifacts")
+        raise LocalReleaseError("full matrix inventory does not bind every expected artifact")
 
 
 def _validate_semgrep_receipt(bundle: Path, receipt: dict, gate: str, context: dict) -> None:

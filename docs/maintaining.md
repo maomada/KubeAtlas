@@ -23,7 +23,7 @@
 | Distribution | Contents | How to build and publish |
 | --- | --- | --- |
 | GHCR | Versioned KubeAtlas (standalone or Agent) and Hub container images, plus the two OCI Helm charts | Run `Release GHCR` |
-| GitHub Releases | Linux amd64 and arm64 DEB/RPM packages for both binaries, the standalone Windows amd64 ZIP, and the release manifest and checksums | Run `Release Binaries` when these install targets are ready |
+| GitHub Releases | Linux amd64 and arm64 DEB and RPM packages for both binaries, with the release manifest and checksums | Run `Release Binaries` when these install targets are ready |
 | Hub enrollment bundle | Version-matched Agent bootstrap, installer, chart, and OCI image | Prepare for your Hub deployment using the [onboarding guide](hub-agent-onboarding.md) |
 
 For the first prerelease, prioritize the GHCR images and charts. Check their
