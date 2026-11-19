@@ -100,7 +100,7 @@ export function GitOpsGraphFilterRail({
               onClick={() => onPresetChange(value)}
               className={`rounded-md px-2 py-1.5 text-left text-[11px] font-medium transition-colors ${
                 preset === value
-                  ? 'bg-skyhook-500 text-white'
+                  ? 'bg-kubeatlas-500 text-white'
                   : 'bg-theme-elevated text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary'
               }`}
             >

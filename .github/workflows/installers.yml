@@ -33,18 +33,3 @@ jobs:
 
       - name: Test OpenCost bundle preparation
         run: python3 -B scripts/test_prepare_hub_opencost.py
-
-  windows:
-    name: Windows installers
-    runs-on: windows-latest
-    timeout-minutes: 10
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Run Windows PowerShell 5.1 fixtures
-        shell: powershell
-        run: ./scripts/test-installers.ps1
-
-      - name: Run PowerShell 7 fixtures
-        shell: pwsh
-        run: ./scripts/test-installers.ps1

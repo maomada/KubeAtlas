@@ -233,7 +233,7 @@ const ResourceTypeButton = forwardRef<HTMLButtonElement, ResourceTypeButtonProps
               <span
                 className={clsx(
                   'text-xs py-0.5 rounded text-center font-mono w-8 text-theme-text-disabled',
-                  isSelected ? 'bg-skyhook-500/30 selection-text' : 'bg-theme-elevated',
+                  isSelected ? 'bg-kubeatlas-500/30 selection-text' : 'bg-theme-elevated',
                 )}
                 aria-label={COUNT_UNAVAILABLE_MESSAGE}
               >
@@ -244,7 +244,7 @@ const ResourceTypeButton = forwardRef<HTMLButtonElement, ResourceTypeButtonProps
             <Tooltip disabled={!resourceCountHint(coverage)} content={resourceCountHint(coverage)} position="left">
               <span className={clsx(
                 'text-xs py-0.5 px-1 min-w-8 rounded text-center font-mono',
-                isSelected ? 'bg-skyhook-500/30 selection-text' : 'bg-theme-elevated',
+                isSelected ? 'bg-kubeatlas-500/30 selection-text' : 'bg-theme-elevated',
               )}>
                 {resourceCountLabel(count, coverage)}
               </span>
@@ -618,7 +618,7 @@ export function ResourcesSidebar({
             value={kindFilter}
             onChange={(e) => setKindFilter(e.target.value)}
             onKeyDown={handleSearchKeyDown}
-            className="w-full pl-7 pr-7 py-2 bg-theme-elevated border border-theme-border-light rounded-lg text-sm text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-2 focus:ring-skyhook-500"
+            className="w-full pl-7 pr-7 py-2 bg-theme-elevated border border-theme-border-light rounded-lg text-sm text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-2 focus:ring-kubeatlas-500"
           />
           {kindFilter && (
             <button
@@ -785,7 +785,7 @@ export function ResourcesSidebar({
                     <span
                       className={clsx(
                         'badge font-mono text-theme-text-disabled',
-                        isSelected ? 'bg-skyhook-500/30 selection-text' : 'bg-theme-elevated',
+                        isSelected ? 'bg-kubeatlas-500/30 selection-text' : 'bg-theme-elevated',
                       )}
                       aria-label={COUNT_UNAVAILABLE_MESSAGE}
                     >
@@ -796,7 +796,7 @@ export function ResourcesSidebar({
                   <Tooltip disabled={!resourceCountHint(resourceCoverage?.[kindKey])} content={resourceCountHint(resourceCoverage?.[kindKey])} position="left">
                     <span className={clsx(
                       'badge font-mono',
-                      isSelected ? 'bg-skyhook-500/30 selection-text' : 'bg-theme-elevated',
+                      isSelected ? 'bg-kubeatlas-500/30 selection-text' : 'bg-theme-elevated',
                     )}>
                       {resourceCountLabel(count, resourceCoverage?.[kindKey])}
                     </span>
@@ -914,7 +914,7 @@ function WorkspaceDestinations({
             </button>
             {d.child && (
               <div
-                className="ml-10 xl:ml-11 mr-1 my-0.5 pl-2 pr-2 py-1 rounded-md text-xs font-medium truncate selection-strong selection-text border-l-2 border-skyhook-500"
+                className="ml-10 xl:ml-11 mr-1 my-0.5 pl-2 pr-2 py-1 rounded-md text-xs font-medium truncate selection-strong selection-text border-l-2 border-kubeatlas-500"
                 title={d.child.title ?? d.child.label}
                 aria-current="page"
               >

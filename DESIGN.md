@@ -51,7 +51,7 @@ Cool, professional, data-dense. A barely-blue-tinted neutral palette — not gen
 | `bg-accent-muted` | `--accent-muted` | `rgba(74,124,201,0.12)` | `rgba(106,159,224,0.18)` | Subtle accent backgrounds |
 | `text-accent-text` | `--accent-text` | `#3B66A8` | `#8BB5EA` | Accent-colored text |
 
-Full Skyhook brand scale: `--color-skyhook-50` (`#EBF2FA`) through `--color-skyhook-900` (`#1F365C`), centered on `--color-skyhook` (`#5088CC`). Available as `bg-skyhook-*` / `text-skyhook-*` utilities.
+Full KubeAtlas brand scale: `--color-kubeatlas-50` (`#EBF2FA`) through `--color-kubeatlas-900` (`#1F365C`), centered on `--color-kubeatlas` (`#5088CC`). Available as `bg-kubeatlas-*` / `text-kubeatlas-*` utilities.
 
 ### Semantic Status
 | Color | Variable | Hex | Use for |

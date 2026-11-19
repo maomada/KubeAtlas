@@ -7,7 +7,7 @@
 .PHONY: jobset-demo jobset-demo-down jobset-demo-reset jobset-demo-status jobset-demo-verify
 .PHONY: kuberay-demo kuberay-demo-down kuberay-demo-reset kuberay-demo-status kuberay-demo-verify
 .PHONY: release release-binaries-dry docker docker-test docker-multiarch docker-push
-.PHONY: desktop desktop-binary desktop-dev desktop-package-darwin desktop-package-windows desktop-package-linux
+.PHONY: desktop desktop-binary desktop-dev desktop-package-darwin desktop-package-linux
 
 VERSION ?= $(shell git describe --tags --match 'v*' --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -X main.version=$(VERSION)
@@ -502,11 +502,6 @@ desktop-dev:
 desktop-package-darwin:
 	@command -v wails >/dev/null 2>&1 || { echo "Error: wails CLI not found"; exit 1; }
 	cd cmd/desktop && wails build -platform darwin/universal -ldflags "$(LDFLAGS)"
-
-# Package Windows .exe
-desktop-package-windows:
-	@command -v wails >/dev/null 2>&1 || { echo "Error: wails CLI not found"; exit 1; }
-	cd cmd/desktop && wails build -platform windows/amd64 -ldflags "$(LDFLAGS)"
 
 # Package Linux binary
 desktop-package-linux:

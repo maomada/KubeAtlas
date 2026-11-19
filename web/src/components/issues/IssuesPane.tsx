@@ -390,7 +390,7 @@ export function IssuesPane({
           <button
             type="button"
             onClick={() => setSeverityFilter(new Set())}
-            className="text-xs text-skyhook-600 hover:text-skyhook-500 dark:text-skyhook-400"
+            className="text-xs text-kubeatlas-600 hover:text-kubeatlas-500 dark:text-kubeatlas-400"
           >
             Clear filter
           </button>

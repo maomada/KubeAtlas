@@ -17,7 +17,7 @@ design constraint.** Honor it on every change:
    it's probably wrong. Everything else is edge-case handling around this spine —
    it must never *become* the model.
 2. **Prefer declaration over inference.** Before adding a heuristic, ask "can the
-   user just *say it*?" The `app.skyhook.io/app` annotation exists precisely so
+   user just *say it*?" The `kubeatlas.io/app` annotation exists precisely so
    that when inference gets hairy, we hand the user a one-word escape hatch instead
    of getting cleverer. Reach for that first.
 3. **The explainability test.** Every heuristic must be stateable in **one plain
@@ -176,7 +176,7 @@ Layer 2 re-expresses the same declared-vs-name split as a `source` on the wire, 
 the cross-cluster layer can make a safe decision from a machine-readable field
 (not a human evidence string). Three families:
 
-- **Explicit** — `app.skyhook.io/app` annotation. The user *deliberately* declares
+- **Explicit** — `kubeatlas.io/app` annotation. The user *deliberately* declares
   "this is app X." Authoritative; overrides everything. *The escape hatch (§8).*
 - **Declared origins** — `argo-path`, `argo-appset`, `flux-source`. A shared
   *upstream*: a GitOps source path with an env overlay, an ApplicationSet that fans
@@ -255,13 +255,17 @@ never get this latitude.
 When an app has only a name (no GitOps origin), it stays per-cluster — *and the
 operator needs to know why and how to fix it.* The answer:
 
-> Set **`app.skyhook.io/app: <name>`** on the app's workloads, the **same value in
+> Set **`kubeatlas.io/app: <name>`** on the app's workloads, the **same value in
 > every cluster**, and KubeAtlas folds them. (Or deploy via Argo/Flux with the
 > environment in the source path.)
 
 Because the user sets it deliberately, it's a true cross-cluster declaration
 (zero collision) — `source = explicit`, `portable = true`, highest precedence.
 The in-product tooltip on each row says exactly this when a row is per-cluster.
+
+Existing `app.skyhook.io/app` annotations still apply when a workload has no
+nonblank `kubeatlas.io/app` value. If both have values, `kubeatlas.io/app` takes
+precedence.
 
 ---
 
@@ -298,7 +302,7 @@ workload rows. After that, the normal portable fold (§6) takes over.
    *But* if both were `default/redis` (same `ns/kind/name`), they'd share an
    overlay key and **Join A would merge them at the hub** regardless of
    declared-only (the §6 caveat). To fold reliably *if* they're really one app:
-   add `app.skyhook.io/app`.
+   add `kubeatlas.io/app`.
 
 3. **`coredns` in `kube-system` on both clusters.**
    → add-on, same name + same chart → folds across clusters as one add-on row,

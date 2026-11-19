@@ -28,16 +28,16 @@ export function CompareTray({ kind, picks, onRemove, onCompare, onExit }: Compar
       role="region"
       aria-label="Compare resources tray"
       className={clsx(
-        'shrink-0 border-t border-skyhook-500/30 bg-theme-surface/95 backdrop-blur',
+        'shrink-0 border-t border-kubeatlas-500/30 bg-theme-surface/95 backdrop-blur',
         'shadow-[0_-8px_24px_-12px_rgba(0,0,0,0.35)]',
       )}
     >
-      <div className="h-0.5 w-full bg-gradient-to-r from-blue-400/70 via-skyhook-400/40 to-emerald-400/70" />
+      <div className="h-0.5 w-full bg-gradient-to-r from-blue-400/70 via-kubeatlas-400/40 to-emerald-400/70" />
 
       {/* Right padding clears the fixed bottom-right overlay buttons (debug / shortcut-help). */}
       <div className="flex items-center gap-3 pl-4 pr-20 py-2.5">
         <div className="flex items-center gap-2 shrink-0">
-          <GitCompare className="w-4 h-4 text-skyhook-400" />
+          <GitCompare className="w-4 h-4 text-kubeatlas-400" />
           <span className="text-xs font-semibold text-theme-text-primary uppercase tracking-wider">
             Compare {kindLabel}
           </span>

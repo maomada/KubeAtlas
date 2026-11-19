@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
         - name: checkout-api
-          image: registry.skyhook.io/checkout-api:v2.4.0
+          image: registry.example.com/checkout-api:v2.4.0
           resources:
             limits:
               cpu: "1"
@@ -31,7 +31,7 @@ spec:
     spec:
       containers:
         - name: checkout-api
-          image: registry.skyhook.io/checkout-api:v2.4.1
+          image: registry.example.com/checkout-api:v2.4.1
           resources:
             limits:
               cpu: "2"

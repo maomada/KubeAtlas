@@ -181,7 +181,7 @@ function DetailShellTabButton({ active, compact, onClick, children }: { active: 
         'flex shrink-0 items-center gap-1.5 whitespace-nowrap py-2 text-sm font-medium border-b-2 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-accent',
         compact ? 'px-2' : 'px-3',
         active
-          ? 'text-theme-text-primary border-skyhook-500'
+          ? 'text-theme-text-primary border-kubeatlas-500'
           : 'text-theme-text-secondary border-transparent hover:text-theme-text-primary hover:border-theme-border-light',
       )}
     >

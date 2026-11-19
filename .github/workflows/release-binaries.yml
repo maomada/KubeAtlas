@@ -150,7 +150,7 @@ jobs:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           RELEASE_EVIDENCE_URLS: ${{ needs.validate.outputs.ci_url }} ${{ needs.validate.outputs.security_url }}
         run: make release-binaries-dry RELEASE_ARTIFACT_TOOL=../trusted/scripts/release_artifacts.py
-      - name: Stage the strict local publication profile
+      - name: Stage the Linux publication profile
         working-directory: source
         env:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
@@ -159,7 +159,7 @@ jobs:
           SECURITY_URL: ${{ needs.validate.outputs.security_url }}
         run: |
           python3 ../trusted/scripts/release_artifacts.py stage-local \
-            --dist dist/release --output dist/publication \
+            --profile local-linux --dist dist/release --output dist/publication \
             --source-sha "$SOURCE_SHA" --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
       - uses: actions/upload-artifact@v4
@@ -175,11 +175,20 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  windows-smoke:
-    name: Native Windows ZIP smoke
+  linux-smoke:
+    name: Native Linux package smoke (${{ matrix.architecture }})
     needs: [validate, build]
     if: ${{ inputs.publish != true }}
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - architecture: amd64
+            runner: ubuntu-24.04
+          - architecture: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 15
     permissions:
       contents: read
       actions: read
@@ -193,26 +202,27 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          name: kubeatlas-binary-release
+          name: kubeatlas-binary-publication
           path: release
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      - name: Verify and run the actual Windows release binary
+      - name: Install package inspection tools
+        run: sudo apt-get update && sudo apt-get install --yes rpm rpm2cpio dpkg-dev cpio
+      - name: Verify and run the staged Linux binaries
         env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           VERSION: ${{ needs.validate.outputs.version }}
-          RELEASE_DIR: release
-          EXTRACT_DIR: ${{ runner.temp }}/kubeatlas-windows-smoke
-        shell: pwsh
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
+          ARCHITECTURE: ${{ matrix.architecture }}
         run: |
-          python trusted/scripts/release_windows_smoke.py `
-            --manifest "$env:RELEASE_DIR/binary-manifest.json" `
-            --archive "$env:RELEASE_DIR/kubeatlas_v$($env:VERSION)_windows_amd64.zip" `
-            --extract-dir "$env:EXTRACT_DIR" `
-            --version "$env:VERSION"
+          python3 trusted/scripts/release_linux_smoke.py --directory release \
+            --architecture "$ARCHITECTURE" --source-sha "$SOURCE_SHA" --version "$VERSION" \
+            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
 
   dry-run:
-    needs: [validate, build, windows-smoke]
+    needs: [validate, build, linux-smoke]
     if: ${{ inputs.publish != true }}
     runs-on: ubuntu-latest
     permissions:
@@ -246,7 +256,7 @@ jobs:
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
-          python3 trusted/scripts/release_artifacts.py validate --profile local --directory release \
+          python3 trusted/scripts/release_artifacts.py validate --profile local-linux --directory release \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
@@ -363,7 +373,7 @@ jobs:
             --sha "$SOURCE_SHA" \
             --version "$VERSION" \
             > "$RUNNER_TEMP/post-approval-source-evidence.json"
-      - name: Validate selected local publication profile
+      - name: Validate selected Linux publication profile
         id: artifacts
         env:
           CI_URL: ${{ needs.validate.outputs.ci_url }}
@@ -372,7 +382,7 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
-          python3 trusted/scripts/release_artifacts.py validate --profile local --directory release \
+          python3 trusted/scripts/release_artifacts.py validate --profile local-linux --directory release \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
@@ -421,7 +431,17 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.validate.outputs.version }}
-        run: gh release upload "v$VERSION" release/* --repo maomada/KubeAtlas
+        run: |
+          asset_list="$(PYTHONPATH=trusted/scripts python3 - "$VERSION" <<'PY'
+          import sys
+          from release_approval import expected_artifact_paths
+
+          for name in expected_artifact_paths("binaries", sys.argv[1]):
+              print(f"release/{name}")
+          PY
+          )"
+          mapfile -t assets <<< "$asset_list"
+          gh release upload "v$VERSION" "${assets[@]}" --repo maomada/KubeAtlas
       - name: Finalize only after every upload succeeded
         id: finalize
         env:

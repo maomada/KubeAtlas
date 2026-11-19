@@ -1076,7 +1076,7 @@ export function GitOpsChangesView({ insight, error, onOpenResource, onSyncResour
                 setSearch('')
                 setStatusFilters(new Set())
               }}
-              className="text-[12px] font-medium text-skyhook-500 hover:underline"
+              className="text-[12px] font-medium text-kubeatlas-500 hover:underline"
             >
               Clear filters
             </button>

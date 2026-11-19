@@ -1140,7 +1140,7 @@ function GroupRow({
                       tabIndex={0}
                       role="note"
                       aria-label={`${fact.summary}. ${MIN_SIZE_EXPLANATION}`}
-                      className="cursor-help rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-skyhook-500"
+                      className="cursor-help rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-kubeatlas-500"
                     >
                       {fact.summary}
                     </span>
@@ -1154,7 +1154,7 @@ function GroupRow({
                       tabIndex={0}
                       role="note"
                       aria-label={`${fact.summary}. ${SCALE_DOWN_EXPLANATION}`}
-                      className="cursor-help rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-skyhook-500"
+                      className="cursor-help rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-kubeatlas-500"
                     >
                       {fact.summary}
                     </span>
@@ -1175,7 +1175,7 @@ function GroupRow({
                     tabIndex={0}
                     role="note"
                     aria-label={`No node can be removed right now. ${NO_CANDIDATES_EXPLANATION}`}
-                    className="cursor-help rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-skyhook-500"
+                    className="cursor-help rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-kubeatlas-500"
                   >
                     No node can be removed right now
                   </span>
@@ -1459,7 +1459,7 @@ function ChildScaleDown({
             tabIndex={0}
             role="note"
             aria-label={`${countIsStatus ? candidatesLabel : statusLabel}. ${explanation}`}
-            className="cursor-help rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-skyhook-500"
+            className="cursor-help rounded focus-visible:outline focus-visible:outline-2 focus-visible:outline-kubeatlas-500"
           >
             {countIsStatus ? candidatesLabel : statusLabel}
           </span>

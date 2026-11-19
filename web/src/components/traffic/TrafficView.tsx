@@ -1459,8 +1459,8 @@ export function TrafficView({ namespaces, onSetNamespaces }: TrafficViewProps) {
                 {/* Top-left: source status pill, focus */}
                 <div className="absolute top-3 left-3 z-10 flex items-center gap-2">
                   {focus ? (
-                    <div className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-theme-surface/90 backdrop-blur border border-skyhook-500/40 text-[11px]">
-                      <Crosshair className="h-3 w-3 text-skyhook-500" />
+                    <div className="flex items-center gap-1.5 pl-2 pr-1 py-1 rounded-lg bg-theme-surface/90 backdrop-blur border border-kubeatlas-500/40 text-[11px]">
+                      <Crosshair className="h-3 w-3 text-kubeatlas-500" />
                       <span className="text-theme-text-secondary">Focused on</span>
                       <span className="font-medium text-theme-text-primary">{focus.name}</span>
                       {focus.namespace && <span className="text-theme-text-tertiary">({focus.namespace})</span>}

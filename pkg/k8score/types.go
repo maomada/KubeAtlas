@@ -1,7 +1,6 @@
 // Package k8score provides a shared Kubernetes resource caching layer built on
-// SharedInformers. It is designed to be imported by both KubeAtlas (the Explorer
-// desktop app) and skyhook-connector (the in-cluster agent), extracting the
-// common informer setup, transform, lister, and change-notification logic.
+// SharedInformers. It contains the common informer setup, transform, lister,
+// and change-notification logic.
 //
 // This package has NO imports of any internal/ package. Application-specific
 // behavior (timeline recording, noisy-resource filtering, diff computation)

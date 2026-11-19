@@ -15,14 +15,11 @@ builds:
     binary: kubeatlas
     env:
       - CGO_ENABLED=0
-    goos: [linux, darwin, windows]
+    goos: [linux, darwin]
     goarch: [amd64, arm64]
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-    ignore:
-      - goos: windows
-        goarch: arm64
   - id: kubeatlas-portal
     main: ./cmd/kubeatlas-portal
     binary: kubeatlas-portal
@@ -39,9 +36,6 @@ archives:
     ids: [kubeatlas]
     formats: [tar.gz]
     name_template: "kubeatlas_v{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format_overrides:
-      - goos: windows
-        formats: [zip]
     files: [LICENSE, NOTICE, README.md, docs/packaging.md]
   - id: kubeatlas-portal
     ids: [kubeatlas-portal]

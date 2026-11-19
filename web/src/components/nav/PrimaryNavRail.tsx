@@ -301,7 +301,7 @@ function NavRailItem({
           // label can't capture clicks meant for content to the right.
           !pinned && "max-w-10 overflow-hidden",
           active
-            ? "bg-skyhook-600/10 dark:bg-skyhook-500/15 text-skyhook-700 dark:text-skyhook-300"
+            ? "bg-kubeatlas-600/10 dark:bg-kubeatlas-500/15 text-kubeatlas-700 dark:text-kubeatlas-300"
             : "text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary",
         )}
       >
@@ -309,7 +309,7 @@ function NavRailItem({
         <span
           aria-hidden
           className={clsx(
-            "absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-skyhook-600 dark:bg-skyhook-400 transition-opacity",
+            "absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-kubeatlas-600 dark:bg-kubeatlas-400 transition-opacity",
             active ? "opacity-100" : "opacity-0",
           )}
         />
@@ -318,7 +318,7 @@ function NavRailItem({
             className={clsx(
               "w-[18px] h-[18px]",
               active
-                ? "text-skyhook-700 dark:text-skyhook-300"
+                ? "text-kubeatlas-700 dark:text-kubeatlas-300"
                 : "text-theme-text-tertiary group-hover/item:text-theme-text-secondary",
             )}
           />

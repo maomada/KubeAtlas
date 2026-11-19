@@ -5,7 +5,7 @@ import { Tooltip } from './Tooltip'
 
 // Shared faceted-filter primitives for sidebar filter rails. One implementation
 // behind the GitOps and Applications rails so the "this filter is on" language
-// stays identical everywhere — active = the skyhook accent, the same signal the
+// stays identical everywhere — active = the KubeAtlas accent, the same signal the
 // nav rail and header status tiles use.
 
 export type FacetTone = 'neutral' | 'success' | 'warning' | 'error' | 'info'
@@ -48,7 +48,7 @@ export function FacetSection({
 }
 
 // A single multi-select filter toggle: leading status dot (tone-colored), label,
-// trailing count. Active uses the skyhook accent.
+// trailing count. Active uses the KubeAtlas accent.
 export function FacetButton({
   label,
   count,
@@ -72,7 +72,7 @@ export function FacetButton({
       className={clsx(
         'flex w-full items-center gap-2 rounded px-2 py-1 text-left text-[11px] transition-colors',
         active
-          ? 'bg-skyhook-500/15 text-skyhook-700 dark:text-skyhook-300'
+          ? 'bg-kubeatlas-500/15 text-kubeatlas-700 dark:text-kubeatlas-300'
           : 'text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary',
       )}
     >

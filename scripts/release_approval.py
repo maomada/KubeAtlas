@@ -121,7 +121,7 @@ def expected_artifact_paths(channel: str, version: str) -> list[str]:
         )
         return sorted(paths)
     if channel == "binaries":
-        return sorted(release_artifacts.local_publication_names(version))
+        return release_artifacts.local_publication_names(version, profile="local-linux")
     raise ApprovalError("unsupported release channel")
 
 

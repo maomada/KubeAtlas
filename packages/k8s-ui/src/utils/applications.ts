@@ -202,7 +202,8 @@ export interface AppIdentity {
 
 /** The user-set annotation that forces cross-cluster grouping — the canonical
  *  answer to "how do I make this fold?" for non-GitOps apps. */
-export const APP_IDENTITY_ANNOTATION = "app.skyhook.io/app";
+export const APP_IDENTITY_ANNOTATION = "kubeatlas.io/app";
+const LEGACY_APP_IDENTITY_ANNOTATION = "app.skyhook.io/app";
 
 /** Whether a Source is a declared cross-cluster origin (mirrors the hub's
  *  isDeclaredPortableSource). NAMEs collide across clusters and stay per-cluster. */
@@ -217,10 +218,12 @@ export function isDeclaredAppSource(source?: string): boolean {
 
 /** A short label for how an app's identity was determined, by Source — the
  *  plain-language "grouped by …" phrase shown in the identity tooltip. */
-export function appSourceLabel(source?: string): string {
+export function appSourceLabel(source?: string, evidence?: string): string {
   switch (source) {
     case "explicit":
-      return `${APP_IDENTITY_ANNOTATION} 注解`;
+      return evidence?.startsWith(`${LEGACY_APP_IDENTITY_ANNOTATION}=`)
+        ? `${LEGACY_APP_IDENTITY_ANNOTATION} 注解`
+        : `${APP_IDENTITY_ANNOTATION} 注解`;
     case "argo-path":
       return "Argo CD 来源路径";
     case "argo-appset":
@@ -251,7 +254,7 @@ export function appGroupingExplainer(identity?: AppIdentity): {
   const folds = isDeclaredAppSource(identity?.source);
   return {
     folds,
-    how: `按 ${appSourceLabel(identity?.source)} 分组。`,
+    how: `按 ${appSourceLabel(identity?.source, identity?.evidence)} 分组。`,
     fix: folds
       ? undefined
       : `此应用仅有集群内名称，无法据此确认多个集群运行的是同一应用。若要跨集群合并，请在各集群的工作负载上设置相同的 ${APP_IDENTITY_ANNOTATION}，或通过 Argo CD / Flux 部署，并在来源路径中包含环境信息。`,

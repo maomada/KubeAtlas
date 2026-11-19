@@ -230,8 +230,8 @@ writeFileSync(join(OUT, 'tsconfig.json'), JSON.stringify({
     noUnusedLocals: false,
     noUnusedParameters: false,
     paths: {
-      '@skyhook/k8s-ui': ['../src/index.ts'],
-      '@skyhook/k8s-ui/*': ['../src/*'],
+      '@maomada/k8s-ui': ['../src/index.ts'],
+      '@maomada/k8s-ui/*': ['../src/*'],
       '@/*': ['../../../web/src/*'],
     },
   },

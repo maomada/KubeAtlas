@@ -134,7 +134,7 @@ function ToggleOption({
         onClick={onToggle}
         className={clsx(
           'w-7 h-4 rounded-full transition-colors relative shrink-0',
-          enabled ? 'bg-skyhook-500' : 'bg-theme-elevated'
+          enabled ? 'bg-kubeatlas-500' : 'bg-theme-elevated'
         )}
       >
         <div className={clsx(
@@ -276,7 +276,7 @@ export const TrafficFilterSidebar = memo(function TrafficFilterSidebar({
                   className={clsx(
                     'flex-1 px-2 py-1.5 text-[10px] font-medium transition-colors capitalize',
                     addonMode === mode
-                      ? 'bg-skyhook-500 text-white'
+                      ? 'bg-kubeatlas-500 text-white'
                       : 'bg-theme-elevated text-theme-text-secondary hover:bg-theme-hover'
                   )}
                 >
@@ -399,7 +399,7 @@ export const TrafficFilterSidebar = memo(function TrafficFilterSidebar({
                     className={clsx(
                       'flex-1 px-2 py-1 text-[10px] font-medium transition-colors capitalize',
                       l7Protocol === proto
-                        ? 'bg-skyhook-500 text-white'
+                        ? 'bg-kubeatlas-500 text-white'
                         : 'bg-theme-elevated text-theme-text-secondary hover:bg-theme-hover'
                     )}
                   >

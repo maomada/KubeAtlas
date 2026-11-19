@@ -186,7 +186,7 @@ export function CapacityPoolDetail({
             }
             className={`border-b-2 px-3 py-2 text-sm font-medium transition-colors ${
               section === tab.id
-                ? "border-skyhook-500 text-theme-text-primary"
+                ? "border-kubeatlas-500 text-theme-text-primary"
                 : "border-transparent text-theme-text-secondary hover:text-theme-text-primary"
             }`}
           >

@@ -30,6 +30,26 @@ class ReleaseArtifactsTests(unittest.TestCase):
         self.assertEqual(artifacts._package_version("1.2.3"), "1.2.3")
         self.assertEqual(artifacts._package_version("1.2.3-rc.1"), "1.2.3~rc.1")
 
+    def test_full_matrix_preserves_linux_and_darwin_without_windows(self):
+        version = "1.2.3"
+        expected = {
+            f"kubeatlas_v{version}_{platform}_{architecture}.tar.gz"
+            for platform in ("linux", "darwin")
+            for architecture in ("amd64", "arm64")
+        }
+        expected.update(
+            f"kubeatlas-portal_v{version}_linux_{architecture}.tar.gz"
+            for architecture in ("amd64", "arm64")
+        )
+        expected.update(
+            f"{component}_{version}_linux_{architecture}.{suffix}"
+            for component in ("kubeatlas", "kubeatlas-portal")
+            for architecture in ("amd64", "arm64")
+            for suffix in ("deb", "rpm")
+        )
+        self.assertEqual(artifacts.expected_names(version), expected)
+        self.assertEqual(len(expected), 14)
+
     def _make_archive(self, path: Path, zip_archive=False):
         component = path.name.split("_v", 1)[0]
         binary = component + (".exe" if zip_archive else "")
@@ -76,7 +96,7 @@ class ReleaseArtifactsTests(unittest.TestCase):
                 path.write_bytes(name.encode())
         output = self.dist / "release"
         manifest = artifacts.create_staged(self.dist, output, source_sha, version)
-        self.assertEqual(len(manifest["artifacts"]), 15)
+        self.assertEqual(len(manifest["artifacts"]), 14)
         self.assertEqual(artifacts.validate_staged(output)["sourceSha"], source_sha)
         (output / "unlisted").symlink_to(output / "checksums.txt")
         with self.assertRaisesRegex(ValueError, "files only"):
@@ -96,28 +116,28 @@ class ReleaseArtifactsTests(unittest.TestCase):
         artifacts.create_staged(self.dist, output, source_sha, version)
         return output
 
-    def test_local_profile_selects_nine_assets_and_keeps_full_matrix_diagnostic(self):
+    def test_default_local_profile_selects_linux_packages_and_keeps_full_matrix_diagnostic(self):
         version = "1.2.3"
         source_sha = "a" * 40
         full = self._create_full_release(version, source_sha)
         output = Path(self.temporary.name) / "local"
         manifest = artifacts.create_local_staged(full, output, source_sha, version)
         names = set(artifacts.local_asset_names(version))
-        self.assertEqual(len(names), 9)
-        self.assertEqual(len(manifest["artifacts"]), 9)
+        self.assertEqual(len(names), 8)
+        self.assertEqual(len(manifest["artifacts"]), 8)
         self.assertEqual(manifest["schemaVersion"], 2)
-        self.assertEqual(manifest["profile"], "local")
+        self.assertEqual(manifest["profile"], "local-linux")
         self.assertEqual(
             {path.name for path in output.iterdir()},
             set(artifacts.local_publication_names(version)),
         )
-        self.assertEqual(len((output / "checksums.txt").read_text().splitlines()), 10)
+        self.assertEqual(len((output / "checksums.txt").read_text().splitlines()), 9)
         full_manifest = json.loads((full / "binary-manifest.json").read_text())
         self.assertEqual(full_manifest["schemaVersion"], 1)
-        self.assertEqual(len(full_manifest["artifacts"]), 15)
-        self.assertEqual(artifacts.validate_staged(output, profile="local")["profile"], "local")
+        self.assertEqual(len(full_manifest["artifacts"]), 14)
+        self.assertEqual(artifacts.validate_staged(output, profile="local-linux")["profile"], "local-linux")
         with self.assertRaisesRegex(ValueError, "publication profile"):
-            artifacts.validate_staged(output, profile="local-linux")
+            artifacts.validate_staged(output, profile="local")
         with self.assertRaisesRegex(ValueError, "schema"):
             artifacts.validate_staged(output)
 
@@ -131,7 +151,7 @@ class ReleaseArtifactsTests(unittest.TestCase):
         )
         names = set(artifacts.local_asset_names(version, "local-linux"))
 
-        self.assertEqual(len(artifacts.expected_names(version)), 15)
+        self.assertEqual(len(artifacts.expected_names(version)), 14)
         self.assertEqual(len(names), 8)
         self.assertEqual(len(manifest["artifacts"]), 8)
         self.assertEqual(manifest["profile"], "local-linux")
@@ -149,7 +169,7 @@ class ReleaseArtifactsTests(unittest.TestCase):
             artifacts.validate_staged(output, profile="local")
 
         windows_zip = f"kubeatlas_v{version}_windows_amd64.zip"
-        (output / windows_zip).write_bytes((full / windows_zip).read_bytes())
+        (output / windows_zip).write_bytes(b"retired Windows archive")
         with self.assertRaisesRegex(ValueError, "artifact set"):
             artifacts.validate_staged(output, profile="local-linux")
 
@@ -172,7 +192,7 @@ class ReleaseArtifactsTests(unittest.TestCase):
         for deferred in (f"kubeatlas_{version}_linux_arm64.deb", f"kubeatlas_v{version}_windows_amd64.zip"):
             with self.subTest(deferred=deferred):
                 extra = output / deferred
-                extra.write_bytes((full / deferred).read_bytes())
+                extra.write_bytes(b"unsupported artifact")
                 with self.assertRaisesRegex(ValueError, "artifact set"):
                     artifacts.validate_staged(output, profile=profile)
                 extra.unlink()
@@ -189,19 +209,25 @@ class ReleaseArtifactsTests(unittest.TestCase):
         original = artifact.read_bytes()
         artifact.unlink()
         with self.assertRaisesRegex(ValueError, "artifact set"):
-            artifacts.validate_staged(output, profile="local")
+            artifacts.validate_staged(output, profile="local-linux")
         artifact.write_bytes(original)
         (output / "extra").write_text("extra")
         with self.assertRaisesRegex(ValueError, "artifact set"):
-            artifacts.validate_staged(output, profile="local")
+            artifacts.validate_staged(output, profile="local-linux")
         (output / "extra").unlink()
         (output / "symlink").symlink_to(artifact)
         with self.assertRaisesRegex(ValueError, "files only"):
-            artifacts.validate_staged(output, profile="local")
+            artifacts.validate_staged(output, profile="local-linux")
         (output / "symlink").unlink()
         artifact.write_bytes(b"modified")
         with self.assertRaises(ValueError):
-            artifacts.validate_staged(output, profile="local")
+            artifacts.validate_staged(output, profile="local-linux")
+
+    def test_full_matrix_rejects_retired_windows_asset(self):
+        output = self._create_full_release()
+        (output / "kubeatlas_v1.2.3_windows_amd64.zip").write_bytes(b"retired Windows archive")
+        with self.assertRaisesRegex(ValueError, "artifact set"):
+            artifacts.validate_staged(output)
 
     def test_linux_elf_architecture_is_not_trusted_from_filename(self):
         import io

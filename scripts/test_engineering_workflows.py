@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_PATHS = ROOT / ".github/package-paths.yml"
 PACKAGE_WORKFLOW = ROOT / ".github/workflows/package-validation.yml"
 CI_WORKFLOW = ROOT / ".github/workflows/ci.yml"
+INSTALLER_WORKFLOW = ROOT / ".github/workflows/installers.yml"
 SECURITY_WORKFLOW = ROOT / ".github/workflows/security.yml"
 
 EXPECTED_PACKAGE_PATHS = [
@@ -194,16 +195,24 @@ class EngineeringWorkflowTests(unittest.TestCase):
             with self.subTest(path=path):
                 self.assertFalse(self.ci_selected("app", path))
 
-    def test_installer_prs_select_reusable_windows_and_posix_checks(self):
+    def test_installer_prs_select_reusable_posix_checks(self):
         installers = job_block(self.ci, "installers")
         self.assertIn("needs: changes", installers)
         self.assertIn("if: needs.changes.outputs.installers == 'true'", installers)
         self.assertIn("uses: ./.github/workflows/installers.yml", installers)
         for path in ("install.sh", "install.ps1", "scripts/test-installers.sh",
-                     "scripts/test-installers.ps1", ".github/workflows/installers.yml"):
+                     "scripts/test_prepare_hub_opencost.py", ".github/workflows/installers.yml"):
             with self.subTest(path=path):
                 self.assertTrue(self.ci_selected("installers", path))
-        self.assertFalse(self.ci_selected("installers", "docs/configuration.md"))
+        for path in ("scripts/test-installers.ps1", "docs/configuration.md"):
+            with self.subTest(path=path):
+                self.assertFalse(self.ci_selected("installers", path))
+        reusable = INSTALLER_WORKFLOW.read_text(encoding="utf-8")
+        posix = job_block(reusable, "posix")
+        self.assertIn("name: POSIX installer", posix)
+        self.assertIn("run: sh scripts/test-installers.sh", posix)
+        self.assertIn("run: python3 -B scripts/test_prepare_hub_opencost.py", posix)
+        self.assertNotIn("runs-on: windows-latest", reusable)
 
     def test_ci_orchestration_changes_select_every_job_and_main_still_runs_every_job(self):
         changes = job_block(self.ci, "changes")

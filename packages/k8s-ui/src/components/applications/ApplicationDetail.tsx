@@ -1008,7 +1008,7 @@ function ApplicationViewTabs({
               className={clsx(
                 "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors",
                 active
-                  ? "border-skyhook-500 text-theme-text-primary"
+                  ? "border-kubeatlas-500 text-theme-text-primary"
                   : "border-transparent text-theme-text-secondary hover:border-theme-border-light hover:text-theme-text-primary",
               )}
             >
@@ -1025,7 +1025,7 @@ function ApplicationViewTabs({
             className={clsx(
               "flex items-center gap-1.5 whitespace-nowrap border-b-2 px-3 py-2 text-sm font-medium transition-colors",
               costSelected
-                ? "border-skyhook-500 text-theme-text-primary"
+                ? "border-kubeatlas-500 text-theme-text-primary"
                 : "border-transparent text-theme-text-secondary hover:border-theme-border-light hover:text-theme-text-primary",
             )}
           >
@@ -1344,7 +1344,7 @@ function ApplicationSourceProvenance({
 
   const inferred = app.identity?.confidence === "medium";
   const identityLabel = app.identity?.source
-    ? appSourceLabel(app.identity.source)
+    ? appSourceLabel(app.identity.source, app.identity.evidence)
     : undefined;
   const tierLabel =
     !app.identity && app.tier ? overlayProvenance(app.tier) : undefined;

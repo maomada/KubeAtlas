@@ -464,6 +464,12 @@ describe('appGroupingExplainer', () => {
     }
   })
 
+  it('recommends the canonical annotation and preserves legacy grouping evidence', () => {
+    expect(APP_IDENTITY_ANNOTATION).toBe('kubeatlas.io/app')
+    expect(appSourceLabel('explicit', 'app.skyhook.io/app="checkout"')).toBe('app.skyhook.io/app 注解')
+    expect(appSourceLabel('explicit', 'kubeatlas.io/app="checkout"')).toBe('kubeatlas.io/app 注解')
+  })
+
   it('NAME sources stay per-cluster and tell the user how to fold', () => {
     for (const source of ['label', 'name-stem', 'namespace', undefined]) {
       const e = appGroupingExplainer({ key: 'k', env: 'prod', confidence: 'high', evidence: '', source })

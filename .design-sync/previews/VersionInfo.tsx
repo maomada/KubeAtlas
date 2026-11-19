@@ -23,7 +23,7 @@ const singleVersion: AppRow = {
   health: 'healthy',
   appVersion: 'v2.4.1',
   versions: ['v2.4.1'],
-  workloads: [wl('Deployment', 'checkout', 'ghcr.io/skyhook/checkout:v2.4.1', 'v2.4.1')],
+  workloads: [wl('Deployment', 'checkout', 'ghcr.io/acme/checkout:v2.4.1', 'v2.4.1')],
 }
 
 const longTag: AppRow = {
@@ -41,8 +41,8 @@ const multiNoSkew: AppRow = {
   versions: ['v1.2.0', 'v3.4.1', 'v0.9.7'],
   versionSkew: false,
   workloads: [
-    wl('Deployment', 'api', 'ghcr.io/skyhook/api:v3.4.1', 'v3.4.1'),
-    wl('Deployment', 'worker', 'ghcr.io/skyhook/worker:v1.2.0', 'v1.2.0'),
+    wl('Deployment', 'api', 'ghcr.io/acme/api:v3.4.1', 'v3.4.1'),
+    wl('Deployment', 'worker', 'ghcr.io/acme/worker:v1.2.0', 'v1.2.0'),
     wl('StatefulSet', 'cache', 'redis:v0.9.7', 'v0.9.7'),
   ],
 }
@@ -54,8 +54,8 @@ const multiSkew: AppRow = {
   versions: ['v2.4.1', 'v2.3.0'],
   versionSkew: true,
   workloads: [
-    wl('Deployment', 'payments-web', 'ghcr.io/skyhook/payments:v2.4.1', 'v2.4.1'),
-    wl('Deployment', 'payments-web-canary', 'ghcr.io/skyhook/payments:v2.3.0', 'v2.3.0'),
+    wl('Deployment', 'payments-web', 'ghcr.io/acme/payments:v2.4.1', 'v2.4.1'),
+    wl('Deployment', 'payments-web-canary', 'ghcr.io/acme/payments:v2.3.0', 'v2.3.0'),
   ],
 }
 

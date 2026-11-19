@@ -79,7 +79,7 @@ export function SearchBox({
             onArrowDown()
           }
         }}
-        className="w-full rounded-lg border border-theme-border-light bg-theme-elevated py-1.5 pl-10 pr-9 text-sm text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-2 focus:ring-skyhook-500"
+        className="w-full rounded-lg border border-theme-border-light bg-theme-elevated py-1.5 pl-10 pr-9 text-sm text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-2 focus:ring-kubeatlas-500"
       />
       {value && (
         <button

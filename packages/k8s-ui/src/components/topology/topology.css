@@ -1,5 +1,5 @@
 /*
- * Topology visualization CSS for @skyhook/k8s-ui
+ * Topology visualization CSS for @maomada/k8s-ui
  * Provides node styling, icon colors, group borders, and layout utilities.
  * Consumers must define the CSS variables below in their theme (light/dark).
  *
@@ -26,7 +26,7 @@
  * on the theme token instead of a hardcoded rgba.
  */
 .topology-node-selected {
-  /* skyhook-400 (#6A9FE0) — hardcoded like the rest of this file's palette
+  /* kubeatlas-400 (#6A9FE0) — hardcoded like the rest of this file's palette
      because @theme inline doesn't expose the brand vars at runtime. */
   outline: 3px solid #6a9fe0;
   outline-offset: 2px;

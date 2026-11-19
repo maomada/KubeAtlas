@@ -2861,7 +2861,7 @@ function EventMarker({ event, x, selected, onClick, dimmed, small }: EventMarker
           case 'delete':
             return 'bg-red-500/20 border-2 border-dashed border-red-500/60'
           case 'update':
-            return 'bg-skyhook-500/20 border-2 border-dashed border-skyhook-500/60'
+            return 'bg-kubeatlas-500/20 border-2 border-dashed border-kubeatlas-500/60'
         }
       }
       return 'bg-theme-hover/30 border-2 border-dashed border-theme-border-light'

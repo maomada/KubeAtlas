@@ -427,7 +427,7 @@ export function SetImageDialog({
               </div>
             )}
 
-            <div className="rounded-md border border-skyhook-500/30 bg-skyhook-500/10 px-3 py-2 text-xs text-theme-text-secondary">
+            <div className="rounded-md border border-kubeatlas-500/30 bg-kubeatlas-500/10 px-3 py-2 text-xs text-theme-text-secondary">
               {describeImageUpdateBehavior(inventory.behavior)}
             </div>
 
@@ -577,7 +577,7 @@ function ContainerImageGroup({
                     'min-w-0 rounded-md border bg-theme-base px-2.5 py-2 font-mono text-xs text-theme-text-primary outline-none focus:ring-1 disabled:opacity-50',
                     empty
                       ? 'border-red-500/60 focus:border-red-500 focus:ring-red-500'
-                      : 'border-theme-border focus:border-skyhook-500 focus:ring-skyhook-500',
+                      : 'border-theme-border focus:border-kubeatlas-500 focus:ring-kubeatlas-500',
                   )}
                 />
               </div>

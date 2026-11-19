@@ -24,7 +24,6 @@ const HelmReleaseSecretType corev1.SecretType = "helm.sh/release.v1"
 
 // DropManagedFields is a SharedInformer transform that reduces memory usage
 // by removing managedFields and heavy annotations from cached objects.
-// This is the union of transforms used by both KubeAtlas and skyhook-connector.
 //
 // It also replaces each value of a Helm release Secret (see
 // IsHelmReleaseSecret) with a digest of it. Each value is a full encoded

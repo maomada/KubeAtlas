@@ -4,10 +4,7 @@ KubeAtlas's GitOps view gives Argo CD and Flux first-class treatment. Instead of
 
 The hard part of GitOps tooling isn't sync — it's diagnosis. KubeAtlas surfaces drift, recent events, controller-failure attribution, and lifecycle state inline so you don't have to context-switch between `kubectl get`, `argocd app diff`, controller logs, and a YAML viewer to understand a stuck reconcile.
 
-<p align="center">
-  <img src="screenshots/gitops-view.png" alt="GitOps fleet view" width="800">
-  <br><em>Fleet view — Argo + Flux applications side-by-side with sync, health, source, destination, and lifecycle state</em>
-</p>
+Start in the fleet view to compare Argo CD and Flux applications by sync, health, source, destination, and lifecycle state. Open an application to trace its dependencies, inspect drift, and review reconciliation activity.
 
 ## Supported CRDs
 
@@ -28,10 +25,7 @@ Open the **GitOps** tab in the sidebar. Argo + Flux rows mix in the same table o
 
 Click any row to open a detail page with three top-level tabs.
 
-<p align="center">
-  <img src="screenshots/gitops-detail-drift.png" alt="GitOps detail page with stuck-drift-loop diagnosis" width="800">
-  <br><em>Detail page — the diagnosis pipeline names the cause; field-level drift renders inline</em>
-</p>
+The detail page names the detected cause and shows field-level drift inline.
 
 ### Topology tab
 

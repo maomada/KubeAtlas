@@ -16,7 +16,7 @@ export function Providers() {
   return (
     <div style={row}>
       <div style={cell}>
-        <ClusterName name="gke_skyhook-prod_us-east1_prod-cluster-us-east1" />
+        <ClusterName name="gke_acme-prod_us-east1_prod-cluster-us-east1" />
       </div>
       <div style={cell}>
         <ClusterName name="arn:aws:eks:us-west-2:123456789012:cluster/staging-payments" />
@@ -35,7 +35,7 @@ export function Stacked() {
   return (
     <div style={card}>
       <div style={cell}>
-        <ClusterName name="gke_skyhook-prod_us-east1_prod-cluster-us-east1" variant="stacked" />
+        <ClusterName name="gke_acme-prod_us-east1_prod-cluster-us-east1" variant="stacked" />
       </div>
       <div style={cell}>
         <ClusterName name="arn:aws:eks:eu-central-1:987654321098:cluster/analytics-eu" variant="stacked" />
@@ -48,7 +48,7 @@ export function NoBadge() {
   return (
     <div style={card}>
       <div style={cell}>
-        <ClusterName name="gke_skyhook-prod_us-east1_prod-cluster-us-east1" noBadge />
+        <ClusterName name="gke_acme-prod_us-east1_prod-cluster-us-east1" noBadge />
       </div>
       <div style={cell}>
         <ClusterName name="minikube" noBadge />

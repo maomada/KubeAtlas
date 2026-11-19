@@ -22,7 +22,7 @@ spec:
     spec:
       containers:
         - name: checkout-api
-          image: registry.skyhook.io/checkout-api:v2.4.1
+          image: registry.example.com/checkout-api:v2.4.1
           ports:
             - containerPort: 8080
           resources:
@@ -42,7 +42,7 @@ metadata:
 spec:
   containers:
     - name: cart-service
-      image: registry.skyhook.io/cart-service:1.8.0
+      image: registry.example.com/cart-service:1.8.0
       ports:
         - containerPort: 9000
   tolerations:

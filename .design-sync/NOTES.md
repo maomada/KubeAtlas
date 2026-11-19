@@ -1,4 +1,4 @@
-# design-sync notes — @maomada/k8s-ui → claude.ai/design "Skyhook KubeAtlas"
+# design-sync notes — @maomada/k8s-ui → claude.ai/design "KubeAtlas"
 
 ## Re-sync (from repo root)
 

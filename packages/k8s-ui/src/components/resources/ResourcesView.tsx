@@ -6268,7 +6268,7 @@ export function ResourcesView({
                   searchTerm ? 'pr-16' : 'pr-10',
                   searchRegex.error
                     ? 'border-red-500/60 focus:ring-red-500'
-                    : 'border-theme-border-light focus:ring-skyhook-500'
+                    : 'border-theme-border-light focus:ring-kubeatlas-500'
                 )}
               />
               <button
@@ -6281,7 +6281,7 @@ export function ResourcesView({
                   'absolute top-1/2 -translate-y-1/2 flex items-center justify-center w-6 h-6 rounded transition-colors',
                   searchTerm ? 'right-9' : 'right-2',
                   regexMode
-                    ? 'bg-skyhook-500/20 text-skyhook-400'
+                    ? 'bg-kubeatlas-500/20 text-kubeatlas-400'
                     : 'text-theme-text-tertiary hover:text-theme-text-primary hover:bg-theme-hover'
                 )}
               >
@@ -6403,7 +6403,7 @@ export function ResourcesView({
                           value={labelSearch}
                           onChange={(e) => setLabelSearch(e.target.value)}
                           autoFocus
-                          className="w-full pl-7 pr-2 py-1.5 text-xs bg-theme-elevated border border-theme-border-light rounded text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-1 focus:ring-skyhook-500"
+                          className="w-full pl-7 pr-2 py-1.5 text-xs bg-theme-elevated border border-theme-border-light rounded text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-1 focus:ring-kubeatlas-500"
                         />
                       </div>
                       {activeLabelPairs.length > 0 && (
@@ -6443,7 +6443,7 @@ export function ResourcesView({
                 type="checkbox"
                 checked={showInactiveReplicaSets}
                 onChange={(e) => setShowInactiveReplicaSets(e.target.checked)}
-                className="w-3 h-3 rounded border-theme-border-light accent-skyhook-500"
+                className="w-3 h-3 rounded border-theme-border-light accent-kubeatlas-500"
               />
               Show inactive ({inactiveReplicaSetCount})
             </label>
@@ -6533,7 +6533,7 @@ export function ResourcesView({
                         className={clsx(
                           'px-2 py-0.5 text-xs rounded capitalize',
                           customColumnDraft.source === src
-                            ? 'bg-skyhook-500/20 text-skyhook-400'
+                            ? 'bg-kubeatlas-500/20 text-kubeatlas-400'
                             : 'text-theme-text-tertiary hover:text-theme-text-primary hover:bg-theme-elevated'
                         )}
                       >
@@ -6554,7 +6554,7 @@ export function ResourcesView({
                       value={customColumnDraft.path}
                       onChange={e => setCustomColumnDraft(d => ({ ...d, path: e.target.value }))}
                       placeholder={`Add ${customColumnDraft.source} key…`}
-                      className="flex-1 min-w-0 px-2 py-1 text-xs rounded bg-theme-base border border-theme-border text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                      className="flex-1 min-w-0 px-2 py-1 text-xs rounded bg-theme-base border border-theme-border text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
                     />
                     <datalist id={customColKeysListId}>
                       {customColumnKeySuggestions[customColumnDraft.source].map(k => (
@@ -6597,7 +6597,7 @@ export function ResourcesView({
                 className={clsx(
                   'p-2 rounded-lg transition-colors',
                   compareMode
-                    ? 'bg-skyhook-500/15 text-skyhook-300 border border-skyhook-400/50'
+                    ? 'bg-kubeatlas-500/15 text-kubeatlas-300 border border-kubeatlas-400/50'
                     : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated',
                 )}
               >
@@ -6614,7 +6614,7 @@ export function ResourcesView({
                 className={clsx(
                   'p-2 rounded-lg transition-colors',
                   isCheckboxMode
-                    ? 'bg-skyhook-500/15 text-skyhook-300 border border-skyhook-400/50'
+                    ? 'bg-kubeatlas-500/15 text-kubeatlas-300 border border-kubeatlas-400/50'
                     : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated',
                 )}
               >
@@ -6634,7 +6634,7 @@ export function ResourcesView({
 
         {/* Bulk actions bar */}
         {showBulkBar && (
-          <div className="flex items-center gap-3 px-4 py-2 bg-skyhook-500/10 border-b border-skyhook-400/20 shrink-0 phone:flex-wrap phone:gap-2 phone:px-3">
+          <div className="flex items-center gap-3 px-4 py-2 bg-kubeatlas-500/10 border-b border-kubeatlas-400/20 shrink-0 phone:flex-wrap phone:gap-2 phone:px-3">
             <span className="text-sm font-medium text-theme-text-primary">
               {checkedItems.length} 项已选
             </span>
@@ -6832,7 +6832,7 @@ export function ResourcesView({
                       // `w-9` is a hint the browser absorbs into leftover
                       // row width on an icon-only column.
                       style={{ ...COMPARE_COLUMN_STYLE, ...phonePinnedLeft(compareMode, isCheckboxMode, 'compare') }}
-                      className={clsx('px-2 py-3 text-xs font-medium uppercase tracking-wide bg-theme-base border-b border-r-subtle border-theme-border text-center text-skyhook-400', PHONE_PINNED_HEAD)}
+                      className={clsx('px-2 py-3 text-xs font-medium uppercase tracking-wide bg-theme-base border-b border-r-subtle border-theme-border text-center text-kubeatlas-400', PHONE_PINNED_HEAD)}
                       title="对比模式"
                     >
                       <GitCompare className="w-3.5 h-3.5 inline-block opacity-70" />
@@ -6845,7 +6845,7 @@ export function ResourcesView({
                         checked={allVisibleChecked}
                         ref={(el) => { if (el) el.indeterminate = checkedItems.length > 0 && checkedItems.length < filteredResources.length }}
                         onChange={toggleCheckAll}
-                        className="w-3.5 h-3.5 rounded border-theme-border accent-skyhook-500 cursor-pointer"
+                        className="w-3.5 h-3.5 rounded border-theme-border accent-kubeatlas-500 cursor-pointer"
                       title={checkedItems.length > 0 ? '取消全选' : '全选'}
                       />
                     </th>
@@ -6909,7 +6909,7 @@ export function ResourcesView({
                                 className={clsx(
                                   'rounded-l transition-colors flex items-center gap-0.5',
                                   hasActiveFilter
-                                    ? 'px-1.5 py-0.5 -my-0.5 selection-strong selection-text hover:bg-skyhook-500/30'
+                                    ? 'px-1.5 py-0.5 -my-0.5 selection-strong selection-text hover:bg-kubeatlas-500/30'
                                     : isFilterOpen
                                       ? 'p-0.5 text-theme-text-primary'
                                       : 'p-0.5 text-theme-text-disabled opacity-40 group-hover/th:opacity-100 hover:text-theme-text-primary'
@@ -6933,7 +6933,7 @@ export function ResourcesView({
                                     clearColumnFilter(col.key)
                                     setOpenColumnFilter(null)
                                   }}
-                                  className="rounded-r px-0.5 py-0.5 -my-0.5 selection-strong selection-text hover:bg-skyhook-500/30 transition-colors"
+                                  className="rounded-r px-0.5 py-0.5 -my-0.5 selection-strong selection-text hover:bg-kubeatlas-500/30 transition-colors"
                                   title="清除筛选"
                                 >
                                   <X className="w-3 h-3" />
@@ -6994,7 +6994,7 @@ export function ResourcesView({
                                       value={columnFilterSearch}
                                       onChange={(e) => setColumnFilterSearch(e.target.value)}
                                       autoFocus
-                                      className="w-full pl-7 pr-2 py-1.5 text-xs bg-theme-elevated border border-theme-border-light rounded text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-1 focus:ring-skyhook-500"
+                                      className="w-full pl-7 pr-2 py-1.5 text-xs bg-theme-elevated border border-theme-border-light rounded text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-1 focus:ring-kubeatlas-500"
                                     />
                                   </div>
                                   {activeFilterValues.length > 0 && (
@@ -7021,7 +7021,7 @@ export function ResourcesView({
                                           : 'text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary'
                                       )}
                                     >
-                                      <span className={clsx('w-3 h-3 shrink-0 rounded-sm border flex items-center justify-center', isSelected ? 'bg-skyhook-500 border-skyhook-500' : 'border-theme-border')}>
+                                      <span className={clsx('w-3 h-3 shrink-0 rounded-sm border flex items-center justify-center', isSelected ? 'bg-kubeatlas-500 border-kubeatlas-500' : 'border-theme-border')}>
                                         {isSelected && <Check className="w-2 h-2 text-white" />}
                                       </span>
                                       <span className="truncate" title={value}>{value}</span>
@@ -7111,7 +7111,7 @@ export function ResourcesView({
             {/* Resize indicator line — full table height, shown only while dragging */}
             {resizeLineX !== null && (
               <div
-                className="absolute top-0 bottom-0 w-0.5 bg-skyhook-500 pointer-events-none"
+                className="absolute top-0 bottom-0 w-0.5 bg-kubeatlas-500 pointer-events-none"
                 style={{ left: resizeLineX, zIndex: 20 }}
               />
             )}
@@ -7219,7 +7219,7 @@ export function ResourcesView({
             value={bulkScaleReplicas}
             aria-label="副本数"
             onChange={(e) => setBulkScaleReplicas(Math.min(10000, Math.max(0, Number.parseInt(e.target.value, 10) || 0)))}
-            className="w-24 text-center text-2xl font-semibold bg-theme-elevated border border-theme-border rounded-lg py-2 text-theme-text-primary focus:outline-none focus:border-skyhook-500"
+            className="w-24 text-center text-2xl font-semibold bg-theme-elevated border border-theme-border rounded-lg py-2 text-theme-text-primary focus:outline-none focus:border-kubeatlas-500"
             autoFocus
           />
           <button
@@ -7288,8 +7288,8 @@ function rowHighlightClass(
     if (isHighlighted) return 'selection selection-ring'
     return 'group-hover/row:bg-theme-surface/50'
   }
-  if (isSelected) return 'selection-strong group-hover/row:bg-skyhook-500/30'
-  if (isChecked) return 'selection group-hover/row:bg-skyhook-500/20'
+  if (isSelected) return 'selection-strong group-hover/row:bg-kubeatlas-500/30'
+  if (isChecked) return 'selection group-hover/row:bg-kubeatlas-500/20'
   if (isHighlighted) return 'selection selection-ring'
   return 'group-hover/row:bg-theme-surface/50'
 }
@@ -7324,7 +7324,7 @@ const ResourceRowCells = React.memo(function ResourceRowCells({ resource, kind, 
             </span>
           ) : (
             <span
-              className="inline-block w-4 h-4 rounded border border-theme-border-light group-hover/row:border-skyhook-400/60 transition-colors"
+              className="inline-block w-4 h-4 rounded border border-theme-border-light group-hover/row:border-kubeatlas-400/60 transition-colors"
               aria-hidden
             />
           )}
@@ -7340,7 +7340,7 @@ const ResourceRowCells = React.memo(function ResourceRowCells({ resource, kind, 
             type="checkbox"
             checked={!!isChecked}
             onChange={() => {}}
-            className="w-3.5 h-3.5 rounded border-theme-border accent-skyhook-500 cursor-pointer"
+            className="w-3.5 h-3.5 rounded border-theme-border accent-kubeatlas-500 cursor-pointer"
           />
         </td>
       )}

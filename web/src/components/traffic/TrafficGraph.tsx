@@ -215,7 +215,7 @@ function TrafficNode({ data }: { data: TrafficNodeData }) {
                   : hasNamespaceColor
                     ? 'border-white/20'
                     : 'bg-theme-surface border-theme-border',
-        data.isFocused ? 'ring-2 ring-skyhook-500' : data.isHotPath && 'ring-2 ring-orange-500/50'
+        data.isFocused ? 'ring-2 ring-kubeatlas-500' : data.isHotPath && 'ring-2 ring-orange-500/50'
       )}
       style={{
         width: NODE_WIDTH,

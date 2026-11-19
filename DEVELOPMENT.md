@@ -13,7 +13,7 @@ Guide for developers contributing to KubeAtlas or building custom versions.
 
 ```bash
 git clone https://github.com/maomada/KubeAtlas.git
-cd kubeatlas
+cd KubeAtlas
 
 # Install dependencies
 make deps
