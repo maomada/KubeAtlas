@@ -38,7 +38,11 @@ origin-only hints; they do not enable the source agent.
 
 The URL is an origin, not an agent endpoint: the source derives `/agent` and
 uses `wss`. It rejects credentials, query strings, fragments and subpaths.
-Plain HTTP/`ws` is permitted only for loopback development. The cluster ID must
+Plain HTTP/`ws` is permitted for loopback development and explicitly configured
+literal IP origins on a trusted network; HTTP DNS names are rejected. For a
+Hub-hosted image, each target node must also permit the selected HTTP registry
+authority. See the [onboarding prerequisites](hub-agent-onboarding.md) before
+using this mode. The cluster ID must
 match `^[a-z0-9][a-z0-9-]{0,62}$`. Supplying any Hub option requires the full
 URL/ID/token-file set. The validated origin is also used for API and app origin
 hints.
