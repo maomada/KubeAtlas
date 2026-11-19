@@ -11,6 +11,8 @@ if [[ ! -f "$STATEFILE" ]]; then
   exit 1
 fi
 
+# The start script writes this state file at runtime.
+# shellcheck source=/dev/null
 source "$STATEFILE"
 
 # Kill KubeAtlas

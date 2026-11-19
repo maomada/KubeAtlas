@@ -62,6 +62,11 @@ check_not_empty() {
     fi
 }
 
+session_cookie_value() {
+    local value="${1##*kubeatlas_session=}"
+    printf '%s\n' "${value%%;*}"
+}
+
 # --- Start kubeatlas ---
 echo -e "${YELLOW}Starting kubeatlas on port $PORT with --auth-mode=proxy${NC}"
 "$KUBEATLAS" --port "$PORT" --auth-mode=proxy --no-browser --auth-secret=test-e2e-secret 2>/dev/null &
@@ -69,7 +74,7 @@ PID=$!
 
 # Wait for health
 echo "Waiting for kubeatlas to be ready..."
-for i in $(seq 1 30); do
+for _ in {1..30}; do
     if curl -sf "$BASE/api/health" >/dev/null 2>&1; then
         echo "KubeAtlas ready."
         break
@@ -150,7 +155,7 @@ if [[ -n "$cookie_header" ]]; then
     PASS=$((PASS + 1))
 
     # Extract cookie value
-    cookie_val=$(echo "$cookie_header" | sed 's/.*kubeatlas_session=\([^;]*\).*/\1/')
+    cookie_val=$(session_cookie_value "$cookie_header")
 
     # Use cookie only (no proxy headers)
     code=$(curl -s -o /dev/null -w '%{http_code}' \
@@ -211,7 +216,7 @@ if [[ -n "$cookie_val" ]]; then
 
     # Verify SID is stable if a re-issue did happen (non-failure path)
     if [[ -n "$reissue_header" ]]; then
-        new_val=$(echo "$reissue_header" | sed 's/.*kubeatlas_session=\([^;]*\).*/\1/')
+        new_val=$(session_cookie_value "$reissue_header")
         new_sid=$(echo "$new_val" | cut -d. -f1 | python3 -c "import sys,base64,json; d=sys.stdin.read().strip(); d+='='*(-len(d)%4); print(json.loads(base64.urlsafe_b64decode(d)).get('s',''))" 2>/dev/null)
         check "SID preserved across re-issue" "$sid" "$new_sid"
     fi

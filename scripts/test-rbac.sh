@@ -118,7 +118,6 @@ G='\033[0;32m'; R='\033[0;31m'; Y='\033[1;33m'; B='\033[1;34m'; N='\033[0m'
 ok()   { echo -e "${G}✓${N} $1"; }
 fail() { echo -e "${R}✗${N} $1"; FAILS=$((FAILS+1)); }
 info() { echo -e "${B}→${N} $1"; }
-warn() { echo -e "${Y}⚠${N} $1"; }
 
 echo
 echo -e "${Y}This will create disposable RBAC fixtures in context: ${B}${CTX}${N}"
@@ -152,10 +151,12 @@ LEDGER="$RUN_DIR/ledger.jsonl"
 : > "$LEDGER"
 chmod 600 "$LEDGER"
 FROZEN_KUBECONFIG="$RUN_DIR/kubeconfig"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 remove_private_kubeconfig() {
   [[ -z "$FROZEN_KUBECONFIG" ]] || rm -f -- "$FROZEN_KUBECONFIG"
 }
-trap remove_private_kubeconfig EXIT
+trap 'remove_private_kubeconfig' EXIT
 
 if ! kubectl --context "$CTX" config view --raw --flatten --minify > "$FROZEN_KUBECONFIG" 2>/dev/null; then
   echo "Unable to snapshot the selected kubeconfig; no cluster resources were changed." >&2
@@ -191,6 +192,8 @@ fi
   exit 1
 }
 
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() {
   local original_status=$?
   local cleanup_status=0
@@ -217,7 +220,7 @@ cleanup() {
   echo "RBAC evidence directory retained: $RUN_DIR"
   exit "$original_status"
 }
-trap cleanup EXIT
+trap 'cleanup' EXIT
 
 create_owned() {
   python3 "$SCRIPT_DIR/engineering_rbac.py" create \
@@ -575,17 +578,6 @@ expect_mcp_code() {
   else
     fail "$desc — expected error_code $want, got: $text"
   fi
-}
-
-# expect_zero <description> <count> — passes when count is "0", fails on
-# anything else (including "ERR" from arr_len). Use for "no leak" tests.
-expect_zero() {
-  local desc=$1 actual=$2
-  case "$actual" in
-    0)   ok "$desc" ;;
-    ERR) fail "$desc — invalid response (transport/parse error)" ;;
-    *)   fail "$desc — expected 0, got $actual" ;;
-  esac
 }
 
 # expect_at_least_one <description> <count> — passes when count is a
