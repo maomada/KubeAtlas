@@ -126,10 +126,18 @@ python3 deploy/helm/kubeatlas/files/prepare-opencost.py \
 
 The helper reports a JSON `ready` value and `reason`. A missing, unreachable,
 or ambiguous Prometheus setup leaves the OpenCost package unavailable while
-allowing Agent enrollment to continue. Correct the Prometheus setup and
-prepare the Agent package again before installing OpenCost.
+allowing Agent enrollment to continue. Correct the Prometheus setup and run
+the helper again. For an existing Agent, apply the prepared archive to that
+release using the verified Agent Helm chart for the running version. Set
+`hub.openCostBundle.sha256` to the prepared archive's checksum,
+`hub.openCostBundle.data` to its base64 contents, and
+`traffic.prometheusUrl` to the helper's `prometheusURL`. Keep the Agent's
+existing Hub values and Secret when upgrading the release.
 
 On a test cluster, confirm that the Agent registers and the cost page offers
 installation while the `opencost` release is still absent. After you confirm
 installation, verify that the exporter image pulls, the Prometheus target is
 healthy, and the Cost page shows data after Prometheus has collected samples.
+Test the first pull on an eligible node without the cached image. The Helm
+install waits up to 40 seconds for readiness. A cluster with slower pulls can
+preload the verified exporter digest on its eligible nodes before installation.
