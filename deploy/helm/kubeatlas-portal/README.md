@@ -98,3 +98,5 @@ hubArtifacts:
 ```
 
 The PVC must contain the immutable catalog produced by `cmd/prepare-hub-artifacts` and match the Portal build version. Keep the source bundle operator-owned and unchanged while the Portal is serving it. An absent bundle disables install artifacts without disabling Hub/MCP; a configured but invalid catalog prevents the Portal from starting. Artifact bytes are not fetched or published at runtime.
+
+During an upgrade, the Portal can continue serving image digests from one previous catalog. With `hubArtifacts.enabled` set to `true`, point `hubArtifacts.previous.existingClaim` at that catalog's PVC and set `hubArtifacts.previous.version` to its exact build version. The Portal mounts the previous PVC read-only and serves verified Agent and OpenCost image digests from it. New enrollments use the current catalog.
