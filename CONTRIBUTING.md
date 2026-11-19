@@ -8,9 +8,13 @@ By participating in this project, you agree to abide by our [Code of Conduct](CO
 
 ## Get Help & Join the Community
 
-Use [this repository's issues](https://github.com/maomada/KubeAtlas/issues) for
-questions, bug reports and feature requests. This is an independently maintained
-derivative; its custom features and releases are not supported by the upstream team.
+- Ask installation and usage questions in [Discussions](https://github.com/maomada/KubeAtlas/discussions).
+- File reproducible bugs and feature requests in [Issues](https://github.com/maomada/KubeAtlas/issues).
+- Use the [security policy](SECURITY.md) to report vulnerabilities privately.
+
+Redact credentials, kubeconfig contents, and internal endpoints from logs and
+screenshots before posting. See the [maintainer handbook](docs/maintaining.md)
+for issue triage and release responsibilities.
 
 ## How to Contribute
 
@@ -70,8 +74,8 @@ For detailed architecture, API reference, and release process, see [DEVELOPMENT.
 
 ```bash
 # Clone your fork
-git clone https://github.com/YOUR_USERNAME/radar.git
-cd radar
+git clone https://github.com/YOUR_USERNAME/KubeAtlas.git
+cd KubeAtlas
 
 # Install all dependencies (Go + npm)
 make deps
