@@ -34,6 +34,8 @@ flowchart TB
 
 The **`0.1.0-rc.1` prerelease** is available as public container images and OCI Helm charts. [Packages](https://github.com/maomada?tab=packages) · [Publication record](https://github.com/maomada/KubeAtlas/actions/runs/44544344800)
 
+Hub and Agent images run on Linux (`amd64` and `arm64`). Windows support ends for future releases.
+
 ### Connect your clusters
 
 1. Deploy Hub with persistent storage and an HTTPS endpoint. [Hub Helm guide](deploy/helm/kubeatlas-portal/README.md)
