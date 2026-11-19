@@ -238,10 +238,14 @@ status="$(curl "${curl_args[@]}" --output "$work/installer.sh" "$origin/download
 [[ "$status" == 200 ]] || fail 'installer endpoint returned non-200; redirects are not followed'
 printf '%s  %s\n' "$installer_sha" "$work/installer.sh" | sha256sum --check --status || fail 'installer checksum mismatch'
 chmod 700 "$work/installer.sh"
-opencost_args=()
+installer_args=(
+  --hub-origin "$origin" --context "$context" --cluster-id "$cluster_id"
+  --version "$version" --image-digest "$image" --chart-sha256 "$chart"
+  --owner-user-id "$owner" --token-file "$work/token" --namespace "$namespace" --release "$release"
+)
 if jq -e 'has("openCostChartSHA256") or has("openCostImageDigest")' "$work/response.json" >/dev/null; then
   cost_chart="$(jq -er '.openCostChartSHA256 | select(test("^[0-9a-f]{64}$"))' "$work/response.json")" || fail 'OpenCost chart checksum is invalid'
   cost_image="$(jq -er '.openCostImageDigest | select(test("^sha256:[0-9a-f]{64}$"))' "$work/response.json")" || fail 'OpenCost image digest is invalid'
-  opencost_args+=(--opencost-chart-sha256 "$cost_chart" --opencost-image-digest "$cost_image")
+  installer_args+=(--opencost-chart-sha256 "$cost_chart" --opencost-image-digest "$cost_image")
 fi
-bash "$work/installer.sh" --hub-origin "$origin" --context "$context" --cluster-id "$cluster_id" --version "$version" --image-digest "$image" --chart-sha256 "$chart" --owner-user-id "$owner" --token-file "$work/token" --namespace "$namespace" --release "$release" "${opencost_args[@]}"
+bash "$work/installer.sh" "${installer_args[@]}"

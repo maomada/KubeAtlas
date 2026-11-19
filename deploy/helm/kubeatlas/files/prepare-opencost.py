@@ -138,13 +138,13 @@ def is_dns_name(value):
 def valid_registry(authority):
     if authority.startswith("["):
         host, bracket, suffix = authority[1:].partition("]")
+        if not bracket or "%" in host:
+            return False
         try:
-            address = ipaddress.IPv6Address(host)
+            ipaddress.IPv6Address(host)
         except ValueError:
             return False
-        return bool(bracket) and address.scope_id is None and (
-            not suffix or (suffix.startswith(":") and valid_registry_port(suffix[1:]))
-        )
+        return not suffix or (suffix.startswith(":") and valid_registry_port(suffix[1:]))
     host, separator, port = authority.partition(":")
     return is_dns_name(host) and ("." in host or bool(separator)) and (
         not separator or valid_registry_port(port)
