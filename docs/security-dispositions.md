@@ -45,6 +45,9 @@ modified on the network; HttpOnly and SameSite do not encrypt them. The decision
 is scoped to the configured authority and does not approve other HTTP endpoints
 or future changes. See [the source review](security-revalidation-pr17.md).
 
+[PR #19 revalidation](security-revalidation-pr19.md) records the first-release
+source mapping, the OpenCost archive bound, and the legacy cookie cleanup.
+
 ## Remaining-finding decisions
 
 | ID | Decision and scope |

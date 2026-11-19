@@ -1,6 +1,9 @@
 package bundledcharts
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"errors"
 	"fmt"
@@ -24,6 +27,35 @@ func TestOpenCostImageRegistryIPv6(t *testing.T) {
 		if validImageRegistry(registry) {
 			t.Errorf("invalid registry %q was accepted", registry)
 		}
+	}
+}
+
+func TestVerifiedOpenCostChartRejectsOversizedExpansion(t *testing.T) {
+	var compressed bytes.Buffer
+	zipper := gzip.NewWriter(&compressed)
+	archive := tar.NewWriter(zipper)
+	write := func(name string, data []byte) {
+		t.Helper()
+		if err := archive.WriteHeader(&tar.Header{Name: name, Mode: 0600, Size: int64(len(data))}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := archive.Write(data); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("opencost/Chart.yaml", []byte("apiVersion: v2\nname: opencost\nversion: 1.2.3\n"))
+	payload := make([]byte, 1<<20)
+	for i := 0; i <= maxOpenCostExpanded/len(payload); i++ {
+		write(fmt.Sprintf("opencost/files/%d", i), payload)
+	}
+	if err := archive.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := zipper.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := verifiedOpenCostChart(compressed.Bytes()); !errors.Is(err, ErrOpenCostUnavailable) {
+		t.Fatalf("oversized unpacked chart returned %v", err)
 	}
 }
 
