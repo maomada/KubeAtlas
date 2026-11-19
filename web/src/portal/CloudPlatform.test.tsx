@@ -107,13 +107,19 @@ it('does not fetch platform endpoints for an organization owner without platform
 })
 
 it('requires organization and role before pending-account approval and sends the atomic user body', async () => {
+  let currentUsers = users
   const fetch = stubDirectory(path => {
-    if (path === '/api/hub/platform/users/pending-user' ) return response({ ...users[1], status: 'active', memberships: [{ organizationId: 'org-1', role: 'viewer' }] })
+    if (path === '/api/hub/platform/users/pending-user' ) {
+      const updated = { ...users[1], status: 'active', memberships: [{ organizationId: 'org-1', role: 'viewer' }] }
+      currentUsers = currentUsers.map(user => user.id === updated.id ? updated : user)
+      return response(updated)
+    }
     throw new Error('Unexpected request: ' + path)
-  })
+  }, () => currentUsers)
   await renderPlatform()
   await act(async () => vi.waitFor(() => expect(host.textContent).toContain('Pending user')))
-  await act(async () => [...host.querySelectorAll('button')].find(button => button.textContent === '审核申请')!.click())
+  const opener = userRow(namedGroup('待审批', namedGroup('平台用户')), 'Pending user').querySelector('button')!
+  await act(async () => { opener.focus(); opener.click() })
   const dialog = document.querySelector('[role="dialog"]')!
   await act(async () => setValue(dialog.querySelector<HTMLSelectElement>('select')!, 'active'))
   await act(async () => setValue(dialog.querySelector<HTMLSelectElement>('[aria-label="要添加的组织"]')!, 'org-1'))
@@ -128,6 +134,12 @@ it('requires organization and role before pending-account approval and sends the
   const request = fetch.mock.calls.find(([, init]) => init?.method === 'PUT')
   expect(request?.[0]).toBe('/api/hub/platform/users/pending-user')
   expect(JSON.parse(request?.[1]?.body as string)).toEqual({ status: 'active', memberships: [{ organizationId: 'org-1', role: 'viewer' }] })
+  await act(async () => vi.waitFor(() => {
+    const replacement = userRow(namedGroup('Organization One', namedGroup('平台用户')), 'Pending user').querySelector('button')!
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(opener.isConnected).toBe(false)
+    expect(document.activeElement).toBe(replacement)
+  }))
 })
 
 it('preserves every existing membership unless explicitly removed', async () => {
@@ -138,7 +150,8 @@ it('preserves every existing membership unless explicitly removed', async () => 
   await renderPlatform()
   await act(async () => vi.waitFor(() => expect(host.textContent).toContain('Local recovery account')))
   const secondOrganizationRow = userRow(namedGroup('Organization Two', namedGroup('平台用户')), 'Active user')
-  await act(async () => [...secondOrganizationRow.querySelectorAll('button')].find(button => button.textContent === '编辑成员资格')!.click())
+  const opener = secondOrganizationRow.querySelector('button')!
+  await act(async () => { opener.focus(); opener.click() })
   const dialog = document.querySelector('[role="dialog"]')!
   expect(dialog.querySelectorAll('.cloud-platform-membership-edit select[aria-label^="组织角色："]')).toHaveLength(2)
   await act(async () => setValue(dialog.querySelector<HTMLSelectElement>('[aria-label="组织角色：Organization Two"]')!, 'viewer'))
@@ -149,6 +162,66 @@ it('preserves every existing membership unless explicitly removed', async () => 
     status: 'active',
     memberships: [{ organizationId: 'org-1', role: 'owner' }, { organizationId: 'org-2', role: 'viewer' }],
   })
+  await act(async () => vi.waitFor(() => {
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(document.activeElement).toBe(opener)
+  }))
+})
+
+it('returns account focus to its remaining organization after removing the opening membership', async () => {
+  let currentUsers = users
+  stubDirectory((path, init) => {
+    if (path === '/api/hub/platform/users/active-user' && init?.method === 'PUT') {
+      const updated = { ...users[2], memberships: [{ organizationId: 'org-1', role: 'owner' }] }
+      currentUsers = currentUsers.map(user => user.id === updated.id ? updated : user)
+      return response(updated)
+    }
+    throw new Error('Unexpected request: ' + path)
+  }, () => currentUsers)
+  await renderPlatform()
+  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('Active user')))
+  const userGroups = namedGroup('平台用户')
+  const opener = userRow(namedGroup('Organization Two', userGroups), 'Active user').querySelector('button')!
+  await act(async () => { opener.focus(); opener.click() })
+  const dialog = document.querySelector('[role="dialog"]')!
+  const membership = [...dialog.querySelectorAll('.cloud-platform-membership-edit')]
+    .find(row => row.querySelector('strong')?.textContent === 'Organization Two')!
+  await act(async () => membership.querySelector('button')!.click())
+  await act(async () => dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+  await act(async () => dialog.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  await act(async () => vi.waitFor(() => {
+    const replacement = userRow(namedGroup('Organization One', userGroups), 'Active user').querySelector('button')!
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(opener.isConnected).toBe(false)
+    expect(namedGroup('Organization Two', userGroups).querySelectorAll('.cloud-platform-user')).toHaveLength(0)
+    expect(document.activeElement).toBe(replacement)
+  }))
+})
+
+it('returns focus to the users heading if the saved account is no longer in the refreshed directory', async () => {
+  let currentUsers = users
+  stubDirectory((path, init) => {
+    if (path === '/api/hub/platform/users/active-user' && init?.method === 'PUT') {
+      currentUsers = currentUsers.filter(user => user.id !== 'active-user')
+      return response(users[2])
+    }
+    throw new Error('Unexpected request: ' + path)
+  }, () => currentUsers)
+  await renderPlatform()
+  await act(async () => vi.waitFor(() => expect(host.textContent).toContain('Active user')))
+  const userGroups = namedGroup('平台用户')
+  const opener = userRow(namedGroup('Organization Two', userGroups), 'Active user').querySelector('button')!
+  await act(async () => { opener.focus(); opener.click() })
+  const dialog = document.querySelector('[role="dialog"]')!
+  await act(async () => dialog.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
+  await act(async () => dialog.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+  await act(async () => vi.waitFor(() => {
+    const heading = userGroups.querySelector('h2')!
+    expect(document.querySelector('[role="dialog"]')).toBeNull()
+    expect(opener.isConnected).toBe(false)
+    expect(document.activeElement).toBe(heading)
+    expect(heading.tabIndex).toBe(-1)
+  }))
 })
 
 it('creates an organization with an active initial owner and refreshes organization data', async () => {

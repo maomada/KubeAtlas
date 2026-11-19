@@ -46,6 +46,20 @@ export function CloudPlatform({ platformOwner }: { platformOwner: boolean }) {
   const [error, setError] = useState<unknown>()
   const usersTitleId = useId()
   const clustersTitleId = useId()
+  const usersSection = useRef<HTMLElement>(null)
+  const editedUserFocus = useRef<{ userId: string; opener: HTMLButtonElement } | undefined>(undefined)
+  useEffect(() => {
+    if (editing || !editedUserFocus.current) return
+    const { userId, opener } = editedUserFocus.current
+    editedUserFocus.current = undefined
+    // A membership edit can unmount the opening row. Preserve its organization
+    // when it survives, otherwise return to the account's new location.
+    const original = opener.isConnected && !opener.disabled ? opener : undefined
+    const replacement = [...(usersSection.current?.querySelectorAll<HTMLButtonElement>('[data-platform-user-id]') ?? [])]
+      .find(button => button.dataset.platformUserId === userId && !button.disabled)
+    const target = original ?? replacement ?? document.getElementById(usersTitleId)
+    target?.focus({ preventScroll: true })
+  }, [editing, usersTitleId])
   const transferredFocus = useRef<string | undefined>(undefined)
   useEffect(() => {
     if (!transfer && transferredFocus.current) {
@@ -89,7 +103,8 @@ export function CloudPlatform({ platformOwner }: { platformOwner: boolean }) {
       .map(path => client.invalidateQueries({ queryKey: ['portal', '/api', path] })))
   }
 
-  function beginEdit(user: PlatformUser) {
+  function beginEdit(user: PlatformUser, opener: HTMLButtonElement) {
+    editedUserFocus.current = { userId: user.id, opener }
     setError(undefined)
     setNewMembershipOrganization('')
     setNewMembershipRole('member')
@@ -161,7 +176,7 @@ export function CloudPlatform({ platformOwner }: { platformOwner: boolean }) {
       <div className="min-w-0"><strong className="break-words">{label}</strong>{user.email && user.email !== label && <div className="cloud-member-id">{user.email}</div>}{user.local && <div className="mt-1"><Badge severity="neutral">恢复账号</Badge></div>}</div>
       <Badge severity={user.status === 'active' ? 'success' : user.status === 'pending' ? 'warning' : 'neutral'}>{user.status === 'active' ? '有效' : user.status === 'pending' ? '待审批' : '已停用'}</Badge>
       <div>{system ? <Badge tone="structural">{user.platformOwner ? '平台 Owner' : '恢复账号'}</Badge> : membership && <Badge tone="structural">{roleLabels[membership.role]}</Badge>}</div>
-      <button className="cloud-button" aria-label={`${action}：${actionLabel}`} disabled={!!busy || system} onClick={() => beginEdit(user)}>{action}</button>
+      <button className="cloud-button" data-platform-user-id={user.id} aria-label={`${action}：${actionLabel}`} disabled={!!busy || system} onClick={event => beginEdit(user, event.currentTarget)}>{action}</button>
     </li>
   }
 
@@ -178,7 +193,7 @@ export function CloudPlatform({ platformOwner }: { platformOwner: boolean }) {
       {organizationRows.length ? <div className="cloud-table-scroll"><table className="cloud-table"><thead><tr><th>组织</th><th>ID</th></tr></thead><tbody>{organizationRows.map(organization => <tr key={organization.id}><td>{organization.name}</td><td className="portal-mono">{organization.id}</td></tr>)}</tbody></table></div> : !loading && !organizations.error && <p>暂无组织。</p>}
     </section>
 
-    <section className="cloud-card" role="group" aria-labelledby={usersTitleId}><header><h2 id={usersTitleId}><Users size={17} aria-hidden="true" /> 平台用户</h2></header>
+    <section ref={usersSection} className="cloud-card" role="group" aria-labelledby={usersTitleId}><header><h2 id={usersTitleId} tabIndex={-1}><Users size={17} aria-hidden="true" /> 平台用户</h2></header>
       {users.data && <>
         {accountGroup('待审批', pendingAccounts)}
         {organizationGroups.map(group => <PlatformGroup key={group.id} title={groupTitle(group)} count={`${group.members.length} 位成员`}>
