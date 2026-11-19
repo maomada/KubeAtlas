@@ -27,7 +27,7 @@ export function CertaintyGlyph({ certainty, title }: { certainty: Certainty; tit
         tabIndex={0}
         role="note"
         aria-label={title ?? certaintyValueLabel(certainty)}
-        className="cursor-help rounded border border-theme-border-light px-1 font-mono text-[10px] leading-tight text-theme-text-tertiary focus-visible:outline focus-visible:outline-2 focus-visible:outline-skyhook-500"
+        className="cursor-help rounded border border-theme-border-light px-1 font-mono text-[10px] leading-tight text-theme-text-tertiary focus-visible:outline focus-visible:outline-2 focus-visible:outline-kubeatlas-500"
       >
         {certaintyGlyph(certainty)}
       </span>

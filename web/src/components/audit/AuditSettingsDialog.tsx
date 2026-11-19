@@ -135,7 +135,7 @@ export function AuditSettingsDialog({ namespaces, onClose }: AuditSettingsDialog
                   'flex-1 px-3 py-1.5 bg-theme-elevated border rounded-lg text-sm text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-2',
                   newNsError || newNsDuplicate
                     ? 'border-red-500/60 focus:ring-red-500'
-                    : 'border-theme-border-light focus:ring-skyhook-500',
+                    : 'border-theme-border-light focus:ring-kubeatlas-500',
                 )}
               />
               <button
@@ -177,7 +177,7 @@ export function AuditSettingsDialog({ namespaces, onClose }: AuditSettingsDialog
                       checked={!disabled}
                       onChange={() => toggleCheck(check.id)}
                       disabled={!canEdit}
-                      className="w-4 h-4 rounded border-theme-border text-skyhook-500 focus:ring-skyhook-500 disabled:opacity-40 disabled:cursor-not-allowed"
+                      className="w-4 h-4 rounded border-theme-border text-kubeatlas-500 focus:ring-kubeatlas-500 disabled:opacity-40 disabled:cursor-not-allowed"
                     />
                     <div className="flex-1 min-w-0">
                       <span className="text-sm text-theme-text-primary">{check.title}</span>

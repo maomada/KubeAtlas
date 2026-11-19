@@ -1703,7 +1703,7 @@ export function PoolSelector({
             }
             onChange(event.target.value || undefined);
           }}
-          className="min-w-0 flex-1 rounded-md border border-theme-border bg-theme-elevated px-2 py-1.5 text-xs text-theme-text-primary outline-none focus:border-skyhook-500"
+          className="min-w-0 flex-1 rounded-md border border-theme-border bg-theme-elevated px-2 py-1.5 text-xs text-theme-text-primary outline-none focus:border-kubeatlas-500"
         >
           <option value="">{emptyLabel}</option>
           {poolNames.map((name) => (

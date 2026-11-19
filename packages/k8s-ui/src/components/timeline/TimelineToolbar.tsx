@@ -245,7 +245,7 @@ export function TimelineToolbar({
             <select
               value={timeRange}
               onChange={(e) => onTimeRangeChange!(e.target.value as TimeRange)}
-              className="shrink-0 appearance-none bg-theme-elevated text-theme-text-primary text-sm rounded-lg px-3 py-2 border border-theme-border-light focus:outline-none focus:ring-2 focus:ring-skyhook-500"
+              className="shrink-0 appearance-none bg-theme-elevated text-theme-text-primary text-sm rounded-lg px-3 py-2 border border-theme-border-light focus:outline-none focus:ring-2 focus:ring-kubeatlas-500"
             >
               {rangeOptions!.map((range) => (
                 <option key={range.value} value={range.value}>
@@ -459,7 +459,7 @@ function SegmentedRadioGroup<T extends string>({
                 active ? 'text-theme-text-primary font-medium' : 'text-theme-text-secondary',
               )}
             >
-              <Check className={clsx('h-3.5 w-3.5 shrink-0 text-skyhook-500', active ? 'opacity-100' : 'opacity-0')} />
+              <Check className={clsx('h-3.5 w-3.5 shrink-0 text-kubeatlas-500', active ? 'opacity-100' : 'opacity-0')} />
               <span className="truncate">{opt.label}</span>
             </button>
           </Tooltip>

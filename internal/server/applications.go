@@ -258,9 +258,10 @@ type appWorkload struct {
 	// identity the chart/author declared. The strongest identity signal we have:
 	// app-identity resolver input, not on the wire.
 	nameLabel string
-	// appAnnotation is app.skyhook.io/app — the user's explicit cross-cluster app
-	// declaration (authoritative, portable). Resolver input, not on the wire.
+	// The user's explicit cross-cluster app declaration and the key actually read.
+	// Both fields are internal to the resolver.
 	appAnnotation string
+	appAnnoKey    string
 }
 
 type appBatchSummary struct {
@@ -896,6 +897,7 @@ func collectAppWorkloads(ctx context.Context, cache *k8s.ResourceCache, namespac
 		rootKey, rootKind, rootGroup, rootIdentity := g.rootOf(group, kind, ns, name)
 		rels := g.relationshipsFor(kind, ns, name, obj)
 		addon, why := packages.ClassifyAddon(lbls["helm.sh/chart"], lbls["app.kubernetes.io/name"], lbls["app.kubernetes.io/part-of"], name, lbls["addonmanager.kubernetes.io/mode"], image)
+		appAnnotation, appAnnoKey := readAppIdentityAnnotation(anns)
 		out = append(out, appWorkloadInput{
 			wl: appWorkload{
 				Kind:          kind,
@@ -915,7 +917,8 @@ func collectAppWorkloads(ctx context.Context, cache *k8s.ResourceCache, namespac
 				Batch:         batch,
 				envLabel:      envLabelOf(lbls),
 				nameLabel:     lbls["app.kubernetes.io/name"],
-				appAnnotation: strings.TrimSpace(anns[appIdentityAnnotation]),
+				appAnnotation: appAnnotation,
+				appAnnoKey:    appAnnoKey,
 			},
 			overlay:      overlay,
 			source:       sourceRefForInput(overlay, rootKind, rootGroup, rootKey),

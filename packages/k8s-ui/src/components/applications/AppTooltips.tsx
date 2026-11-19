@@ -140,13 +140,14 @@ export function AppIdentityTooltip({
   fleet?: boolean
 }) {
   const evidences = Array.from(new Set(members.map((m) => m.evidence).filter(Boolean)))
+  const sourceEvidence = evidences.find((e) => e.startsWith(`${APP_IDENTITY_ANNOTATION}=`)) ?? evidences[0]
   const heuristicOnly = members.every((m) => m.confidence !== 'high')
   // The wire `portable` flag is authoritative; fall back to deriving it from the
   // source when an older host doesn't pass it.
   const folds = portable ?? isDeclaredAppSource(source)
   return (
     <div className="max-w-xs space-y-1.5">
-      {source && <div className="text-xs font-medium text-theme-text-primary">分组依据：{appSourceLabel(source)}。</div>}
+      {source && <div className="text-xs font-medium text-theme-text-primary">分组依据：{appSourceLabel(source, sourceEvidence)}。</div>}
       {evidences.map((e, i) => (
         <div key={i} className="text-xs text-theme-text-secondary">
           <EvidenceLine evidence={e} />

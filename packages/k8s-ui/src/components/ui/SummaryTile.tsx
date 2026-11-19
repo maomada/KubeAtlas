@@ -31,7 +31,7 @@ export function SummaryTile({
     info: 'text-sky-600 dark:text-sky-300',
   }[tone]
   const activeBorderClass = {
-    neutral: 'border-skyhook-500',
+    neutral: 'border-kubeatlas-500',
     success: 'border-emerald-500',
     warning: 'border-amber-500',
     error: 'border-red-500',
@@ -57,7 +57,7 @@ export function SummaryTile({
       onClick={onClick}
       aria-pressed={active}
       className={clsx(
-        'cursor-pointer rounded-md border bg-theme-base px-3 py-2 text-left transition-colors hover:bg-theme-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-skyhook-500',
+        'cursor-pointer rounded-md border bg-theme-base px-3 py-2 text-left transition-colors hover:bg-theme-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-kubeatlas-500',
         active ? activeBorderClass : 'border-theme-border',
       )}
     >

@@ -623,13 +623,13 @@ export const K8sResourceNode = memo(function K8sResourceNode({
         <div
           className={clsx(
             "flex items-center gap-2 px-4 py-2 rounded-full",
-            "selection border border-skyhook-500/30",
-            "shadow-lg shadow-skyhook-500/20",
-            selected && "ring-2 ring-skyhook-400",
+            "selection border border-kubeatlas-500/30",
+            "shadow-lg shadow-kubeatlas-500/20",
+            selected && "ring-2 ring-kubeatlas-400",
           )}
         >
           <Icon className="h-5 w-5 shrink-0 text-accent-text" aria-hidden />
-          <span className="text-sm font-medium text-skyhook-300">Internet</span>
+          <span className="text-sm font-medium text-kubeatlas-300">Internet</span>
           <span className="w-2 h-2 rounded-full bg-green-500" />
         </div>
         <Handle

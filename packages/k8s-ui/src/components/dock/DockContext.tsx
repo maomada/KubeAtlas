@@ -187,7 +187,7 @@ export function useDock() {
  * Maximized returns 0 — the dock covers everything by design.
  *
  * Safe to call without a DockProvider ancestor (returns 0) — the shared
- * @skyhook/k8s-ui package exports drawers that may be consumed without a dock.
+ * @maomada/k8s-ui package exports drawers that may be consumed without a dock.
  */
 export function useDockReservedHeight(): number {
   const context = useContext(DockContext)

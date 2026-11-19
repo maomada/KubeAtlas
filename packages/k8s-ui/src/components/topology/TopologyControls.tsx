@@ -154,7 +154,7 @@ export function TopologyControls({
                 onClick={() => { onGroupingModeChange(o.value); closeGroup(true) }}
                 className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary focus:bg-theme-hover focus:text-theme-text-primary focus:outline-none transition-colors"
               >
-                <Check className={clsx('w-3.5 h-3.5 shrink-0', groupingMode === o.value ? 'opacity-100 text-skyhook-500' : 'opacity-0')} />
+                <Check className={clsx('w-3.5 h-3.5 shrink-0', groupingMode === o.value ? 'opacity-100 text-kubeatlas-500' : 'opacity-0')} />
                 <span className="truncate">{o.label}</span>
               </button>
             ))}
@@ -168,7 +168,7 @@ export function TopologyControls({
           onClick={() => onViewModeChange('resources')}
           className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
             viewMode === 'resources'
-              ? 'bg-skyhook-600 text-white'
+              ? 'bg-kubeatlas-600 text-white'
               : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated'
           }`}
         >
@@ -187,7 +187,7 @@ export function TopologyControls({
                   <button
                     type="button"
                     onClick={onNavigateToTraffic}
-                    className="text-skyhook-400 hover:text-skyhook-300 underline underline-offset-2"
+                    className="text-kubeatlas-400 hover:text-kubeatlas-300 underline underline-offset-2"
                   >
                     打开实时流量 →
                   </button>
@@ -200,7 +200,7 @@ export function TopologyControls({
             onClick={() => onViewModeChange('traffic')}
             className={`px-2.5 py-1 text-xs rounded-md transition-colors whitespace-nowrap ${
               viewMode === 'traffic'
-                ? 'bg-skyhook-600 text-white'
+                ? 'bg-kubeatlas-600 text-white'
                 : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated'
             }`}
           >
@@ -212,7 +212,7 @@ export function TopologyControls({
             onClick={() => onViewModeChange('fleet')}
             className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
               viewMode === 'fleet'
-                ? 'bg-skyhook-600 text-white'
+                ? 'bg-kubeatlas-600 text-white'
                 : 'text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated'
             }`}
             title="集群 API 集群视图——仅显示 CAPI 资源和节点"

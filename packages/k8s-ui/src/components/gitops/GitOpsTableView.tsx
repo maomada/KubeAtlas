@@ -966,7 +966,7 @@ function GitOpsFilterSidebar({
                 onClick={() => onModeChange(item)}
                 className={`rounded-md px-2 py-1.5 text-left text-[11px] transition-colors ${
                   mode === item
-                    ? 'bg-skyhook-500 text-white'
+                    ? 'bg-kubeatlas-500 text-white'
                     : 'bg-theme-elevated text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary'
                 }`}
               >
@@ -1026,7 +1026,7 @@ function GitOpsFilterSidebar({
                     lifecycleFilter === value
                       ? value === 'terminating'
                         ? 'bg-orange-500 text-white'
-                        : 'bg-skyhook-500 text-white'
+                        : 'bg-kubeatlas-500 text-white'
                       : 'bg-theme-elevated text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary'
                   }`}
                 >
@@ -1082,7 +1082,7 @@ export function GitOpsIconToggle({ active, label, icon: Icon, onClick }: { activ
         type="button"
         onClick={onClick}
         className={`inline-flex h-8 w-8 items-center justify-center transition-colors ${
-          active ? 'bg-skyhook-500 text-white' : 'bg-theme-base text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary'
+          active ? 'bg-kubeatlas-500 text-white' : 'bg-theme-base text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary'
         }`}
       >
         <Icon className="h-3.5 w-3.5" />
@@ -1135,7 +1135,7 @@ function GitOpsSortMenu({ sortKey, onChange }: { sortKey: SortKey; onChange: (ke
                 key === sortKey ? 'font-medium text-theme-text-primary' : 'text-theme-text-secondary',
               )}
             >
-              <Check className={clsx('h-3.5 w-3.5 shrink-0', key === sortKey ? 'opacity-100 text-skyhook-500' : 'opacity-0')} />
+              <Check className={clsx('h-3.5 w-3.5 shrink-0', key === sortKey ? 'opacity-100 text-kubeatlas-500' : 'opacity-0')} />
               {label}
             </button>
           ))}

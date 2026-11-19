@@ -600,7 +600,7 @@ function ViewButton({
       onClick={onClick}
       className={`inline-flex items-center gap-1.5 rounded px-2.5 py-1 text-xs font-medium transition-colors ${
         active
-          ? 'bg-skyhook-500 text-white'
+          ? 'bg-kubeatlas-500 text-white'
           : 'text-theme-text-secondary hover:bg-theme-hover hover:text-theme-text-primary'
       }`}
     >

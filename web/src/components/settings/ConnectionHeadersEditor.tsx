@@ -44,7 +44,7 @@ export function ConnectionHeadersEditor({
                 disabled={saved}
                 onChange={(e) => update(index, { key: e.target.value })}
                 placeholder="请求头名称"
-                  className="min-w-0 flex-1 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                  className="min-w-0 flex-1 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
               />
               <Input
                 aria-label={`${row.key || '新请求头'}的值`}
@@ -67,7 +67,7 @@ export function ConnectionHeadersEditor({
                     value: e.target.value || undefined
                   })
                 }
-                  className="min-w-0 flex-1 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                  className="min-w-0 flex-1 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
               />
               {!environment && (
                 <button

@@ -660,7 +660,7 @@ export function PortForwardPanel() {
       {/* Panel shell — visual chrome (border, shadow, bg, corners). Height is driven
           by the grid-sizer child. As the grid grows 0→auto, the shell grows with it,
           keeping border and rounded corners correct at every intermediate height. */}
-      <div className="overflow-hidden rounded-xl bg-theme-surface dark:bg-theme-elevated border-2 border-skyhook-500/35 dark:border-skyhook-400/40 shadow-2xl dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.75),0_10px_24px_-6px_rgba(0,0,0,0.45)]">
+      <div className="overflow-hidden rounded-xl bg-theme-surface dark:bg-theme-elevated border-2 border-kubeatlas-500/35 dark:border-kubeatlas-400/40 shadow-2xl dark:shadow-[0_24px_60px_-12px_rgba(0,0,0,0.75),0_10px_24px_-6px_rgba(0,0,0,0.45)]">
 
         {/* Height engine — Collapse animates grid-template-rows 0fr→1fr so the
             shell grows from 0 to auto. Content clips from the bottom up, creating
@@ -927,7 +927,7 @@ export function PortForwardPanel() {
       {/* Caret — rendered after the shell so it paints on top (z-10). Opaque fill
           covers the shell's border at the junction. The tint layer matches the header. */}
       <div
-        className="absolute -top-[6px] w-3.5 h-3.5 rotate-45 z-10 bg-theme-surface dark:bg-theme-elevated border-t-2 border-l-2 border-skyhook-500/35 dark:border-skyhook-400/40"
+        className="absolute -top-[6px] w-3.5 h-3.5 rotate-45 z-10 bg-theme-surface dark:bg-theme-elevated border-t-2 border-l-2 border-kubeatlas-500/35 dark:border-kubeatlas-400/40"
         style={{ right: anchor?.caretRight ?? 16 }}
       >
         <div className={clsx(

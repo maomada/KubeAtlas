@@ -1555,7 +1555,7 @@ export function formatDuration(ms: number, detailed: boolean = false): string {
   return '<1s'
 }
 
-// formatBytes is available from @skyhook/k8s-ui utils — no re-export needed
+// formatBytes is available from @maomada/k8s-ui utils — no re-export needed
 
 export function cronToHuman(cron: string): string {
   if (!cron) return '-'

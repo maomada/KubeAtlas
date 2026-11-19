@@ -206,7 +206,7 @@ export function GitOpsWriteWarning({
           checked={acknowledged}
           onChange={(event) => onAcknowledgedChange(event.target.checked)}
           disabled={disabled}
-          className="mt-0.5 h-3.5 w-3.5 accent-skyhook-500"
+          className="mt-0.5 h-3.5 w-3.5 accent-kubeatlas-500"
         />
         <span>
           I understand {tool} {guard.level === 'will-revert' ? 'will' : 'may'} revert this.

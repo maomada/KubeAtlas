@@ -39,7 +39,7 @@ export function ConfigToggle({
         onClick={() => onChange(!value)}
         className={clsx(
           'relative w-9 h-5 shrink-0 rounded-full transition-colors',
-          value ? 'bg-skyhook-600' : 'bg-theme-elevated border border-theme-border',
+          value ? 'bg-kubeatlas-600' : 'bg-theme-elevated border border-theme-border',
           disabled && 'opacity-50'
         )}
       >

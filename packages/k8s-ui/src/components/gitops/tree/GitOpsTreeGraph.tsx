@@ -265,7 +265,7 @@ function GitOpsTreeToolbar({
             className={clsx(
               'rounded-md px-2.5 py-1 text-xs transition-colors',
               preset === value
-                ? 'bg-skyhook-600 text-white'
+                ? 'bg-kubeatlas-600 text-white'
                 : 'text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary'
             )}
           >
@@ -567,7 +567,7 @@ const GitOpsResourceNode = memo(function GitOpsResourceNode({ data }: NodeProps<
       <div
         className={clsx(
           'relative overflow-hidden rounded-lg border bg-theme-surface shadow-md transition-colors',
-          data.highlighted ? 'border-skyhook-400 ring-2 ring-skyhook-400/40' : 'border-theme-border',
+          data.highlighted ? 'border-kubeatlas-400 ring-2 ring-kubeatlas-400/40' : 'border-theme-border',
           // Lifecycle dominates the left-stripe color: a Terminating node
           // paints orange regardless of its frozen sync/health state. Same
           // logic as the fleet-row statusStripe — sync/health shouldn't
@@ -583,7 +583,7 @@ const GitOpsResourceNode = memo(function GitOpsResourceNode({ data }: NodeProps<
           // tool-icon overlay + "→ Open" affordance below, this signals
           // "click me to dive into this CR's own GitOps view" without
           // making the node look broken or alarming.
-          gitopsTool && !data.highlighted && 'ring-1 ring-skyhook-500/30 hover:ring-skyhook-500/60',
+          gitopsTool && !data.highlighted && 'ring-1 ring-kubeatlas-500/30 hover:ring-kubeatlas-500/60',
           gitopsTool && 'cursor-pointer',
           // Group nodes are interactive (click toggles expand) but the
           // default ReactFlow handler doesn't add a hover state. A subtle
@@ -611,7 +611,7 @@ const GitOpsResourceNode = memo(function GitOpsResourceNode({ data }: NodeProps<
                 GitOps-app, not a leaf K8s resource". Keeps the dot's
                 position so non-portal nodes look unchanged. */}
             {gitopsTool && (
-              <span className="rounded-sm border border-skyhook-500/30 bg-skyhook-500/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-skyhook-300">
+              <span className="rounded-sm border border-kubeatlas-500/30 bg-kubeatlas-500/10 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-kubeatlas-300">
                 {gitopsTool === 'argocd' ? 'Argo' : 'Flux'}
               </span>
             )}

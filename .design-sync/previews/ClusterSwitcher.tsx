@@ -3,8 +3,8 @@ import type { ClusterSwitcherItem } from '@maomada/k8s-ui'
 import type { CSSProperties } from 'react'
 
 const items: ClusterSwitcherItem[] = [
-  { id: 'prod', name: 'gke_skyhook-prod_us-east1_prod-cluster', status: 'healthy', group: { key: 'gcp', label: 'Google Cloud' } },
-  { id: 'staging', name: 'gke_skyhook-nonprod_us-east1_staging-cluster', status: 'healthy', group: { key: 'gcp', label: 'Google Cloud' } },
+  { id: 'prod', name: 'gke_acme-prod_us-east1_prod-cluster', status: 'healthy', group: { key: 'gcp', label: 'Google Cloud' } },
+  { id: 'staging', name: 'gke_acme-nonprod_us-east1_staging-cluster', status: 'healthy', group: { key: 'gcp', label: 'Google Cloud' } },
   { id: 'eks', name: 'arn:aws:eks:us-west-2:481923:cluster/data-platform', status: 'degraded', group: { key: 'aws', label: 'AWS' } },
   { id: 'kind', name: 'kind-kubeatlas-gitops-demo', secondary: 'local', status: 'neutral', group: { key: 'local', label: 'Local' } },
 ]

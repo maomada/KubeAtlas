@@ -939,8 +939,8 @@ export function TimelineView({ namespaces, onResourceClick, initialViewMode, ini
           <div className="flex-1 flex items-center justify-center">
             <div className="max-w-md w-full mx-4 text-center">
               <div className="bg-theme-surface border border-theme-border rounded-xl shadow-theme-lg p-6">
-                <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-skyhook-500/10 flex items-center justify-center">
-                  <Network className="w-6 h-6 text-skyhook-400" />
+                <div className="w-12 h-12 mx-auto mb-4 rounded-full bg-kubeatlas-500/10 flex items-center justify-center">
+                  <Network className="w-6 h-6 text-kubeatlas-400" />
                 </div>
                 <h2 className="text-lg font-semibold text-theme-text-primary mb-2">
                   Large Cluster Detected

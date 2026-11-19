@@ -46,7 +46,7 @@ interface UpgradeReadinessViewProps {
 }
 
 const FINDING_CAP = 8
-export const UPGRADE_IMPACT_DOCS_URL = 'https://github.com/maomada/KubeAtlas#kubernetes-upgrade-impact'
+export const UPGRADE_IMPACT_DOCS_URL = 'https://github.com/maomada/KubeAtlas/blob/main/docs/upgrade-impact.md'
 
 const statusMeta: Record<UpgradeReadinessCheckStatus, {
   label: string

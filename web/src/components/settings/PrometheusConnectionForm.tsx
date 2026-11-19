@@ -141,7 +141,7 @@ export function PrometheusConnectionForm({
           disabled={apply.status === 'applying'}
           onChange={(e) => onChange(e.target.value)}
           placeholder="http://prometheus-server.monitoring:9090"
-          className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+          className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
         />
       </div>
       {connectionAction}
@@ -196,7 +196,7 @@ export function PrometheusConnectionForm({
                     clearStatus()
                   }}
                   placeholder="请求头（例如 Authorization）"
-                  className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-theme-base border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                  className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-theme-base border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
                 />
                 <input
                   type="password"
@@ -207,7 +207,7 @@ export function PrometheusConnectionForm({
                     clearStatus()
                   }}
                   placeholder="值（例如 Bearer …）"
-                  className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-theme-base border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                  className="flex-1 min-w-0 px-2.5 py-1.5 text-xs bg-theme-base border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
                 />
                 <Tooltip content="移除请求头" wrapperClassName="shrink-0">
                   <button

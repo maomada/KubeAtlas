@@ -1623,7 +1623,7 @@ function OpenInGitOpsChip({ onClick }: { onClick: () => void }) {
       <button
         type="button"
         onClick={onClick}
-        className="inline-flex items-center gap-1 rounded border border-skyhook-500/40 bg-skyhook-500/10 px-1.5 py-0.5 text-[11px] font-medium text-skyhook-500 hover:bg-skyhook-500/20 transition-colors"
+        className="inline-flex items-center gap-1 rounded border border-kubeatlas-500/40 bg-kubeatlas-500/10 px-1.5 py-0.5 text-[11px] font-medium text-kubeatlas-500 hover:bg-kubeatlas-500/20 transition-colors"
       >
         在 GitOps 中打开
         <ArrowRight className="h-3 w-3 shrink-0" />
@@ -3581,7 +3581,7 @@ function CronJobRunsCard({
       title="运行记录"
       icon={Activity}
       action={onSwitchToTopology && (
-        <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-skyhook-500 hover:underline">
+        <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-kubeatlas-500 hover:underline">
           <GitBranch className="h-3.5 w-3.5" />
           拓扑
         </button>
@@ -3612,7 +3612,7 @@ function CronJobRunsCard({
                   onNavigate && 'transition-colors hover:bg-theme-hover',
                 )}
               >
-                <span className="h-2 w-2 shrink-0 rounded-full bg-skyhook-500" />
+                <span className="h-2 w-2 shrink-0 rounded-full bg-kubeatlas-500" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-medium text-theme-text-primary">{ref.name}</span>
                   <span className="block truncate text-xs text-theme-text-tertiary">{ref.namespace || '默认命名空间'}</span>
@@ -3746,7 +3746,7 @@ function RolloutFactChip({ label, value, tone = 'default' }: { label: string; va
 function rolloutStateDotClass(level: ReplicatedWorkloadState['level']): string {
   if (level === 'unhealthy') return 'bg-red-500'
   if (level === 'degraded' || level === 'alert') return 'bg-amber-500'
-  if (level === 'neutral') return 'bg-skyhook-500'
+  if (level === 'neutral') return 'bg-kubeatlas-500'
   if (level === 'unknown') return 'bg-theme-text-tertiary'
   return 'bg-emerald-500'
 }
@@ -3929,7 +3929,7 @@ function ServingDependenciesCard({
       title={title}
       icon={Network}
       action={onSwitchToTopology && (
-        <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-skyhook-500 hover:underline">
+        <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-kubeatlas-500 hover:underline">
           <GitBranch className="h-3.5 w-3.5" />
           拓扑
         </button>
@@ -3993,7 +3993,7 @@ function ConfigurationInputsCard({
       title="配置输入"
       icon={Layers}
       action={onSwitchToTopology && (
-        <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-skyhook-500 hover:underline">
+        <button type="button" onClick={onSwitchToTopology} className="inline-flex items-center gap-1 text-xs text-kubeatlas-500 hover:underline">
           <GitBranch className="h-3.5 w-3.5" />
           拓扑
         </button>
@@ -4056,7 +4056,7 @@ function ActivityCard({
       title="近期活动"
       icon={Clock3}
       action={onSwitchToTimeline && (
-        <button type="button" onClick={onSwitchToTimeline} className="inline-flex items-center gap-1 text-xs text-skyhook-500 hover:underline">
+        <button type="button" onClick={onSwitchToTimeline} className="inline-flex items-center gap-1 text-xs text-kubeatlas-500 hover:underline">
           <ExternalLink className="h-3.5 w-3.5" />
           时间线
         </button>
@@ -4069,7 +4069,7 @@ function ActivityCard({
           {visibleEvents.map((event, i) => (
             <div key={`${event.id}-${i}`} className="rounded-md border border-theme-border bg-theme-base px-3 py-2">
               <div className="flex min-w-0 items-start gap-2">
-                <span className={clsx('mt-1 h-2 w-2 shrink-0 rounded-full', isProblematicEvent(event) ? 'bg-amber-500' : 'bg-skyhook-500')} />
+                <span className={clsx('mt-1 h-2 w-2 shrink-0 rounded-full', isProblematicEvent(event) ? 'bg-amber-500' : 'bg-kubeatlas-500')} />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center justify-between gap-2">
                     <span className="truncate text-sm font-medium text-theme-text-primary">{event.reason || event.eventType || '更新'}</span>

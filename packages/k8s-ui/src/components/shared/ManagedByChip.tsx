@@ -104,7 +104,7 @@ export function ManagedByChip({
           : {})}
         className={clsx(
           'inline-flex min-w-0 items-center gap-1 rounded border border-theme-border bg-theme-elevated px-1.5 py-0.5 text-[11px] text-theme-text-secondary',
-          interactive && 'hover:border-skyhook-500/60 hover:text-skyhook-500 transition-colors',
+          interactive && 'hover:border-kubeatlas-500/60 hover:text-kubeatlas-500 transition-colors',
         )}
       >
         <GitBranch className="h-3 w-3 shrink-0" />
@@ -283,7 +283,7 @@ export function HelmManagedByChip({
           : {})}
         className={clsx(
           'inline-flex min-w-0 items-center gap-1 rounded border border-theme-border bg-theme-elevated px-1.5 py-0.5 text-[11px] text-theme-text-secondary',
-          interactive && 'hover:border-skyhook-500/60 hover:text-skyhook-500 transition-colors',
+          interactive && 'hover:border-kubeatlas-500/60 hover:text-kubeatlas-500 transition-colors',
         )}
       >
         <Package className="h-3 w-3 shrink-0" />

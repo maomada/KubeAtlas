@@ -1,6 +1,6 @@
-# Building with Skyhook KubeAtlas (`@maomada/k8s-ui`)
+# Building with KubeAtlas (`@maomada/k8s-ui`)
 
-This is KubeAtlas's Kubernetes UI library — the components behind Skyhook's cluster-visibility product. Every component is on `window.K8sUI.*` (import as `import { Badge, StatusDot } from '@maomada/k8s-ui'`). Build Kubernetes/infra dashboards, resource views, and operational surfaces from these real parts; they map 1:1 onto shippable KubeAtlas code.
+This is KubeAtlas's Kubernetes UI library — the reusable components behind KubeAtlas. Every component is on `window.K8sUI.*` (import as `import { Badge, StatusDot } from '@maomada/k8s-ui'`). Build Kubernetes/infra dashboards, resource views, and operational surfaces from these real parts; they map 1:1 onto shippable KubeAtlas code.
 
 ## Setup & wrapping
 - **No app-wide provider.** Most components (Badge, StatusDot, HealthRing, DistributionBar, Property, Section, CardSection, PageHeader, EmptyState, Facet, charts, every `*Renderer` resource view…) render standalone.

@@ -230,7 +230,7 @@ function ToggleButton({
         className={clsx(
           'flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors whitespace-nowrap',
           active
-            ? 'border-skyhook-400/50 bg-skyhook-500/15 text-skyhook-300'
+            ? 'border-kubeatlas-400/50 bg-kubeatlas-500/15 text-kubeatlas-300'
             : 'border-transparent text-theme-text-secondary hover:bg-theme-elevated hover:text-theme-text-primary',
         )}
       >

@@ -193,9 +193,7 @@ ClusterClass links use the namespace declared by the Cluster, defaulting to the 
 
 ![CAPI Fleet Topology — 5 GKE clusters with MachineDeployments, MachinePools, and provider resources](images/capi/fleet-topology.png)
 
-**Resource browser** with smart columns per CAPI kind — Provider detection, phase badges, replica counts:
-
-![CAPI Cluster list with Provider column](images/capi/cluster-list.png)
+**Resource browser** with provider detection, phase badges, and replica counts for each CAPI kind.
 
 **Cluster detail view** with Connect to Cluster and Download Kubeconfig actions, provider detection, and clickable references to infrastructure resources:
 
@@ -609,7 +607,7 @@ resource, including core Secrets and these excluded kinds. See the
 
 ## GitOps
 
-See the main [README](../README.md#gitops) for the user-facing overview. This section covers integration coverage and capabilities.
+See the [GitOps guide](gitops.md) for the console workflow and supported operations.
 
 ### FluxCD
 
@@ -903,11 +901,7 @@ Beyond the per-kind views below, CloudNativePG gets its own views under Resource
 
 **Fleet:** every Cluster ordered by urgency, each with its top problem.
 
-![CloudNativePG Clusters view: three PostgreSQL clusters, two needing attention, each with its top problem](images/cnpg/cnpg-fleet.png)
-
 **Cluster page:** the cause first, then one line per health dimension.
-
-![A Cluster stuck because its first instance can't be scheduled: the scheduler's reason first, then Serving, Replication, Storage and Backups at a glance](images/cnpg/cnpg-cluster-overview.png)
 
 ### What KubeAtlas Shows
 
@@ -1222,11 +1216,6 @@ Event destinations retain the reference’s API group, kind, namespace and name.
 - Container template (image, ports, env, resources)
 - Conditions (Ready, RoutesReady, ConfigurationsReady)
 
-<p align="center">
-  <img src="screenshots/integrations/knative-service-detail.png" alt="Knative Service Detail" width="800">
-  <br><em>KnativeService Detail View — URL, scaling, traffic splits, and conditions</em>
-</p>
-
 **Revision Detail View:**
 - Container image with tag
 - Concurrency model and container concurrency limit
@@ -1457,17 +1446,7 @@ The common case is a default-deny policy with nothing that allows the client. Ci
 
 When the plugin does name the policy — an explicit Cilium deny rule — that is the headline, shown if you have permission to read that policy. The current Kubernetes NetworkPolicy check appears under it as a note; it may find an allow, no matching allow, or an incomplete result.
 
-<p align="center">
-  <img src="screenshots/integrations/netpol-drop-cilium-attributed.png" alt="Dropped flow attributed by Hubble to a CiliumNetworkPolicy" width="900">
-  <br><em>Hubble names a Cilium deny policy as the reason for the drop. The current Kubernetes NetworkPolicy check appears below it</em>
-</p>
-
 Cilium policies can allow or deny traffic on their own terms, alongside Kubernetes ones, and KubeAtlas does not evaluate their rules. So when a Cilium policy governs the pod in the flow's direction, KubeAtlas states the Kubernetes-only result as a result, lists the Cilium policy as *can't evaluate*, and does not call the connection allowed or denied.
-
-<p align="center">
-  <img src="screenshots/integrations/netpol-drop-cilium-capped.png" alt="Dropped flow where a Cilium policy caps the Kubernetes-only verdict" width="900">
-  <br><em>A Cilium policy also applies. KubeAtlas shows the Kubernetes-only result and cannot determine the combined result</em>
-</p>
 
 Each policy row says what it does to this connection in plain words: *allows this traffic*, *no matching allow rule*, or *can't evaluate*. NetworkPolicies combine their allow rules, so a policy with no matching rule does not override another policy's allow; the panel shows this reminder when several policies apply and at least one has no matching allow rule.
 

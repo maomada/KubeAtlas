@@ -1,5 +1,5 @@
-// @skyhook/k8s-ui — Shared Kubernetes UI types, utilities, and components
-// Used by both kubeatlas (OSS) and koala-frontend (Skyhook platform)
+// @maomada/k8s-ui — Shared Kubernetes UI types, utilities, and components
+// Reusable Kubernetes UI building blocks for KubeAtlas applications
 
 // Types
 export * from './types'

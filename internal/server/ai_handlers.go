@@ -20,8 +20,7 @@
 //
 //	(a) the agent surface stabilizes (no major shape changes for two
 //	    release cycles), AND
-//	(b) Skyhook commits to a public customer-facing AI SDK that needs
-//	    generated bindings.
+//	(b) a supported public AI SDK needs generated bindings.
 //
 // Until both conditions are met, bringing /api/ai/* under openapi.yaml
 // is premature — it would pay the spec-authoring tax during evolution

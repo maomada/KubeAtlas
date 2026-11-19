@@ -84,7 +84,7 @@ type appIdentity struct {
 // App identity provenance tiers (appIdentity.Source). The declaredOrigin set is
 // the only one a fleet consumer may auto-promote to cross-cluster portable.
 const (
-	SourceExplicit   = "explicit"    // app.skyhook.io/app annotation — user-declared, authoritative
+	SourceExplicit   = "explicit"    // application identity annotation — user-declared, authoritative
 	SourceArgoPath   = "argo-path"   // declared Argo Application source path (origin)
 	SourceArgoAppSet = "argo-appset" // declared ApplicationSet fan-out (origin)
 	SourceFluxSource = "flux-source" // declared Flux source ref (origin)
@@ -97,7 +97,20 @@ const (
 // the SAME value on an app's workloads in every cluster and KubeAtlas folds them — the
 // canonical answer to "how do I force grouping?" for non-GitOps apps. Deliberate
 // (zero-collision), so it is authoritative over every inferred/declared tier.
-const appIdentityAnnotation = "app.skyhook.io/app"
+const (
+	appIdentityAnnotation       = "kubeatlas.io/app"
+	legacyAppIdentityAnnotation = "app.skyhook.io/app"
+)
+
+func readAppIdentityAnnotation(annotations map[string]string) (value, key string) {
+	if value := strings.TrimSpace(annotations[appIdentityAnnotation]); value != "" {
+		return value, appIdentityAnnotation
+	}
+	if value := strings.TrimSpace(annotations[legacyAppIdentityAnnotation]); value != "" {
+		return value, legacyAppIdentityAnnotation
+	}
+	return "", ""
+}
 
 // The ONLY hardcoded env vocabulary: the universal trio, kept solely because
 // promotion DIRECTION (dev < staging < prod) cannot be derived from a
@@ -197,7 +210,7 @@ func readingsOf(name, ns string) []reading {
 	}
 	if ns != "" {
 		// A full namespace name is an env candidate only when it's a single
-		// token ("dev", "loadtest") — "skyhook-clients-frps" is a
+		// token ("dev", "loadtest") — "acme-clients-frps" is a
 		// name, not an environment; only its segments may qualify.
 		if !strings.ContainsAny(ns, "-_") {
 			out = append(out, reading{stem: name, token: strings.ToLower(ns), prio: 2})
@@ -286,7 +299,8 @@ func resolveAppIdentities(rows []appRow, argoSourcePaths map[string]string, appS
 		pathSource string // SourceArgoPath | SourceFluxSource for the declared path stem
 		labelEnv   string // explicit env label (workload, else namespace)
 		nameLabel  string // app.kubernetes.io/name, when the row's workloads agree
-		appAnno    string // app.skyhook.io/app explicit declaration, when workloads agree
+		appAnno    string // explicit declaration, when workloads agree
+		appAnnoKey string // annotation spelling represented in the evidence
 	}
 	infos := make([]rowInfo, 0, len(rows))
 	clusterNamespaces := map[string]bool{}
@@ -306,6 +320,7 @@ func resolveAppIdentities(rows []appRow, argoSourcePaths map[string]string, appS
 		wlEnv, wlEnvAgree := "", true
 		wlName, wlNameAgree := "", true
 		wlApp, wlAppAgree, wlAppCount := "", true, 0
+		wlAppKey := legacyAppIdentityAnnotation
 		for _, w := range r.Workloads {
 			if repo := imageutil.Repository(w.Image); repo != "" {
 				info.repos[repo] = true
@@ -326,6 +341,9 @@ func resolveAppIdentities(rows []appRow, argoSourcePaths map[string]string, appS
 			}
 			if w.appAnnotation != "" {
 				wlAppCount++
+				if w.appAnnoKey == appIdentityAnnotation {
+					wlAppKey = appIdentityAnnotation
+				}
 				if wlApp == "" {
 					wlApp = w.appAnnotation
 				} else if wlApp != w.appAnnotation {
@@ -345,7 +363,7 @@ func resolveAppIdentities(rows []appRow, argoSourcePaths map[string]string, appS
 		// in the row carry the same value — a partial annotation must not promote
 		// the whole app (including unannotated components) to a portable identity.
 		if wlApp != "" && wlAppAgree && wlAppCount == len(r.Workloads) {
-			info.appAnno = wlApp
+			info.appAnno, info.appAnnoKey = wlApp, wlAppKey
 		}
 		if r.Tier == 3 || r.Tier == 4 {
 			for _, key := range argoSourcePathKeys(r.Key) {
@@ -710,7 +728,7 @@ func resolveAppIdentities(rows []appRow, argoSourcePaths map[string]string, appS
 		}
 	}
 
-	// Explicit tier — app.skyhook.io/app is the user's deliberate cross-cluster
+	// Explicit tier — kubeatlas.io/app is the user's deliberate cross-cluster
 	// declaration: authoritative (overrides every inferred/declared tier) and
 	// portable (the user opted in, so it is collision-free by construction).
 	for i := range infos {
@@ -722,7 +740,7 @@ func resolveAppIdentities(rows []appRow, argoSourcePaths map[string]string, appS
 			Key:        info.appAnno,
 			Env:        resolveStandaloneEnv(info),
 			Confidence: "high",
-			Evidence:   fmt.Sprintf("%s=%q", appIdentityAnnotation, info.appAnno),
+			Evidence:   fmt.Sprintf("%s=%q", info.appAnnoKey, info.appAnno),
 			Portable:   true,
 			Source:     SourceExplicit,
 		}

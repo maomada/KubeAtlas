@@ -670,7 +670,7 @@ function ActivityCard({ item, expanded, onToggle, onResourceClick, compact, sele
         'rounded-lg border transition-all',
         (hasExpandableContent || onSelect) && 'cursor-pointer',
         getCardStyle(),
-        selected && 'ring-2 ring-skyhook-500/60 ring-offset-1 ring-offset-theme-base',
+        selected && 'ring-2 ring-kubeatlas-500/60 ring-offset-1 ring-offset-theme-base',
       )}
       onClick={() => { if (onSelect) { onSelect() } else if (hasExpandableContent) { onToggle() } }}
     >
@@ -915,7 +915,7 @@ function AggregatedActivityCard({ first, last, count, reason, expanded, onToggle
       className={clsx(
         'rounded-lg border transition-all cursor-pointer',
         cardStyle,
-        selected && 'ring-2 ring-skyhook-500/60 ring-offset-1 ring-offset-theme-base',
+        selected && 'ring-2 ring-kubeatlas-500/60 ring-offset-1 ring-offset-theme-base',
       )}
       onClick={() => { if (onSelect) { onSelect() } else { onToggle() } }}
     >

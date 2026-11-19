@@ -60,7 +60,7 @@ function CredentialField({
                 ? '已保存的值'
                 : '可选'
           }
-          className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500 flex-1"
+          className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500 flex-1"
         />
         {saved && (
           <button
@@ -153,7 +153,7 @@ export function ArgoCDConnectionForm({
           地址必须可从 KubeAtlas 访问。留空以自动发现此集群中的服务器。
         </p>
         <Input
-          className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+          className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
           id={id}
           value={value.url}
           onChange={(e) => onChange({ ...value, url: e.target.value })}
@@ -329,7 +329,7 @@ export function CostConnectionForm({
                 留空以自动发现此集群中的服务。联邦部署请使用中心 Aggregator URL。
               </p>
               <Input
-                className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
                 id={id}
                 value={value.url}
                 onChange={(e) => onChange({ ...value, url: e.target.value })}
@@ -360,7 +360,7 @@ export function CostConnectionForm({
                 FinOps Agent 的 CLUSTER_ID，而非 kubeconfig context 名称。留空以自动检测，仅适用于此集群。
               </p>
               <Input
-                className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                className="block w-full min-w-0 px-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
                 id={`${id}-cluster`}
                 value={value.clusterId}
                 onChange={(e) =>

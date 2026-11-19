@@ -42,18 +42,18 @@
   --color-accent-muted: var(--accent-muted);
   --color-accent-text: var(--accent-text);
 
-  /* Skyhook brand (refined blue palette — more saturated) */
-  --color-skyhook: #5088CC;
-  --color-skyhook-50: #EBF2FA;
-  --color-skyhook-100: #D2E2F4;
-  --color-skyhook-200: #A8C7E8;
-  --color-skyhook-300: #7EACDC;
-  --color-skyhook-400: #6A9FE0;
-  --color-skyhook-500: #5088CC;
-  --color-skyhook-600: #4A7CC9;
-  --color-skyhook-700: #3B66A8;
-  --color-skyhook-800: #2D4E82;
-  --color-skyhook-900: #1F365C;
+  /* KubeAtlas brand (refined blue palette — more saturated) */
+  --color-kubeatlas: #5088CC;
+  --color-kubeatlas-50: #EBF2FA;
+  --color-kubeatlas-100: #D2E2F4;
+  --color-kubeatlas-200: #A8C7E8;
+  --color-kubeatlas-300: #7EACDC;
+  --color-kubeatlas-400: #6A9FE0;
+  --color-kubeatlas-500: #5088CC;
+  --color-kubeatlas-600: #4A7CC9;
+  --color-kubeatlas-700: #3B66A8;
+  --color-kubeatlas-800: #2D4E82;
+  --color-kubeatlas-900: #1F365C;
 
   /* K8s resource type colors */
   --color-k8s-internet: #5088CC;

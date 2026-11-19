@@ -300,11 +300,11 @@ func TestIdentities_VariantSuffixesNotEnvs(t *testing.T) {
 }
 
 // A multi-segment namespace name is not an env token — only its segments may
-// qualify ("payments-staging" → staging; "skyhook-clients-frps" → nothing).
+// qualify ("payments-staging" → staging; "acme-clients-frps" → nothing).
 func TestIdentities_MultiSegmentNamespaceNotAToken(t *testing.T) {
 	rows := []appRow{
-		identRow("frps-a", "skyhook-clients-frps", 0, "", "repo.dev/koala/frps:1"),
-		identRow("frps-a", "skyhook-clients-frps-staging", 0, "", "repo.dev/koala/frps:2"),
+		identRow("frps-a", "acme-clients-frps", 0, "", "repo.dev/acme/frps:1"),
+		identRow("frps-a", "acme-clients-frps-staging", 0, "", "repo.dev/acme/frps:2"),
 	}
 	resolveAppIdentities(rows, nil, nil, nil, nil)
 	for i := range rows {
@@ -672,6 +672,77 @@ func TestIdentities_ExplicitAnnotationStandsAlone(t *testing.T) {
 	id := identOf(t, rows, "api")
 	if id == nil || id.Key != "acme-api" || id.Source != SourceExplicit || !id.Portable {
 		t.Fatalf("standalone explicit identity = %+v, want key=acme-api source=explicit portable", id)
+	}
+}
+
+func TestIdentities_AppAnnotationCompatibility(t *testing.T) {
+	const current = "kubeatlas.io/app"
+	const previous = "app.skyhook.io/app"
+	for _, tc := range []struct {
+		name        string
+		annotations []map[string]string
+		wantKey     string
+		wantName    string
+	}{
+		{
+			name:        "trims canonical value",
+			annotations: []map[string]string{{current: "  Checkout\t"}},
+			wantKey:     "Checkout",
+			wantName:    current,
+		},
+		{
+			name:        "reads legacy value and reports its spelling",
+			annotations: []map[string]string{{previous: "  checkout\t"}},
+			wantKey:     "checkout",
+			wantName:    previous,
+		},
+		{
+			name:        "blank canonical falls back",
+			annotations: []map[string]string{{current: " \t", previous: "checkout"}},
+			wantKey:     "checkout",
+			wantName:    previous,
+		},
+		{
+			name:        "canonical takes precedence over different legacy value",
+			annotations: []map[string]string{{current: "checkout", previous: "payments"}},
+			wantKey:     "checkout",
+			wantName:    current,
+		},
+		{
+			name:        "mixed workload keys can agree",
+			annotations: []map[string]string{{previous: "checkout"}, {current: "checkout"}},
+			wantKey:     "checkout",
+			wantName:    current,
+		},
+		{
+			name:        "disagreeing workload values stay nonexplicit",
+			annotations: []map[string]string{{previous: "checkout", current: "payments"}, {previous: "checkout"}},
+		},
+		{
+			name:        "both values blank",
+			annotations: []map[string]string{{current: "\t", previous: " "}},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			row := identRow("checkout", "store", 0, "")
+			for _, annotations := range tc.annotations {
+				value, key := readAppIdentityAnnotation(annotations)
+				row.Workloads = append(row.Workloads, appWorkload{appAnnotation: value, appAnnoKey: key})
+			}
+			rows := []appRow{row}
+			resolveAppIdentities(rows, nil, nil, nil, nil)
+			id := rows[0].Identity
+			if tc.wantKey == "" {
+				if id != nil && id.Source == SourceExplicit {
+					t.Fatalf("unexpected explicit identity: %+v", id)
+				}
+				return
+			}
+			wantEvidence := fmt.Sprintf("%s=%q", tc.wantName, tc.wantKey)
+			if id == nil || !id.Portable || id.Source != SourceExplicit || id.Key != tc.wantKey || id.Evidence != wantEvidence {
+				t.Fatalf("identity = %+v, want explicit portable identity with evidence %q", id, wantEvidence)
+			}
+		})
 	}
 }
 

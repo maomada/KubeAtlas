@@ -1651,7 +1651,7 @@ function TimelineSection({
         <select
           value={config.timelineStorage ?? 'memory'}
           onChange={(e) => onChange('timelineStorage', e.target.value === 'memory' ? undefined : e.target.value as 'sqlite')}
-          className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary focus:outline-none focus:border-skyhook-500"
+          className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary focus:outline-none focus:border-kubeatlas-500"
         >
           <option value="memory">内存（默认）</option>
           <option value="sqlite">SQLite（持久化）</option>
@@ -1842,7 +1842,7 @@ function CostSection({
           'rounded-md border p-3',
           sourceEnvError
             ? 'border-red-500/30 bg-red-500/[0.07]'
-            : 'border-skyhook-500/30 bg-skyhook-500/[0.07]',
+            : 'border-kubeatlas-500/30 bg-kubeatlas-500/[0.07]',
         )}>
           <p className={clsx(
             'flex items-center gap-1.5 text-sm font-medium',
@@ -1850,7 +1850,7 @@ function CostSection({
           )}>
             {sourceEnvError
               ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
-              : <Terminal className="h-3.5 w-3.5 shrink-0 text-skyhook-500" />}
+              : <Terminal className="h-3.5 w-3.5 shrink-0 text-kubeatlas-500" />}
             {sourceEnvError ? '部署成本配置无效' : '由部署配置'}
           </p>
           <p className="mt-1 text-xs text-theme-text-tertiary">
@@ -1909,7 +1909,7 @@ function CostSection({
                       onChange={(event) => { onChangeUrl(event.target.value); setApply({ status: 'idle' }) }}
                       disabled={sourceEnvManaged}
                       placeholder="自动发现，或填写 https://kubecost.example.com"
-                      className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                      className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
                     />
                   </div>
                   <div>
@@ -1925,7 +1925,7 @@ function CostSection({
                       onChange={(event) => { onChangeClusterId(event.target.value); setApply({ status: 'idle' }) }}
                       disabled={sourceEnvManaged}
                       placeholder="自动检测"
-                      className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                      className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
                     />
                   </div>
                 </div>
@@ -1957,7 +1957,7 @@ function CostSection({
                 spellCheck={false}
                 disabled={sourceEnvManaged}
                 placeholder={apiKeySet && !apiKeyCleared ? 'Saved value' : 'Optional API key'}
-                className="min-w-0 flex-1 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+                className="min-w-0 flex-1 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
               />
               {apiKeySet && !apiKeyCleared && !sourceEnvManaged && (
                 <button
@@ -2312,9 +2312,9 @@ function ArgoCDEnvManagedField({
       <p className="text-xs text-theme-text-tertiary mb-3">
         为 GitOps 应用页面提供完整的 Git 声明与集群实际运行状态之间的差异视图。
       </p>
-      <div className="rounded-md border border-skyhook-500/30 bg-skyhook-500/[0.07] p-3">
+      <div className="rounded-md border border-kubeatlas-500/30 bg-kubeatlas-500/[0.07] p-3">
         <p className="flex items-center gap-1.5 text-sm font-medium text-theme-text-primary">
-          <Terminal className="w-3.5 h-3.5 shrink-0 text-skyhook-500" />
+          <Terminal className="w-3.5 h-3.5 shrink-0 text-kubeatlas-500" />
           由环境变量配置
         </p>
         <p className="mt-1 text-xs text-theme-text-tertiary">
@@ -2538,15 +2538,15 @@ function ArgoCDEditableField({
         value={url}
         onChange={(e) => { onChangeUrl(e.target.value); clearStatus() }}
         placeholder="自动发现 argocd-server"
-        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
       />
 
       {cliSession && (
-        <div className="mt-3 rounded-md border border-skyhook-500/30 bg-skyhook-500/[0.07] p-3">
+        <div className="mt-3 rounded-md border border-kubeatlas-500/30 bg-kubeatlas-500/[0.07] p-3">
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <p className="flex items-center gap-1.5 text-sm font-medium text-theme-text-primary">
-                <Terminal className="w-3.5 h-3.5 shrink-0 text-skyhook-500" />
+                <Terminal className="w-3.5 h-3.5 shrink-0 text-kubeatlas-500" />
                 已发现 Argo CD CLI 会话
               </p>
               <p className="mt-0.5 truncate text-xs text-theme-text-tertiary">
@@ -2586,7 +2586,7 @@ function ArgoCDEditableField({
           value={showConfiguredPlaceholder ? '' : token}
           onChange={(e) => { setToken(e.target.value); setTokenTouched(true); setTokenCleared(false); clearStatus() }}
           placeholder={showConfiguredPlaceholder ? '已保存的值' : 'Argo CD API 令牌'}
-          className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+          className="flex-1 min-w-0 px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
         />
         {effectiveTokenSet && !tokenCleared && (
           <button
@@ -2606,7 +2606,7 @@ function ArgoCDEditableField({
           type="checkbox"
           checked={insecureTls}
           onChange={(e) => { onChangeInsecureTls(e.target.checked); clearStatus() }}
-          className="h-3.5 w-3.5 accent-skyhook-600"
+          className="h-3.5 w-3.5 accent-kubeatlas-600"
         />
         <span className="text-xs text-theme-text-secondary">跳过 TLS 验证（自签名 Argo CD 服务器）</span>
       </label>
@@ -2665,7 +2665,7 @@ function ConfigField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
       />
       <EffectiveHint current={value || undefined} effective={effectiveValue} />
     </div>
@@ -2724,7 +2724,7 @@ function ConfigArrayField({
           commit(e.target.value)
         }}
         placeholder={placeholder}
-        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
       />
       <EffectiveHint current={canonical(value) || undefined} effective={canonical(effectiveValue) || undefined} />
     </div>
@@ -2757,7 +2757,7 @@ function ConfigNumberField({
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value ? parseInt(e.target.value, 10) || undefined : undefined)}
         placeholder={placeholder}
-        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500"
+        className="w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500"
       />
       <EffectiveHint current={value} effective={effectiveValue} />
     </div>

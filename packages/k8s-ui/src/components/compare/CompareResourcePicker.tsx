@@ -101,7 +101,7 @@ export function CompareResourcePicker({
     <DialogPortal ariaLabelledBy={titleId} open={open} onClose={onClose} className="max-w-xl w-full max-h-[70vh] flex flex-col">
       <div className="flex items-center justify-between px-4 py-3 border-b border-theme-border shrink-0">
         <div className="flex items-center gap-2">
-          <GitCompare className="w-5 h-5 text-skyhook-400" />
+          <GitCompare className="w-5 h-5 text-kubeatlas-400" />
           <h3 id={titleId} className="text-sm font-semibold text-theme-text-primary">
             {sourceSide === 'a'
               ? `Compare to another ${pluralToKind(source.kind)}`
@@ -135,7 +135,7 @@ export function CompareResourcePicker({
             onChange={e => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
             placeholder="Search by name or namespace…  ↑↓ navigate, ↵ pick"
-            className="w-full pl-9 pr-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-lg text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-400"
+            className="w-full pl-9 pr-3 py-2 text-sm bg-theme-elevated border border-theme-border rounded-lg text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-400"
           />
         </div>
       </div>
@@ -178,7 +178,7 @@ export function CompareResourcePicker({
                     className={clsx(
                       'w-full text-left px-4 py-2.5 transition-colors',
                       'flex items-baseline gap-2',
-                      isActive ? 'bg-skyhook-500/10' : 'hover:bg-theme-hover',
+                      isActive ? 'bg-kubeatlas-500/10' : 'hover:bg-theme-hover',
                     )}
                   >
                     <span className="text-sm font-mono text-theme-text-primary truncate flex-1">
@@ -188,7 +188,7 @@ export function CompareResourcePicker({
                       <span
                         className={clsx(
                           'text-xs font-mono shrink-0',
-                          sameNs ? 'text-skyhook-400' : 'text-theme-text-tertiary',
+                          sameNs ? 'text-kubeatlas-400' : 'text-theme-text-tertiary',
                         )}
                         title={sameNs ? 'Same namespace as the source — likely target' : undefined}
                       >

@@ -216,7 +216,7 @@ export function TrafficWizard({
             {recommendation && (
               <div className="space-y-4">
                 {/* Primary option */}
-                <div className="border border-skyhook-500/30 bg-skyhook-500/5 rounded-lg p-4 space-y-3">
+                <div className="border border-kubeatlas-500/30 bg-kubeatlas-500/5 rounded-lg p-4 space-y-3">
                   <div className="flex items-start gap-2">
                     <span className="badge btn-brand">
                       Recommended
@@ -350,7 +350,7 @@ export function TrafficWizard({
 
           {/* Platform-specific notes */}
           {cluster?.platform === 'gke' && cluster?.cni === 'cilium' && (
-            <div className="bg-skyhook-500/10 border border-skyhook-500/20 rounded-lg p-4 text-sm">
+            <div className="bg-kubeatlas-500/10 border border-kubeatlas-500/20 rounded-lg p-4 text-sm">
               <p className="text-blue-400 font-medium">GKE Dataplane V2</p>
               <p className="text-theme-text-secondary mt-1">
                 Your cluster uses Cilium natively. The command above enables the Hubble

@@ -467,7 +467,7 @@ function ResourceGroupRow({ group: g, checks, expanded, onToggle, onResourceClic
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); onResourceClick(g.kind, g.namespace, g.name) }}
-            className="text-sm font-medium text-skyhook-500 hover:text-skyhook-400 hover:underline cursor-pointer truncate max-w-[300px] inline-flex items-center gap-1 text-left"
+            className="text-sm font-medium text-kubeatlas-500 hover:text-kubeatlas-400 hover:underline cursor-pointer truncate max-w-[300px] inline-flex items-center gap-1 text-left"
           >
             {showNamespace && g.namespace ? `${g.namespace} / ` : ''}{g.name}
             <ExternalLink className="w-3 h-3 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />

@@ -1,7 +1,8 @@
 # CI/CD and owned GHCR distribution
 
-Main and pull-request CI build and test only. This repository does not claim
-that any image or chart has already been published. A maintainer may dispatch
+Main and pull-request CI build and test only. Published images and charts
+are listed in [GitHub Packages](https://github.com/maomada?tab=packages).
+A maintainer may dispatch
 **Release GHCR** from `maomada/KubeAtlas` on `main` with a full lowercase 40-digit
 source SHA and a strict SemVer version (no `v` prefix or build metadata).
 The policy requires that SHA to be an ancestor of `main` and that the latest

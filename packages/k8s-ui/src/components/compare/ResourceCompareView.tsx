@@ -154,10 +154,10 @@ export function ResourceCompareView({
 
   return (
     <div className="flex-1 min-w-0 flex flex-col h-full bg-theme-base">
-      <div className="h-0.5 w-full bg-gradient-to-r from-blue-400/70 via-skyhook-400/40 to-emerald-400/70" />
+      <div className="h-0.5 w-full bg-gradient-to-r from-blue-400/70 via-kubeatlas-400/40 to-emerald-400/70" />
 
       <div className="flex items-center gap-3 px-4 py-2.5 border-b border-theme-border bg-theme-surface">
-        <GitCompare className="w-5 h-5 text-skyhook-400 shrink-0" />
+        <GitCompare className="w-5 h-5 text-kubeatlas-400 shrink-0" />
         <h2 className="text-sm font-semibold text-theme-text-primary shrink-0 whitespace-nowrap">
           Compare <span className="text-theme-text-tertiary mx-0.5">·</span>{' '}
           <span className="text-theme-text-secondary font-medium">{kindLabel}</span>
@@ -260,7 +260,7 @@ function ToggleButton({
         className={clsx(
           'flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-lg border transition-colors whitespace-nowrap',
           active
-            ? 'border-skyhook-400/50 bg-skyhook-500/15 text-skyhook-300'
+            ? 'border-kubeatlas-400/50 bg-kubeatlas-500/15 text-kubeatlas-300'
             : 'border-transparent text-theme-text-secondary hover:text-theme-text-primary hover:bg-theme-elevated',
         )}
       >

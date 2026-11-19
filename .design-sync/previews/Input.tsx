@@ -1,6 +1,6 @@
 import { Input } from '@maomada/k8s-ui'
 
-const field = 'w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-skyhook-500 disabled:opacity-60 disabled:cursor-not-allowed'
+const field = 'w-full px-3 py-1.5 text-sm bg-theme-elevated border border-theme-border rounded-md text-theme-text-primary placeholder:text-theme-text-tertiary focus:outline-none focus:border-kubeatlas-500 disabled:opacity-60 disabled:cursor-not-allowed'
 const box = { width: 400 } as const
 
 function Field({ id, label, help, children }: { id: string; label: string; help?: string; children: React.ReactNode }) {

@@ -299,7 +299,7 @@ export function HelmView({ namespaces, selectedRelease, onReleaseClick }: HelmVi
                   {!searchTerm && (
                     <button
                       onClick={() => setActiveTab('charts')}
-                      className="mt-2 px-4 py-2 text-sm text-skyhook-400 hover:text-skyhook-300 border border-skyhook-500/30 rounded-lg hover:bg-skyhook-500/10 transition-colors"
+                      className="mt-2 px-4 py-2 text-sm text-kubeatlas-400 hover:text-kubeatlas-300 border border-kubeatlas-500/30 rounded-lg hover:bg-kubeatlas-500/10 transition-colors"
                     >
                       Browse charts to install
                     </button>
@@ -539,7 +539,7 @@ const ReleaseRow = forwardRef<HTMLTableRowElement, ReleaseRowProps>(
       className={clsx(
         'cursor-pointer transition-colors',
         isSelected
-          ? 'selection-strong hover:bg-skyhook-500/30'
+          ? 'selection-strong hover:bg-kubeatlas-500/30'
           : isHighlighted
             ? 'selection selection-ring'
             : 'hover:bg-theme-surface/50'

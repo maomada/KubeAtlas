@@ -29,7 +29,7 @@ function ServiceRow({ svc, ns, weightPct, onNavigate }: {
       {weightPct !== undefined && (
         <div className="flex items-center gap-1.5 ml-auto">
           <div className="w-20 h-1.5 bg-theme-hover rounded-full overflow-hidden">
-            <div className="h-full bg-skyhook-500" style={{ width: `${Math.min(100, weightPct)}%` }} />
+            <div className="h-full bg-kubeatlas-500" style={{ width: `${Math.min(100, weightPct)}%` }} />
           </div>
           <span className="text-theme-text-tertiary tabular-nums w-10 text-right">{weightPct.toFixed(0)}%</span>
         </div>

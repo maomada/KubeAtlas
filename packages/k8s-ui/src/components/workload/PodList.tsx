@@ -147,7 +147,7 @@ export function podStatusClass(healthLevel: WorkloadPodInfo['healthLevel'] | und
 export function podDotClass(healthLevel: WorkloadPodInfo['healthLevel'] | undefined, ready: boolean | null): string {
   if (healthLevel === 'unhealthy') return 'bg-red-500'
   if (healthLevel === 'degraded') return 'bg-amber-500'
-  if (healthLevel === 'neutral') return 'bg-skyhook-500'
+  if (healthLevel === 'neutral') return 'bg-kubeatlas-500'
   if (healthLevel === 'unknown' || ready === null) return 'bg-theme-text-tertiary'
   return ready ? 'bg-emerald-500' : 'bg-amber-500'
 }

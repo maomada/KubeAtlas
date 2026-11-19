@@ -291,9 +291,9 @@ export function ResourceDetailDrawer({ resource, onClose, onNavigate, initialTab
         <div
           onMouseDown={handleResizeStart}
           className={clsx(
-            'absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize z-10 hover:bg-skyhook-500/50 transition-colors',
+            'absolute left-0 top-0 bottom-0 w-2 cursor-ew-resize z-10 hover:bg-kubeatlas-500/50 transition-colors',
             'hidden sm:block',
-            isResizing && 'bg-skyhook-500/50'
+            isResizing && 'bg-kubeatlas-500/50'
           )}
         />
       )}
