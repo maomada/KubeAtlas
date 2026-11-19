@@ -15,6 +15,17 @@ export FAKE_IMAGE_DIGEST
 export FAKE_CONTEXTS=test-context
 export FAKE_HTTP_STATUS=200
 export FAKE_CHECKSUM_SHA="$FAKE_CHART_SHA"
+export FAKE_LOCAL_BOOT_ID=11111111-1111-4111-8111-111111111111
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
+
+cat() {
+  if [[ "$*" == /proc/sys/kernel/random/boot_id ]]; then printf '%s\n' "$FAKE_LOCAL_BOOT_ID"; else command cat "$@"; fi
+}
+docker() {
+  [[ "$1" == --host && "$2" == unix:///var/run/docker.sock && "$3" == info ]] || return 80
+  [[ -z "${DOCKER_HOST+x}" && -z "${DOCKER_CONTEXT+x}" ]] || return 81
+  printf '{"name":"fixture-node","kernel":"fixture-kernel","registry":%s}\n' "$FAKE_DOCKER_REGISTRY"
+}
 
 curl() {
   local output='' headers='' url=''
@@ -41,6 +52,7 @@ curl() {
 }
 kubectl() {
   if [[ "$1" == --context ]]; then shift 2; fi
+  if [[ "${1:-}" == --request-timeout=* ]]; then shift; fi
   if [[ "$1" == config ]]; then
     case "$2" in
       get-contexts) printf '%s\n' "$FAKE_CONTEXTS";;
@@ -54,6 +66,10 @@ kubectl() {
     cluster-info) return 0;;
     auth) printf 'yes\n';;
     get)
+      if [[ "$2" == nodes ]]; then
+        printf '{"items":[{"metadata":{"name":"fixture-node"},"status":{"nodeInfo":{"bootID":"%s","kernelVersion":"fixture-kernel","containerRuntimeVersion":"docker://24.0.9"}}}]}\n' "$FAKE_LOCAL_BOOT_ID"
+        return 0
+      fi
       if [[ "$2" == namespace && "$3" == kube-system ]]; then printf '%s\n' 'test-kube-system-uid'; return 0; fi
       local kind="$2" name="$3"
       if [[ "$kind" == namespace && "${FAKE_NAMESPACE_COLLISION:-0}" == 1 ]] ||
@@ -67,11 +83,14 @@ helm() {
   case "$1" in
     list) [[ "${FAKE_RELEASE_COLLISION:-0}" == 1 ]] && printf '[{"name":"kubeatlas"}]\n' || printf '[]\n';;
     template) printf 'kind: Deployment\n';;
-    install) printf 'helm install %s\n' "$*" >>"$FAKE_MUTATIONS";;
+    install)
+      printf 'helm install %s\n' "$*" >>"$FAKE_MUTATIONS"
+      [[ "${FAKE_HELM_INSTALL_FAIL:-0}" != 1 ]] || return 42
+      ;;
     *) return 10;;
   esac
 }
-export -f curl kubectl helm
+export -f curl kubectl helm cat docker
 
 token="$tmp/token"
 printf '  %s  \n' "$(printf 't%.0s' {1..40})" >"$token"
@@ -122,4 +141,16 @@ expect_failure 'at most 4096 bytes'
 if grep -Eq -- 'curl.*(--location|(^|[[:space:]])-L([[:space:]]|$))' "$script"; then
   printf 'installer must not follow redirects\n' >&2; exit 1
 fi
-printf 'Hub Agent installer shell tests passed (preflight failures, collisions, confirmation, dry-run, token validation).\n'
+
+printf '  %s  \n' "$(printf 't%.0s' {1..40})" >"$token"
+common[1]=http://10.0.100.220:8080
+expect_failure 'HTTP registry preflight blocked' --yes
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"10.0.100.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
+export FAKE_HELM_INSTALL_FAIL=1
+: >"$FAKE_MUTATIONS"
+if output="$(bash "$script" "${common[@]}" --yes 2>&1)"; then printf 'Helm failure unexpectedly passed\n' >&2; exit 1; fi
+[[ "$output" == *'Installation recovery:'* && "$output" == *'namespace=kubeatlas'* && "$output" == *'context=test-context'* && "$output" == *'Resources may already exist'* && "$output" == *'10.0.100.220:8080'* ]] || { printf 'Helm failure lacked target/recovery guidance: %s\n' "$output" >&2; exit 1; }
+[[ "$(wc -l <"$FAKE_MUTATIONS")" -eq 3 ]] || { printf 'unexpected post-failure mutations\n' >&2; exit 1; }
+if grep -Eq '(delete|uninstall|upgrade|patch|apply|replace)' "$FAKE_MUTATIONS"; then printf 'failed install cleaned up or adopted resources\n' >&2; exit 1; fi
+[[ "$output" != *"$(printf 't%.0s' {1..40})"* ]] || { printf 'Helm failure leaked token\n' >&2; exit 1; }
+printf 'Hub Agent installer shell tests passed (preflight failures, local Docker registry, collisions, confirmation, dry-run, token validation, failed-install recovery).\n'

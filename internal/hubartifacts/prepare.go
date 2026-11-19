@@ -14,21 +14,38 @@ import (
 )
 
 type PrepareOptions struct {
-	ChartDir      string
-	LayoutDir     string
-	InstallerPath string
-	BootstrapPath string
-	OutputDir     string
-	Version       string
-	ChartVersion  string
-	Revision      string
-	ImageDigest   string
-	HelmBinary    string
+	ChartDir       string
+	LayoutDir      string
+	InstallerPath  string
+	BootstrapPath  string
+	OutputDir      string
+	Version        string
+	ChartVersion   string
+	Revision       string
+	ImageDigest    string
+	HelmBinary     string
+	OpenCostChart  string
+	OpenCostLayout string
+	OpenCostDigest string
 }
 
 func Prepare(options PrepareOptions) error {
 	if !versionPattern.MatchString(options.Version) || !revisionPattern.MatchString(options.Revision) || !digestPattern.MatchString(options.ImageDigest) {
 		return errors.New("version, source revision, or image digest is invalid")
+	}
+	openCostEnabled := options.OpenCostChart != "" || options.OpenCostLayout != "" || options.OpenCostDigest != ""
+	if openCostEnabled {
+		if options.OpenCostChart == "" || options.OpenCostLayout == "" || !digestPattern.MatchString(options.OpenCostDigest) {
+			return errors.New("OpenCost chart, layout and image digest are required together")
+		}
+		chart, err := os.Lstat(options.OpenCostChart)
+		if err != nil || !chart.Mode().IsRegular() || chart.Size() > maxOpenCostChart {
+			return errors.New("OpenCost chart source is unavailable or exceeds size limit")
+		}
+		layout, err := os.Lstat(options.OpenCostLayout)
+		if err != nil || !layout.IsDir() || layout.Mode()&os.ModeSymlink != 0 {
+			return errors.New("OpenCost OCI layout source is unavailable")
+		}
 	}
 	chartVersion := options.ChartVersion
 	if chartVersion == "" {
@@ -98,7 +115,7 @@ func Prepare(options PrepareOptions) error {
 	if err := os.Remove(packageDir); err != nil {
 		return err
 	}
-	if err := copyTree(options.LayoutDir, filepath.Join(stage, "oci")); err != nil {
+	if err := copyTree(options.LayoutDir, filepath.Join(stage, agentOCIPath)); err != nil {
 		return err
 	}
 	if err := copyRegular(options.InstallerPath, filepath.Join(stage, "install-hub-agent.sh"), 0o444); err != nil {
@@ -140,6 +157,20 @@ func Prepare(options PrepareOptions) error {
 	manifest.Installer.File = "install-hub-agent.sh"
 	manifest.Installer.SHA256 = installerHash
 	manifest.Bootstrap = bootstrap
+	if openCostEnabled {
+		if err := copyTree(options.OpenCostLayout, filepath.Join(stage, openCostOCIPath)); err != nil {
+			return err
+		}
+		path := filepath.Join(stage, openCostChartName)
+		if err := copyRegular(options.OpenCostChart, path, 0o444); err != nil {
+			return err
+		}
+		chartHash, err := hashPath(path)
+		if err != nil {
+			return err
+		}
+		manifest.OpenCost = &OpenCostManifest{ChartSHA256: chartHash, ImageDigest: options.OpenCostDigest}
+	}
 	data, err := json.MarshalIndent(manifest, "", "  ")
 	if err != nil {
 		return err

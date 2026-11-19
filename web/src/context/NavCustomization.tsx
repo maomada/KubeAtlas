@@ -12,6 +12,7 @@ export type FleetTakeoverTarget = 'issues' | 'gitops' | 'checks' | 'certs';
 export interface NavCustomization {
   /** KubeAtlas Hub owns all chrome; KubeAtlas renders only the active view. */
   embedded?: boolean;
+  clusterDisplayName?: string;
   /**
    * When set, a "Compare across clusters" option is added to the Compare
    * button in resource action bars. The host returns the URL that should

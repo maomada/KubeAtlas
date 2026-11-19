@@ -29,6 +29,8 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
 	hubStateFile := flag.String("hub-state-file", os.Getenv("KUBEATLAS_PORTAL_HUB_STATE_FILE"), "Required persistent state file for the self-hosted Cloud Hub")
 	hubArtifactsDir := flag.String("hub-artifacts-dir", os.Getenv("KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR"), "Optional read-only directory containing the version-matched Hub Agent artifact bundle")
+	previousArtifactsDir := flag.String("hub-previous-artifacts-dir", "", "Optional read-only previous Hub artifact bundle, retained for digest-only image pulls")
+	previousArtifactsVersion := flag.String("hub-previous-artifacts-version", "", "Exact build version of the previous Hub Agent artifact bundle")
 	hubGroups := flag.String("hub-groups", os.Getenv("KUBEATLAS_PORTAL_HUB_GROUPS"), "Comma-separated Kubernetes identity groups for the local Cloud Hub owner; grants still require cluster RBAC")
 	oidcIssuer := flag.String("oidc-issuer", os.Getenv("KUBEATLAS_PORTAL_OIDC_ISSUER"), "OIDC issuer URL for Hub SSO")
 	oidcClientID := flag.String("oidc-client-id", os.Getenv("KUBEATLAS_PORTAL_OIDC_CLIENT_ID"), "OIDC client ID for Hub SSO")
@@ -56,6 +58,17 @@ func main() {
 	}
 	if err := configureArtifacts(&credentials, *hubArtifactsDir, version); err != nil {
 		log.Fatalf("portal Hub artifact catalog is invalid: %v", err)
+	}
+	if *previousArtifactsDir != "" || *previousArtifactsVersion != "" {
+		if *previousArtifactsDir == "" || *previousArtifactsVersion == "" || credentials.Hub.Artifacts == nil {
+			log.Fatal("retaining previous images requires an active and a fully specified previous catalog")
+		}
+		previous, err := hubartifacts.Open(*previousArtifactsDir, *previousArtifactsVersion)
+		if err != nil {
+			log.Fatalf("previous Hub artifact catalog is invalid: %v", err)
+		}
+		defer previous.Close()
+		credentials.Hub.Artifacts.WithPreviousImages(previous)
 	}
 	if err := configureOIDC(&credentials, *oidcIssuer, *oidcClientID, *oidcRedirectURL, *oidcCACert, os.Getenv("KUBEATLAS_PORTAL_OIDC_CLIENT_SECRET")); err != nil {
 		log.Fatalf("portal OIDC configuration is invalid: %v", err)

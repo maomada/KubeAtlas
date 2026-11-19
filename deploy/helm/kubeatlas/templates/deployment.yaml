@@ -16,6 +16,15 @@
 {{- if and .Values.image.digest (not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest)) }}
 {{- fail "image.digest must be a lowercase sha256 digest" }}
 {{- end }}
+{{- $openCost := .Values.hub.openCostBundle }}
+{{- if or $openCost.sha256 $openCost.data }}
+{{- if or (not .Values.hub.enabled) (not (regexMatch "^[0-9a-f]{64}$" $openCost.sha256)) (empty $openCost.data) (gt (len $openCost.data) 699052) }}
+{{- fail "hub.openCostBundle requires Hub mode and a bounded chart with a lowercase SHA-256 digest" }}
+{{- end }}
+{{- if ne ($openCost.data | b64dec | sha256sum) $openCost.sha256 }}
+{{- fail "hub.openCostBundle chart digest does not match" }}
+{{- end }}
+{{- end }}
 {{- if .Values.hub.enabled }}
 {{- $hubURL := toString .Values.hub.url }}
 {{- $hub := urlParse $hubURL }}
@@ -597,6 +606,14 @@ spec:
             # of assuming `kubeatlas`. Read-only self-description, like the two above.
             - name: KUBEATLAS_HELM_RELEASE
               value: {{ .Release.Name | quote }}
+            {{- if $openCost.sha256 }}
+            - name: KUBEATLAS_OPENCOST_CHART_PATH
+              value: /etc/kubeatlas/opencost/opencost.tgz
+            - name: KUBEATLAS_OPENCOST_CHART_SHA256
+              value: {{ $openCost.sha256 | quote }}
+            - name: KUBEATLAS_OPENCOST_IMAGE_REGISTRY
+              value: {{ lower (get (urlParse .Values.hub.url) "host") | quote }}
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -645,6 +662,12 @@ spec:
             - name: hub-token
               mountPath: /etc/kubeatlas/hub
               readOnly: true
+            {{- if $openCost.sha256 }}
+            - name: hub-opencost
+              mountPath: /etc/kubeatlas/opencost/opencost.tgz
+              subPath: opencost.tgz
+              readOnly: true
+            {{- end }}
             {{- if .Values.hub.caSecret }}
             - name: hub-ca
               mountPath: /etc/kubeatlas/hub-ca
@@ -683,6 +706,11 @@ spec:
                 path: key
         {{- end }}
         {{- if .Values.hub.enabled }}
+        {{- if $openCost.sha256 }}
+        - name: hub-opencost
+          configMap:
+            name: {{ printf "%s-oc-%s" (include "kubeatlas.fullname" . | trunc 43 | trimSuffix "-") ($openCost.sha256 | trunc 15) }}
+        {{- end }}
         - name: hub-token
           secret:
             secretName: {{ .Values.hub.tokenSecret }}

@@ -69,20 +69,25 @@ func TestPreparePackagesValidReleaseChartVersion(t *testing.T) {
 	if err != nil {
 		t.Skip("Helm is required for the source-chart preparation regression")
 	}
-	fixture, imageDigest, _ := makeBundle(t)
+	fixture, imageDigest, _ := makeBundleForPlatforms(t, []string{"amd64"}, true, false)
+	openCostLayout, openCostDigest, _ := sideImageFixture(t)
+	openCostChart := writeOpenCostFixture(t, fixture, "opencost")
 	output := privateOutputPath(t, "prepared-release")
 	cleanupReadOnlyBundle(t, output)
 	const chartVersion = "1.2.3+build.7"
 	err = Prepare(PrepareOptions{
-		ChartDir:      filepath.Join("..", "..", "deploy", "helm", "kubeatlas"),
-		LayoutDir:     filepath.Join(fixture, "oci"),
-		InstallerPath: filepath.Join("..", "..", "scripts", "install-hub-agent.sh"),
-		OutputDir:     output,
-		Version:       "1.2.3",
-		ChartVersion:  chartVersion,
-		Revision:      testRevision,
-		ImageDigest:   imageDigest,
-		HelmBinary:    helm,
+		ChartDir:       filepath.Join("..", "..", "deploy", "helm", "kubeatlas"),
+		LayoutDir:      filepath.Join(fixture, "oci"),
+		InstallerPath:  filepath.Join("..", "..", "scripts", "install-hub-agent.sh"),
+		OutputDir:      output,
+		Version:        "1.2.3",
+		ChartVersion:   chartVersion,
+		Revision:       testRevision,
+		ImageDigest:    imageDigest,
+		HelmBinary:     helm,
+		OpenCostChart:  filepath.Join(fixture, openCostChartName),
+		OpenCostLayout: openCostLayout,
+		OpenCostDigest: openCostDigest,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -94,5 +99,8 @@ func TestPreparePackagesValidReleaseChartVersion(t *testing.T) {
 	t.Cleanup(func() { _ = catalog.Close() })
 	if catalog.manifest.Chart.Version != chartVersion {
 		t.Fatalf("prepared chart version = %q, want %q", catalog.manifest.Chart.Version, chartVersion)
+	}
+	if got := catalog.Availability(); got.OpenCostChartSHA256 != digestHex(openCostChart) || got.OpenCostImageDigest != openCostDigest {
+		t.Fatalf("prepared catalog has incorrect OpenCost artifact metadata: %+v", got)
 	}
 }

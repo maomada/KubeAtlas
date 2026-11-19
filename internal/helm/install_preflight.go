@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/maomada/KubeAtlas/internal/bundledcharts"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -279,6 +280,22 @@ func classifyInstallError(err error) InstallErrorClass {
 	}
 	if errors.Is(err, errChartDigest) {
 		return InstallErrorClass{Status: http.StatusBadGateway, Code: "chart_digest_failed", Message: err.Error()}
+	}
+	if errors.Is(err, bundledcharts.ErrOpenCostUnavailable) {
+		return InstallErrorClass{Status: http.StatusServiceUnavailable, Code: "opencost_package_unavailable", Message: err.Error()}
+	}
+	if errors.Is(err, errOpenCostExists) {
+		return InstallErrorClass{Status: http.StatusConflict, Code: "opencost_exists", Message: err.Error()}
+	}
+	if errors.Is(err, errOpenCostListDenied) {
+		return InstallErrorClass{Status: http.StatusForbidden, Code: "opencost_inventory_denied", Message: err.Error()}
+	}
+	if errors.Is(err, errInvalidChartSource) {
+		return InstallErrorClass{Status: http.StatusBadRequest, Code: "invalid_chart_source", Message: err.Error()}
+	}
+	var history *ReleaseHistoryError
+	if errors.As(err, &history) {
+		return InstallErrorClass{Status: http.StatusConflict, Code: "release_history", Message: history.Error()}
 	}
 	var pending *ReleasePendingError
 	if errors.As(err, &pending) {

@@ -497,8 +497,13 @@ func (p *portalHub) claimEnrollment(w http.ResponseWriter, r *http.Request) {
 	p.transport.Disconnect(clusterID)
 	namespace := "kubeatlas-agent-" + entry.id[:10]
 	release := "kubeatlas-agent-" + entry.id[:10]
-	hubJSON(w, 200, map[string]any{"status": "approved", "clusterId": clusterID, "organizationId": entry.organizationID,
+	response := map[string]any{"status": "approved", "clusterId": clusterID, "organizationId": entry.organizationID,
 		"ownerUserId": p.userID, "hubOrigin": entry.origin, "version": availability.Version, "imageDigest": availability.ImageDigest,
 		"chartSHA256": availability.ChartSHA256, "installerSHA256": availability.InstallerSHA256, "agentToken": issued.Token,
-		"namespace": namespace, "release": release})
+		"namespace": namespace, "release": release}
+	if availability.OpenCostChartSHA256 != "" {
+		response["openCostChartSHA256"] = availability.OpenCostChartSHA256
+		response["openCostImageDigest"] = availability.OpenCostImageDigest
+	}
+	hubJSON(w, 200, response)
 }

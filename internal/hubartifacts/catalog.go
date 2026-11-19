@@ -21,13 +21,19 @@ import (
 )
 
 const (
-	maxMetadataBytes = 8 << 20
-	maxChartBytes    = 512 << 20
-	maxInstallerSize = 8 << 20
-	maxBlobSize      = int64(32 << 30)
-	maxTotalBytes    = int64(64 << 30)
-	maxChartEntries  = 10000
+	maxMetadataBytes    = 8 << 20
+	maxChartBytes       = 512 << 20
+	maxInstallerSize    = 8 << 20
+	maxOpenCostChart    = 512 << 10
+	maxOpenCostExpanded = 32 << 20
+	maxBlobSize         = int64(32 << 30)
+	maxTotalBytes       = int64(64 << 30)
+	maxChartEntries     = 10000
 )
+
+const openCostChartName = "opencost.tgz"
+const agentOCIPath = "oci"
+const openCostOCIPath = "opencost-oci"
 
 var (
 	versionPattern      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}$`)
@@ -56,6 +62,12 @@ type Manifest struct {
 	Image struct {
 		Digest string `json:"digest"`
 	} `json:"image"`
+	OpenCost *OpenCostManifest `json:"opencost,omitempty"`
+}
+
+type OpenCostManifest struct {
+	ChartSHA256 string `json:"chartSHA256"`
+	ImageDigest string `json:"imageDigest"`
 }
 
 type fileEntry struct {
@@ -72,37 +84,36 @@ type rootSnapshot struct {
 }
 
 type Catalog struct {
-	root                string
-	rootFS              *os.Root
-	rootInfo            fs.FileInfo
-	rootAncestors       []rootSnapshot
-	version             string
-	manifest            Manifest
-	manifestPath        string
-	chartPath           string
-	installPath         string
-	bootstrapPath       string
-	totalBytes          int64
-	descriptorCount     int
-	descriptorPlatforms map[string]string
-	platforms           map[string]bool
-	manifests           map[string]fileEntry
-	blobs               map[string]fileEntry
-	files               map[string]fileEntry
+	root          string
+	rootFS        *os.Root
+	rootInfo      fs.FileInfo
+	rootAncestors []rootSnapshot
+	version       string
+	manifest      Manifest
+	manifestPath  string
+	chartPath     string
+	installPath   string
+	bootstrapPath string
+	agentOCI      *ociRepository
+	openCostOCI   *ociRepository
+	previous      *Catalog
+	files         map[string]fileEntry
 }
 
 type Availability struct {
-	Available          bool     `json:"available"`
-	BootstrapAvailable bool     `json:"bootstrapAvailable"`
-	BootstrapSHA256    string   `json:"bootstrapSHA256,omitempty"`
-	Version            string   `json:"version,omitempty"`
-	ChartVersion       string   `json:"chartVersion,omitempty"`
-	Platforms          []string `json:"platforms,omitempty"`
-	InstallerSHA256    string   `json:"installerSHA256,omitempty"`
-	ChartSHA256        string   `json:"chartSHA256,omitempty"`
-	ChartFile          string   `json:"chartFile,omitempty"`
-	ImageRepository    string   `json:"imageRepository,omitempty"`
-	ImageDigest        string   `json:"imageDigest,omitempty"`
+	Available           bool     `json:"available"`
+	BootstrapAvailable  bool     `json:"bootstrapAvailable"`
+	BootstrapSHA256     string   `json:"bootstrapSHA256,omitempty"`
+	Version             string   `json:"version,omitempty"`
+	ChartVersion        string   `json:"chartVersion,omitempty"`
+	Platforms           []string `json:"platforms,omitempty"`
+	InstallerSHA256     string   `json:"installerSHA256,omitempty"`
+	ChartSHA256         string   `json:"chartSHA256,omitempty"`
+	ChartFile           string   `json:"chartFile,omitempty"`
+	ImageRepository     string   `json:"imageRepository,omitempty"`
+	ImageDigest         string   `json:"imageDigest,omitempty"`
+	OpenCostChartSHA256 string   `json:"openCostChartSHA256,omitempty"`
+	OpenCostImageDigest string   `json:"openCostImageDigest,omitempty"`
 }
 
 func Open(dir, expectedVersion string) (*Catalog, error) {
@@ -182,17 +193,53 @@ func Open(dir, expectedVersion string) (*Catalog, error) {
 	}
 	catalog := &Catalog{root: root, rootFS: rootFS, rootInfo: rootInfo, rootAncestors: rootAncestors, version: manifest.Version, manifest: manifest,
 		manifestPath: manifestEntry.path, chartPath: chartEntry.path, installPath: installEntry.path,
-		platforms: map[string]bool{}, manifests: map[string]fileEntry{}, blobs: map[string]fileEntry{},
 		files: map[string]fileEntry{manifestEntry.path: manifestEntry, chartEntry.path: chartEntry, installEntry.path: installEntry}}
 	if manifest.Bootstrap != nil {
 		catalog.bootstrapPath = bootstrapEntry.path
 		catalog.files[bootstrapEntry.path] = bootstrapEntry
 	}
-	if err := catalog.validateLayout(); err != nil {
+	catalog.agentOCI, err = readOCIRepository(rootFS, agentOCIPath, manifest.Image.Digest, manifest.Version, manifest.SourceRevision)
+	if err != nil {
 		return nil, err
+	}
+	if manifest.OpenCost != nil {
+		if err := catalog.loadOpenCost(); err != nil {
+			return nil, err
+		}
 	}
 	keepRoot = true
 	return catalog, nil
+}
+
+func (c *Catalog) loadOpenCost() error {
+	config := c.manifest.OpenCost
+	if !validHex(config.ChartSHA256) || !digestPattern.MatchString(config.ImageDigest) {
+		return errors.New("Hub OpenCost artifact metadata is invalid")
+	}
+	entry, err := verifyRootFile(c.rootFS, openCostChartName, config.ChartSHA256, maxOpenCostChart, "application/gzip")
+	if err != nil {
+		return errors.New("Hub OpenCost chart is missing or has an invalid digest")
+	}
+	chart, info, err := openRootRegular(c.rootFS, entry.path)
+	if err != nil {
+		return errors.New("Hub OpenCost chart is unavailable")
+	}
+	version, _, err := readChartVersions(chart, "opencost", maxOpenCostExpanded)
+	_ = chart.Close()
+	if err != nil || !sameSnapshot(entry.identity, info) || !chartVersionPattern.MatchString(version) {
+		return errors.New("Hub OpenCost chart metadata is invalid")
+	}
+	c.openCostOCI, err = readOCIRepository(c.rootFS, openCostOCIPath, config.ImageDigest, "", "")
+	if err != nil {
+		return fmt.Errorf("Hub OpenCost image: %w", err)
+	}
+	for platform := range c.agentOCI.platforms {
+		if !c.openCostOCI.platforms[platform] {
+			return fmt.Errorf("Hub OpenCost image does not support Agent platform %s", platform)
+		}
+	}
+	c.files[entry.path] = entry
+	return nil
 }
 
 func snapshotDirectories(root string) ([]rootSnapshot, error) {
@@ -221,12 +268,20 @@ func (c *Catalog) Close() error {
 	return c.rootFS.Close()
 }
 
+// WithPreviousImages permits only digest-addressed image pulls from the verified
+// previous catalog. Call it before serving requests and keep both catalogs open.
+func (c *Catalog) WithPreviousImages(previous *Catalog) {
+	if previous != c {
+		c.previous = previous
+	}
+}
+
 func (c *Catalog) Availability() Availability {
 	if c == nil {
 		return Availability{}
 	}
-	platforms := make([]string, 0, len(c.platforms))
-	for platform, available := range c.platforms {
+	platforms := make([]string, 0, len(c.agentOCI.platforms))
+	for platform, available := range c.agentOCI.platforms {
 		if available {
 			platforms = append(platforms, platform)
 		}
@@ -236,9 +291,14 @@ func (c *Catalog) Availability() Availability {
 	if c.manifest.Bootstrap != nil {
 		bootstrapSHA256 = c.manifest.Bootstrap.SHA256
 	}
-	return Availability{Available: true, BootstrapAvailable: c.bootstrapPath != "", BootstrapSHA256: bootstrapSHA256, Version: c.version, ChartVersion: c.manifest.Chart.Version, Platforms: platforms, InstallerSHA256: c.manifest.Installer.SHA256,
+	availability := Availability{Available: true, BootstrapAvailable: c.bootstrapPath != "", BootstrapSHA256: bootstrapSHA256, Version: c.version, ChartVersion: c.manifest.Chart.Version, Platforms: platforms, InstallerSHA256: c.manifest.Installer.SHA256,
 		ChartSHA256: c.manifest.Chart.SHA256, ChartFile: c.manifest.Chart.File,
 		ImageRepository: "kubeatlas/agent", ImageDigest: c.manifest.Image.Digest}
+	if config := c.manifest.OpenCost; config != nil {
+		availability.OpenCostChartSHA256 = config.ChartSHA256
+		availability.OpenCostImageDigest = config.ImageDigest
+	}
+	return availability
 }
 
 func openRootRegular(root *os.Root, relative string) (*os.File, fs.FileInfo, error) {
@@ -323,6 +383,10 @@ func sameSnapshot(before, after fs.FileInfo) bool {
 }
 
 func chartVersionsReader(reader io.Reader) (string, string, error) {
+	return readChartVersions(reader, "kubeatlas", maxChartBytes*4)
+}
+
+func readChartVersions(reader io.Reader, chartName string, maxExpanded int64) (string, string, error) {
 	gz, err := gzip.NewReader(reader)
 	if err != nil {
 		return "", "", err
@@ -350,7 +414,7 @@ func chartVersionsReader(reader io.Reader) (string, string, error) {
 			(header.Typeflag != tar.TypeReg && header.Typeflag != tar.TypeRegA && header.Typeflag != tar.TypeDir) || header.Size < 0 {
 			return "", "", errors.New("unsafe chart archive entry")
 		}
-		if header.Size > maxChartBytes*4-total {
+		if header.Size > maxExpanded-total {
 			return "", "", errors.New("chart archive expands beyond size limit")
 		}
 		total += header.Size
@@ -374,7 +438,7 @@ func chartVersionsReader(reader io.Reader) (string, string, error) {
 		Version    string `yaml:"version"`
 		AppVersion string `yaml:"appVersion"`
 	}
-	if err := yaml.Unmarshal(metadata, &chart); err != nil || chart.Name != "kubeatlas" {
+	if err := yaml.Unmarshal(metadata, &chart); err != nil || chart.Name != chartName {
 		return "", "", errors.New("chart metadata is invalid")
 	}
 	return chart.Version, chart.AppVersion, nil

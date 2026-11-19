@@ -43,6 +43,9 @@ hub:
   caSecret: ""
   caSecretKey: ca.crt
   ownerUserID: ""
+  openCostBundle:
+    sha256: ""
+    data: ""
 nameOverride: ""
 fullnameOverride: ""
 

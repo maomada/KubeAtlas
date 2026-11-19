@@ -29,6 +29,12 @@ Use a clean, committed checkout and build the Portal with the same build version
 
 Configure the Portal with `--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR`. The `kubeatlas-portal` chart supports an existing PVC through `hubArtifacts.enabled=true` and `hubArtifacts.existingClaim`; the mount is read-only. No artifacts are embedded in the Portal image.
 
+To offer OpenCost on new clusters, prepare the catalog with `--opencost-chart`, `--opencost-layout`, and `--opencost-digest` together. Supply an operator-reviewed offline archive with JSON-compatible `opencost/values.yaml` and an embedded exporter chart, plus a local OCI image layout and its pinned image digest. Match the OpenCost layout to all supported Agent platforms. The chart and exporter are served by the Hub from the same origin as the Agent. Nodes already able to pull the Agent from that registry can pull the OpenCost exporter using the same runtime configuration.
+
+Follow the [OpenCost offline preparation guide](opencost-offline.md) to build and verify the operator-managed inputs.
+
+For a Hub catalog change, pass `--hub-previous-artifacts-dir` and `--hub-previous-artifacts-version` to retain digest-addressed Agent and OpenCost pulls from the preceding verified catalog. New enrollments use the current version.
+
 The Hub exposes only versioned installer/chart/checksum/bootstrap files and the catalog-reachable image manifest and blobs. OCI content is anonymous, immutable, same-origin, and GET/HEAD-only. Tags, upload/delete routes, arbitrary file paths, external redirects, and registry credentials are not supported. Consequently the selected Hub origin must be reachable by the bootstrap client and by every target node that pulls the Agent image.
 
 ## Configure LAN and public addresses
@@ -53,6 +59,8 @@ Run the generated bootstrap with Bash. Bootstrap requires `curl`, `kubectl`,
 An owner selects the LAN or public profile and approves the CLI's short-lived human code. The generated command downloads the same-origin bootstrap without following redirects, verifies its SHA-256 before execution, and starts enrollment. Bootstrap reads the current kube context and freezes it in a private mode-0600 kubeconfig; it displays the context, API server, and `kube-system` UID, checks tools, identity, required privileges, and resource collisions before cluster mutation, and never adopts or cleans up existing resources. The installer repeats preflight, downloads the pinned installer/chart/image from the same origin without redirects, verifies hashes, and passes the Agent token only by protected file path. Helm success means deployed, not Connected; verify the Agent's actual Connected status in the Portal.
 
 Enrollment requests expire after about ten minutes. The device secret is never shown in the Portal, and the Agent token is returned only to the one-time claimant. Losing the claim response requires a new approved pairing; the Hub cannot recover the token. MCP continues to use organization-scoped bearer credentials.
+
+With an OpenCost bundle configured, the installer checks existing Prometheus Services in the selected cluster. It verifies query access, then matches the exporter to the existing Prometheus Operator ServiceMonitor selectors or a detected annotation-based scraper. The installer stores the prepared offline chart in the Agent namespace. If discovery is inconclusive, Agent registration can proceed and the installer reports the reason. The user deploys OpenCost from the cost page after reviewing the target cluster and confirming installation.
 
 The token is passed to `kubectl` only as a file path and is stored in a Secret mounted into the Agent as a file. It is never included in an argument value, URL, Helm release values, artifact, or generated log. Optional CA material is stored separately. The Agent chart requires the selected Hub origin, cluster ID, pinned image digest, token Secret, proxy authentication, and MCP; legacy `cloud.enabled` remains unavailable.
 

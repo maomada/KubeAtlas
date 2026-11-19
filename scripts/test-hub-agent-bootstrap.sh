@@ -4,6 +4,9 @@ script="$(cd "$(dirname "$0")" && pwd)/bootstrap-hub-agent.sh"
 tmp="$(mktemp -d)"
 trap 'rm -rf -- "$tmp"' EXIT
 bash -n "$script"
+bootstrap_guard="$(awk '/^# BEGIN HTTP_REGISTRY_PREFLIGHT$/ {copy=1; next} /^# END HTTP_REGISTRY_PREFLIGHT$/ {copy=0} copy' "$script")"
+installer_guard="$(awk '/^# BEGIN HTTP_REGISTRY_PREFLIGHT$/ {copy=1; next} /^# END HTTP_REGISTRY_PREFLIGHT$/ {copy=0} copy' "${script%/*}/install-hub-agent.sh")"
+[[ -n "$bootstrap_guard" && "$bootstrap_guard" == "$installer_guard" ]] || { printf 'HTTP registry guards have drifted\n' >&2; exit 1; }
 
 export FAKE_ORIGIN=https://hub.example.test
 export FAKE_ENROLLMENT_ID=0123456789abcdef0123456789abcdef
@@ -19,7 +22,7 @@ FAKE_IMAGE_DIGEST="sha256:$(printf 'a%.0s' {1..64})"
 export FAKE_IMAGE_DIGEST
 FAKE_CHART_SHA256="$(printf 'chart fixture' | sha256sum | awk '{print $1}')"
 export FAKE_CHART_SHA256
-FAKE_INSTALLER_BODY="$(cat <<'INSTALLER'
+FAKE_INSTALLER_BODY="$(command cat <<'INSTALLER'
 #!/usr/bin/env bash
 set -Eeuo pipefail
 printf "%s\n" "$@" >"$FAKE_INSTALLER_ARGV_LOG"
@@ -32,6 +35,7 @@ while (($#)); do case "$1" in --context) context="$2"; shift 2;; --token-file) t
 [[ "$(<"$token_file")" == "$FAKE_AGENT_TOKEN" ]]
 printf "%s\n" "600" >>"$FAKE_TOKEN_MODES"
 printf "%s\n" ran >>"$FAKE_INSTALLER_RUNS"
+if [[ "${FAKE_INSTALLER_FAIL:-0}" == 1 ]]; then printf 'fixture installer failed\n' >&2; exit 23; fi
 INSTALLER
 )"
 export FAKE_INSTALLER_BODY
@@ -47,6 +51,20 @@ export FAKE_INSTALLER_ARGV_LOG="$tmp/installer-argv.log"
 export FAKE_INSTALLER_RUNS="$tmp/installer-runs.log"
 export FAKE_MUTATIONS="$tmp/mutations.log"
 export FAKE_GET_LOG="$tmp/get.log"
+export FAKE_DOCKER_LOG="$tmp/docker.log"
+
+# This exported fixture receives arguments from the child bootstrap/installer.
+# shellcheck disable=SC2120
+cat() {
+  if [[ "$*" == /proc/sys/kernel/random/boot_id ]]; then printf '%s\n' "$FAKE_LOCAL_BOOT_ID"; else command cat "$@"; fi
+}
+docker() {
+  printf '%s\n' "$*" >>"$FAKE_DOCKER_LOG"
+  [[ "$1" == --host && "$2" == unix:///var/run/docker.sock && "$3" == info ]] || return 80
+  [[ -z "${DOCKER_HOST+x}" && -z "${DOCKER_CONTEXT+x}" ]] || return 81
+  [[ "${FAKE_DOCKER_FAIL:-0}" != 1 ]] || return 82
+  printf '{"name":"%s","kernel":"%s","registry":%s}\n' "$FAKE_DOCKER_NAME" "$FAKE_DOCKER_KERNEL" "$FAKE_DOCKER_REGISTRY"
+}
 
 curl() {
   {
@@ -101,6 +119,7 @@ kubectl() {
     printf '\n'
   } >>"$FAKE_ARGV_LOG"
   if [[ "${1:-}" == --context ]]; then shift 2; fi
+  if [[ "${1:-}" == --request-timeout=* ]]; then shift; fi
   case "${1:-}" in
     config)
       case "${2:-}" in
@@ -132,7 +151,11 @@ kubectl() {
       ;;
     get)
       printf '%s/%s\n' "${2:-}" "${3:-}" >>"$FAKE_GET_LOG"
-      if [[ "${2:-}" == namespace && "${3:-}" == kube-system ]]; then
+      if [[ "${2:-}" == nodes ]]; then
+        local node
+        node="$(printf '{"metadata":{"name":"fixture-node"},"status":{"addresses":[{"type":"Hostname","address":"fixture-node"}],"nodeInfo":{"bootID":"%s","kernelVersion":"fixture-kernel","containerRuntimeVersion":"%s"}}}' "$FAKE_NODE_BOOT_ID" "$FAKE_NODE_RUNTIME")"
+        if [[ "$FAKE_NODE_COUNT" == 2 ]]; then printf '{"items":[%s,%s]}\n' "$node" "$node"; else printf '{"items":[%s]}\n' "$node"; fi
+      elif [[ "${2:-}" == namespace && "${3:-}" == kube-system ]]; then
         printf '%s\n' fake-kube-system-uid
       elif [[ "${2:-}" == namespace && "$FAKE_NAMESPACE_COLLISION" == 1 ]]; then
         printf 'namespace/%s\n' "$3"
@@ -164,9 +187,10 @@ helm() {
     *) return 99;;
   esac
 }
-export -f curl kubectl helm
+export -f curl kubectl helm cat docker
 
 reset_case() {
+  export FAKE_ORIGIN=https://hub.example.test
   export FAKE_CONTEXT=test-context FAKE_CHANGED_CONTEXT=0 FAKE_DENY_PERMISSION=''
   export FAKE_NAMESPACE_COLLISION=0 FAKE_RELEASE_COLLISION=0
   export FAKE_COLLISION_KIND='' FAKE_COLLISION_NAME=''
@@ -174,6 +198,12 @@ reset_case() {
   export FAKE_CLAIM_VERSION=1.2.3 FAKE_CLAIM_ORIGIN="$FAKE_ORIGIN"
   export FAKE_CLAIM_NAMESPACE="$FAKE_NAMESPACE" FAKE_CLAIM_RELEASE="$FAKE_NAMESPACE"
   export FAKE_CLAIM_INSTALLER_SHA256="$FAKE_INSTALLER_SHA256"
+  export FAKE_INSTALLER_FAIL=0 FAKE_DOCKER_FAIL=0 FAKE_NODE_COUNT=1
+  export FAKE_LOCAL_BOOT_ID=11111111-1111-4111-8111-111111111111
+  export FAKE_NODE_BOOT_ID="$FAKE_LOCAL_BOOT_ID" FAKE_NODE_RUNTIME=docker://24.0.9
+  export FAKE_DOCKER_NAME=fixture-node FAKE_DOCKER_KERNEL=fixture-kernel
+  export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
+  unset DOCKER_HOST DOCKER_CONTEXT
   export KUBEATLAS_PROFILE=lan KUBEATLAS_ORIGIN="$FAKE_ORIGIN" KUBEATLAS_VERSION=1.2.3
   KUBEATLAS_BOOTSTRAP_SHA256="$(printf 'b%.0s' {1..64})"
   export KUBEATLAS_BOOTSTRAP_SHA256
@@ -186,6 +216,7 @@ reset_case() {
   : >"$FAKE_INSTALLER_RUNS"
   : >"$FAKE_MUTATIONS"
   : >"$FAKE_GET_LOG"
+  : >"$FAKE_DOCKER_LOG"
 }
 
 assert_no_external_downloads() {
@@ -302,4 +333,87 @@ FAKE_CLAIM_INSTALLER_SHA256="$(printf '0%.0s' {1..64})"
 export FAKE_CLAIM_INSTALLER_SHA256
 expect_failure 'installer checksum mismatch' 'installer checksum mismatch'
 
-printf 'Hub Agent bootstrap shell tests passed (frozen context, secret files, authorization, collisions, claim binding, redirects, checksums).\n'
+use_http_origin() {
+  export FAKE_ORIGIN=http://10.0.100.220:8080 KUBEATLAS_ORIGIN=http://10.0.100.220:8080 FAKE_CLAIM_ORIGIN=http://10.0.100.220:8080
+}
+
+expect_bootstrap_success() {
+  local label="$1" expected="${2:-}"
+  local result
+  if ! result="$(printf 'yes\n' | env -u KUBECONFIG bash "$script" 2>&1)"; then printf '%s failed: %s\n' "$label" "$result" >&2; exit 1; fi
+  [[ -z "$expected" || "$result" == *"$expected"* ]] || { printf '%s lacked expected guidance: %s\n' "$label" "$result" >&2; exit 1; }
+  [[ "$(<"$FAKE_INSTALLER_RUNS")" == ran ]] || { printf '%s did not invoke installer once\n' "$label" >&2; exit 1; }
+  [[ "$result" != *"$FAKE_DEVICE_SECRET"* && "$result" != *"$FAKE_AGENT_TOKEN"* ]] || { printf '%s leaked a secret\n' "$label" >&2; exit 1; }
+  assert_no_cluster_mutation "$label"
+  assert_safe_argv
+  assert_no_external_downloads
+}
+
+reset_case
+use_http_origin
+expect_failure 'local HTTP Docker registry missing' 'HTTP registry preflight blocked'
+[[ ! -s "$FAKE_CURL_URL_LOG" ]] || { printf 'runtime failure created an enrollment or claimed a token\n' >&2; exit 1; }
+grep -Fq -- '--host unix:///var/run/docker.sock info' "$FAKE_DOCKER_LOG"
+
+reset_case
+use_http_origin
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"10.0.100.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
+export DOCKER_HOST=ssh://unrelated-daemon DOCKER_CONTEXT=unrelated-context
+expect_bootstrap_success 'exact HTTP registry with remote client overrides'
+
+reset_case
+use_http_origin
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{},"InsecureRegistryCIDRs":["10.0.100.0/24"]}'
+expect_bootstrap_success 'HTTP registry allowed by CIDR'
+
+for wrong_authority in 10.0.100.220:5000 10.0.100.220:8081; do
+  reset_case
+  use_http_origin
+  export FAKE_DOCKER_REGISTRY="{\"IndexConfigs\":{\"$wrong_authority\":{\"Secure\":false}},\"InsecureRegistryCIDRs\":[\"127.0.0.0/8\"]}"
+  expect_failure 'different HTTP registry port' 'HTTP registry preflight blocked'
+  [[ ! -s "$FAKE_CURL_URL_LOG" ]] || { printf 'wrong registry match reached enrollment\n' >&2; exit 1; }
+done
+
+reset_case
+use_http_origin
+export FAKE_NODE_BOOT_ID=22222222-2222-4222-8222-222222222222
+expect_bootstrap_success 'remote Kubernetes node' 'not this booted host'
+[[ ! -s "$FAKE_DOCKER_LOG" ]] || { printf 'remote-node preflight inspected client Docker\n' >&2; exit 1; }
+
+reset_case
+use_http_origin
+export FAKE_NODE_COUNT=2
+expect_bootstrap_success 'multi-node Kubernetes cluster' 'not a verified single-node cluster'
+[[ ! -s "$FAKE_DOCKER_LOG" ]] || { printf 'multi-node preflight inspected only client Docker\n' >&2; exit 1; }
+
+reset_case
+use_http_origin
+export FAKE_NODE_RUNTIME=containerd://1.6.39
+expect_bootstrap_success 'non-Docker runtime' 'does not report Docker'
+[[ ! -s "$FAKE_DOCKER_LOG" ]] || { printf 'containerd preflight inspected Docker\n' >&2; exit 1; }
+
+reset_case
+use_http_origin
+export FAKE_DOCKER_NAME=another-host
+expect_bootstrap_success 'different local Docker daemon' 'does not match the Kubernetes node'
+
+reset_case
+use_http_origin
+export FAKE_DOCKER_FAIL=1
+expect_bootstrap_success 'Docker policy unavailable' 'unavailable or access is denied'
+
+reset_case
+expect_bootstrap_success 'HTTPS skips HTTP registry probing'
+[[ ! -s "$FAKE_DOCKER_LOG" ]] || { printf 'HTTPS unexpectedly inspected Docker\n' >&2; exit 1; }
+
+reset_case
+export FAKE_INSTALLER_FAIL=1
+if result="$(printf 'yes\n' | env -u KUBECONFIG bash "$script" 2>&1)"; then printf 'installer failure unexpectedly passed bootstrap\n' >&2; exit 1; fi
+[[ "$result" == *'claim state=claimed'* && "$result" == *"cluster=$FAKE_CLUSTER_ID"* && "$result" == *"namespace=$FAKE_NAMESPACE"* && "$result" == *'one-time claim cannot be replayed'* ]] || { printf 'post-claim failure lacked recovery target: %s\n' "$result" >&2; exit 1; }
+[[ "$result" != *"$FAKE_DEVICE_SECRET"* && "$result" != *"$FAKE_AGENT_TOKEN"* ]] || { printf 'post-claim failure leaked credentials\n' >&2; exit 1; }
+[[ "$(<"$FAKE_INSTALLER_RUNS")" == ran ]] || { printf 'failed installer was invoked more than once\n' >&2; exit 1; }
+[[ "$(grep -c '/claim$' "$FAKE_CURL_URL_LOG")" == 1 ]] || { printf 'approved claim was retried\n' >&2; exit 1; }
+assert_safe_argv
+assert_no_cluster_mutation 'failed fixture installer'
+
+printf 'Hub Agent bootstrap shell tests passed (frozen context, registry identity/trust, no premature enrollment, secret files, authorization, collisions, claim recovery, redirects, checksums).\n'

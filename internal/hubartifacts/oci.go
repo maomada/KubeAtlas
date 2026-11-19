@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
@@ -55,13 +54,37 @@ type imageConfiguration struct {
 	} `json:"config"`
 }
 
-func (c *Catalog) validateLayout() error {
-	layoutPath := filepath.Join(c.root, "oci")
-	info, err := os.Lstat(layoutPath)
+type ociRepository struct {
+	rootFS              *os.Root
+	path                string
+	version             string
+	revision            string
+	totalBytes          int64
+	descriptorCount     int
+	descriptorPlatforms map[string]string
+	platforms           map[string]bool
+	manifests           map[string]fileEntry
+	blobs               map[string]fileEntry
+}
+
+func readOCIRepository(rootFS *os.Root, path, digest, version, revision string) (*ociRepository, error) {
+	repository := &ociRepository{
+		rootFS: rootFS, path: path, version: version, revision: revision,
+		descriptorPlatforms: map[string]string{}, platforms: map[string]bool{},
+		manifests: map[string]fileEntry{}, blobs: map[string]fileEntry{},
+	}
+	if err := repository.validateLayout(digest); err != nil {
+		return nil, err
+	}
+	return repository, nil
+}
+
+func (c *ociRepository) validateLayout(digest string) error {
+	info, err := c.rootFS.Lstat(c.path)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return errors.New("Hub OCI layout is unavailable")
 	}
-	layoutBytes, _, err := readRootFile(c.rootFS, "oci/oci-layout", 64<<10, "application/json")
+	layoutBytes, _, err := readRootFile(c.rootFS, c.path+"/oci-layout", 64<<10, "application/json")
 	if err != nil || !uniqueJSON(layoutBytes) {
 		return errors.New("Hub OCI layout metadata is invalid")
 	}
@@ -71,7 +94,7 @@ func (c *Catalog) validateLayout() error {
 	if json.Unmarshal(layoutBytes, &layout) != nil || layout.Version != "1.0.0" {
 		return errors.New("Hub OCI layout version is unsupported")
 	}
-	indexBytes, _, err := readRootFile(c.rootFS, "oci/index.json", maxMetadataBytes, "application/json")
+	indexBytes, _, err := readRootFile(c.rootFS, c.path+"/index.json", maxMetadataBytes, "application/json")
 	if err != nil || !uniqueJSON(indexBytes) {
 		return errors.New("Hub OCI index is invalid")
 	}
@@ -83,7 +106,7 @@ func (c *Catalog) validateLayout() error {
 	var selected *descriptor
 	for i := range root.Manifests {
 		d := &root.Manifests[i]
-		if d.Digest == c.manifest.Image.Digest {
+		if d.Digest == digest {
 			if selected != nil {
 				return errors.New("Hub OCI layout has an ambiguous image digest")
 			}
@@ -94,11 +117,8 @@ func (c *Catalog) validateLayout() error {
 		return errors.New("Hub OCI image digest is not present in the local layout")
 	}
 	if selected.MediaType != ociIndexMedia && selected.MediaType != dockerIndexMedia && selected.MediaType != ociImageMedia && selected.MediaType != dockerImageMedia {
-		return errors.New("Hub OCI Agent image uses an unsupported root media type")
+		return errors.New("Hub OCI image uses an unsupported root media type")
 	}
-	c.totalBytes = 0
-	c.descriptorCount = 0
-	c.descriptorPlatforms = map[string]string{}
 	if err := c.walkDescriptor(*selected, 1, map[string]bool{}, map[string]bool{}); err != nil {
 		return err
 	}
@@ -108,7 +128,7 @@ func (c *Catalog) validateLayout() error {
 	return nil
 }
 
-func (c *Catalog) walkDescriptor(d descriptor, depth int, visiting, visited map[string]bool) error {
+func (c *ociRepository) walkDescriptor(d descriptor, depth int, visiting, visited map[string]bool) error {
 	if depth > maxGraphDepth {
 		return errors.New("Hub OCI descriptor graph exceeds depth limit")
 	}
@@ -200,8 +220,8 @@ func (c *Catalog) walkDescriptor(d descriptor, depth int, visiting, visited map[
 		if d.Platform != nil && (d.Platform.OS != image.OS || d.Platform.Architecture != image.Architecture) {
 			return errors.New("Hub OCI image descriptor and configuration platforms disagree")
 		}
-		if image.Config.Labels["org.opencontainers.image.version"] != c.manifest.Version ||
-			image.Config.Labels["org.opencontainers.image.revision"] != c.manifest.SourceRevision {
+		if c.version != "" && (image.Config.Labels["org.opencontainers.image.version"] != c.version ||
+			image.Config.Labels["org.opencontainers.image.revision"] != c.revision) {
 			return errors.New("Hub OCI image version or source revision does not match the catalog")
 		}
 		platform := image.OS + "/" + image.Architecture
@@ -236,7 +256,7 @@ func (c *Catalog) walkDescriptor(d descriptor, depth int, visiting, visited map[
 	return nil
 }
 
-func (c *Catalog) countDescriptor() error {
+func (c *ociRepository) countDescriptor() error {
 	c.descriptorCount++
 	if c.descriptorCount > maxTotalDescriptors {
 		return errors.New("Hub OCI descriptor graph exceeds count limit")
@@ -244,7 +264,7 @@ func (c *Catalog) countDescriptor() error {
 	return nil
 }
 
-func (c *Catalog) registerBlob(d descriptor, entry fileEntry) error {
+func (c *ociRepository) registerBlob(d descriptor, entry fileEntry) error {
 	if entry, exists := c.blobs[d.Digest]; exists {
 		if entry.mediaType != d.MediaType || entry.size != d.Size {
 			return errors.New("Hub OCI digest has conflicting media type or size descriptors")
@@ -257,11 +277,11 @@ func (c *Catalog) registerBlob(d descriptor, entry fileEntry) error {
 	return nil
 }
 
-func (c *Catalog) readBlob(d descriptor) ([]byte, fileEntry, error) {
+func (c *ociRepository) readBlob(d descriptor) ([]byte, fileEntry, error) {
 	if !digestPattern.MatchString(d.Digest) || d.Size < 0 || d.Size > maxBlobSize || len(d.URLs) != 0 {
 		return nil, fileEntry{}, errors.New("Hub OCI blob descriptor is invalid or contains a foreign URL")
 	}
-	path := "oci/blobs/sha256/" + strings.TrimPrefix(d.Digest, "sha256:")
+	path := c.path + "/blobs/sha256/" + strings.TrimPrefix(d.Digest, "sha256:")
 	file, info, err := openRootRegular(c.rootFS, path)
 	if err != nil {
 		return nil, fileEntry{}, errors.New("Hub OCI blob is unavailable")

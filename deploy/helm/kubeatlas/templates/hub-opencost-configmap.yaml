@@ -1,0 +1,12 @@
+{{- if and .Values.hub.enabled .Values.hub.openCostBundle.sha256 }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "%s-oc-%s" (include "kubeatlas.fullname" . | trunc 43 | trimSuffix "-") (.Values.hub.openCostBundle.sha256 | trunc 15) }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "kubeatlas.labels" . | nindent 4 }}
+immutable: true
+binaryData:
+  opencost.tgz: {{ .Values.hub.openCostBundle.data | quote }}
+{{- end }}

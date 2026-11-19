@@ -32,6 +32,9 @@ func parseOptions(args []string) (hubartifacts.PrepareOptions, error) {
 	chartVersion := set.String("chart-version", "", "Helm chart SemVer (defaults to 0.0.0-dev.<revision12>)")
 	revision := set.String("revision", "", "40-character source revision encoded in Agent image labels")
 	digest := set.String("image-digest", "", "Pinned sha256 image manifest or index digest")
+	openCostChart := set.String("opencost-chart", "", "Prepared OpenCost chart archive")
+	openCostLayout := set.String("opencost-layout", "", "Separate local OCI layout for OpenCost")
+	openCostDigest := set.String("opencost-digest", "", "Pinned OpenCost sha256 image manifest or index digest")
 	helm := set.String("helm", "helm", "Existing Helm executable")
 	if err := set.Parse(args); err != nil {
 		return hubartifacts.PrepareOptions{}, err
@@ -42,5 +45,6 @@ func parseOptions(args []string) (hubartifacts.PrepareOptions, error) {
 	return hubartifacts.PrepareOptions{
 		ChartDir: *chart, LayoutDir: *layout, InstallerPath: *installer, BootstrapPath: *bootstrap, OutputDir: *output,
 		Version: *version, ChartVersion: *chartVersion, Revision: *revision, ImageDigest: *digest, HelmBinary: *helm,
+		OpenCostChart: *openCostChart, OpenCostLayout: *openCostLayout, OpenCostDigest: *openCostDigest,
 	}, nil
 }

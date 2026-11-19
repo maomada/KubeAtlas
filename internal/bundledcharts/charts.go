@@ -17,14 +17,18 @@ const CarettaVersion = "0.0.16"
 var carettaArchive []byte
 
 type Source struct {
-	Name       string
-	Version    string
-	Repository string
-	URL        string
-	Digest     string
+	Name          string
+	Version       string
+	Repository    string
+	URL           string
+	Digest        string
+	ImageRegistry string
 }
 
 func Load(name, version string) (*chart.Chart, Source, error) {
+	if name == OpenCostName {
+		return loadOpenCost(version)
+	}
 	source := Source{
 		Name: "caretta", Version: CarettaVersion,
 		Repository: "groundcover", URL: "https://helm.groundcover.com/",
