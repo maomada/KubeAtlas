@@ -88,12 +88,12 @@ scenario_in_cluster() {
 }
 
 assert_matching_scenario() {
-  local installed logical group plural kind scope version scenario url
+  local installed group plural scenario
   installed="$(scenario_in_cluster)"
   if [ -n "${installed}" ] && [ "${installed}" != "${SCENARIO}" ]; then
     fail "Cluster contains '${installed}' fixtures. Run 'SCENARIO=${SCENARIO} $0 reset' to switch inference API families."
   fi
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  while IFS=$'\t' read -r _ group plural _ _ _ scenario _; do
     if [ "${scenario}" != "all" ] && [ "${scenario}" != "${SCENARIO}" ] && \
       kctl get "crd/${plural}.${group}" >/dev/null 2>&1; then
       fail "Cluster already contains the '${scenario}' ${plural}.${group} CRD. Run 'SCENARIO=${SCENARIO} $0 reset' to switch inference API families."
@@ -109,8 +109,8 @@ record_scenario() {
 
 install_crds() {
   step "Installing pinned upstream CRDs for the ${SCENARIO} scenario"
-  local seen='' logical group plural kind scope version scenario url crd
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  local seen='' group plural url crd
+  while IFS=$'\t' read -r _ group plural _ _ _ _ url; do
     crd="${plural}.${group}"
     case " ${seen} " in
       *" ${crd} "*) continue ;;
@@ -250,8 +250,8 @@ cmd_verify() {
   [ "$(logical_count)" = "37" ] || fail "Registry resolves to $(logical_count) logical kinds; expected 37"
 
   step "Verifying upstream CRDs and all 37 group-qualified fixtures"
-  local logical group plural kind scope version scenario url crd actual_group actual_plural actual_scope served count
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  local group plural kind scope version crd actual_group actual_plural actual_scope served count
+  while IFS=$'\t' read -r _ group plural kind scope version _; do
     crd="${plural}.${group}"
     actual_group="$(kctl get "crd/${crd}" -o jsonpath='{.spec.group}')"
     actual_plural="$(kctl get "crd/${crd}" -o jsonpath='{.spec.names.plural}')"
@@ -313,8 +313,8 @@ cmd_verify_kubeatlas() {
   kctl -n "${KUBEATLAS_NS}" get deploy kubeatlas >/dev/null 2>&1 || fail "KubeAtlas is not installed. Run '$0 install-kubeatlas' first."
 
   step "Checking the default KubeAtlas service account against all 37 resources"
-  local logical group plural kind scope version scenario url answer pid log response ready
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  local group plural answer pid log response ready
+  while IFS=$'\t' read -r _ group plural _; do
     answer="$(kctl auth can-i list "${plural}.${group}" --as "system:serviceaccount:${KUBEATLAS_NS}:kubeatlas" 2>/dev/null || true)"
     [ "${answer}" = "yes" ] || fail "Default KubeAtlas SA cannot list ${plural}.${group}"
   done < <(registry_rows)
@@ -337,7 +337,7 @@ cmd_verify_kubeatlas() {
   [ "${ready}" = "true" ] || fail "KubeAtlas did not report healthy within 40s; port-forward log: $(tail -n 5 "${log}" | tr '\n' ' ')"
 
   step "Querying KubeAtlas's group-aware API for every curated fixture"
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  while IFS=$'\t' read -r _ group plural _; do
     ready=false
     for _ in $(seq 1 30); do
       if response="$(curl -fsS "http://127.0.0.1:${KUBEATLAS_PORT}/api/resources/${plural}?group=${group}" 2>/dev/null | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" && \

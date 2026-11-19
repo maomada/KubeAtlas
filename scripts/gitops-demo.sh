@@ -157,7 +157,9 @@ apply_fixtures() {
   # before Kustomization that references it). Skip empty / comment-only
   # files so a placeholder YAML doesn't trip set -e on
   # "no objects passed to apply".
-  for f in $(ls "${FIXTURES_DIR}"/*.yaml 2>/dev/null | sort); do
+  local f
+  for f in "${FIXTURES_DIR}"/*.yaml; do
+    [[ -f "$f" ]] || continue
     if ! grep -q '^[[:space:]]*[^#[:space:]]' "$f"; then
       note "skipping $(basename "$f") (placeholder / comments only)"
       continue
@@ -418,27 +420,27 @@ cmd_status() {
   fi
 
   step "Cluster: ${CLUSTER_NAME} (context ${KUBECTL_CTX})"
-  printf "\n${C_BLUE}Argo CD pods${C_RESET}\n"
+  printf '\n%bArgo CD pods%b\n' "$C_BLUE" "$C_RESET"
   kubectl --context "${KUBECTL_CTX}" -n argocd get pods --no-headers 2>/dev/null \
     | awk '{ printf "    %s %s\n", $1, $3 }' || warn "no pods (controllers not installed?)"
 
-  printf "\n${C_BLUE}Flux pods${C_RESET}\n"
+  printf '\n%bFlux pods%b\n' "$C_BLUE" "$C_RESET"
   kubectl --context "${KUBECTL_CTX}" -n flux-system get pods --no-headers 2>/dev/null \
     | awk '{ printf "    %s %s\n", $1, $3 }' || warn "no pods (controllers not installed?)"
 
-  printf "\n${C_BLUE}Argo Applications${C_RESET}\n"
+  printf '\n%bArgo Applications%b\n' "$C_BLUE" "$C_RESET"
   kubectl --context "${KUBECTL_CTX}" -n argocd get applications.argoproj.io --no-headers 2>/dev/null \
     | awk '{ printf "    %s sync=%s health=%s\n", $1, $2, $3 }' || note "(none)"
 
-  printf "\n${C_BLUE}Argo ApplicationSets${C_RESET}\n"
+  printf '\n%bArgo ApplicationSets%b\n' "$C_BLUE" "$C_RESET"
   kubectl --context "${KUBECTL_CTX}" -n argocd get applicationsets.argoproj.io --no-headers 2>/dev/null \
     | awk '{ printf "    %s\n", $1 }' || note "(none)"
 
-  printf "\n${C_BLUE}Flux Kustomizations${C_RESET}\n"
+  printf '\n%bFlux Kustomizations%b\n' "$C_BLUE" "$C_RESET"
   kubectl --context "${KUBECTL_CTX}" get kustomizations.kustomize.toolkit.fluxcd.io -A --no-headers 2>/dev/null \
     | awk '{ printf "    %s/%s ready=%s\n", $1, $2, $4 }' || note "(none)"
 
-  printf "\n${C_BLUE}Flux HelmReleases${C_RESET}\n"
+  printf '\n%bFlux HelmReleases%b\n' "$C_BLUE" "$C_RESET"
   kubectl --context "${KUBECTL_CTX}" get helmreleases.helm.toolkit.fluxcd.io -A --no-headers 2>/dev/null \
     | awk '{ printf "    %s/%s ready=%s\n", $1, $2, $4 }' || note "(none)"
 
@@ -469,7 +471,7 @@ mint_kubeatlas_token() {
   # Wait for the forward to accept connections; the account cm change is
   # hot-reloaded by argocd-server, but give it a couple of retries too.
   local attempt session_resp
-  for attempt in $(seq 1 15); do
+  for ((attempt = 1; attempt <= 15; attempt++)); do
     sleep 1
     session_resp=$(curl -ks -X POST https://localhost:18085/api/v1/session \
       -H "Content-Type: application/json" \
@@ -483,7 +485,7 @@ mint_kubeatlas_token() {
     return 0
   fi
 
-  for attempt in $(seq 1 10); do
+  for ((attempt = 1; attempt <= 10; attempt++)); do
     token=$(curl -ks -X POST https://localhost:18085/api/v1/account/kubeatlas/token \
       -H "Authorization: Bearer ${session_token}" -H "Content-Type: application/json" -d '{}' \
       | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')

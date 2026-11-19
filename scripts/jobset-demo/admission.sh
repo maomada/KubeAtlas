@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by jobset-demo.sh so ownership, context restoration, and waits stay shared.
 ADMISSION_NS="jobset-admission-demo"
 KUEUE_VERSION="${KUEUE_VERSION:-v0.19.2}"
@@ -87,6 +88,8 @@ kubeatlas_admission_matches() {
 
 cmd_verify_admission_kubeatlas() {
   cmd_verify_kubeatlas
+  # wait_until reads these locals through Bash's dynamic scope.
+  # shellcheck disable=SC2034
   local SNAPSHOT_NS="${ADMISSION_NS}" SNAPSHOT_KINDS="jobsets.jobset.x-k8s.io,jobs,pods,workloads.kueue.x-k8s.io"
   cmd_verify_admission
   wait_until "KubeAtlas admitted admission" kubeatlas_admission_matches admitted-running satisfied admitted Admitted True Admitted

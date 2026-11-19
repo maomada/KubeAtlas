@@ -581,6 +581,7 @@ up-admission mode also validates Kueue admission (KUEUE_VERSION=v0.19.2).
 EOF
 }
 
+# shellcheck source=scripts/jobset-demo/admission.sh
 source "${FIXTURES_DIR}/admission.sh"
 
 case "${1:-help}" in
