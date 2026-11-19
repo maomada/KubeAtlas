@@ -1,7 +1,8 @@
 # KubeAtlas
 
-**The missing open-source Kubernetes UI.**
-<br>Single binary. No account required. Apache-2.0 licensed.
+**A self-hosted Kubernetes operations console.**
+<br>Use Hub and Agent for shared multi-cluster operations, or run the standalone
+console against your kubeconfig. Apache-2.0 licensed.
 
 This is an independently maintained KubeAtlas distribution derived from Radar.
 See [NOTICE](NOTICE) for origin attribution and [LICENSE](LICENSE) for the
@@ -10,6 +11,7 @@ not yet published.
 
 [Source](https://github.com/maomada/KubeAtlas) · [Documentation](docs/) ·
 [Issues](https://github.com/maomada/KubeAtlas/issues) ·
+[Discussions](https://github.com/maomada/KubeAtlas/discussions) ·
 [Releases](https://github.com/maomada/KubeAtlas/releases)
 
 Topology, resources, Helm, GitOps, traffic, audit, upgrade impact, and MCP context for AI agents — from your laptop or in-cluster.
@@ -53,8 +55,8 @@ chart version only after that version has actually been published. See the
 
 ## Why KubeAtlas?
 
-- **Zero install on your cluster** — runs on your laptop, talks to the K8s API directly
-- **Single binary** — no dependencies, no agents, no CRDs
+- **Shared multi-cluster console** — run [Hub](docs/portal.md) centrally and enroll clusters using the [Agent onboarding workflow](docs/hub-agent-onboarding.md)
+- **Standalone console** — run a single binary on your laptop and connect directly to the Kubernetes API with your kubeconfig
 - **Fast on big clusters** — tested on tens of thousands of pods, with responsive views and live updates under real cluster churn
 - **Private by design** — KubeAtlas does not collect or send usage reports. Your configured Kubernetes, Prometheus, GitOps, AI, and other integrations still use their configured network access ([usage reporting policy](docs/usage-stats.md)).
 - **Airgapped-friendly** — runs as a single binary against the Kubernetes API and works in locked-down environments with outbound egress blocked
