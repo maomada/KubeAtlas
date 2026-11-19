@@ -88,6 +88,7 @@ jobs:
               - 'deploy/helm/**'
               - 'scripts/gpu-ecosystem-demo/**'
               - 'README.md'
+              - 'docs/cluster-checks.md'
               - 'docs/mcp.md'
               - 'docs/reachability.md'
               - 'web/src/api/kubeatlasFeatures.ts'
