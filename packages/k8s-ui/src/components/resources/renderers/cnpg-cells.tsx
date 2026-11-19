@@ -86,7 +86,7 @@ export function CNPGClusterCell({ resource, column }: { resource: any; column: s
     case 'primary': {
       const primary = getCNPGClusterPrimary(resource)
       // status.currentPrimary is LAST KNOWN — CNPG never clears it. Naming a
-      // primary on a cluster that cannot elect one is an assertion Radar makes,
+      // primary on a cluster that cannot elect one is an assertion KubeAtlas makes,
       // not one CNPG makes, so say so rather than presenting it as current.
       if (isTerminalPhase(resource)) {
         return (

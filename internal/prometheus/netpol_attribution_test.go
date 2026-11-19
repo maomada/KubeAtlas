@@ -30,7 +30,7 @@ func promCandidate() prom.Candidate {
 	return prom.Candidate{Namespace: "monitoring", Name: "prometheus-server", Port: 9090, ClusterAddr: "http://prometheus-server.monitoring.svc.cluster.local:9090"}
 }
 
-// clusterWithPrometheus is the minimal in-cluster picture: Radar's pod, a
+// clusterWithPrometheus is the minimal in-cluster picture: KubeAtlas's pod, a
 // Prometheus pod behind a Service with a published EndpointSlice, and both
 // Namespace objects.
 func clusterWithPrometheus(extra ...runtime.Object) []runtime.Object {
@@ -38,10 +38,10 @@ func clusterWithPrometheus(extra ...runtime.Object) []runtime.Object {
 	port := int32(9090)
 	proto := corev1.ProtocolTCP
 	objs := []runtime.Object{
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar", Labels: map[string]string{"kubernetes.io/metadata.name": "radar"}}},
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas", Labels: map[string]string{"kubernetes.io/metadata.name": "kubeatlas"}}},
 		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "monitoring", Labels: map[string]string{"kubernetes.io/metadata.name": "monitoring"}}},
 		&corev1.Pod{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "radar", Name: "radar-0", Labels: map[string]string{"app": "radar"}},
+			ObjectMeta: metav1.ObjectMeta{Namespace: "kubeatlas", Name: "kubeatlas-0", Labels: map[string]string{"app": "kubeatlas"}},
 			Status:     corev1.PodStatus{PodIP: "10.0.1.5"},
 		},
 		&corev1.Pod{
@@ -84,14 +84,14 @@ func denyAllIngress(ns, name string) *networkingv1.NetworkPolicy {
 	}
 }
 
-func allowFromRadar(ns, name string) *networkingv1.NetworkPolicy {
+func allowFromKubeAtlas(ns, name string) *networkingv1.NetworkPolicy {
 	return &networkingv1.NetworkPolicy{
 		ObjectMeta: metav1.ObjectMeta{Namespace: ns, Name: name},
 		Spec: networkingv1.NetworkPolicySpec{
 			PodSelector: metav1.LabelSelector{MatchLabels: map[string]string{"app": "prometheus"}},
 			PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress},
 			Ingress: []networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{
-				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "radar"}},
+				NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kubeatlas"}},
 			}}}},
 		},
 	}
@@ -126,7 +126,7 @@ func runAttribution(t *testing.T, fx attributionFixture, reasons []prom.ProbeRea
 
 func TestAttributeNetworkPolicyBlock(t *testing.T) {
 	transport := []prom.ProbeReason{prom.ProbeReasonTransportError}
-	self := attributionFixture{selfName: "radar-0", selfNs: "radar"}
+	self := attributionFixture{selfName: "kubeatlas-0", selfNs: "kubeatlas"}
 
 	t.Run("names the ingress policy that isolates the backend", func(t *testing.T) {
 		fx := self
@@ -135,7 +135,7 @@ func TestAttributeNetworkPolicyBlock(t *testing.T) {
 		if err == nil {
 			t.Fatal("expected an attributed error")
 		}
-		for _, want := range []string{"monitoring/prometheus-server:9090", "NetworkPolicy monitoring/deny-all", "radar/radar-0", "ingress rule"} {
+		for _, want := range []string{"monitoring/prometheus-server:9090", "NetworkPolicy monitoring/deny-all", "kubeatlas/kubeatlas-0", "ingress rule"} {
 			if !strings.Contains(err.Error(), want) {
 				t.Errorf("error %q lacks %q", err, want)
 			}
@@ -145,21 +145,21 @@ func TestAttributeNetworkPolicyBlock(t *testing.T) {
 		}
 	})
 
-	t.Run("names Radar's own egress policy", func(t *testing.T) {
+	t.Run("names KubeAtlas's own egress policy", func(t *testing.T) {
 		fx := self
 		fx.objects = clusterWithPrometheus(&networkingv1.NetworkPolicy{
-			ObjectMeta: metav1.ObjectMeta{Namespace: "radar", Name: "egress-lockdown"},
+			ObjectMeta: metav1.ObjectMeta{Namespace: "kubeatlas", Name: "egress-lockdown"},
 			Spec:       networkingv1.NetworkPolicySpec{PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}},
 		})
 		err := runAttribution(t, fx, transport)
-		if err == nil || !strings.Contains(err.Error(), "NetworkPolicy radar/egress-lockdown isolates egress") || !strings.Contains(err.Error(), "egress rule to namespace monitoring port 9090") {
+		if err == nil || !strings.Contains(err.Error(), "NetworkPolicy kubeatlas/egress-lockdown isolates egress") || !strings.Contains(err.Error(), "egress rule to namespace monitoring port 9090") {
 			t.Fatalf("err = %v, want the egress policy named with an egress remedy", err)
 		}
 	})
 
 	t.Run("an admitting policy yields nothing", func(t *testing.T) {
 		fx := self
-		fx.objects = clusterWithPrometheus(denyAllIngress("monitoring", "deny-all"), allowFromRadar("monitoring", "allow-radar"))
+		fx.objects = clusterWithPrometheus(denyAllIngress("monitoring", "deny-all"), allowFromKubeAtlas("monitoring", "allow-kubeatlas"))
 		if err := runAttribution(t, fx, transport); err != nil {
 			t.Fatalf("expected nil, got %v", err)
 		}
@@ -181,7 +181,7 @@ func TestAttributeNetworkPolicyBlock(t *testing.T) {
 		}
 	})
 
-	t.Run("without Radar's own pod identity nothing is attributed", func(t *testing.T) {
+	t.Run("without KubeAtlas's own pod identity nothing is attributed", func(t *testing.T) {
 		fx := attributionFixture{objects: clusterWithPrometheus(denyAllIngress("monitoring", "deny-all"))}
 		if err := runAttribution(t, fx, transport); err != nil {
 			t.Fatalf("expected nil, got %v", err)
@@ -192,7 +192,7 @@ func TestAttributeNetworkPolicyBlock(t *testing.T) {
 		fx := self
 		fx.objects = clusterWithPrometheus(denyAllIngress("monitoring", "deny-all"))
 		fx.scopes = clusterWideScopes()
-		fx.scopes[string(k8score.NetworkPolicies)] = k8score.ResourceScope{Enabled: true, Namespace: "radar"}
+		fx.scopes[string(k8score.NetworkPolicies)] = k8score.ResourceScope{Enabled: true, Namespace: "kubeatlas"}
 		if err := runAttribution(t, fx, transport); err != nil {
 			t.Fatalf("expected nil for an unauthoritative cache, got %v", err)
 		}
@@ -259,7 +259,7 @@ func TestAttributeNetworkPolicyBlock(t *testing.T) {
 	t.Run("a terminating endpoint that is still serving counts as a backend", func(t *testing.T) {
 		fx := self
 		notReady, serving := false, true
-		objs := clusterWithPrometheus(denyAllIngress("monitoring", "deny-all"), allowFromRadar("monitoring", "allow-radar"))
+		objs := clusterWithPrometheus(denyAllIngress("monitoring", "deny-all"), allowFromKubeAtlas("monitoring", "allow-kubeatlas"))
 		for _, o := range objs {
 			if slice, ok := o.(*discoveryv1.EndpointSlice); ok {
 				slice.Endpoints[0].Conditions = discoveryv1.EndpointConditions{Ready: &notReady, Serving: &serving, Terminating: &serving}
@@ -314,7 +314,7 @@ func TestAttributeNetworkPolicyBlock(t *testing.T) {
 		podPort := int32(9999)
 		objs := clusterWithPrometheus(
 			&networkingv1.NetworkPolicy{
-				ObjectMeta: metav1.ObjectMeta{Namespace: "radar", Name: "egress-lockdown"},
+				ObjectMeta: metav1.ObjectMeta{Namespace: "kubeatlas", Name: "egress-lockdown"},
 				Spec:       networkingv1.NetworkPolicySpec{PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeEgress}},
 			},
 			&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "metrics", Labels: map[string]string{"kubernetes.io/metadata.name": "metrics"}}},

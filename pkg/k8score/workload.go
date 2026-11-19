@@ -58,7 +58,7 @@ type PreviewUpdateResourceResult struct {
 	Warnings        []string
 }
 
-const radarOwnershipReclaimedWarning = "Radar reclaimed field ownership left by an earlier Radar write. No external manager ownership was overridden."
+const kubeatlasOwnershipReclaimedWarning = "KubeAtlas reclaimed field ownership left by an earlier KubeAtlas write. No external manager ownership was overridden."
 
 // DeleteResourceOptions contains options for deleting a resource.
 type DeleteResourceOptions struct {
@@ -139,7 +139,7 @@ func (m *WorkloadManager) PreviewUpdateResource(ctx context.Context, opts Update
 		return nil, fmt.Errorf("failed to read resource before preview: %w", err)
 	}
 	obj.SetResourceVersion(live.GetResourceVersion())
-	predicted, reclaimedRadarOwnership, err := m.patchUpdateResource(ctx, opts, obj, gvr, ri)
+	predicted, reclaimedKubeAtlasOwnership, err := m.patchUpdateResource(ctx, opts, obj, gvr, ri)
 	if err != nil {
 		return nil, err
 	}
@@ -148,8 +148,8 @@ func (m *WorkloadManager) PreviewUpdateResource(ctx context.Context, opts Update
 		EnrichObjectWarnings(predicted),
 		checkFieldRemoval(obj, live, predicted)...,
 	)
-	if reclaimedRadarOwnership {
-		warnings = append([]string{radarOwnershipReclaimedWarning}, warnings...)
+	if reclaimedKubeAtlasOwnership {
+		warnings = append([]string{kubeatlasOwnershipReclaimedWarning}, warnings...)
 	}
 	return &PreviewUpdateResourceResult{
 		Object:          predicted,
@@ -241,7 +241,7 @@ func (m *WorkloadManager) patchUpdateResource(ctx context.Context, opts UpdateRe
 	if opts.DryRun {
 		dryRun = []string{metav1.DryRunAll}
 	}
-	result, reclaimedRadarOwnership, err := patchWithRadarOwnershipReclaim(
+	result, reclaimedKubeAtlasOwnership, err := patchWithKubeAtlasOwnershipReclaim(
 		ctx,
 		ri,
 		opts.Name,
@@ -252,7 +252,7 @@ func (m *WorkloadManager) patchUpdateResource(ctx context.Context, opts UpdateRe
 	if err != nil {
 		return nil, false, fmt.Errorf("failed to update resource: %w", err)
 	}
-	return result, reclaimedRadarOwnership, nil
+	return result, reclaimedKubeAtlasOwnership, nil
 }
 
 // stripServerManagedFields removes metadata fields the apiserver owns. SSA
@@ -392,7 +392,7 @@ func (m *WorkloadManager) ApplyResource(ctx context.Context, opts ApplyResourceO
 	if mode == "create" {
 		created, err := client.Create(ctx, obj, metav1.CreateOptions{
 			DryRun:          dryRun,
-			FieldManager:    "radar",
+			FieldManager:    "kubeatlas",
 			FieldValidation: metav1.FieldValidationStrict,
 		})
 		if err != nil {
@@ -414,7 +414,7 @@ func (m *WorkloadManager) ApplyResource(ctx context.Context, opts ApplyResourceO
 		// observed so its admitted object matches the final write.
 		created, err := client.Create(ctx, obj, metav1.CreateOptions{
 			DryRun:          dryRun,
-			FieldManager:    "radar",
+			FieldManager:    "kubeatlas",
 			FieldValidation: metav1.FieldValidationStrict,
 		})
 		if err != nil {
@@ -431,7 +431,7 @@ func (m *WorkloadManager) ApplyResource(ctx context.Context, opts ApplyResourceO
 	}
 
 	// Apply mode: server-side apply
-	applied, reclaimedRadarOwnership, err := patchWithRadarOwnershipReclaim(
+	applied, reclaimedKubeAtlasOwnership, err := patchWithKubeAtlasOwnershipReclaim(
 		ctx,
 		client,
 		name,
@@ -442,8 +442,8 @@ func (m *WorkloadManager) ApplyResource(ctx context.Context, opts ApplyResourceO
 	if err != nil {
 		return result, fmt.Errorf("failed to apply resource: %w", err)
 	}
-	if reclaimedRadarOwnership {
-		result.Warnings = append(result.Warnings, radarOwnershipReclaimedWarning)
+	if reclaimedKubeAtlasOwnership {
+		result.Warnings = append(result.Warnings, kubeatlasOwnershipReclaimedWarning)
 	}
 
 	// SSA results report "applied"; Action carries create/update classification.
@@ -476,7 +476,7 @@ func (m *WorkloadManager) ApplyResource(ctx context.Context, opts ApplyResourceO
 	// agent the verification was skipped rather than letting silence imply a clean
 	// apply — a partial manifest may have dropped fields without warning.
 	if !opts.DryRun && pre == nil && preGetErr != nil {
-		result.Warnings = append(result.Warnings, "Pre-apply GET failed; Radar could not compute field-retention warnings — a partial manifest may have silently dropped fields.")
+		result.Warnings = append(result.Warnings, "Pre-apply GET failed; KubeAtlas could not compute field-retention warnings — a partial manifest may have silently dropped fields.")
 	}
 
 	m.populateApplyWarnings(ctx, result, obj, pre, post, ns, kind, name, opts.DryRun)
@@ -505,7 +505,7 @@ func (m *WorkloadManager) populateApplyWarnings(ctx context.Context, result *App
 	if pre != nil && post != nil {
 		result.Warnings = append(result.Warnings, checkFieldRemoval(submitted, pre, post)...)
 	} else if !dryRun && pre != nil && post == nil {
-		result.Warnings = append(result.Warnings, "Post-apply verification GET failed; Radar could not compute field-retention warnings from the live object.")
+		result.Warnings = append(result.Warnings, "Post-apply verification GET failed; KubeAtlas could not compute field-retention warnings from the live object.")
 	}
 	// The consumer-reload reminder only makes sense for a persisted edit — on a
 	// dry run nothing landed, so the "restart consumers" advice would be
@@ -520,7 +520,7 @@ func (m *WorkloadManager) populateApplyWarnings(ctx context.Context, result *App
 
 func boolPtr(b bool) *bool { return &b }
 
-func patchWithRadarOwnershipReclaim(
+func patchWithKubeAtlasOwnershipReclaim(
 	ctx context.Context,
 	client dynamic.ResourceInterface,
 	name string,
@@ -530,7 +530,7 @@ func patchWithRadarOwnershipReclaim(
 ) (*unstructured.Unstructured, bool, error) {
 	patch := func(body []byte, patchForce bool) (*unstructured.Unstructured, error) {
 		return client.Patch(ctx, name, types.ApplyPatchType, body, metav1.PatchOptions{
-			FieldManager:    "radar",
+			FieldManager:    "kubeatlas",
 			FieldValidation: metav1.FieldValidationStrict,
 			Force:           boolPtr(patchForce),
 			DryRun:          dryRun,
@@ -541,7 +541,7 @@ func patchWithRadarOwnershipReclaim(
 		return nil, false, fmt.Errorf("failed to marshal resource: %w", err)
 	}
 	applied, err := patch(body, force)
-	if err == nil || force || !isOnlyRadarFieldManagerConflict(err) {
+	if err == nil || force || !isOnlyKubeAtlasFieldManagerConflict(err) {
 		return applied, false, err
 	}
 
@@ -558,7 +558,7 @@ func patchWithRadarOwnershipReclaim(
 			return nil, false, fmt.Errorf("failed to marshal resource: %w", err)
 		}
 		applied, err = patch(body, false)
-		if err == nil || !isOnlyRadarFieldManagerConflict(err) {
+		if err == nil || !isOnlyKubeAtlasFieldManagerConflict(err) {
 			return applied, false, err
 		}
 	}
@@ -567,7 +567,7 @@ func patchWithRadarOwnershipReclaim(
 	return applied, err == nil, err
 }
 
-func isOnlyRadarFieldManagerConflict(err error) bool {
+func isOnlyKubeAtlasFieldManagerConflict(err error) bool {
 	var statusErr *apierrors.StatusError
 	if !errors.As(err, &statusErr) || statusErr.ErrStatus.Details == nil {
 		return false
@@ -578,7 +578,7 @@ func isOnlyRadarFieldManagerConflict(err error) bool {
 	}
 	for _, cause := range causes {
 		if cause.Type != metav1.CauseTypeFieldManagerConflict ||
-			!strings.Contains(cause.Message, `conflict with "radar"`) {
+			!strings.Contains(cause.Message, `conflict with "kubeatlas"`) {
 			return false
 		}
 	}

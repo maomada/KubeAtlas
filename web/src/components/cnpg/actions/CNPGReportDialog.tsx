@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { ActionConfirmDialog } from '@maomada/k8s-ui'
 import { downloadCNPGReport } from '../../../api/cnpg-recovery'
-import { useRadarFeature } from '../../../api/client'
+import { useKubeAtlasFeature } from '../../../api/client'
 import { useConnection } from '../../../context/ConnectionContext'
 import { downloadBlob } from '../../resources/file-browser-utils'
 
@@ -25,7 +25,7 @@ export function CNPGReportDialog({ namespace, name, onClose }: { namespace: stri
   const [queryText, setQueryText] = useState(false)
   const [tailLines, setTailLines] = useState(1000)
   const [busy, setBusy] = useState(false)
-  const { guard } = useRadarFeature('cnpgWorkspace')
+  const { guard } = useKubeAtlasFeature('cnpgWorkspace')
   const [error, setError] = useState<string | null>(null)
 
   return (

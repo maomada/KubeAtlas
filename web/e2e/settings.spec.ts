@@ -24,7 +24,7 @@ test.describe('Settings dialog', () => {
     await page.goto('/')
     await page.waitForSelector('header', { timeout: 10000 })
 
-    await page.evaluate(() => window.dispatchEvent(new Event('radar:open-settings')))
+    await page.evaluate(() => window.dispatchEvent(new Event('kubeatlas:open-settings')))
 
     await expect(page.getByText('Kubeconfig', { exact: true })).toBeVisible()
   })

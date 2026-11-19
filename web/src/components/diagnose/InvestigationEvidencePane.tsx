@@ -81,7 +81,7 @@ export function InvestigationEvidencePane({
   /** The current assessment's agent case, resolved against this projection. */
   investigationCase?: InvestigationCaseResolution;
   /**
-   * The assessment's story: the agent's prose with `[[radar:evidence=N]]`
+   * The assessment's story: the agent's prose with `[[kubeatlas:evidence=N]]`
    * placements resolved against `investigationCase` and the verdict's
    * `evidence` array. Absent on backends and runs without the story contract,
    * which keep the previous layout.
@@ -536,7 +536,7 @@ export function InvestigationEvidencePane({
   );
   const content = (
     <section
-      aria-labelledby="investigation-radar-evidence"
+      aria-labelledby="investigation-kubeatlas-evidence"
       className={
         // In the story shape this is no card: the analysis, the steps and the
         // record are siblings. The element stays only as the container the
@@ -556,7 +556,7 @@ export function InvestigationEvidencePane({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h2
-                id="investigation-radar-evidence"
+                id="investigation-kubeatlas-evidence"
                 className="text-lg font-semibold text-theme-text-primary"
               >
                 Evidence
@@ -571,7 +571,7 @@ export function InvestigationEvidencePane({
           </div>
         </div>
       ) : (
-        <h2 id="investigation-radar-evidence" className="sr-only">
+        <h2 id="investigation-kubeatlas-evidence" className="sr-only">
           Analysis and evidence
         </h2>
       )}

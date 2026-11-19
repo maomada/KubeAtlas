@@ -8,8 +8,8 @@
 # pre-signed URL to the object store, and whatever asks for those messages then
 # fetches that URL itself. In `live` mode the object store is MinIO inside the
 # cluster, so the URL Velero would naturally sign — http://minio.minio.svc:9000
-# — is meaningless to Radar running on a laptop, and the fetch fails with a DNS
-# error that looks like a bug in Radar.
+# — is meaningless to KubeAtlas running on a laptop, and the fetch fails with a DNS
+# error that looks like a bug in KubeAtlas.
 #
 # Velero's AWS plugin has `publicUrl` for exactly this: sign the download URLs
 # for a host the *client* can reach, while the controller keeps using the

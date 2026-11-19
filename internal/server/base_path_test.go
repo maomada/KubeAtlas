@@ -20,20 +20,20 @@ func TestNormalizeBasePath(t *testing.T) {
 	}{
 		{name: "empty", raw: "", want: ""},
 		{name: "root", raw: "/", want: ""},
-		{name: "adds leading slash", raw: "radar", want: "/radar"},
-		{name: "trims trailing slash", raw: "/radar/", want: "/radar"},
-		{name: "nested path", raw: "/tools/radar/", want: "/tools/radar"},
-		{name: "query rejected", raw: "/radar?x=1", wantErr: true},
-		{name: "fragment rejected", raw: "/radar#top", wantErr: true},
-		{name: "url rejected", raw: "https://example.com/radar", wantErr: true},
-		{name: "route pattern rejected", raw: "/{tenant}/radar", wantErr: true},
-		{name: "dot segment rejected", raw: "/radar/../api", wantErr: true},
+		{name: "adds leading slash", raw: "kubeatlas", want: "/kubeatlas"},
+		{name: "trims trailing slash", raw: "/kubeatlas/", want: "/kubeatlas"},
+		{name: "nested path", raw: "/tools/kubeatlas/", want: "/tools/kubeatlas"},
+		{name: "query rejected", raw: "/kubeatlas?x=1", wantErr: true},
+		{name: "fragment rejected", raw: "/kubeatlas#top", wantErr: true},
+		{name: "url rejected", raw: "https://example.com/kubeatlas", wantErr: true},
+		{name: "route pattern rejected", raw: "/{tenant}/kubeatlas", wantErr: true},
+		{name: "dot segment rejected", raw: "/kubeatlas/../api", wantErr: true},
 		{name: "quote rejected", raw: `/rad"ar`, wantErr: true},
 		{name: "angle bracket rejected", raw: "/rad<script>ar", wantErr: true},
 		{name: "backslash rejected", raw: `/rad\ar`, wantErr: true},
 		{name: "space rejected", raw: "/rad ar", wantErr: true},
 		{name: "percent encoding rejected", raw: "/rad%2Far", wantErr: true},
-		{name: "unreserved characters allowed", raw: "/radar-v2_1.0~beta", want: "/radar-v2_1.0~beta"},
+		{name: "unreserved characters allowed", raw: "/kubeatlas-v2_1.0~beta", want: "/kubeatlas-v2_1.0~beta"},
 		// Scheme-relative forms would turn the redirect Location into an
 		// off-origin URL, so they must never normalize successfully.
 		{name: "protocol-relative rejected", raw: "//evil.com", wantErr: true},
@@ -74,13 +74,13 @@ func TestRewriteFrontendIndexInjectsBasePathRuntimeConfig(t *testing.T) {
   </body>
 </html>`)
 
-	got := string(rewriteFrontendIndex(input, "/radar"))
+	got := string(rewriteFrontendIndex(input, "/kubeatlas"))
 	for _, want := range []string{
-		`window.__KUBEATLAS_RUNTIME_CONFIG__={"basePath":"/radar","apiBase":"/radar/api","assetBase":"/radar"};`,
-		`href="/radar/favicon.svg"`,
-		`src="/radar/assets/index.js"`,
-		`href="/radar/assets/vendor.js"`,
-		`src="/radar/images/kubeatlas/kubeatlas-icon.svg"`,
+		`window.__KUBEATLAS_RUNTIME_CONFIG__={"basePath":"/kubeatlas","apiBase":"/kubeatlas/api","assetBase":"/kubeatlas"};`,
+		`href="/kubeatlas/favicon.svg"`,
+		`src="/kubeatlas/assets/index.js"`,
+		`href="/kubeatlas/assets/vendor.js"`,
+		`src="/kubeatlas/images/kubeatlas/kubeatlas-icon.svg"`,
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("rewritten index missing %q:\n%s", want, got)
@@ -123,7 +123,7 @@ func TestFrontendHandlerRewritesIndexFallbackButNotAssets(t *testing.T) {
 		"index.html":      &fstest.MapFile{Data: []byte(`<!doctype html><html><head><script type="module" src="/assets/index.js"></script></head><body></body></html>`)},
 		"assets/index.js": &fstest.MapFile{Data: []byte(`console.log("ok")`)},
 	})
-	handler := frontendHandler(fsys, "/radar")
+	handler := frontendHandler(fsys, "/kubeatlas")
 
 	indexResp := httptest.NewRecorder()
 	handler.ServeHTTP(indexResp, httptest.NewRequest(http.MethodGet, "/topology", nil))
@@ -131,10 +131,10 @@ func TestFrontendHandlerRewritesIndexFallbackButNotAssets(t *testing.T) {
 		t.Fatalf("client-route fallback status = %d, want 200", indexResp.Code)
 	}
 	indexBody := indexResp.Body.String()
-	if !strings.Contains(indexBody, `window.__KUBEATLAS_RUNTIME_CONFIG__={"basePath":"/radar","apiBase":"/radar/api","assetBase":"/radar"};`) {
+	if !strings.Contains(indexBody, `window.__KUBEATLAS_RUNTIME_CONFIG__={"basePath":"/kubeatlas","apiBase":"/kubeatlas/api","assetBase":"/kubeatlas"};`) {
 		t.Fatalf("client-route fallback did not inject runtime config:\n%s", indexBody)
 	}
-	if !strings.Contains(indexBody, `src="/radar/assets/index.js"`) {
+	if !strings.Contains(indexBody, `src="/kubeatlas/assets/index.js"`) {
 		t.Fatalf("client-route fallback did not rewrite asset src:\n%s", indexBody)
 	}
 
@@ -155,15 +155,15 @@ func TestFrontendHandlerRewritesIndexFallbackButNotAssets(t *testing.T) {
 }
 
 func TestServerMountsRoutesUnderBasePath(t *testing.T) {
-	srv := New(Config{DevMode: true, BasePath: "/radar"})
+	srv := New(Config{DevMode: true, BasePath: "/kubeatlas"})
 
 	rootResp := httptest.NewRecorder()
 	srv.Handler().ServeHTTP(rootResp, httptest.NewRequest(http.MethodGet, "/?namespace=default", nil))
 	if rootResp.Code != http.StatusFound {
 		t.Fatalf("root status = %d, want 302", rootResp.Code)
 	}
-	if got := rootResp.Header().Get("Location"); got != "/radar/?namespace=default" {
-		t.Fatalf("root redirect Location = %q, want /radar/?namespace=default", got)
+	if got := rootResp.Header().Get("Location"); got != "/kubeatlas/?namespace=default" {
+		t.Fatalf("root redirect Location = %q, want /kubeatlas/?namespace=default", got)
 	}
 
 	unprefixedResp := httptest.NewRecorder()
@@ -173,37 +173,37 @@ func TestServerMountsRoutesUnderBasePath(t *testing.T) {
 	}
 
 	prefixedResp := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(prefixedResp, httptest.NewRequest(http.MethodGet, "/radar/api/health", nil))
+	srv.Handler().ServeHTTP(prefixedResp, httptest.NewRequest(http.MethodGet, "/kubeatlas/api/health", nil))
 	if prefixedResp.Code != http.StatusOK {
 		t.Fatalf("prefixed API status = %d, want 200", prefixedResp.Code)
 	}
 
 	bareResp := httptest.NewRecorder()
-	srv.Handler().ServeHTTP(bareResp, httptest.NewRequest(http.MethodGet, "/radar?namespace=default", nil))
+	srv.Handler().ServeHTTP(bareResp, httptest.NewRequest(http.MethodGet, "/kubeatlas?namespace=default", nil))
 	if bareResp.Code != http.StatusMovedPermanently {
 		t.Fatalf("bare prefix status = %d, want 301", bareResp.Code)
 	}
-	if got := bareResp.Header().Get("Location"); got != "/radar/?namespace=default" {
-		t.Fatalf("bare prefix Location = %q, want /radar/?namespace=default", got)
+	if got := bareResp.Header().Get("Location"); got != "/kubeatlas/?namespace=default" {
+		t.Fatalf("bare prefix Location = %q, want /kubeatlas/?namespace=default", got)
 	}
 }
 
 // index.html asset URLs get re-rooted under the prefix, but only the ones that
-// address this origin: a protocol-relative URL prefixed into "/radar//cdn…"
+// address this origin: a protocol-relative URL prefixed into "/kubeatlas//cdn…"
 // becomes a local path that 404s, and it would break only under a base path.
 func TestPrefixAttrPathsLeavesOtherOriginsAlone(t *testing.T) {
 	in := `<link href="//cdn.example.com/a.css"><script src="https://cdn.example.com/b.js"></script>` +
 		`<link href="./assets/c.css"><script src="/assets/d.js"></script>`
 
-	underPrefix := prefixAttrPaths(in, "/radar")
+	underPrefix := prefixAttrPaths(in, "/kubeatlas")
 	for _, want := range []string{
 		`href="//cdn.example.com/a.css"`,     // other origin, untouched
 		`src="https://cdn.example.com/b.js"`, // scheme-qualified, untouched
-		`href="/radar/assets/c.css"`,         // Vite-relative, re-rooted
-		`src="/radar/assets/d.js"`,           // root-absolute, re-rooted
+		`href="/kubeatlas/assets/c.css"`,     // Vite-relative, re-rooted
+		`src="/kubeatlas/assets/d.js"`,       // root-absolute, re-rooted
 	} {
 		if !strings.Contains(underPrefix, want) {
-			t.Errorf("under /radar: missing %s\ngot: %s", want, underPrefix)
+			t.Errorf("under /kubeatlas: missing %s\ngot: %s", want, underPrefix)
 		}
 	}
 
@@ -230,7 +230,7 @@ func TestBasePathRedirectsStaySameOrigin(t *testing.T) {
 		"a=b&c=//evil.com", "%0d%0aSet-Cookie:+evil=1", "?=//evil.com",
 	}
 
-	for _, basePath := range []string{"/radar", "/tools/radar"} {
+	for _, basePath := range []string{"/kubeatlas", "/tools/kubeatlas"} {
 		srv := New(Config{DevMode: true, BasePath: basePath})
 		for _, q := range hostileQueries {
 			for _, target := range []string{"/?" + q, basePath + "?" + q} {
@@ -267,7 +267,7 @@ func TestBasePathDoesNotBypassAuth(t *testing.T) {
 	// Proxy mode only: the exemption logic under test lives in
 	// auth.Authenticate and is mode-independent, and OIDC mode would need a
 	// reachable issuer for discovery.
-	for _, basePath := range []string{"", "/radar", "/tools/radar"} {
+	for _, basePath := range []string{"", "/kubeatlas", "/tools/kubeatlas"} {
 		srv := New(Config{
 			DevMode:    true,
 			BasePath:   basePath,

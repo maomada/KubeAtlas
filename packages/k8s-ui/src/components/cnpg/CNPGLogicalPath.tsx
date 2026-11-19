@@ -101,7 +101,7 @@ export function CNPGLogicalPathView({
               {publisher.namespace}/{publisher.name} <span className="text-xs text-theme-text-tertiary">via {publisher.via}</span>
             </span>
           ) : (
-            <span className="text-theme-text-secondary">Outside Radar's view: {publisher.reason}</span>
+            <span className="text-theme-text-secondary">Outside KubeAtlas's view: {publisher.reason}</span>
           )}
           <div className="mt-0.5 text-[11.5px] text-theme-text-tertiary">
             {path.externalCluster.name

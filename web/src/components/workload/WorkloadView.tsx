@@ -99,10 +99,10 @@ import { RestartEventLane } from '../resource/RestartChart'
 import { RightsizingPanel } from '../resource/RightsizingStrip'
 import { WorkloadCostTab } from '../cost/WorkloadCostTab'
 import { isOpenCostWorkloadKind } from '../cost/kinds'
-import { isRadarFeatureUnsupported } from '../../api/radarFeatures'
+import { isKubeAtlasFeatureUnsupported } from '../../api/kubeatlasFeatures'
 import { useTrafficAvailable } from '../../api/traffic'
-import { useResourceAudit, useResourceIssues, useSubjectIssues, useRadarFeature, useTrace, fetchTraceWithProbes, fetchInClusterCapability, runInClusterMerged } from '../../api/client'
-import { AuditAlerts, getRadarUpgradeRequirement, ResourceIssuesSection, ReachabilityView, TraceSummary, InClusterConsentDialog, traceFingerprint, staticPollUnreliable, summarizeInClusterTests, type Trace as NetworkTrace, type InClusterCapability, inClusterConsentGiven, consentRequestRows } from '@maomada/k8s-ui'
+import { useResourceAudit, useResourceIssues, useSubjectIssues, useKubeAtlasFeature, useTrace, fetchTraceWithProbes, fetchInClusterCapability, runInClusterMerged } from '../../api/client'
+import { AuditAlerts, getKubeAtlasUpgradeRequirement, ResourceIssuesSection, ReachabilityView, TraceSummary, InClusterConsentDialog, traceFingerprint, staticPollUnreliable, summarizeInClusterTests, type Trace as NetworkTrace, type InClusterCapability, inClusterConsentGiven, consentRequestRows } from '@maomada/k8s-ui'
 import { WorkloadLogsViewer } from '../logs/WorkloadLogsViewer'
 import { ScheduledWorkloadLogsViewer } from '../logs/ScheduledWorkloadLogsViewer'
 import { LogsViewer } from '../logs/LogsViewer'
@@ -489,8 +489,8 @@ function useActionsBarProps(
     drainPlan: drainPlanMutation.data ?? null,
     isPlanningDrain: drainPlanMutation.isPending,
     drainPlanError: drainPlanMutation.error?.message ?? null,
-    drainPlanUpgrade: isRadarFeatureUnsupported(drainPlanMutation.error, 'drainPlan')
-      ? getRadarUpgradeRequirement(drainPlanMutation.error)
+    drainPlanUpgrade: isKubeAtlasFeatureUnsupported(drainPlanMutation.error, 'drainPlan')
+      ? getKubeAtlasUpgradeRequirement(drainPlanMutation.error)
       : null,
   }
 }
@@ -691,7 +691,7 @@ export function WorkloadView({
   const historyQuery = useWorkloadHistory(apiKind, namespace, name, effectiveGroup, expanded && historyGroupSettled)
   // A KubeAtlas without the scoped history endpoint gets the namespace's newest
   // changes instead, which the timeline filters to this workload.
-  const historyFallback = isRadarFeatureUnsupported(historyQuery.error, 'workloadHistory')
+  const historyFallback = isKubeAtlasFeatureUnsupported(historyQuery.error, 'workloadHistory')
   const namespaceChanges = useChanges({
     namespaces: [namespace],
     timeRange: 'all',
@@ -812,7 +812,7 @@ export function WorkloadView({
   // the renderer banners. The backend canonicalizes a plural kind via discovery,
   // so using the normalized API kind resolves direct links and app navigation alike.
   const isCronJob = apiKind === 'cronjobs' && (!effectiveGroup || effectiveGroup === 'batch')
-  const { support: coverageSupport } = useRadarFeature('resourceIssueCoverage')
+  const { support: coverageSupport } = useKubeAtlasFeature('resourceIssueCoverage')
   const useCronJobCoverage = isCronJob && coverageSupport === 'supported'
   const ordinaryIssues = useResourceIssues(apiKind, rest.group, namespace, name, !useCronJobCoverage)
   const cronJobIssues = useSubjectIssues(useCronJobCoverage ? { kind: 'CronJob', group: 'batch', namespace, name, uid: resource?.metadata?.uid } : null, useCronJobCoverage && Boolean(resource))

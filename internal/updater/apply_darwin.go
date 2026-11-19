@@ -32,7 +32,7 @@ func applyUpdate(_ context.Context, assetPath string) error {
 
 	// Extract zip to a temp dir next to the .app bundle
 	parentDir := filepath.Dir(appBundle)
-	extractDir, err := os.MkdirTemp(parentDir, "radar-update-*")
+	extractDir, err := os.MkdirTemp(parentDir, "kubeatlas-update-*")
 	if err != nil {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
@@ -102,7 +102,7 @@ func Relaunch() error {
 }
 
 // findAppBundle walks up the path from the executable to find the .app directory.
-// e.g., /Applications/Radar.app/Contents/MacOS/kubeatlas-desktop → /Applications/Radar.app
+// e.g., /Applications/KubeAtlas.app/Contents/MacOS/kubeatlas-desktop → /Applications/KubeAtlas.app
 func findAppBundle(exe string) string {
 	path := exe
 	for {

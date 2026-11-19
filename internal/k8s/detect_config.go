@@ -315,7 +315,7 @@ type EnvServiceRefCheck struct {
 // DuplicateEnvVarOccurrence locates one declaration of a duplicated env var.
 // A duplicate is the one list element a strategic-merge patch can't address
 // by its merge key (name), so the locator is a 0-based JSON pointer into the
-// object as Radar last saw it, e.g. /spec/template/spec/containers/0/env/23.
+// object as KubeAtlas last saw it, e.g. /spec/template/spec/containers/0/env/23.
 type DuplicateEnvVarOccurrence struct {
 	Path  string
 	Value string
@@ -572,7 +572,7 @@ func findEnvServiceRefChecks(cache *ResourceCache, workloads []envServiceWorkloa
 				if err != nil {
 					if !apierrors.IsNotFound(err) {
 						check.Status = "lookup_error"
-						check.Message = fmt.Sprintf("Env %s in container %s points to %s, but Radar could not verify Service/%s in namespace %s: %v.", env.Name, c.Name, ref.display, ref.name, ref.namespace, err)
+						check.Message = fmt.Sprintf("Env %s in container %s points to %s, but KubeAtlas could not verify Service/%s in namespace %s: %v.", env.Name, c.Name, ref.display, ref.name, ref.namespace, err)
 						out = append(out, check)
 						continue
 					}
@@ -583,7 +583,7 @@ func findEnvServiceRefChecks(cache *ResourceCache, workloads []envServiceWorkloa
 				}
 				if svc == nil {
 					check.Status = "lookup_error"
-					check.Message = fmt.Sprintf("Env %s in container %s points to %s, but Radar could not verify Service/%s in namespace %s.", env.Name, c.Name, ref.display, ref.name, ref.namespace)
+					check.Message = fmt.Sprintf("Env %s in container %s points to %s, but KubeAtlas could not verify Service/%s in namespace %s.", env.Name, c.Name, ref.display, ref.name, ref.namespace)
 					out = append(out, check)
 					continue
 				}

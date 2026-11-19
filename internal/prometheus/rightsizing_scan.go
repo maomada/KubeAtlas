@@ -134,7 +134,7 @@ type RightsizingScanCoverage struct {
 
 	// PartiallyCachedKinds are kinds whose informer covers only some
 	// namespaces, so a scope asking for "all namespaces" silently reads a
-	// subset. Without this a namespace-scoped Radar reports a cluster scan of
+	// subset. Without this a namespace-scoped KubeAtlas reports a cluster scan of
 	// one namespace as complete.
 	PartiallyCachedKinds []string `json:"partiallyCachedKinds,omitempty"`
 
@@ -311,7 +311,7 @@ func newRightsizingScanResponse(now time.Time, scope RightsizingScanScope) Right
 	restricted := append([]string(nil), scope.RestrictedKinds...)
 	sort.Strings(restricted)
 	return RightsizingScanResponse{
-		State: RightsizingScanUnavailable, ScannedAt: now, Window: "7d", Source: "radar",
+		State: RightsizingScanUnavailable, ScannedAt: now, Window: "7d", Source: "kubeatlas",
 		Coverage: RightsizingScanCoverage{
 			RestrictedKinds: restricted, deniedKinds: scope.deniedKinds(),
 			// Seeded with the request so the early returns below — no client,
@@ -333,7 +333,7 @@ func computeRightsizingScanProgress(ctx context.Context, client rightsizingScanQ
 		// Unreadable and partially-cached are counted separately. A kind whose
 		// informer covers only some namespaces is still readable, so folding it
 		// in here would report "every workload kind is unreadable" for a
-		// namespace-scoped Radar whose covered namespaces simply hold none.
+		// namespace-scoped KubeAtlas whose covered namespaces simply hold none.
 		unreadable := countDistinct(resp.Coverage.deniedKinds, resp.Coverage.UnavailableKinds)
 		narrowed := countDistinct(resp.Coverage.RestrictedKinds, resp.Coverage.UnavailableKinds, resp.Coverage.PartiallyCachedKinds)
 		switch {

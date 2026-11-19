@@ -13,7 +13,7 @@ describe('read actions', () => {
   it('maps an incomplete findings scan to changing the request', () => {
     expect(READ_ACTIONS.findings_scan_incomplete).toBe('change_request')
   })
-  it('read the spellings older Radars sent as the codes they became', () => {
+  it('read the spellings older KubeAtlas instances sent as the codes they became', () => {
     expect(canonicalReadCode('kind_sync_failed')).toBe('kind_sync_timed_out')
     expect(canonicalReadCode('rbac_denied')).toBe('user_forbidden')
     expect(readActionFor('kind_sync_failed')).toBe('wait')

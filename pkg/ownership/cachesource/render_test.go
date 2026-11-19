@@ -25,7 +25,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/resourceid"
 )
 
-// rendered is a World served by fake API clients, with Radar's caches over
+// rendered is a World served by fake API clients, with KubeAtlas's caches over
 // them.
 type rendered struct {
 	typed   *fake.Clientset
@@ -89,7 +89,7 @@ func setMeta(t testing.TB, obj runtime.Object, o ownershiptest.Object) {
 	m.SetFinalizers(o.Finalizers)
 }
 
-// apiObject renders o as the API serves it: a typed object for a kind Radar's
+// apiObject renders o as the API serves it: a typed object for a kind KubeAtlas's
 // typed cache holds, unstructured otherwise.
 func apiObject(t testing.TB, o ownershiptest.Object) (runtime.Object, bool) {
 	t.Helper()
@@ -223,7 +223,7 @@ func renderFluxManager(u *unstructured.Unstructured, o ownershiptest.Object) {
 	u.Object["status"] = status
 }
 
-// render starts Radar's caches over fake clients holding w, collected as
+// render starts KubeAtlas's caches over fake clients holding w, collected as
 // w.Collection says, and returns once every collected store has loaded.
 func render(t testing.TB, w ownershiptest.World) *rendered {
 	t.Helper()
@@ -317,7 +317,7 @@ func render(t testing.TB, w ownershiptest.World) *rendered {
 func (r *rendered) reactDynamic(k ownershiptest.Kind, c ownershiptest.Collection) {
 	gvr := schema.GroupVersionResource{Group: k.Group, Version: k.Version, Resource: k.Resource}
 	refuse := func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, apierrors.NewForbidden(gvr.GroupResource(), "", errors.New("Radar may not list this"))
+		return true, nil, apierrors.NewForbidden(gvr.GroupResource(), "", errors.New("KubeAtlas may not list this"))
 	}
 	limited := k.Namespaced && c.Namespaces != nil
 	switch c.State {

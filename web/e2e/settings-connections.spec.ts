@@ -61,7 +61,7 @@ for (const installMethod of ['homebrew', 'krew', 'direct', 'desktop']) {
       updateCommand: command,
       releaseUrl: 'https://github.com/maomada/KubeAtlas/releases/tag/v1.14.2',
     } }))
-    await page.addInitScript(() => localStorage.setItem('radar-update-dismissed', '1.14.2'))
+    await page.addInitScript(() => localStorage.setItem('kubeatlas-update-dismissed', '1.14.2'))
     const dialog = await openSettings(page, 'Metrics')
     const trigger = dialog.getByRole('button', { name: 'Update available', exact: true })
     await trigger.click()
@@ -1561,7 +1561,7 @@ test('contextual Argo health and diff preserve benefits and open Argo settings',
   } }))
   await page.goto('/gitops/detail/applications/argocd/storefront')
   await expect(page.getByRole('note')).toContainText(previousHint)
-  await expect(page.getByRole('note').getByRole('button', { name: 'connect Radar to your Argo CD server', exact: true })).toBeVisible()
+  await expect(page.getByRole('note').getByRole('button', { name: 'connect KubeAtlas to your Argo CD server', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Resources', exact: true }).last().click()
   await expect(page.getByText('for the full Git-rendered diff.')).toBeVisible()
   await expect(page.getByText(previousHint)).toHaveCount(1)
@@ -1677,7 +1677,7 @@ test('AI investigations saves through the shared row and is guarded on close', a
 
   await save.click()
   await expect(dialog.getByText('已保存', { exact: true })).toBeVisible()
-  expect(await page.evaluate(() => localStorage.getItem('radar-ai-profile'))).toBe('full-local')
+  expect(await page.evaluate(() => localStorage.getItem('kubeatlas-ai-profile'))).toBe('full-local')
   await page.keyboard.press('Escape')
   await expect(dialog).toBeHidden()
 })
@@ -1686,7 +1686,7 @@ test('a late agent list is not an unsaved AI edit', async ({ page }) => {
   await fixture(page)
   let release: (() => void) | undefined
   await mockAgents(page, new Promise<void>(resolve => { release = resolve }))
-  await page.addInitScript(() => localStorage.setItem('radar-ai-agent', 'codex'))
+  await page.addInitScript(() => localStorage.setItem('kubeatlas-ai-agent', 'codex'))
   const dialog = await openSettings(page, 'AI investigations')
   release?.()
   await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
@@ -1703,7 +1703,7 @@ test('an agent CLI installed while Settings is open is picked up without a resta
   }))
   const dialog = await openSettings(page, 'AI investigations')
   await expect(dialog.getByText('未找到受支持的 Agent CLI', { exact: true })).toBeVisible()
-  await expect(dialog.getByText(/then restart Radar/)).toHaveCount(0)
+  await expect(dialog.getByText(/then restart KubeAtlas/)).toHaveCount(0)
   await expect(dialog.getByText(/KUBEATLAS_AI_CLI_BIN/)).toHaveCount(0)
 
   await dialog.getByRole('button', { name: '重新检查', exact: true }).click()
@@ -1774,7 +1774,7 @@ test('AI drafts are guarded for non-owners and discardable when configuration fa
   await discard.click()
   await dialog.getByRole('tab', { name: 'AI调查', exact: true }).click()
   await expect(dialog.getByRole('button', { name: '保存更改', exact: true })).toBeDisabled()
-  expect(await page.evaluate(() => localStorage.getItem('radar-ai-profile'))).not.toBe('full-local')
+  expect(await page.evaluate(() => localStorage.getItem('kubeatlas-ai-profile'))).not.toBe('full-local')
 })
 
 test('Overview links to the per-cluster settings list at the end of Connection', async ({ page }) => {
@@ -1824,14 +1824,14 @@ test('a failed investigation start keeps the model and effort set for the agent 
   const ask = page.getByRole('button', { name: 'Ask AI about this resource', exact: true })
   await expect(ask).toBeVisible()
   await page.evaluate(() => {
-    localStorage.setItem('radar-ai-model', 'opus')
-    localStorage.setItem('radar-ai-effort', 'high')
+    localStorage.setItem('kubeatlas-ai-model', 'opus')
+    localStorage.setItem('kubeatlas-ai-effort', 'high')
   })
   await ask.click()
   await expect(page.getByText(/too many investigations running/)).toBeVisible()
   expect(starts).toBe(1)
-  await expect.poll(() => page.evaluate(() => [localStorage.getItem('radar-ai-model'), localStorage.getItem('radar-ai-effort')]))
+  await expect.poll(() => page.evaluate(() => [localStorage.getItem('kubeatlas-ai-model'), localStorage.getItem('kubeatlas-ai-effort')]))
     .toEqual(['opus', 'high'])
   // The default pick isn't saved as a choice, so a later default still applies.
-  expect(await page.evaluate(() => localStorage.getItem('radar-ai-agent'))).toBeNull()
+  expect(await page.evaluate(() => localStorage.getItem('kubeatlas-ai-agent'))).toBeNull()
 })

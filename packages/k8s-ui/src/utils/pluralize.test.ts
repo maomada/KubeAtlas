@@ -145,7 +145,7 @@ describe('isEnglishPlural', () => {
   // KNOWN LIMIT. A singular ending in a lone `s` whose stem doesn't end in
   // s/x/ch/sh is indistinguishable from a plural by English rules alone
   // ('status' → 'statu' → 'status' round-trips exactly like 'clusters' →
-  // 'cluster' → 'clusters'). No Kubernetes Kind Radar handles has this shape,
+  // 'cluster' → 'clusters'). No Kubernetes Kind KubeAtlas handles has this shape,
   // and kindToPlural's discovered-map lookup takes over the moment discovery
   // lands, so the mistake is confined to the cold window. Pinned so a future
   // change to these rules surfaces the boundary rather than moving it silently.

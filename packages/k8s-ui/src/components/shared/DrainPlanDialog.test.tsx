@@ -88,7 +88,7 @@ describe('DrainPlanContent', () => {
     )
   }
 
-  it('says a drain plan needs a newer Radar when the cluster predates it', () => {
+  it('says a drain plan needs a newer KubeAtlas when the cluster predates it', () => {
     const html = render({
       planSupported: false,
       planUpgrade: { feature: 'Drain plans', minimumVersion: 'v1.14.0', currentVersion: 'v1.13.1' },

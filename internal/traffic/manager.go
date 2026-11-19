@@ -465,7 +465,7 @@ func (m *Manager) generateRecommendation(info *ClusterInfo, detected []SourceSta
 		if s.Name == "istio" && s.Status == "error" {
 			return &Recommendation{
 				Name:    "istio",
-				Reason:  "Istio service mesh detected but Prometheus not reachable. Use --prometheus-url to point Radar to your Prometheus instance for Istio traffic visibility.",
+				Reason:  "Istio service mesh detected but Prometheus not reachable. Use --prometheus-url to point KubeAtlas to your Prometheus instance for Istio traffic visibility.",
 				DocsURL: "https://istio.io/latest/docs/ops/integrations/prometheus/",
 			}
 		}
@@ -604,7 +604,7 @@ func (m *Manager) StreamFlows(ctx context.Context, opts FlowOptions) (<-chan Flo
 // not_found at once, and the flows endpoint answered 200 with an empty graph and
 // no warning to explain it — the same permanently-empty view that requiring data
 // for availability exists to prevent. Clearing it makes the flows endpoint report
-// no source, which is the truth and what a freshly started Radar already says.
+// no source, which is the truth and what a freshly started KubeAtlas already says.
 func (m *Manager) reconcileActiveSource(available []TrafficSource) {
 	if m.activeSource != nil {
 		for _, s := range available {

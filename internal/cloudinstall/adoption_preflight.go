@@ -32,7 +32,7 @@ import (
 )
 
 const (
-	mutationPreflightFieldManager = "radar"
+	mutationPreflightFieldManager = "kubeatlas"
 	adoptionPreflightName         = "adoption preflight"
 )
 
@@ -55,7 +55,7 @@ type AdoptionPreflightOptions struct {
 // not authorize the create/patch/delete calls made by a real upgrade.
 //
 // Chart hooks are not part of release.Manifest, and PreparedUpgrade currently
-// renders with HideSecret. The Radar chart has neither hooks nor rendered
+// renders with HideSecret. The KubeAtlas chart has neither hooks nor rendered
 // Secrets in this flow (the Cloud token and Helm storage Secrets are checked
 // explicitly below). If the chart gains either, PreparedUpgrade must expose
 // those objects and this preflight must include them before adoption remains
@@ -137,7 +137,7 @@ func recordHiddenSecretBlocker(manifest, mutationKind string, result *PreflightR
 		return false
 	}
 	result.blockUnverifiable(
-		fmt.Sprintf("inspect rendered chart Secrets: the prepared target hid at least one Secret, so Radar cannot prove the exact %s mutations", mutationKind))
+		fmt.Sprintf("inspect rendered chart Secrets: the prepared target hid at least one Secret, so KubeAtlas cannot prove the exact %s mutations", mutationKind))
 	return true
 }
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"github.com/maomada/KubeAtlas/pkg/probe"
 	authzv1 "k8s.io/api/authorization/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -443,37 +444,37 @@ func TestCapability_GatesEveryVerb(t *testing.T) {
 	}
 }
 
-func radarPod(ns string, containers ...corev1.Container) *corev1.Pod {
+func kubeatlasPod(ns string, containers ...corev1.Container) *corev1.Pod {
 	return &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: "radar-abc", Namespace: ns},
+		ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas-abc", Namespace: ns},
 		Spec:       corev1.PodSpec{Containers: containers},
 	}
 }
 
 // TestResolveImage_Precedence pins the four-source order: explicit override >
-// self-read (radar's live pod image) > KUBEATLAS_IMAGE env > version default.
+// self-read (kubeatlas's live pod image) > KUBEATLAS_IMAGE env > version default.
 func TestResolveImage_Precedence(t *testing.T) {
 	old := DefaultImageRef
 	DefaultImageRef = "ghcr.io/maomada/kubeatlas:vdefault"
 	defer func() { DefaultImageRef = old }()
 
-	client := fake.NewSimpleClientset(radarPod("radar-ns",
+	client := fake.NewSimpleClientset(kubeatlasPod("kubeatlas-ns",
 		corev1.Container{Name: "istio-proxy", Image: "proxy:1"},
-		corev1.Container{Name: "radar", Image: "myregistry.internal/radar@sha256:dead"},
+		corev1.Container{Name: "kubeatlas", Image: "myregistry.internal/kubeatlas@sha256:dead"},
 	))
 	ctx := context.Background()
-	t.Setenv("MY_POD_NAME", "radar-abc")
-	t.Setenv("MY_POD_NAMESPACE", "radar-ns")
-	t.Setenv("KUBEATLAS_IMAGE", "env/radar:x")
+	t.Setenv("MY_POD_NAME", "kubeatlas-abc")
+	t.Setenv("MY_POD_NAMESPACE", "kubeatlas-ns")
+	t.Setenv("KUBEATLAS_IMAGE", "env/kubeatlas:x")
 
-	if got := ResolveImage(ctx, client, "override/radar:pin"); got != "override/radar:pin" {
+	if got := ResolveImage(ctx, client, "override/kubeatlas:pin"); got != "override/kubeatlas:pin" {
 		t.Errorf("override should win, got %q", got)
 	}
-	if got := ResolveImage(ctx, client, ""); got != "myregistry.internal/radar@sha256:dead" {
+	if got := ResolveImage(ctx, client, ""); got != "myregistry.internal/kubeatlas@sha256:dead" {
 		t.Errorf("self-read (live pod image) should win over env/default, got %q", got)
 	}
 	t.Setenv("MY_POD_NAME", "") // self-read can't run
-	if got := ResolveImage(ctx, client, ""); got != "env/radar:x" {
+	if got := ResolveImage(ctx, client, ""); got != "env/kubeatlas:x" {
 		t.Errorf("KUBEATLAS_IMAGE should apply when self-read unavailable, got %q", got)
 	}
 	t.Setenv("KUBEATLAS_IMAGE", "")
@@ -484,14 +485,14 @@ func TestResolveImage_Precedence(t *testing.T) {
 	// The configured --reachability-image override (recorded at startup) wins over
 	// self-read / KUBEATLAS_IMAGE / default even with an EMPTY per-call override arg -
 	// this is the MCP path, which must honor the operator's override too.
-	SetConfiguredImage("configured/radar:flag")
+	SetConfiguredImage("configured/kubeatlas:flag")
 	defer SetConfiguredImage("")
-	t.Setenv("MY_POD_NAME", "radar-abc") // self-read would otherwise win
-	t.Setenv("KUBEATLAS_IMAGE", "env/radar:x")
-	if got := ResolveImage(ctx, client, ""); got != "configured/radar:flag" {
+	t.Setenv("MY_POD_NAME", "kubeatlas-abc") // self-read would otherwise win
+	t.Setenv("KUBEATLAS_IMAGE", "env/kubeatlas:x")
+	if got := ResolveImage(ctx, client, ""); got != "configured/kubeatlas:flag" {
 		t.Errorf("configured override should beat self-read/env/default, got %q", got)
 	}
-	if got := ResolveImage(ctx, client, "explicit/radar:arg"); got != "explicit/radar:arg" {
+	if got := ResolveImage(ctx, client, "explicit/kubeatlas:arg"); got != "explicit/kubeatlas:arg" {
 		t.Errorf("an explicit per-call override arg should still beat the configured one, got %q", got)
 	}
 }
@@ -500,28 +501,28 @@ func TestResolveImage_Precedence(t *testing.T) {
 // fall-through-to-empty case (so resolution drops cleanly to the next source).
 func TestSelfPodImage(t *testing.T) {
 	ctx := context.Background()
-	t.Setenv("MY_POD_NAME", "radar-abc")
-	t.Setenv("MY_POD_NAMESPACE", "radar-ns")
+	t.Setenv("MY_POD_NAME", "kubeatlas-abc")
+	t.Setenv("MY_POD_NAMESPACE", "kubeatlas-ns")
 
 	// Prefer the "kubeatlas" container behind a sidecar when both names exist.
-	c := fake.NewSimpleClientset(radarPod("radar-ns",
+	c := fake.NewSimpleClientset(kubeatlasPod("kubeatlas-ns",
 		corev1.Container{Name: "linkerd-proxy", Image: "proxy:1"},
-		corev1.Container{Name: "radar", Image: "radar:legacy"},
+		corev1.Container{Name: compat.LegacyContainerName, Image: "kubeatlas:legacy"},
 		corev1.Container{Name: "kubeatlas", Image: "kubeatlas:real"},
 	))
 	if got := selfPodImage(ctx, c); got != "kubeatlas:real" {
 		t.Errorf("want the kubeatlas container image, got %q", got)
 	}
 	// Retain the legacy container name only when no "kubeatlas" container exists.
-	legacy := fake.NewSimpleClientset(radarPod("radar-ns",
+	legacy := fake.NewSimpleClientset(kubeatlasPod("kubeatlas-ns",
 		corev1.Container{Name: "linkerd-proxy", Image: "proxy:1"},
-		corev1.Container{Name: "radar", Image: "radar:legacy"},
+		corev1.Container{Name: compat.LegacyContainerName, Image: "kubeatlas:legacy"},
 	))
-	if got := selfPodImage(ctx, legacy); got != "radar:legacy" {
-		t.Errorf("want the legacy radar container image, got %q", got)
+	if got := selfPodImage(ctx, legacy); got != "kubeatlas:legacy" {
+		t.Errorf("want the legacy kubeatlas container image, got %q", got)
 	}
 	// First-container fallback when there is no named KubeAtlas container.
-	c2 := fake.NewSimpleClientset(radarPod("radar-ns", corev1.Container{Name: "app", Image: "app:1"}))
+	c2 := fake.NewSimpleClientset(kubeatlasPod("kubeatlas-ns", corev1.Container{Name: "app", Image: "app:1"}))
 	if got := selfPodImage(ctx, c2); got != "app:1" {
 		t.Errorf("want first-container fallback, got %q", got)
 	}
@@ -533,7 +534,7 @@ func TestSelfPodImage(t *testing.T) {
 	}
 	// A multi-container pod with no named container yields empty (don't guess a
 	// sidecar image); only a SOLE container is trusted as the fallback.
-	multi := fake.NewSimpleClientset(radarPod("radar-ns",
+	multi := fake.NewSimpleClientset(kubeatlasPod("kubeatlas-ns",
 		corev1.Container{Name: "istio-proxy", Image: "proxy:1"},
 		corev1.Container{Name: "app", Image: "app:2"},
 	))
@@ -563,8 +564,8 @@ func TestResolveImage_DevFallsBackToLatestRelease(t *testing.T) {
 		t.Errorf("dev build should fall back to the latest published release, got %q", got)
 	}
 
-	t.Setenv("KUBEATLAS_IMAGE", "env/radar:x")
-	if got := ResolveImage(context.Background(), nil, ""); got != "env/radar:x" {
+	t.Setenv("KUBEATLAS_IMAGE", "env/kubeatlas:x")
+	if got := ResolveImage(context.Background(), nil, ""); got != "env/kubeatlas:x" {
 		t.Errorf("KUBEATLAS_IMAGE must still outrank the latest-release fallback, got %q", got)
 	}
 	t.Setenv("KUBEATLAS_IMAGE", "")
@@ -580,14 +581,14 @@ func TestResolveImage_DevFallsBackToLatestRelease(t *testing.T) {
 func TestWithProbeMeshMarksSidecarResults(t *testing.T) {
 	results := func() []probe.Result { return []probe.Result{{Layer: probe.LayerTCP, Target: "svc:80", OK: true}} }
 	for name, pod := range map[string]*corev1.Pod{
-		"regular container": radarPod("ns", corev1.Container{Name: "probe"}, corev1.Container{Name: "istio-proxy"}),
+		"regular container": kubeatlasPod("ns", corev1.Container{Name: "probe"}, corev1.Container{Name: "istio-proxy"}),
 		"native sidecar":    {Spec: corev1.PodSpec{Containers: []corev1.Container{{Name: "probe"}}, InitContainers: []corev1.Container{{Name: "linkerd-proxy"}}}},
 	} {
 		if got := withProbeMesh(results(), pod); got[0].Mesh == "" {
 			t.Errorf("%s: result not marked with the mesh", name)
 		}
 	}
-	if got := withProbeMesh(results(), radarPod("ns", corev1.Container{Name: "probe"})); got[0].Mesh != "" {
+	if got := withProbeMesh(results(), kubeatlasPod("ns", corev1.Container{Name: "probe"})); got[0].Mesh != "" {
 		t.Errorf("plain probe pod marked with mesh %q", got[0].Mesh)
 	}
 }

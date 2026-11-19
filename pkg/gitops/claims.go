@@ -44,7 +44,7 @@ const (
 
 // Claim is what an object's own metadata says manages it. It is a candidate,
 // not a verdict: a manager decides membership by its own rules (Argo CD's
-// tracking method and installation ID, which Radar may not be able to read),
+// tracking method and installation ID, which KubeAtlas may not be able to read),
 // and its status list records what it compared or applied, which for Argo CD
 // can include objects it doesn't sync.
 type Claim struct {

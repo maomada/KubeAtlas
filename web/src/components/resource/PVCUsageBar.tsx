@@ -71,7 +71,7 @@ export function PVCUsageBar({ namespace, name }: { namespace: string; name: stri
             <button
               type="button"
               className="mt-2 text-xs text-accent hover:underline"
-              onClick={() => window.dispatchEvent(new CustomEvent('radar:open-settings', { detail: { section: 'prometheus' } }))}
+              onClick={() => window.dispatchEvent(new CustomEvent('kubeatlas:open-settings', { detail: { section: 'prometheus' } }))}
             >Configure metrics</button>
           ) : guidance ? (
             <p className="mt-2 text-xs text-theme-text-tertiary">{guidance}</p>

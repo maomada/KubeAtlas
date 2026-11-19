@@ -13,7 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 )
 
-const runningPreviousValueNote = "These Pods started before Radar observed this write and read the changed keys as env vars. Env values are set when a container starts, so they likely still hold the earlier value until they restart."
+const runningPreviousValueNote = "These Pods started before KubeAtlas observed this write and read the changed keys as env vars. Env values are set when a container starts, so they likely still hold the earlier value until they restart."
 
 func annotateRunningPreviousValue(ctx context.Context, changes []issuesapi.RecentChange, podsByNamespace map[string][]*corev1.Pod, viewer Viewer) {
 	cache := k8s.GetResourceCache()

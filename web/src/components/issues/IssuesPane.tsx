@@ -170,7 +170,7 @@ interface IssuesPaneProps {
 // The per-cluster Issues surface. Renders the same shared triage queue
 // (IssuesView) the Hub fleet view uses — single cluster here, so no cluster
 // label and in-app (client-side) resource navigation. Classification +
-// owner-grouping come pre-computed from radar's /api/issues
+// owner-grouping come pre-computed from kubeatlas's /api/issues
 // (internal/issues.Compose → Classify → Group). Filtering is the host's job
 // (IssuesView is a pure list); single-cluster gets a light severity filter via
 // the header status tiles (clickable → filter), matching the Applications /

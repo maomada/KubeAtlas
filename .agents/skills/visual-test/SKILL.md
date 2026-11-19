@@ -1,6 +1,6 @@
 ---
 name: visual-test
-description: Use when visually testing Radar UI changes against a real Kubernetes cluster with Playwright screenshots.
+description: Use when visually testing KubeAtlas UI changes against a real Kubernetes cluster with Playwright screenshots.
 ---
 
 Follow the workflow in `.claude/commands/visual-test.md`.

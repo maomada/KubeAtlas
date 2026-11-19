@@ -254,7 +254,7 @@ func TestResourceIssuesCoverageOfAnUnwatchedKind(t *testing.T) {
 }
 
 // A link made on one cluster can open on another that has no such kind; that
-// is not a kind Radar could start watching.
+// is not a kind KubeAtlas could start watching.
 func TestResourceIssuesCoverageOfAKindTheClusterDoesNotServe(t *testing.T) {
 	appGVR := schema.GroupVersionResource{Group: "argoproj.io", Version: "v1alpha1", Resource: "applications"}
 	dyn := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{appGVR: "ApplicationList"})
@@ -561,7 +561,7 @@ func TestSecretDerivedFindingsDegradeWithoutSecretAccess(t *testing.T) {
 	if stale == nil || !strings.Contains(stale.Message, "Secret/db-conn key password") || stale.FirstSeen.IsZero() {
 		t.Fatalf("a caller with Secret access lost the full finding: %+v", stale)
 	}
-	if problem, _ := dashboard(); problem == nil || !strings.Contains(problem.Message, "before Radar observed") || problem.Duration == "" {
+	if problem, _ := dashboard(); problem == nil || !strings.Contains(problem.Message, "before KubeAtlas observed") || problem.Duration == "" {
 		t.Fatalf("a caller with Secret access lost the full dashboard problem: %+v", problem)
 	}
 }

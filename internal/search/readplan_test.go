@@ -69,7 +69,7 @@ func TestSearchTypedNamespaceCredentialRejection(t *testing.T) {
 		if !slices.Equal(hitNames(res), []string{"ConfigMap/alpha/robusta"}) || res.Searched != 1 {
 			t.Fatalf("%s: %+v", query, res)
 		}
-		want := []resourceapi.Gap{{Code: readreason.RadarCredentialsRejected, Kinds: resourceapi.Kinds([]resourceapi.KindRef{{Kind: "ConfigMap"}}, 1), Namespaces: resourceapi.UnknownNames()}}
+		want := []resourceapi.Gap{{Code: readreason.KubeAtlasCredentialsRejected, Kinds: resourceapi.Kinds([]resourceapi.KindRef{{Kind: "ConfigMap"}}, 1), Namespaces: resourceapi.UnknownNames()}}
 		if !partial(res) || !reflect.DeepEqual(res.Coverage.Gaps, want) || slices.Contains(res.Coverage.NarrowedBy, resourceapi.NarrowedByNamespaceCollection) {
 			t.Fatalf("%s: rejected namespace became collection narrowing: %+v", query, res.Coverage)
 		}

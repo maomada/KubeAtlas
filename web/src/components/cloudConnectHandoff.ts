@@ -2,12 +2,12 @@ import { ApiError, type CloudInstallAttempted, type CloudInstallBlocked, type Cl
 
 // The Cloud dialog's links into the Hub. utm_content names the link that was
 // clicked. After an in-app connect attempt that did not end connected, the
-// link also carries radar_outcome, a short phrase for what happened, so the
+// link also carries kubeatlas_outcome, a short phrase for what happened, so the
 // wizard opens knowing what the person is coming from. The person sees both
 // in the address bar, so every value reads as plain words about the flow —
 // never an error message, never a cluster name. Anything that is not a short
 // snake_case phrase is dropped here and again on the Hub.
-export const SIGNUP_QUERY = '?utm_source=radar-oss&utm_medium=app&utm_campaign=cloud-modal'
+export const SIGNUP_QUERY = '?utm_source=kubeatlas-oss&utm_medium=app&utm_campaign=cloud-modal'
 
 // What the person is coming from, whether the pitch should offer "Try
 // again" (a failure can be retried; a refusal or the person's own cancel
@@ -43,9 +43,9 @@ export function isHandoffOutcome(value: unknown): value is string {
 export function handoffForPrepareError(err: unknown): Handoff {
   let outcome = 'cluster_inspect_request_error'
   if (err instanceof ApiError) {
-    outcome = err.status === 503 ? 'radar_not_connected_to_cluster' : 'cluster_inspect_failed'
+    outcome = err.status === 503 ? 'kubeatlas_not_connected_to_cluster' : 'cluster_inspect_failed'
   } else if (err instanceof TypeError) {
-    outcome = 'radar_server_unreachable'
+    outcome = 'kubeatlas_server_unreachable'
   }
   return { outcome, retryable: true, detail: err instanceof Error ? err.message : undefined }
 }
@@ -64,7 +64,7 @@ export function handoffForBlocked(reason: CloudInstallBlocked['reason'], target?
 
 export function signupUrlFor(appUrl: string, content: string, handoff?: Handoff | null): string {
   const url = `${appUrl}/signup${SIGNUP_QUERY}&utm_content=${content}`
-  return handoff && isHandoffOutcome(handoff.outcome) ? `${url}&radar_outcome=${handoff.outcome}` : url
+  return handoff && isHandoffOutcome(handoff.outcome) ? `${url}&kubeatlas_outcome=${handoff.outcome}` : url
 }
 
 // The one exit every blocked card offers. An install-page deep link is
@@ -91,7 +91,7 @@ export function exitFor(appUrl: string, content: string, handoff: Handoff | null
   const generic = { href: signupUrlFor(appUrl, content, handoff), label: 'Open upstream Cloud', install: false }
   const t = handoff?.target
   if (!t) return generic
-  // An unsupported refusal names its own remedy (several Radars to pick from,
+  // An unsupported refusal names its own remedy (several KubeAtlas instances to pick from,
   // a pairing to recover, ownership KubeAtlas will not guess at); a release it
   // happens to know is not an invitation to install over it.
   if (handoff?.outcome === BLOCKED_OUTCOMES.unsupported) return generic
@@ -124,7 +124,7 @@ export function exitFor(appUrl: string, content: string, handoff: Handoff | null
 
 function installHref(appUrl: string, content: string, handoff: Handoff | null | undefined, params: URLSearchParams): string {
   const url = `${appUrl}/install?${params.toString()}&${SIGNUP_QUERY.slice(1)}&utm_content=${content}`
-  return handoff && isHandoffOutcome(handoff.outcome) ? `${url}&radar_outcome=${handoff.outcome}` : url
+  return handoff && isHandoffOutcome(handoff.outcome) ? `${url}&kubeatlas_outcome=${handoff.outcome}` : url
 }
 
 // The note a blocked person hands to whoever administers the cluster. An
@@ -247,8 +247,8 @@ function plainLink(href: string): string {
   }
 }
 
-// A refusal line is a Go error chain — "create Namespace "radar": namespaces
-// "radar" is forbidden: ValidatingAdmissionPolicy … denied request: <reason>".
+// A refusal line is a Go error chain — "create Namespace "kubeatlas": namespaces
+// "kubeatlas" is forbidden: ValidatingAdmissionPolicy … denied request: <reason>".
 // Keep what was attempted and why it was refused; drop the wrapping between.
 export function trimRefusal(line: string): string {
   const parts = line.split(': ').map((p) => p.trim()).filter(Boolean)

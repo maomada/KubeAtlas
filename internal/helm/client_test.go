@@ -572,7 +572,7 @@ func TestValuesPreviewApplyFailsClosedWhenDependencyBodiesUnavailable(t *testing
 		_, err := (&Client{}).chartForUpgradeTargetWithLoader(nil, rel, "1.0.4", "", func(string, string, string) {}, func(*action.Configuration, *release.Release, string, string, func(string, string, string)) (*chart.Chart, error) {
 			return nil, errors.New("chart not found in configured sources")
 		})
-		if err == nil || !strings.Contains(err.Error(), "Radar could not rebuild the full chart") || !strings.Contains(err.Error(), "umbrella version 1.0.4") {
+		if err == nil || !strings.Contains(err.Error(), "KubeAtlas could not rebuild the full chart") || !strings.Contains(err.Error(), "umbrella version 1.0.4") {
 			t.Fatalf("error = %v, want fail-closed reconstruction error", err)
 		}
 	})

@@ -25,7 +25,7 @@ func TestLogToolCallStructuredForbidden(t *testing.T) {
 	}{
 		{"typed", forbidden, "permission_denied"},
 		{"wrapped", fmt.Errorf("failed to patch resource: %w", forbidden), "permission_denied"},
-		{"existing read reason", &readError{code: readreason.RadarForbidden, err: forbidden}, "radar_forbidden"},
+		{"existing read reason", &readError{code: readreason.KubeAtlasForbidden, err: forbidden}, "kubeatlas_forbidden"},
 		{"text is not a status", errors.New("configmaps cfg is forbidden"), ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

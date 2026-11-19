@@ -88,16 +88,16 @@ func TestSearchCoverageReadFailuresAndPartialNamespaces(t *testing.T) {
 			}
 		})
 	}
-	// Radar's collection scope is reported only for a namespace the query
+	// KubeAtlas's collection scope is reported only for a namespace the query
 	// names.
-	p := &fakeProvider{typedReasons: map[string]string{"Pod": "radar_namespace_not_collected"}, typed: map[string][]runtime.Object{"pods": {newPod("a", "visible", "x", nil)}}}
+	p := &fakeProvider{typedReasons: map[string]string{"Pod": "kubeatlas_namespace_not_collected"}, typed: map[string][]runtime.Object{"pods": {newPod("a", "visible", "x", nil)}}}
 	if res, _ := Search(context.Background(), p, Parse("kind:Pod"), Options{}); partial(res) || len(unsearched(res)) != 0 || len(res.Hits) != 0 {
 		t.Fatalf("kind: alone reported collector scope: %+v", res)
 	}
 	q := Parse("kind:Pod ns:a")
 	opts := Options{}
 	opts.Selection = SelectNamespaces(p, q, readscope.NamespaceAccess{Namespaces: nil, Checked: true}, nil)
-	want := []UnsearchedKind{{Kind: "*", Reason: "radar_namespace_not_collected", Namespaces: []string{"a"}}}
+	want := []UnsearchedKind{{Kind: "*", Reason: "kubeatlas_namespace_not_collected", Namespaces: []string{"a"}}}
 	if res, _ := Search(context.Background(), p, q, opts); !partial(res) || !reflect.DeepEqual(unsearched(res), want) || len(res.Hits) != 0 {
 		t.Fatalf("named namespace outside collection: %+v, want %+v", unsearched(res), want)
 	}
@@ -105,8 +105,8 @@ func TestSearchCoverageReadFailuresAndPartialNamespaces(t *testing.T) {
 		err    error
 		reason string
 	}{
-		{fmt.Errorf("forbidden: pods"), "radar_forbidden"},
-		{apierrors.NewUnauthorized("token expired"), "radar_credentials_rejected"},
+		{fmt.Errorf("forbidden: pods"), "kubeatlas_forbidden"},
+		{apierrors.NewUnauthorized("token expired"), "kubeatlas_credentials_rejected"},
 		{fmt.Errorf("broken list"), "read_error"},
 	} {
 		p := &fakeProvider{listErrors: map[string]error{"pods": tc.err}}
@@ -143,7 +143,7 @@ func TestSearchDynamicCoverageDoesNotWarmDeniedAndRetainsGoodNamespaces(t *testi
 		count       int
 		wantPartial bool
 	}{
-		{k8score.DynamicObservationDenied, "kind:Widget", "Widget", "radar_forbidden", 0, true},
+		{k8score.DynamicObservationDenied, "kind:Widget", "Widget", "kubeatlas_forbidden", 0, true},
 		{k8score.DynamicObservationDenied, "", "", "", 0, false},
 		{k8score.DynamicObservationSyncing, "", "*", "kind_sync_pending", 1, true},
 		{k8score.DynamicObservationUnsupported, "kind:Widget", "Widget", "kind_not_watchable", 0, true},
@@ -155,7 +155,7 @@ func TestSearchDynamicCoverageDoesNotWarmDeniedAndRetainsGoodNamespaces(t *testi
 		if partial(res) != tc.wantPartial || (tc.wantPartial && (len(unsearched(res)) != 1 || unsearched(res)[0].Kind != tc.kind || string(unsearched(res)[0].Reason) != tc.reason || unsearched(res)[0].Count != tc.count)) {
 			t.Fatalf("dynamic state %s, query %q: %+v", tc.state, tc.query, res)
 		}
-		// A kind Radar is refused narrows a broad search; a kind no search can
+		// A kind KubeAtlas is refused narrows a broad search; a kind no search can
 		// watch is outside every search and narrows none.
 		if tc.query == "" && tc.state == k8score.DynamicObservationDenied && !slices.Equal(res.Coverage.NarrowedBy, []resourceapi.Narrowing{resourceapi.NarrowedByKindCollection}) {
 			t.Fatalf("refused kind narrowedBy = %v", res.Coverage.NarrowedBy)
@@ -231,7 +231,7 @@ var (
 	stalled = k8score.DynamicResourceObservation{State: k8score.DynamicObservationSyncing, ReasonCode: "sync_stalled"}
 )
 
-// The caller's access and Radar's setup are a search's scope: a broad search
+// The caller's access and KubeAtlas's setup are a search's scope: a broad search
 // names none of it, however many kinds it covers, while a kind: term gets an
 // exact entry for every kind it names.
 func TestBroadSearchNamesNoScopeReasons(t *testing.T) {
@@ -255,7 +255,7 @@ func TestBroadSearchNamesNoScopeReasons(t *testing.T) {
 		t.Fatalf("kind: query must name every named kind, got %d: %+v", len(unsearched(res)), unsearched(res))
 	}
 	res, _ = Search(context.Background(), p, Parse("kind:Blocked01 kind:Listonly00"), Options{CanReadClusterScoped: denyDenied})
-	want := append(capNamed("Blocked", 3, 1, 1, readreason.RadarForbidden), capNamed("Listonly", 2, 0, 0, readreason.KindNotWatchable)...)
+	want := append(capNamed("Blocked", 3, 1, 1, readreason.KubeAtlasForbidden), capNamed("Listonly", 2, 0, 0, readreason.KindNotWatchable)...)
 	if !reflect.DeepEqual(unsearched(res), want) {
 		t.Fatalf("named setup reasons = %+v, want %+v", unsearched(res), want)
 	}
@@ -351,7 +351,7 @@ func TestLoadingCatalogIsPendingNotUnknown(t *testing.T) {
 
 // When some API groups failed discovery, an unmatched kind: term is still
 // reported as unknown, but with the failure beside it: the kind may live in a
-// group Radar couldn't discover. A broad search records kind-collection narrowing.
+// group KubeAtlas couldn't discover. A broad search records kind-collection narrowing.
 func TestIncompleteDiscoveryQualifiesUnknownKinds(t *testing.T) {
 	p := &fakeProvider{catalogErr: errIncompleteDiscovery}
 	if res, _ := Search(context.Background(), p, Parse("robusta"), Options{}); partial(res) || len(unsearched(res)) != 0 || !slices.Contains(res.Coverage.NarrowedBy, resourceapi.NarrowedByKindCollection) {

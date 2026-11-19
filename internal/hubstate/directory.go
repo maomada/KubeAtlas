@@ -258,7 +258,7 @@ func (s *Store) TransferCluster(id, organizationID string) (Cluster, error) {
 	}
 	oldOrganizationID := cluster.OrganizationID
 	next := s.next(now)
-	cluster.OrganizationID, cluster.RevokedAt, cluster.UpdatedAt = organizationID, &now, now
+	cluster.OrganizationID, cluster.UpdatedAt = organizationID, now
 	next.Clusters[id] = cluster
 	for groupID, group := range next.Groups {
 		if group.OrganizationID != oldOrganizationID {

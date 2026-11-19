@@ -12,13 +12,13 @@ import {
   cnpgBackupDeclaration,
   cnpgScheduleDestinationBlocker,
   coverageReadable,
-  getRadarUpgradeRequirement,
-  RadarUpgradeNote,
+  getKubeAtlasUpgradeRequirement,
+  KubeAtlasUpgradeNote,
   type CNPGFleetRow,
 } from '@maomada/k8s-ui'
 import { useCNPGClusterCapabilities, useCNPGOperator } from '../../../api/cnpg'
-import { useRadarFeature } from '../../../api/client'
-import { radarUpgradeRequirement } from '../../../api/radarFeatures'
+import { useKubeAtlasFeature } from '../../../api/client'
+import { kubeatlasUpgradeRequirement } from '../../../api/kubeatlasFeatures'
 import { useConnection } from '../../../context/ConnectionContext'
 import { useCNPGFleet } from '../useCNPGSidebarWorkspace'
 import { CNPGAttachArchiveDialog } from './CNPGAttachArchiveDialog'
@@ -45,7 +45,7 @@ export function CNPGProtectionSetup({
 }) {
   const [params, setParams] = useSearchParams()
   const location = useLocation()
-  const feature = useRadarFeature('cnpgProtectionSetup')
+  const feature = useKubeAtlasFeature('cnpgProtectionSetup')
   const [open, setOpen] = useState(() => params.get('protectionSetup') === '1')
   const requested = params.get('protectionSetup') === '1'
   useEffect(() => {
@@ -71,7 +71,7 @@ export function CNPGProtectionSetup({
           ariaLabel="Backup setup needs a newer KubeAtlas"
           className="w-full max-w-lg p-5"
         >
-          <RadarUpgradeNote requirement={radarUpgradeRequirement('cnpgProtectionSetup', {})} />
+          <KubeAtlasUpgradeNote requirement={kubeatlasUpgradeRequirement('cnpgProtectionSetup', {})} />
           <button type="button" onClick={close} className="btn-secondary mt-4 px-3 py-1.5 text-sm">
             Close
           </button>
@@ -177,7 +177,7 @@ function ProtectionGuide({
       (schedule.spec?.method || 'barmanObjectStore') !== 'volumeSnapshot',
   )
   const changed = connection.context !== context
-  const upgrade = getRadarUpgradeRequirement(query.error)
+  const upgrade = getKubeAtlasUpgradeRequirement(query.error)
   if (step === 'attach' && cluster && !changed)
     return (
       <CNPGAttachArchiveDialog
@@ -253,7 +253,7 @@ function ProtectionGuide({
         {!row ? (
           <div>
             {upgrade ? (
-              <RadarUpgradeNote requirement={upgrade} />
+              <KubeAtlasUpgradeNote requirement={upgrade} />
             ) : (
               <>
                 <p>

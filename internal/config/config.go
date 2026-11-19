@@ -58,8 +58,8 @@ type Config struct {
 	DebugImage string `json:"debugImage,omitempty"`
 
 	// ReachabilityImage is the image for the in-cluster reachability probe Job
-	// (`radar probe`). Empty falls back to KUBEATLAS_IMAGE, then the version-matched
-	// published Radar image; set it to a reachable mirror for air-gapped clusters.
+	// (`kubeatlas probe`). Empty falls back to KUBEATLAS_IMAGE, then the version-matched
+	// published KubeAtlas image; set it to a reachable mirror for air-gapped clusters.
 	ReachabilityImage string `json:"reachabilityImage,omitempty"`
 	// ArgoCDURL is the Argo CD API server URL. Empty enables auto-discovery.
 	ArgoCDURL string `json:"argoCdUrl,omitempty"`
@@ -86,7 +86,7 @@ type Config struct {
 	// agent execution profile. Machine-scoped on purpose: consent gates a
 	// machine-scoped action (spawn this machine's agent CLI, persist transcripts
 	// to this machine's disk), so one acknowledgment covers the web panel and
-	// the `radar diagnose` CLI alike.
+	// the `kubeatlas diagnose` CLI alike.
 	AIConsent map[string]string `json:"aiConsent,omitempty"`
 }
 
@@ -158,18 +158,18 @@ func Load() Config {
 func LoadForStartup() (Config, error) {
 	path := Path()
 	if path == "" {
-		return Config{}, fmt.Errorf("cannot determine Radar config path")
+		return Config{}, fmt.Errorf("cannot determine KubeAtlas config path")
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return Config{}, nil
 		}
-		return Config{}, fmt.Errorf("cannot read Radar config: %w", err)
+		return Config{}, fmt.Errorf("cannot read KubeAtlas config: %w", err)
 	}
 	var c Config
 	if err := json.Unmarshal(data, &c); err != nil {
-		return Config{}, fmt.Errorf("invalid Radar config: %w", err)
+		return Config{}, fmt.Errorf("invalid KubeAtlas config: %w", err)
 	}
 	normalizedCurrency, err := NormalizeOpenCostCurrency(c.OpenCostCurrency)
 	if err != nil {

@@ -24,12 +24,12 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/topology"
 )
 
-// The write-evidence endpoint answers, before a direct write, what Radar can
+// The write-evidence endpoint answers, before a direct write, what KubeAtlas can
 // learn about whether the object's GitOps (or Helm) owner will put the old
 // value back: per written field, is it in the last client-side apply payload,
 // is it owned (managedFields) by the owner's controller, does an ignore rule
 // cover it — plus the owner's sync policy. Both managedFields and last-applied
-// are stripped from Radar's caches, so this reads the object directly, as the
+// are stripped from KubeAtlas's caches, so this reads the object directly, as the
 // caller. Only derived facts leave the server, never the annotation or the
 // managedFields themselves.
 
@@ -90,7 +90,7 @@ type gitOpsPathEvidence struct {
 	// Ignored: "" | "effective" (the owner won't revert it) |
 	// "comparison-only" (Argo ignoreDifferences without
 	// RespectIgnoreDifferences: no self-heal trigger, but a sync overwrites) |
-	// "unevaluated" (a matching rule uses jqPathExpressions, which Radar
+	// "unevaluated" (a matching rule uses jqPathExpressions, which KubeAtlas
 	// doesn't evaluate, or covers only some of the elements a wildcard path
 	// matches, so it may or may not cover the field being written).
 	Ignored   string `json:"ignored,omitempty"`
@@ -126,7 +126,7 @@ type controllerOwnerEvidence struct {
 
 type gitOpsWriteEvidenceResponse struct {
 	Manager *topology.ManagerAnswer `json:"manager,omitempty"`
-	// ManagerUnavailable is the reason code when Radar couldn't answer what
+	// ManagerUnavailable is the reason code when KubeAtlas couldn't answer what
 	// manages the live object (it changed under the cache, or the cache isn't
 	// ready). The caller's owner hint is then not used either: an exemption
 	// read from it could belong to the object as it was.
@@ -338,10 +338,10 @@ var gitOpsFieldManagers = map[string]string{
 	"helm":                          "helm",
 }
 
-// The field managers Radar's own writes record: server-side apply names
-// "radar"; a patch records the client's user-agent prefix, the binary name.
-var radarWriteManagers = map[string]bool{
-	"radar": true,
+// The field managers KubeAtlas's own writes record: server-side apply names
+// "kubeatlas"; a patch records the client's user-agent prefix, the binary name.
+var kubeatlasWriteManagers = map[string]bool{
+	"kubeatlas": true,
 	strings.SplitN(rest.DefaultKubernetesUserAgent(), "/", 2)[0]: true,
 }
 
@@ -618,7 +618,7 @@ func ignoreRuleFor(
 	case "argocd":
 		entries, _, _ := unstructured.NestedSlice(ownerObj.Object, "spec", "ignoreDifferences")
 		covered := make([]bool, len(sets))
-		jqRule, radarManagerRule := false, false
+		jqRule, kubeatlasManagerRule := false, false
 		for _, raw := range entries {
 			entry, ok := raw.(map[string]any)
 			if !ok || !argoIgnoreEntryMatches(entry, ref) {
@@ -629,11 +629,11 @@ func ignoreRuleFor(
 				jqRule = true
 			}
 			// Argo matches managedFieldsManagers against the field's live
-			// owner, and the write makes Radar the owner: only a rule naming
-			// Radar's own manager can still cover the field afterwards.
+			// owner, and the write makes KubeAtlas the owner: only a rule naming
+			// KubeAtlas's own manager can still cover the field afterwards.
 			for _, m := range stringSlice(entry["managedFieldsManagers"]) {
-				if radarWriteManagers[m] {
-					radarManagerRule = true
+				if kubeatlasWriteManagers[m] {
+					kubeatlasManagerRule = true
 				}
 			}
 		}
@@ -645,7 +645,7 @@ func ignoreRuleFor(
 			return "comparison-only", "spec.ignoreDifferences"
 		case jqRule:
 			return "unevaluated", "spec.ignoreDifferences jqPathExpressions"
-		case radarManagerRule:
+		case kubeatlasManagerRule:
 			return "unevaluated", "spec.ignoreDifferences managedFieldsManagers"
 		case anyCovered(covered):
 			return "unevaluated", "spec.ignoreDifferences jsonPointers"

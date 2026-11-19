@@ -48,14 +48,14 @@ func TestBuildTimelineStoreConfig(t *testing.T) {
 	t.Run("sqlite preserves path and cleanup settings", func(t *testing.T) {
 		got, err := BuildTimelineStoreConfig(AppConfig{
 			TimelineStorage:      "sqlite",
-			TimelineDBPath:       "/tmp/radar-test.db",
+			TimelineDBPath:       "/tmp/kubeatlas-test.db",
 			TimelineRetention:    72 * time.Hour,
 			TimelineMaxSizeBytes: 8 << 20,
 		})
 		if err != nil {
 			t.Fatalf("BuildTimelineStoreConfig: %v", err)
 		}
-		if got.Type != timeline.StoreTypeSQLite || got.Path != "/tmp/radar-test.db" {
+		if got.Type != timeline.StoreTypeSQLite || got.Path != "/tmp/kubeatlas-test.db" {
 			t.Fatalf("sqlite config = %+v, want explicit SQLite path", got)
 		}
 		if got.RetentionAge != 72*time.Hour || got.MaxStorageBytes != 8<<20 {
@@ -78,7 +78,7 @@ func TestBuildTimelineStoreConfig(t *testing.T) {
 	})
 
 	t.Run("postgres carries runtime DSN", func(t *testing.T) {
-		const dsn = "postgres://radar:secret@example.test/radar"
+		const dsn = "postgres://kubeatlas:secret@example.test/kubeatlas"
 		got, err := BuildTimelineStoreConfig(AppConfig{
 			TimelineStorage:     "postgres",
 			TimelinePostgresDSN: dsn,

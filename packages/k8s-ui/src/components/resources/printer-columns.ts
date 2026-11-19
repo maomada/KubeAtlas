@@ -10,7 +10,7 @@ import { KNOWN_NEGATIVE_CONDITIONS, KNOWN_POSITIVE_CONDITIONS } from './generic-
 /** One column definition, as the CRD declared it. */
 export interface PrinterColumnDef {
   name: string
-  /** Source provenance; absent when a supported older Radar omits it. Never evaluated by the UI. */
+  /** Source provenance; absent when a supported older KubeAtlas omits it. Never evaluated by the UI. */
   jsonPath?: string
   type?: string
   format?: string
@@ -197,7 +197,7 @@ export function printerColumnWidth(def: PrinterColumnDef): string {
  * the condition sets in generic-status.ts so the two can't drift, plus the
  * names CRDs actually use for the same idea in a printer column.
  *
- * This is the one place Radar interprets vendor data rather than passing it
+ * This is the one place KubeAtlas interprets vendor data rather than passing it
  * through. It is deliberately narrow: the vendor NAMED the column, which is a
  * much stronger signal than inferring health from a value. Anything not on
  * these lists renders as plain text with no health claim.

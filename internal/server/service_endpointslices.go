@@ -58,7 +58,7 @@ func (s *Server) handleServiceEndpointSlices(w http.ResponseWriter, r *http.Requ
 	namespaces, accessCheckFailed := s.parseNamespacesForUserWithStatus(withNamespaceFilter(r, namespace))
 	if _, failure := s.preflightResourceList(r, "endpointslices", endpointSliceGroup, namespaces); failure != nil {
 		if failure.code == readreason.UserNoNamespaceAccess && accessCheckFailed {
-			failure = readFailuref(readreason.UserPermissionCheckFailed, "Radar could not determine your namespace access; retry when the permission check is available")
+			failure = readFailuref(readreason.UserPermissionCheckFailed, "KubeAtlas could not determine your namespace access; retry when the permission check is available")
 		}
 		s.writeErrorCode(w, readStatusFor(failure.code), string(failure.code), failure.message)
 		return

@@ -23,7 +23,7 @@ type RunOptions struct {
 	ServedAPIs     []string // e.g. ["apps/v1", "batch/v1beta1"]
 }
 
-// RunFromCache fetches resources from Radar's cache and runs all best-practice
+// RunFromCache fetches resources from KubeAtlas's cache and runs all best-practice
 // checks. namespaces filters to specific namespaces; empty = all.
 func RunFromCache(cache *k8s.ResourceCache, namespaces []string, opts *RunOptions) *bp.ScanResults {
 	if cache == nil {
@@ -168,7 +168,7 @@ func collectWorkloadInput(cache *k8s.ResourceCache, namespaces []string) *bp.Che
 // CRD: that path calls EnsureWatching, which starts a persistent informer
 // per GVR. On a cluster with the Upbound AWS provider (~1000 CRDs), one
 // audit run would permanently start informers for every kind and the
-// process would grow unbounded. Instead, the audit acts on what Radar is
+// process would grow unbounded. Instead, the audit acts on what KubeAtlas is
 // already observing — MRs/XRs in groups nobody has navigated to yet won't
 // surface until they're watched for some other reason. Acceptable trade-
 // off for an audit pass.

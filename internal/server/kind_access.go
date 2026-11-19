@@ -24,7 +24,7 @@ import (
 //
 // denied names namespaces only when the candidate set came from the caller —
 // their view filter or their RBAC-allowed list. When the scope is "all" the
-// candidates are every namespace in Radar's cache, and naming the denied ones
+// candidates are every namespace in KubeAtlas's cache, and naming the denied ones
 // would disclose namespaces the caller was never shown; partial then carries
 // the fact without the names.
 func (s *Server) listScope(r *http.Request, namespaces []string, group, resource string) (allowed, denied []string, partial, any bool) {
@@ -61,7 +61,7 @@ func (s *Server) listScopeWithCandidates(r *http.Request, namespaces []string, g
 // readWorkspaceKind authorizes and lists one kind, keeping only objects of
 // groups. A namespaced kind falls back to the namespaces the caller may list
 // when a cluster-wide list is denied; a cluster-scoped kind needs the
-// cluster-scope list. Radar's own watch scope counts as well, as for typed
+// cluster-scope list. KubeAtlas's own watch scope counts as well, as for typed
 // kinds: where its identity watches the kind namespace by namespace, what it
 // does not hold is unread (uncached), never empty and never syncing forever.
 func (s *Server) readWorkspaceKind(r *http.Request, cache *k8s.ResourceCache, k integration.WorkspaceKind, namespaces, groups []string, budget *syncBudget) (integration.KindAccess, []*unstructured.Unstructured) {
@@ -145,7 +145,7 @@ func (b *syncBudget) listBlocking(dc *k8s.DynamicResourceCache, gvr schema.Group
 	return nil, integration.ErrDynamicNotSynced
 }
 
-// readWorkspaceKindEverywhere reads a kind in every namespace. When Radar's
+// readWorkspaceKindEverywhere reads a kind in every namespace. When KubeAtlas's
 // identity watches it only namespace by namespace, a cluster-wide read never
 // syncs (or is refused outright); each watched namespace that has synced is
 // read instead and the rest stays unread, unnamed (the caller did not name the
@@ -155,13 +155,13 @@ func readWorkspaceKindEverywhere(ctx context.Context, cache *k8s.ResourceCache, 
 	if err == nil {
 		return acc, list
 	}
-	radarDenied := apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err)
-	if !errors.Is(err, integration.ErrDynamicNotSynced) && !radarDenied {
+	kubeatlasDenied := apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err)
+	if !errors.Is(err, integration.ErrDynamicNotSynced) && !kubeatlasDenied {
 		return kindAccessFromListError(k, err), nil
 	}
 	dc, gvr, watched, ok := dynamicNamespaceWatches(k, budget)
 	if !ok {
-		if radarDenied {
+		if kubeatlasDenied {
 			return integration.KindAccess{State: integration.KindCoverageUncached}, nil
 		}
 		return integration.KindAccess{State: integration.KindCoverageSyncing}, nil
@@ -186,8 +186,8 @@ func readWorkspaceKindEverywhere(ctx context.Context, cache *k8s.ResourceCache, 
 }
 
 // readWorkspaceKindIn reads each allowed namespace on its own, which starts
-// that namespace's watch when Radar watches the kind namespace by namespace. A
-// namespace Radar's identity cannot watch, or that has not synced in time, is
+// that namespace's watch when KubeAtlas watches the kind namespace by namespace. A
+// namespace KubeAtlas's identity cannot watch, or that has not synced in time, is
 // unread: uncached, named only when the caller named the scope.
 func readWorkspaceKindIn(ctx context.Context, cache *k8s.ResourceCache, k integration.WorkspaceKind, groups []string, acc integration.KindAccess, allowed []string, callerScoped bool, budget *syncBudget) (integration.KindAccess, []*unstructured.Unstructured) {
 	read := map[string]bool{}
@@ -234,7 +234,7 @@ func kindAccessFromListError(k integration.WorkspaceKind, err error) integration
 	case errors.Is(err, integration.ErrDynamicNotSynced):
 		return integration.KindAccess{State: integration.KindCoverageSyncing}
 	case apierrors.IsForbidden(err) || apierrors.IsUnauthorized(err):
-		// Radar's own identity may not watch it; the caller's access was checked first.
+		// KubeAtlas's own identity may not watch it; the caller's access was checked first.
 		return integration.KindAccess{State: integration.KindCoverageUncached}
 	default:
 		log.Printf("[workspace] Failed to list %s.%s: %v", k.Kind, k.Group, err)
@@ -242,7 +242,7 @@ func kindAccessFromListError(k integration.WorkspaceKind, err error) integration
 	}
 }
 
-// dynamicNamespaceWatches returns the namespaces Radar's identity watches k in
+// dynamicNamespaceWatches returns the namespaces KubeAtlas's identity watches k in
 // when it holds no cluster-wide informer for it.
 func dynamicNamespaceWatches(k integration.WorkspaceKind, budget *syncBudget) (*k8s.DynamicResourceCache, schema.GroupVersionResource, []string, bool) {
 	discovery, dc := budget.dynamicDependencies()

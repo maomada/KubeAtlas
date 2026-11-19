@@ -44,7 +44,7 @@ func newServer(includeWrites, includeExec bool, instructions string) *mcpsdk.Ser
 
 // privateCacheScope marks every cacheable result (server/discover, the list
 // methods, resources/read) as cacheable only by the requesting user's client.
-// Radar answers with one caller's RBAC-filtered view of one cluster, so a
+// KubeAtlas answers with one caller's RBAC-filtered view of one cluster, so a
 // shared intermediary must not serve it to anyone else; the SDK's default
 // scope is "public".
 func privateCacheScope(_ context.Context, _ mcpsdk.Request, c *mcpsdk.Cacheable) {
@@ -85,9 +85,9 @@ func newApplyServer() *mcpsdk.Server {
 func NewApplyHandler() http.Handler { return handlerForServer(newApplyServer()) }
 
 // NewInvestigationHandler creates the private read-only MCP transport used by
-// Radar's built-in investigation runner. It deliberately has a separate mount
+// KubeAtlas's built-in investigation runner. It deliberately has a separate mount
 // from the public /mcp-readonly surface: the evidence marker is an internal
-// correlation protocol between Radar and its agent adapters, not part of the
+// correlation protocol between KubeAtlas and its agent adapters, not part of the
 // normal tool result contract. It sends no server instructions: the agent
 // already runs under investigation.SystemPrompt.
 func NewInvestigationHandler(refs *investigationrefs.Registry) http.Handler {
@@ -167,7 +167,7 @@ func investigationEvidenceProducerText(result *mcpsdk.CallToolResult) string {
 // expose ordered text content to the model; their stream adapters remove this
 // marker and retain the reference separately before persisting the tool result.
 // Tool-level error results are marked too: they are not citable as causal proof,
-// but their exact Radar provenance lets Findings report an honest failed check.
+// but their exact KubeAtlas provenance lets Findings report an honest failed check.
 func annotateInvestigationEvidenceReference(result *mcpsdk.CallToolResult, ref string) {
 	marker := &mcpsdk.TextContent{
 		Text: investigation.RefMarker(ref),
@@ -190,7 +190,7 @@ func handlerForServer(server *mcpsdk.Server) http.Handler {
 	// The MCP SDK auto-enables DNS-rebinding protection (Host header must be
 	// loopback) when the connection arrives on a loopback address. That blocks
 	// Docker-isolated callers reaching us via host.docker.internal. Allow
-	// opt-out via env for bench setups. Radar's own Host check still applies
+	// opt-out via env for bench setups. KubeAtlas's own Host check still applies
 	// in front of /mcp: such callers also need --listen-address=0.0.0.0 and
 	// --allowed-hosts=host.docker.internal.
 	if os.Getenv("KUBEATLAS_MCP_DISABLE_LOCALHOST_PROTECTION") == "1" {
@@ -207,7 +207,7 @@ func handlerForServer(server *mcpsdk.Server) http.Handler {
 	// wrap the handler so a malicious page can't drive the local MCP server.
 	//
 	// KUBEATLAS_MCP_DISABLE_ORIGIN_PROTECTION=1 fully bypasses the wrapper. Use
-	// ONLY in trusted environments where radar is reached from a known
+	// ONLY in trusted environments where kubeatlas is reached from a known
 	// non-localhost address (e.g. Docker-isolated bench agents calling via
 	// host.docker.internal). Never set in user-facing installs.
 	if os.Getenv("KUBEATLAS_MCP_DISABLE_ORIGIN_PROTECTION") == "1" {

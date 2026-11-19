@@ -137,7 +137,7 @@ func TestPodTemplateCandidatesDiscloseUncachedLimitRanges(t *testing.T) {
 	}
 	omitted := []templateDifference{{path: "containers[app].resources.limits.memory", resource: corev1.ResourceMemory, resourceKind: "limits", templateMissing: true}}
 	_, coverage := NewCacheProvider().templateCandidates(templateTestPod(), omitted, podTemplateAccess{cluster: func(string, string) bool { return false }})
-	if !strings.Contains(strings.Join(coverage, " "), "LimitRange defaults were not inspected: Radar does not cache LimitRanges") {
+	if !strings.Contains(strings.Join(coverage, " "), "LimitRange defaults were not inspected: KubeAtlas does not cache LimitRanges") {
 		t.Fatalf("uncached LimitRanges not disclosed: %v", coverage)
 	}
 }
@@ -266,7 +266,7 @@ func TestPodTemplateWebhookCandidatesDiscloseUnreadableNamespaceLabels(t *testin
 		t.Fatalf("unreadable PriorityClass not disclosed: %v", coverage)
 	}
 	_, coverage = NewCacheProvider().templateCandidates(pod, omitted, podTemplateAccess{})
-	if got := strings.Join(coverage, " "); !strings.Contains(got, "PriorityClasses were not inspected: Radar has not cached them.") {
+	if got := strings.Join(coverage, " "); !strings.Contains(got, "PriorityClasses were not inspected: KubeAtlas has not cached them.") {
 		t.Fatalf("uncached PriorityClasses not disclosed: %v", coverage)
 	}
 }

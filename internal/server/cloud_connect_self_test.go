@@ -64,7 +64,7 @@ func TestInspectSelfInstallDegradesWithoutIdentity(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/api/cloud/connect/self", nil)
 
 	for _, tc := range []struct{ ns, deployment string }{
-		{"", ""}, {"radar", ""}, {"", "radar"},
+		{"", ""}, {"kubeatlas", ""}, {"", "kubeatlas"},
 	} {
 		self := srv.inspectSelfInstall(t.Context(), req, tc.ns, tc.deployment)
 		if self.Ownership != "unknown" || self.Namespace != "" || self.Release != "" {
@@ -116,12 +116,12 @@ func TestVerifiedControllerIgnoresCandidateOrder(t *testing.T) {
 			Verification: cloudinstall.ControllerStale,
 		},
 		{
-			Ref:          subject.Ref{Group: "helm.toolkit.fluxcd.io", Kind: "HelmRelease", Namespace: "flux-system", Name: "radar"},
+			Ref:          subject.Ref{Group: "helm.toolkit.fluxcd.io", Kind: "HelmRelease", Namespace: "flux-system", Name: "kubeatlas"},
 			Verification: cloudinstall.ControllerVerified,
 		},
 	}
 	owner := verifiedController(candidates)
-	if owner == nil || owner.Ref.Name != "radar" {
+	if owner == nil || owner.Ref.Name != "kubeatlas" {
 		t.Fatalf("owner = %+v, want the verified HelmRelease", owner)
 	}
 	if got := wizardMethodFor(owner.Ref); got != "flux" {

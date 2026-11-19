@@ -1,3 +1,4 @@
+import { hasKubeAtlasEvidence } from '@maomada/k8s-ui/utils/legacy-brand';
 import {
   apiVersionToGroup,
   knownKindForPluralWithGroup,
@@ -108,7 +109,7 @@ function collectEstablishedTargetPods(
       if (
         item.kind !== "tool" ||
         item.tool !== "diagnose" ||
-        item.radarEvidence !== true ||
+        !hasKubeAtlasEvidence(item) ||
         item.status !== "done" ||
         // Confirmed success, the same test the sources use. This set is what
         // proves a Prometheus selector is about the target, so a result that
@@ -166,7 +167,7 @@ export function projectInvestigationEvidence(
       // Full-local agents may load user MCP servers whose bare tool names collide
       // with KubeAtlas's. Only results matched by the server to the active private
       // transport ledger may enter the surface labelled "KubeAtlas evidence".
-      if (item.radarEvidence !== true) continue;
+      if (!hasKubeAtlasEvidence(item)) continue;
       const source: InvestigationEvidenceSource = {
         id: investigationEvidenceSourceId(turnIndex, item.id),
         turnIndex,

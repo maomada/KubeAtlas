@@ -1,4 +1,4 @@
-import { useRadarFeature } from '../../api/client'
+import { useKubeAtlasFeature } from '../../api/client'
 import { useState } from 'react'
 import { isApiGroup } from '@maomada/k8s-ui'
 import type { RenderDiagnoseAction } from '../../context/DiagnoseCustomization'
@@ -60,7 +60,7 @@ export const cnpgHost = {
 }
 
 function CNPGDiagnoseForServer({ render, context }: { render: RenderDiagnoseAction; context: Parameters<RenderDiagnoseAction>[0] }) {
-  const { support } = useRadarFeature('cnpgWorkspace')
+  const { support } = useKubeAtlasFeature('cnpgWorkspace')
   return support === 'supported'
     ? <CNPGInvestigationAction namespace={context.namespace} name={context.name} render={render} context={context} />
     : render(context)

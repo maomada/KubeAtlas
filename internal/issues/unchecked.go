@@ -29,7 +29,7 @@ type uncheckedEntry struct {
 	whole bool
 }
 
-// add records the source and reason. A zero kind records a gap Radar can't
+// add records the source and reason. A zero kind records a gap KubeAtlas can't
 // pin to particular kinds.
 func (u *uncheckedSet) add(source issuesapi.UncheckedSourceName, reason issuesapi.UncheckedReason, kind issuesapi.UncheckedKind) {
 	if u == nil {
@@ -82,7 +82,7 @@ func (u *uncheckedSet) list() []issuesapi.UncheckedSource {
 }
 
 // typedIssueKind is a built-in kind whose own problems the curated detectors
-// read from Radar's typed resource cache.
+// read from KubeAtlas's typed resource cache.
 type typedIssueKind struct {
 	key           string // informer key, as k8s.ResourceCache names it
 	group         string
@@ -123,9 +123,9 @@ func (p *CacheProvider) typedKindReadiness(key string) k8s.KindReadiness {
 }
 
 // recordUnloadedTypedKinds records the typed kinds in scope whose cache is
-// still loading or gave up loading. A kind Radar has no informer for at all
+// still loading or gave up loading. A kind KubeAtlas has no informer for at all
 // (its own RBAC disabled it) is not listed: the response's visibility summary
-// already says which kinds Radar can't read.
+// already says which kinds KubeAtlas can't read.
 func recordUnloadedTypedKinds(p Provider, f Filters, unchecked *uncheckedSet) {
 	rp, ok := p.(typedKindReadinessProvider)
 	if !ok {

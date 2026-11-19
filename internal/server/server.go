@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"io"
 	"io/fs"
 	"log"
@@ -186,7 +187,7 @@ type Server struct {
 	yamlSchemaFetchGroup  singleflight.Group
 
 	// aiMu guards aiDiagnoser and aiRuns: refreshAIEngine turns the engine on
-	// when an agent CLI is installed while Radar runs. Read them through
+	// when an agent CLI is installed while KubeAtlas runs. Read them through
 	// aiEngine / aiRunManager.
 	aiMu sync.RWMutex
 	// aiDiagnoser drives a local agent CLI for AI investigations (nil until a
@@ -287,7 +288,7 @@ func New(cfg Config) *Server {
 				s.trustedOrigins[normalized] = struct{}{}
 			}
 		}
-		log.Printf("Trusting these origins to make changes in addition to Radar's own address: %s", strings.Join(cfg.TrustedOrigins, ", "))
+		log.Printf("Trusting these origins to make changes in addition to KubeAtlas's own address: %s", strings.Join(cfg.TrustedOrigins, ", "))
 	}
 	s.allowedHosts = make(map[string]struct{}, len(cfg.AllowedHosts)+len(cfg.TrustedOrigins))
 	for _, host := range cfg.AllowedHosts {
@@ -307,7 +308,7 @@ func New(cfg Config) *Server {
 		}
 	}
 	if s.allowAnyHost && !cfg.AuthConfig.Enabled() && !cloud.IsLoopbackHostname(cfg.ListenAddress) {
-		log.Printf("WARNING: --allowed-hosts=* turns off Host validation; any web page that rebinds its hostname to this address can use Radar")
+		log.Printf("WARNING: --allowed-hosts=* turns off Host validation; any web page that rebinds its hostname to this address can use KubeAtlas")
 	}
 	opencost.PublishCurrencyResolver(s.openCostCurrency)
 	s.cloudInstall = newCloudInstallManager(cfg.CloudConnect)
@@ -442,8 +443,8 @@ func (s *Server) basePathHandler(app http.Handler) http.Handler {
 
 // hintRootRequestUnderBasePath explains, once, the misconfiguration that
 // otherwise presents only as an unexplained browser redirect loop: an ingress
-// that strips the prefix sitting in front of a Radar that also serves under it.
-// Radar sends the browser to {basePath}/, the ingress strips it again, and the
+// that strips the prefix sitting in front of a KubeAtlas that also serves under it.
+// KubeAtlas sends the browser to {basePath}/, the ingress strips it again, and the
 // two bounce until the browser gives up with ERR_TOO_MANY_REDIRECTS.
 //
 // Phrased as a hint rather than an error because reaching / is legitimate — a
@@ -452,7 +453,7 @@ func (s *Server) basePathHandler(app http.Handler) http.Handler {
 func (s *Server) hintRootRequestUnderBasePath() {
 	s.rootHintOnce.Do(func() {
 		log.Printf("[base-path] serving under %s; a request arrived for / and was redirected to %s/. "+
-			"If the browser reports too many redirects, the ingress in front of Radar is stripping the prefix: "+
+			"If the browser reports too many redirects, the ingress in front of KubeAtlas is stripping the prefix: "+
 			"either stop stripping it, or unset --base-path / chart basePath.", s.basePath, s.basePath)
 	})
 }
@@ -486,7 +487,7 @@ func (s *Server) setupAppRoutes(r chi.Router) {
 		AllowedHeaders: []string{"Accept", "Content-Type"},
 		// Without an expose entry, cross-origin JS reads these as "" and the
 		// timeline client silently falls back to full-ring refetches.
-		ExposedHeaders:   []string{"X-Radar-Timeline-Epoch", "X-Radar-Timeline-Max-Seq", "X-Radar-Timeline-Min-Seq"},
+		ExposedHeaders:   []string{"X-KubeAtlas-Timeline-Epoch", "X-KubeAtlas-Timeline-Max-Seq", "X-KubeAtlas-Timeline-Min-Seq", compat.LegacyTimelineEpochHeader, compat.LegacyTimelineMaxHeader, compat.LegacyTimelineMinHeader},
 		AllowCredentials: true,
 	}))
 
@@ -855,7 +856,7 @@ func (s *Server) setupAppRoutes(r chi.Router) {
 			})
 			imageHandlers.RegisterRoutes(r)
 
-			// Prometheus metrics routes. Every metrics read runs with Radar's
+			// Prometheus metrics routes. Every metrics read runs with KubeAtlas's
 			// own Prometheus access, so each route authorizes the caller
 			// through this gate before querying — see prometheusAuthGate.
 			prometheuspkg.SetAuthGate(s.prometheusAuthGate)
@@ -1040,7 +1041,7 @@ func (s *Server) setupAppRoutes(r chi.Router) {
 	// OAuth discovery probes from MCP HTTP clients. Without this, the frontend
 	// catch-all answers /.well-known/oauth-* with HTML 200, which newer
 	// claude-code parses as a broken OAuth flow and aborts MCP registration.
-	// Radar's MCP server is unauthenticated when run locally; signal that
+	// KubeAtlas's MCP server is unauthenticated when run locally; signal that
 	// cleanly with a 404 so clients proceed without an auth handshake.
 	r.Get("/.well-known/oauth-protected-resource", http.NotFound)
 	r.Get("/.well-known/oauth-authorization-server", http.NotFound)
@@ -1075,8 +1076,8 @@ func (s *Server) openCostRouteScope() opencost.RouteScope {
 	}
 }
 
-// NormalizeBasePath canonicalizes the optional URL prefix used when Radar is
-// served behind an ingress path like /radar. Empty and "/" mean root.
+// NormalizeBasePath canonicalizes the optional URL prefix used when KubeAtlas is
+// served behind an ingress path like /kubeatlas. Empty and "/" mean root.
 func NormalizeBasePath(raw string) (string, error) {
 	p := strings.TrimSpace(raw)
 	if p == "" || p == "/" {
@@ -1265,7 +1266,7 @@ func (s *Server) StartWithReady(ready chan<- struct{}) error {
 		// Keep the security warnings fail-safe for any direct Server caller that
 		// opts out of the full CLI/desktop startup block.
 		if shouldWarnUnauthenticatedListener(listenAddress, s.authConfig.Enabled()) && !cloud.Mode() {
-			log.Printf("WARNING: Radar's HTTP listener is unauthenticated and reachable on %s", listenAddress)
+			log.Printf("WARNING: KubeAtlas's HTTP listener is unauthenticated and reachable on %s", listenAddress)
 		}
 		if s.authConfig.Mode == "proxy" && !cloud.Mode() {
 			log.Printf("WARNING: Proxy auth trusts %s and %s; ensure the ingress strips client-supplied identity headers",
@@ -1298,11 +1299,11 @@ func shouldWarnUnauthenticatedListener(listenAddress string, authEnabled bool) b
 	return !authEnabled && !cloud.IsLoopbackHostname(listenAddress)
 }
 
-// localTCPHandler is the handler exposed on Radar's ordinary pod/host listener.
+// localTCPHandler is the handler exposed on KubeAtlas's ordinary pod/host listener.
 // In Cloud mode the full application is served only over the authenticated
 // yamux session; this listener exists solely for kubelet health probes. Without
 // this split, any pod that could reach the ClusterIP Service could spoof the
-// Hub's forwarded identity headers and use Radar as a Kubernetes impersonation
+// Hub's forwarded identity headers and use KubeAtlas as a Kubernetes impersonation
 // deputy.
 func localTCPHandler(next http.Handler) http.Handler {
 	if !cloud.Mode() {
@@ -1521,9 +1522,9 @@ func (s *Server) handleCapabilities(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Port-forward binds a local TCP listener on the radar host and proxies it to
-	// the pod — only reachable when radar runs as a local binary. In-cluster
-	// (Radar Cloud, reached over the tunnel) the listener would live on the radar
+	// Port-forward binds a local TCP listener on the kubeatlas host and proxies it to
+	// the pod — only reachable when kubeatlas runs as a local binary. In-cluster
+	// (KubeAtlas Cloud, reached over the tunnel) the listener would live on the kubeatlas
 	// pod, unreachable from the user's browser, so the feature can't work
 	// regardless of RBAC. Force it off after the namespace merge so a clean
 	// per-namespace RBAC grant can't re-enable a capability the runtime can't
@@ -1608,7 +1609,7 @@ func mergeNamespaceCapability(global, namespaced, checkErrored bool) bool {
 // A request that names no namespaces reads everything the caller may see:
 // data reads never inherit a stored view selection. The namespace picker's
 // selection is a remembered UI preference that the UI sends explicitly, so a
-// caller acting as the same user for another purpose (Radar Hub's fan-outs,
+// caller acting as the same user for another purpose (KubeAtlas Hub's fan-outs,
 // background pollers seeded by --namespaces) isn't silently narrowed by a
 // pick made while browsing. The --namespace-scope clamp still applies — it is
 // the real extent of the cache.
@@ -2264,7 +2265,7 @@ func (s *Server) handleListResources(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	namespaces = authz.namespaces
-	// A named namespace Radar knows doesn't exist is a gap and is never read:
+	// A named namespace KubeAtlas knows doesn't exist is a gap and is never read:
 	// an empty read there would say it holds nothing.
 	if target.explicit && namespaces != nil {
 		namespaces = slices.DeleteFunc(slices.Clone(namespaces), func(ns string) bool { return !slices.Contains(target.namespaces, ns) })
@@ -2887,7 +2888,8 @@ func (s *Server) handleGetResource(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method == http.MethodHead {
 		// Distinguish an authorized resource lookup from an upstream 404.
-		w.Header().Set("X-Radar-Resource-Read", "true")
+		w.Header().Set("X-KubeAtlas-Resource-Read", "true")
+		w.Header().Set(compat.LegacyResourceReadHeader, "true")
 	}
 
 	// A found object proves existence before its store can prove a miss.
@@ -3145,7 +3147,7 @@ func (s *Server) handleGetResource(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !cache.KindCoversNamespace("limitranges", namespace) {
-			s.writeError(w, http.StatusForbidden, "Radar does not have LimitRange visibility for the requested namespace")
+			s.writeError(w, http.StatusForbidden, "KubeAtlas does not have LimitRange visibility for the requested namespace")
 			return
 		}
 		resource, err = cache.LimitRanges().LimitRanges(namespace).Get(name)
@@ -4071,9 +4073,11 @@ func (s *Server) handleChanges(w http.ResponseWriter, r *http.Request) {
 	// store is re-created (process restart, context switch), so a client
 	// holding a cursor from another epoch must full-resync instead of
 	// trusting an empty delta as "nothing new".
-	w.Header().Set("X-Radar-Timeline-Epoch", strconv.FormatInt(timeline.ObservationStart().UnixNano(), 10))
+	w.Header().Set("X-KubeAtlas-Timeline-Epoch", strconv.FormatInt(timeline.ObservationStart().UnixNano(), 10))
+	w.Header().Set(compat.LegacyTimelineEpochHeader, strconv.FormatInt(timeline.ObservationStart().UnixNano(), 10))
 	if maxSeq > 0 {
-		w.Header().Set("X-Radar-Timeline-Max-Seq", strconv.FormatInt(maxSeq, 10))
+		w.Header().Set("X-KubeAtlas-Timeline-Max-Seq", strconv.FormatInt(maxSeq, 10))
+		w.Header().Set(compat.LegacyTimelineMaxHeader, strconv.FormatInt(maxSeq, 10))
 	}
 	// The store's oldest retained seq lets a consumer pulling forward from a
 	// cursor detect that events below its cursor were evicted while it was
@@ -4086,7 +4090,8 @@ func (s *Server) handleChanges(w http.ResponseWriter, r *http.Request) {
 	// the Max-Seq header's marshaling and its skip-when-zero convention: an
 	// empty store reports OldestSeq==0, so the header is omitted, not sent as 0.
 	if minSeq := clampMinSeqToPage(retainedFloor, pageMinSeq); minSeq > 0 {
-		w.Header().Set("X-Radar-Timeline-Min-Seq", strconv.FormatInt(minSeq, 10))
+		w.Header().Set("X-KubeAtlas-Timeline-Min-Seq", strconv.FormatInt(minSeq, 10))
+		w.Header().Set(compat.LegacyTimelineMinHeader, strconv.FormatInt(minSeq, 10))
 	}
 	s.writeJSON(w, events)
 }
@@ -5153,7 +5158,7 @@ func (s *Server) handleCAPIClusterConnect(w http.ResponseWriter, r *http.Request
 
 	// Use %q on user-influenced values (context name derived from an uploaded
 	// kubeconfig YAML, temp path partly includes the system TMPDIR) so a
-	// crafted context name can't inject forged log lines when Radar's stderr
+	// crafted context name can't inject forged log lines when KubeAtlas's stderr
 	// is scraped by a log aggregator. CodeQL alert "Log entries created from
 	// user input".
 	log.Printf("[capi] Connected to workload cluster %s/%s (context: %q, kubeconfig: %q)", ns, name, qualifiedName, mergedPath)
@@ -5263,14 +5268,14 @@ func (s *Server) writeTimelineQueryError(w http.ResponseWriter, err error) {
 const timelineQueryPingTimeout = 2 * time.Second
 
 // writeTimelineDatabaseUnreachable is the one answer for a PostgreSQL database
-// Radar can't connect to, whether it never answered at startup or went away later,
+// KubeAtlas can't connect to, whether it never answered at startup or went away later,
 // so the page says the same thing in both cases. `detail` is the driver's error
 // with the password already redacted, for the operator to act on.
 func (s *Server) writeTimelineDatabaseUnreachable(w http.ResponseWriter, detail string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusServiceUnavailable)
 	payload := map[string]string{
-		"error":      "Timeline history is unavailable because Radar can't connect to its PostgreSQL database. Radar keeps retrying. Its logs have the details: search them for [timeline].",
+		"error":      "Timeline history is unavailable because KubeAtlas can't connect to its PostgreSQL database. KubeAtlas keeps retrying. Its logs have the details: search them for [timeline].",
 		"error_code": "timeline_database_unreachable",
 		"detail":     detail,
 	}
@@ -5279,12 +5284,12 @@ func (s *Server) writeTimelineDatabaseUnreachable(w http.ResponseWriter, detail 
 	}
 }
 
-// requireCloudRole gates a handler for one of Radar's own features (config,
+// requireCloudRole gates a handler for one of KubeAtlas's own features (config,
 // settings, integrations) on the caller's Cloud role tier. Returns true if the
 // request should proceed.
 //
 // Outside Cloud, callers with no Cloud role (OSS, OIDC) bypass the gate —
-// radar OSS keeps using only K8s RBAC for authz, so the single-user laptop
+// kubeatlas OSS keeps using only K8s RBAC for authz, so the single-user laptop
 // case is never 403'd out of its own config. Under Cloud, a caller with no
 // tier is denied, and a tier below `min` returns 403 with
 // error_code=cloud_role_insufficient.
@@ -5296,11 +5301,11 @@ func (s *Server) requireCloudRole(w http.ResponseWriter, r *http.Request, min au
 	}
 	// The no-role bypass exists for OSS, where no Cloud roles exist. Under
 	// Cloud every person carries a tier, so a caller without one is a
-	// synthetic identity (radar:system) and must not reach Radar's own config.
+	// synthetic identity (kubeatlas:system) and must not reach KubeAtlas's own config.
 	if role == auth.RoleNone && cloudMode() {
-		log.Printf("[settings] Denied %s for %q: no Radar Cloud role on a Cloud request: %q", opName, username, r.URL.Path)
+		log.Printf("[settings] Denied %s for %q: no KubeAtlas Cloud role on a Cloud request: %q", opName, username, r.URL.Path)
 		s.writeErrorCode(w, http.StatusForbidden, auth.ErrCodeCloudRoleInsufficient,
-			"This request has no Radar Cloud role, so it cannot "+opName+".")
+			"This request has no KubeAtlas Cloud role, so it cannot "+opName+".")
 		return false
 	}
 	if role.AtLeast(min) {
@@ -5308,12 +5313,12 @@ func (s *Server) requireCloudRole(w http.ResponseWriter, r *http.Request, min au
 	}
 	log.Printf("[settings] Cloud role %q denied %s for user %q (need at least %q): %q", role, opName, username, min, r.URL.Path)
 	s.writeErrorCode(w, http.StatusForbidden, auth.ErrCodeCloudRoleInsufficient,
-		"Your Radar Cloud role ("+role.String()+") cannot "+opName+". Requires "+string(min)+" or higher.")
+		"Your KubeAtlas Cloud role ("+role.String()+") cannot "+opName+". Requires "+string(min)+" or higher.")
 	return false
 }
 
 // requireHelmSourceConfigWrite gates the registered OCI chart sources. They are
-// shared Radar configuration that upgrade discovery resolves against, so they
+// shared KubeAtlas configuration that upgrade discovery resolves against, so they
 // take the owner gate rather than the caller's cluster RBAC.
 func (s *Server) requireHelmSourceConfigWrite(w http.ResponseWriter, r *http.Request) bool {
 	return s.requireConfigEditable(w, r) && s.requireCloudRole(w, r, auth.RoleOwner, "manage Helm chart sources")
@@ -5349,7 +5354,7 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	resp := map[string]string{"status": "logged out"}
-	// Clearing Radar's cookie alone doesn't switch users: the proxy
+	// Clearing KubeAtlas's cookie alone doesn't switch users: the proxy
 	// re-injects the identity header on the next request. Redirect to the
 	// proxy's sign-out URL so the upstream session is torn down too.
 	if s.authConfig.ProxyLogoutURL != "" {
@@ -5364,7 +5369,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		"authMode":    s.authConfig.Mode,
 	}
 	// Tells the frontend whether proxy-mode logout can tear down the upstream
-	// session (vs only clearing Radar's cookie), so it can warn the user.
+	// session (vs only clearing KubeAtlas's cookie), so it can warn the user.
 	if s.authConfig.Mode == "proxy" {
 		resp["proxyLogoutConfigured"] = s.authConfig.ProxyLogoutURL != ""
 	}
@@ -5733,13 +5738,13 @@ func memoizedAuthorizer(base func(group, resource, namespace, verb string) (bool
 
 // Settings handlers
 
-// cloudMode reports whether Radar is running under Radar Cloud. Reads
+// cloudMode reports whether KubeAtlas is running under KubeAtlas Cloud. Reads
 // the resolved deployment mode from internal/cloud (which normalizes
 // the KUBEATLAS_CLOUD_MODE env var via strconv.ParseBool, so common typos
 // like "True" / "1" don't silently degrade to OSS mode). When true,
 // user-scoped settings fields (theme, pinnedKinds) are owned by
 // Cloud's user_preferences table — not settings.json — because a
-// single in-cluster Radar is shared across every Cloud user of the
+// single in-cluster KubeAtlas is shared across every Cloud user of the
 // cluster and can't meaningfully store per-user state.
 func cloudMode() bool {
 	return cloud.Mode()
@@ -5793,7 +5798,7 @@ func (s *Server) handlePutSettings(w http.ResponseWriter, r *http.Request) {
 	// doesn't silently succeed and cause a cluster-shared settings.json
 	// to get mutated by one user.
 	if cloudMode() && (patch.Theme != "" || patch.PinnedKinds != nil) {
-		s.writeError(w, http.StatusBadRequest, "theme and pinnedKinds are managed by Radar Cloud; use /api/preferences instead")
+		s.writeError(w, http.StatusBadRequest, "theme and pinnedKinds are managed by KubeAtlas Cloud; use /api/preferences instead")
 		return
 	}
 	result, err := settings.Update(func(current *settings.Settings) {
@@ -5983,7 +5988,7 @@ func (s *Server) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if !s.requireConfigEditable(w, r) {
 		return
 	}
-	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify Radar configuration") {
+	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify KubeAtlas configuration") {
 		return
 	}
 	var updated config.Config
@@ -6080,7 +6085,7 @@ func (s *Server) handleApplyPrometheusURL(w http.ResponseWriter, r *http.Request
 	if !s.requireConfigEditable(w, r) {
 		return
 	}
-	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify Radar configuration") {
+	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify KubeAtlas configuration") {
 		return
 	}
 	if s.localConnections != nil && s.configManagement() == "local" {
@@ -6127,14 +6132,14 @@ func (s *Server) handleApplyPrometheusURL(w http.ResponseWriter, r *http.Request
 	currentURL, currentHeaders := prometheuspkg.CurrentConfig()
 	previous := config.Load()
 	if body.Headers != nil && (s.promHeaderFlags || len(previous.PrometheusHeadersFromEnv) > 0) {
-		s.writeError(w, http.StatusConflict, "Prometheus headers are configured outside Settings. Update their startup flags, environment references or Helm values, then restart Radar; no changes were saved.")
+		s.writeError(w, http.StatusConflict, "Prometheus headers are configured outside Settings. Update their startup flags, environment references or Helm values, then restart KubeAtlas; no changes were saved.")
 		return
 	}
 
 	// On restart, URL or header flags can split a saved endpoint/credential pair.
 	// Bind edits to the immutable startup URL, not the mutable running client.
 	if (s.promURLFlag || s.promHeaderFlags) && (s.effectiveConfig == nil || !sameIntegrationOrigin(rawURL, s.effectiveConfig.PrometheusURL)) {
-		s.writeError(w, http.StatusConflict, "Prometheus is configured by startup flags. Update the URL and header flags together, then restart Radar to set or change the server, or enable auto-discovery.")
+		s.writeError(w, http.StatusConflict, "Prometheus is configured by startup flags. Update the URL and header flags together, then restart KubeAtlas to set or change the server, or enable auto-discovery.")
 		return
 	}
 
@@ -6145,7 +6150,7 @@ func (s *Server) handleApplyPrometheusURL(w http.ResponseWriter, r *http.Request
 		}
 		if len(previous.PrometheusHeadersFromEnv) > 0 &&
 			(!sameIntegrationOrigin(rawURL, currentURL) || previous.PrometheusURL != "" && !sameIntegrationOrigin(rawURL, previous.PrometheusURL)) {
-			s.writeError(w, http.StatusConflict, "Prometheus headers are loaded from environment references in the configuration file. Update the URL and header references together in that file, then restart Radar.")
+			s.writeError(w, http.StatusConflict, "Prometheus headers are loaded from environment references in the configuration file. Update the URL and header references together in that file, then restart KubeAtlas.")
 			return
 		}
 		if body.Headers == nil &&

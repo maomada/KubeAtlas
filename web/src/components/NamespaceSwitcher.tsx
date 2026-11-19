@@ -17,7 +17,7 @@ interface NamespaceSwitcherProps {
 /**
  * OSS KubeAtlas's namespace scope control — a thin data container over the shared
  * presentational NamespacePicker (@maomada/k8s-ui). Wires KubeAtlas's own API
- * hooks; Radar Hub supplies its own container over the per-cluster apiBase.
+ * hooks; KubeAtlas Hub supplies its own container over the per-cluster apiBase.
  */
 export const NamespaceSwitcher = forwardRef<NamespaceSwitcherHandle, NamespaceSwitcherProps>(function NamespaceSwitcher(
   { className, disabled, disabledTooltip, variant, label },

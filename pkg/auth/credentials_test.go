@@ -20,15 +20,15 @@ func TestIsSystemIdentity(t *testing.T) {
 		groups []string
 		want   bool
 	}{
-		{"radar:system:hub-timeline-puller", []string{"radar:system"}, true},
-		{"radar:ai:org_1", []string{"radar:ai:reader"}, true},
-		{"radar:system:", []string{"radar:system"}, false},
-		{"radar:ai:", []string{"radar:ai:reader"}, false},
-		{"radar:system:x", []string{"radar:ai:reader"}, false},
-		{"radar:ai:org_1", []string{"radar:system"}, false},
-		{"radar:system:x", []string{"radar:system", "radar:owner"}, false},
-		{"radar:system:x", nil, false},
-		{"alice", []string{"radar:system"}, false},
+		{"kubeatlas:system:hub-timeline-puller", []string{"kubeatlas:system"}, true},
+		{"kubeatlas:ai:org_1", []string{"kubeatlas:ai:reader"}, true},
+		{"kubeatlas:system:", []string{"kubeatlas:system"}, false},
+		{"kubeatlas:ai:", []string{"kubeatlas:ai:reader"}, false},
+		{"kubeatlas:system:x", []string{"kubeatlas:ai:reader"}, false},
+		{"kubeatlas:ai:org_1", []string{"kubeatlas:system"}, false},
+		{"kubeatlas:system:x", []string{"kubeatlas:system", "kubeatlas:owner"}, false},
+		{"kubeatlas:system:x", nil, false},
+		{"alice", []string{"kubeatlas:system"}, false},
 	} {
 		if got := IsSystemIdentity(tc.user, tc.groups); got != tc.want {
 			t.Errorf("IsSystemIdentity(%q, %v) = %v, want %v", tc.user, tc.groups, got, tc.want)

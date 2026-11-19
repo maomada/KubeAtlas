@@ -43,7 +43,7 @@ const (
 // Reason codes explaining a non-ready status. The bare four-state enum
 // collapses RBAC denial and probe failure into "deferred", which leaves an
 // operator with an empty policy view and no way to tell "nothing is violating"
-// from "Radar cannot see". The reason code makes that distinction sayable.
+// from "KubeAtlas cannot see". The reason code makes that distinction sayable.
 const (
 	ReasonNoDiscovery  = "discovery_unavailable"
 	ReasonNotInstalled = "kyverno_not_installed"
@@ -480,7 +480,7 @@ func firstServed(served func(schema.GroupVersionResource) bool, candidates []sch
 // rather than just the first: on a cluster that has enabled openreports but
 // hasn't produced a violation yet, both families are legitimately empty, and
 // locking onto the first would leave the group Kyverno is about to write to
-// unwatched — reports would appear in the cluster and never in Radar, with the
+// unwatched — reports would appear in the cluster and never in KubeAtlas, with the
 // status still claiming `ready`.
 // The two cluster interactions are injected so the selection rules can be
 // tested without a live apiserver: `served` reports whether a GVR is
@@ -747,7 +747,7 @@ func ResetPolicyReportIndex() {
 	policyReportInit = new(sync.Once)
 }
 
-// PolicyReportFamily is one report family Radar indexes, with the resource name
+// PolicyReportFamily is one report family KubeAtlas indexes, with the resource name
 // a finding is read from at each scope.
 type PolicyReportFamily struct {
 	Group         string
@@ -755,7 +755,7 @@ type PolicyReportFamily struct {
 	ClusterScoped string
 }
 
-// PolicyReportFamilies are the two families Radar indexes. They share no
+// PolicyReportFamilies are the two families KubeAtlas indexes. They share no
 // resource names, and a cluster may serve either or both — Kyverno 1.15+ writes
 // to openreports.io — so authorizing against one name asks about a resource that
 // may not exist here. The namespaced/cluster-scoped split matters for the same

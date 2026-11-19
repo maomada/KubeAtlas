@@ -1159,8 +1159,8 @@ func TestCompose_StaleSecretEnvSurvivesAsStableWorkloadIssue(t *testing.T) {
 }
 
 func TestCompose_ReadyStaleSecretEnvWorkloadDetectionKeepsAgentGuidance(t *testing.T) {
-	const message = "Deployment/catalog has 2 Ready pods with running containers that started before Radar observed Secret keys they reference change: 2 app containers started at or before 2026-07-25T10:00:00Z and reference Secret/db-conn key password as env DB_PASSWORD; Radar observed that key change at 2026-07-25T10:05:00Z. Kubernetes reads Secret-backed env values only when a container starts."
-	const cause = "Radar observed Secret keys referenced by these Ready containers' environment change after the containers started; Kubernetes does not refresh Secret-backed environment variables in running containers."
+	const message = "Deployment/catalog has 2 Ready pods with running containers that started before KubeAtlas observed Secret keys they reference change: 2 app containers started at or before 2026-07-25T10:00:00Z and reference Secret/db-conn key password as env DB_PASSWORD; KubeAtlas observed that key change at 2026-07-25T10:05:00Z. Kubernetes reads Secret-backed env values only when a container starts."
+	const cause = "KubeAtlas observed Secret keys referenced by these Ready containers' environment change after the containers started; Kubernetes does not refresh Secret-backed environment variables in running containers."
 	const action = "Confirm no rollout is already replacing the affected pods, then restart Deployment/catalog so its containers re-read Secret-backed environment variables."
 	p := &fakeProvider{problems: []k8s.Detection{{
 		Group: "apps", Kind: "Deployment", Namespace: "shop", Name: "catalog",
@@ -2948,9 +2948,9 @@ func TestAPIServiceHPA_MissingRequestNotAttributed(t *testing.T) {
 	}
 }
 
-func TestAPIServiceHPA_MissingRequestNotAttributedWhenRadarLeadsTheReason(t *testing.T) {
+func TestAPIServiceHPA_MissingRequestNotAttributedWhenKubeAtlasLeadsTheReason(t *testing.T) {
 	// The same case as above in the shape the workload detector now produces:
-	// Radar's reading of the condition leads the message and the controller's
+	// KubeAtlas's reading of the condition leads the message and the controller's
 	// own sentence no longer appears in it. The guard has to recognise this
 	// spelling too, or a workload whose pods lack resource requests gets blamed
 	// on a metrics API outage.

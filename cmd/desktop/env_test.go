@@ -30,7 +30,7 @@ func setupEnvTestShell(t *testing.T, shell, profile string) string {
 	wrapper := filepath.Join(dir, "shell")
 	// Source only the fixture, so developer profiles cannot affect the test.
 	script := "#!/bin/sh\nexec " + shell + " " + args +
-		" -c '. \"$1\"; eval \"$2\"' radar-env-test \"${0%/*}/profile\" \"$4\"\n"
+		" -c '. \"$1\"; eval \"$2\"' kubeatlas-env-test \"${0%/*}/profile\" \"$4\"\n"
 	if err := os.WriteFile(wrapper, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -48,7 +48,7 @@ export KUBEATLAS_HUB_URL=https://hub.example.test
 export ANTHROPIC_AUTH_TOKEN='fake=token=='
 export CLAUDE_CODE_USE_BEDROCK=1
 export ANTHROPIC_CUSTOM_HEADERS=$'  first=value\nKUBECONFIG=/tmp/wrong\nANTHROPIC_FAKE_NAME=not-a-variable\nlast=value  \n'
-export ANTHROPIC_MARKERS='__KUBEATLAS_ENV_START____RADAR_ENV_END__'
+export ANTHROPIC_MARKERS='__KUBEATLAS_ENV_START____KUBEATLAS_ENV_END__'
 export ANTHROPIC_CONTROL_BYTES=$'one\001two\002UNRELATED\001three'
 ANTHROPIC_UNEXPORTED=not-captured
 export UNRELATED=not-captured
@@ -66,7 +66,7 @@ export UNRELATED=not-captured
 				"ANTHROPIC_AUTH_TOKEN":     "fake=token==",
 				"CLAUDE_CODE_USE_BEDROCK":  "1",
 				"ANTHROPIC_CUSTOM_HEADERS": "  first=value\nKUBECONFIG=/tmp/wrong\nANTHROPIC_FAKE_NAME=not-a-variable\nlast=value  \n",
-				"ANTHROPIC_MARKERS":        "__KUBEATLAS_ENV_START____RADAR_ENV_END__",
+				"ANTHROPIC_MARKERS":        "__KUBEATLAS_ENV_START____KUBEATLAS_ENV_END__",
 				"ANTHROPIC_CONTROL_BYTES":  "one\x01two\x02UNRELATED\x01three",
 			}
 			for _, key := range shellEnvVars {

@@ -737,7 +737,7 @@ func TestGetDiagnosis_WithSQLiteStore(t *testing.T) {
 		Timestamp: time.Now(),
 		Source:    SourceInformer,
 		Kind:      "TimelineWidget",
-		Namespace: "radar-timeline-test",
+		Namespace: "kubeatlas-timeline-test",
 		Name:      "noise-check",
 		EventType: EventTypeUpdate,
 	}
@@ -745,7 +745,7 @@ func TestGetDiagnosis_WithSQLiteStore(t *testing.T) {
 		t.Fatalf("RecordEvent: %v", err)
 	}
 
-	resp := GetDiagnosis("TimelineWidget", "radar-timeline-test", "noise-check", "", nil)
+	resp := GetDiagnosis("TimelineWidget", "kubeatlas-timeline-test", "noise-check", "", nil)
 	if !resp.StorePresent {
 		t.Fatal("expected diagnostics to see the global store")
 	}

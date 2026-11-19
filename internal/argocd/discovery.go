@@ -22,7 +22,7 @@ import (
 const serverLabelSelector = "app.kubernetes.io/name=argocd-server"
 
 // errNoArgoServer: discovery found nothing to connect to, because the
-// cluster has no argocd-server Service or Radar may not list Services.
+// cluster has no argocd-server Service or KubeAtlas may not list Services.
 // Waiting won't change that, so it is not retried on its own.
 var errNoArgoServer = errors.New("no Argo CD server to connect to")
 

@@ -12,7 +12,7 @@ export interface ScopePillProps {
 
 /**
  * ScopePill is the shared bordered shell for the cluster + namespace "scope"
- * control, used by both OSS Radar's header and Radar Hub's cluster top bar so
+ * control, used by both OSS KubeAtlas's header and KubeAtlas Hub's cluster top bar so
  * the two stay visually identical. It is purely the container: the segments
  * (ClusterSwitcher / NamespacePicker in segment variant) and their data,
  * view-awareness, and any layout pinning are the host's concern.

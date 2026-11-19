@@ -7,7 +7,7 @@ kind: Namespace
 metadata:
   name: demo-argo3-health
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -17,7 +17,7 @@ metadata:
   finalizers:
     - resources-finalizer.argocd.argoproj.io
 spec:
-  project: radar-demo
+  project: kubeatlas-demo
   source:
     repoURL: https://github.com/maomada/KubeAtlas
     targetRevision: main

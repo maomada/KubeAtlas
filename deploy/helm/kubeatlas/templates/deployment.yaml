@@ -16,6 +16,15 @@
 {{- if and .Values.image.digest (not (regexMatch "^sha256:[0-9a-f]{64}$" .Values.image.digest)) }}
 {{- fail "image.digest must be a lowercase sha256 digest" }}
 {{- end }}
+{{- $openCost := .Values.hub.openCostBundle }}
+{{- if or $openCost.sha256 $openCost.data }}
+{{- if or (not .Values.hub.enabled) (not (regexMatch "^[0-9a-f]{64}$" $openCost.sha256)) (empty $openCost.data) (gt (len $openCost.data) 699052) }}
+{{- fail "hub.openCostBundle requires Hub mode and a bounded chart with a lowercase SHA-256 digest" }}
+{{- end }}
+{{- if ne ($openCost.data | b64dec | sha256sum) $openCost.sha256 }}
+{{- fail "hub.openCostBundle chart digest does not match" }}
+{{- end }}
+{{- end }}
 {{- if .Values.hub.enabled }}
 {{- $hubURL := toString .Values.hub.url }}
 {{- $hub := urlParse $hubURL }}
@@ -147,15 +156,15 @@
 {{- if and (eq .Values.timeline.storage "postgres") (not .Values.timeline.postgres.existingSecret) }}
 {{- fail "timeline.postgres.existingSecret is required when timeline.storage=postgres" }}
 {{- end }}
-{{- $basePath := include "radar.basePath" . -}}
-{{- $enroll := include "radar.cloudEnrollmentMode" . | eq "true" -}}
+{{- $basePath := include "kubeatlas.basePath" . -}}
+{{- $enroll := include "kubeatlas.cloudEnrollmentMode" . | eq "true" -}}
 {{- $cloudCA := and $enroll (not (empty .Values.cloud.caBundle)) -}}
 {{- if and .Values.mcp.readOnly (not .Values.mcp.enabled) }}
 {{- fail "mcp.readOnly requires mcp.enabled=true" }}
 {{- end }}
 {{- if $enroll }}
 {{- $e := .Values.cloud.enrollment }}
-{{- /* The same rules Radar applies to --cloud-hub-url at startup, so a bad
+{{- /* The same rules KubeAtlas applies to --cloud-hub-url at startup, so a bad
        address fails here instead of crash looping the pod. */}}
 {{- $hub := urlParse (toString .Values.cloud.hubURL) }}
 {{- $hubHost := regexReplaceAll ":[0-9]*$" $hub.host "" | trimPrefix "[" | trimSuffix "]" | lower }}
@@ -178,10 +187,10 @@
 {{- fail "cloud.enrollment.key and cloud.enrollment.existingSecret are mutually exclusive: set only one (prefer existingSecret so the key stays out of the Helm release)" }}
 {{- end }}
 {{- if and $e.key (not (hasPrefix "rhe_" (toString $e.key))) }}
-{{- fail "cloud.enrollment.key must be a Radar Hub enrollment key, which starts with rhe_. An owner creates one in Radar Hub under Settings > Enrollment keys. On a self-hosted Hub, the install key from the Hub's config works too." }}
+{{- fail "cloud.enrollment.key must be a KubeAtlas Hub enrollment key, which starts with rhe_. An owner creates one in KubeAtlas Hub under Settings > Enrollment keys. On a self-hosted Hub, the install key from the Hub's config works too." }}
 {{- end }}
 {{- if ne (int .Values.replicaCount) 1 }}
-{{- fail "replicaCount must be 1 when Radar joins with cloud.enrollment: the Hub keeps one connection per cluster, so any other replica would only wait for it" }}
+{{- fail "replicaCount must be 1 when KubeAtlas joins with cloud.enrollment: the Hub keeps one connection per cluster, so any other replica would only wait for it" }}
 {{- end }}
 {{- if .Values.cloud.insecureSkipVerify }}
 {{- fail "cloud.insecureSkipVerify cannot be used with cloud.enrollment: the enrollment key would be sent to an unverified server. Give the Hub's CA with cloud.caBundle instead" }}
@@ -192,35 +201,35 @@
 {{- if $enroll }}
 {{- $tag := toString .Values.image.tag }}
 {{- if and (regexMatch "^v?[0-9]+\\.[0-9]+\\.[0-9]+" $tag) (semverCompare "<1.18.2-0" $tag) }}
-{{- fail (printf "cloud.enrollment requires Radar 1.18.2 or later, but image.tag pins %s. Unset image.tag to use the chart's version, or pin 1.18.2 or later." $tag) }}
+{{- fail (printf "cloud.enrollment requires KubeAtlas 1.18.2 or later, but image.tag pins %s. Unset image.tag to use the chart's version, or pin 1.18.2 or later." $tag) }}
 {{- end }}
 {{- end }}
 {{- if and $basePath .Values.cloud.enabled }}
 {{- fail "basePath is not supported with cloud.enabled=true: the legacy Cloud mode owns the URL path, and the binary refuses the combination at startup — unset one of them" }}
 {{- end }}
-{{- /* URLs registered at the IdP have to carry the prefix: Radar's OIDC routes
+{{- /* URLs registered at the IdP have to carry the prefix: KubeAtlas's OIDC routes
        move under it, and an unprefixed URI is not routed here, so login fails
        after the callback rather than at install time. */}}
 {{- if $basePath }}
 {{- range $key := list "redirectURL" "postLogoutRedirectURL" }}
 {{- $val := get $.Values.auth.oidc $key }}
 {{- /* Match on whole path segments of the URL's path. Comparing the whole URL
-       string lets the authority satisfy the prefix (basePath /radar against
-       https://radar.example.com/auth/callback), and a bare string prefix on the
-       path lets a different segment satisfy it (/radartools/auth/callback). Same
+       string lets the authority satisfy the prefix (basePath /kubeatlas against
+       https://kubeatlas.example.com/auth/callback), and a bare string prefix on the
+       path lets a different segment satisfy it (/kubeatlastools/auth/callback). Same
        rule the server applies when routing: equal, or followed by a slash. */}}
 {{- $p := (urlParse $val).path }}
 {{- if and $val (not (or (eq $p $basePath) (hasPrefix (printf "%s/" $basePath) $p))) }}
-{{- fail (printf "auth.oidc.%s (%s) must be under basePath %q — Radar serves /auth/* below the prefix, so the IdP would send the browser to a path that is not routed to Radar" $key $val $basePath) }}
+{{- fail (printf "auth.oidc.%s (%s) must be under basePath %q — KubeAtlas serves /auth/* below the prefix, so the IdP would send the browser to a path that is not routed to KubeAtlas" $key $val $basePath) }}
 {{- end }}
 {{- end }}
 {{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "radar.fullname" . }}
+  name: {{ include "kubeatlas.fullname" . }}
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 spec:
   replicas: {{ .Values.replicaCount }}
   {{- /* Enrollment: the Hub keeps one connection per cluster. In a rolling
@@ -232,14 +241,14 @@ spec:
   {{- end }}
   selector:
     matchLabels:
-      {{- include "radar.selectorLabels" . | nindent 6 }}
+      {{- include "kubeatlas.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
-        {{- /* Radar decides what it can watch at startup and keeps serving its
+        {{- /* KubeAtlas decides what it can watch at startup and keeps serving its
                cache after a grant is revoked, so a grant change needs a new pod.
                auth.mode and cloud.enabled also shape the ClusterRole, but they
                already change the container args. */}}
@@ -248,14 +257,14 @@ spec:
         checksum/hub: {{ toJson .Values.hub | sha256sum }}
         {{- end }}
         {{- if not .Values.cloud.enabled }}
-        checksum/operator-settings: {{ include "radar.operatorSettings" . | sha256sum }}
+        checksum/operator-settings: {{ include "kubeatlas.operatorSettings" . | sha256sum }}
         {{- end }}
         {{- if $cloudCA }}
-        {{- /* Radar reads the CA bundle once at startup. */}}
+        {{- /* KubeAtlas reads the CA bundle once at startup. */}}
         checksum/cloud-ca: {{ .Values.cloud.caBundle | sha256sum }}
         {{- end }}
       labels:
-        {{- include "radar.selectorLabels" . | nindent 8 }}
+        {{- include "kubeatlas.selectorLabels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -264,7 +273,7 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ include "radar.serviceAccountName" . }}
+      serviceAccountName: {{ include "kubeatlas.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- with .Values.initContainers }}
@@ -287,7 +296,7 @@ spec:
             {{- with .Values.trustedOrigins }}
             - {{ printf "--trusted-origins=%s" (join "," .) | quote }}
             {{- end }}
-            {{- $allowedHosts := list (printf "%s.%s" (include "radar.fullname" .) .Release.Namespace) }}
+            {{- $allowedHosts := list (printf "%s.%s" (include "kubeatlas.fullname" .) .Release.Namespace) }}
             {{- range .Values.allowedHosts }}{{ $allowedHosts = append $allowedHosts . }}{{ end }}
             {{- if .Values.ingress.enabled }}
             {{- range .Values.ingress.hosts }}{{ with .host }}{{ $allowedHosts = append $allowedHosts . }}{{ end }}{{ end }}
@@ -420,7 +429,7 @@ spec:
             {{- end }}
             {{- if $enroll }}
             - {{ printf "--cloud-hub-url=%s" .Values.cloud.hubURL | quote }}
-            - --cloud-enrollment-key-file=/etc/radar/cloud-enrollment/key
+            - --cloud-enrollment-key-file=/etc/kubeatlas/cloud-enrollment/key
             {{- with .Values.cloud.clusterName }}
             - {{ printf "--cluster-name=%s" . | quote }}
             {{- end }}
@@ -442,7 +451,7 @@ spec:
             {{- /* cloud.token is injected via KUBEATLAS_CLOUD_TOKEN env var below, not the command line */}}
             {{- end }}
             {{- if $cloudCA }}
-            - --cloud-ca-file=/etc/radar/cloud-ca/ca.crt
+            - --cloud-ca-file=/etc/kubeatlas/cloud-ca/ca.crt
             {{- end }}
             {{- /* extraArgs come last: a repeated scalar flag wins, a repeatable one is appended */}}
             {{- range .Values.extraArgs }}
@@ -455,7 +464,7 @@ spec:
           env:
             {{- if not .Values.cloud.enabled }}
             - name: KUBEATLAS_OPERATOR_SETTINGS_FILE
-              value: /etc/radar/operator/settings.json
+              value: /etc/kubeatlas/operator/settings.json
             {{- end }}
             {{- if .Values.cost.source }}
             - name: KUBEATLAS_COST_SOURCE
@@ -517,12 +526,12 @@ spec:
             - name: HELM_DATA_HOME
               value: "/tmp/helm/data"
             {{- if .Values.cloud.enabled }}
-            # Signals cloud-mode to the Radar binary: forces --auth-mode=proxy,
+            # Signals cloud-mode to the KubeAtlas binary: forces --auth-mode=proxy,
             # accepts forwarded identity headers from the tunnel, disables
-            # startup-config fields that don't apply under hosted Radar Cloud.
+            # startup-config fields that don't apply under hosted KubeAtlas Cloud.
             - name: KUBEATLAS_CLOUD_MODE
               value: "true"
-            {{- if include "radar.userTokenMode" . | eq "true" }}
+            {{- if include "kubeatlas.userTokenMode" . | eq "true" }}
             - name: KUBEATLAS_AUTH_K8S_CREDENTIALS
               value: "user-token"
             {{- end }}
@@ -574,7 +583,7 @@ spec:
                   name: {{ .Values.timeline.postgres.existingSecret }}
                   key: {{ .Values.timeline.postgres.secretKey }}
             {{- end }}
-            # Downward-API identity. Always emitted: Radar needs to know which
+            # Downward-API identity. Always emitted: KubeAtlas needs to know which
             # object it is for read-only self-description (Cloud connect
             # handoff), which carries no RBAC implication. Whether it may
             # actually patch itself is decided by the apiserver against
@@ -584,19 +593,27 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
-            # Pin the in-cluster reachability probe to radar's own deployed image.
-            # This is the no-RBAC fallback for when the runtime self-read of radar's
+            # Pin the in-cluster reachability probe to kubeatlas's own deployed image.
+            # This is the no-RBAC fallback for when the runtime self-read of kubeatlas's
             # pod can't run; an explicit --reachability-image / config still wins,
-            # and the self-read (radar's live pod image) is preferred when available.
+            # and the self-read (kubeatlas's live pod image) is preferred when available.
             - name: KUBEATLAS_IMAGE
               value: {{ if .Values.image.digest }}{{ printf "%s@%s" .Values.image.repository .Values.image.digest | quote }}{{ else }}{{ printf "%s:%s" .Values.image.repository (.Values.image.tag | default .Chart.AppVersion) | quote }}{{ end }}
             - name: MY_DEPLOYMENT_NAME
-              value: {{ include "radar.fullname" . }}
-            # The Helm release name, reported to Radar Cloud on connect so the
+              value: {{ include "kubeatlas.fullname" . }}
+            # The Helm release name, reported to KubeAtlas Cloud on connect so the
             # dashboard's token-rotation command targets this release instead
-            # of assuming `radar`. Read-only self-description, like the two above.
+            # of assuming `kubeatlas`. Read-only self-description, like the two above.
             - name: KUBEATLAS_HELM_RELEASE
               value: {{ .Release.Name | quote }}
+            {{- if $openCost.sha256 }}
+            - name: KUBEATLAS_OPENCOST_CHART_PATH
+              value: /etc/kubeatlas/opencost/opencost.tgz
+            - name: KUBEATLAS_OPENCOST_CHART_SHA256
+              value: {{ $openCost.sha256 | quote }}
+            - name: KUBEATLAS_OPENCOST_IMAGE_REGISTRY
+              value: {{ lower (get (urlParse .Values.hub.url) "host") | quote }}
+            {{- end }}
             {{- with .Values.env }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -625,7 +642,7 @@ spec:
           volumeMounts:
             {{- if not .Values.cloud.enabled }}
             - name: operator-settings
-              mountPath: /etc/radar/operator
+              mountPath: /etc/kubeatlas/operator
               readOnly: true
             {{- end }}
             - name: tmp
@@ -638,13 +655,19 @@ spec:
             {{- end }}
             {{- if $enroll }}
             - name: cloud-enrollment-key
-              mountPath: /etc/radar/cloud-enrollment
+              mountPath: /etc/kubeatlas/cloud-enrollment
               readOnly: true
             {{- end }}
             {{- if .Values.hub.enabled }}
             - name: hub-token
               mountPath: /etc/kubeatlas/hub
               readOnly: true
+            {{- if $openCost.sha256 }}
+            - name: hub-opencost
+              mountPath: /etc/kubeatlas/opencost/opencost.tgz
+              subPath: opencost.tgz
+              readOnly: true
+            {{- end }}
             {{- if .Values.hub.caSecret }}
             - name: hub-ca
               mountPath: /etc/kubeatlas/hub-ca
@@ -653,7 +676,7 @@ spec:
             {{- end }}
             {{- if $cloudCA }}
             - name: cloud-ca
-              mountPath: /etc/radar/cloud-ca
+              mountPath: /etc/kubeatlas/cloud-ca
               readOnly: true
             {{- end }}
             {{- with .Values.extraVolumeMounts }}
@@ -663,7 +686,7 @@ spec:
         {{- if not .Values.cloud.enabled }}
         - name: operator-settings
           configMap:
-            name: {{ include "radar.fullname" . }}-operator-settings
+            name: {{ include "kubeatlas.fullname" . }}-operator-settings
         {{- end }}
         - name: tmp
           emptyDir: {}
@@ -672,17 +695,22 @@ spec:
         {{- if and .Values.persistence.enabled (eq .Values.timeline.storage "sqlite") }}
         - name: data
           persistentVolumeClaim:
-            claimName: {{ include "radar.fullname" . }}
+            claimName: {{ include "kubeatlas.fullname" . }}
         {{- end }}
         {{- if $enroll }}
         - name: cloud-enrollment-key
           secret:
-            secretName: {{ include "radar.cloudEnrollmentKeySecretName" . }}
+            secretName: {{ include "kubeatlas.cloudEnrollmentKeySecretName" . }}
             items:
               - key: {{ ternary (.Values.cloud.enrollment.existingSecretKey | default "key") "key" (not (empty .Values.cloud.enrollment.existingSecret)) }}
                 path: key
         {{- end }}
         {{- if .Values.hub.enabled }}
+        {{- if $openCost.sha256 }}
+        - name: hub-opencost
+          configMap:
+            name: {{ printf "%s-oc-%s" (include "kubeatlas.fullname" . | trunc 43 | trimSuffix "-") ($openCost.sha256 | trunc 15) }}
+        {{- end }}
         - name: hub-token
           secret:
             secretName: {{ .Values.hub.tokenSecret }}
@@ -703,7 +731,7 @@ spec:
         {{- if $cloudCA }}
         - name: cloud-ca
           configMap:
-            name: {{ include "radar.fullname" . }}-cloud-ca
+            name: {{ include "kubeatlas.fullname" . }}-cloud-ca
             items:
               - key: ca.crt
                 path: ca.crt

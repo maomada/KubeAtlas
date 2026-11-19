@@ -40,7 +40,7 @@ kind: Namespace
 metadata:
   name: demo-flux-stale
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: GitRepository

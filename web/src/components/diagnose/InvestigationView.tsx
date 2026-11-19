@@ -993,7 +993,7 @@ export function InvestigationView({
     [navigateRouter, onRevealDestination],
   );
   const openApplyOwner = useMemo(() => {
-    // A host without resource navigation (Radar Hub's fleet Diagnose panel)
+    // A host without resource navigation (KubeAtlas Hub's fleet Diagnose panel)
     // has no route for the owner either.
     if (!onOpenResource) return undefined;
     const owner = applyOwner;

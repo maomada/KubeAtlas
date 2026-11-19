@@ -12,8 +12,8 @@ import (
 )
 
 // TestHandleTimelineEvents_WireContract runs the shared timeline wire
-// conformance suite (exported from the radar OSS pkg module) against OSS's own
-// live handler. The same suite backs radar-hub against its handler, so both
+// conformance suite (exported from the kubeatlas OSS pkg module) against OSS's own
+// live handler. The same suite backs kubeatlas-hub against its handler, so both
 // servers prove they speak the one contract; each declares its capabilities and
 // the suite gates the deliberate divergences on them. OSS's capabilities:
 // "<epoch>:<seq>" cursors, foreign cursor → 400, no coverage records, a 10k row

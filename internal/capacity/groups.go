@@ -688,7 +688,7 @@ func autoscalerHealthRollup(status *autoscalerstatus.Status, children []capacity
 
 // buildClusterScheduling sums scheduled requests vs allocatable across ALL
 // observed nodes and bound pods — every manager included — and reuses
-// Karpenter's in-flight capacity, the only future segment Radar can observe.
+// Karpenter's in-flight capacity, the only future segment KubeAtlas can observe.
 func buildClusterScheduling(snapshot Snapshot, model *Model, asOf time.Time) *capacityapi.SchedulingCapacity {
 	if len(snapshot.Nodes) == 0 {
 		return nil

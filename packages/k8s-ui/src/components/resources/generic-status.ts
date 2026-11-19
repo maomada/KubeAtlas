@@ -2,7 +2,7 @@ import type { HealthLevel } from './resource-utils'
 import { getGatewayPolicyStatus } from './gateway-policy-status'
 
 /**
- * Derives a status for a resource with no dedicated renderer — a CRD Radar
+ * Derives a status for a resource with no dedicated renderer — a CRD KubeAtlas
  * hasn't curated. Shared by the table cell, the column filter and sort, the
  * drawer dispatch and the generic renderer, so a row cannot show one status
  * and its filter dropdown offer another.

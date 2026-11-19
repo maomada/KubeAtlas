@@ -99,20 +99,20 @@ func TestWatchSelfUpgradeAdvertisementIgnoresTransientMismatch(t *testing.T) {
 }
 
 func TestCloudHandshakeHeaders_Release(t *testing.T) {
-	with := cloudHandshakeHeaders(Config{Token: "rhc_test", Release: "radar-prod"}, false)
-	if got := with.Get("X-Radar-Release"); got != "radar-prod" {
-		t.Fatalf("X-Radar-Release = %q, want radar-prod", got)
+	with := cloudHandshakeHeaders(Config{Token: "rhc_test", Release: "kubeatlas-prod"}, false)
+	if got := with.Get("X-KubeAtlas-Release"); got != "kubeatlas-prod" {
+		t.Fatalf("X-KubeAtlas-Release = %q, want kubeatlas-prod", got)
 	}
 	// Non-Helm installs have no release; the header must be absent, not
 	// empty, so the hub keeps whatever it last stored.
 	without := cloudHandshakeHeaders(Config{Token: "rhc_test"}, false)
-	if _, ok := without["X-Radar-Release"]; ok {
-		t.Fatal("X-Radar-Release sent with no release configured")
+	if _, ok := without["X-KubeAtlas-Release"]; ok {
+		t.Fatal("X-KubeAtlas-Release sent with no release configured")
 	}
 }
 
 func TestHandshakeRejectionErrorOnlyBlamesTheTokenOn401(t *testing.T) {
-	// Radar Cloud answers the agent handshake with 101, 401 or 500. Any other
+	// KubeAtlas Cloud answers the agent handshake with 101, 401 or 500. Any other
 	// status came from the path in between, which never saw the token, and a
 	// message that blames the credential sends the operator to rotate a token
 	// that was fine.

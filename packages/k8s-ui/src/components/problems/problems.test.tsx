@@ -21,7 +21,7 @@ describe('ProblemMeta', () => {
 describe('problemOriginLabel', () => {
   it('says who measured a measurement, and never calls an issue generic', () => {
     expect(problemOriginLabel({ ...details('Cluster'), source: 'measurement', measuredBy: 'Prometheus' }).label).toBe('Measured by Prometheus')
-    expect(problemOriginLabel(problem('Cluster')).label).toBe('Detected by Radar')
+    expect(problemOriginLabel(problem('Cluster')).label).toBe('Detected by KubeAtlas')
   })
 })
 

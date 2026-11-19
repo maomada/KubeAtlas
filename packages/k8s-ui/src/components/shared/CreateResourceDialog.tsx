@@ -756,7 +756,7 @@ function ApplyErrorBanner({ error, partialCreates, strictCreate, hasPreview }: {
           <span className="font-medium">{parsed.summary}</span>
           {partialCreates.length > 0 && <p className="mt-1">
             停止前已创建：{partialCreates.map(result => `${result.kind} ${result.namespace ? `${result.namespace}/` : ''}${result.name}`).join('、')}。
-            {' '}{recoveringWithReview ? 'Radar 已切换到“应用”模式，以便你审阅并根据当前集群状态继续。' : `${strictCreate ? '此对话框仅用于创建。' : ''}请从清单中移除已创建的对象，然后重试创建。`}
+            {' '}{recoveringWithReview ? 'KubeAtlas 已切换到“应用”模式，以便你审阅并根据当前集群状态继续。' : `${strictCreate ? '此对话框仅用于创建。' : ''}请从清单中移除已创建的对象，然后重试创建。`}
           </p>}
           {parsed.suggestion && !recoveringWithReview && (
             <p className="mt-1 text-red-500/80 dark:text-red-400/80">{parsed.suggestion}</p>

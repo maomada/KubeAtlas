@@ -158,8 +158,8 @@ function ManagerAnswerChip({ manager, status, onOpen, variant }: {
   if (!presentation) return null
   // Several candidates open a menu naming each, so none is reached only
   // through the one shown first; one opens directly.
-  // Every candidate is named; only one Radar found links. A label that names
-  // no namespace stays unlinked: Radar doesn't guess it.
+  // Every candidate is named; only one KubeAtlas found links. A label that names
+  // no namespace stays unlinked: KubeAtlas doesn't guess it.
   const choices = managerChoices(manager).map(c => {
     const owner = gitOpsOwnerFromRef(c.ref)
     return { ...c, owner: c.found && owner?.namespace ? owner : null }
@@ -231,7 +231,7 @@ function ManagerAnswerChip({ manager, status, onOpen, variant }: {
               )}
             >
               <span className="truncate">{managerRefLabel(c.ref)}</span>
-              <span className="text-[11px] text-theme-text-tertiary">{choiceRole(c)}{c.owner ? '' : !c.ref.namespace ? unresolved(c.ref) ? ` · Radar found no ${c.ref.kind} of this name listing it; it may be managed from another cluster` : ` · its label doesn't say which ${c.ref.kind} of this name` : !c.found ? ' · Radar found no such manager you can view' : ''}</span>
+              <span className="text-[11px] text-theme-text-tertiary">{choiceRole(c)}{c.owner ? '' : !c.ref.namespace ? unresolved(c.ref) ? ` · KubeAtlas found no ${c.ref.kind} of this name listing it; it may be managed from another cluster` : ` · its label doesn't say which ${c.ref.kind} of this name` : !c.found ? ' · KubeAtlas found no such manager you can view' : ''}</span>
             </button>
           ))}
         </div>

@@ -161,7 +161,7 @@ func newManagerFixtureOn(mode cloudinstall.ProvisionMode, planMode cloudinstall.
 			consume: make(chan error, 1),
 		},
 	}
-	prepared := &fakePrepared{mode: mode, namespace: "radar", release: "radar"}
+	prepared := &fakePrepared{mode: mode, namespace: "kubeatlas", release: "kubeatlas"}
 	fx.m = &cloudInstallManager{
 		cfg:            CloudConnectConfig{HubAPIURL: "https://api.test.example", HubAppURL: "https://app.test.example"},
 		sharedListener: func() bool { return shared },
@@ -170,7 +170,7 @@ func newManagerFixtureOn(mode cloudinstall.ProvisionMode, planMode cloudinstall.
 				return cloudInstallClients{}, "kind-test", nil
 			},
 			inspectPlan: func(context.Context, cloudInstallClients, string, string) (cloudinstall.InstallPlan, error) {
-				return cloudinstall.InstallPlan{Mode: planMode, Namespace: "radar", Release: "radar", ClusterWideScanError: scanErr}, nil
+				return cloudinstall.InstallPlan{Mode: planMode, Namespace: "kubeatlas", Release: "kubeatlas", ClusterWideScanError: scanErr}, nil
 			},
 			prepare: func(context.Context, cloudInstallClients, cloudinstall.PrepareConfig) (preparedInstall, error) {
 				return prepared, nil
@@ -301,7 +301,7 @@ func TestCloudInstallGitOpsIsBlockedBeforeAnyHubContact(t *testing.T) {
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
-	if blocked == nil || blocked.Reason != "gitops" || !strings.Contains(blocked.Message, "radar cloud install") {
+	if blocked == nil || blocked.Reason != "gitops" || !strings.Contains(blocked.Message, "kubeatlas cloud install") {
 		t.Fatalf("blocked = %+v", blocked)
 	}
 	if st := fx.m.status(); st.State != "idle" {
@@ -312,7 +312,7 @@ func TestCloudInstallGitOpsIsBlockedBeforeAnyHubContact(t *testing.T) {
 func TestCloudInstallPreflightBlockingIsSurfaced(t *testing.T) {
 	fx := newManagerFixture(cloudinstall.ProvisionFresh, cloudinstall.InstallModeFresh, nil)
 	fx.m.backend.preflight = func(context.Context, cloudInstallClients, preparedInstall) (cloudinstall.PreflightResult, error) {
-		return cloudinstall.PreflightResult{Blocking: []string{"create ClusterRoleBinding radar-cloud-owner"}}, nil
+		return cloudinstall.PreflightResult{Blocking: []string{"create ClusterRoleBinding kubeatlas-cloud-owner"}}, nil
 	}
 	_, blocked, err := fx.m.prepare(context.Background())
 	if err != nil {
@@ -326,13 +326,13 @@ func TestCloudInstallPreflightBlockingIsSurfaced(t *testing.T) {
 func TestCloudInstallMultipleInstallsBlockedWithCLIHint(t *testing.T) {
 	fx := newManagerFixture(cloudinstall.ProvisionFresh, cloudinstall.InstallModeFresh, nil)
 	fx.m.backend.inspectPlan = func(context.Context, cloudInstallClients, string, string) (cloudinstall.InstallPlan, error) {
-		return cloudinstall.InstallPlan{}, &cloudinstall.MultipleTargetsError{Targets: []cloudinstall.RadarTarget{{Namespace: "a"}, {Namespace: "b"}}}
+		return cloudinstall.InstallPlan{}, &cloudinstall.MultipleTargetsError{Targets: []cloudinstall.KubeAtlasTarget{{Namespace: "a"}, {Namespace: "b"}}}
 	}
 	_, blocked, err := fx.m.prepare(context.Background())
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
-	if blocked == nil || !strings.Contains(blocked.Message, "radar cloud install --namespace") {
+	if blocked == nil || !strings.Contains(blocked.Message, "kubeatlas cloud install --namespace") {
 		t.Fatalf("blocked = %+v", blocked)
 	}
 }
@@ -407,7 +407,7 @@ func TestCloudInstallApprovalTerminalOutcomes(t *testing.T) {
 }
 
 // A cancel is never provably harmless: the Hub's approval page stays valid
-// until it expires, so an approval can commit after Radar stops polling.
+// until it expires, so an approval can commit after KubeAtlas stops polling.
 func TestCloudInstallCancelBeforeApprovalIsAmbiguous(t *testing.T) {
 	fx := newManagerFixture(cloudinstall.ProvisionFresh, cloudinstall.InstallModeFresh, nil)
 	_, _, err := fx.m.prepare(context.Background())
@@ -821,7 +821,7 @@ func TestCloudInstallProvisionErrorNeverLeaksTokenIntoStatus(t *testing.T) {
 	// Exercise both representations.
 	encoded := base64.StdEncoding.EncodeToString([]byte(testToken))
 	fx.provision.err = fmt.Errorf(
-		`admission webhook "policy.example.com" denied the request: Secret radar-cloud-config has disallowed data: {"token":%q} (raw %s)`,
+		`admission webhook "policy.example.com" denied the request: Secret kubeatlas-cloud-config has disallowed data: {"token":%q} (raw %s)`,
 		encoded, testToken,
 	)
 
@@ -868,8 +868,8 @@ func TestConnectRequestFailureHeadlines(t *testing.T) {
 		err         error
 		wantMessage string
 	}{
-		{"unreachable", &cloud.HubUnreachableError{HubBase: "http://127.0.0.1:9", Err: dial}, "Radar couldn't reach Radar Hub, so no connection was requested."},
-		{"other", errors.New("hub response missing required fields"), "Radar couldn't start the connection request."},
+		{"unreachable", &cloud.HubUnreachableError{HubBase: "http://127.0.0.1:9", Err: dial}, "KubeAtlas couldn't reach KubeAtlas Hub, so no connection was requested."},
+		{"other", errors.New("hub response missing required fields"), "KubeAtlas couldn't start the connection request."},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -892,8 +892,8 @@ func TestConnectRequestFailureHeadlines(t *testing.T) {
 }
 
 func TestInspectBlockedKeepsTheAdoptionTarget(t *testing.T) {
-	plan := cloudinstall.InstallPlan{Mode: cloudinstall.InstallModeAdopt, Namespace: "monitoring", Release: "radar-prod"}
-	denied := apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "radar-cloud-token",
+	plan := cloudinstall.InstallPlan{Mode: cloudinstall.InstallModeAdopt, Namespace: "monitoring", Release: "kubeatlas-prod"}
+	denied := apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "kubeatlas-cloud-token",
 		errors.New(`User "dev" cannot get resource "secrets" in API group "" in the namespace "monitoring"`))
 	blocked, err := inspectBlocked(fmt.Errorf("inspect token Secret: %w", denied), attemptedFor(plan, attemptStagePrepare))
 	if err != nil || blocked == nil {
@@ -904,18 +904,18 @@ func TestInspectBlockedKeepsTheAdoptionTarget(t *testing.T) {
 	}
 	// The link the card builds must still adopt the release inspection found,
 	// not open a fresh install over it.
-	if blocked.Attempted == nil || blocked.Attempted.Mode != "adopt" || blocked.Attempted.Release != "radar-prod" || blocked.Attempted.Namespace != "monitoring" || blocked.Attempted.Stage != attemptStagePrepare {
+	if blocked.Attempted == nil || blocked.Attempted.Mode != "adopt" || blocked.Attempted.Release != "kubeatlas-prod" || blocked.Attempted.Namespace != "monitoring" || blocked.Attempted.Stage != attemptStagePrepare {
 		t.Fatalf("attempted = %+v, want the adoption target", blocked.Attempted)
 	}
 	// A refusal that is not about permissions keeps the target too.
-	refused, err := inspectBlocked(errors.New("Helm release \"radar-prod\" in namespace \"monitoring\" cannot be adopted: already connected"), attemptedFor(plan, attemptStagePrepare))
+	refused, err := inspectBlocked(errors.New("Helm release \"kubeatlas-prod\" in namespace \"monitoring\" cannot be adopted: already connected"), attemptedFor(plan, attemptStagePrepare))
 	if err != nil || refused.Reason != "unsupported" || refused.Attempted == nil || refused.Attempted.Mode != "adopt" {
 		t.Fatalf("refused=%+v err=%v", refused, err)
 	}
 }
 
 func TestInspectBlockedOffersFreshOnlyWhenNothingRunsAndTheScanWasComplete(t *testing.T) {
-	err := errors.New(`secrets is forbidden: User "dev" cannot list resource "secrets" in API group "" in the namespace "radar"`)
+	err := errors.New(`secrets is forbidden: User "dev" cannot list resource "secrets" in API group "" in the namespace "kubeatlas"`)
 	// Mirrors runPrepare's switch over ReleaseInspectError.
 	pick := func(e *cloudinstall.ReleaseInspectError) *cloudInstallAttempted {
 		switch {
@@ -926,16 +926,16 @@ func TestInspectBlockedOffersFreshOnlyWhenNothingRunsAndTheScanWasComplete(t *te
 		}
 		return nil
 	}
-	// A Radar Deployment without matching native-Helm ownership is neither
+	// A KubeAtlas Deployment without matching native-Helm ownership is neither
 	// adoptable nor absent: no target is offered at all.
-	if unmanaged := pick(&cloudinstall.ReleaseInspectError{Namespace: "radar", Release: "radar", Found: true, Existing: false, Err: err}); unmanaged != nil {
+	if unmanaged := pick(&cloudinstall.ReleaseInspectError{Namespace: "kubeatlas", Release: "kubeatlas", Found: true, Existing: false, Err: err}); unmanaged != nil {
 		t.Fatalf("an unmanaged Deployment must not become an install target: %+v", unmanaged)
 	}
-	complete := pick(&cloudinstall.ReleaseInspectError{Namespace: "radar", Release: "radar", Err: err})
+	complete := pick(&cloudinstall.ReleaseInspectError{Namespace: "kubeatlas", Release: "kubeatlas", Err: err})
 	if complete == nil || complete.Mode != "fresh" || !complete.ReleaseUnread {
 		t.Fatalf("a complete scan finding nothing offers fresh, flagged unconfirmed: %+v", complete)
 	}
-	if partial := pick(&cloudinstall.ReleaseInspectError{Namespace: "radar", Release: "radar", ScanIncomplete: true, Err: err}); partial != nil {
+	if partial := pick(&cloudinstall.ReleaseInspectError{Namespace: "kubeatlas", Release: "kubeatlas", ScanIncomplete: true, Err: err}); partial != nil {
 		t.Fatalf("a partial scan establishes nothing: %+v", partial)
 	}
 	blocked, berr := inspectBlocked(err, complete)
@@ -945,7 +945,7 @@ func TestInspectBlockedOffersFreshOnlyWhenNothingRunsAndTheScanWasComplete(t *te
 }
 
 func TestAttemptedForFlagsAFreshPlanFromAPartialScan(t *testing.T) {
-	partial := cloudinstall.InstallPlan{Mode: cloudinstall.InstallModeFresh, Namespace: "radar", Release: "radar", ClusterWideScanError: errors.New("deployments is forbidden")}
+	partial := cloudinstall.InstallPlan{Mode: cloudinstall.InstallModeFresh, Namespace: "kubeatlas", Release: "kubeatlas", ClusterWideScanError: errors.New("deployments is forbidden")}
 	got := attemptedFor(partial, attemptStagePreflight)
 	// The stage reached is still told — the refusals below describe a dry run
 	// that did run — but the target is not one the card may link to.
@@ -957,7 +957,7 @@ func TestAttemptedForFlagsAFreshPlanFromAPartialScan(t *testing.T) {
 	if got := attemptedFor(adopt, attemptStagePreflight); got == nil || got.PartialScan {
 		t.Fatalf("an adopt target is established regardless of scan scope: %+v", got)
 	}
-	complete := cloudinstall.InstallPlan{Mode: cloudinstall.InstallModeFresh, Namespace: "radar", Release: "radar"}
+	complete := cloudinstall.InstallPlan{Mode: cloudinstall.InstallModeFresh, Namespace: "kubeatlas", Release: "kubeatlas"}
 	if got := attemptedFor(complete, attemptStagePreflight); got == nil || got.PartialScan {
 		t.Fatalf("a complete scan establishes fresh: %+v", got)
 	}
@@ -965,7 +965,7 @@ func TestAttemptedForFlagsAFreshPlanFromAPartialScan(t *testing.T) {
 
 func TestGitOpsBlockedCarriesTheVerifiedOwnersMethod(t *testing.T) {
 	stale := cloudinstall.ControllerCandidate{Ref: subject.Ref{Group: "argoproj.io", Kind: "Application", Name: "old"}, Verification: cloudinstall.ControllerStale}
-	verified := cloudinstall.ControllerCandidate{Ref: subject.Ref{Group: "helm.toolkit.fluxcd.io", Kind: "HelmRelease", Name: "radar"}, Verification: cloudinstall.ControllerVerified}
+	verified := cloudinstall.ControllerCandidate{Ref: subject.Ref{Group: "helm.toolkit.fluxcd.io", Kind: "HelmRelease", Name: "kubeatlas"}, Verification: cloudinstall.ControllerVerified}
 	// Candidate order is not confidence order: the stale Argo CD candidate
 	// comes first, and the method must still come from the verified Flux owner.
 	owner := verifiedController([]cloudinstall.ControllerCandidate{stale, verified})
@@ -982,23 +982,23 @@ func TestDiscoverConnectedNamesAlreadyCloudDeployments(t *testing.T) {
 	m.backend.captureClients = func() (cloudInstallClients, string, error) { return cloudInstallClients{}, "kind-dev", nil }
 	m.backend.discover = func(context.Context, cloudInstallClients) (cloudinstall.DiscoveryResult, error) {
 		return cloudinstall.DiscoveryResult{
-			Namespace: []cloudinstall.RadarTarget{
-				{Namespace: "legacy", DeploymentName: "radar", ReleaseName: "radar", Runtime: cloudinstall.DeploymentRuntime{
+			Namespace: []cloudinstall.KubeAtlasTarget{
+				{Namespace: "legacy", DeploymentName: "kubeatlas", ReleaseName: "kubeatlas", Runtime: cloudinstall.DeploymentRuntime{
 					AlreadyCloud: true, CloudTokenConfigured: true,
 				}},
 			},
-			ClusterWide: []cloudinstall.RadarTarget{
+			ClusterWide: []cloudinstall.KubeAtlasTarget{
 				// An explicit default port is still our Hub.
-				{Namespace: "radar", DeploymentName: "radar", ReleaseName: "radar", Runtime: cloudinstall.DeploymentRuntime{
+				{Namespace: "kubeatlas", DeploymentName: "kubeatlas", ReleaseName: "kubeatlas", Runtime: cloudinstall.DeploymentRuntime{
 					AlreadyCloud: true, CloudURLConfigured: true, CloudURL: "wss://api.test.example:443/agent",
 					ClusterNameConfigured: true, ClusterName: "abc123",
 				}},
-				{Namespace: "tools", DeploymentName: "radar", ReleaseName: "radar", Runtime: cloudinstall.DeploymentRuntime{}},
-				{Namespace: "ops", DeploymentName: "radar", Runtime: cloudinstall.DeploymentRuntime{
+				{Namespace: "tools", DeploymentName: "kubeatlas", ReleaseName: "kubeatlas", Runtime: cloudinstall.DeploymentRuntime{}},
+				{Namespace: "ops", DeploymentName: "kubeatlas", Runtime: cloudinstall.DeploymentRuntime{
 					AlreadyCloud: true, CloudURLConfigured: true, CloudURL: "wss://hub.corp.example/agent",
 					ClusterNameConfigured: true, ClusterName: "def456",
 				}},
-				{Namespace: "staging", DeploymentName: "radar", ReleaseName: "radar", Runtime: cloudinstall.DeploymentRuntime{
+				{Namespace: "staging", DeploymentName: "kubeatlas", ReleaseName: "kubeatlas", Runtime: cloudinstall.DeploymentRuntime{
 					AlreadyCloud: true, CloudURLConfigured: true, CloudURL: "wss://api.test.example/agent",
 					ClusterNameConfigured: true, ClusterNameUnresolved: true,
 				}},

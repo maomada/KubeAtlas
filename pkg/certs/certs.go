@@ -1,11 +1,11 @@
-// Package certs unifies a cluster's certificates from the two sources Radar
+// Package certs unifies a cluster's certificates from the two sources KubeAtlas
 // knows about — cert-manager.io Certificate CRs and raw kubernetes.io/tls
 // secrets — into one health-rated, deduplicated list.
 //
 // A cluster that doesn't run cert-manager has only TLS secrets; a cluster that
 // does has both, and the same physical cert appears in each (the Certificate
 // owns a Secret). Aggregate is the single place that reconciles them, so fleet
-// callers (Radar Hub) stay thin pivots and never re-implement the merge.
+// callers (KubeAtlas Hub) stay thin pivots and never re-implement the merge.
 package certs
 
 import (

@@ -62,12 +62,12 @@ func TestHandleChanges_DeltaContract(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("full fetch status = %d, body %s", rr.Code, rr.Body.String())
 	}
-	if rr.Header().Get("X-Radar-Timeline-Epoch") == "" {
-		t.Fatalf("missing X-Radar-Timeline-Epoch header")
+	if rr.Header().Get("X-KubeAtlas-Timeline-Epoch") == "" {
+		t.Fatalf("missing X-KubeAtlas-Timeline-Epoch header")
 	}
-	maxSeqHeader := rr.Header().Get("X-Radar-Timeline-Max-Seq")
+	maxSeqHeader := rr.Header().Get("X-KubeAtlas-Timeline-Max-Seq")
 	if maxSeqHeader == "" {
-		t.Fatalf("missing X-Radar-Timeline-Max-Seq header")
+		t.Fatalf("missing X-KubeAtlas-Timeline-Max-Seq header")
 	}
 	maxSeq, err := strconv.ParseInt(maxSeqHeader, 10, 64)
 	if err != nil || maxSeq <= 0 {
@@ -84,9 +84,9 @@ func TestHandleChanges_DeltaContract(t *testing.T) {
 	// Min-seq advertises the store's oldest retained seq so a consumer can tell
 	// its cursor fell below the retention floor. Nothing evicted here, so it is
 	// the seq of the oldest surviving event.
-	minSeqHeader := rr.Header().Get("X-Radar-Timeline-Min-Seq")
+	minSeqHeader := rr.Header().Get("X-KubeAtlas-Timeline-Min-Seq")
 	if minSeqHeader == "" {
-		t.Fatalf("missing X-Radar-Timeline-Min-Seq header")
+		t.Fatalf("missing X-KubeAtlas-Timeline-Min-Seq header")
 	}
 	minSeq, err := strconv.ParseInt(minSeqHeader, 10, 64)
 	if err != nil || minSeq <= 0 {
@@ -125,7 +125,7 @@ func TestHandleChanges_DeltaContract(t *testing.T) {
 	if rr.Code != http.StatusOK {
 		t.Fatalf("frontier delta status = %d", rr.Code)
 	}
-	if rr.Header().Get("X-Radar-Timeline-Epoch") == "" {
+	if rr.Header().Get("X-KubeAtlas-Timeline-Epoch") == "" {
 		t.Fatalf("frontier delta missing epoch header")
 	}
 
@@ -180,9 +180,9 @@ func TestHandleChanges_MinSeqTracksEviction(t *testing.T) {
 		t.Fatalf("status = %d, body %s", rr.Code, rr.Body.String())
 	}
 
-	minSeqHeader := rr.Header().Get("X-Radar-Timeline-Min-Seq")
+	minSeqHeader := rr.Header().Get("X-KubeAtlas-Timeline-Min-Seq")
 	if minSeqHeader == "" {
-		t.Fatalf("missing X-Radar-Timeline-Min-Seq header")
+		t.Fatalf("missing X-KubeAtlas-Timeline-Min-Seq header")
 	}
 	minSeq, err := strconv.ParseInt(minSeqHeader, 10, 64)
 	if err != nil {

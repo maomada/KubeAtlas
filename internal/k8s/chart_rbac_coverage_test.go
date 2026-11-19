@@ -10,7 +10,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/topology"
 )
 
-// TestChartGrantsEveryWatchedCRDGroup guards against the drift where Radar
+// TestChartGrantsEveryWatchedCRDGroup guards against the drift where KubeAtlas
 // watches an API group the Helm chart never grants. That failure is silent: the
 // informer's list call 403s, the reflector backs off, and the resource simply
 // never appears in the UI — no error, no log most operators would notice. The
@@ -29,7 +29,7 @@ import (
 func TestChartGrantsEveryWatchedCRDGroup(t *testing.T) {
 	granted := chartGrantedAPIGroups(t)
 
-	// group -> a human-readable pointer to where Radar watches it, for the failure message.
+	// group -> a human-readable pointer to where KubeAtlas watches it, for the failure message.
 	watched := map[string]string{}
 	for _, c := range supportedCRDFallbacks {
 		if c.Group != "" {
@@ -50,7 +50,7 @@ func TestChartGrantsEveryWatchedCRDGroup(t *testing.T) {
 
 	for group, source := range watched {
 		if !granted[group] {
-			t.Errorf("API group %q is watched by Radar (%s) but no rule in "+
+			t.Errorf("API group %q is watched by KubeAtlas (%s) but no rule in "+
 				"deploy/helm/kubeatlas/templates/clusterrole.yaml grants it. The informer "+
 				"will 403 and the resource will silently never appear. Add a per-group "+
 				"rule (and values.yaml toggle) granting get/list/watch on %q.",

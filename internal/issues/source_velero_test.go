@@ -520,7 +520,7 @@ func TestVeleroTargetIssues(t *testing.T) {
 	})
 }
 
-// Kinds Radar watches but has no Velero detector for (VolumeSnapshotLocation
+// Kinds KubeAtlas watches but has no Velero detector for (VolumeSnapshotLocation
 // has no populated status.phase; the data-mover kinds are v2 work) must not
 // fabricate issues.
 func TestVeleroUnhandledKindsAreSilent(t *testing.T) {

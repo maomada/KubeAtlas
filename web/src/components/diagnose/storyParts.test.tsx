@@ -11,7 +11,7 @@ const storyDiagnosis: Diagnosis = {
   certainty: "likely",
   unresolved: ["Whether the Atlas password was rotated on the provider side."],
   report:
-    "The container dies on start.\n\n[[radar:evidence=0]]\n\nSo the build changed.",
+    "The container dies on start.\n\n[[kubeatlas:evidence=0]]\n\nSo the build changed.",
   remediation: [
     "Roll back to revision 7",
     "Test the stored password with `mongosh`",
@@ -44,7 +44,7 @@ describe("ResultCard under the story contract", () => {
     expect(html).toContain("Whether the Atlas password was rotated");
     // The story is the host's to render with placed cards: no second copy.
     expect(html).not.toContain("Full analysis");
-    expect(html).not.toContain("[[radar:evidence=0]]");
+    expect(html).not.toContain("[[kubeatlas:evidence=0]]");
   });
 
   it("frames adverse KubeAtlas cards on a healthy verdict by the agent's position, without a coloured box", () => {
@@ -107,7 +107,7 @@ describe("ResultCard under the story contract", () => {
       />,
     );
     expect(html).toContain('data-health-flag="unaddressed"');
-    expect(html).not.toContain("[[radar:evidence=0]]");
+    expect(html).not.toContain("[[kubeatlas:evidence=0]]");
   });
 
   it("keeps the inline story on a read-only earlier healthy assessment", () => {
@@ -120,7 +120,7 @@ describe("ResultCard under the story contract", () => {
           remediation: [],
           unresolved: [],
           report:
-            "The pod is fine.\n\n[[radar:evidence=0]]\n\n" +
+            "The pod is fine.\n\n[[kubeatlas:evidence=0]]\n\n" +
             "Detail. ".repeat(60),
         }}
         section="conclusion"
@@ -129,7 +129,7 @@ describe("ResultCard under the story contract", () => {
       />,
     );
     expect(html).toContain("Full analysis");
-    expect(html).not.toContain("[[radar:evidence=0]]");
+    expect(html).not.toContain("[[kubeatlas:evidence=0]]");
   });
 
   it("lists KubeAtlas's own read limits under Still open beside the agent's items", () => {
@@ -322,7 +322,7 @@ describe("assessmentCopyText", () => {
     expect(text).toContain("Still open:\n- Whether the Atlas password");
     expect(text).toContain("Auth to MongoDB fails");
     expect(text).toContain("So the build changed.");
-    expect(text).not.toContain("[[radar:evidence=0]]");
+    expect(text).not.toContain("[[kubeatlas:evidence=0]]");
     expect(text).toContain(
       "1. [Mitigate] Roll back to revision 7 (only if revision 7 still authenticates)",
     );
@@ -380,7 +380,7 @@ describe("TurnView and assessments", () => {
     expect(html).not.toContain("Apply…");
     // The story is inline here as plain prose, markers stripped.
     expect(html).toContain("Full analysis");
-    expect(html).not.toContain("[[radar:evidence=0]]");
+    expect(html).not.toContain("[[kubeatlas:evidence=0]]");
   });
 
   it("folds the agent's evidence ledger under the turn, out of Findings", () => {

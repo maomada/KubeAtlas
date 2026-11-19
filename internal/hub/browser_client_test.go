@@ -38,7 +38,7 @@ func TestBrowserClientUsesScopedIdentityAndKeepsMCPClosed(t *testing.T) {
 	startSource(t, cloudWebSocketEndpoint(server.URL), "alpha", "token-alpha", source)
 	waitForAgent(t, h, "alpha")
 
-	principal := Principal{UserID: "portal:user", Groups: []string{"radar:viewer"}, ClusterIDs: []string{"alpha"}}
+	principal := Principal{UserID: "portal:user", Groups: []string{"kubeatlas:viewer"}, ClusterIDs: []string{"alpha"}}
 	client, err := h.BrowserHTTPClient("alpha", principal)
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +49,7 @@ func TestBrowserClientUsesScopedIdentityAndKeepsMCPClosed(t *testing.T) {
 	request.Header.Set("Forwarded", "for=attacker")
 	request.Header.Set("Impersonate-User", "attacker")
 	request.Header.Set("X-Forwarded-User", "attacker")
-	request.Header.Set("X-Radar-Role", "admin")
+	request.Header.Set("X-KubeAtlas-Role", "admin")
 	request.Header.Set("Origin", "https://attacker.invalid")
 	request.Header.Set("Sec-Fetch-Site", "cross-site")
 	response, err := client.Do(request)
@@ -61,7 +61,7 @@ func TestBrowserClientUsesScopedIdentityAndKeepsMCPClosed(t *testing.T) {
 		t.Fatalf("status=%d source cookie=%q", response.StatusCode, response.Header.Get("Set-Cookie"))
 	}
 	if len(observations) != 1 || observations[0].UserID != principal.UserID ||
-		len(observations[0].Groups) != 1 || observations[0].Groups[0] != "radar:viewer" ||
+		len(observations[0].Groups) != 1 || observations[0].Groups[0] != "kubeatlas:viewer" ||
 		!observations[0].Tunnel || observations[0].Auth != "" || observations[0].Cookie != "" ||
 		observations[0].Impersonate != "" || observations[0].Host != "localhost" {
 		t.Fatalf("source received untrusted identity or headers: %+v", observations)

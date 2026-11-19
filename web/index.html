@@ -10,7 +10,7 @@
     <script>
       // Prevent flash of wrong theme before React hydrates
       (function() {
-        var t = localStorage.getItem('radar-theme');
+        var t = localStorage.getItem('kubeatlas-theme');
         if (!t) t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
         if (t === 'dark') document.documentElement.classList.add('dark');
         document.documentElement.style.colorScheme = t;
@@ -18,9 +18,9 @@
     </script>
   </head>
   <body>
-    <!-- #radar (not #root): keeps the app-shell layout rule in index.css from
+    <!-- #kubeatlas (not #root): keeps the app-shell layout rule in index.css from
          matching a host app's #root when this ships as a library stylesheet. -->
-    <div id="radar"></div>
+    <div id="kubeatlas"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

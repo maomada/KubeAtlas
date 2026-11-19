@@ -8,10 +8,10 @@ import { MetricsSummary } from "./MetricsSummary";
 import { SeriesLegend } from "./SeriesLegend";
 import type { TimeSeries, ReferenceLine } from "./types";
 
-// Pure presentational Prometheus charts view, shared between radar's WorkloadView
-// and Radar Hub's Application metrics tab. It owns NO data fetching — the host
+// Pure presentational Prometheus charts view, shared between kubeatlas's WorkloadView
+// and KubeAtlas Hub's Application metrics tab. It owns NO data fetching — the host
 // passes status, the selected category/range, the metrics result, and an
-// onConnect callback. radar/web injects its global-apiBase hooks; the hub injects
+// onConnect callback. kubeatlas/web injects its global-apiBase hooks; the hub injects
 // per-cluster tunnel fetches. Built on the AreaChart/MetricsSummary/SeriesLegend
 // primitives already in this package.
 
@@ -140,8 +140,8 @@ export function describePodCoverage(
   const pods = metrics.pods;
   if (pods === undefined) return undefined;
   // Zero is a fact about the workload, not a failure to establish one: a
-  // workload Radar cannot resolve pods for reports an error instead of a
-  // count, so this line never stands for "Radar could not tell".
+  // workload KubeAtlas cannot resolve pods for reports an error instead of a
+  // count, so this line never stands for "KubeAtlas could not tell".
   if (pods === 0)
     return "此工作负载没有正在运行的 Pod，因此没有可绘制的图表";
   const total = metrics.podsTotal ?? pods;

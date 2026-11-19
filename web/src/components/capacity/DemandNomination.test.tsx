@@ -33,7 +33,7 @@ function sourceCoverage(
 const meta: CapacityResponseMeta = {
   schemaVersion: "v1alpha1",
   generatedAt,
-  clusterContext: { contextName: "radar-test-eks", clusterName: "radar-test" },
+  clusterContext: { contextName: "kubeatlas-test-eks", clusterName: "kubeatlas-test" },
   provider: {
     type: "karpenter",
     controllerMode: "self_managed",

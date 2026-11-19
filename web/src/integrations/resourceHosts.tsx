@@ -1,7 +1,7 @@
 import { useMemo } from 'react'
 import { useLocation } from 'react-router-dom'
 import { PaneLoader, type WorkloadExtraTab } from '@maomada/k8s-ui'
-import { useRadarFeature } from '../api/client'
+import { useKubeAtlasFeature } from '../api/client'
 import type { RenderDiagnoseAction } from '../context/DiagnoseCustomization'
 import { apiVersionToGroup } from '../utils/navigation'
 import type { SelectedResource } from '../types'
@@ -86,7 +86,7 @@ export function ResourceDrawerNavigation({ resource }: { resource: SelectedResou
 
 export function useResourceHostFeatures(): HostFeatures {
   // Hook order is fixed here; selected adapters mount components that own their data hooks.
-  const { support } = useRadarFeature('cnpgWorkspace')
+  const { support } = useKubeAtlasFeature('cnpgWorkspace')
   return useMemo(() => ({ cnpgWorkspace: support }), [support])
 }
 

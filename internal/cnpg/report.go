@@ -77,16 +77,16 @@ type CNPGReportSecretRef struct {
 
 // CNPGReportIndex is report.json at the root of the bundle.
 type CNPGReportIndex struct {
-	GeneratedAt  string                `json:"generatedAt"`
-	RadarVersion string                `json:"radarVersion"`
-	Context      string                `json:"context"`
-	RequestedBy  string                `json:"requestedBy,omitempty"`
-	Cluster      CNPGRuntimeObjectRef  `json:"cluster"`
-	Options      ReportOptions         `json:"options"`
-	Contents     []CNPGReportItem      `json:"contents"`
-	Secrets      []CNPGReportSecretRef `json:"secrets"`
-	BoundBytes   int64                 `json:"boundBytes"`
-	Truncated    bool                  `json:"truncated"`
+	GeneratedAt      string                `json:"generatedAt"`
+	KubeAtlasVersion string                `json:"kubeatlasVersion"`
+	Context          string                `json:"context"`
+	RequestedBy      string                `json:"requestedBy,omitempty"`
+	Cluster          CNPGRuntimeObjectRef  `json:"cluster"`
+	Options          ReportOptions         `json:"options"`
+	Contents         []CNPGReportItem      `json:"contents"`
+	Secrets          []CNPGReportSecretRef `json:"secrets"`
+	BoundBytes       int64                 `json:"boundBytes"`
+	Truncated        bool                  `json:"truncated"`
 }
 
 type reportZip struct {
@@ -840,10 +840,10 @@ type cnpgReportBuilder struct {
 }
 
 type ReportMetadata struct {
-	Context      string
-	RequestedBy  string
-	RadarVersion string
-	Now          time.Time
+	Context          string
+	RequestedBy      string
+	KubeAtlasVersion string
+	Now              time.Time
 }
 
 func (s *Reader) Report(ctx context.Context, dyn dynamic.Interface, typed kubernetes.Interface, cluster *unstructured.Unstructured, opts ReportOptions, meta ReportMetadata) ([]byte, string, error) {
@@ -851,7 +851,7 @@ func (s *Reader) Report(ctx context.Context, dyn dynamic.Interface, typed kubern
 	root := fmt.Sprintf("report_cluster_%s_%s", cluster.GetName(), now.Format(compactStamp))
 	var buf bytes.Buffer
 	z := &reportZip{zw: zip.NewWriter(&buf), root: root, limit: reportTotalCap}
-	index := CNPGReportIndex{GeneratedAt: now.Format(time.RFC3339), RadarVersion: meta.RadarVersion, Context: meta.Context, RequestedBy: meta.RequestedBy,
+	index := CNPGReportIndex{GeneratedAt: now.Format(time.RFC3339), KubeAtlasVersion: meta.KubeAtlasVersion, Context: meta.Context, RequestedBy: meta.RequestedBy,
 		Cluster: CNPGRuntimeObjectRef{Namespace: cluster.GetNamespace(), Name: cluster.GetName(), UID: cluster.GetUID()}, Options: opts, BoundBytes: reportTotalCap}
 	b := &cnpgReportBuilder{reader: s, ctx: ctx, dyn: dyn, typed: typed, cluster: cluster, z: z, index: &index, secrets: map[string]map[string]bool{}}
 	b.build(opts)

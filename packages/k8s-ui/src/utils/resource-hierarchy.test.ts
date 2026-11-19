@@ -1452,24 +1452,24 @@ describe('group-qualified lane identity', () => {
 })
 
 describe('app membership outranks topology attachment (grouping=app)', () => {
-  const crashloop: AppMembership = { appKey: 'radar-netdiag/Deployment/crashloop', appName: 'crashloop' }
+  const crashloop: AppMembership = { appKey: 'kubeatlas-netdiag/Deployment/crashloop', appName: 'crashloop' }
 
   const exposesTopo = {
     nodes: [
-      { id: 'service/radar-netdiag/crashloop', kind: 'Service', name: 'crashloop', data: { namespace: 'radar-netdiag' } },
-      { id: 'deployment/radar-netdiag/crashloop', kind: 'Deployment', name: 'crashloop', data: { namespace: 'radar-netdiag' } },
+      { id: 'service/kubeatlas-netdiag/crashloop', kind: 'Service', name: 'crashloop', data: { namespace: 'kubeatlas-netdiag' } },
+      { id: 'deployment/kubeatlas-netdiag/crashloop', kind: 'Deployment', name: 'crashloop', data: { namespace: 'kubeatlas-netdiag' } },
     ],
-    edges: [{ source: 'service/radar-netdiag/crashloop', target: 'deployment/radar-netdiag/crashloop', type: 'exposes' }],
+    edges: [{ source: 'service/kubeatlas-netdiag/crashloop', target: 'deployment/kubeatlas-netdiag/crashloop', type: 'exposes' }],
   } as unknown as Topology
 
   it('keeps two same-app members SIBLINGS under the app header despite an exposes edge', () => {
     const events = [
-      changeEvent('Service', 'radar-netdiag', 'crashloop'),
-      changeEvent('Deployment', 'radar-netdiag', 'crashloop'),
+      changeEvent('Service', 'kubeatlas-netdiag', 'crashloop'),
+      changeEvent('Deployment', 'kubeatlas-netdiag', 'crashloop'),
     ]
     const appIndex = index({
-      'Service/radar-netdiag/crashloop': crashloop,
-      'Deployment/radar-netdiag/crashloop': crashloop,
+      'Service/kubeatlas-netdiag/crashloop': crashloop,
+      'Deployment/kubeatlas-netdiag/crashloop': crashloop,
     })
     const lanes = buildResourceHierarchy({ events, topology: exposesTopo, grouping: 'app', appIndex })
 
@@ -1485,14 +1485,14 @@ describe('app membership outranks topology attachment (grouping=app)', () => {
   })
 
   it('still parents the Deployment under the Service when they belong to DIFFERENT apps', () => {
-    const other: AppMembership = { appKey: 'radar-netdiag/Service/other', appName: 'other' }
+    const other: AppMembership = { appKey: 'kubeatlas-netdiag/Service/other', appName: 'other' }
     const events = [
-      changeEvent('Service', 'radar-netdiag', 'crashloop'),
-      changeEvent('Deployment', 'radar-netdiag', 'crashloop'),
+      changeEvent('Service', 'kubeatlas-netdiag', 'crashloop'),
+      changeEvent('Deployment', 'kubeatlas-netdiag', 'crashloop'),
     ]
     const appIndex = index({
-      'Service/radar-netdiag/crashloop': other,
-      'Deployment/radar-netdiag/crashloop': crashloop,
+      'Service/kubeatlas-netdiag/crashloop': other,
+      'Deployment/kubeatlas-netdiag/crashloop': crashloop,
     })
     const lanes = buildResourceHierarchy({ events, topology: exposesTopo, grouping: 'app', appIndex })
 
@@ -1502,8 +1502,8 @@ describe('app membership outranks topology attachment (grouping=app)', () => {
 
   it('keeps exposes parenting when no app index is supplied (owner grouping)', () => {
     const events = [
-      changeEvent('Service', 'radar-netdiag', 'crashloop'),
-      changeEvent('Deployment', 'radar-netdiag', 'crashloop'),
+      changeEvent('Service', 'kubeatlas-netdiag', 'crashloop'),
+      changeEvent('Deployment', 'kubeatlas-netdiag', 'crashloop'),
     ]
     const lanes = buildResourceHierarchy({ events, topology: exposesTopo, grouping: 'owner' })
     const service = lanes.find((l) => l.kind === 'Service')
@@ -1514,7 +1514,7 @@ describe('app membership outranks topology attachment (grouping=app)', () => {
 describe('structural app members survive the window filter', () => {
   it('keeps a server-declared member visible with no events in the window', () => {
     const member: ResourceLane = {
-      id: 'Service/radar-netdiag/crashloop', kind: 'Service', namespace: 'radar-netdiag',
+      id: 'Service/kubeatlas-netdiag/crashloop', kind: 'Service', namespace: 'kubeatlas-netdiag',
       name: 'crashloop', events: [], isWorkload: false, structuralMember: true,
     }
     expect(isChildVisibleInWindow(member, 0, 1000, { pinned: false, userExpanded: false })).toBe(true)
@@ -1522,7 +1522,7 @@ describe('structural app members survive the window filter', () => {
 
   it('still filters an event-less lane that is NOT a structural member', () => {
     const stray: ResourceLane = {
-      id: 'Pod/radar-netdiag/old-pod', kind: 'Pod', namespace: 'radar-netdiag',
+      id: 'Pod/kubeatlas-netdiag/old-pod', kind: 'Pod', namespace: 'kubeatlas-netdiag',
       name: 'old-pod', events: [], isWorkload: false,
     }
     expect(isChildVisibleInWindow(stray, 0, 1000, { pinned: false, userExpanded: false })).toBe(false)

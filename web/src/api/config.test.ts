@@ -36,8 +36,8 @@ describe('MCP client endpoint', () => {
   })
 
   it('preserves the configured base path', () => {
-    setBasename('/tools/radar')
-    expect(mcpEndpointUrl(true)).toBe(`${window.location.origin}/tools/radar/mcp-readonly`)
+    setBasename('/tools/kubeatlas')
+    expect(mcpEndpointUrl(true)).toBe(`${window.location.origin}/tools/kubeatlas/mcp-readonly`)
   })
 })
 
@@ -80,17 +80,17 @@ describe('stripBasename', () => {
   // navigate() re-applies the basename — the net effect must be the original
   // route, never a doubled one.
   it('round-trips a return path under a base path without doubling', () => {
-    setBasename('/radar')
-    const stored = stripBasename('/radar/resources/pods') + '?namespaces=prod'
+    setBasename('/kubeatlas')
+    const stored = stripBasename('/kubeatlas/resources/pods') + '?namespaces=prod'
     expect(stored).toBe('/resources/pods?namespaces=prod')
     // Restore side strips a second time; already-relative values are untouched.
     expect(stripBasename(stored)).toBe('/resources/pods?namespaces=prod')
   })
 
   it('leaves a nested base path return path relative', () => {
-    setBasename('/tools/radar')
-    expect(stripBasename('/tools/radar/topology')).toBe('/topology')
-    expect(stripBasename(stripBasename('/tools/radar/topology'))).toBe('/topology')
+    setBasename('/tools/kubeatlas')
+    expect(stripBasename('/tools/kubeatlas/topology')).toBe('/topology')
+    expect(stripBasename(stripBasename('/tools/kubeatlas/topology'))).toBe('/topology')
   })
 
   it('inverts routePath', () => {

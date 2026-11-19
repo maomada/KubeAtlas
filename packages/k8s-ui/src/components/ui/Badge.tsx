@@ -23,9 +23,9 @@ export type BadgeSize = 'sm' | 'default'
 //   "tell these sibling options apart". The only place sharing is intended.
 // - structural: ports/paths/hosts/weights/names — neutral data fragments, not a
 //   status. Its own name so it can diverge from severity-neutral later.
-// - agent:    words an AI agent attached to a Radar fact (evidence roles such
+// - agent:    words an AI agent attached to a KubeAtlas fact (evidence roles such
 //   as "Cause" / "Rules out"). Muted brand accent on purpose: never a severity
-//   hue, so an agent's framing can never be mistaken for a Radar finding.
+//   hue, so an agent's framing can never be mistaken for a KubeAtlas finding.
 export type BadgeTone = 'note' | 'accent1' | 'accent2' | 'accent3' | 'structural' | 'agent'
 
 interface BadgeProps {

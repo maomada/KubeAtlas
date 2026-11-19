@@ -542,10 +542,10 @@ export interface TimelineSwimlanesProps {
   onViewModeChange?: (mode: 'list' | 'swimlane') => void
   topology?: Topology
   namespaces?: string[]
-  // RBAC capability flag (was a radar/web context); host passes it. Default false.
+  // RBAC capability flag (was a kubeatlas/web context); host passes it. Default false.
   hasLimitedAccess?: boolean
   // GitOps lane labels deep-link to a controller path; the host decides how to
-  // navigate (radar router push, or cross-route-tree href). When omitted, GitOps lanes
+  // navigate (kubeatlas router push, or cross-route-tree href). When omitted, GitOps lanes
   // fall back to onResourceClick (the resource drawer).
   onNavigatePath?: (path: string) => void
   // Controlled "show deleted" toggle. When omitted the component manages it
@@ -3223,7 +3223,7 @@ export function EventDetailPanel({ events, selectedId, onSelectId, onClose, onRe
             <dt className="text-xs text-theme-text-tertiary">资源</dt>
             <dd className="flex min-w-0 flex-wrap items-center gap-1.5">
               {/* The ONE click target for the resource — the same badge used by
-                  every Radar drawer, so it reads as "this navigates". */}
+                  every KubeAtlas drawer, so it reads as "this navigates". */}
               <ResourceRefBadge
                 resourceRef={{ kind: selected.kind || '事件', namespace: selected.namespace ?? '', name: selected.name, group }}
                 onClick={onResourceClick && canOpenResource ? openResource : undefined}

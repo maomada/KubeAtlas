@@ -9,7 +9,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/ownership/ownershiptest"
 )
 
-// Which manager lists Radar couldn't search stays internal: the state counts
+// Which manager lists KubeAtlas couldn't search stays internal: the state counts
 // it, and for the resource itself OwnershipCoverage.Managers says what its
 // own search missed.
 func TestManagerAnswerCarriesNoSearchCoverage(t *testing.T) {

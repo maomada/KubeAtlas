@@ -179,7 +179,7 @@ export function isBlockingYamlDiagnostic(
   if (source?.startsWith('yaml-schema:')) return false
   if (severity === 'error') return true
   if (severity !== 'warning') return false
-  return code !== '2' && !message?.startsWith('[radar-advisory:deprecated]')
+  return code !== '2' && !message?.startsWith('[kubeatlas-advisory:deprecated]')
 }
 
 export function shouldAutoTriggerYamlSuggestions(
@@ -196,7 +196,7 @@ export function shouldAutoTriggerYamlSuggestions(
 }
 
 function displayDiagnosticMessage(message: string) {
-  return message.replace(/^\[radar-advisory:deprecated\]\s*/, '')
+  return message.replace(/^\[kubeatlas-advisory:deprecated\]\s*/, '')
 }
 
 export function YamlEditor({
@@ -237,7 +237,7 @@ export function YamlEditor({
   >([])
   const editorId = useId()
   const modelPath = useMemo(
-    () => `radar://yaml/${editorId.replace(/[^a-zA-Z0-9_-]/g, '') || 'editor'}.yaml`,
+    () => `kubeatlas://yaml/${editorId.replace(/[^a-zA-Z0-9_-]/g, '') || 'editor'}.yaml`,
     [editorId],
   )
   const theme = useDocumentMonacoTheme()
@@ -293,10 +293,10 @@ export function YamlEditor({
       }
       schemaDisposerRef.current?.()
       const editorWindow = window as typeof window & {
-        __radarMonacoEditor?: unknown
+        __kubeatlasMonacoEditor?: unknown
       }
-      if (editorWindow.__radarMonacoEditor === editorRef.current) {
-        delete editorWindow.__radarMonacoEditor
+      if (editorWindow.__kubeatlasMonacoEditor === editorRef.current) {
+        delete editorWindow.__kubeatlasMonacoEditor
       }
     }
   }, [])
@@ -456,7 +456,7 @@ export function YamlEditor({
     (mountedEditor, monaco) => {
       editorRef.current = mountedEditor
       monacoRef.current = monaco
-      ;(window as typeof window & { __radarMonacoEditor?: unknown }).__radarMonacoEditor =
+      ;(window as typeof window & { __kubeatlasMonacoEditor?: unknown }).__kubeatlasMonacoEditor =
         mountedEditor
       ensureEditableLineStyles()
       mountedEditor.updateOptions({
@@ -520,7 +520,7 @@ export function YamlEditor({
           ) {
             return
           }
-          mountedEditor.trigger('radar-yaml', 'editor.action.triggerSuggest', { auto: true })
+          mountedEditor.trigger('kubeatlas-yaml', 'editor.action.triggerSuggest', { auto: true })
         }, 120)
       })
       publishDiagnostics(mountedEditor, monaco)

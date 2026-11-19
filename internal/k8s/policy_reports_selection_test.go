@@ -293,7 +293,7 @@ func TestSelectReportGVRs_ProbeErrorOnSiblingKeepsReadableOne(t *testing.T) {
 
 // When every served family is legitimately empty, locking onto the first
 // family leaves the group Kyverno may write to unwatched. Reports could then
-// appear in the cluster but not in Radar while the status still claims ready.
+// appear in the cluster but not in KubeAtlas while the status still claims ready.
 func TestSelectReportGVRs_AllEmptyWatchesEveryReadableFamily(t *testing.T) {
 	sel := selectReportGVRs(
 		servedSet(wgReports, wgClusterReports, orReports, orClusterReports),

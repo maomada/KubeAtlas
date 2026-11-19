@@ -276,7 +276,7 @@ func handleDeleteResource(ctx context.Context, req *mcp.CallToolRequest, input d
 			}
 		}
 		if token == "" {
-			result.Message = "Impact preview unavailable; no confirmation token was issued. " + result.Message + " Inspect cascade.reason and cascade.unavailableReason before retrying; this tool requires caller-readable impact. Use the UI or kubectl if Radar cannot provide it."
+			result.Message = "Impact preview unavailable; no confirmation token was issued. " + result.Message + " Inspect cascade.reason and cascade.unavailableReason before retrying; this tool requires caller-readable impact. Use the UI or kubectl if KubeAtlas cannot provide it."
 		}
 	} else {
 		result.Message = "Deletion accepted; completion is asynchronous."
@@ -329,7 +329,7 @@ func deleteCascadePreview(ctx context.Context, obj *unstructured.Unstructured, p
 		result["notEnumerated"] = []string{"controller-finalizer cleanup"}
 	}
 	if auth.UserFromContext(ctx) != nil {
-		result["visibilityNote"] = "Only resources Radar observes and you can read are listed."
+		result["visibilityNote"] = "Only resources KubeAtlas observes and you can read are listed."
 	}
 	switch {
 	case obj.GetKind() == "Namespace" && obj.GetAPIVersion() == "v1":

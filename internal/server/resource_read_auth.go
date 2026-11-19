@@ -68,7 +68,7 @@ func (s *Server) preflightResourceList(r *http.Request, kind, group string, name
 	// Per-kind RBAC inside a namespace. Helm release storage IS K8s Secrets,
 	// so the chart can grant the SA cluster-wide secrets (rbac.secrets,
 	// rbac.helm, auth.mode != "none", or cloud.enabled — see deploy/helm/
-	// radar/templates/clusterrole.yaml). When any of those triggers fires
+	// kubeatlas/templates/clusterrole.yaml). When any of those triggers fires
 	// the cache holds every secret in the cluster, so per-user RBAC must
 	// gate the read. Roles, RoleBindings, LimitRanges and Trivy Operator reports (an
 	// ExposedSecretReport quotes the leaked credential) get the same exact
@@ -150,7 +150,7 @@ func (s *Server) preflightResourceGetFrom(r *http.Request, cache *k8s.ResourceCa
 	case namespace != "":
 		selection, code := s.requestNamespaceSelection(r, cache, []string{namespace})
 		if code == readreason.UserPermissionCheckFailed {
-			return readFailuref(code, "Radar could not determine your namespace access; retry when the permission check is available")
+			return readFailuref(code, "KubeAtlas could not determine your namespace access; retry when the permission check is available")
 		}
 		if len(selection.Gaps) > 0 {
 			switch selection.Gaps[0].Code {
@@ -201,14 +201,14 @@ func (s *Server) requestNamespaceSelection(r *http.Request, cache *k8s.ResourceC
 	return readscope.ResolveNamespaces(requested, readscope.NamespaceAccess{Namespaces: ceiling, Checked: !failed}, pin, missing)
 }
 
-// outsideNamespacePin refuses a read of one namespace Radar's --namespace-scope
+// outsideNamespacePin refuses a read of one namespace KubeAtlas's --namespace-scope
 // pin excludes: its cache holds nothing there, so a miss would read as absence.
 func outsideNamespacePin(namespace string) *resourceReadFailure {
 	if namespace != "" && k8s.ForceNamespaceScope {
 		pin := k8s.GetNamespaceScopeTarget()
 		selection, _ := readscope.ResolveNamespaces([]string{namespace}, readscope.NamespaceAccess{Checked: true}, &pin, nil)
 		if len(selection.Gaps) > 0 {
-			return readFailuref(selection.Gaps[0].Code, "namespace %q is outside Radar's --namespace-scope pin", namespace)
+			return readFailuref(selection.Gaps[0].Code, "namespace %q is outside KubeAtlas's --namespace-scope pin", namespace)
 		}
 	}
 	return nil

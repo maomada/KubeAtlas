@@ -7,8 +7,8 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/issuesapi"
 )
 
-// The Radar Hub alert worker keys an issue's open/resolved lifecycle on
-// issue.ID (radar-hub IssueSourceKey = clusterID + ":" + issue.ID): a matching
+// The KubeAtlas Hub alert worker keys an issue's open/resolved lifecycle on
+// issue.ID (kubeatlas-hub IssueSourceKey = clusterID + ":" + issue.ID): a matching
 // issue that keeps one ID across polls is one continuous alert, a new ID is a
 // new alert. So if the SAME underlying problem yields a DIFFERENT ID across
 // polls, the worker sees spurious resolve→reopen churn and fires false

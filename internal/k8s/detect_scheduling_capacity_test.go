@@ -213,7 +213,7 @@ func TestPodEvaluatedAgainstKarpenterPools(t *testing.T) {
 	// that is the case where withholding the Demand link would hide the
 	// diagnosis behind the worst news.
 	rejected := unschedulablePod("rejected", corev1.PodSpec{
-		NodeSelector: map[string]string{"radar.test/undeclared": "true"},
+		NodeSelector: map[string]string{"kubeatlas.test/undeclared": "true"},
 	})
 	if !podEvaluatedAgainstKarpenterPools(rejected, pools) {
 		t.Fatal("an evaluated-and-rejected pod must still correlate — bad news is still the answer")

@@ -54,7 +54,7 @@ func decodeInto[T any](t *testing.T, body []byte) T {
 }
 
 // A pick made in the UI must not narrow a read that names no namespaces — the
-// read Radar Hub's fan-outs make as the same user. Each of these surfaces
+// read KubeAtlas Hub's fan-outs make as the same user. Each of these surfaces
 // answers for the caller's whole RBAC ceiling; an explicit filter still
 // narrows, RBAC still bounds, and the preference read still echoes the pick
 // for the UI.
@@ -191,7 +191,7 @@ func TestProxyAuth_PlainReadsIgnoreSavedPick(t *testing.T) {
 }
 
 // --namespaces seeds each user's initial UI selection; it must not narrow a
-// background poller's read (Radar Hub's alerts worker polls /api/issues as a
+// background poller's read (KubeAtlas Hub's alerts worker polls /api/issues as a
 // system identity and names no namespace).
 func TestProxyAuth_ConfiguredNamespacesDoNotNarrowSystemReads(t *testing.T) {
 	prevCtx := k8s.SetTestContextName("test-ctx")
@@ -200,7 +200,7 @@ func TestProxyAuth_ConfiguredNamespacesDoNotNarrowSystemReads(t *testing.T) {
 	t.Cleanup(func() { k8s.SetFallbackNamespace("") })
 
 	env := newAuthTestServer(t)
-	const system = "radar:system:alerts:test"
+	const system = "kubeatlas:system:alerts:test"
 	env.srv.permCache.Set(system, nil, &pkgauth.UserPermissions{AllowedNamespaces: nil})
 	env.srv.permCache.Set("alice", nil, &pkgauth.UserPermissions{AllowedNamespaces: nil})
 
@@ -343,7 +343,7 @@ func seedTimelineAcrossNamespaces(t *testing.T) {
 
 // A caller who can't see a namespace gets the same answer for it whether or
 // not it is outside the --namespace-scope pin, so guessing names doesn't
-// reveal which namespace Radar is pinned to. "Outside the pin" is said only
+// reveal which namespace KubeAtlas is pinned to. "Outside the pin" is said only
 // about a namespace the caller can see.
 func TestProxyAuth_PinIsNotRevealedToGuesses(t *testing.T) {
 	prevCtx := k8s.SetTestContextName("test-ctx")
@@ -438,7 +438,7 @@ func TestProxyAuth_MissingNamespaceIsNotFound(t *testing.T) {
 	if status, b := fetch("/api/resources/deployments?namespaces=typo"); status != http.StatusNotFound || b.ErrorCode != "namespace_not_found" {
 		t.Errorf("missing namespace outside the pin = %d %q, want 404 namespace_not_found", status, b.ErrorCode)
 	}
-	if status, b := fetch("/api/resources/deployments?namespaces=broken"); status != http.StatusConflict || b.ErrorCode != "outside_namespace_pin" || b.Error != `namespace "broken" is outside Radar's --namespace-scope pin` {
+	if status, b := fetch("/api/resources/deployments?namespaces=broken"); status != http.StatusConflict || b.ErrorCode != "outside_namespace_pin" || b.Error != `namespace "broken" is outside KubeAtlas's --namespace-scope pin` {
 		t.Errorf("existing namespace outside the pin = %d %q %q, want 409 outside_namespace_pin naming broken", status, b.ErrorCode, b.Error)
 	}
 	if status, b := fetch("/api/resources/deployments/typo/nginx"); status != http.StatusNotFound || b.ErrorCode != "namespace_not_found" {

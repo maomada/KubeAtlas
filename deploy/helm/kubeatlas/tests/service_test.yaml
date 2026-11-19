@@ -14,22 +14,22 @@ tests:
     set:
       service:
         annotations:
-          external-dns.kubernetes.io/hostname: radar.example.com
+          external-dns.kubernetes.io/hostname: kubeatlas.example.com
     asserts:
       - equal:
           path: metadata.annotations["external-dns.kubernetes.io/hostname"]
-          value: radar.example.com
+          value: kubeatlas.example.com
       - equal:
           path: metadata.annotations
           value:
-            external-dns.kubernetes.io/hostname: radar.example.com
+            external-dns.kubernetes.io/hostname: kubeatlas.example.com
             svc-annotation-key: svc-annotation-value
   - it: override service annotation
     set:
       service:
         annotations:
-          svc-annotation-key: radar.example.com
+          svc-annotation-key: kubeatlas.example.com
     asserts:
       - equal:
           path: metadata.annotations["svc-annotation-key"]
-          value: radar.example.com
+          value: kubeatlas.example.com

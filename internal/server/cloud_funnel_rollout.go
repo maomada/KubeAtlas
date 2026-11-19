@@ -13,7 +13,7 @@ import (
 )
 
 // cloudFunnelRolloutPercent stages the Cloud funnel's exposure. It is compiled
-// in — deliberately not a remote flag service, because Radar makes no network
+// in — deliberately not a remote flag service, because KubeAtlas makes no network
 // calls it doesn't announce and a rollout gate is not a reason to start. The
 // ramp is complete at 100; the mechanism stays so exposure can be pulled back
 // in a release without rebuilding the gate.
@@ -50,7 +50,7 @@ var cloudFunnelBucketVerdict = sync.OnceValue(func() bool {
 	return cloudFunnelBucketed(cloudFunnelRolloutPercent, bucketKey())
 })
 
-// bucketKey is the value the rollout hashes on. In-cluster it prefers the Radar
+// bucketKey is the value the rollout hashes on. In-cluster it prefers the KubeAtlas
 // Deployment's creation time over ~/.kubeatlas: that directory sits on an emptyDir
 // that dies with the pod, so bucketing on it re-rolls the verdict on every
 // restart and rollout — and disagrees between replicas — making the funnel

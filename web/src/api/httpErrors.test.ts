@@ -19,7 +19,7 @@ describe('isUnknownRouteResponse', () => {
     expect(isUnknownRouteResponse(404, 'application/json', '{"error":"pods \\"web\\" not found"}')).toBe(false)
   })
 
-  it("rejects Radar Hub's plain-text cluster lookup 404", () => {
+  it("rejects KubeAtlas Hub's plain-text cluster lookup 404", () => {
     expect(isUnknownRouteResponse(404, TEXT, 'not found\n')).toBe(false)
   })
 
@@ -46,7 +46,7 @@ describe('readErrorResponse', () => {
     expect(gateway).toEqual({ body: { error: 'HTTP 502 (Bad Gateway)' }, unknownRoute: false })
   })
 
-  it("keeps a short plain-text reason such as Radar Hub's", async () => {
+  it("keeps a short plain-text reason such as KubeAtlas Hub's", async () => {
     const offline = await readErrorResponse(response(503, 'cluster "prod" not connected\n', TEXT))
     expect(offline.body.error).toBe('cluster "prod" not connected (HTTP 503)')
     // Hub's bare "not found" only repeats the status.

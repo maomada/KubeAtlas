@@ -7,16 +7,16 @@ import { useKeepInViewport } from '../../hooks/useKeepInViewport'
 import { MultiSelectPicker } from '../ui/MultiSelectPicker'
 
 /**
- * Backend-reported namespace scope. Mirrors Radar's `/cluster/namespace-scope`
+ * Backend-reported namespace scope. Mirrors KubeAtlas's `/cluster/namespace-scope`
  * response shape; the host supplies it however it fetches it (OSS via its API
- * hooks, Radar Hub via the per-cluster apiBase).
+ * hooks, KubeAtlas Hub via the per-cluster apiBase).
  */
 export interface NamespaceScopeView {
   /** Currently-selected namespaces. Empty = cluster-wide ("All namespaces"). */
   actives: string[]
   /** Namespaces the user may pick from. */
   accessibleNamespaces: string[]
-  /** Namespaces where Radar cannot list pods or deployments. */
+  /** Namespaces where KubeAtlas cannot list pods or deployments. */
   deniedNamespaces?: string[]
   mode?: 'cluster-wide' | 'namespace' | 'restricted' | string
   /** Single-namespace cache-scope control instead of a multi-select filter. */
@@ -68,7 +68,7 @@ export interface NamespacePickerProps {
 
 /**
  * NamespacePicker is the presentational namespace scope control shared by
- * Radar OSS and Radar Hub (mirrors the ClusterSwitcher pattern — pure UI, data
+ * KubeAtlas OSS and KubeAtlas Hub (mirrors the ClusterSwitcher pattern — pure UI, data
  * injected via props). It is normally a per-user multi-select view filter. When
  * the scope reports cacheScoped=true, it becomes a single-namespace cache scope
  * control.
@@ -254,10 +254,10 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
     ? disabledTooltip
     : scope.cacheScoped
       ? scope.namespaceRescope
-        ? `为保持大型集群中的响应速度，Radar 仅监视 ${scope.cacheScopeNamespace || triggerLabel}。选择其他命名空间可重新指定范围（需要片刻，并会关闭已打开的终端）。`
-        : `Radar 在此集群中仅监视 ${scope.cacheScopeNamespace || triggerLabel}。`
+        ? `为保持大型集群中的响应速度，KubeAtlas 仅监视 ${scope.cacheScopeNamespace || triggerLabel}。选择其他命名空间可重新指定范围（需要片刻，并会关闭已打开的终端）。`
+        : `KubeAtlas 在此集群中仅监视 ${scope.cacheScopeNamespace || triggerLabel}。`
       : needsNamespaces && isClusterWide
-      ? 'Radar 无法列出此集群中的命名空间。'
+      ? 'KubeAtlas 无法列出此集群中的命名空间。'
       : scope.authoritative === false && isClusterWide
       ? '正在显示你的账号有权访问的命名空间。'
       : isClusterWide
@@ -269,7 +269,7 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
   const renderNamespaceMeta = (ns: string) => (
     <>
       {deniedNamespaces.has(ns) && (
-        <Badge severity="error" size="sm" title="Radar 无法列出此命名空间中的 Pod 或 Deployment。">
+        <Badge severity="error" size="sm" title="KubeAtlas 无法列出此命名空间中的 Pod 或 Deployment。">
           无权访问
         </Badge>
       )}
@@ -333,7 +333,7 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
                 )}
 
                 <div className="px-3 py-1.5 border-b border-theme-border text-[11px] leading-snug text-theme-text-secondary">
-                  为了在大型集群中保持响应速度，Radar 当前仅监视一个命名空间。
+                  为了在大型集群中保持响应速度，KubeAtlas 当前仅监视一个命名空间。
                   {scope.namespaceRescope
                     ? ' 选择其他命名空间可重新指定范围——需要片刻，并会关闭已打开的终端。'
                     : ' 此实例已锁定为启动时指定的命名空间。'}

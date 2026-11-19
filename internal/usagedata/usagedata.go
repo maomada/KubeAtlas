@@ -1,8 +1,8 @@
-// Package usagedata implements Radar's opt-in usage reports.
+// Package usagedata implements KubeAtlas's opt-in usage reports.
 //
 // Nothing is recorded or sent until the user says yes. A yes starts a daily
 // anonymous report: which views and actions were used, MCP tool calls,
-// Radar's own setup, and each connected cluster's minor version, platform,
+// KubeAtlas's own setup, and each connected cluster's minor version, platform,
 // node-count range and known integrations. It carries no install ID and never
 // carries names (resources, namespaces, clusters, hosts) or contents. The
 // pending report lives in ~/.kubeatlas/usage-report.json so the user can read
@@ -63,7 +63,7 @@ const (
 	SourceUser    Source = "user"
 	SourceEnv     Source = "env"
 	// SourceDeployment covers installs whose host manages usage data
-	// itself (Radar Cloud).
+	// itself (KubeAtlas Cloud).
 	SourceDeployment Source = "deployment"
 )
 
@@ -81,7 +81,7 @@ type Status struct {
 	// Ask lets What's New ask an undecided user: never asked, or asked and
 	// left unanswered long enough ago.
 	Ask bool `json:"ask"`
-	// Shared means several people use this Radar, so its configuration
+	// Shared means several people use this KubeAtlas, so its configuration
 	// decides (the Helm value, or KUBEATLAS_USAGE_REPORTING) and nobody is asked.
 	Shared bool `json:"shared"`
 }
@@ -91,7 +91,7 @@ func (s State) Recording() bool { return s == StateOn }
 
 // Options wires the collector to facts only the server knows.
 type Options struct {
-	// Hosted reports an install whose host manages usage data itself (Radar
+	// Hosted reports an install whose host manages usage data itself (KubeAtlas
 	// Cloud). It is always off and nobody in the UI can change that.
 	Hosted func() bool
 	// Shared reports an install several people use (in-cluster, behind
@@ -101,20 +101,20 @@ type Options struct {
 	Shared func() bool
 	// Mode is "local", "desktop", "in-cluster" or "cloud".
 	Mode func() string
-	// ClusterSample describes the cluster Radar is connected to right now.
+	// ClusterSample describes the cluster KubeAtlas is connected to right now.
 	// key identifies it locally so a day's clusters can be told apart; it is
 	// hashed before it is stored and never sent.
 	ClusterSample func() (key string, shape ClusterShape, ok bool)
-	// Setup describes how this Radar is configured.
+	// Setup describes how this KubeAtlas is configured.
 	Setup func() Setup
-	// Contexts is how many kubeconfig contexts Radar can see.
+	// Contexts is how many kubeconfig contexts KubeAtlas can see.
 	Contexts func() int
-	// SendOnShutdown sends whatever is pending when Radar stops, however
+	// SendOnShutdown sends whatever is pending when KubeAtlas stops, however
 	// short the period. In-cluster the pending report lives on an emptyDir
 	// that dies with the pod, so without it a pod replaced more often than
 	// daily would never report.
 	SendOnShutdown bool
-	// InstalledAt is when Radar first ran on this machine (Unix seconds, 0
+	// InstalledAt is when KubeAtlas first ran on this machine (Unix seconds, 0
 	// if unknown). It decides the first-install prompt and is never sent.
 	InstalledAt func() int64
 }
@@ -131,7 +131,7 @@ var errReportRefused = errors.New("usage report refused")
 
 // doNotTrack reports the DO_NOT_TRACK convention. It never overrides a choice:
 // on a laptop the person who says yes is the person whose usage it is, and a
-// shared Radar is decided by its operator's Helm value. It only keeps Radar
+// shared KubeAtlas is decided by its operator's Helm value. It only keeps KubeAtlas
 // from asking a second time.
 func doNotTrack(env func(string) string) bool {
 	switch strings.ToLower(strings.TrimSpace(env("DO_NOT_TRACK"))) {
@@ -144,7 +144,7 @@ func doNotTrack(env func(string) string) bool {
 // resolve is the whole precedence chain, kept pure for tests: hosted installs
 // (off), then KUBEATLAS_USAGE_REPORTING, then the saved answer, then undecided.
 func resolve(env func(string) string, hosted bool, choice *settings.UsageDataChoice) (State, Source) {
-	// Radar Cloud runs its own program; not even an environment variable
+	// KubeAtlas Cloud runs its own program; not even an environment variable
 	// turns the OSS reports on under it.
 	if hosted {
 		return StateOff, SourceDeployment
@@ -306,7 +306,7 @@ func describeSource(s Source) string {
 	case SourceEnv:
 		return "set by KUBEATLAS_USAGE_REPORTING"
 	case SourceDeployment:
-		return "managed by Radar Cloud"
+		return "managed by KubeAtlas Cloud"
 	case SourceUser:
 		return "your choice in Settings"
 	default:
@@ -428,7 +428,7 @@ func (c *Collector) Status() Status {
 	st.Shared = shared
 	p := c.p.clone()
 	c.mu.Unlock()
-	// Before anything is recorded, preview the cluster Radar is on now, so
+	// Before anything is recorded, preview the cluster KubeAtlas is on now, so
 	// the example shows exactly what a report would carry.
 	if len(p.Clusters) == 0 {
 		if shape, ok := c.previewCluster(); ok {

@@ -55,11 +55,11 @@ func isNamed(ctx context.Context, host, port string) bool {
 
 // guardedTransport is the transport runtime-version lookups use. Image
 // references come from Pod specs, which anyone who can create a Pod
-// controls, and Radar's network position differs from a node's. Every
+// controls, and KubeAtlas's network position differs from a node's. Every
 // request, including redirects and token endpoints, is resolved here and
 // sent only to an address that passed the policy:
 //   - link-local (cloud metadata), unspecified and multicast: never;
-//   - loopback: never in-cluster (it is Radar's own Pod), and locally only
+//   - loopback: never in-cluster (it is KubeAtlas's own Pod), and locally only
 //     for the registry endpoint the Pod named (a local dev registry);
 //   - private ranges: only for the registry endpoint (host and port) the Pod
 //     named, unless anyPrivate is set.
@@ -84,7 +84,7 @@ type guardedTransport struct {
 	// named registry: self-hosted registries often serve tokens or blobs
 	// from a second internal host.
 	anyPrivate bool
-	// pinnedOnly refuses proxied requests Radar can't pin to a checked
+	// pinnedOnly refuses proxied requests KubeAtlas can't pin to a checked
 	// address, outside a cluster too: with auth on, the caller is not the
 	// proxy's owner.
 	pinnedOnly     bool

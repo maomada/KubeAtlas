@@ -126,7 +126,7 @@ func answerOwnership(source ownership.Source, apply func(*topology.Relationships
 		return
 	}
 	if len(session.Catalog().DependentKinds()) == 0 {
-		// Discovery hasn't answered yet, as while Radar starts, so no kind
+		// Discovery hasn't answered yet, as while KubeAtlas starts, so no kind
 		// could be searched or resolved.
 		topology.OwnershipUnavailable(rel, string(readreason.ClusterConnecting))
 		return

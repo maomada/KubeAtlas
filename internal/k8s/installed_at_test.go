@@ -15,14 +15,14 @@ func TestInstalledAtReadsOwnDeployment(t *testing.T) {
 	created := time.Date(2026, 3, 14, 9, 26, 53, 0, time.UTC)
 	kc := fake.NewSimpleClientset(
 		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
-			Name: "radar", Namespace: "radar", CreationTimestamp: metav1.NewTime(created),
+			Name: "kubeatlas", Namespace: "kubeatlas", CreationTimestamp: metav1.NewTime(created),
 		}},
 		// A same-named Deployment elsewhere must not be mistaken for ours.
 		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
-			Name: "radar", Namespace: "other", CreationTimestamp: metav1.NewTime(created.Add(72 * time.Hour)),
+			Name: "kubeatlas", Namespace: "other", CreationTimestamp: metav1.NewTime(created.Add(72 * time.Hour)),
 		}},
 	)
-	if got := installedAtFrom(context.Background(), kc, "radar", "radar"); got != created.Unix() {
+	if got := installedAtFrom(context.Background(), kc, "kubeatlas", "kubeatlas"); got != created.Unix() {
 		t.Fatalf("installedAt = %d, want %d", got, created.Unix())
 	}
 }
@@ -37,12 +37,12 @@ func TestInstalledAtZeroWhenUnknown(t *testing.T) {
 		client     kubernetes.Interface
 		ns, deploy string
 	}{
-		{"no downward-API namespace", kc, "", "radar"},
-		{"no downward-API name", kc, "radar", ""},
-		{"deployment absent", kc, "radar", "radar"},
-		{"nil client", nil, "radar", "radar"},
+		{"no downward-API namespace", kc, "", "kubeatlas"},
+		{"no downward-API name", kc, "kubeatlas", ""},
+		{"deployment absent", kc, "kubeatlas", "kubeatlas"},
+		{"nil client", nil, "kubeatlas", "kubeatlas"},
 		// A typed nil in an interface is non-nil and panics on first use without the guard.
-		{"typed-nil client", (*kubernetes.Clientset)(nil), "radar", "radar"},
+		{"typed-nil client", (*kubernetes.Clientset)(nil), "kubeatlas", "kubeatlas"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := installedAtFrom(ctx, tc.client, tc.ns, tc.deploy); got != 0 {

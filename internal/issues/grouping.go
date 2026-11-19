@@ -12,7 +12,7 @@ import (
 
 // RelatedIssues returns the grouped issues whose subject OR an affected member
 // is the given resource — what an agent diagnosing an object wants: "issues
-// Radar already classified here." Kind is matched case-insensitively (callers
+// KubeAtlas already classified here." Kind is matched case-insensitively (callers
 // may pass the K8s Kind or a normalized form); group is exact, including the
 // empty core API group, so core/CRD kind collisions cannot bleed into each
 // other's resourceContext.

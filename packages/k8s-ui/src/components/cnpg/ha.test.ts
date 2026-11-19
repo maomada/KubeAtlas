@@ -232,7 +232,7 @@ describe('cnpgDimensions', () => {
     const replica = { replicaCluster: { source: 'origin' } }
     const streaming = cnpgDimensions({ row: row({ ...replica, instances: { ready: 3, desired: 3 } }), replication: { streaming: 2, standbys: 2, maxReplayLagSeconds: 0 } })[1]
     expect(streaming).toMatchObject({ tone: 'unknown', text: '2 of 2 standbys streaming · upstream feed not assessed' })
-    expect(streaming.source).toContain('external cluster origin; Radar does not assess that feed')
+    expect(streaming.source).toContain('external cluster origin; KubeAtlas does not assess that feed')
     const single = cnpgDimensions({ row: row({ ...replica, instances: { ready: 1, desired: 1 }, pods: [{ name: 'pg-1', role: 'primary', ready: true }] }) })[1]
     expect(single).toMatchObject({ tone: 'unknown', text: 'no standby · upstream feed not assessed' })
     const local = cnpgDimensions({ row: row({ ...replica, instances: { ready: 3, desired: 3 } }), replication: { streaming: 1, standbys: 2, maxReplayLagSeconds: 0 } })[1]

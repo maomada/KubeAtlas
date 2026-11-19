@@ -13,7 +13,7 @@ type fakeCatalog struct {
 func (c fakeCatalog) GroupsForKind(kind string) []string { return c.groups[kind] }
 func (c fakeCatalog) Complete() bool                     { return c.complete }
 
-// gpuCluster serves the collisions Radar's GPU demo fixtures carry: a batch
+// gpuCluster serves the collisions KubeAtlas's GPU demo fixtures carry: a batch
 // Job next to a Volcano Job, and PodGroups from both Volcano and KAI.
 var gpuCluster = fakeCatalog{complete: true, groups: map[string][]string{
 	"Job":      {"batch", "batch.volcano.sh"},

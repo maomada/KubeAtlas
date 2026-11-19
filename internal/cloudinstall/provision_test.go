@@ -101,14 +101,14 @@ func TestTokenSecret_CreateOnlyRejectsExisting(t *testing.T) {
 	kc := fakeWithSecretCreateMetadata()
 	ctx := context.Background()
 
-	created, err := createTokenSecret(ctx, kc, "radar", "rhc_first")
+	created, err := createTokenSecret(ctx, kc, "kubeatlas", "rhc_first")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if created.UID != "uid-created" || created.ResourceVersion != "1" {
 		t.Fatalf("unexpected identity: %+v", created)
 	}
-	got, err := kc.CoreV1().Secrets("radar").Get(ctx, CloudTokenSecretName, metav1.GetOptions{})
+	got, err := kc.CoreV1().Secrets("kubeatlas").Get(ctx, CloudTokenSecretName, metav1.GetOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -116,12 +116,12 @@ func TestTokenSecret_CreateOnlyRejectsExisting(t *testing.T) {
 		t.Errorf("first token = %q", got.StringData[cloudTokenSecretKey])
 	}
 
-	_, err = createTokenSecret(ctx, kc, "radar", "rhc_second")
+	_, err = createTokenSecret(ctx, kc, "kubeatlas", "rhc_second")
 	var exists *TokenSecretExistsError
 	if !errors.As(err, &exists) {
 		t.Fatalf("expected TokenSecretExistsError, got %T: %v", err, err)
 	}
-	got, _ = kc.CoreV1().Secrets("radar").Get(ctx, CloudTokenSecretName, metav1.GetOptions{})
+	got, _ = kc.CoreV1().Secrets("kubeatlas").Get(ctx, CloudTokenSecretName, metav1.GetOptions{})
 	if got.StringData[cloudTokenSecretKey] != "rhc_first" {
 		t.Errorf("existing token was overwritten, got %q", got.StringData[cloudTokenSecretKey])
 	}
@@ -129,13 +129,13 @@ func TestTokenSecret_CreateOnlyRejectsExisting(t *testing.T) {
 
 func TestCheckTokenSecretAvailable_TypedAndReadErrors(t *testing.T) {
 	ctx := context.Background()
-	if err := CheckTokenSecretAvailable(ctx, fake.NewSimpleClientset(), "radar"); err != nil {
+	if err := CheckTokenSecretAvailable(ctx, fake.NewSimpleClientset(), "kubeatlas"); err != nil {
 		t.Fatalf("missing Secret should pass: %v", err)
 	}
 	kc := fake.NewSimpleClientset(&corev1.Secret{ObjectMeta: metav1.ObjectMeta{
-		Name: CloudTokenSecretName, Namespace: "radar", UID: "existing", ResourceVersion: "9",
+		Name: CloudTokenSecretName, Namespace: "kubeatlas", UID: "existing", ResourceVersion: "9",
 	}})
-	err := CheckTokenSecretAvailable(ctx, kc, "radar")
+	err := CheckTokenSecretAvailable(ctx, kc, "kubeatlas")
 	var exists *TokenSecretExistsError
 	if !errors.As(err, &exists) || exists.UID != "existing" || exists.ResourceVersion != "9" {
 		t.Fatalf("expected typed Secret metadata, got %T: %+v", err, exists)
@@ -146,7 +146,7 @@ func TestCheckTokenSecretAvailable_TypedAndReadErrors(t *testing.T) {
 	broken.PrependReactor("get", "secrets", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, want
 	})
-	if err := CheckTokenSecretAvailable(ctx, broken, "radar"); !errors.Is(err, want) {
+	if err := CheckTokenSecretAvailable(ctx, broken, "kubeatlas"); !errors.Is(err, want) {
 		t.Fatalf("expected read error to propagate, got %v", err)
 	}
 }
@@ -154,31 +154,31 @@ func TestCheckTokenSecretAvailable_TypedAndReadErrors(t *testing.T) {
 func TestDeleteTokenSecretIfUnchanged_GuardsIdentity(t *testing.T) {
 	ctx := context.Background()
 	kc := fakeWithSecretCreateMetadata()
-	created, err := createTokenSecret(ctx, kc, "radar", "rhc_token")
+	created, err := createTokenSecret(ctx, kc, "kubeatlas", "rhc_token")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := deleteTokenSecretIfUnchanged(ctx, kc, *created); err != nil {
 		t.Fatalf("delete unchanged Secret: %v", err)
 	}
-	if _, err := kc.CoreV1().Secrets("radar").Get(ctx, CloudTokenSecretName, metav1.GetOptions{}); err == nil {
+	if _, err := kc.CoreV1().Secrets("kubeatlas").Get(ctx, CloudTokenSecretName, metav1.GetOptions{}); err == nil {
 		t.Fatal("unchanged Secret was not deleted")
 	}
 
 	kc = fakeWithSecretCreateMetadata()
-	created, err = createTokenSecret(ctx, kc, "radar", "rhc_token")
+	created, err = createTokenSecret(ctx, kc, "kubeatlas", "rhc_token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	current, _ := kc.CoreV1().Secrets("radar").Get(ctx, CloudTokenSecretName, metav1.GetOptions{})
+	current, _ := kc.CoreV1().Secrets("kubeatlas").Get(ctx, CloudTokenSecretName, metav1.GetOptions{})
 	current.ResourceVersion = "2"
-	if _, err := kc.CoreV1().Secrets("radar").Update(ctx, current, metav1.UpdateOptions{}); err != nil {
+	if _, err := kc.CoreV1().Secrets("kubeatlas").Update(ctx, current, metav1.UpdateOptions{}); err != nil {
 		t.Fatal(err)
 	}
 	if err := deleteTokenSecretIfUnchanged(ctx, kc, *created); err == nil {
 		t.Fatal("changed Secret must not be deleted")
 	}
-	if _, err := kc.CoreV1().Secrets("radar").Get(ctx, CloudTokenSecretName, metav1.GetOptions{}); err != nil {
+	if _, err := kc.CoreV1().Secrets("kubeatlas").Get(ctx, CloudTokenSecretName, metav1.GetOptions{}); err != nil {
 		t.Fatalf("changed Secret should remain: %v", err)
 	}
 }
@@ -187,15 +187,15 @@ func TestEnsureNamespace(t *testing.T) {
 	ctx := context.Background()
 	// Missing → created.
 	kc := fake.NewSimpleClientset()
-	if err := ensureNamespace(ctx, kc, "radar"); err != nil {
+	if err := ensureNamespace(ctx, kc, "kubeatlas"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := kc.CoreV1().Namespaces().Get(ctx, "radar", metav1.GetOptions{}); err != nil {
+	if _, err := kc.CoreV1().Namespaces().Get(ctx, "kubeatlas", metav1.GetOptions{}); err != nil {
 		t.Fatalf("namespace not created: %v", err)
 	}
 	// Already exists → no error.
-	kc2 := fake.NewSimpleClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar"}})
-	if err := ensureNamespace(ctx, kc2, "radar"); err != nil {
+	kc2 := fake.NewSimpleClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas"}})
+	if err := ensureNamespace(ctx, kc2, "kubeatlas"); err != nil {
 		t.Fatalf("existing namespace must be a no-op: %v", err)
 	}
 }
@@ -218,7 +218,7 @@ func TestValidateProvisionConfigCloudURLTransportPolicy(t *testing.T) {
 			}
 		})
 	}
-	for _, raw := range []string{"ws://api.radarhq.io/agent", "ws://localhost.example/agent"} {
+	for _, raw := range []string{"ws://api.kubeatlas.io/agent", "ws://localhost.example/agent"} {
 		t.Run("invalid_"+raw, func(t *testing.T) {
 			if err := validateProvisionConfig(ProvisionConfig{Token: "t", CloudURL: raw, ClusterID: "c"}); err == nil {
 				t.Fatalf("validateProvisionConfig(%q) unexpectedly succeeded", raw)

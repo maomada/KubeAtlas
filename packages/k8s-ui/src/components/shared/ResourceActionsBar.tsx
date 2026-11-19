@@ -27,7 +27,7 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { AlertBanner } from '../ui/drawer-components'
 import { DialogPortal } from '../ui/DialogPortal'
 import type { SelectedResource, WorkloadRevision } from '../../types'
-import type { RadarUpgradeRequirement } from '../../types/fetch-error'
+import type { KubeAtlasUpgradeRequirement } from '../../types/fetch-error'
 import { displayKindName } from '../ui/drawer-components'
 import { getDefaultContainerName, getExecContainerNames } from '../resources/resource-utils'
 import { SetImageDialog, type SetImageOwnership } from './SetImageDialog'
@@ -62,7 +62,7 @@ interface ResourceActionsBarProps {
    * Host-supplied callback for cross-cluster compare. When set alongside
    * onCompareTo, the Compare button becomes a small dropdown offering both
    * scopes. When set alone, the button opens cross-cluster compare directly.
-   * Only embedded hosts (Radar Hub) wire this; standalone Radar leaves it
+   * Only embedded hosts (KubeAtlas Hub) wire this; standalone KubeAtlas leaves it
    * undefined and the button stays single-cluster.
    */
   onCompareAcrossClusters?: () => void
@@ -156,12 +156,12 @@ interface ResourceActionsBarProps {
   drainPlan?: DrainPlan | null
   isPlanningDrain?: boolean
   drainPlanError?: string | null
-  // The connected Radar predates the drain-plan endpoint (a newer frontend
-  // against an older Radar). The dialog falls back to the plan-less
+  // The connected KubeAtlas predates the drain-plan endpoint (a newer frontend
+  // against an older KubeAtlas). The dialog falls back to the plan-less
   // acknowledgement-only mode instead of keeping Drain disabled on a dead
-  // request, and names the Radar version that serves plans so the user knows a
+  // request, and names the KubeAtlas version that serves plans so the user knows a
   // preview exists.
-  drainPlanUpgrade?: RadarUpgradeRequirement | null
+  drainPlanUpgrade?: KubeAtlasUpgradeRequirement | null
 }
 
 export function ResourceActionsBar({
@@ -226,7 +226,7 @@ export function ResourceActionsBar({
   // open: the host reports it through a mutation error, which the next request clears,
   // so without latching every option change would refire a request known to 404 and
   // bounce the dialog out of its fallback mode.
-  const [planUpgrade, setPlanUpgrade] = useState<RadarUpgradeRequirement | null>(null)
+  const [planUpgrade, setPlanUpgrade] = useState<KubeAtlasUpgradeRequirement | null>(null)
   useEffect(() => {
     if (drainPlanUpgrade) setPlanUpgrade(drainPlanUpgrade)
   }, [drainPlanUpgrade])

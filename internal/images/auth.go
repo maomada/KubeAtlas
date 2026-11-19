@@ -210,7 +210,7 @@ func GetAuthenticatedKeychain(imageRef string, namespace string, secretNames []s
 
 // getPodKeychain scopes an authenticated caller's registry credentials to the
 // Pod they can read: the Pod's pull secrets the caller may use, plus, with
-// useAmbient (an exec holder fetching the digest the kubelet pulled), Radar's
+// useAmbient (an exec holder fetching the digest the kubelet pulled), KubeAtlas's
 // own credentials, which node-identity pulls such as Artifact Registry on GKE
 // need.
 func getPodKeychain(namespace string, pod *corev1.Pod, useAmbient bool, canUseSecret func(string) bool) authn.Keychain {

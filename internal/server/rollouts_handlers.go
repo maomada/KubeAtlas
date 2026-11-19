@@ -238,7 +238,7 @@ func (s *Server) writeRolloutError(w http.ResponseWriter, err error, action, nam
 	case errors.Is(err, rollouts.ErrNoSteps), errors.Is(err, rollouts.ErrWorkloadRefUnsupported):
 		status = http.StatusBadRequest
 	// The controller is a dependency that is lagging or down — the request was fine, so
-	// the caller should retry rather than treat this as a bug in radar.
+	// the caller should retry rather than treat this as a bug in kubeatlas.
 	case errors.Is(err, rollouts.ErrControllerNotCaughtUp):
 		status = http.StatusServiceUnavailable
 		code = errCodeControllerNotCaughtUp

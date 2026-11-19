@@ -26,12 +26,12 @@ import (
 func scanNodeCgroupCompatibility(input *Input) Check {
 	check := Check{ID: "node-cgroup-v1", Category: "Node compatibility", Title: "Node cgroup compatibility", Status: CheckPassed, Summary: "All inspected nodes use cgroup v2.", Scope: "Kubelet cgroup version metric", AppliesFrom: "1.35", References: append([]Reference(nil), cgroupReferences...)}
 	if len(input.Nodes) == 0 {
-		check.Status, check.Summary = CheckUnknown, "Nodes were unavailable; Radar could not inspect cgroup compatibility."
+		check.Status, check.Summary = CheckUnknown, "Nodes were unavailable; KubeAtlas could not inspect cgroup compatibility."
 		return check
 	}
 	nonNilNodes, linuxNodes := nodeOSCounts(input.Nodes)
 	if nonNilNodes == 0 {
-		check.Status, check.Summary = CheckUnknown, "Nodes were unavailable; Radar could not inspect cgroup compatibility."
+		check.Status, check.Summary = CheckUnknown, "Nodes were unavailable; KubeAtlas could not inspect cgroup compatibility."
 		return check
 	}
 	if linuxNodes == 0 {
@@ -92,12 +92,12 @@ func nodeOSCounts(nodes []*corev1.Node) (nonNil, linux int) {
 func scanContainerRuntimeSupport(input *Input, target *utilversion.Version) Check {
 	check := Check{ID: "container-runtime-support", Category: "Node compatibility", Title: "Container runtime support", Status: CheckPassed, Summary: "All inspected node runtimes are supported by the target version.", Scope: "Kubelet CRI support metric and Node status", AppliesFrom: "1.36", References: append([]Reference(nil), runtimeReferences...)}
 	if len(input.Nodes) == 0 {
-		check.Status, check.Summary = CheckUnknown, "Nodes were unavailable; Radar could not inspect container runtime versions."
+		check.Status, check.Summary = CheckUnknown, "Nodes were unavailable; KubeAtlas could not inspect container runtime versions."
 		return check
 	}
 	nonNilNodes, linuxNodes := nodeOSCounts(input.Nodes)
 	if nonNilNodes == 0 {
-		check.Status, check.Summary = CheckUnknown, "Nodes were unavailable; Radar could not inspect container runtime versions."
+		check.Status, check.Summary = CheckUnknown, "Nodes were unavailable; KubeAtlas could not inspect container runtime versions."
 		return check
 	}
 	if linuxNodes == 0 {
@@ -451,7 +451,7 @@ func scanAdmissionWebhookReadiness(input *Input) Check {
 				}
 			}
 			if webhookURL, found, _ := unstructured.NestedString(webhook, "clientConfig", "url"); found && webhookURL != "" {
-				check.Findings = append(check.Findings, admissionFinding(check, config, i, LevelReview, "URL webhook backend requires external verification", "clientConfig.url", webhookURL, "Radar cannot verify the availability of an admission webhook backend outside the cluster.", "Verify the URL backend is reachable and highly available throughout the control-plane upgrade, especially for fail-closed webhooks.", admissionBackendReferences))
+				check.Findings = append(check.Findings, admissionFinding(check, config, i, LevelReview, "URL webhook backend requires external verification", "clientConfig.url", webhookURL, "KubeAtlas cannot verify the availability of an admission webhook backend outside the cluster.", "Verify the URL backend is reachable and highly available throughout the control-plane upgrade, especially for fail-closed webhooks.", admissionBackendReferences))
 			}
 			if webhookInterceptsAuth(webhook) {
 				check.Findings = append(check.Findings, admissionFinding(check, config, i, LevelReview, "Authentication review interception", "rules", name, "The webhook can intercept TokenReview or SubjectAccessReview requests used during authentication and authorization.", "Verify the webhook remains available and deliberately excludes authentication and authorization review APIs if interception is unnecessary.", admissionAuthReviewReferences))
@@ -826,7 +826,7 @@ func scanGKEExecProbeTimeout(input *Input) Check {
 	check := Check{ID: "gke-exec-probe-timeout", Category: "Managed Kubernetes", Title: "GKE exec probe timeout exposure", Status: CheckPassed, Summary: "No GKE exec probes rely on the one-second default timeout.", Scope: "Workload probes and recent Kubernetes Events", AppliesFrom: "1.35", References: append([]Reference(nil), gkeExecProbeReferences...)}
 	platform := strings.ToLower(strings.TrimSpace(input.Platform))
 	if platform == "" || platform == "unknown" {
-		check.Status, check.Summary = CheckUnknown, "Cluster platform detection was unavailable; Radar could not determine whether the GKE-specific change applies."
+		check.Status, check.Summary = CheckUnknown, "Cluster platform detection was unavailable; KubeAtlas could not determine whether the GKE-specific change applies."
 		return check
 	}
 	if !strings.Contains(platform, "gke") && !strings.Contains(platform, "google") {
@@ -883,7 +883,7 @@ func scanGKEExecProbeTimeout(input *Input) Check {
 		}
 	}
 	if input.Events == nil && len(check.Findings) > 0 {
-		check.Caveat = appendCaveat(check.Caveat, "Recent Events were unavailable, so Radar could not distinguish observed timeouts from static exposure.")
+		check.Caveat = appendCaveat(check.Caveat, "Recent Events were unavailable, so KubeAtlas could not distinguish observed timeouts from static exposure.")
 	} else if len(check.Findings) > 0 && len(input.CacheScopedKinds["events"]) > 0 {
 		check.Caveat = appendCaveat(check.Caveat, cacheScopedCoverageNote(input, []string{"events"}))
 	}

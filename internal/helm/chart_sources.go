@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/maomada/KubeAtlas/internal/bundledcharts"
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"log"
 	"net"
 	"net/url"
@@ -23,14 +24,14 @@ import (
 )
 
 const (
-	chartSourceTypeLabel = "radarhq.io/chart-source-type"
-	chartSourceRefLabel  = "radarhq.io/chart-source-ref-"
-	chartSourceURLLabel  = "radarhq.io/chart-source-url-"
+	chartSourceTypeLabel = "kubeatlas.io/chart-source-type"
+	chartSourceRefLabel  = "kubeatlas.io/chart-source-ref-"
+	chartSourceURLLabel  = "kubeatlas.io/chart-source-url-"
 	chartSourceChunkSize = 63
 	chartSourceMaxChunks = 16
 )
 
-const recordedSourceUnavailableMessage = "the recorded chart source is not configured on this Radar installation or lists no versions of this chart"
+const recordedSourceUnavailableMessage = "the recorded chart source is not configured on this KubeAtlas installation or lists no versions of this chart"
 
 var (
 	repositoryNamePartRE        = regexp.MustCompile(`[^a-z0-9._-]+`)
@@ -110,16 +111,20 @@ func chartSourceFromRelease(rel *release.Release) (*ChartSourceCandidate, bool) 
 	if rel == nil || rel.Labels == nil {
 		return nil, false
 	}
-	typ := rel.Labels[chartSourceTypeLabel]
+	labels, validLabels := compat.CanonicalChartSourceLabels(rel.Labels)
+	if !validLabels {
+		return nil, false
+	}
+	typ := labels[chartSourceTypeLabel]
 	if typ != "repository" && typ != "oci" {
 		return nil, false
 	}
-	reference, ok := decodeChartSourceLabelChunks(rel.Labels, chartSourceRefLabel)
+	reference, ok := decodeChartSourceLabelChunks(labels, chartSourceRefLabel)
 	if !ok {
 		return nil, false
 	}
 	source := &ChartSourceCandidate{Type: typ, Reference: reference}
-	if rawURL, ok := decodeChartSourceLabelChunks(rel.Labels, chartSourceURLLabel); ok {
+	if rawURL, ok := decodeChartSourceLabelChunks(labels, chartSourceURLLabel); ok {
 		if typ != "repository" {
 			return nil, false
 		}
@@ -138,7 +143,7 @@ func chartSourceFromRelease(rel *release.Release) (*ChartSourceCandidate, bool) 
 func mergeChartSourceLabels(current map[string]string, source *ChartSourceCandidate) map[string]string {
 	labels := make(map[string]string, len(current)+chartSourceMaxChunks+1)
 	for k, v := range current {
-		if k != chartSourceTypeLabel && !strings.HasPrefix(k, chartSourceRefLabel) && !strings.HasPrefix(k, chartSourceURLLabel) {
+		if !compat.IsLegacyChartSourceLabel(k) && k != chartSourceTypeLabel && !strings.HasPrefix(k, chartSourceRefLabel) && !strings.HasPrefix(k, chartSourceURLLabel) {
 			labels[k] = v
 		}
 	}
@@ -154,7 +159,7 @@ func chartSourceUpgradeLabels(current map[string]string, source *ChartSourceCand
 	desired := chartSourceLabels(source)
 	patch := make(map[string]string, len(desired)+chartSourceMaxChunks*2+1)
 	for k := range current {
-		if k == chartSourceTypeLabel || strings.HasPrefix(k, chartSourceRefLabel) || strings.HasPrefix(k, chartSourceURLLabel) {
+		if compat.IsLegacyChartSourceLabel(k) || k == chartSourceTypeLabel || strings.HasPrefix(k, chartSourceRefLabel) || strings.HasPrefix(k, chartSourceURLLabel) {
 			if _, ok := desired[k]; !ok {
 				patch[k] = "null"
 			}
@@ -187,7 +192,7 @@ func stableRepositoryName(preferred, rawURL string) string {
 		base = "source"
 	}
 	sum := sha256.Sum256([]byte(rawURL))
-	return fmt.Sprintf("radar-%s-%x", base, sum[:4])
+	return fmt.Sprintf("kubeatlas-%s-%x", base, sum[:4])
 }
 
 func canonicalClassicRepositoryURL(rawURL string) (string, error) {
@@ -345,7 +350,7 @@ func (c *Client) ensureClassicRepository(rawURL, preferredName string) (string, 
 	if err := os.MkdirAll(c.settings.RepositoryCache, 0o755); err != nil {
 		return "", fmt.Errorf("prepare repository cache: %w", err)
 	}
-	stageDir, err := os.MkdirTemp(c.settings.RepositoryCache, ".radar-repository-")
+	stageDir, err := os.MkdirTemp(c.settings.RepositoryCache, ".kubeatlas-repository-")
 	if err != nil {
 		return "", fmt.Errorf("stage repository index: %w", err)
 	}

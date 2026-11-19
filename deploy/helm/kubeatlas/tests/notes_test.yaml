@@ -2,8 +2,8 @@ suite: NOTES
 templates:
   - NOTES.txt
 release:
-  name: radar
-  namespace: radar
+  name: kubeatlas
+  namespace: kubeatlas
 tests:
   - it: ClusterIP (default) prints the documented port-forward
     asserts:
@@ -11,7 +11,7 @@ tests:
           value: |
             Access via port-forward:
 
-              kubectl port-forward svc/radar-kubeatlas 9280:9280 -n radar
+              kubectl port-forward svc/kubeatlas 9280:9280 -n kubeatlas
               open http://localhost:9280
 
   - it: ClusterIP follows release namespace, fullname, service port and basePath
@@ -21,12 +21,12 @@ tests:
     set:
       service:
         port: 8080
-      basePath: /radar/
+      basePath: /kubeatlas/
     asserts:
       - matchRegexRaw:
           pattern: kubectl port-forward svc/tools-kubeatlas 9280:8080 -n platform\n
       - matchRegexRaw:
-          pattern: open http://localhost:9280/radar/\n?$
+          pattern: open http://localhost:9280/kubeatlas/\n?$
       - notMatchRegexRaw:
           pattern: Warning
 
@@ -36,7 +36,7 @@ tests:
         type: LoadBalancer
     asserts:
       - matchRegexRaw:
-          pattern: "^Access via port-forward:\n\n  kubectl port-forward svc/radar-kubeatlas 9280:9280 -n radar\n  open http://localhost:9280\n\nWarning: no auth"
+          pattern: "^Access via port-forward:\n\n  kubectl port-forward svc/kubeatlas 9280:9280 -n kubeatlas\n  open http://localhost:9280\n\nWarning: no auth"
       - notMatchRegexRaw:
           pattern: (SERVICE_IP|NODE_PORT)
 
@@ -46,7 +46,7 @@ tests:
         type: NodePort
     asserts:
       - matchRegexRaw:
-          pattern: kubectl port-forward svc/radar-kubeatlas 9280:9280 -n radar
+          pattern: kubectl port-forward svc/kubeatlas 9280:9280 -n kubeatlas
       - matchRegexRaw:
           pattern: "Warning: no auth"
 
@@ -55,21 +55,21 @@ tests:
       ingress:
         enabled: true
         hosts:
-          - host: radar.example.com
+          - host: kubeatlas.example.com
             paths:
               - path: /
                 pathType: Prefix
-          - host: radar.example.org
+          - host: kubeatlas.example.org
             paths:
               - path: /
                 pathType: Prefix
         tls:
-          - secretName: radar-tls
+          - secretName: kubeatlas-tls
             hosts:
-              - radar.example.com
+              - kubeatlas.example.com
     asserts:
       - matchRegexRaw:
-          pattern: "Open KubeAtlas at:\n  https://radar.example.com/\n  https://radar.example.org/\n"
+          pattern: "Open KubeAtlas at:\n  https://kubeatlas.example.com/\n  https://kubeatlas.example.org/\n"
       - matchRegexRaw:
           pattern: "Warning: no auth"
       - notMatchRegexRaw:
@@ -81,23 +81,23 @@ tests:
         enabled: true
     asserts:
       - matchRegexRaw:
-          pattern: "Open KubeAtlas at:\n  http://radar.example.com/\n"
+          pattern: "Open KubeAtlas at:\n  http://kubeatlas.example.com/\n"
 
   - it: Ingress uses basePath instead of the ingress path and drops duplicates
     set:
-      basePath: /radar
+      basePath: /kubeatlas
       ingress:
         enabled: true
         hosts:
           - host: tools.example.com
             paths:
-              - path: /radar
+              - path: /kubeatlas
                 pathType: Prefix
-              - path: /radar/
+              - path: /kubeatlas/
                 pathType: Prefix
     asserts:
       - matchRegexRaw:
-          pattern: "Open KubeAtlas at:\n  http://tools.example.com/radar/\n\n"
+          pattern: "Open KubeAtlas at:\n  http://tools.example.com/kubeatlas/\n\n"
 
   - it: HTTPRoute prints its hostnames without a scheme and points at the Gateway
     set:
@@ -107,13 +107,13 @@ tests:
           - name: public-gateway
             namespace: gateway-system
         hostnames:
-          - radar.example.com
-          - radar.example.org
+          - kubeatlas.example.com
+          - kubeatlas.example.org
     asserts:
       - matchRegexRaw:
-          pattern: "KubeAtlas HTTPRoute hostnames:\n  radar.example.com/\n  radar.example.org/\n"
+          pattern: "KubeAtlas HTTPRoute hostnames:\n  kubeatlas.example.com/\n  kubeatlas.example.org/\n"
       - notMatchRegexRaw:
-          pattern: https?://radar\.example
+          pattern: https?://kubeatlas\.example
       - matchRegexRaw:
           pattern: Your HTTPRoute depends on the listener configuration of your gateway
       - matchRegexRaw:
@@ -129,9 +129,9 @@ tests:
           - name: public-gateway
     asserts:
       - matchRegexRaw:
-          pattern: export APP_HOSTNAME=\$\(kubectl get --namespace radar gateway/public-gateway -o jsonpath="\{\.spec\.listeners\[0\]\.hostname\}"\)
+          pattern: export APP_HOSTNAME=\$\(kubectl get --namespace kubeatlas gateway/public-gateway -o jsonpath="\{\.spec\.listeners\[0\]\.hostname\}"\)
       - matchRegexRaw:
-          pattern: kubectl get --namespace radar gateway/public-gateway -o yaml
+          pattern: kubectl get --namespace kubeatlas gateway/public-gateway -o yaml
       - matchRegexRaw:
           pattern: such as a Gateway listener or load balancer\nhostname, to allowedHosts
 
@@ -141,8 +141,8 @@ tests:
         mode: oidc
         oidc:
           issuerURL: https://idp.example.com
-          clientID: radar
-          redirectURL: https://radar.example.com/auth/callback
+          clientID: kubeatlas
+          redirectURL: https://kubeatlas.example.com/auth/callback
     asserts:
       - matchRegexRaw:
           pattern: Access via port-forward
@@ -185,7 +185,7 @@ tests:
         enabled: true
     asserts:
       - matchRegexRaw:
-          pattern: "Open KubeAtlas at:\n  http://radar.example.com/\n\nAuthentication: proxy"
+          pattern: "Open KubeAtlas at:\n  http://kubeatlas.example.com/\n\nAuthentication: proxy"
       - notMatchRegexRaw:
           pattern: Warning
 
@@ -195,7 +195,7 @@ tests:
         enabled: true
         url: wss://cloud.example/agent
         clusterName: prod-eu
-        existingSecret: radar-cloud-config
+        existingSecret: kubeatlas-cloud-config
       ingress:
         enabled: true
     asserts:
@@ -241,9 +241,9 @@ tests:
         secret: SHOULD-NOT-APPEAR
         oidc:
           issuerURL: https://idp.example.com
-          clientID: radar
+          clientID: kubeatlas
           clientSecret: SHOULD-NOT-APPEAR
-          redirectURL: https://radar.example.com/auth/callback
+          redirectURL: https://kubeatlas.example.com/auth/callback
     asserts: *noCredentials
 
   - it: never prints credentials (HTTPRoute, proxy)
@@ -254,7 +254,7 @@ tests:
         parentRefs:
           - name: public-gateway
         hostnames:
-          - radar.example.com
+          - kubeatlas.example.com
       auth:
         mode: proxy
         secret: SHOULD-NOT-APPEAR

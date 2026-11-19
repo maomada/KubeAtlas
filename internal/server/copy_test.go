@@ -204,7 +204,7 @@ func streamOver(t *testing.T, archive []byte) *podFileStream {
 }
 
 func TestPodFileStreamDeliversWholeFile(t *testing.T) {
-	payload := bytes.Repeat([]byte("radar"), 5000)
+	payload := bytes.Repeat([]byte("kubeatlas"), 5000)
 	stream := streamOver(t, tarArchive(t, "app.log", payload, -1))
 
 	var got bytes.Buffer
@@ -221,7 +221,7 @@ func TestPodFileStreamDeliversWholeFile(t *testing.T) {
 }
 
 func TestPodFileStreamRejectsTruncatedTransfer(t *testing.T) {
-	payload := bytes.Repeat([]byte("radar"), 5000)
+	payload := bytes.Repeat([]byte("kubeatlas"), 5000)
 	full := tarArchive(t, "app.log", payload, -1)
 	stream := streamOver(t, tarArchive(t, "app.log", payload, len(full)-4096))
 

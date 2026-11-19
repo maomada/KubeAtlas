@@ -35,7 +35,7 @@ metadata:
 spec:
   retentionPolicy: 30d
   configuration:
-    destinationPath: s3://radar-demo-backups/pg
+    destinationPath: s3://kubeatlas-demo-backups/pg
     endpointURL: http://minio.storage.svc:9000
     s3Credentials:
       accessKeyId:
@@ -60,7 +60,7 @@ metadata:
 spec:
   retentionPolicy: 7d
   configuration:
-    destinationPath: s3://radar-demo-backups/pg-fresh
+    destinationPath: s3://kubeatlas-demo-backups/pg-fresh
     endpointURL: http://minio.storage.svc:9000
     s3Credentials:
       accessKeyId:

@@ -181,7 +181,7 @@ func TestVeleroExpiredDecidesWhatCountsAsARestorePoint(t *testing.T) {
 		// with no TTL never expires. Reading absent as expired would drop every
 		// one of those out of the count.
 		{"no expiration set", "", false},
-		// A field Radar cannot parse says nothing about the backup. Guessing
+		// A field KubeAtlas cannot parse says nothing about the backup. Guessing
 		// "expired" would delete restore points from the count on a formatting
 		// difference.
 		{"unparseable", "whenever", false},

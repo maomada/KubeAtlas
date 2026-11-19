@@ -1,11 +1,8 @@
 import { useState, useEffect } from 'react'
 import type { TrafficSourcesResponse, TrafficWizardState } from '../../types'
 import { CheckCircle2, XCircle, AlertTriangle, Copy, ExternalLink, ArrowRight, ArrowLeft, Package } from 'lucide-react'
-import { AlertBanner, assetUrl, PaneLoader } from '@maomada/k8s-ui'
-import radarLoadingIcon from '@maomada/k8s-ui/assets/radar/radar-icon-loading.svg'
+import { AlertBanner, PaneLoader } from '@maomada/k8s-ui'
 import { InstallWizard } from '../helm/InstallWizard'
-
-const radarLoadingIconUrl = assetUrl(radarLoadingIcon)
 
 interface TrafficWizardProps {
   state: TrafficWizardState
@@ -102,7 +99,6 @@ export function TrafficWizard({
         <div className="flex items-center justify-center h-full w-full">
           <div className="max-w-md w-full p-6 space-y-6">
             <div className="flex flex-col items-center gap-3">
-              <img src={radarLoadingIconUrl} alt="" aria-hidden className="h-11 w-11" />
               <h2 className="text-lg font-medium text-theme-text-primary">Waiting for traffic source…</h2>
               <p className="text-sm text-theme-text-secondary">
                 Checking for availability

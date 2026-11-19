@@ -30,7 +30,7 @@ func TestExplicitInterfaceMCPConnection(t *testing.T) {
 		t.Skip("no non-loopback IPv4 interface available")
 	}
 	srv := server.New(server.Config{
-		ListenAddress: address, BasePath: "/radar", MCPHandler: mcp.NewHandler(),
+		ListenAddress: address, BasePath: "/kubeatlas", MCPHandler: mcp.NewHandler(),
 	})
 	ready := make(chan struct{})
 	errCh := make(chan error, 1)
@@ -58,7 +58,7 @@ func TestExplicitInterfaceMCPConnection(t *testing.T) {
 	httpClient := &http.Client{Transport: &http.Transport{}}
 	defer httpClient.CloseIdleConnections()
 	session, err := client.Connect(ctx, &mcpsdk.StreamableClientTransport{
-		Endpoint: "http://" + srv.ActualAddr() + "/radar/mcp", HTTPClient: httpClient,
+		Endpoint: "http://" + srv.ActualAddr() + "/kubeatlas/mcp", HTTPClient: httpClient,
 	}, nil)
 	if err != nil {
 		t.Fatalf("MCP handshake on explicit interface: %v", err)

@@ -2,25 +2,38 @@
 
 This document covers KubeAtlas's cluster connection behavior. For commands and flags, see the [CLI flag definitions](../cmd/explorer/main.go).
 
-KubeAtlas stores new local state under `~/.kubeatlas` and never automatically
-reads or copies `~/.radar`. To migrate manually, review the old configuration
-and state files, then selectively transfer only settings you understand.
+KubeAtlas stores new local state under `~/.kubeatlas`. It never automatically
+reads or copies an upstream installation's home directory. To migrate manually,
+review the old configuration and state files, then selectively transfer settings.
 Credentials and secrets require a separate operator-reviewed migration; KubeAtlas
 does not copy them automatically.
 
 ## Compatibility and migration
 
-This distribution is derived from Radar and retains compatibility identifiers
-where changing them could invalidate user data or ownership evidence. The source
-repository and Go import path remain `maomada/KubeAtlas`; the public `RadarApp`
-export, Portal `radarUrl` field, Kubernetes annotation and label keys, and
-persisted schema fields remain unchanged. These are compatibility contracts, not
-active upstream services.
+Product names, source symbols, new configuration and newly owned metadata use
+KubeAtlas. The repository and Go import path are `maomada/KubeAtlas`, and the web
+component is exported as `KubeAtlasApp`.
+
+Legacy wire headers, signed cookies, ownership annotations, evidence markers and
+physical timeline tables are handled at explicit compatibility boundaries. This
+allows existing Agents and stored data to keep working during upgrades. Conflicting
+identity or ownership claims are rejected. Historical SQL migrations retain their
+original identifiers; no database rename or credential rotation is required.
+
+New Cloud-forwarded identities accept defined roles and nonempty `org:`, `user:`,
+`idp:` or `email:` claims within the product namespace. Use the `idp:` claim for
+custom identity-provider groups; unknown reserved group names are rejected.
+Existing legacy-configured Kubernetes groups remain supported without rewriting
+their values. Unknown Cloud roles never grant local or administrative privileges.
+
+Browser preferences migrate from an explicit allowlist. Old YAML drafts are
+purged rather than copied into a new authorization scope, and the existing
+cross-tab purge channel remains stable so already-open tabs receive invalidations.
 
 The original Apache license, copyright notices, attribution and Git history are
 preserved; see [NOTICE](../NOTICE). KubeAtlas is independently maintained and
 has no official upstream affiliation. New installs use `~/.kubeatlas` and
-`KUBEATLAS_*`; old `~/.radar` credentials or settings are never loaded
+`KUBEATLAS_*`; upstream home-directory credentials or settings are never loaded
 automatically. Review and migrate only selected settings manually.
 
 ## MCP exposure
@@ -91,15 +104,15 @@ web page cannot reach KubeAtlas by rebinding its own hostname to KubeAtlas's add
 
 - `localhost`, `*.localhost` and IP addresses, such as `http://192.168.1.5:9280`
   or a published Docker port at `http://localhost:9280`;
-- single-label names (`http://radar:9280`) and Kubernetes Service names ending
+- single-label names (`http://kubeatlas:9280`) and Kubernetes Service names ending
   in `.svc` or `.svc.cluster.local`. The two-label `<service>.<namespace>` form
   can't be told apart from a public domain, so list it (the Helm chart adds its
   own);
 - the hosts of `--trusted-origins`;
 - hostnames listed in `--allowed-hosts` (env `KUBEATLAS_ALLOWED_HOSTS`), e.g.
-  `--allowed-hosts=radar.internal,radar.example.com`. Names have no scheme or
+  `--allowed-hosts=kubeatlas.internal,kubeatlas.example.com`. Names have no scheme or
   port; `*.example.com` covers every name under `example.com` but not
-  `example.com` itself. A custom cluster domain (`radar.radar.svc.example`)
+  `example.com` itself. A custom cluster domain (`kubeatlas.kubeatlas.svc.example`)
   must be listed.
 
 Any other hostname gets `403` naming the host to add. `--allowed-hosts='*'` turns
@@ -109,13 +122,13 @@ listener, which keeps the stricter rule above, or with authentication enabled.
 The check sees the `Host` KubeAtlas receives. A proxy without authentication in
 front of KubeAtlas must pass the browser's original `Host` through, or itself accept
 only the hostnames you serve KubeAtlas at: a catch-all proxy that rewrites every
-request to `Host: radar` or an IP address hides a rebound hostname from KubeAtlas.
+request to `Host: kubeatlas` or an IP address hides a rebound hostname from KubeAtlas.
 The host local terminal is unavailable on a shared listener even if a client
 sends a loopback `Host` value.
 
 The Docker image and Helm chart set `0.0.0.0` explicitly because their HTTP
 listener must be reachable through a published container port or Kubernetes
-Service. Desktop KubeAtlas and temporary `radar diagnose` servers remain
+Service. Desktop KubeAtlas and temporary `kubeatlas diagnose` servers remain
 loopback-only.
 
 ## Profiling
@@ -184,11 +197,11 @@ KubeAtlas from a terminal where the CLI works, or set `KUBEATLAS_AI_CLI_BIN` to 
 path:
 
 ```bash
-KUBEATLAS_AI_CLI_BIN="$(command -v claude)" radar
+KUBEATLAS_AI_CLI_BIN="$(command -v claude)" kubeatlas
 ```
 
 ```powershell
-$env:KUBEATLAS_AI_CLI_BIN = "C:\path\to\claude.exe"; radar
+$env:KUBEATLAS_AI_CLI_BIN = "C:\path\to\claude.exe"; kubeatlas
 ```
 
 With the variable set, KubeAtlas uses only that CLI and stops looking for others.
@@ -316,7 +329,7 @@ User preferences for the UI. Managed via the Settings dialog or `PUT /api/settin
 |-------|--------|-------------|
 | `theme` | `light`, `dark`, `system` | UI theme preference |
 | `pinnedKinds` | Array of `{name, kind, group}` | Resource kinds pinned to the sidebar |
-| `lastDesktopContext` | `{name, sourceFile, inFileName}` | Written by the Desktop app for itself: the cluster its window last used, reopened on the next launch. Stripped from `/api/settings`, and never read by `kubectl kubeatlas` or the `radar` CLI — see [Startup Context](#startup-context) |
+| `lastDesktopContext` | `{name, sourceFile, inFileName}` | Written by the Desktop app for itself: the cluster its window last used, reopened on the next launch. Stripped from `/api/settings`, and never read by `kubectl kubeatlas` or the `kubeatlas` CLI — see [Startup Context](#startup-context) |
 
 ## Cluster Connection Precedence
 
@@ -706,7 +719,7 @@ Which cluster KubeAtlas comes up on depends on how you launched it.
 
 **The Desktop app reopens where you left off.** The context selected at startup and every successful context switch are recorded as `lastDesktopContext` in `~/.kubeatlas/settings.json`, and the next launch reconnects to it — the natural behaviour for a window you closed and reopened.
 
-**`kubectl kubeatlas`, `radar`, and `radar diagnose --standalone` start on the kubeconfig's `current-context`**, as `kubectl` would. A command typed right after `kubectl config use-context staging` runs against staging, and a cluster picked in the Desktop app days ago never redirects it. Terminal runs don't record switches either, so nothing you do in one moves where the Desktop app reopens.
+**`kubectl kubeatlas`, `kubeatlas`, and `kubeatlas diagnose --standalone` start on the kubeconfig's `current-context`**, as `kubectl` would. A command typed right after `kubectl config use-context staging` runs against staging, and a cluster picked in the Desktop app days ago never redirects it. Terminal runs don't record switches either, so nothing you do in one moves where the Desktop app reopens.
 
 The separation is not a preference: the remembered cluster is written under a Desktop-scoped key that the CLI never reads, and there is no setting that opts the CLI in.
 
@@ -844,7 +857,7 @@ workload-template efficiency checks are skipped and `missingInputs` includes
 
 ### Per-resource check suppression
 
-Add `radarhq.io/ignore-checks` with comma-separated check IDs to the resource
+Add `kubeatlas.io/ignore-checks` with comma-separated check IDs to the resource
 named in a finding, for example `singleReplica,hostNetwork`. For workload
 Pod-spec findings, put the annotation on the Deployment or other owning workload,
 not only on its generated Pods. Unknown check IDs have no effect. The annotation

@@ -2,6 +2,7 @@ package investigation
 
 import (
 	"crypto/rand"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"regexp"
 	"strings"
 )
@@ -14,17 +15,17 @@ var (
 	scopeRe = regexp.MustCompile(`^[a-z2-7]{26,128}$`)
 	refRe   = regexp.MustCompile(`^ev_[a-z2-7]{26,128}_[a-z2-7]{26,128}$`)
 	// The ref reaches the model inside a marker wrapper, so a model that
-	// copies the whole marker instead of its payload is quoting Radar
+	// copies the whole marker instead of its payload is quoting KubeAtlas
 	// correctly. Unwrapping is transcription, not interpretation.
 	// Anchored, and one marker only: a field holding two markers, or a marker
 	// inside prose, is the agent meaning something this cannot read, and
 	// picking the first would be choosing an interpretation rather than
 	// removing a wrapper.
-	wrappedRefRe = regexp.MustCompile(`^\[\[radar:evidence-ref=(ev_[a-z2-7]{26,128}_[a-z2-7]{26,128})\]\]$`)
+	wrappedRefRe = regexp.MustCompile(`^\[\[` + compat.EvidenceNamespacePattern + `:evidence-ref=(ev_[a-z2-7]{26,128}_[a-z2-7]{26,128})\]\]$`)
 )
 
 const (
-	refMarkerPrefix = "[[radar:evidence-ref="
+	refMarkerPrefix = "[[kubeatlas:evidence-ref="
 	refMarkerSuffix = "]]\n"
 )
 
@@ -53,10 +54,14 @@ func RefMarker(ref string) string { return refMarkerPrefix + ref + refMarkerSuff
 // a payload from any MCP server comes out as a ref, and only the issuer's
 // check against what it recorded makes it provenance.
 func SplitRefMarker(result string) (clean, ref string) {
-	if !strings.HasPrefix(result, refMarkerPrefix) {
+	prefix := refMarkerPrefix
+	if !strings.HasPrefix(result, prefix) {
+		prefix = compat.LegacyEvidenceRefPrefix
+	}
+	if !strings.HasPrefix(result, prefix) {
 		return result, ""
 	}
-	remainder := result[len(refMarkerPrefix):]
+	remainder := result[len(prefix):]
 	end := strings.Index(remainder, refMarkerSuffix)
 	if end < 0 {
 		return result, ""

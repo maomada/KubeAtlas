@@ -65,7 +65,7 @@ type CalicoPolicyKind struct {
 	Stages string
 }
 
-// CalicoPolicyKinds returns the Calico policy APIs Radar reads.
+// CalicoPolicyKinds returns the Calico policy APIs KubeAtlas reads.
 func CalicoPolicyKinds() []CalicoPolicyKind {
 	kinds := make([]CalicoPolicyKind, 0, len(calicoPolicyDefinitions))
 	for _, definition := range calicoPolicyDefinitions {

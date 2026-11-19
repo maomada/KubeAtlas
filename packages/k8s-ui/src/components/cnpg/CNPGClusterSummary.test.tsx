@@ -186,7 +186,7 @@ describe('problem meta', () => {
 })
 
 describe('problem provenance', () => {
-  it('names the origin instead of "Radar issue" and links to Issues when the host can', () => {
+  it('names the origin instead of "KubeAtlas issue" and links to Issues when the host can', () => {
     const open = vi.fn()
     const r = row({
       problems: [{ ...problem('a', 'critical', 'WAL archiving is failing'), subject: { kind: 'Cluster', group: 'postgresql.cnpg.io', namespace: 'db', name: 'pg' }, origin: { label: 'Reported by CNPG', detail: 'ContinuousArchiving condition' } }],
@@ -198,7 +198,7 @@ describe('problem provenance', () => {
       </OpenIssueContext.Provider>,
     )
     expect(document.body.textContent).toContain('Reported by CNPG')
-    expect(document.body.textContent).not.toContain('Radar issue')
+    expect(document.body.textContent).not.toContain('KubeAtlas issue')
     act(() => [...document.querySelectorAll('button')].find((b) => b.textContent === 'See in Issues →')!.click())
     expect(open).toHaveBeenCalledWith(expect.objectContaining({ id: 'a' }))
     act(() => root.unmount())
@@ -206,7 +206,7 @@ describe('problem provenance', () => {
   it('offers no Issues link without a host handler', () => {
     const r = row({ problems: [problem('a', 'warning', 'Backup failed')], attention: true })
     const root = render(<CNPGClusterSummary row={r} />)
-    expect(document.body.textContent).toContain('Detected by Radar')
+    expect(document.body.textContent).toContain('Detected by KubeAtlas')
     expect(document.body.textContent).not.toContain('See in Issues')
     act(() => root.unmount())
   })

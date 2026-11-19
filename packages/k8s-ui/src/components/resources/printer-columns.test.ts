@@ -204,7 +204,7 @@ describe('printerTableKey priority', () => {
 })
 
 describe('printerCellTone', () => {
-  // The one place Radar interprets vendor data rather than passing it through.
+  // The one place KubeAtlas interprets vendor data rather than passing it through.
   // Deliberately narrow: the vendor NAMED the column, which is a far stronger
   // signal than inferring health from a value.
   it.each([

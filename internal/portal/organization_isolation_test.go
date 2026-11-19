@@ -3,6 +3,7 @@ package portal
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -49,7 +50,7 @@ func startBlockedMCP(t *testing.T, h *Handler, calls chan *blockedMCPCall, cooki
 		r := httptest.NewRequest(http.MethodPost, "http://localhost/mcp", strings.NewReader("{}"))
 		r.Header.Set("Authorization", "Bearer "+token)
 		r.Header.Set("X-KubeAtlas-Organization-ID", organizationID)
-		r.Header.Set("X-Kubernetes-Groups", "radar:spoofed")
+		r.Header.Set("X-Kubernetes-Groups", "kubeatlas:spoofed")
 		if cookie != nil {
 			r.AddCookie(cookie)
 		}
@@ -74,10 +75,10 @@ func organizationTestRequest(h *Handler, cookie *http.Cookie, method, path, body
 	r.Header.Set("Sec-Fetch-Site", "same-origin")
 	r.Header.Set("X-KubeAtlas-Organization-ID", "attacker-org")
 	r.Header.Set("X-Organization-ID", "attacker-org")
-	r.Header.Set("X-Kubernetes-Groups", "radar:spoofed")
-	r.Header.Set("X-Forwarded-Groups", "radar:spoofed")
+	r.Header.Set("X-Kubernetes-Groups", "kubeatlas:spoofed")
+	r.Header.Set("X-Forwarded-Groups", "kubeatlas:spoofed")
 	r.Header.Set("X-Forwarded-User", "forged-user")
-	r.Header.Set("X-Radar-Role", "admin")
+	r.Header.Set("X-KubeAtlas-Role", "admin")
 	if cookie != nil {
 		r.AddCookie(cookie)
 	}
@@ -136,6 +137,13 @@ func TestOrganizationIsolationSwitchPinnedMCPAndTransferCancellation(t *testing.
 		_, _ = w.Write([]byte("{\"source\":\"live\"}"))
 	}))
 	startPortalHubAgent(t, h, clusterA.Token, "org-a", source)
+	oldConnectionID := h.liveHub.transport.Agents()[0].ConnectionID
+	oldClient, err := h.liveHub.transport.BrowserHTTPClient("org-a", hub.Principal{
+		OrganizationID: orgA, UserID: "kubeatlas:transfer-stale-client", ClusterIDs: []string{"org-a"}, ReadOnly: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	if _, err := h.liveHub.store.CreateClusterForOrganization(orgB, hubstate.ClusterInput{ID: "org-b", Name: "B cluster"}); err != nil {
 		t.Fatal(err)
 	}
@@ -301,15 +309,84 @@ func TestOrganizationIsolationSwitchPinnedMCPAndTransferCancellation(t *testing.
 	case <-time.After(time.Second):
 		t.Fatal("transferred MCP request did not finish")
 	}
-	if _, err := h.liveHub.store.AuthenticateAgent(clusterA.Token, "org-a"); err == nil {
-		t.Fatal("cluster transfer retained the old Agent token")
+	if current, err := h.liveHub.store.AuthenticateAgent(clusterA.Token, "org-a"); err != nil || current.OrganizationID != orgB || current.RevokedAt != nil {
+		t.Fatalf("active Agent did not retain authentication in its new organization: err=%v", err)
 	}
 	if groups := h.liveHub.store.GroupsForOrganization(orgA); len(groups) != 1 || len(groups[0].ClusterIDs) != 0 {
 		t.Fatalf("transfer retained old group scope: %#v", groups)
 	}
-	selectOrganizationForTest(t, h, localCookie, orgB)
-	hubRequest(t, h, localCookie, "", http.MethodPost, "/api/hub/clusters/org-a/rotate", "{}", http.StatusConflict)
 	hubRequest(t, h, nil, aCredential.Token, http.MethodPost, "/mcp", "{}", http.StatusUnauthorized)
+	selectOrganizationForTest(t, h, sharedCookie, orgA)
+	if denied := organizationTestRequest(h, sharedCookie, http.MethodGet, "/c/org-a/api/health", ""); denied.Code != http.StatusNotFound {
+		t.Fatalf("source organization retained native access after transfer: status=%d", denied.Code)
+	}
+	sourceDirectory := decodeHubResponse[map[string]any](t, organizationTestRequest(h, sharedCookie, http.MethodGet, "/api/hub/clusters", ""))
+	if len(sourceDirectory["clusters"].([]any)) != 0 {
+		t.Fatal("source organization retained the transferred cluster in its directory")
+	}
+	deadline := time.NewTimer(10 * time.Second)
+	defer deadline.Stop()
+	tick := time.NewTicker(10 * time.Millisecond)
+	defer tick.Stop()
+	reconnected := false
+	for !reconnected {
+		for _, agent := range h.liveHub.transport.Agents() {
+			if agent.ClusterID == "org-a" && agent.ConnectionID != oldConnectionID {
+				reconnected = true
+			}
+		}
+		if reconnected {
+			break
+		}
+		select {
+		case <-tick.C:
+		case <-deadline.C:
+			t.Fatal("same-token Agent did not automatically reconnect after transfer")
+		}
+	}
+	oldRequest, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://localhost/api/health", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldResponse, err := oldClient.Do(oldRequest)
+	if oldResponse != nil {
+		_ = oldResponse.Body.Close()
+	}
+	var oldTransportError *hub.Error
+	if !errors.As(err, &oldTransportError) || oldTransportError.Code != hub.CodeSourceChanged {
+		t.Fatalf("pre-transfer client reused the replaced tunnel: err=%v", err)
+	}
+	selectOrganizationForTest(t, h, sharedCookie, orgB)
+	if read := organizationTestRequest(h, sharedCookie, http.MethodGet, "/c/org-a/api/health", ""); read.Code != http.StatusOK {
+		t.Fatalf("target viewer could not read the automatically reconnected Agent: status=%d", read.Code)
+	}
+	select {
+	case identity := <-nativeObservations:
+		if identity.user != "kubeatlas:"+sharedID || len(identity.groups) != 1 || identity.groups[0] != "kubeatlas:hub:viewer" {
+			t.Fatalf("transferred Agent received the old organization's authority: %#v", identity)
+		}
+	default:
+		t.Fatal("target viewer read did not reach the reconnected Agent")
+	}
+	if write := organizationTestRequest(h, sharedCookie, http.MethodPost, "/c/org-a/api/resources/apply", `{"kind":"ConfigMap"}`); write.Code != http.StatusForbidden {
+		t.Fatalf("target viewer retained source-owner write access: status=%d", write.Code)
+	}
+	if len(nativeObservations) != 0 {
+		t.Fatal("denied source request, stale client or viewer write reached the Agent")
+	}
+	credentialBody, _ = json.Marshal(map[string]any{"label": "Moved cluster viewer", "clusterIds": []string{"org-a"}, "readOnly": false})
+	movedCredential := decodeHubResponse[hubstate.IssuedCredential](t,
+		hubRequest(t, h, sharedCookie, "", http.MethodPost, "/api/mcp/credentials", string(credentialBody), http.StatusCreated))
+	movedCall, movedDone := startBlockedMCP(t, h, calls, sharedCookie, movedCredential.Token, orgA)
+	if movedCall.principal.OrganizationID != orgB || !movedCall.principal.ReadOnly || len(movedCall.principal.Groups) != 1 || movedCall.principal.Groups[0] != "kubeatlas:hub:viewer" {
+		t.Fatalf("new target MCP credential inherited source-owner authority: %#v", movedCall.principal)
+	}
+	close(movedCall.release)
+	select {
+	case <-movedDone:
+	case <-time.After(time.Second):
+		t.Fatal("new target MCP request did not finish")
+	}
 }
 
 func TestOrganizationAuthorizationMutationsCancelAndRevokeMCP(t *testing.T) {
@@ -324,6 +401,8 @@ func TestOrganizationAuthorizationMutationsCancelAndRevokeMCP(t *testing.T) {
 	id := "oidc:" + strings.Repeat("c", 64)
 	memberships := []hubstate.OrganizationMembership{{OrganizationID: orgA, Role: "owner"}, {OrganizationID: orgB, Role: "viewer"}}
 	addOrganizationAccount(t, h, id, memberships...)
+	// Recovery access is not an ordinary organization Owner quorum vote.
+	addOrganizationAccount(t, h, "oidc:"+strings.Repeat("e", 64), hubstate.OrganizationMembership{OrganizationID: orgA, Role: "owner"})
 	mutationSets := []struct {
 		name        string
 		status      string

@@ -1,5 +1,5 @@
 // Package resourcecontext defines the canonical data-transfer types for
-// radar's normalized resource-context layer.
+// kubeatlas's normalized resource-context layer.
 //
 // The layer is the unified server-side projection of facts that today are
 // scattered across topology relationships, the audit engine, the issues
@@ -137,7 +137,7 @@ type ContextRef struct {
 
 // ScalerRef is one scaledBy entry: the scaler's identity plus, when the
 // scaler is an HPA the caller may read, the same diagnosis the HPA's own
-// context carries under hpaSummary. Scalers Radar does not diagnose (KEDA
+// context carries under hpaSummary. Scalers KubeAtlas does not diagnose (KEDA
 // ScaledObject/ScaledJob) carry the identity alone.
 type ScalerRef struct {
 	ContextRef
@@ -153,8 +153,8 @@ type ManagerContext struct {
 	// State: "agree" or "listed" (one GitOps manager's status lists it),
 	// "disagree" (a list names it and its metadata names another manager),
 	// "shared" (several lists name it), "claimed" (only its metadata names a
-	// manager), "unknown" (no evidence, and Radar couldn't look everywhere) or
-	// "none" (no evidence in what Radar reads; not "unmanaged"). A native Helm
+	// manager), "unknown" (no evidence, and KubeAtlas couldn't look everywhere) or
+	// "none" (no evidence in what KubeAtlas reads; not "unmanaged"). A native Helm
 	// release's annotations count only without GitOps evidence: Flux's
 	// helm-controller writes them for the release it manages.
 	State string `json:"state"`
@@ -184,7 +184,7 @@ type ManagerClaimContext struct {
 	// Check: "recorded", "omitted" (its list was read and doesn't name the
 	// resource), "unreadable", "remote", "missing", "not-recording" (a native
 	// Helm release), "unresolved" (no namespace), "withheld" (the caller may
-	// not read the manager) or "unchecked" (Radar couldn't establish what its list says).
+	// not read the manager) or "unchecked" (KubeAtlas couldn't establish what its list says).
 	Check string `json:"check"`
 	// On is the object whose metadata makes the claim, in AlsoClaimed.
 	On *ContextRef `json:"on,omitempty"`
@@ -224,7 +224,7 @@ type ResourceSummaryContext struct {
 // deletes them). Replicas is a scanned ReplicaSet's desired count, so zero
 // usually marks findings about an image the workload no longer runs, though a
 // Deployment scaled to zero reads zero too. Missing means the scanned object
-// isn't in Radar's cache. Neither says the scanned image is what runs now.
+// isn't in KubeAtlas's cache. Neither says the scanned image is what runs now.
 type ScannedRef struct {
 	Kind      string `json:"kind"`
 	Name      string `json:"name"`
@@ -272,7 +272,7 @@ type DuplicateEnvVarReference struct {
 
 type DuplicateEnvVarOccurrence struct {
 	// Path is a 0-based JSON pointer to the declaration in the object as
-	// Radar last saw it, e.g. /spec/template/spec/containers/0/env/23.
+	// KubeAtlas last saw it, e.g. /spec/template/spec/containers/0/env/23.
 	Path  string `json:"path"`
 	Value string `json:"value"`
 }
@@ -410,7 +410,7 @@ const (
 )
 
 // SchedulingQueue describes a provider-owned queue in the scheduling path.
-// Name remains available when RBAC prevents Radar from exposing a navigable
+// Name remains available when RBAC prevents KubeAtlas from exposing a navigable
 // Ref. Adapters order queues from submission toward entitlement and Roles in
 // the constant order below; one queue may play both roles.
 type SchedulingQueue struct {
@@ -476,7 +476,7 @@ type KueueScheduling struct {
 	ConcurrentAdmission        *KueueConcurrentAdmission `json:"concurrentAdmission,omitempty"`
 }
 
-// KueuePhase is Radar's compact projection of the Kueue admission lifecycle.
+// KueuePhase is KubeAtlas's compact projection of the Kueue admission lifecycle.
 type KueuePhase string
 
 const (

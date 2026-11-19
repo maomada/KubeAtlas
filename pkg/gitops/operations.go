@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"sort"
 	"strings"
 	"time"
@@ -23,12 +24,12 @@ import (
 // so consumers can identify or clean these annotations up directly.
 //
 // The legacy* keys are read on resume to honor Applications suspended by
-// older Radar builds; they're cleared on resume and never re-written. Safe
+// older KubeAtlas builds; they're cleared on resume and never re-written. Safe
 // to drop once all installs have rolled through at least one resume cycle
 // past this release.
 const (
-	ArgoSuspendedPruneAnnotation    = "radarhq.io/suspended-prune"
-	ArgoSuspendedSelfHealAnnotation = "radarhq.io/suspended-selfheal"
+	ArgoSuspendedPruneAnnotation    = "kubeatlas.io/suspended-prune"
+	ArgoSuspendedSelfHealAnnotation = "kubeatlas.io/suspended-selfheal"
 
 	legacyArgoSuspendedPruneAnnotation    = "skyhook.io/suspended-prune"
 	legacyArgoSuspendedSelfHealAnnotation = "skyhook.io/suspended-selfheal"
@@ -315,13 +316,13 @@ func syncArgoApp(ctx context.Context, dynClient dynamic.Interface, namespace, na
 	}
 	operation := map[string]any{
 		"initiatedBy": map[string]any{
-			"username": "radar",
+			"username": "kubeatlas",
 		},
 		"sync": sync,
 	}
 	if validationID != "" {
 		operation["info"] = []any{map[string]any{
-			"name":  "radar-validation-id",
+			"name":  "kubeatlas-validation-id",
 			"value": validationID,
 		}}
 	}
@@ -402,7 +403,7 @@ func ValidateArgoResource(ctx context.Context, dynClient dynamic.Interface, name
 
 func argoResourceValidationResult(app *unstructured.Unstructured, validationID string, target ArgoSyncResource) (ArgoResourceValidationResult, bool) {
 	operation, found, _ := unstructured.NestedMap(app.Object, "status", "operationState", "operation")
-	if !found || !argoOperationHasInfo(operation, "radar-validation-id", validationID) {
+	if !found || !argoOperationHasInfo(operation, "kubeatlas-validation-id", validationID) {
 		return ArgoResourceValidationResult{}, false
 	}
 	phase, _, _ := unstructured.NestedString(app.Object, "status", "operationState", "phase")
@@ -447,13 +448,24 @@ func argoOperationHasInfo(operation map[string]any, name, value string) bool {
 	if !ok {
 		return false
 	}
+	matched := false
+	seen := make(map[string]bool)
 	for _, item := range info {
 		entry, ok := item.(map[string]any)
-		if ok && entry["name"] == name && entry["value"] == value {
-			return true
+		if !ok {
+			continue
 		}
+		key, _ := entry["name"].(string)
+		if key != name && !(name == "kubeatlas-validation-id" && key == compat.LegacyArgoValidationInfo) {
+			continue
+		}
+		if seen[key] || entry["value"] != value {
+			return false
+		}
+		seen[key] = true
+		matched = true
 	}
-	return false
+	return matched
 }
 
 func argoResourceResultMatches(entry map[string]any, target ArgoSyncResource) bool {
@@ -495,19 +507,15 @@ func SetArgoAutoSync(ctx context.Context, dynClient dynamic.Interface, namespace
 		selfHeal := true
 
 		annotations, _, _ := unstructured.NestedStringMap(app.Object, "metadata", "annotations")
-		if annotations != nil {
-			// Prefer the current key; fall back to the legacy key for
-			// Applications suspended by older Radar builds.
-			if v, ok := annotations[ArgoSuspendedPruneAnnotation]; ok {
-				prune = v == "true"
-			} else if v, ok := annotations[legacyArgoSuspendedPruneAnnotation]; ok {
-				prune = v == "true"
-			}
-			if v, ok := annotations[ArgoSuspendedSelfHealAnnotation]; ok {
-				selfHeal = v == "true"
-			} else if v, ok := annotations[legacyArgoSuspendedSelfHealAnnotation]; ok {
-				selfHeal = v == "true"
-			}
+		if value, present, err := suspendedSetting(annotations, ArgoSuspendedPruneAnnotation, compat.LegacyArgoPruneAnnotation, legacyArgoSuspendedPruneAnnotation); err != nil {
+			return OperationResult{}, err
+		} else if present {
+			prune = value
+		}
+		if value, present, err := suspendedSetting(annotations, ArgoSuspendedSelfHealAnnotation, compat.LegacyArgoSelfHealAnnotation, legacyArgoSuspendedSelfHealAnnotation); err != nil {
+			return OperationResult{}, err
+		} else if present {
+			selfHeal = value
 		}
 
 		patch = map[string]any{
@@ -516,7 +524,9 @@ func SetArgoAutoSync(ctx context.Context, dynClient dynamic.Interface, namespace
 					ArgoSuspendedPruneAnnotation:          nil,
 					ArgoSuspendedSelfHealAnnotation:       nil,
 					legacyArgoSuspendedPruneAnnotation:    nil,
+					compat.LegacyArgoPruneAnnotation:      nil,
 					legacyArgoSuspendedSelfHealAnnotation: nil,
+					compat.LegacyArgoSelfHealAnnotation:   nil,
 				},
 			},
 			"spec": map[string]any{
@@ -542,9 +552,24 @@ func SetArgoAutoSync(ctx context.Context, dynClient dynamic.Interface, namespace
 			}
 		}
 
+		if !found || automated == nil {
+			annotations := app.GetAnnotations()
+			if value, present, err := suspendedSetting(annotations, ArgoSuspendedPruneAnnotation, compat.LegacyArgoPruneAnnotation, legacyArgoSuspendedPruneAnnotation); err != nil {
+				return OperationResult{}, err
+			} else if present {
+				prune = value
+			}
+			if value, present, err := suspendedSetting(annotations, ArgoSuspendedSelfHealAnnotation, compat.LegacyArgoSelfHealAnnotation, legacyArgoSuspendedSelfHealAnnotation); err != nil {
+				return OperationResult{}, err
+			} else if present {
+				selfHeal = value
+			}
+		}
 		patch = map[string]any{
 			"metadata": map[string]any{
-				"annotations": map[string]string{
+				"annotations": map[string]any{
+					compat.LegacyArgoPruneAnnotation: nil, compat.LegacyArgoSelfHealAnnotation: nil,
+					legacyArgoSuspendedPruneAnnotation: nil, legacyArgoSuspendedSelfHealAnnotation: nil,
 					ArgoSuspendedPruneAnnotation:    fmt.Sprintf("%v", prune),
 					ArgoSuspendedSelfHealAnnotation: fmt.Sprintf("%v", selfHeal),
 				},
@@ -729,7 +754,7 @@ func RollbackArgoApp(ctx context.Context, dynClient dynamic.Interface, namespace
 	patch := map[string]any{
 		"metadata": map[string]any{"resourceVersion": app.GetResourceVersion()},
 		"operation": map[string]any{
-			"initiatedBy": map[string]any{"username": "radar"},
+			"initiatedBy": map[string]any{"username": "kubeatlas"},
 			"rollback":    rollback,
 		},
 	}

@@ -58,7 +58,7 @@ func TestMatch_KindFilter(t *testing.T) {
 	if _, _, _, ok := match(Parse("kind:Pod"), c); !ok {
 		t.Fatal("kind:Pod should match a Pod candidate")
 	}
-	// Pluralized form too — radar fetch.go uses lowercase plural keys.
+	// Pluralized form too — kubeatlas fetch.go uses lowercase plural keys.
 	if _, _, _, ok := match(Parse("kind:pods"), c); !ok {
 		t.Fatal("kind:pods should match")
 	}

@@ -27,7 +27,7 @@ func loadOperatorSettings(cfg AppConfig) error {
 		return nil
 	}
 	if cloud.Mode() || cfg.CloudTunnelConfigured {
-		log.Printf("[settings] Ignoring %s in Radar Cloud mode; Cloud configuration behavior is unchanged", settings.OperatorFileEnv)
+		log.Printf("[settings] Ignoring %s in KubeAtlas Cloud mode; Cloud configuration behavior is unchanged", settings.OperatorFileEnv)
 		return nil
 	}
 	operator, err := settings.ReadOperatorConfig(path)

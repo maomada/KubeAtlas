@@ -2,16 +2,17 @@ package auth
 
 import (
 	"context"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"strings"
 )
 
-// CloudRole captures the user's tier under Radar Cloud's RBAC model.
-// Cloud injects one of `radar:owner` / `radar:member` / `radar:viewer`
+// CloudRole captures the user's tier under KubeAtlas Cloud's RBAC model.
+// Cloud injects one of `kubeatlas:owner` / `kubeatlas:member` / `kubeatlas:viewer`
 // into X-Forwarded-Groups (plus the deprecated `cloud:*` equivalents for
 // the transition window); this type extracts that signal.
 //
-// CloudRole gates Radar's own features — settings, integrations, self-upgrade —
-// which run as Radar's service account, so nothing else checks them. It must
+// CloudRole gates KubeAtlas's own features — settings, integrations, self-upgrade —
+// which run as KubeAtlas's service account, so nothing else checks them. It must
 // not gate operations that run as the impersonated user (Helm, probe pods):
 // Kubernetes RBAC decides those, and when IdP groups grant access the role
 // says nothing about what the user may do in the cluster.
@@ -19,19 +20,21 @@ type CloudRole string
 
 const (
 	// RoleNone means the request is not from a Cloud-attributed user
-	// (OSS deploy, or a Cloud bug stripped the role group). AtLeast
+	// (a standalone deployment). Authenticated Cloud users with no recognized
+	// tier are RoleDenied. AtLeast
 	// returns true for RoleNone so non-Cloud deploys aren't gated.
 	RoleNone   CloudRole = ""
+	RoleDenied CloudRole = "denied"
 	RoleViewer CloudRole = "viewer"
 	RoleMember CloudRole = "member"
 	RoleOwner  CloudRole = "owner"
 )
 
-// radar: is the canonical vocabulary; cloud: is the pre-rename legacy still
+// kubeatlas: is the canonical vocabulary; cloud: is the pre-rename legacy still
 // emitted by the hub (and possibly present from older hubs) during the
 // deprecation window. Accepting both keeps every hub/binary version pairing
 // working; drop cloud: in the next major.
-var tierGroupPrefixes = []string{"radar:", "cloud:"}
+var tierGroupPrefixes = []string{"kubeatlas:hub:", "kubeatlas:", compat.LegacyTierPrefix, "cloud:"}
 
 // ErrCodeCloudRoleInsufficient is the stable wire value emitted in 403
 // response bodies (`error_code` field) when a request is denied by a
@@ -47,7 +50,7 @@ var tierRank = map[CloudRole]int{
 }
 
 // CloudRoleFromGroups returns the highest-ranked Cloud tier present in
-// the group list (accepting both the canonical radar:<tier> and legacy
+// the group list (accepting both the canonical kubeatlas:<tier> and legacy
 // cloud:<tier> forms). Returns RoleNone when no tier group is found,
 // which the call sites treat as "not running under Cloud."
 func CloudRoleFromGroups(groups []string) CloudRole {
@@ -80,10 +83,26 @@ func CloudRoleFromContext(ctx context.Context) CloudRole {
 	if user == nil {
 		return RoleNone
 	}
-	if user.HubGroups != nil {
-		return CloudRoleFromGroups(user.HubGroups)
+	if user.Cloud && user.System {
+		// User-token mode keeps HubGroups empty for verified service identities.
+		// Their dedicated Kubernetes identity permits reads, never owner actions.
+		if IsSystemIdentity(user.Username, user.Groups) {
+			return RoleViewer
+		}
+		return RoleDenied
 	}
-	return CloudRoleFromGroups(user.Groups)
+	groups := user.Groups
+	if user.HubGroups != nil {
+		groups = user.HubGroups
+	}
+	role := CloudRoleFromGroups(groups)
+	if user.Cloud && role == RoleNone {
+		if IsSystemIdentity(user.Username, groups) {
+			return RoleViewer
+		}
+		return RoleDenied
+	}
+	return role
 }
 
 // AtLeast reports whether r meets or exceeds min. RoleNone (no Cloud

@@ -50,7 +50,7 @@ describe('mergeGitOpsTrees', () => {
       nodes: [
         ctrlNode('app1', 'Application', 'app1', 'argocd', { role: 'root' }),
         ctrlNode('dep1', 'Deployment', 'web', 'prod', { health: 'Healthy', healthSource: 'controller' }),
-        ctrlNode('css1', 'ClusterSecretStore', 'platform', '', { health: 'Degraded', healthSource: 'radar', healthReason: 'Ready: Bad', healthMessage: 'no route' }),
+        ctrlNode('css1', 'ClusterSecretStore', 'platform', '', { health: 'Degraded', healthSource: 'kubeatlas', healthReason: 'Ready: Bad', healthMessage: 'no route' }),
       ],
       edges: [],
     }
@@ -58,7 +58,7 @@ describe('mergeGitOpsTrees', () => {
       root: destNode('dest-root', 'Application', 'app1', 'argocd', { role: 'root' }),
       nodes: [
         destNode('dest-root', 'Application', 'app1', 'argocd', { role: 'root' }),
-        destNode('dest-dep1', 'Deployment', 'web', 'prod', { health: 'Degraded', healthSource: 'radar', healthReason: 'CrashLoopBackOff', healthMessage: 'back-off' }),
+        destNode('dest-dep1', 'Deployment', 'web', 'prod', { health: 'Degraded', healthSource: 'kubeatlas', healthReason: 'CrashLoopBackOff', healthMessage: 'back-off' }),
         destNode('dest-css1', 'ClusterSecretStore', 'platform', ''),
       ],
       edges: [],
@@ -66,12 +66,12 @@ describe('mergeGitOpsTrees', () => {
     const merged = mergeGitOpsTrees(controller, destination)
     const dep = merged.nodes.find((n) => n.ref.kind === 'Deployment')!
     expect(dep.health).toBe('Degraded')
-    expect(dep.healthSource).toBe('radar')
+    expect(dep.healthSource).toBe('kubeatlas')
     expect(dep.healthReason).toBe('CrashLoopBackOff')
     expect(dep.healthMessage).toBe('back-off')
     const css = merged.nodes.find((n) => n.ref.kind === 'ClusterSecretStore')!
     expect(css.health).toBe('Degraded')
-    expect(css.healthSource).toBe('radar')
+    expect(css.healthSource).toBe('kubeatlas')
     expect(css.healthReason).toBe('Ready: Bad')
   })
 
@@ -234,7 +234,7 @@ describe('mergeGitOpsTrees', () => {
   })
 
   // Routing signal: every node carries `data._source` so consumers
-  // (Radar Hub's fleet detail page) can route resource-viewer clicks
+  // (KubeAtlas Hub's fleet detail page) can route resource-viewer clicks
   // to the correct cluster without depending on the `dest:` ID prefix
   // string convention. A future change to the ID format must NOT break
   // routing — this test pins that separation.

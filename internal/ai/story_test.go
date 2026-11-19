@@ -36,7 +36,7 @@ func TestFinishTurnKeepsRevisionOnlyForCompleteVerdicts(t *testing.T) {
 }
 
 // An assessment may rest on results read in earlier turns of the same run.
-// Their proof is the RadarEvidence flag the earlier turn's validator persisted;
+// Their proof is the KubeAtlasEvidence flag the earlier turn's validator persisted;
 // the current turn is still held to the exact private-transport payload.
 func TestBindEvidenceAcceptsEarlierTurnsOfTheSameRun(t *testing.T) {
 	earlierScope := strings.Repeat("e", 26)
@@ -50,7 +50,7 @@ func TestBindEvidenceAcceptsEarlierTurnsOfTheSameRun(t *testing.T) {
 		evidenceStep(earlierRef, func(s *StepInfo) { s.ID = "call-1"; s.Result = `{"kind":"Pod","from":"turn 1"}` }),
 		// Same host call ID as the current turn's, with a different tool: the
 		// identity table must be per turn or this would read as a conflict.
-		evidenceStep(unflaggedRef, func(s *StepInfo) { s.ID = "call-2"; s.Tool = "get_events"; s.RadarEvidence = false }),
+		evidenceStep(unflaggedRef, func(s *StepInfo) { s.ID = "call-2"; s.Tool = "get_events"; s.KubeAtlasEvidence = false }),
 		// A ref that carries the CURRENT turn's scope but sits in an earlier
 		// turn cannot have been observed then; it is a replay, not evidence.
 		evidenceStep(forgedCurrentRef, func(s *StepInfo) { s.ID = "call-3" }),
@@ -69,7 +69,7 @@ func TestBindEvidenceAcceptsEarlierTurnsOfTheSameRun(t *testing.T) {
 		t.Fatalf("earlier-turn and current-turn refs together: %s, want linked", got)
 	}
 	if got := bind(unflaggedRef); got != investigation.Invalid {
-		t.Fatalf("an earlier step without the persisted RadarEvidence flag must not bind: %s", got)
+		t.Fatalf("an earlier step without the persisted KubeAtlasEvidence flag must not bind: %s", got)
 	}
 	if got := bind(forgedCurrentRef); got != investigation.Invalid {
 		t.Fatalf("a current-scope ref replayed in an earlier turn must not bind: %s", got)

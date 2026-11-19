@@ -958,13 +958,13 @@ func TestAutoUnreachablePrometheusUsesProvisionalKubecost(t *testing.T) {
 				&corev1.Service{ObjectMeta: metav1.ObjectMeta{Namespace: "monitoring", Name: serviceName, Labels: map[string]string{"app.kubernetes.io/name": "prometheus"}}, Spec: corev1.ServiceSpec{Ports: []corev1.ServicePort{{Name: "http", Port: 9090}}}},
 			}
 			if tc.blocked {
-				t.Setenv("MY_POD_NAME", "radar-0")
-				t.Setenv("MY_POD_NAMESPACE", "radar")
+				t.Setenv("MY_POD_NAME", "kubeatlas-0")
+				t.Setenv("MY_POD_NAMESPACE", "kubeatlas")
 				ready, port, protocol, portName := true, int32(9090), corev1.ProtocolTCP, "http"
 				objects = append(objects,
-					&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar"}},
+					&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas"}},
 					&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "monitoring"}},
-					&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "radar", Name: "radar-0"}, Status: corev1.PodStatus{PodIP: "10.0.1.5"}},
+					&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "kubeatlas", Name: "kubeatlas-0"}, Status: corev1.PodStatus{PodIP: "10.0.1.5"}},
 					&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Namespace: "monitoring", Name: "prometheus-0"}, Status: corev1.PodStatus{PodIP: "10.0.2.9"}},
 					&networkingv1.NetworkPolicy{ObjectMeta: metav1.ObjectMeta{Namespace: "monitoring", Name: "deny-prom"}, Spec: networkingv1.NetworkPolicySpec{PolicyTypes: []networkingv1.PolicyType{networkingv1.PolicyTypeIngress}}},
 					&discoveryv1.EndpointSlice{ObjectMeta: metav1.ObjectMeta{Namespace: "monitoring", Name: "prometheus-endpoints", Labels: map[string]string{discoveryv1.LabelServiceName: serviceName}}, AddressType: discoveryv1.AddressTypeIPv4, Ports: []discoveryv1.EndpointPort{{Name: &portName, Port: &port, Protocol: &protocol}}, Endpoints: []discoveryv1.Endpoint{{Addresses: []string{"10.0.2.9"}, Conditions: discoveryv1.EndpointConditions{Ready: &ready}, TargetRef: &corev1.ObjectReference{Kind: "Pod", Namespace: "monitoring", Name: "prometheus-0"}}}},

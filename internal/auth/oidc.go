@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"io"
 	"log"
 	"net/http"
@@ -22,9 +23,9 @@ import (
 	"golang.org/x/oauth2"
 )
 
-const oidcStateCookieName = "radar_oidc_state"
-const oidcVerifierCookieName = "radar_oidc_verifier"
-const oidcForceLoginCookieName = "radar_force_login"
+const oidcStateCookieName = "kubeatlas_oidc_state"
+const oidcVerifierCookieName = "kubeatlas_oidc_verifier"
+const oidcForceLoginCookieName = "kubeatlas_force_login"
 
 // OIDCHandler handles the OIDC login flow
 type OIDCHandler struct {
@@ -37,7 +38,7 @@ type OIDCHandler struct {
 	revoker            *MemoryRevoker        // session revocation store; nil = backchannel logout disabled
 	pkceEnabled        bool                  // opt-in PKCE (S256) for the authorization-code flow
 
-	// basePath is the URL prefix Radar serves under ("" at the root). Where Radar
+	// basePath is the URL prefix KubeAtlas serves under ("" at the root). Where KubeAtlas
 	// is mounted is the server's concern, not part of the shared auth config, but
 	// the post-login redirect has to land inside the app: under a no-strip subpath
 	// ingress only {basePath}/* is routed here, so "/" would leave the app.
@@ -72,7 +73,7 @@ var supportedOIDCSigningAlgorithms = map[string]bool{
 	oidc.EdDSA: true,
 }
 
-// NewOIDCHandler creates a new OIDC handler. basePath is the URL prefix Radar is
+// NewOIDCHandler creates a new OIDC handler. basePath is the URL prefix KubeAtlas is
 // served under ("" at the root), which the post-login redirect must target.
 // Returns an error if the provider cannot be discovered (network error, invalid
 // issuer URL, etc.).
@@ -85,7 +86,7 @@ func warnIfInsecureOIDCOrigin(redirectURL string) {
 	if err != nil || u.Scheme != "http" || isLoopbackHost(u.Hostname()) {
 		return
 	}
-	log.Printf("[oidc] WARNING: redirect URL %s is not HTTPS — the browser will drop the Secure session cookie and login will loop. Serve Radar over HTTPS, or ensure your TLS-terminating proxy sets X-Forwarded-Proto: https.", redirectURL)
+	log.Printf("[oidc] WARNING: redirect URL %s is not HTTPS — the browser will drop the Secure session cookie and login will loop. Serve KubeAtlas over HTTPS, or ensure your TLS-terminating proxy sets X-Forwarded-Proto: https.", redirectURL)
 }
 
 func isLoopbackHost(host string) bool {
@@ -225,7 +226,7 @@ func resolveOIDCProviderMetadata(ctx context.Context, cfg Config) (*oidcProvider
 		}
 		metadata = *discovered
 		if metadata.IssuerURL != cfg.OIDCIssuer {
-			return nil, fmt.Errorf("oidc: issuer URL configured for Radar (%q) did not match the issuer URL returned by provider discovery (%q)", cfg.OIDCIssuer, metadata.IssuerURL)
+			return nil, fmt.Errorf("oidc: issuer URL configured for KubeAtlas (%q) did not match the issuer URL returned by provider discovery (%q)", cfg.OIDCIssuer, metadata.IssuerURL)
 		}
 	} else {
 		// Explicit-endpoint mode skips discovery, so the provider advertises no
@@ -240,7 +241,7 @@ func resolveOIDCProviderMetadata(ctx context.Context, cfg Config) (*oidcProvider
 	metadata.ProviderConfig.Algorithms = filterOIDCSigningAlgorithms(metadata.ProviderConfig.Algorithms)
 	applyOIDCEndpointConfig(&metadata, cfg)
 	if stuck := unreachableInternalEndpoints(cfg, metadata.ProviderConfig); len(stuck) > 0 {
-		log.Printf("[oidc] WARNING: these server-side endpoints were not rewritten to the internal issuer host: %s. If the Radar pod cannot reach these hosts, set the matching --auth-oidc-<endpoint>-url override.", strings.Join(stuck, ", "))
+		log.Printf("[oidc] WARNING: these server-side endpoints were not rewritten to the internal issuer host: %s. If the KubeAtlas pod cannot reach these hosts, set the matching --auth-oidc-<endpoint>-url override.", strings.Join(stuck, ", "))
 	}
 	if err := validateOIDCProviderMetadata(metadata.ProviderConfig); err != nil {
 		return nil, err
@@ -444,15 +445,19 @@ func (h *OIDCHandler) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	}
 	state := hex.EncodeToString(b)
 
+	http.SetCookie(w, h.clearFlowCookie(compat.LegacyOIDCStateCookie, r))
+	http.SetCookie(w, h.clearFlowCookie(compat.LegacyOIDCVerifierCookie, r))
 	http.SetCookie(w, h.newFlowCookie(oidcStateCookieName, state, r))
 
 	// If the user just logged out, force the IdP to show a login prompt instead
 	// of silently re-authenticating with an existing SSO session.
 	var authOpts []oauth2.AuthCodeOption
-	if cookie, err := r.Cookie(oidcForceLoginCookieName); err == nil && cookie.Value == "1" {
+	forceCookie, forceErr := compat.SingleCookie(r, oidcForceLoginCookieName, compat.LegacyOIDCForceLoginCookie)
+	if forceErr == compat.ErrAmbiguousCookie || forceErr == nil && forceCookie.Value == "1" {
 		authOpts = append(authOpts, oauth2.SetAuthURLParam("prompt", "login"))
 		// Clear the cookie — only force login once
 		http.SetCookie(w, h.clearFlowCookie(oidcForceLoginCookieName, r))
+		http.SetCookie(w, h.clearFlowCookie(compat.LegacyOIDCForceLoginCookie, r))
 	}
 
 	// PKCE (opt-in): generate a per-request verifier, stash it in a cookie for
@@ -477,7 +482,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify state against cookie to prevent CSRF
-	stateCookie, err := r.Cookie(oidcStateCookieName)
+	stateCookie, err := compat.SingleCookie(r, oidcStateCookieName, compat.LegacyOIDCStateCookie)
 	if err != nil || stateCookie.Value == "" {
 		http.Error(w, "missing state cookie — please retry login", http.StatusBadRequest)
 		return
@@ -491,8 +496,14 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// empty and the flow is byte-for-byte identical to the non-PKCE path.
 	var verifier string
 	if h.pkceEnabled {
-		if c, err := r.Cookie(oidcVerifierCookieName); err == nil {
-			verifier = c.Value
+		if c, err := compat.SingleCookie(r, oidcVerifierCookieName, compat.LegacyOIDCVerifierCookie); err == nil {
+			expectedName := oidcVerifierCookieName
+			if stateCookie.Name == compat.LegacyOIDCStateCookie {
+				expectedName = compat.LegacyOIDCVerifierCookie
+			}
+			if c.Name == expectedName {
+				verifier = c.Value
+			}
 		}
 	}
 
@@ -500,8 +511,10 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	// state is validated) so a stale PKCE secret never lingers past a successful
 	// state check, regardless of what happens next in the exchange.
 	http.SetCookie(w, h.clearFlowCookie(oidcStateCookieName, r))
+	http.SetCookie(w, h.clearFlowCookie(compat.LegacyOIDCStateCookie, r))
 	if h.pkceEnabled {
 		http.SetCookie(w, h.clearFlowCookie(oidcVerifierCookieName, r))
+		http.SetCookie(w, h.clearFlowCookie(compat.LegacyOIDCVerifierCookie, r))
 	}
 
 	if h.pkceEnabled && verifier == "" {
@@ -563,7 +576,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 		var unverified *unverifiedEmailError
 		if errors.As(err, &unverified) {
 			log.Printf("[oidc] Refusing login for %q: email_verified is false in the ID token", unverified.email)
-			http.Error(w, "Your email address is not verified at your identity provider, so Radar will not use it as your Kubernetes username. Verify the address with your identity provider, or set --auth-oidc-username-claim to a claim that does not depend on email (for example sub).", http.StatusForbidden)
+			http.Error(w, "Your email address is not verified at your identity provider, so KubeAtlas will not use it as your Kubernetes username. Verify the address with your identity provider, or set --auth-oidc-username-claim to a claim that does not depend on email (for example sub).", http.StatusForbidden)
 			return
 		}
 		log.Printf("[oidc] %v", err)
@@ -598,7 +611,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 
 	if !ForwardedIdentityAllowed(username, groups, false) {
 		log.Printf("[oidc] Refusing login for %s: identity asserts a reserved Kubernetes principal (system:*)", username)
-		http.Error(w, "Your identity includes a reserved Kubernetes user or group (system:*), which Radar will not impersonate. Set --auth-oidc-groups-prefix / --auth-oidc-username-prefix to match your API server, or remove the group at your identity provider.", http.StatusForbidden)
+		http.Error(w, "Your identity includes a reserved Kubernetes user or group (system:*), which KubeAtlas will not impersonate. Set --auth-oidc-groups-prefix / --auth-oidc-username-prefix to match your API server, or remove the group at your identity provider.", http.StatusForbidden)
 		return
 	}
 
@@ -639,7 +652,7 @@ func (h *OIDCHandler) HandleCallback(w http.ResponseWriter, r *http.Request) {
 	log.Printf("[oidc] User %s authenticated (username claim: %s, groups: %v)", username, usernameClaim, groups)
 
 	// Redirect to the app root under its base path. A bare "/" would leave the
-	// user outside Radar on a subpath deployment, where the ingress routes only
+	// user outside KubeAtlas on a subpath deployment, where the ingress routes only
 	// the prefix to this service.
 	http.Redirect(w, r, h.basePath+"/", http.StatusFound)
 }
@@ -676,6 +689,7 @@ func (h *OIDCHandler) HandleLogout(w http.ResponseWriter, r *http.Request) {
 	// This is especially important for providers like Google that don't
 	// support end_session_endpoint.
 	secure := r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
+	http.SetCookie(w, h.clearFlowCookie(compat.LegacyOIDCForceLoginCookie, r))
 	http.SetCookie(w, &http.Cookie{
 		Name:     oidcForceLoginCookieName,
 		Value:    "1",
@@ -723,7 +737,7 @@ func (h *OIDCHandler) SetRevoker(r *MemoryRevoker) {
 const backchannelLogoutEventURI = "http://schemas.openid.net/event/backchannel-logout"
 
 // HandleBackchannelLogout handles POST /auth/backchannel-logout.
-// The IdP sends a signed logout_token JWT to notify Radar that a session
+// The IdP sends a signed logout_token JWT to notify KubeAtlas that a session
 // should be revoked. See: https://openid.net/specs/openid-connect-backchannel-1_0.html
 func (h *OIDCHandler) HandleBackchannelLogout(w http.ResponseWriter, r *http.Request) {
 	// Spec §2.5: response MUST include Cache-Control: no-store
@@ -843,7 +857,7 @@ func (e *unverifiedEmailError) Error() string {
 	return fmt.Sprintf("email %s is not verified", e.email)
 }
 
-// oidcUsername returns the username Radar impersonates and the claim it came
+// oidcUsername returns the username KubeAtlas impersonates and the claim it came
 // from. With no claim configured it prefers email and falls back to sub. A
 // configured claim must be present: falling back would impersonate a
 // different identity than the one the operator mapped in RBAC.

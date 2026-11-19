@@ -6,7 +6,7 @@
  * `light-dark()` and don't resolve correctly through the log viewer's forced
  * `color-scheme` container. Instead it flips between two explicit palettes
  * based on its own `isDark` state (toggled by a Sun/Moon button in the
- * toolbar, persisted to `localStorage['radar-logs-dark']`).
+ * toolbar, persisted to `localStorage['kubeatlas-logs-dark']`).
  *
  * All class strings are static literals so Tailwind's class scanner picks them
  * up — do not construct them dynamically.

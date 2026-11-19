@@ -59,7 +59,7 @@ func (c *Client) loadSourceChart(cfg *action.Configuration, source ChartSourceCa
 			return nil, "", err
 		}
 	} else {
-		dir, err := os.MkdirTemp("", "radar-chart-")
+		dir, err := os.MkdirTemp("", "kubeatlas-chart-")
 		if err != nil {
 			return nil, "", err
 		}

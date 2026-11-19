@@ -27,12 +27,12 @@ import (
 )
 
 const (
-	testNamespace  = "radar"
+	testNamespace  = "kubeatlas"
 	testClusterUID = "0b6c7c43-6f0e-4a8e-9d6c-5d2f4f6b7a10"
 	testKey        = "rhe_AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd"
 )
 
-// newEnrollClientset holds the kube-system namespace Radar reads its
+// newEnrollClientset holds the kube-system namespace KubeAtlas reads its
 // cluster identity from.
 func newEnrollClientset() *fake.Clientset {
 	return fake.NewClientset(&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kube-system", UID: types.UID(testClusterUID)}})
@@ -205,7 +205,7 @@ func startEnroller(t *testing.T, cs *fake.Clientset, hub *fakeHub, keyFile strin
 		KeyFile:   keyFile,
 		Client:    cs,
 		Namespace: testNamespace,
-		Release:   "radar",
+		Release:   "kubeatlas",
 		Names:     names,
 		Tunnel:    Config{Handler: http.NotFoundHandler()},
 	})
@@ -262,10 +262,10 @@ func TestEnrollmentJoinsAndServesTheTunnelWithTheTokenInMemory(t *testing.T) {
 		t.Fatalf("tunnel config = %+v", cfg)
 	}
 	if cfg.ClusterName != "nkp-api.prod-eu.example.com" {
-		t.Fatalf("tunnel name %q, want the name Radar picked", cfg.ClusterName)
+		t.Fatalf("tunnel name %q, want the name KubeAtlas picked", cfg.ClusterName)
 	}
 	req := hub.requests()[0]
-	if req.AgentUID != testClusterUID || req.Namespace != testNamespace || req.Release != "radar" || req.Name != "nkp-api.prod-eu.example.com" || req.NameSource != NameSourceAPIServer {
+	if req.AgentUID != testClusterUID || req.Namespace != testNamespace || req.Release != "kubeatlas" || req.Name != "nkp-api.prod-eu.example.com" || req.NameSource != NameSourceAPIServer {
 		t.Fatalf("enroll request = %+v", req)
 	}
 }
@@ -312,7 +312,7 @@ func TestEnrollmentRetriesAnUnreadableAPIServerAddress(t *testing.T) {
 }
 
 // A cluster that forbids reading cluster-info has no address to give, so
-// the cluster-<uid> name is its real default and Radar joins with it.
+// the cluster-<uid> name is its real default and KubeAtlas joins with it.
 func TestEnrollmentJoinsWhenTheAPIServerAddressIsForbidden(t *testing.T) {
 	fastEnrollDelays(t)
 	cs := newEnrollClientsetWithAPIServer()
@@ -380,10 +380,10 @@ func TestEnrollRefusalsWaitAndExplain(t *testing.T) {
 		{"key deleted", &EnrollError{StatusCode: 401, Code: "key_deleted"}, "rejected the enrollment key", func(d time.Duration) bool { return d == 0 }, false},
 		{"key replaced", &EnrollError{StatusCode: 401, Code: "key_replaced"}, "rejected the enrollment key", func(d time.Duration) bool { return d == 0 }, false},
 		{"plan limit", &EnrollError{StatusCode: 402}, "license or plan limit", func(d time.Duration) bool { return within(d, 10*time.Minute) }, true},
-		{"removed", &EnrollError{StatusCode: 403, Code: "cluster_removed"}, "This cluster was removed in Radar Hub. An owner can let it back in under Settings > Enrollment keys.", func(d time.Duration) bool { return within(d, 10*time.Minute) }, true},
-		{"pending approval", &EnrollError{StatusCode: 403, Code: "pending_approval"}, "This cluster is waiting for an owner to approve it in Radar Hub.", func(d time.Duration) bool { return within(d, 30*time.Second) }, false},
-		{"key full", &EnrollError{StatusCode: 409, Code: "key_full"}, "An owner can raise it on the Enrollment keys page in Radar Hub.", func(d time.Duration) bool { return within(d, 10*time.Minute) }, true},
-		{"already connected", &EnrollError{StatusCode: 409, Code: "already_connected"}, "Another Radar with this cluster's identity is connected", func(d time.Duration) bool { return within(d, 15*time.Second) }, false},
+		{"removed", &EnrollError{StatusCode: 403, Code: "cluster_removed"}, "This cluster was removed in KubeAtlas Hub. An owner can let it back in under Settings > Enrollment keys.", func(d time.Duration) bool { return within(d, 10*time.Minute) }, true},
+		{"pending approval", &EnrollError{StatusCode: 403, Code: "pending_approval"}, "This cluster is waiting for an owner to approve it in KubeAtlas Hub.", func(d time.Duration) bool { return within(d, 30*time.Second) }, false},
+		{"key full", &EnrollError{StatusCode: 409, Code: "key_full"}, "An owner can raise it on the Enrollment keys page in KubeAtlas Hub.", func(d time.Duration) bool { return within(d, 10*time.Minute) }, true},
+		{"already connected", &EnrollError{StatusCode: 409, Code: "already_connected"}, "Another KubeAtlas with this cluster's identity is connected", func(d time.Duration) bool { return within(d, 15*time.Second) }, false},
 		{"no agent address", &EnrollError{StatusCode: 409, Code: "no_agent_address"}, "no agent address", func(d time.Duration) bool { return d == 0 }, false},
 		{"rate limited", &EnrollError{StatusCode: 429, RetryAfter: 42 * time.Second, HasRetryAfter: true}, "rate limiting", func(d time.Duration) bool { return d == 42*time.Second }, false},
 		{"rate limited, Retry-After capped", &EnrollError{StatusCode: 429, RetryAfter: 24 * time.Hour, HasRetryAfter: true}, "rate limiting", func(d time.Duration) bool { return d == 10*time.Minute }, false},
@@ -418,7 +418,7 @@ func TestRemovedClusterLogsAndChecksAgainWithoutARestart(t *testing.T) {
 	tunnel := newFakeTunnel()
 	startEnroller(t, cs, hub, writeKeyFile(t, testKey), tunnel, NameOptions{})
 
-	const want = "This cluster was removed in Radar Hub. An owner can let it back in under Settings > Enrollment keys. Checking again every 10 minutes."
+	const want = "This cluster was removed in KubeAtlas Hub. An owner can let it back in under Settings > Enrollment keys. Checking again every 10 minutes."
 	eventually(t, "the removed message in the log", func() bool { return strings.Contains(logs(), want) })
 	eventually(t, "several retries", func() bool { return len(hub.requests()) >= 3 })
 	if n := strings.Count(logs(), want); n != 1 {
@@ -433,11 +433,11 @@ func TestHubMessageIsLoggedForARefusal(t *testing.T) {
 	fastEnrollDelays(t)
 	logs := captureLog(t)
 	cs := newEnrollClientset()
-	hub := newFakeHub(t, refusal(409, "key_full", "This key has reached its limit of 50 clusters. An owner can raise it on the Enrollment keys page in Radar Hub."))
+	hub := newFakeHub(t, refusal(409, "key_full", "This key has reached its limit of 50 clusters. An owner can raise it on the Enrollment keys page in KubeAtlas Hub."))
 	startEnroller(t, cs, hub, writeKeyFile(t, testKey), newFakeTunnel(), NameOptions{})
 
 	eventually(t, "the Hub's message in the log", func() bool {
-		return strings.Contains(logs(), "This key has reached its limit of 50 clusters. An owner can raise it on the Enrollment keys page in Radar Hub. Checking again every 10 minutes.")
+		return strings.Contains(logs(), "This key has reached its limit of 50 clusters. An owner can raise it on the Enrollment keys page in KubeAtlas Hub. Checking again every 10 minutes.")
 	})
 }
 
@@ -450,7 +450,7 @@ func TestEnrollClientStatusHandling(t *testing.T) {
 		wantMessage string
 		wantRetry   time.Duration
 	}{
-		{name: "removed", reply: refusal(403, "cluster_removed", "This cluster was removed in Radar Hub."), wantStatus: 403, wantCode: "cluster_removed", wantMessage: "This cluster was removed in Radar Hub."},
+		{name: "removed", reply: refusal(403, "cluster_removed", "This cluster was removed in KubeAtlas Hub."), wantStatus: 403, wantCode: "cluster_removed", wantMessage: "This cluster was removed in KubeAtlas Hub."},
 		{name: "already connected", reply: hubReply{status: 409, body: `{"error":"already_connected"}`}, wantStatus: 409, wantCode: "already_connected"},
 		{name: "rate limited", reply: hubReply{status: 429, body: `{}`, retryAfter: "17"}, wantStatus: 429, wantRetry: 17 * time.Second},
 		{name: "license limit", reply: hubReply{status: 402, body: `{"error":"license_limit","limit":3}`}, wantStatus: 402, wantCode: "license_limit"},
@@ -640,7 +640,7 @@ func TestUntrustedHubCertificateNamesTheCABundle(t *testing.T) {
 		t.Fatal("trusted a self-signed Hub without its CA")
 	}
 	out := classifyEnrollError(err)
-	if !strings.HasPrefix(out.reason, "Radar does not trust the Hub's certificate. "+caBundleFix+" Details: ") {
+	if !strings.HasPrefix(out.reason, "KubeAtlas does not trust the Hub's certificate. "+caBundleFix+" Details: ") {
 		t.Fatalf("reason = %q", out.reason)
 	}
 	if untrustedCert(errors.New("dial tcp: connection refused")) {

@@ -98,7 +98,7 @@ func TestOIDCCallback_ContextCanceledIsNot500(t *testing.T) {
 	// Unreachable token endpoint; the canceled context makes Exchange fail with
 	// context.Canceled before any network round-trip completes.
 	h.oauth = oauth2.Config{
-		ClientID: "radar",
+		ClientID: "kubeatlas",
 		Endpoint: oauth2.Endpoint{TokenURL: "http://127.0.0.1:1/token"},
 	}
 	ctx, cancel := context.WithCancel(context.Background())
@@ -117,13 +117,13 @@ func TestOIDCCallback_ContextCanceledIsNot500(t *testing.T) {
 
 func TestIsLoopbackHost(t *testing.T) {
 	cases := map[string]bool{
-		"localhost":       true,
-		"127.0.0.1":       true,
-		"::1":             true,
-		"radar.localhost": true,
-		"example.com":     false,
-		"10.0.0.5":        false,
-		"":                false,
+		"localhost":           true,
+		"127.0.0.1":           true,
+		"::1":                 true,
+		"kubeatlas.localhost": true,
+		"example.com":         false,
+		"10.0.0.5":            false,
+		"":                    false,
 	}
 	for host, want := range cases {
 		if got := isLoopbackHost(host); got != want {
@@ -134,10 +134,10 @@ func TestIsLoopbackHost(t *testing.T) {
 
 func TestWarnIfInsecureOIDCOrigin(t *testing.T) {
 	cases := map[string]bool{
-		"http://radar.example.com/auth/callback":    true,  // non-secure, non-local → warn
-		"https://radar.example.com/auth/callback":   false, // secure → no warn
-		"http://localhost:8080/auth/callback":       false, // loopback exempt
-		"http://radar.localhost:4962/auth/callback": false,
+		"http://kubeatlas.example.com/auth/callback":    true,  // non-secure, non-local → warn
+		"https://kubeatlas.example.com/auth/callback":   false, // secure → no warn
+		"http://localhost:8080/auth/callback":           false, // loopback exempt
+		"http://kubeatlas.localhost:4962/auth/callback": false,
 	}
 	for redirectURL, wantWarn := range cases {
 		var buf bytes.Buffer
@@ -215,7 +215,7 @@ func TestHandleLogout_NoEndSessionEndpoint(t *testing.T) {
 func TestHandleLogout_WithEndSessionEndpoint(t *testing.T) {
 	h := newTestOIDCHandler()
 	h.endSessionEndpoint = "https://idp.example.com/logout"
-	h.cfg.OIDCClientID = "radar-client"
+	h.cfg.OIDCClientID = "kubeatlas-client"
 
 	// Create a session cookie with an ID token
 	user := &User{Username: "alice"}
@@ -262,7 +262,7 @@ func TestHandleLogout_WithEndSessionEndpoint(t *testing.T) {
 func TestHandleLogout_WithPostLogoutRedirectURL(t *testing.T) {
 	h := newTestOIDCHandler()
 	h.endSessionEndpoint = "https://idp.example.com/logout"
-	h.cfg.OIDCPostLogoutRedirectURL = "https://radar.example.com/"
+	h.cfg.OIDCPostLogoutRedirectURL = "https://kubeatlas.example.com/"
 
 	r := httptest.NewRequest("GET", "/auth/logout", nil)
 	w := httptest.NewRecorder()
@@ -283,7 +283,7 @@ func TestHandleLogout_WithPostLogoutRedirectURL(t *testing.T) {
 func TestHandleLogout_NoIDTokenInCookie(t *testing.T) {
 	h := newTestOIDCHandler()
 	h.endSessionEndpoint = "https://idp.example.com/logout"
-	h.cfg.OIDCClientID = "radar-client"
+	h.cfg.OIDCClientID = "kubeatlas-client"
 
 	// Session cookie without ID token (old session from before upgrade)
 	user := &User{Username: "alice"}
@@ -305,7 +305,7 @@ func TestHandleLogout_NoIDTokenInCookie(t *testing.T) {
 		t.Fatal("redirectTo should be present even without id_token")
 	}
 	// Should fall back to client_id
-	if !strings.Contains(redirectTo, "client_id=radar-client") {
+	if !strings.Contains(redirectTo, "client_id=kubeatlas-client") {
 		t.Errorf("redirectTo should contain client_id fallback, got %q", redirectTo)
 	}
 	if strings.Contains(redirectTo, "id_token_hint=") {
@@ -566,7 +566,7 @@ func TestNewOIDCHandler_InternalIssuerUsesInternalEndpoints(t *testing.T) {
 		Mode:               "oidc",
 		OIDCIssuer:         publicIssuer,
 		OIDCInternalIssuer: srv.URL,
-		OIDCClientID:       "radar",
+		OIDCClientID:       "kubeatlas",
 		OIDCClientSecret:   "secret",
 		OIDCRedirectURL:    "http://localhost/callback",
 	}, "")
@@ -583,7 +583,7 @@ func TestNewOIDCHandler_InternalIssuerUsesInternalEndpoints(t *testing.T) {
 
 	claims := fmt.Sprintf(`{
 		"iss": %q,
-		"aud": "radar",
+		"aud": "kubeatlas",
 		"sub": "alice",
 		"exp": %d
 	}`, publicIssuer, time.Now().Add(time.Hour).Unix())
@@ -594,7 +594,7 @@ func TestNewOIDCHandler_InternalIssuerUsesInternalEndpoints(t *testing.T) {
 
 	wrongIssuerClaims := fmt.Sprintf(`{
 		"iss": %q,
-		"aud": "radar",
+		"aud": "kubeatlas",
 		"sub": "alice",
 		"exp": %d
 	}`, srv.URL, time.Now().Add(time.Hour).Unix())
@@ -605,21 +605,21 @@ func TestNewOIDCHandler_InternalIssuerUsesInternalEndpoints(t *testing.T) {
 }
 
 func TestNewOIDCHandler_InternalIssuerWithOverridesKeepsDiscoveryMetadata(t *testing.T) {
-	publicIssuer := "https://auth.example.com/application/o/radar"
+	publicIssuer := "https://auth.example.com/application/o/kubeatlas"
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/application/o/radar/.well-known/openid-configuration" {
+		if r.URL.Path != "/application/o/kubeatlas/.well-known/openid-configuration" {
 			http.NotFound(w, r)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]any{
 			"issuer":                                publicIssuer,
-			"authorization_endpoint":                srv.URL + "/application/o/radar/authorize",
-			"token_endpoint":                        srv.URL + "/application/o/radar/token",
-			"userinfo_endpoint":                     srv.URL + "/application/o/radar/userinfo",
-			"jwks_uri":                              srv.URL + "/application/o/radar/jwks",
-			"end_session_endpoint":                  srv.URL + "/application/o/radar/logout",
+			"authorization_endpoint":                srv.URL + "/application/o/kubeatlas/authorize",
+			"token_endpoint":                        srv.URL + "/application/o/kubeatlas/token",
+			"userinfo_endpoint":                     srv.URL + "/application/o/kubeatlas/userinfo",
+			"jwks_uri":                              srv.URL + "/application/o/kubeatlas/jwks",
+			"end_session_endpoint":                  srv.URL + "/application/o/kubeatlas/logout",
 			"backchannel_logout_supported":          true,
 			"backchannel_logout_session_supported":  true,
 			"id_token_signing_alg_values_supported": []string{"RS256"},
@@ -630,11 +630,11 @@ func TestNewOIDCHandler_InternalIssuerWithOverridesKeepsDiscoveryMetadata(t *tes
 	h, err := NewOIDCHandler(context.Background(), Config{
 		Mode:                 "oidc",
 		OIDCIssuer:           publicIssuer,
-		OIDCInternalIssuer:   srv.URL + "/application/o/radar",
+		OIDCInternalIssuer:   srv.URL + "/application/o/kubeatlas",
 		OIDCAuthorizationURL: publicIssuer + "/authorize",
 		OIDCTokenURL:         srv.URL + "/custom-token",
 		OIDCJWKSURL:          srv.URL + "/custom-jwks",
-		OIDCClientID:         "radar",
+		OIDCClientID:         "kubeatlas",
 		OIDCClientSecret:     "secret",
 		OIDCRedirectURL:      "http://localhost/callback",
 	}, "")
@@ -664,7 +664,7 @@ func TestNewOIDCHandler_ExplicitEndpointsDoNotRequireDiscovery(t *testing.T) {
 		OIDCTokenURL:         "http://auth.authentik.svc/token",
 		OIDCUserInfoURL:      "http://auth.authentik.svc/userinfo",
 		OIDCJWKSURL:          "http://auth.authentik.svc/jwks",
-		OIDCClientID:         "radar",
+		OIDCClientID:         "kubeatlas",
 		OIDCClientSecret:     "secret",
 		OIDCRedirectURL:      "http://localhost/callback",
 	}, "")
@@ -689,7 +689,7 @@ func TestResolveOIDCProviderMetadata_ExplicitEndpointsSeedSigningAlgorithms(t *t
 		OIDCAuthorizationURL: "https://auth.example.com/authorize",
 		OIDCTokenURL:         "http://auth.authentik.svc/token",
 		OIDCJWKSURL:          "http://auth.authentik.svc/jwks",
-		OIDCClientID:         "radar",
+		OIDCClientID:         "kubeatlas",
 	})
 	if err != nil {
 		t.Fatalf("resolveOIDCProviderMetadata: %v", err)
@@ -734,7 +734,7 @@ func TestNewOIDCHandler_ExplicitEndpointsVerifyES256Token(t *testing.T) {
 		OIDCAuthorizationURL: issuer + "/auth",
 		OIDCTokenURL:         srv.URL + "/token",
 		OIDCJWKSURL:          srv.URL + "/keys",
-		OIDCClientID:         "radar",
+		OIDCClientID:         "kubeatlas",
 		OIDCClientSecret:     "secret",
 		OIDCRedirectURL:      "http://localhost/callback",
 	}, "")
@@ -744,7 +744,7 @@ func TestNewOIDCHandler_ExplicitEndpointsVerifyES256Token(t *testing.T) {
 
 	claims := fmt.Sprintf(`{
 		"iss": %q,
-		"aud": "radar",
+		"aud": "kubeatlas",
 		"sub": "alice",
 		"exp": %d
 	}`, issuer, time.Now().Add(time.Hour).Unix())
@@ -815,7 +815,7 @@ func newFakeIDP(t *testing.T, alg string) *fakeIDP {
 }
 
 func (f *fakeIDP) defaultClaims() string {
-	return fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"alice@example.com","sub":"alice","exp":%d,"groups":["dev","ops"]}`,
+	return fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"alice@example.com","sub":"alice","exp":%d,"groups":["dev","ops"]}`,
 		f.issuer, time.Now().Add(time.Hour).Unix())
 }
 
@@ -829,10 +829,10 @@ func (f *fakeIDP) newHandlerUnderBasePath(t *testing.T, cfg Config, basePath str
 	cfg.Mode = "oidc"
 	cfg.OIDCIssuer = f.issuer
 	if cfg.OIDCClientID == "" {
-		cfg.OIDCClientID = "radar"
+		cfg.OIDCClientID = "kubeatlas"
 	}
 	cfg.OIDCClientSecret = "secret"
-	cfg.OIDCRedirectURL = "https://radar.example.com/auth/callback"
+	cfg.OIDCRedirectURL = "https://kubeatlas.example.com/auth/callback"
 	if cfg.OIDCGroupsClaim == "" {
 		cfg.OIDCGroupsClaim = "groups"
 	}
@@ -887,25 +887,25 @@ func TestHandleCallback_Matrix(t *testing.T) {
 		{name: "token endpoint error", alg: oidc.RS256, setup: func(f *fakeIDP) { f.tokenStatus = 500 }, wantStatus: http.StatusInternalServerError},
 		{name: "no id_token in response", alg: oidc.RS256, setup: func(f *fakeIDP) { f.omitIDToken = true }, wantStatus: http.StatusInternalServerError},
 		{name: "wrong issuer", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":"https://evil.example.com","aud":"radar","email":"a@b.com","exp":%d}`, future)
+			f.claims = fmt.Sprintf(`{"iss":"https://evil.example.com","aud":"kubeatlas","email":"a@b.com","exp":%d}`, future)
 		}, wantStatus: http.StatusUnauthorized},
 		{name: "wrong audience", alg: oidc.RS256, setup: func(f *fakeIDP) {
 			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"someone-else","email":"a@b.com","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusUnauthorized},
 		{name: "expired token", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","exp":%d}`, f.issuer, past)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","exp":%d}`, f.issuer, past)
 		}, wantStatus: http.StatusUnauthorized},
 		{name: "no username claim", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusBadRequest},
 		{name: "sub fallback when no email", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","sub":"bob","exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","sub":"bob","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusFound, wantUser: "bob"},
 		{name: "groups as single string", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","exp":%d,"groups":"solo"}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","exp":%d,"groups":"solo"}`, f.issuer, future)
 		}, wantStatus: http.StatusFound, wantUser: "a@b.com", wantGroups: []string{"solo"}},
 		{name: "aud as array containing client id (Keycloak/Azure style)", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":["radar","account"],"azp":"radar","email":"a@b.com","exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":["kubeatlas","account"],"azp":"kubeatlas","email":"a@b.com","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusFound, wantUser: "a@b.com"},
 		{name: "aud array without client id", alg: oidc.RS256, setup: func(f *fakeIDP) {
 			f.claims = fmt.Sprintf(`{"iss":%q,"aud":["account","other"],"email":"a@b.com","exp":%d}`, f.issuer, future)
@@ -913,38 +913,38 @@ func TestHandleCallback_Matrix(t *testing.T) {
 		{name: "username and groups prefixes applied", alg: oidc.RS256, cfg: Config{OIDCUsernamePrefix: "oidc:", OIDCGroupsPrefix: "oidc:"},
 			wantStatus: http.StatusFound, wantUser: "oidc:alice@example.com", wantGroups: []string{"oidc:dev", "oidc:ops"}},
 		{name: "reserved group refused", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","exp":%d,"groups":["dev","system:masters"]}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","exp":%d,"groups":["dev","system:masters"]}`, f.issuer, future)
 		}, wantStatus: http.StatusForbidden},
 		{name: "reserved username refused", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","sub":"system:kube-controller-manager","exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","sub":"system:kube-controller-manager","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusForbidden},
 		{name: "groups prefix keeps reserved-looking group out of system:", alg: oidc.RS256, cfg: Config{OIDCGroupsPrefix: "oidc:"}, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","exp":%d,"groups":["system:masters"]}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","exp":%d,"groups":["system:masters"]}`, f.issuer, future)
 		}, wantStatus: http.StatusFound, wantUser: "a@b.com", wantGroups: []string{"oidc:system:masters"}},
 		{name: "configured username claim", alg: oidc.RS256, cfg: Config{OIDCUsernameClaim: "upn"}, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","sub":"s1","upn":"alice@corp","exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","sub":"s1","upn":"alice@corp","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusFound, wantUser: "alice@corp"},
 		{name: "configured username claim with prefix", alg: oidc.RS256, cfg: Config{OIDCUsernameClaim: "sub", OIDCUsernamePrefix: "oidc:"},
 			wantStatus: http.StatusFound, wantUser: "oidc:alice"},
 		{name: "configured username claim missing does not fall back", alg: oidc.RS256, cfg: Config{OIDCUsernameClaim: "upn"},
 			wantStatus: http.StatusBadRequest},
 		{name: "configured username claim not a string", alg: oidc.RS256, cfg: Config{OIDCUsernameClaim: "upn"}, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","upn":["x"],"exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","upn":["x"],"exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusBadRequest},
 		{name: "unverified email refused", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","email_verified":false,"sub":"s1","exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","email_verified":false,"sub":"s1","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusForbidden},
 		{name: "unverified email refused when email claim is configured", alg: oidc.RS256, cfg: Config{OIDCUsernameClaim: "email"}, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","email_verified":false,"exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","email_verified":false,"exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusForbidden},
 		{name: "verified email accepted", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","email_verified":true,"exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","email_verified":true,"exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusFound, wantUser: "a@b.com"},
 		{name: "email_verified not a boolean", alg: oidc.RS256, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","email_verified":"true","exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","email_verified":"true","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusBadRequest},
 		{name: "unverified email ignored when username comes from sub", alg: oidc.RS256, cfg: Config{OIDCUsernameClaim: "sub"}, setup: func(f *fakeIDP) {
-			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"radar","email":"a@b.com","email_verified":false,"sub":"s1","exp":%d}`, f.issuer, future)
+			f.claims = fmt.Sprintf(`{"iss":%q,"aud":"kubeatlas","email":"a@b.com","email_verified":false,"sub":"s1","exp":%d}`, f.issuer, future)
 		}, wantStatus: http.StatusFound, wantUser: "s1"},
 	}
 
@@ -1025,7 +1025,7 @@ func TestResolveOIDCProviderMetadata_IssuerMismatchRejected(t *testing.T) {
 	_, err := resolveOIDCProviderMetadata(context.Background(), Config{
 		OIDCIssuer:         "https://configured-but-wrong.example.com",
 		OIDCInternalIssuer: idp.issuer,
-		OIDCClientID:       "radar",
+		OIDCClientID:       "kubeatlas",
 	})
 	if err == nil {
 		t.Fatal("expected issuer-mismatch to be rejected")
@@ -1175,10 +1175,10 @@ func TestBackchannelLogout_CacheControlAlwaysSet(t *testing.T) {
 // with JWKS. The pre-verification tests above cover all paths before Verify().
 
 // A completed login must land inside the app. Under a no-strip subpath ingress
-// only {basePath}/* is routed to Radar, so redirecting to a bare "/" would drop
+// only {basePath}/* is routed to KubeAtlas, so redirecting to a bare "/" would drop
 // the user onto whatever else owns the origin root right after authenticating.
 func TestHandleCallback_RedirectsUnderBasePath(t *testing.T) {
-	for _, basePath := range []string{"", "/radar", "/tools/radar"} {
+	for _, basePath := range []string{"", "/kubeatlas", "/tools/kubeatlas"} {
 		t.Run("basePath="+basePath, func(t *testing.T) {
 			idp := newFakeIDP(t, oidc.RS256)
 			h := idp.newHandlerUnderBasePath(t, Config{}, basePath)

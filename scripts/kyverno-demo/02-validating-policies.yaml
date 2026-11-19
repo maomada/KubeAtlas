@@ -1,6 +1,6 @@
 # ValidatingPolicy (policies.kyverno.io) — the four enforcement-posture cases.
 #
-# Radar computes an EFFECTIVE posture rather than echoing spec.validationActions,
+# KubeAtlas computes an EFFECTIVE posture rather than echoing spec.validationActions,
 # because three fields interact: validationActions, evaluation.admission.enabled
 # and evaluation.mode. These four policies are the reason that computation
 # exists — each renders a different badge, and two of them contradict what a

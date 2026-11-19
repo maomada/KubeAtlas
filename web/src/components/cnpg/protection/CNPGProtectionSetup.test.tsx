@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
   walState: 'unknown',
   backup: 'No successful backup yet',
 }))
-vi.mock('../../../api/client', () => ({ useRadarFeature: () => ({ support: state.support }) }))
+vi.mock('../../../api/client', () => ({ useKubeAtlasFeature: () => ({ support: state.support }) }))
 vi.mock('../../../context/ConnectionContext', () => ({
   useConnection: () => ({ connection: { context: state.context } }),
 }))

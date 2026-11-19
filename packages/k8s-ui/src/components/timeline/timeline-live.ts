@@ -1,6 +1,6 @@
 // Live/paused (relative/absolute) selection model for the retained timeline.
 //
-// Pure helpers so the host (radar/web TimelineView) can derive the concrete
+// Pure helpers so the host (kubeatlas/web TimelineView) can derive the concrete
 // selection each render, quantize the fetch window, and keep a latched lens
 // tracking the live edge — all unit-testable without a DOM.
 

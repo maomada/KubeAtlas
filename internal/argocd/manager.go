@@ -1,4 +1,4 @@
-// Package argocd manages Radar's connection to the Argo CD API server:
+// Package argocd manages KubeAtlas's connection to the Argo CD API server:
 // configuration, endpoint discovery, reachability/auth probing, and a small
 // response cache. It mirrors internal/prometheus's manager-around-a-pure-client
 // shape, with pkg/argoapi doing the actual HTTP calls.
@@ -1054,8 +1054,8 @@ func (m *Manager) LastProbeError() error {
 
 // transientConnectFailure: the server couldn't be reached, which may pass on
 // its own. A rejected token, a token bound to another cluster, a certificate
-// Radar can't verify, a URL that isn't an Argo CD server and a cluster with
-// no argocd-server Service Radar can see need the user.
+// KubeAtlas can't verify, a URL that isn't an Argo CD server and a cluster with
+// no argocd-server Service KubeAtlas can see need the user.
 func transientConnectFailure(err error) bool {
 	return errors.Is(err, ErrUnreachable) && !errors.Is(err, ErrTokenInvalid) &&
 		!isTLSError(err) && !errors.Is(err, argoapi.ErrNotFound) && !errors.Is(err, errNoArgoServer)
@@ -1381,7 +1381,7 @@ func (m *Manager) noteReadLocked(gen uint64, client *argoapi.Client, err error) 
 
 // ReadMayRecover reports whether a page whose read failed with err should ask
 // again later: the read got no usable HTTP answer, or a retry of the shared
-// connection is under way. A certificate Radar can't verify needs the user to
+// connection is under way. A certificate KubeAtlas can't verify needs the user to
 // fix the configuration, so it never counts, even while a retry runs.
 func ReadMayRecover(err error) bool {
 	if isTLSError(err) {
@@ -1391,7 +1391,7 @@ func ReadMayRecover(err error) bool {
 }
 
 // isTransportFailure reports a read that got no usable HTTP answer: a
-// timeout, a refused connection, a failed DNS lookup, a certificate Radar
+// timeout, a refused connection, a failed DNS lookup, a certificate KubeAtlas
 // can't verify, or a gateway in front of argocd-server answering for it.
 func isTransportFailure(err error) bool {
 	if isNoAnswerInTime(err) || errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) || isTLSError(err) ||
@@ -1783,7 +1783,7 @@ func (m *Manager) verifyAuth(ctx context.Context, url string, snap probeSnapshot
 		// problem first surfaces here, where the token would be sent; say
 		// what to do about it rather than leaving a bare x509 error.
 		if isTLSError(err) {
-			return fmt.Errorf("%w: %w (argocd-server serves a certificate Radar can't verify; set argoCdInsecureTls to trust it)", ErrUnreachable, err)
+			return fmt.Errorf("%w: %w (argocd-server serves a certificate KubeAtlas can't verify; set argoCdInsecureTls to trust it)", ErrUnreachable, err)
 		}
 		if isNoAnswerInTime(err) {
 			return fmt.Errorf("%w: %w: %w", ErrUnreachable, errNoAnswerInTime, err)

@@ -18,7 +18,7 @@ func TestSaveFileStreamWritesToDownloads(t *testing.T) {
 	setHome(t, home)
 
 	a := &DesktopApp{}
-	content := bytes.Repeat([]byte("radar"), 100000)
+	content := bytes.Repeat([]byte("kubeatlas"), 100000)
 	path, err := a.saveFileStream("export.csv", bytes.NewReader(content))
 	if err != nil {
 		t.Fatalf("saveFileStream failed: %v", err)

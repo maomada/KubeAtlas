@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"time"
 
+	"github.com/maomada/KubeAtlas/internal/bundledcharts"
 	"helm.sh/helm/v3/pkg/action"
 	"helm.sh/helm/v3/pkg/chart"
 	"helm.sh/helm/v3/pkg/release"
@@ -94,7 +95,7 @@ type storedReleaseState struct {
 }
 
 // inspectStoredRelease is the single classifier for Helm history state. Both
-// Radar's general Helm install recovery and Cloud's strict fresh-only flow map
+// KubeAtlas's general Helm install recovery and Cloud's strict fresh-only flow map
 // this result onto their own behavior without duplicating the status switch.
 func inspectStoredRelease(actionConfig *action.Configuration, name string) (storedReleaseState, error) {
 	last, err := actionConfig.Releases.Last(name)
@@ -164,7 +165,7 @@ func preInstallCheck(actionConfig *action.Configuration, name, namespace string)
 }
 
 // freshInstallCheck rejects every Helm history state. It is intentionally
-// stricter than preInstallCheck, whose recovery modes are useful to Radar's
+// stricter than preInstallCheck, whose recovery modes are useful to KubeAtlas's
 // general Helm UI but unsafe for a first-time Cloud enrollment.
 func freshInstallCheck(actionConfig *action.Configuration, name, namespace string) error {
 	state, err := inspectStoredRelease(actionConfig, name)
@@ -280,6 +281,22 @@ func classifyInstallError(err error) InstallErrorClass {
 	if errors.Is(err, errChartDigest) {
 		return InstallErrorClass{Status: http.StatusBadGateway, Code: "chart_digest_failed", Message: err.Error()}
 	}
+	if errors.Is(err, bundledcharts.ErrOpenCostUnavailable) {
+		return InstallErrorClass{Status: http.StatusServiceUnavailable, Code: "opencost_package_unavailable", Message: err.Error()}
+	}
+	if errors.Is(err, errOpenCostExists) {
+		return InstallErrorClass{Status: http.StatusConflict, Code: "opencost_exists", Message: err.Error()}
+	}
+	if errors.Is(err, errOpenCostListDenied) {
+		return InstallErrorClass{Status: http.StatusForbidden, Code: "opencost_inventory_denied", Message: err.Error()}
+	}
+	if errors.Is(err, errInvalidChartSource) {
+		return InstallErrorClass{Status: http.StatusBadRequest, Code: "invalid_chart_source", Message: err.Error()}
+	}
+	var history *ReleaseHistoryError
+	if errors.As(err, &history) {
+		return InstallErrorClass{Status: http.StatusConflict, Code: "release_history", Message: history.Error()}
+	}
 	var pending *ReleasePendingError
 	if errors.As(err, &pending) {
 		return InstallErrorClass{
@@ -306,7 +323,7 @@ func classifyInstallError(err error) InstallErrorClass {
 		return InstallErrorClass{
 			Status: http.StatusForbidden,
 			Code:   "rbac_preflight",
-			Message: fmt.Sprintf("Radar identity %q is missing %s on %s.%s — see the in-cluster RBAC docs to expand permissions",
+			Message: fmt.Sprintf("KubeAtlas identity %q is missing %s on %s.%s — see the in-cluster RBAC docs to expand permissions",
 				rbac.User, rbac.Verb, rbac.Resource, group),
 		}
 	}

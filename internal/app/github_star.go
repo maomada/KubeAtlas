@@ -18,7 +18,7 @@ const githubRepo = "maomada/KubeAtlas"
 
 // starState tracks GitHub star prompt history across launches.
 type starState struct {
-	Opens       int    `json:"opens"`                  // Total radar launches
+	Opens       int    `json:"opens"`                  // Total kubeatlas launches
 	StarredAt   string `json:"starred_at,omitempty"`   // Set when user starred via prompt
 	DismissedAt string `json:"dismissed_at,omitempty"` // Last time user said no
 	Dismissals  int    `json:"dismissals"`             // Number of times dismissed

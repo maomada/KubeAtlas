@@ -503,7 +503,7 @@ func TestNarrowedClusterScopeRemediationNamesTheRealCause(t *testing.T) {
 		t.Errorf("remediation must state what the scan could not reach: %q", remediation)
 	}
 	if strings.Contains(remediation, "--namespace") {
-		t.Errorf("an unpinned radar must not blame the pin: %q", remediation)
+		t.Errorf("an unpinned kubeatlas must not blame the pin: %q", remediation)
 	}
 
 	// The pin is a startup flag, not a permissions problem.
@@ -659,7 +659,7 @@ func TestExplicitZeroRequestStillCountsItsFullImpact(t *testing.T) {
 }
 
 func TestSuppressedRecommendationsCountAsIncompleteEvidence(t *testing.T) {
-	// Radar sets these reasons only when the missing evidence actually blocked a
+	// KubeAtlas sets these reasons only when the missing evidence actually blocked a
 	// recommendation, so reporting state=complete would present a withheld
 	// verdict as a clean one — and a memory cut on an unknown-OOM container is
 	// exactly the unsafe change this guards.

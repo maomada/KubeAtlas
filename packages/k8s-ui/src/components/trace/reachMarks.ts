@@ -170,13 +170,13 @@ export function routeForOrigin(route: RouteResult | undefined, originId: string,
   if (originId === 'apiserver') return rows.find((v) => v.path === 'apiserver')
   if (originId === 'local') return rows.find((v) => v.path !== 'apiserver' && v.vantage === 'local')
   // Both in-cluster origins share (in-cluster, data); `source` is what tells
-  // Radar's own dial apart from the throwaway Job's. An absent source resolves
+  // KubeAtlas's own dial apart from the throwaway Job's. An absent source resolves
   // the same way originOf does, so the rail and the rows can't disagree.
   const wantJob = originId === 'incluster'
   return rows.find((v) => {
     if (v.path === 'apiserver' || v.vantage !== 'in-cluster') return false
-    const src = v.source || (runVantage === 'in-cluster' ? 'radar' : 'probe-job')
-    return wantJob ? src === 'probe-job' : src === 'radar'
+    const src = v.source || (runVantage === 'in-cluster' ? 'kubeatlas' : 'probe-job')
+    return wantJob ? src === 'probe-job' : src === 'kubeatlas'
   })
 }
 
@@ -498,7 +498,7 @@ export function vantageSignature(r: RouteResult): string {
   return (r.byVantage ?? [])
     .map(
       (v) =>
-        `${v.vantage}/${v.path}/${v.source || 'radar'}=${v.outcome}${v.failedBoundary ? `@${v.failedBoundary}` : ''}${v.segment ? `#${v.segment}` : ''}`,
+        `${v.vantage}/${v.path}/${v.source || 'kubeatlas'}=${v.outcome}${v.failedBoundary ? `@${v.failedBoundary}` : ''}${v.segment ? `#${v.segment}` : ''}`,
     )
     .sort()
     .join(',')

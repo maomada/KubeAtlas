@@ -676,7 +676,7 @@ func summarizeNamespace(ns *corev1.Namespace) *ResourceSummary {
 //
 // WHY THIS EXISTS: pod.Status.Phase alone is nearly useless as a status. It has
 // five values, and a Job pod whose main container finished while a sidecar
-// keeps running reports phase Running forever. Radar used to emit the bare
+// keeps running reports phase Running forever. KubeAtlas used to emit the bare
 // phase here, so such a pod read "Running" with no hint anything was wrong,
 // while `kubectl get pods` read "NotReady". This is a deliberate port of
 // upstream printPod (k8s.io/kubernetes/pkg/printers/internalversion).
@@ -684,11 +684,11 @@ func summarizeNamespace(ns *corev1.Namespace) *ResourceSummary {
 // Two deliberate divergences from upstream, both retaining strictly more
 // information than upstream does:
 //   - No Terminating override. kubectl replaces STATUS wholesale with
-//     "Terminating" when deletionTimestamp is set; radar carries Terminating
+//     "Terminating" when deletionTimestamp is set; kubeatlas carries Terminating
 //     and Finalizers as dedicated fields, so overriding would DISCARD the
 //     underlying state during every routine rollout.
 //   - No NodeUnreachable -> "Unknown" branch. It is gated on a legacy
-//     pod.Status.Reason that modern kubelets rarely set; radar's health
+//     pod.Status.Reason that modern kubelets rarely set; kubeatlas's health
 //     classifier keys on phase Unknown instead (pkg/health/pod.go:75).
 type podDisplay struct {
 	Status           string

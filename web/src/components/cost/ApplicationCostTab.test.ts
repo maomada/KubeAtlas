@@ -196,7 +196,7 @@ describe('getApplicationCostState', () => {
   })
 
   it('does not report a cross-origin refusal as missing access', () => {
-    const refused = new ApiError('KubeAtlas refused this request because it came from http://radar.internal', 403, {
+    const refused = new ApiError('KubeAtlas refused this request because it came from http://kubeatlas.internal', 403, {
       error_code: 'cross_origin_refused',
     })
     expect(getApplicationCostState(undefined, undefined, { currentError: refused })).toBe('load_error')

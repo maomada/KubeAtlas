@@ -20,14 +20,14 @@ const freshPreflightManifest = `
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: radar-config
+  name: kubeatlas-config
 data:
   mode: cloud
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: radar-cloud
+  name: kubeatlas-cloud
 rules:
 - apiGroups: [""]
   resources: ["users"]
@@ -36,14 +36,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: radar-cloud-owner
+  name: kubeatlas-cloud-owner
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: admin
 subjects:
 - kind: Group
-  name: radar:owner
+  name: kubeatlas:owner
   apiGroup: rbac.authorization.k8s.io
 `
 
@@ -52,20 +52,20 @@ func TestFreshInstallPreflight_ExistingNamespaceDryRunsExactCreates(t *testing.T
 	kc := adoptionKubeClient(t, func(attrs authv1.ResourceAttributes) bool {
 		reviews = append(reviews, attrs)
 		return true
-	}, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar"}})
+	}, &corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas"}})
 	dc := adoptionDynamicClient()
 	dc.PrependReactor("create", "configmaps", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		object := action.(k8stesting.CreateAction).GetObject().(*unstructured.Unstructured)
 		if object.GetLabels()["app.kubernetes.io/managed-by"] != "Helm" ||
-			object.GetAnnotations()["meta.helm.sh/release-name"] != "radar" ||
-			object.GetAnnotations()["meta.helm.sh/release-namespace"] != "radar" {
+			object.GetAnnotations()["meta.helm.sh/release-name"] != "kubeatlas" ||
+			object.GetAnnotations()["meta.helm.sh/release-namespace"] != "kubeatlas" {
 			t.Errorf("dry-run object is missing Helm tracking metadata: labels=%v annotations=%v", object.GetLabels(), object.GetAnnotations())
 		}
 		return false, nil, nil
 	})
 
 	result, err := FreshInstallPreflight(context.Background(), kc, dc, adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: freshPreflightManifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: freshPreflightManifest,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -88,14 +88,14 @@ func TestFreshInstallPreflight_ExistingNamespaceDryRunsExactCreates(t *testing.T
 			t.Errorf("missing server dry-run create for %s; got %v", resource, created)
 		}
 	}
-	assertFreshSecretDryRunCreates(t, kc.Actions(), CloudTokenSecretName, helmReleaseSecretName("radar", 1))
+	assertFreshSecretDryRunCreates(t, kc.Actions(), CloudTokenSecretName, helmReleaseSecretName("kubeatlas", 1))
 	assertReviewed(t, reviews, "delete", "secrets", CloudTokenSecretName)
-	assertReviewed(t, reviews, "update", "secrets", helmReleaseSecretName("radar", 1))
+	assertReviewed(t, reviews, "update", "secrets", helmReleaseSecretName("kubeatlas", 1))
 }
 
 func TestFreshInstallPreflight_DoesNotRepeatPreparedResourceGets(t *testing.T) {
 	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true },
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar"}})
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas"}})
 	dc := adoptionDynamicClient()
 	dc.PrependReactor("get", "*", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewForbidden(
@@ -104,7 +104,7 @@ func TestFreshInstallPreflight_DoesNotRepeatPreparedResourceGets(t *testing.T) {
 	})
 
 	result, err := FreshInstallPreflight(context.Background(), kc, dc, adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: freshPreflightManifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: freshPreflightManifest,
 	})
 	if err != nil || !result.OK() {
 		t.Fatalf("mutation preflight should not repeat preparation's GETs, result=%+v err=%v", result, err)
@@ -118,16 +118,16 @@ func TestFreshInstallPreflight_DoesNotRepeatPreparedResourceGets(t *testing.T) {
 
 func TestFreshInstallPreflight_RBACAdmissionDenialBlocksBeforeEnrollment(t *testing.T) {
 	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true },
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar"}})
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas"}})
 	dc := adoptionDynamicClient()
 	dc.PrependReactor("create", "clusterrolebindings", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewForbidden(
 			schema.GroupResource{Group: action.GetResource().Group, Resource: action.GetResource().Resource},
-			"radar-cloud-owner", errors.New("RBAC admission denied bind"))
+			"kubeatlas-cloud-owner", errors.New("RBAC admission denied bind"))
 	})
 
 	result, err := FreshInstallPreflight(context.Background(), kc, dc, adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: freshPreflightManifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: freshPreflightManifest,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -146,7 +146,7 @@ func TestFreshInstallPreflight_MissingNamespaceDefersOnlyNamespacedAdmission(t *
 	dc := adoptionDynamicClient()
 
 	result, err := FreshInstallPreflight(context.Background(), kc, dc, adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: freshPreflightManifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: freshPreflightManifest,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -186,7 +186,7 @@ func TestFreshInstallPreflight_MissingNamespaceDefersOnlyNamespacedAdmission(t *
 	assertReviewed(t, reviews, "create", "configmaps", "")
 	assertReviewed(t, reviews, "create", "secrets", "")
 	assertReviewed(t, reviews, "delete", "secrets", CloudTokenSecretName)
-	assertReviewed(t, reviews, "update", "secrets", helmReleaseSecretName("radar", 1))
+	assertReviewed(t, reviews, "update", "secrets", helmReleaseSecretName("kubeatlas", 1))
 	for _, attrs := range reviews {
 		if attrs.Verb == "create" && attrs.Name != "" {
 			t.Errorf("CREATE SSAR must model the collection request without resourceName, got %+v", attrs)
@@ -200,12 +200,12 @@ func TestFreshInstallPreflight_MissingNamespaceExactPermissionDenialBlocks(t *te
 	})
 
 	result, err := FreshInstallPreflight(context.Background(), kc, adoptionDynamicClient(), adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: freshPreflightManifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: freshPreflightManifest,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.OK() || !listContainsSubstring(result.Blocking, `create ConfigMap "radar-config"`) {
+	if result.OK() || !listContainsSubstring(result.Blocking, `create ConfigMap "kubeatlas-config"`) {
 		t.Fatalf("expected exact ConfigMap create denial, got %+v", result)
 	}
 }
@@ -213,7 +213,7 @@ func TestFreshInstallPreflight_MissingNamespaceExactPermissionDenialBlocks(t *te
 func TestFreshInstallPreflight_GeneratedRoleBindingUsesProvenRoleCreate(t *testing.T) {
 	manifest := `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: radar-generated}
+metadata: {name: kubeatlas-generated}
 rules:
 - apiGroups: [""]
   resources: ["pods"]
@@ -221,26 +221,26 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
-metadata: {name: radar-generated}
+metadata: {name: kubeatlas-generated}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: radar-generated
+  name: kubeatlas-generated
 subjects:
 - kind: ServiceAccount
-  name: radar
-  namespace: radar`
+  name: kubeatlas
+  namespace: kubeatlas`
 	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true },
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar"}})
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas"}})
 	dc := adoptionDynamicClient()
 	dc.PrependReactor("create", "clusterrolebindings", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewNotFound(
 			schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"},
-			"radar-generated")
+			"kubeatlas-generated")
 	})
 
 	result, err := FreshInstallPreflight(context.Background(), kc, dc, adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: manifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: manifest,
 	})
 	if err != nil || !result.OK() {
 		t.Fatalf("a binding to a successfully dry-run generated role should pass, result=%+v err=%v", result, err)
@@ -252,14 +252,14 @@ subjects:
 
 func TestFreshInstallPreflight_RateLimitIsInfrastructureError(t *testing.T) {
 	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true },
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar"}})
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas"}})
 	dc := adoptionDynamicClient()
 	dc.PrependReactor("create", "configmaps", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewTooManyRequests("busy", 1)
 	})
 
 	result, err := FreshInstallPreflight(context.Background(), kc, dc, adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: freshPreflightManifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: freshPreflightManifest,
 	})
 	if err == nil || !apierrors.IsTooManyRequests(err) || len(result.Blocking) != 0 {
 		t.Fatalf("429 must remain retryable infrastructure failure, result=%+v err=%v", result, err)
@@ -270,11 +270,11 @@ func TestFreshInstallPreflight_NamespaceAdmissionDenialIsBlocking(t *testing.T) 
 	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true })
 	kc.PrependReactor("create", "namespaces", func(action k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewForbidden(
-			schema.GroupResource{Resource: "namespaces"}, "radar", errors.New("denied"))
+			schema.GroupResource{Resource: "namespaces"}, "kubeatlas", errors.New("denied"))
 	})
 
 	result, err := FreshInstallPreflight(context.Background(), kc, adoptionDynamicClient(), adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: freshPreflightManifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: freshPreflightManifest,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -306,7 +306,7 @@ func TestFreshInstallPreflight_HiddenChartSecretFailsClosed(t *testing.T) {
 	result, err := FreshInstallPreflight(context.Background(),
 		adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true }),
 		adoptionDynamicClient(), adoptionDiscovery(), FreshInstallPreflightOptions{
-			Namespace: "radar", ReleaseName: "radar",
+			Namespace: "kubeatlas", ReleaseName: "kubeatlas",
 			TargetManifest: "---\n# HIDDEN: The Secret output has been suppressed\n",
 		})
 	if err != nil {
@@ -324,7 +324,7 @@ func TestFreshInstallPreflight_TransientNamespaceFailureIsInfrastructureError(t 
 		return true, nil, want
 	})
 	result, err := FreshInstallPreflight(context.Background(), kc, adoptionDynamicClient(), adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: freshPreflightManifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: freshPreflightManifest,
 	})
 	if !errors.Is(err, want) || len(result.Blocking) != 0 || len(result.Advisory) != 0 {
 		t.Fatalf("expected infrastructure error, got result=%+v err=%v", result, err)
@@ -341,7 +341,7 @@ func TestFreshInstallPreflight_ValidatesRequiredInputs(t *testing.T) {
 func TestFreshInstallPreflight_DeniedRoleDoesNotMakeItsBindingAClusterRefusal(t *testing.T) {
 	manifest := `apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
-metadata: {name: radar-generated}
+metadata: {name: kubeatlas-generated}
 rules:
 - apiGroups: [""]
   resources: ["secrets"]
@@ -349,31 +349,31 @@ rules:
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
-metadata: {name: radar-generated}
+metadata: {name: kubeatlas-generated}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: radar-generated
+  name: kubeatlas-generated
 subjects:
 - kind: ServiceAccount
-  name: radar
-  namespace: radar`
+  name: kubeatlas
+  namespace: kubeatlas`
 	kc := adoptionKubeClient(t, func(authv1.ResourceAttributes) bool { return true },
-		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "radar"}})
+		&corev1.Namespace{ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas"}})
 	dc := adoptionDynamicClient()
 	dc.PrependReactor("create", "clusterroles", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewForbidden(
-			schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"}, "radar-generated",
+			schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"}, "kubeatlas-generated",
 			errors.New(`user "dev" (groups=["system:authenticated"]) is attempting to grant RBAC permissions not currently held: {APIGroups:[""], Resources:["secrets"], Verbs:["get"]}`))
 	})
 	dc.PrependReactor("create", "clusterrolebindings", func(k8stesting.Action) (bool, runtime.Object, error) {
 		return true, nil, apierrors.NewNotFound(
 			schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: "clusterroles"},
-			"radar-generated")
+			"kubeatlas-generated")
 	})
 
 	result, err := FreshInstallPreflight(context.Background(), kc, dc, adoptionDiscovery(), FreshInstallPreflightOptions{
-		Namespace: "radar", ReleaseName: "radar", TargetManifest: manifest,
+		Namespace: "kubeatlas", ReleaseName: "kubeatlas", TargetManifest: manifest,
 	})
 	if err != nil {
 		t.Fatal(err)

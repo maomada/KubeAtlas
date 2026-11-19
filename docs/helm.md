@@ -127,7 +127,7 @@ Use `issues` for currently broken native Helm releases: active failed and stuck 
 - When rendered object identities do not overlap, KubeAtlas reports added/removed context instead of guessing a rename.
 - Hook evidence can disappear after Helm records the failure. KubeAtlas reports the absence and likely reasons, but cannot reconstruct deleted Job/Pod logs unless Kubernetes or Helm retained them.
 - Flux-managed releases should be changed through Flux. KubeAtlas links them to the owning `HelmRelease` and warns that direct `helm upgrade` changes may be reconciled back.
-- Upgrade source detection depends on source data available to the running KubeAtlas environment. Local OSS can use local Helm repo/OCI configuration; the legacy upstream Radar Cloud should not assume that local repo config exists, so unresolved source states are reported explicitly.
+- Upgrade source detection depends on source data available to the running KubeAtlas environment. Local OSS can use local Helm repo/OCI configuration; the legacy upstream cloud should not assume that local repo config exists, so unresolved source states are reported explicitly.
 
 
 ## Chart sources and upgrades

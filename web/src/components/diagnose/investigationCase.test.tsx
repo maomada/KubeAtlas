@@ -56,7 +56,7 @@ function tool(
     }),
     result: JSON.stringify(result),
     isError: false,
-    radarEvidence: true,
+    kubeatlasEvidence: true,
     ...patch,
   };
 }

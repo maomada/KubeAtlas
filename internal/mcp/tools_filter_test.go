@@ -510,7 +510,7 @@ func callGetEventsCtx(t *testing.T, ctx context.Context, input eventsInput) getE
 
 // --- Per-namespace Secret RBAC ---
 //
-// The chart grants the Radar SA cluster-wide secrets so Helm release
+// The chart grants the KubeAtlas SA cluster-wide secrets so Helm release
 // visibility works under auth modes. The cache therefore holds secrets
 // across all namespaces; the server must gate reads per-user, per-namespace.
 // These tests pin the gate at the MCP layer for list_resources / get_resource.

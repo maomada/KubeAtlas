@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { Grant } from '@maomada/k8s-ui'
-import { fetchJSON, useRadarFeature } from './client'
+import { fetchJSON, useKubeAtlasFeature } from './client'
 import type { CNPGClusterFacts, CNPGRuntimeSourceState } from './cnpg'
 import type { ActionCapability } from './actions'
 
@@ -61,7 +61,7 @@ export interface CNPGSessionsResponse {
 // /api/cnpg/clusters/{ns}/{name}/sessions — who blocks whom on one instance,
 // read with fixed SQL over the caller's pods/exec. Denied is a state, not an error.
 export function useCNPGSessions(namespace: string, name: string, pod?: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGSessionsResponse>({
     queryKey: ['cnpg', 'sessions', namespace, name, pod ?? '', ...gatedKey],
     queryFn: ({ signal }) => guard(() =>
@@ -101,7 +101,7 @@ export interface CNPGDestroyPlan {
 }
 
 export function useCNPGDestroyPlan(namespace: string, name: string, pod: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGDestroyPlan>({
     queryKey: ['cnpg', 'destroy-plan', namespace, name, pod, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGDestroyPlan>(`/cnpg/clusters/${enc(namespace)}/${enc(name)}/instances/${enc(pod)}/destroy-plan`, signal)),
@@ -141,7 +141,7 @@ export interface CNPGPoolerCapabilities {
 }
 
 export function useCNPGPoolerCapabilities(namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGPoolerCapabilities>({
     queryKey: ['cnpg', 'capabilities', 'poolers', namespace, name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGPoolerCapabilities>(`/cnpg/poolers/${enc(namespace)}/${enc(name)}/capabilities`, signal)),
@@ -162,7 +162,7 @@ export interface CNPGPgBouncerStateResponse {
 // /api/cnpg/poolers/{ns}/{name}/pgbouncer-state — each PgBouncer's own SHOW
 // STATE, the only place "paused" is observed rather than requested.
 export function useCNPGPgBouncerState(namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGPgBouncerStateResponse>({
     queryKey: ['cnpg', 'pgbouncer-state', namespace, name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGPgBouncerStateResponse>(`/cnpg/poolers/${enc(namespace)}/${enc(name)}/pgbouncer-state`, signal)),

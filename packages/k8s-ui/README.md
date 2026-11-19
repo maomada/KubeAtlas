@@ -1,6 +1,6 @@
 # @maomada/k8s-ui
 
-Shared, source-distributed Kubernetes UI components used by Radar.
+Shared, source-distributed Kubernetes UI components used by KubeAtlas.
 
 ## Log search highlighting (breaking API change)
 
@@ -61,7 +61,7 @@ Hosts can update a dock tab's label and optional full-name tooltip with
 The optional `DockTab.localTerminalContext` field lets a host retain the full
 context selected when a local terminal was requested. An empty string records
 no active context; an omitted field records no intent. The shared terminal and
-open hook do not interpret it; Radar's host wrapper checks it on open/reconnect.
+open hook do not interpret it; KubeAtlas's host wrapper checks it on open/reconnect.
 `canConnect` is a predicate evaluated during rendering to disable Reconnect/Retry,
 and before an attempt to preserve the existing terminal when refused.
 `onConnectionError` lets a host refresh connection state after a failed WebSocket
@@ -95,9 +95,9 @@ webpack 5 hosts need the same mapping in `resolve.alias`. Without it the build f
 
 ## Resource read coverage
 
-`ResourceReadCoverage` describes the scope an answer covers (and `narrowedBy`, when the caller's access, Radar's pin or what Radar collects narrowed it), what Radar read of it, and coded gaps naming what it did not read and why. `READ_ACTIONS` / `readActionFor` say what resolves each code. `ResourceCoverage` additionally permits `unknown` in UI adapters for older Radar instances. It does not describe object freshness or count truncation.
+`ResourceReadCoverage` describes the scope an answer covers (and `narrowedBy`, when the caller's access, KubeAtlas's pin or what KubeAtlas collects narrowed it), what KubeAtlas read of it, and coded gaps naming what it did not read and why. `READ_ACTIONS` / `readActionFor` say what resolves each code. `ResourceCoverage` additionally permits `unknown` in UI adapters for older KubeAtlas instances. It does not describe object freshness or count truncation.
 
-Pass list coverage through `ResourceQueryResult.coverage`, and per-kind count coverage through `ResourcesView.resourceCoverage` / `ResourcesSidebar.resourceCoverage`. Counts stay useful for sizing; a partial count displays as a lower bound and a partial zero does not hide a kind as empty; a category total is a lower bound when any of its kinds is partial or narrowed by what Radar collects. A complete list whose scope Radar's collection narrowed (`narrowedBy: ["namespace_collection"]`) gets a neutral note naming the collected namespaces. Unknown or absent coverage keeps the presentation that predates coverage. Partial list notices name the affected namespaces when the gap names at most three; larger or unnamed sets keep the compact wording. Loaded list counts retain their coverage when cached. `GitOpsTableView` accepts aggregate `coverageStatus` and `countsPartial` keys; hosts must combine coverage across every cluster/source contributing to the view, and a host that passes no `coverageStatus` gets the unqualified view. Keep source-specific metadata in the host rather than repeating it on every row.
+Pass list coverage through `ResourceQueryResult.coverage`, and per-kind count coverage through `ResourcesView.resourceCoverage` / `ResourcesSidebar.resourceCoverage`. Counts stay useful for sizing; a partial count displays as a lower bound and a partial zero does not hide a kind as empty; a category total is a lower bound when any of its kinds is partial or narrowed by what KubeAtlas collects. A complete list whose scope KubeAtlas's collection narrowed (`narrowedBy: ["namespace_collection"]`) gets a neutral note naming the collected namespaces. Unknown or absent coverage keeps the presentation that predates coverage. Partial list notices name the affected namespaces when the gap names at most three; larger or unnamed sets keep the compact wording. Loaded list counts retain their coverage when cached. `GitOpsTableView` accepts aggregate `coverageStatus` and `countsPartial` keys; hosts must combine coverage across every cluster/source contributing to the view, and a host that passes no `coverageStatus` gets the unqualified view. Keep source-specific metadata in the host rather than repeating it on every row.
 
 ## Resource kind views and certainty
 
@@ -112,9 +112,9 @@ tooltip. `certaintyGlyph` and `certaintyValueLabel` expose the same vocabulary.
 
 ## Optional flow controls
 
-`CreateResourceDialog` defaults to Apply. Guided flows can set `initialMode="create"` and `lockMode` to require creation, and use `onBack(draftYaml)` to retain edits when returning to setup. Cancel closes the dialog. After a successful write, `onCreated(result, submittedYaml)` receives the first result and the exact submitted manifest; dry runs do not invoke it. `result.uid`, when supplied by Radar, identifies the persisted object. Partial creates name the objects already created. Unlocked flows switch to Apply for review when preview is available; direct creation keeps Create selected so a retry cannot silently update existing objects.
+`CreateResourceDialog` defaults to Apply. Guided flows can set `initialMode="create"` and `lockMode` to require creation, and use `onBack(draftYaml)` to retain edits when returning to setup. Cancel closes the dialog. After a successful write, `onCreated(result, submittedYaml)` receives the first result and the exact submitted manifest; dry runs do not invoke it. `result.uid`, when supplied by KubeAtlas, identifies the persisted object. Partial creates name the objects already created. Unlocked flows switch to Apply for review when preview is available; direct creation keeps Create selected so a retry cannot silently update existing objects.
 
-`useOpenTerminal` accepts `shell` (one executable name, without arguments), `title`, and `sessionNote`. Dock hosts must forward these fields to their terminal renderer; Radar does so. The shared `TerminalTab` accepts `command` to describe that executable, pin the container, and suppress shell debug advice, plus `note` for session context. `createSession` remains responsible for launching the command. Omitted options retain the normal shell session.
+`useOpenTerminal` accepts `shell` (one executable name, without arguments), `title`, and `sessionNote`. Dock hosts must forward these fields to their terminal renderer; KubeAtlas does so. The shared `TerminalTab` accepts `command` to describe that executable, pin the container, and suppress shell debug advice, plus `note` for session context. `createSession` remains responsible for launching the command. Omitted options retain the normal shell session.
 
 `AreaChart` supports optional `shadedRanges`, controlled `selection`, and `onSelectRange`. Range timestamps use Unix seconds. Dragging selects a range; with positive `stepSeconds`, clicking selects a step-wide window centered on the pointer, clipped at the chart edges. Arrow keys plus Enter select a window from the keyboard. Shaded range labels appear on hover. `AlertBanner.action` places a host-supplied control alongside the title. Omitting these props preserves existing charts and banners.
 
@@ -128,7 +128,7 @@ tooltip. `certaintyGlyph` and `certaintyValueLabel` expose the same vocabulary.
 
 Existing CNPG primitive exports remain available and delegate to these shared implementations.
 
-`PrinterColumnDef.jsonPath` optionally carries source provenance from newer Radar servers. The UI does not evaluate it: values still come from the server's table converter. Without it, printer-cell tones stay generic. Crossplane pause qualification only recognizes exact Ready/Synced condition paths and corroborated annotation/condition evidence; same-named unrelated columns retain their normal tones. `ConditionTone` also supports opt-in `neutral`; `defaultConditionTone` retains its original return vocabulary. `ComposedRefStatus.pauseState` optionally supplies recorded Crossplane pause context for a composed-resource row.
+`PrinterColumnDef.jsonPath` optionally carries source provenance from newer KubeAtlas servers. The UI does not evaluate it: values still come from the server's table converter. Without it, printer-cell tones stay generic. Crossplane pause qualification only recognizes exact Ready/Synced condition paths and corroborated annotation/condition evidence; same-named unrelated columns retain their normal tones. `ConditionTone` also supports opt-in `neutral`; `defaultConditionTone` retains its original return vocabulary. `ComposedRefStatus.pauseState` optionally supplies recorded Crossplane pause context for a composed-resource row.
 
 `ForceDeleteConfirmDialog.resourceData` optionally supplies the current object for Crossplane pause context. Paused MR/XR/Claim shapes holding a known Crossplane finalizer receive a cleanup warning; the prop does not change confirmation or force-delete behavior. YAML operation context uses the existing baseline and predicted manifests; removing a pause annotation requests resumption rather than proving it.
 

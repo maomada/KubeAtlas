@@ -88,23 +88,23 @@ func (e *CloudReleaseNotDeployedError) Error() string {
 		e.Name, e.Namespace, e.Inspection.State, emptyAs(e.Inspection.Status, "none"), e.Inspection.Revision)
 }
 
-// NotOfficialRadarReleaseError is returned when Helm storage contains a chart
+// NotOfficialKubeAtlasReleaseError is returned when Helm storage contains a chart
 // that cannot be identified as the KubeAtlas chart. Helm release records do
 // not retain their repository URL, so identity is based on embedded metadata.
-type NotOfficialRadarReleaseError struct {
+type NotOfficialKubeAtlasReleaseError struct {
 	Name         string
 	Namespace    string
 	ChartName    string
 	ChartVersion string
 }
 
-func (e *NotOfficialRadarReleaseError) Error() string {
+func (e *NotOfficialKubeAtlasReleaseError) Error() string {
 	return fmt.Sprintf("release %q in namespace %q is not a KubeAtlas chart (found %q version %q)",
 		e.Name, e.Namespace, e.ChartName, e.ChartVersion)
 }
 
 // ChartDowngradeError prevents Cloud adoption from silently replacing a newer
-// Radar chart with an older stable chart selected from the configured repo.
+// KubeAtlas chart with an older stable chart selected from the configured repo.
 type ChartDowngradeError struct {
 	Current string
 	Target  string
@@ -130,7 +130,7 @@ func (e *ReleaseChangedError) Error() string {
 }
 
 // CloudUpgradeValuesSummary is the effective configuration relevant to
-// deciding whether and how to adopt an existing Radar release. It intentionally
+// deciding whether and how to adopt an existing KubeAtlas release. It intentionally
 // never exposes token or OIDC secret values.
 type CloudUpgradeValuesSummary struct {
 	AuthMode            string
@@ -231,7 +231,7 @@ func (c *Client) ResolvePreparedChartSummary(ctx context.Context, req *InstallRe
 	if err != nil {
 		return PreparedChartSummary{}, err
 	}
-	if err := validateOfficialRadarChart(request.ReleaseName, request.Namespace, loaded); err != nil {
+	if err := validateOfficialKubeAtlasChart(request.ReleaseName, request.Namespace, loaded); err != nil {
 		return PreparedChartSummary{}, err
 	}
 	return PreparedChartSummary{ChartVersion: exactVersion, AppVersion: loaded.Metadata.AppVersion}, nil
@@ -247,15 +247,15 @@ func (c *Client) prepareCloudUpgradeWith(ctx context.Context, actionConfig *acti
 	}
 	current, err := action.NewGet(actionConfig).Run(request.ReleaseName)
 	if err != nil {
-		return nil, fmt.Errorf("get deployed Radar release: %w", err)
+		return nil, fmt.Errorf("get deployed KubeAtlas release: %w", err)
 	}
-	if err := validateOfficialRadarRelease(current); err != nil {
+	if err := validateOfficialKubeAtlasRelease(current); err != nil {
 		return nil, err
 	}
 	// The workload, token Secret and permission checks below all assume the
 	// release runs where its history is stored.
 	if current.Namespace != "" && current.Namespace != request.Namespace {
-		return nil, fmt.Errorf("release %q keeps its Helm history in namespace %q but runs in %q; Cloud Connect can only adopt a Radar release kept in one namespace, so upgrade it with the tool that installed it",
+		return nil, fmt.Errorf("release %q keeps its Helm history in namespace %q but runs in %q; Cloud Connect can only adopt a KubeAtlas release kept in one namespace, so upgrade it with the tool that installed it",
 			request.ReleaseName, request.Namespace, current.Namespace)
 	}
 
@@ -263,7 +263,7 @@ func (c *Client) prepareCloudUpgradeWith(ctx context.Context, actionConfig *acti
 	if err != nil {
 		return nil, err
 	}
-	if err := validateOfficialRadarChart(request.ReleaseName, request.Namespace, loaded); err != nil {
+	if err := validateOfficialKubeAtlasChart(request.ReleaseName, request.Namespace, loaded); err != nil {
 		return nil, err
 	}
 	if err := RejectChartDowngrade(current.Chart.Metadata.Version, exactVersion); err != nil {
@@ -282,7 +282,7 @@ func (c *Client) prepareCloudUpgradeWith(ctx context.Context, actionConfig *acti
 	}
 	values, err := summarizeCloudUpgradeValues(current)
 	if err != nil {
-		return nil, fmt.Errorf("inspect existing Radar values: %w", err)
+		return nil, fmt.Errorf("inspect existing KubeAtlas values: %w", err)
 	}
 	dryRun, err := runServerUpgradeDryRun(ctx, actionConfig, &request, loaded)
 	if err != nil {
@@ -298,7 +298,7 @@ func (c *Client) prepareCloudUpgradeWith(ctx context.Context, actionConfig *acti
 
 	identity, err := releaseIdentity(current)
 	if err != nil {
-		return nil, fmt.Errorf("record existing Radar release identity: %w", err)
+		return nil, fmt.Errorf("record existing KubeAtlas release identity: %w", err)
 	}
 	return &PreparedUpgrade{
 		client: c, request: request, chart: loaded,
@@ -520,7 +520,7 @@ func preparedUpgradeAction(actionConfig *action.Configuration, request *InstallR
 }
 
 // cloudUpgradeValues clones the caller's overlay and deliberately clears an
-// old image.tag pin. Adoption upgrades Radar to the selected chart's AppVersion
+// old image.tag pin. Adoption upgrades KubeAtlas to the selected chart's AppVersion
 // by default while preserving every other existing user-supplied value through
 // ResetThenReuseValues.
 func cloudUpgradeValues(values map[string]any) map[string]any {
@@ -543,11 +543,11 @@ func cloudUpgradeValues(values map[string]any) map[string]any {
 func RejectChartDowngrade(current, target string) error {
 	currentVersion, err := semver.StrictNewVersion(current)
 	if err != nil {
-		return fmt.Errorf("existing Radar chart has invalid semantic version %q", current)
+		return fmt.Errorf("existing KubeAtlas chart has invalid semantic version %q", current)
 	}
 	targetVersion, err := semver.StrictNewVersion(target)
 	if err != nil {
-		return fmt.Errorf("target Radar chart has invalid semantic version %q", target)
+		return fmt.Errorf("target KubeAtlas chart has invalid semantic version %q", target)
 	}
 	if targetVersion.LessThan(currentVersion) {
 		return &ChartDowngradeError{Current: current, Target: target}
@@ -555,7 +555,7 @@ func RejectChartDowngrade(current, target string) error {
 	return nil
 }
 
-func validateOfficialRadarRelease(rel *release.Release) error {
+func validateOfficialKubeAtlasRelease(rel *release.Release) error {
 	name, namespace := "", ""
 	if rel != nil {
 		name, namespace = rel.Name, rel.Namespace
@@ -564,10 +564,10 @@ func validateOfficialRadarRelease(rel *release.Release) error {
 	if rel != nil {
 		loaded = rel.Chart
 	}
-	return validateOfficialRadarChart(name, namespace, loaded)
+	return validateOfficialKubeAtlasChart(name, namespace, loaded)
 }
 
-func validateOfficialRadarChart(releaseName, namespace string, loaded *chart.Chart) error {
+func validateOfficialKubeAtlasChart(releaseName, namespace string, loaded *chart.Chart) error {
 	metadata := (*chart.Metadata)(nil)
 	if loaded != nil {
 		metadata = loaded.Metadata
@@ -586,7 +586,7 @@ func validateOfficialRadarChart(releaseName, namespace string, loaded *chart.Cha
 		}
 	}
 	if chartName != "kubeatlas" || !officialSource {
-		return &NotOfficialRadarReleaseError{
+		return &NotOfficialKubeAtlasReleaseError{
 			Name: releaseName, Namespace: namespace,
 			ChartName: chartName, ChartVersion: chartVersion,
 		}
@@ -634,10 +634,10 @@ func preCloudDeploymentRef(manifest, defaultNamespace, releaseName string) (Depl
 		if object.Labels["app.kubernetes.io/instance"] != "" && object.Labels["app.kubernetes.io/instance"] != releaseName {
 			return false
 		}
-		if strings.HasPrefix(object.Labels["helm.sh/chart"], "radar-") || strings.HasPrefix(object.Labels["helm.sh/chart"], "kubeatlas-") {
+		if strings.HasPrefix(object.Labels["helm.sh/chart"], "kubeatlas-") || strings.HasPrefix(object.Labels["helm.sh/chart"], "kubeatlas-") {
 			return true
 		}
-		return slices.Contains(object.ContainerNames, "radar") || slices.Contains(object.ContainerNames, "kubeatlas")
+		return slices.Contains(object.ContainerNames, "kubeatlas") || slices.Contains(object.ContainerNames, "kubeatlas")
 	}, "KubeAtlas Deployment in the existing release")
 }
 

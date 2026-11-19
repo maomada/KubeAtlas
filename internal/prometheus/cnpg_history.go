@@ -582,7 +582,7 @@ func parseCNPGReceivers(res *prom.QueryResult, known map[string]bool) map[string
 // CNPGFleetSlotCap bounds the inactive slots kept per Cluster.
 const CNPGFleetSlotCap = 10
 
-const cnpgSlotRowLabel = "radar_row"
+const cnpgSlotRowLabel = "kubeatlas_row"
 
 // CNPGSlotReading is one inactive physical replication slot as one instance
 // reports it. Role is that instance's: "primary", "standby" (CloudNativePG
@@ -620,7 +620,7 @@ func (client *Client) QueryCNPGFleetSlots(ctx context.Context, namespace string,
 	return queryCNPGFleetSlots(ctx, client, namespace, clusters, matchers)
 }
 
-// Each branch is tagged with its own radar_row value so `or` keeps all of
+// Each branch is tagged with its own kubeatlas_row value so `or` keeps all of
 // them: inactive slots, the WAL those retain, which instances report the slot
 // family at all, each instance's recovery state (its role), and which
 // instances are scraped.

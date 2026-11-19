@@ -221,9 +221,9 @@ func (p *CacheProvider) templateCandidates(pod *corev1.Pod, differences []templa
 	if needsDefaults {
 		switch {
 		case p.cache.LimitRanges() == nil:
-			coverage = append(coverage, "LimitRange defaults were not inspected: Radar does not cache LimitRanges (its access does not allow it, or they are not watched).")
+			coverage = append(coverage, "LimitRange defaults were not inspected: KubeAtlas does not cache LimitRanges (its access does not allow it, or they are not watched).")
 		case !p.cache.AssessKindRead("limitranges", []string{pod.Namespace}).Complete:
-			coverage = append(coverage, "LimitRange defaults were not inspected: Radar has not finished loading LimitRanges for this namespace.")
+			coverage = append(coverage, "LimitRange defaults were not inspected: KubeAtlas has not finished loading LimitRanges for this namespace.")
 		}
 		unreadable := false
 		for _, lr := range p.templateLimitRanges(pod.Namespace) {
@@ -248,7 +248,7 @@ func (p *CacheProvider) templateCandidates(pod *corev1.Pod, differences []templa
 			p.loadTemplatePriorities()
 		})
 		if !p.podTemplateSources.prioritiesLoaded {
-			coverage = append(coverage, "PriorityClasses were not inspected: Radar has not cached them.")
+			coverage = append(coverage, "PriorityClasses were not inspected: KubeAtlas has not cached them.")
 		}
 		for _, pc := range p.podTemplateSources.priorities {
 			if pc.Name == pod.Spec.PriorityClassName && pc.GlobalDefault {
@@ -262,7 +262,7 @@ func (p *CacheProvider) templateCandidates(pod *corev1.Pod, differences []templa
 	}
 	p.podTemplateSources.webhooksOnce.Do(func() { p.loadTemplateWebhooks() })
 	if !p.podTemplateSources.webhooksLoaded {
-		coverage = append(coverage, "Mutating webhook configurations were not inspected: Radar has not cached them.")
+		coverage = append(coverage, "Mutating webhook configurations were not inspected: KubeAtlas has not cached them.")
 	}
 	var namespaceLabels labels.Set
 	if access.canRead(Ref{Kind: "Namespace", Name: pod.Namespace}) && p.cache.Namespaces() != nil {

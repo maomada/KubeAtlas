@@ -11,11 +11,11 @@ import (
 )
 
 func TestExplain(t *testing.T) {
-	src := radar()
+	src := kubeatlas()
 	dst := prom(9090)
 	external := Peer{External: true, IP: "203.0.113.7"}
 	unresolved := Peer{}
-	fromRadarNs := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "radar"}}}
+	fromKubeAtlasNs := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"kubernetes.io/metadata.name": "kubeatlas"}}}
 	fromAnyPodInAnyNs := networkingv1.NetworkPolicyPeer{NamespaceSelector: &metav1.LabelSelector{}}
 
 	tests := []struct {
@@ -55,15 +55,15 @@ func TestExplain(t *testing.T) {
 		},
 		{
 			name: "namespaceSelector match admits and names the selector",
-			np: policy("monitoring", "from-radar", promLabels, ingressT,
-				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromRadarNs}}}, nil),
+			np: policy("monitoring", "from-kubeatlas", promLabels, ingressT,
+				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromKubeAtlasNs}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod, peer: src, port: 9090,
-			effect: Admits, reason: "from any pod in namespaces labeled kubernetes.io/metadata.name=radar",
+			effect: Admits, reason: "from any pod in namespaces labeled kubernetes.io/metadata.name=kubeatlas",
 		},
 		{
 			name: "rules for other ports only",
 			np: policy("monitoring", "other-port", promLabels, ingressT,
-				[]networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{tcpPort(8080)}, From: []networkingv1.NetworkPolicyPeer{fromRadarNs}}}, nil),
+				[]networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{tcpPort(8080)}, From: []networkingv1.NetworkPolicyPeer{fromKubeAtlasNs}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod, peer: src, port: 9090,
 			effect: DoesNotAdmit, reason: "no rule allows TCP/9090; its rules cover other ports",
 		},
@@ -72,18 +72,18 @@ func TestExplain(t *testing.T) {
 			np: policy("monitoring", "from-other", promLabels, ingressT,
 				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{NamespaceSelector: &metav1.LabelSelector{MatchLabels: map[string]string{"team": "payments"}}}}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod, peer: src, port: 9090,
-			effect: DoesNotAdmit, reason: "no rule allows incoming TCP/9090 from the source pod radar/radar-1",
+			effect: DoesNotAdmit, reason: "no rule allows incoming TCP/9090 from the source pod kubeatlas/kubeatlas-1",
 		},
 		{
 			name: "unknown port against a port-restricted rule is undecidable",
 			np: policy("monitoring", "ported", promLabels, ingressT,
-				[]networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{tcpPort(9090)}, From: []networkingv1.NetworkPolicyPeer{fromRadarNs}}}, nil),
+				[]networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{tcpPort(9090)}, From: []networkingv1.NetworkPolicyPeer{fromKubeAtlasNs}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod, peer: src, port: 0,
 			effect: Undecidable, reason: "port of this connection is not known",
 		},
 		{
 			name: "selector rules never admit an external source",
-			np: policy("monitoring", "from-radar", promLabels, ingressT,
+			np: policy("monitoring", "from-kubeatlas", promLabels, ingressT,
 				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromAnyPodInAnyNs}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod, peer: external, port: 9090,
 			effect: DoesNotAdmit, reason: "no rule allows incoming TCP/9090 from the source 203.0.113.7 (outside the cluster)",
@@ -102,7 +102,7 @@ func TestExplain(t *testing.T) {
 			name: "ipBlock containing a pod source is undecidable on ingress",
 			np: policy("monitoring", "from-pod-range", promLabels, ingressT,
 				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "10.0.0.0/8"}}}}}, nil),
-			dir: DirectionIngress, sel: dst.Pod, peer: radar(), port: 9090,
+			dir: DirectionIngress, sel: dst.Pod, peer: kubeatlas(), port: 9090,
 			effect: Undecidable, reason: "plugins disagree",
 		},
 		{
@@ -121,44 +121,44 @@ func TestExplain(t *testing.T) {
 		},
 		{
 			name: "egress ipBlock to an external destination is decisive",
-			np: policy("radar", "egress-cidr", radarLabels, egressT, nil,
+			np: policy("kubeatlas", "egress-cidr", kubeatlasLabels, egressT, nil,
 				[]networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.0/24"}}}}}),
 			dir: DirectionEgress, sel: src.Pod, peer: external, port: 443,
 			effect: DoesNotAdmit, reason: "no rule allows outgoing TCP/443 to the destination 203.0.113.7 (outside the cluster)",
 		},
 		{
 			name: "egress ipBlock to a pod destination is undecidable even on a hit",
-			np: policy("radar", "egress-cidr", radarLabels, egressT, nil,
+			np: policy("kubeatlas", "egress-cidr", kubeatlasLabels, egressT, nil,
 				[]networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "10.0.2.0/24"}}}}}),
 			dir: DirectionEgress, sel: src.Pod, peer: dst.Peer, port: 9090,
 			effect: Undecidable, reason: "plugins disagree",
 		},
 		{
 			name: "an unresolved pod peer is undecidable",
-			np: policy("monitoring", "from-radar", promLabels, ingressT,
-				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromRadarNs}}}, nil),
+			np: policy("monitoring", "from-kubeatlas", promLabels, ingressT,
+				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromKubeAtlasNs}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod, peer: unresolved, port: 9090,
 			effect: Undecidable, reason: "can't be looked up",
 		},
 		{
 			name: "named egress port against an unresolved destination is undecidable",
-			np: policy("radar", "egress-named", radarLabels, egressT, nil,
+			np: policy("kubeatlas", "egress-named", kubeatlasLabels, egressT, nil,
 				[]networkingv1.NetworkPolicyEgressRule{{Ports: []networkingv1.NetworkPolicyPort{namedPort("web")}, To: []networkingv1.NetworkPolicyPeer{fromAnyPodInAnyNs}}}),
 			dir: DirectionEgress, sel: src.Pod, peer: unresolved, port: 9090,
 			effect: Undecidable, reason: "uses a named port and the destination pod can't be looked up",
 		},
 		{
 			name: "external destination with no known address is undecidable, not refused",
-			np: policy("radar", "egress-cidr", radarLabels, egressT, nil,
+			np: policy("kubeatlas", "egress-cidr", kubeatlasLabels, egressT, nil,
 				[]networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "192.0.2.0/24"}}}}}),
 			dir: DirectionEgress, sel: src.Pod, peer: Peer{External: true}, port: 443,
 			effect: Undecidable, reason: "no IPv4 address is known",
 		},
 		{
 			name: "hostNetwork peer is undecidable",
-			np: policy("monitoring", "from-radar", promLabels, ingressT,
-				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromRadarNs}}}, nil),
-			dir: DirectionIngress, sel: dst.Pod, peer: func() Peer { p := radar(); p.Pod.Spec.HostNetwork = true; return p }(), port: 9090,
+			np: policy("monitoring", "from-kubeatlas", promLabels, ingressT,
+				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromKubeAtlasNs}}}, nil),
+			dir: DirectionIngress, sel: dst.Pod, peer: func() Peer { p := kubeatlas(); p.Pod.Spec.HostNetwork = true; return p }(), port: 9090,
 			effect: Undecidable, reason: "host network",
 		},
 		{
@@ -167,7 +167,7 @@ func TestExplain(t *testing.T) {
 				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "10.0.0.0/16"}}}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod,
 			peer: func() Peer {
-				p := radar()
+				p := kubeatlas()
 				p.Pod.Status.PodIPs = []corev1.PodIP{{IP: "10.0.1.5"}, {IP: "fd00::5"}}
 				p.IP = "fd00::5" // the flow arrived over IPv6
 				return p
@@ -176,7 +176,7 @@ func TestExplain(t *testing.T) {
 		},
 		{
 			name: "a numeric port entry admits even when a named sibling cannot be resolved",
-			np: policy("radar", "egress-mixed-ports", radarLabels, egressT, nil,
+			np: policy("kubeatlas", "egress-mixed-ports", kubeatlasLabels, egressT, nil,
 				[]networkingv1.NetworkPolicyEgressRule{{Ports: []networkingv1.NetworkPolicyPort{tcpPort(443), namedPort("https")}}}),
 			dir: DirectionEgress, sel: src.Pod, peer: unresolved, port: 443,
 			effect: Admits, reason: "rule 1 allows outgoing TCP/443 to any destination",
@@ -184,14 +184,14 @@ func TestExplain(t *testing.T) {
 		{
 			name: "unknown port: a protocol-only entry admits every port of that protocol",
 			np: policy("monitoring", "any-tcp", promLabels, ingressT,
-				[]networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{{Protocol: func() *corev1.Protocol { p := corev1.ProtocolTCP; return &p }()}}, From: []networkingv1.NetworkPolicyPeer{fromRadarNs}}}, nil),
+				[]networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{{Protocol: func() *corev1.Protocol { p := corev1.ProtocolTCP; return &p }()}}, From: []networkingv1.NetworkPolicyPeer{fromKubeAtlasNs}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod, peer: src, port: 0,
 			effect: Admits, reason: "TCP (port unknown)",
 		},
 		{
 			name: "unknown port: an entry for another protocol never matches",
 			np: policy("monitoring", "udp-only", promLabels, ingressT,
-				[]networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{{Protocol: func() *corev1.Protocol { p := corev1.ProtocolUDP; return &p }(), Port: func() *intstr.IntOrString { p := intstr.FromInt32(53); return &p }()}}, From: []networkingv1.NetworkPolicyPeer{fromRadarNs}}}, nil),
+				[]networkingv1.NetworkPolicyIngressRule{{Ports: []networkingv1.NetworkPolicyPort{{Protocol: func() *corev1.Protocol { p := corev1.ProtocolUDP; return &p }(), Port: func() *intstr.IntOrString { p := intstr.FromInt32(53); return &p }()}}, From: []networkingv1.NetworkPolicyPeer{fromKubeAtlasNs}}}, nil),
 			dir: DirectionIngress, sel: dst.Pod, peer: src, port: 0,
 			effect: DoesNotAdmit, reason: "its rules cover other ports",
 		},
@@ -199,19 +199,19 @@ func TestExplain(t *testing.T) {
 			name: "an empty namespaceSelector needs no Namespace object",
 			np: policy("monitoring", "from-anywhere", promLabels, ingressT,
 				[]networkingv1.NetworkPolicyIngressRule{{From: []networkingv1.NetworkPolicyPeer{fromAnyPodInAnyNs}}}, nil),
-			dir: DirectionIngress, sel: dst.Pod, peer: Peer{Pod: radar().Pod}, port: 9090,
+			dir: DirectionIngress, sel: dst.Pod, peer: Peer{Pod: kubeatlas().Pod}, port: 9090,
 			effect: Admits, reason: "from any pod in any namespace",
 		},
 		{
 			name: "egress ipBlock of the other family does not admit a known external destination",
-			np: policy("radar", "egress-v4", radarLabels, egressT, nil,
+			np: policy("kubeatlas", "egress-v4", kubeatlasLabels, egressT, nil,
 				[]networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "203.0.113.0/24"}}}}}),
 			dir: DirectionEgress, sel: src.Pod, peer: Peer{External: true, IP: "2001:db8::7"}, port: 443,
 			effect: DoesNotAdmit, reason: "no rule allows outgoing TCP/443 to the destination 2001:db8::7 (outside the cluster)",
 		},
 		{
 			name: "a malformed ipBlock is undecidable even for a known external destination",
-			np: policy("radar", "egress-bad", radarLabels, egressT, nil,
+			np: policy("kubeatlas", "egress-bad", kubeatlasLabels, egressT, nil,
 				[]networkingv1.NetworkPolicyEgressRule{{To: []networkingv1.NetworkPolicyPeer{{IPBlock: &networkingv1.IPBlock{CIDR: "203.0.113.0/24", Except: []string{"not-a-cidr"}}}}}}),
 			dir: DirectionEgress, sel: src.Pod, peer: external, port: 443,
 			effect: Undecidable, reason: "not a valid CIDR",
@@ -246,7 +246,7 @@ func TestExplain(t *testing.T) {
 func TestEvaluate_MatchesExplainFold(t *testing.T) {
 	// Evaluate is defined as a fold over Explain; pin one denial and one
 	// admission so a divergence between the two cannot go unnoticed.
-	src, backends := radar(), []Backend{prom(9090)}
+	src, backends := kubeatlas(), []Backend{prom(9090)}
 	deny := policy("monitoring", "deny-all", nil, ingressT, nil, nil)
 	if got := Evaluate(src, backends, []*networkingv1.NetworkPolicy{deny}); got.Kind != Denied {
 		t.Fatalf("Evaluate = %+v, want Denied", got)

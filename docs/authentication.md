@@ -185,7 +185,7 @@ auth:
     issuerURL: https://accounts.google.com    # Your OIDC provider
     clientID: your-client-id
     clientSecret: your-client-secret
-    redirectURL: https://radar.example.com/auth/callback
+    redirectURL: https://kubeatlas.example.com/auth/callback
     # usernameClaim: preferred_username        # Default: email, falling back to sub
     groupsClaim: groups                        # JWT claim containing group membership
     # scopes: ["openid", "profile", "email", "groups"]  # Default — uncomment to override (e.g., drop "groups" for Google)
@@ -203,10 +203,10 @@ auth:
 auth:
   mode: oidc
   oidc:
-    issuerURL: http://authentik.example.com/application/o/radar/
-    internalIssuerURL: http://authentik-server.authentik.svc.cluster.local/application/o/radar/
-    clientID: radar
-    redirectURL: https://radar.example.com/auth/callback
+    issuerURL: http://authentik.example.com/application/o/kubeatlas/
+    internalIssuerURL: http://authentik-server.authentik.svc.cluster.local/application/o/kubeatlas/
+    clientID: kubeatlas
+    redirectURL: https://kubeatlas.example.com/auth/callback
 ```
 
 If the endpoints cannot be derived from the two issuer bases, override them explicitly. `authorizationURL` is browser-facing; `tokenURL`, `userInfoURL`, and `jwksURL` are server-side URLs used by the KubeAtlas process:
@@ -215,11 +215,11 @@ If the endpoints cannot be derived from the two issuer bases, override them expl
 auth:
   mode: oidc
   oidc:
-    issuerURL: http://authentik.example.com/application/o/radar/
-    authorizationURL: http://authentik.example.com/application/o/radar/authorize/
-    tokenURL: http://authentik-server.authentik.svc.cluster.local/application/o/radar/token/
-    userInfoURL: http://authentik-server.authentik.svc.cluster.local/application/o/radar/userinfo/
-    jwksURL: http://authentik-server.authentik.svc.cluster.local/application/o/radar/jwks/
+    issuerURL: http://authentik.example.com/application/o/kubeatlas/
+    authorizationURL: http://authentik.example.com/application/o/kubeatlas/authorize/
+    tokenURL: http://authentik-server.authentik.svc.cluster.local/application/o/kubeatlas/token/
+    userInfoURL: http://authentik-server.authentik.svc.cluster.local/application/o/kubeatlas/userinfo/
+    jwksURL: http://authentik-server.authentik.svc.cluster.local/application/o/kubeatlas/jwks/
 ```
 
 **Logout behavior:**
@@ -240,7 +240,7 @@ To redirect users back to KubeAtlas after IdP logout, set `--auth-oidc-post-logo
 
 When an admin disables a user at the IdP level (e.g., disables an Okta account), KubeAtlas has no way to know — the existing session cookie remains valid until it expires. Back-Channel Logout ([spec](https://openid.net/specs/openid-connect-backchannel-1_0.html)) solves this: the IdP POSTs a signed `logout_token` to KubeAtlas's `/auth/backchannel-logout` endpoint, and KubeAtlas immediately revokes the matching session.
 
-To enable, set `--auth-oidc-backchannel-logout` (or `auth.oidc.backchannelLogout: true` in Helm), then register `https://radar.example.com/auth/backchannel-logout` as the Back-Channel Logout URI in your IdP.
+To enable, set `--auth-oidc-backchannel-logout` (or `auth.oidc.backchannelLogout: true` in Helm), then register `https://kubeatlas.example.com/auth/backchannel-logout` as the Back-Channel Logout URI in your IdP.
 
 If KubeAtlas is served under a base path, the route sits at `{basePath}/auth/backchannel-logout` — register that. An unprefixed URI is not routed to KubeAtlas, and the IdP's POST is silently lost: disabling a user leaves their KubeAtlas session live until the cookie expires, which is the exact failure this feature exists to prevent.
 
@@ -249,7 +249,7 @@ auth:
   mode: oidc
   oidc:
     issuerURL: https://your-idp.example.com
-    clientID: radar
+    clientID: kubeatlas
     backchannelLogout: true
 ```
 
@@ -274,15 +274,15 @@ For production, use K8s Secrets instead of storing credentials in Helm values (w
 auth:
   mode: oidc
   # Session signing key from a K8s Secret
-  existingSecret: radar-auth-secret        # K8s Secret containing the HMAC key
+  existingSecret: kubeatlas-auth-secret        # K8s Secret containing the HMAC key
   existingSecretKey: auth-secret            # Key within the Secret (default)
   oidc:
     issuerURL: https://accounts.google.com
     clientID: your-client-id
     # OIDC client secret from a K8s Secret
-    existingSecret: radar-oidc-credentials  # K8s Secret containing the client secret
+    existingSecret: kubeatlas-oidc-credentials  # K8s Secret containing the client secret
     clientSecretKey: client-secret           # Key within the Secret (default)
-    redirectURL: https://radar.example.com/auth/callback
+    redirectURL: https://kubeatlas.example.com/auth/callback
 ```
 
 You can also mix approaches — use `existingSecret` for the client secret but pass `clientID` as a plain value (it's not sensitive).
@@ -294,7 +294,7 @@ If your OIDC provider uses a self-signed or internal CA certificate (e.g., on-pr
 ```yaml
 auth:
   oidc:
-    caCert: /etc/radar/oidc-ca.crt          # Path to CA certificate file (secure)
+    caCert: /etc/kubeatlas/oidc-ca.crt          # Path to CA certificate file (secure)
     # insecureSkipVerify: true              # Skip TLS verification (dev/test only)
 ```
 
@@ -312,25 +312,25 @@ deployment mode that used an outbound tunnel.
 Under cloud-mode (`KUBEATLAS_CLOUD_MODE=true`, set automatically by the chart when `cloud.enabled=true`), KubeAtlas:
 
 - Forces `--auth-mode=proxy` with pinned `X-Forwarded-User` / `X-Forwarded-Groups` headers. KubeAtlas accepts those headers only on requests marked in-process by its authenticated Cloud tunnel; the ordinary pod TCP listener cannot assert Cloud identity.
-- Ships three default ClusterRoleBindings mapping Cloud's `radar:owner` / `radar:member` / `radar:viewer` groups to the standard K8s `admin` / `edit` / `view` ClusterRoles. Configurable via `cloud.defaultRbac.*` in `values.yaml`.
+- Ships three default ClusterRoleBindings mapping Cloud's `kubeatlas:owner` / `kubeatlas:member` / `kubeatlas:viewer` groups to the standard K8s `admin` / `edit` / `view` ClusterRoles. Configurable via `cloud.defaultRbac.*` in `values.yaml`.
 - Adds a **cluster-read add-on** (`cloud.defaultRbac.clusterScopedRead.{viewer,member,owner}`, each default on) granting `get/list/watch` on infrastructure the built-in `view`/`edit`/`admin` roles exclude — Nodes, PersistentVolumes, StorageClasses, IngressClasses, PriorityClasses, RuntimeClasses, Leases (namespaced; the spec is only a holder and renew times — `edit`/`admin` already include them, so only viewers and the view-based system and AI grants gain), ClusterTrustBundles, CRDs, and admission webhook configurations — plus list-only Upgrade impact evidence for CSIDrivers, CSIStorageCapacities, legacy PodSecurityPolicies, and API flow-control configuration. When the matching collection is enabled, it also grants APIServices, PrometheusRules, Karpenter kinds, and node metrics. It does not grant Secrets, RBAC objects, API-server metrics, or kubelet proxy access. It's an independent axis per tier: set a tier `false` to make it namespaced-only (e.g. `clusterScopedRead.viewer: false`). Owner node cordon/drain is a separate cluster-scoped *write*, off by default (`cloud.defaultRbac.nodeOps`).
-- Creates the default read grant for `radar:system`, upstream Cloud's alerts worker and timeline puller: a chart-owned role aggregated to match `view`, the cluster-read and integration-read add-ons, and cluster-wide Secret read. Helm release alerts and Secret changes in the timeline need Secret read; Helm stores releases as Secrets. No writes. Controlled by `cloud.systemRbac` (default `true`).
-- Creates the default read grant for alert-triggered AI investigations, recorded in Kubernetes audit logs as `radar:ai:<org>`: `radar:ai:reader` receives permissions based on `view` plus the cluster-read and integration-read add-ons. Stock `view` excludes Secrets, but includes pod logs and ConfigMaps; roles labelled `aggregate-to-view` widen this grant too. Controlled by `cloud.aiRbac` (default `true`). Requests a person starts or follows up on use that person's identity and groups, including follow-ups on alert-triggered investigations. MCP clients also use the user's permissions.
+- Creates the default read grant for `kubeatlas:system`, upstream Cloud's alerts worker and timeline puller: a chart-owned role aggregated to match `view`, the cluster-read and integration-read add-ons, and cluster-wide Secret read. Helm release alerts and Secret changes in the timeline need Secret read; Helm stores releases as Secrets. No writes. Controlled by `cloud.systemRbac` (default `true`).
+- Creates the default read grant for alert-triggered AI investigations, recorded in Kubernetes audit logs as `kubeatlas:ai:<org>`: `kubeatlas:ai:reader` receives permissions based on `view` plus the cluster-read and integration-read add-ons. Stock `view` excludes Secrets, but includes pod logs and ConfigMaps; roles labelled `aggregate-to-view` widen this grant too. Controlled by `cloud.aiRbac` (default `true`). Requests a person starts or follows up on use that person's identity and groups, including follow-ups on alert-triggered investigations. MCP clients also use the user's permissions.
 - Treats `cloud.aiRbac` and `cloud.systemRbac` as controls for the chart's default grants, independent of `cloud.defaultRbac`. False or absent (including after a plain `--reuse-values` upgrade from an older chart) creates no default grant and leaves customer-created bindings untouched. These settings do not disable background jobs or automatic analysis; they control their default Kubernetes access.
 - Requires cluster-admin-equivalent authority or `escalate` on ClusterRoles to create or update the AI/system aggregated roles, in addition to normal chart installation permissions. Restricted installers can set `cloud.aiRbac=false` and `cloud.systemRbac=false` and supply their own read-only group bindings.
-- Uses the Cloud role (`radar:owner` / `radar:member` / `radar:viewer`) only to gate KubeAtlas's own configuration (settings, integrations, audit settings, registered OCI chart sources, self-upgrade), which runs as KubeAtlas's ServiceAccount. A Cloud request with no role group (such as the Hub's `radar:system` background identity) is refused there. Operations that run as the impersonated user — Helm reads and writes, in-cluster probe pods — are decided by Kubernetes RBAC alone.
-- Does **not** grant `PodCertificateRequest` access through the default Cloud tier bindings. KubeAtlas surfaces the API when Kubernetes 1.37 serves it, but a Cloud user can browse requests only when their Kubernetes RBAC independently grants `get/list` access. To opt in, bind a Role or ClusterRole granting `get/list/watch` on `certificates.k8s.io/podcertificaterequests` to the intended `radar:*` groups. This stays separate because certificate-request metadata is more sensitive than ordinary workload inventory.
+- Uses the Cloud role (`kubeatlas:owner` / `kubeatlas:member` / `kubeatlas:viewer`) only to gate KubeAtlas's own configuration (settings, integrations, audit settings, registered OCI chart sources, self-upgrade), which runs as KubeAtlas's ServiceAccount. A Cloud request with no role group (such as the Hub's `kubeatlas:system` background identity) is refused there. Operations that run as the impersonated user — Helm reads and writes, in-cluster probe pods — are decided by Kubernetes RBAC alone.
+- Does **not** grant `PodCertificateRequest` access through the default Cloud tier bindings. KubeAtlas surfaces the API when Kubernetes 1.37 serves it, but a Cloud user can browse requests only when their Kubernetes RBAC independently grants `get/list` access. To opt in, bind a Role or ClusterRole granting `get/list/watch` on `certificates.k8s.io/podcertificaterequests` to the intended `kubeatlas:*` groups. This stays separate because certificate-request metadata is more sensitive than ordinary workload inventory.
 - Restricts the ordinary pod/ClusterIP TCP listener to `/api/health`; the full handler is served only over yamux streams from the outbound Cloud tunnel. Cloud mode also omits `/debug/pprof/*` and narrows auth exemptions to health only.
 
 <a id="cloud-mode-helm-bindings"></a>
-**Optional Upgrade impact metrics evidence.** The default Cloud bindings deliberately omit the broader API server `/metrics` endpoint and kubelet `nodes/proxy` access. Upgrade impact reports checks that depend on those sources as **Incomplete**. To enable deprecated-API request evidence for a tier, bind a separate ClusterRole granting `get` on `nonResourceURLs: ["/metrics"]` to its canonical `radar:viewer`, `radar:member`, or `radar:owner` group. Keep this opt-in separate from the default cluster-read role so operators can make the broader disclosure decision explicitly.
+**Optional Upgrade impact metrics evidence.** The default Cloud bindings deliberately omit the broader API server `/metrics` endpoint and kubelet `nodes/proxy` access. Upgrade impact reports checks that depend on those sources as **Incomplete**. To enable deprecated-API request evidence for a tier, bind a separate ClusterRole granting `get` on `nonResourceURLs: ["/metrics"]` to its canonical `kubeatlas:viewer`, `kubeatlas:member`, or `kubeatlas:owner` group. Keep this opt-in separate from the default cluster-read role so operators can make the broader disclosure decision explicitly.
 
 **Helm-specific bindings (when `rbac.helm=true`).** Helm's pre-flight existence check needs cluster-scoped reads/writes that the K8s built-in `admin`/`edit`/`view` ClusterRoles don't grant. The chart emits two add-on ClusterRoles, split by trust tier:
 
-- `radar-helm` — CRDs, StorageClasses, RuntimeClasses, PriorityClasses, PodDisruptionBudgets, Namespaces. Bound to `radar:owner` AND `radar:member`.
-- `radar-helm-admin` — RBAC objects (Roles/Bindings, Cluster variants), validating/mutating webhooks, ApiServices. Bound to `radar:owner` ONLY. Granting these to a tier weaker than owner would let a member self-promote to cluster-admin in one `ClusterRoleBinding` write, collapsing the owner/member distinction.
+- `kubeatlas-helm` — CRDs, StorageClasses, RuntimeClasses, PriorityClasses, PodDisruptionBudgets, Namespaces. Bound to `kubeatlas:owner` AND `kubeatlas:member`.
+- `kubeatlas-helm-admin` — RBAC objects (Roles/Bindings, Cluster variants), validating/mutating webhooks, ApiServices. Bound to `kubeatlas:owner` ONLY. Granting these to a tier weaker than owner would let a member self-promote to cluster-admin in one `ClusterRoleBinding` write, collapsing the owner/member distinction.
 
-A `radar:member` attempting to install a chart that bundles its own RBAC will get a typed `rbac_preflight` 403 with an actionable "ask an owner" message. Day-to-day app charts and operator-CRD installs still work for members.
+A `kubeatlas:member` attempting to install a chart that bundles its own RBAC will get a typed `rbac_preflight` 403 with an actionable "ask an owner" message. Day-to-day app charts and operator-CRD installs still work for members.
 
 <a id="user-token-mode"></a>
 #### User-token mode (no impersonation)
@@ -343,14 +343,14 @@ Set `auth.kubernetesCredentials: user-token` (flag `--auth-k8s-credentials=user-
 
 - **With the user's token** (`X-Forwarded-Kubernetes-Token`): KubeAtlas asks the API server who the token belongs to (SelfSubjectReview) and makes every live call — writes, logs, exec, Helm — with that token alone, so the API server applies your own RBAC and audit logs show the real user. The forwarded username must match the token's username, or the request is refused.
 - **Without a token, as a person** (for example cross-cluster views): KubeAtlas serves its cache, filtered by that person's permissions, and refuses every live call with a 403 (`reason: user_token_required`).
-- **Without a token, as `radar:system:*` (group `radar:system`) or `radar:ai:<org>` (group `radar:ai:reader`)**: KubeAtlas reads with its ServiceAccount, after a SubjectAccessReview of every request against that identity's bindings (`cloud.systemRbac`, `cloud.aiRbac`).
+- **Without a token, as `kubeatlas:system:*` (group `kubeatlas:system`) or `kubeatlas:ai:<org>` (group `kubeatlas:ai:reader`)**: KubeAtlas reads with its ServiceAccount, after a SubjectAccessReview of every request against that identity's bindings (`cloud.systemRbac`, `cloud.aiRbac`).
 
 **Requirements:**
 
-- upstream Cloud mode (`cloud.enabled: true`), with `cloud.defaultRbac.create=false`. With the default bindings, the API server would apply them to any token whose IdP groups are named `radar:owner`, `radar:member` or `radar:viewer`.
+- upstream Cloud mode (`cloud.enabled: true`), with `cloud.defaultRbac.create=false`. With the default bindings, the API server would apply them to any token whose IdP groups are named `kubeatlas:owner`, `kubeatlas:member` or `kubeatlas:viewer`.
 - A verified tunnel: `wss://` with `cloud.insecureSkipVerify=false`. The chart and the binary both refuse otherwise.
 - API servers that accept the token the control plane relays: the ID token your identity provider issues to its sign-in client, or the access token, with `auth.oidc.clusterToken: access_token`.
-- A non-empty `--oidc-groups-prefix` on the API servers. KubeAtlas refuses tokens whose groups start with `radar:`, `cloud:` or `system:` (other than `system:authenticated`), because the API server would apply the chart's `radar:system` and `radar:ai:reader` bindings, or `system:masters`, to them.
+- A non-empty `--oidc-groups-prefix` on the API servers. KubeAtlas refuses tokens whose groups start with `kubeatlas:`, `cloud:` or `system:` (other than `system:authenticated`), because the API server would apply the chart's `kubeatlas:system` and `kubeatlas:ai:reader` bindings, or `system:masters`, to them.
 
 **What still uses the ServiceAccount:**
 
@@ -360,7 +360,7 @@ Set `auth.kubernetesCredentials: user-token` (flag `--auth-k8s-credentials=user-
 
 **Other effects:**
 
-- The `radar:*` role groups only gate KubeAtlas's own settings. KubeAtlas never uses them when it checks Kubernetes permissions.
+- The `kubeatlas:*` role groups only gate KubeAtlas's own settings. KubeAtlas never uses them when it checks Kubernetes permissions.
 - The chart drops the ServiceAccount's `pods/exec` and `pods/portforward` grants, since shells and port-forwards run on each person's token. Integrations that fall back to a ServiceAccount port-forward (Hubble, OpenCost) only work over their in-cluster Service.
 
 The chart rejects the Cloud mode. The comment block in [`deploy/helm/kubeatlas/values.yaml`](../deploy/helm/kubeatlas/values.yaml) is retained as a compatibility reference for its legacy values.
@@ -407,7 +407,7 @@ K8s ships with built-in ClusterRoles that work well with KubeAtlas. You don't ne
 | Built-in Role | What Users Can Do in KubeAtlas |
 |---------------|---------------------------|
 | `view` | See resources, topology, events, logs. No restart, scale, or Helm writes. |
-| `edit` | Everything in `view` + restart, scale, edit resources. Does NOT include exec or port-forward (those require `pods/exec` and `pods/portforward` subresources — use the custom `radar-operator` role below). |
+| `edit` | Everything in `view` + restart, scale, edit resources. Does NOT include exec or port-forward (those require `pods/exec` and `pods/portforward` subresources — use the custom `kubeatlas-operator` role below). |
 | `admin` | Everything in `edit` + manage RBAC within namespaces. Same exec/port-forward caveat as `edit`. |
 | `cluster-admin` | Full access to everything across all namespaces, including exec and port-forward. |
 
@@ -435,7 +435,7 @@ For more control, create a custom ClusterRole:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: radar-operator
+  name: kubeatlas-operator
 rules:
   # View workloads (most users)
   - apiGroups: ["", "apps", "batch"]
@@ -466,14 +466,14 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: sre-team-radar-operator
+  name: sre-team-kubeatlas-operator
 subjects:
   - kind: Group
     name: sre-team                    # Must match the group string from IdP
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
-  name: radar-operator
+  name: kubeatlas-operator
   apiGroup: rbac.authorization.k8s.io
 ```
 
@@ -482,14 +482,14 @@ roleRef:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: alice-radar-operator
+  name: alice-kubeatlas-operator
 subjects:
   - kind: User
     name: alice@company.com           # Must match the username from IdP
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
-  name: radar-operator
+  name: kubeatlas-operator
   apiGroup: rbac.authorization.k8s.io
 ```
 
@@ -498,7 +498,7 @@ roleRef:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: dev-team-radar-operator
+  name: dev-team-kubeatlas-operator
   namespace: staging                  # Only grants access in this namespace
 subjects:
   - kind: Group
@@ -506,7 +506,7 @@ subjects:
     apiGroup: rbac.authorization.k8s.io
 roleRef:
   kind: ClusterRole
-  name: radar-operator
+  name: kubeatlas-operator
   apiGroup: rbac.authorization.k8s.io
 ```
 
@@ -608,7 +608,7 @@ This happens when the identity provider's SSO session is not terminated during l
 
 - **Proxy mode**: Check that the auth proxy is setting `X-Forwarded-User`. Inspect with:
   ```bash
-  kubectl logs -n radar -l app.kubernetes.io/name=radar | grep "auth"
+  kubectl logs -n kubeatlas -l app.kubernetes.io/name=kubeatlas | grep "auth"
   ```
 - **OIDC mode**: Verify the issuer URL, client ID, and redirect URL are correct. Check KubeAtlas logs for OIDC errors.
 
@@ -634,7 +634,7 @@ kubectl auth can-i list pods --all-namespaces \
 KubeAtlas's ServiceAccount may be missing the `subjectaccessreviews` permission needed to check user access. When this fails, KubeAtlas denies all namespace access (fail-closed). Verify:
 ```bash
 kubectl auth can-i create subjectaccessreviews \
-  --as=system:serviceaccount:radar:radar
+  --as=system:serviceaccount:kubeatlas:kubeatlas
 ```
 
 If this returns `no`, the Helm chart's RBAC was not applied. Re-install with `rbac.create: true` (the default) or add the rule manually.
@@ -652,7 +652,7 @@ kubectl auth can-i patch deployments -n <namespace> \
 KubeAtlas's ServiceAccount is missing impersonation permissions. Verify:
 ```bash
 kubectl auth can-i impersonate users \
-  --as=system:serviceaccount:radar:radar
+  --as=system:serviceaccount:kubeatlas:kubeatlas
 ```
 
 If using `rbac.create: false` in Helm, make sure your custom ClusterRole includes the impersonation rules.

@@ -27,7 +27,7 @@ describe('inClusterConsent', () => {
   })
 
   it('does not trust consent stored under the visible-name key format', () => {
-    const store: Record<string, string> = { 'radar.inClusterConsent.prod': '1' }
+    const store: Record<string, string> = { 'kubeatlas.inClusterConsent.prod': '1' }
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => (k in store ? store[k] : null),
       setItem: (k: string, v: string) => { store[k] = v },
@@ -46,7 +46,7 @@ describe('inClusterConsent', () => {
 })
 
 // No stable cluster identity → consent is never remembered, in ANY store. A
-// persisted fallback key is shared by every cluster a single origin (Radar
+// persisted fallback key is shared by every cluster a single origin (KubeAtlas
 // Hub) serves, and even an in-memory session flag is shared across every
 // identity-less cluster in the session - either would let one cluster's
 // "don't ask again" suppress the pod-creating confirm on all of them. So an
@@ -71,7 +71,7 @@ describe('inClusterConsent without a cluster identity', () => {
   it('does not read a persisted key when no cluster is known', () => {
     // Even if some earlier version persisted a shared sentinel, an identity-less
     // check must not honor it.
-    const store: Record<string, string> = { 'radar.inClusterConsent.current': '1' }
+    const store: Record<string, string> = { 'kubeatlas.inClusterConsent.current': '1' }
     vi.stubGlobal('localStorage', {
       getItem: (k: string) => (k in store ? store[k] : null),
       setItem: (k: string, v: string) => { store[k] = v },

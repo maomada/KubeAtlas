@@ -6,7 +6,7 @@
 #   Issue #981 is not just a metadata parsing problem. The failure mode shows
 #   up across the real OIDC browser redirect + callback + token exchange +
 #   JWKS verification flow when the browser-facing issuer URL is different
-#   from the URL Radar can reach from inside the cluster. Unit tests cover the
+#   from the URL KubeAtlas can reach from inside the cluster. Unit tests cover the
 #   resolver rules, but they do not prove the full OAuth code flow still works
 #   against a real provider.
 #
@@ -15,19 +15,19 @@
 #   - Exposes that public issuer through a tiny reverse proxy.
 #   - The proxy forwards browser endpoints but deliberately blocks public
 #     /token, /keys, and /userinfo requests.
-#   - Starts Radar with:
+#   - Starts KubeAtlas with:
 #       --auth-oidc-issuer=<public issuer>
 #       --auth-oidc-internal-issuer=<direct Dex URL>
 #   - Completes a real Dex password login with curl.
 #   - Asserts that:
 #       * the browser authorization path used the public issuer,
-#       * Radar created a valid OIDC session for admin@example.com,
-#       * Radar never called the public token/JWKS/userinfo endpoints.
+#       * KubeAtlas created a valid OIDC session for admin@example.com,
+#       * KubeAtlas never called the public token/JWKS/userinfo endpoints.
 #
 # Why it is worth keeping in the repo:
 #   This is a cheap, reproducible manual smoke test for a deployment shape that
 #   is otherwise awkward to recreate. It does not need an AWS cluster, a kind
-#   cluster, ingress, DNS, or hostAliases; Docker plus the built Radar binary is
+#   cluster, ingress, DNS, or hostAliases; Docker plus the built KubeAtlas binary is
 #   enough. Keeping it next to the other auth smoke scripts makes it easy to
 #   rerun before changing OIDC internals and gives future #981-style regressions
 #   a concrete reproduction.
@@ -49,12 +49,12 @@
 #     exercise the standard code flow.
 #
 # Prerequisites:
-#   - radar binary built (make build)
+#   - kubeatlas binary built (make build)
 #   - docker
 #   - curl, jq, python3
 #
 # Usage:
-#   ./scripts/test-oidc-split.sh [radar-binary-path]
+#   ./scripts/test-oidc-split.sh [kubeatlas-binary-path]
 #
 # Useful knobs:
 #   DEX_IMAGE=ghcr.io/dexidp/dex:<tag>  Override the Dex image.
@@ -62,7 +62,7 @@
 
 set -euo pipefail
 
-RADAR="${1:-./radar}"
+KUBEATLAS="${1:-./kubeatlas}"
 DEX_IMAGE="${DEX_IMAGE:-ghcr.io/dexidp/dex:v2.41.1}"
 
 PASS=0
@@ -268,7 +268,7 @@ PY
 
 session_cookie_from_jar() {
     local jar="$1"
-    awk '($0 ~ /^#HttpOnly_/ || $0 !~ /^#/) && NF >= 7 && $6 == "radar_session" { print $7 }' "$jar" | tail -n1
+    awk '($0 ~ /^#HttpOnly_/ || $0 !~ /^#/) && NF >= 7 && $6 == "kubeatlas_session" { print $7 }' "$jar" | tail -n1
 }
 
 require_cmd docker
@@ -276,24 +276,24 @@ require_cmd curl
 require_cmd jq
 require_cmd python3
 
-if [[ ! -x "$RADAR" ]]; then
-    echo -e "${RED}Radar binary not found or not executable: $RADAR${NC}"
+if [[ ! -x "$KUBEATLAS" ]]; then
+    echo -e "${RED}KubeAtlas binary not found or not executable: $KUBEATLAS${NC}"
     echo "Run make build first, or pass the binary path as the first argument."
     exit 1
 fi
 
-TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/radar-oidc-split.XXXXXX")
+TMP_DIR=$(mktemp -d "${TMPDIR:-/tmp}/kubeatlas-oidc-split.XXXXXX")
 KUBEATLAS_PORT=$(random_port)
 DEX_PUBLIC_PORT=$(random_port)
 DEX_INTERNAL_PORT=$(random_port)
 KUBEATLAS_BASE="http://localhost:${KUBEATLAS_PORT}"
 PUBLIC_ISSUER="http://localhost:${DEX_PUBLIC_PORT}/dex"
 INTERNAL_ISSUER="http://127.0.0.1:${DEX_INTERNAL_PORT}/dex"
-DEX_CONTAINER="radar-oidc-split-$RANDOM-$RANDOM"
+DEX_CONTAINER="kubeatlas-oidc-split-$RANDOM-$RANDOM"
 
 DEX_CONFIG="$TMP_DIR/dex-config.yaml"
 DEX_LOG="$TMP_DIR/dex.log"
-KUBEATLAS_LOG="$TMP_DIR/radar.log"
+KUBEATLAS_LOG="$TMP_DIR/kubeatlas.log"
 PROXY_LOG="$TMP_DIR/public-proxy.log"
 COOKIE_JAR="$TMP_DIR/cookies.txt"
 LOGIN_HTML="$TMP_DIR/login.html"
@@ -308,9 +308,9 @@ web:
 oauth2:
   skipApprovalScreen: true
 staticClients:
-  - id: radar
-    secret: radar-secret
-    name: Radar
+  - id: kubeatlas
+    secret: kubeatlas-secret
+    name: KubeAtlas
     redirectURIs:
       - "$KUBEATLAS_BASE/auth/callback"
 enablePasswordDB: true
@@ -431,24 +431,24 @@ if ! wait_for_url "$PUBLIC_ISSUER/.well-known/openid-configuration" "Public issu
     fail_now "Public issuer proxy failed to start"
 fi
 
-echo -e "${YELLOW}Starting Radar on port $KUBEATLAS_PORT with split OIDC issuer URLs${NC}"
-"$RADAR" \
+echo -e "${YELLOW}Starting KubeAtlas on port $KUBEATLAS_PORT with split OIDC issuer URLs${NC}"
+"$KUBEATLAS" \
     --port "$KUBEATLAS_PORT" \
     --no-browser \
     --auth-mode=oidc \
     --auth-secret=test-oidc-split-secret \
     --auth-oidc-issuer="$PUBLIC_ISSUER" \
     --auth-oidc-internal-issuer="$INTERNAL_ISSUER" \
-    --auth-oidc-client-id=radar \
-    --auth-oidc-client-secret=radar-secret \
+    --auth-oidc-client-id=kubeatlas \
+    --auth-oidc-client-secret=kubeatlas-secret \
     --auth-oidc-redirect-url="$KUBEATLAS_BASE/auth/callback" \
     --auth-oidc-scopes=openid,profile,email \
     >"$KUBEATLAS_LOG" 2>&1 &
 KUBEATLAS_PID=$!
 
-if ! wait_for_url "$KUBEATLAS_BASE/api/health" "Radar"; then
+if ! wait_for_url "$KUBEATLAS_BASE/api/health" "KubeAtlas"; then
     cat "$KUBEATLAS_LOG" >&2 || true
-    fail_now "Radar failed to start"
+    fail_now "KubeAtlas failed to start"
 fi
 
 echo ""
@@ -472,15 +472,15 @@ post_url=$(curl -sS -c "$COOKIE_JAR" -b "$COOKIE_JAR" -L \
     "$login_action")
 
 check_success "browser auth path used public issuer" grep -Eq 'PUBLIC (GET|POST) /dex/auth' "$PROXY_LOG"
-check "post-login redirects to Radar" "$KUBEATLAS_BASE/" "$post_url"
+check "post-login redirects to KubeAtlas" "$KUBEATLAS_BASE/" "$post_url"
 
 session_cookie=$(session_cookie_from_jar "$COOKIE_JAR")
 if [[ -z "$session_cookie" ]]; then
     cat "$POST_HTML" >&2 || true
-    fail_now "Radar session cookie was not set"
+    fail_now "KubeAtlas session cookie was not set"
 fi
 
-me=$(curl -sS -H "Cookie: radar_session=${session_cookie}" "$KUBEATLAS_BASE/api/auth/me")
+me=$(curl -sS -H "Cookie: kubeatlas_session=${session_cookie}" "$KUBEATLAS_BASE/api/auth/me")
 username=$(echo "$me" | jq -r '.username // empty')
 auth_mode=$(echo "$me" | jq -r '.authMode // empty')
 check "logged-in username" "admin@example.com" "$username"
@@ -497,7 +497,7 @@ else
     PASS=$((PASS + 1))
 fi
 
-check_success "Radar authenticated the OIDC user" grep -q 'User admin@example.com authenticated' "$KUBEATLAS_LOG"
+check_success "KubeAtlas authenticated the OIDC user" grep -q 'User admin@example.com authenticated' "$KUBEATLAS_LOG"
 
 echo ""
 if [[ -n "${KEEP_LOGS:-}" ]]; then

@@ -10,7 +10,7 @@ import (
 
 // Per-namespace Secret RBAC at the REST layer.
 //
-// The chart can grant the Radar ServiceAccount cluster-wide list/get/watch
+// The chart can grant the KubeAtlas ServiceAccount cluster-wide list/get/watch
 // on secrets (any of rbac.secrets / rbac.helm / auth.mode != "none" /
 // cloud.enabled triggers it — Helm release metadata IS K8s Secrets, and the
 // K8s `view` role excludes them, so Helm visibility requires the elevated
@@ -232,7 +232,7 @@ func TestProxyAuth_SearchSecrets_NamespaceDenied(t *testing.T) {
 // TestSmokeSecretsList_NoAuthPassthrough verifies that auth.mode=none lets
 // callers see every cached Secret. The Secret gate in handleListResources
 // short-circuits on a nil user context (auth.UserFromContext); a regression
-// that inverted that check would silently break Radar's primary local mode.
+// that inverted that check would silently break KubeAtlas's primary local mode.
 // Uses the auth-disabled global testServer (Config{DevMode: true}, no auth
 // config) — distinct from the auth-enabled tests above.
 func TestSmokeSecretsList_NoAuthPassthrough(t *testing.T) {

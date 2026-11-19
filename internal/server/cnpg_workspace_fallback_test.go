@@ -24,7 +24,7 @@ import (
 
 // fallbackFixture is a dynamic cache whose identity may not list CRDs
 // cluster-wide, so it watches them namespace by namespace, starting with
-// fallbacks. forbid says where Radar's identity may not list either; fail makes
+// fallbacks. forbid says where KubeAtlas's identity may not list either; fail makes
 // a namespace's Cluster list error without denying it; slow delays it by
 // slowList.
 type fallbackFixture struct {
@@ -55,7 +55,7 @@ func seedCNPGFallbackCache(t *testing.T, f fallbackFixture, clusters ...string) 
 		ns := a.GetNamespace()
 		if ns == "" || (f.forbid != nil && f.forbid(ns)) {
 			gr := a.GetResource().GroupResource()
-			return true, nil, apierrors.NewForbidden(gr, "", errors.New("radar may not list here"))
+			return true, nil, apierrors.NewForbidden(gr, "", errors.New("kubeatlas may not list here"))
 		}
 		if a.GetResource().Resource != "clusters" {
 			return false, nil, nil
@@ -84,7 +84,7 @@ func sortedNames(objs []any) []string {
 	return names
 }
 
-// All namespaces: the Clusters Radar watches are listed and the rest reads as
+// All namespaces: the Clusters KubeAtlas watches are listed and the rest reads as
 // not read, rather than the kind syncing forever.
 func TestCNPGWorkspace_FallbackCacheAllNamespaces(t *testing.T) {
 	seedCNPGFallbackCache(t, fallbackFixture{fallbacks: []string{"a"}}, "a", "pg-a", "b", "pg-b")
@@ -101,12 +101,12 @@ func TestCNPGWorkspace_FallbackCacheAllNamespaces(t *testing.T) {
 		t.Errorf("clusters = %v, want [pg-a]", names)
 	}
 	if cov := got.Coverage["clusterImageCatalogs"]; cov.State != integration.KindCoverageUncached {
-		t.Errorf("clusterImageCatalogs coverage = %+v: a cluster-scoped kind Radar may not watch is uncached, not an error", cov)
+		t.Errorf("clusterImageCatalogs coverage = %+v: a cluster-scoped kind KubeAtlas may not watch is uncached, not an error", cov)
 	}
 }
 
 // A namespace the caller names is read on its own, which starts its watch even
-// outside the startup fallbacks; one Radar may not watch is named as not cached.
+// outside the startup fallbacks; one KubeAtlas may not watch is named as not cached.
 func TestCNPGWorkspace_FallbackCacheNamedNamespaces(t *testing.T) {
 	seedCNPGFallbackCache(t, fallbackFixture{fallbacks: []string{"a"}, forbid: inNamespaces("c")}, "a", "pg-a", "b", "pg-b", "c", "pg-c")
 
@@ -166,7 +166,7 @@ func TestCNPGWorkspace_FallbackCacheRetriesUnsyncedNamespace(t *testing.T) {
 	}
 }
 
-// Radar's identity may list Clusters in neither the cluster nor its startup
+// KubeAtlas's identity may list Clusters in neither the cluster nor its startup
 // fallbacks, only in a namespace a caller named: the watch that read started
 // still serves an all-namespaces read instead of the kind failing.
 func TestCNPGWorkspace_FallbackCacheAllKeepsNamedWatches(t *testing.T) {

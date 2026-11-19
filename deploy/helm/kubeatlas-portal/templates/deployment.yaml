@@ -13,6 +13,24 @@
 {{- if and .Values.hubArtifacts.enabled (not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" .Values.hubArtifacts.existingClaim)) }}
 {{- fail "hubArtifacts.existingClaim must be a Kubernetes PVC name" }}
 {{- end }}
+{{- $previous := .Values.hubArtifacts.previous | default dict }}
+{{- $previousClaim := $previous.existingClaim | default "" }}
+{{- $previousVersion := $previous.version | default "" }}
+{{- $retainPrevious := or $previousClaim $previousVersion }}
+{{- if $retainPrevious }}
+{{- if not .Values.hubArtifacts.enabled }}
+{{- fail "hubArtifacts.previous requires hubArtifacts.enabled=true" }}
+{{- end }}
+{{- if or (empty $previousClaim) (empty $previousVersion) }}
+{{- fail "hubArtifacts.previous.existingClaim and hubArtifacts.previous.version are required together" }}
+{{- end }}
+{{- if not (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $previousClaim) }}
+{{- fail "hubArtifacts.previous.existingClaim must be a Kubernetes PVC name" }}
+{{- end }}
+{{- if not (regexMatch "^[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}$" $previousVersion) }}
+{{- fail "hubArtifacts.previous.version must be a valid Hub artifact version" }}
+{{- end }}
+{{- end }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -60,6 +78,10 @@ spec:
             - --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json
             {{- if .Values.hubArtifacts.enabled }}
             - --hub-artifacts-dir=/var/lib/kubeatlas-portal/artifacts
+            {{- end }}
+            {{- if $retainPrevious }}
+            - --hub-previous-artifacts-dir=/var/lib/kubeatlas-portal/previous-artifacts
+            - {{ printf "--hub-previous-artifacts-version=%s" $previousVersion | quote }}
             {{- end }}
           ports:
             - name: http
@@ -144,6 +166,11 @@ spec:
               mountPath: /var/lib/kubeatlas-portal/artifacts
               readOnly: true
             {{- end }}
+            {{- if $retainPrevious }}
+            - name: hub-previous-artifacts
+              mountPath: /var/lib/kubeatlas-portal/previous-artifacts
+              readOnly: true
+            {{- end }}
       volumes:
         - name: hub-state
           persistentVolumeClaim:
@@ -152,4 +179,10 @@ spec:
         - name: hub-artifacts
           persistentVolumeClaim:
             claimName: {{ .Values.hubArtifacts.existingClaim }}
+        {{- end }}
+        {{- if $retainPrevious }}
+        - name: hub-previous-artifacts
+          persistentVolumeClaim:
+            claimName: {{ $previousClaim | quote }}
+            readOnly: true
         {{- end }}

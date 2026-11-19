@@ -6,7 +6,7 @@ Workloads, conditions, queue assignments, Job suspension changes, and Pods.
 
 It complements [`gpu-ecosystem-demo`](../gpu-ecosystem-demo/README.md). That
 deterministic breadth lane validates all 37 curated CRD identities, schemas,
-collisions, Radar discovery, and chart RBAC. This focused lane validates one
+collisions, KubeAtlas discovery, and chart RBAC. This focused lane validates one
 controller lifecycle deeply without turning the breadth suite into a fragile
 mega-cluster.
 
@@ -18,17 +18,17 @@ make kueue-demo              # ~2-4 minutes on the first run
 make kueue-demo-status
 
 # `up` restores the previous current-context value, including an unset value.
-# Use an isolated kubeconfig to run Radar without changing it.
+# Use an isolated kubeconfig to run KubeAtlas without changing it.
 make build
-kind get kubeconfig --name radar-kueue-demo > /tmp/radar-kueue-demo.kubeconfig
-./radar --kubeconfig /tmp/radar-kueue-demo.kubeconfig --port 9331 --no-browser
+kind get kubeconfig --name kubeatlas-kueue-demo > /tmp/kubeatlas-kueue-demo.kubeconfig
+./kubeatlas --kubeconfig /tmp/kubeatlas-kueue-demo.kubeconfig --port 9331 --no-browser
 
 # In a second terminal, from the repository root:
-KUBEATLAS_URL=http://127.0.0.1:9331 ./scripts/kueue-demo.sh verify-radar
+KUBEATLAS_URL=http://127.0.0.1:9331 ./scripts/kueue-demo.sh verify-kubeatlas
 
-# When done, stop Radar with Ctrl-C in its terminal, then:
+# When done, stop KubeAtlas with Ctrl-C in its terminal, then:
 make kueue-demo-down
-rm /tmp/radar-kueue-demo.kubeconfig
+rm /tmp/kubeatlas-kueue-demo.kubeconfig
 ```
 
 `up` is idempotent and reuses only a cluster carrying the demo's ownership
@@ -58,14 +58,14 @@ three Jobs once they exist, so the admitted Pod is not disrupted merely to
 refresh the lane. Use `reset` after changing Job fixtures or to recover a
 partially edited scenario.
 
-## Radar testing
+## KubeAtlas testing
 
-`verify-radar` expects an already-running Radar and checks:
+`verify-kubeatlas` expects an already-running KubeAtlas and checks:
 
 - the health endpoint;
 - the fixture namespace explicitly, independent of a saved UI namespace selection;
 - exactly three group-pure `kueue.x-k8s.io/v1beta2` Workloads;
-- admitted, quota-blocked, and held-queue conditions as returned by Radar;
+- admitted, quota-blocked, and held-queue conditions as returned by KubeAtlas;
 - both group-pure ClusterQueues;
 - the exact scheduling source, domain, full-GVK subject, generation-aware
   condition, decision, queue roles, and Kueue phase for every scenario;
@@ -76,7 +76,7 @@ For visual testing, use the dedicated context before starting the normal visual
 workflow:
 
 ```bash
-kubectl config use-context kind-radar-kueue-demo
+kubectl config use-context kind-kubeatlas-kueue-demo
 ./scripts/visual-test-start.sh
 ```
 
@@ -86,7 +86,7 @@ Restore your previous context afterward if you use this form.
 
 Passing this lane proves that Kueue `v0.19.2` on kind Kubernetes `v1.36.1`
 can reconcile a healthy admission and two real pre-Pod blockers, and
-that Radar can read those resulting objects through group-aware APIs while the
+that KubeAtlas can read those resulting objects through group-aware APIs while the
 REST AI resource endpoint and MCP `get_resource` expose the same basic-tier
 normalized scheduling evidence.
 

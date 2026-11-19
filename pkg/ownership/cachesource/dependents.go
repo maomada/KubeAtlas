@@ -83,7 +83,7 @@ func (q *search) gap(gk resourceid.GroupKind, namespace string, reason readreaso
 }
 
 // gapEverywhere records that a kind went unread wherever the search looked,
-// for a reason of the whole kind, such as Radar not collecting it: one gap,
+// for a reason of the whole kind, such as KubeAtlas not collecting it: one gap,
 // however many namespaces the search covers.
 func (q *search) gapEverywhere(gk resourceid.GroupKind, namespaced bool, reason readreason.Code) {
 	if namespaced && !q.scope.AllNamespaces && len(q.namespaces) == 0 {
@@ -108,7 +108,7 @@ func (s *session) typedCandidates(q *search, b resourceid.Builtin) {
 	}
 	a := s.caches.Typed.AssessKindRead(b.Resource, target)
 	if a.Readiness == k8score.KindUnavailable {
-		q.gapEverywhere(gk, b.Namespaced, readreason.RadarKindNotCollected)
+		q.gapEverywhere(gk, b.Namespaced, readreason.KubeAtlasKindNotCollected)
 		return
 	}
 	read := a.Read
@@ -132,11 +132,11 @@ func (s *session) typedCandidates(q *search, b resourceid.Builtin) {
 			q.gap(gk, ns, readreason.KindSyncTimedOut)
 		}
 		for _, ns := range a.Uncovered {
-			q.gap(gk, ns, readreason.RadarNamespaceNotCollected)
+			q.gap(gk, ns, readreason.KubeAtlasNamespaceNotCollected)
 		}
 		if target == nil {
 			// The collector holds only some namespaces; the rest are unread.
-			q.gap(gk, "", readreason.RadarNamespaceNotCollected)
+			q.gap(gk, "", readreason.KubeAtlasNamespaceNotCollected)
 		}
 		if len(read) == 0 {
 			return
@@ -171,7 +171,7 @@ func (s *session) dynamicCandidates(q *search, kind ownership.CatalogKind) {
 func (s *session) dynamicIndexed(q *search, kind ownership.CatalogKind, index string, keys []string, found func(*unstructured.Unstructured)) {
 	gk := kind.GroupKind
 	if s.caches.Dynamic == nil {
-		q.gapEverywhere(gk, kind.Namespaced, readreason.RadarKindNotCollected)
+		q.gapEverywhere(gk, kind.Namespaced, readreason.KubeAtlasKindNotCollected)
 		return
 	}
 	versions := s.servingVersions(kind)
@@ -232,7 +232,7 @@ func (s *session) dynamicIndexed(q *search, kind ownership.CatalogKind, index st
 	if q.scope.AllNamespaces {
 		// The namespaces not watched one by one are unread: still loading if
 		// a version is watched cluster-wide, otherwise uncollected.
-		rest := readreason.RadarNamespaceNotCollected
+		rest := readreason.KubeAtlasNamespaceNotCollected
 		for _, gvr := range versions {
 			if _, byNamespace := s.namespaceWatches(gvr); !byNamespace {
 				rest = dynamicReason(s.caches.Dynamic.NamespaceObservation(gvr, ""))

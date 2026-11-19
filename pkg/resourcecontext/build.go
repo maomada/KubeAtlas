@@ -105,7 +105,7 @@ type PolicyReportLookup interface {
 // PolicyReportAvailability is an optional interface a PolicyReportLookup may
 // also implement to say that findings could not be read at all, and why.
 //
-// Without it, "this resource has no policy violations" and "Radar could not
+// Without it, "this resource has no policy violations" and "KubeAtlas could not
 // see the policy reports" produce the identical empty response — the silent
 // emptiness this codebase treats as a bug. Implementing it makes Build emit
 // `omitted: [{field: "policySummary.kyverno", reason: ...}]` instead.

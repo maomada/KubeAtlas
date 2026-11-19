@@ -23,7 +23,7 @@ spec:
     region: us-east-1
   default: true
   objectStorage:
-    bucket: radar-demo
+    bucket: kubeatlas-demo
   provider: aws
 status:
   lastSyncedTime: "@now-1860m"
@@ -40,7 +40,7 @@ spec:
   config:
     region: eu-west-1
   objectStorage:
-    bucket: radar-dr
+    bucket: kubeatlas-dr
   provider: aws
 status:
   message: "BackupStorageLocation \"dr-replica\" is unavailable: rpc error: code = Unknown desc = NoCredentialProviders"

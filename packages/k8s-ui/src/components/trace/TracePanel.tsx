@@ -404,9 +404,9 @@ export function ReachActions({ onRunProbes, probeRequested, probed, onRunInClust
   probePath?: string
   onApplyProbePath?: (p: string) => void
   supportsHTTPPath?: boolean
-  /** Where Radar itself runs. The primary test is sent by the Radar PROCESS, so
-   *  "from your machine" is only true when Radar is on one - a hosted or
-   *  in-cluster Radar dials from its own Pod. */
+  /** Where KubeAtlas itself runs. The primary test is sent by the KubeAtlas PROCESS, so
+   *  "from your machine" is only true when KubeAtlas is on one - a hosted or
+   *  in-cluster KubeAtlas dials from its own Pod. */
   runVantage?: 'in-cluster' | 'local'
 }) {
   // The in-cluster test stays available whenever the cluster allows it - NEVER
@@ -424,7 +424,7 @@ export function ReachActions({ onRunProbes, probeRequested, probed, onRunInClust
         <Tooltip
           content={
             notRunnable
-              ? 'No path on this resource has a request Radar can send from inside the cluster, so this test has nothing to run.'
+              ? 'No path on this resource has a request KubeAtlas can send from inside the cluster, so this test has nothing to run.'
               : 'Runs the probe from short-lived Jobs INSIDE the cluster — real pod-to-pod traffic — to confirm the in-cluster data path. Covers the testable paths on this resource, not only the one selected above; the confirmation names how many will actually run.'
           }
         >
@@ -445,7 +445,7 @@ export function ReachActions({ onRunProbes, probeRequested, probed, onRunInClust
         <Tooltip
           content={
             runVantage === 'in-cluster'
-              ? 'Tests reachability from Radar’s own Pod and through the API server. Covers EVERY path on this resource, not only the one selected above.'
+              ? 'Tests reachability from KubeAtlas’s own Pod and through the API server. Covers EVERY path on this resource, not only the one selected above.'
               : 'Tests reachability from your machine and through the API server. Covers EVERY path on this resource, not only the one selected above.'
           }
         >
@@ -496,7 +496,7 @@ export function CopyableCommand({ command }: { command: string }) {
 }
 
 // severityToTone bridges the trace's Finding vocabulary (critical / warning /
-// info, plus empty when a hop is clean) to Radar's shared StatusTone, so the
+// info, plus empty when a hop is clean) to KubeAtlas's shared StatusTone, so the
 // dot rendering uses the same primitive every other surface does.
 function severityToTone(s: FindingSeverity | ''): StatusTone {
   switch (s) {

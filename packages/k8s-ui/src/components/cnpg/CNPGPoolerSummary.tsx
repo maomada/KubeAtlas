@@ -109,7 +109,7 @@ export function CNPGPoolerSummary({
       ) : (
         <FactGrid>
           <FactRow label="Connection pressure">
-            <FactValue fact={{ text: 'Not measured — needs PgBouncer metrics, which Radar does not read yet', tone: 'unknown' }} />
+            <FactValue fact={{ text: 'Not measured — needs PgBouncer metrics, which KubeAtlas does not read yet', tone: 'unknown' }} />
           </FactRow>
         </FactGrid>
       )}

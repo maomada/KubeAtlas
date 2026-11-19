@@ -101,7 +101,7 @@ func TestBuildYAMLSchemaBundle_SelectsGVKAndReferencedDefinitions(t *testing.T) 
 	if !strings.Contains(text, `"type":["string","null"]`) {
 		t.Fatalf("nullable type was not normalized: %s", text)
 	}
-	if !strings.Contains(text, `"deprecationMessage":"[radar-advisory:deprecated] This field is deprecated."`) {
+	if !strings.Contains(text, `"deprecationMessage":"[kubeatlas-advisory:deprecated] This field is deprecated."`) {
 		t.Fatalf("deprecated field was not normalized: %s", text)
 	}
 	if !strings.Contains(text, `"default":{"deprecated":true,"format":"int-or-string","nullable":true}`) {

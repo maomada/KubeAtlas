@@ -35,7 +35,7 @@ export function isApiGroup(apiVersion: unknown, group: string): boolean {
 
 // Phase strings are full English sentences copied verbatim from CNPG's
 // api/v1/cluster_types.go — match on equality, never substring. Verified
-// against CNPG 1.27. Radar's Go issue detection mirrors these buckets in
+// against CNPG 1.27. KubeAtlas's Go issue detection mirrors these buckets in
 // internal/issues/source_cnpg.go; the two must not drift, or a cluster gets
 // a red badge and no issue (or the reverse).
 
@@ -100,7 +100,7 @@ export const CNPG_CLUSTER_PHASES_ATTENTION = [
  * so this is about badge semantics rather than width: a badge carries a state,
  * the drawer and the `title` carry the operator's exact words.
  *
- * Radar's own labels (Healthy, WAL Archiving Failing, …) are not in here —
+ * KubeAtlas's own labels (Healthy, WAL Archiving Failing, …) are not in here —
  * those are already states and are produced directly by getCNPGClusterStatus.
  *
  * Both in-place and without-a-switchover restarts collapse to "Restarting
@@ -1115,7 +1115,7 @@ export function getCNPGPoolerAuthQuerySecret(resource: any): { name: string } | 
 
 /**
  * Volume health for a CNPG cluster, read from the arrays the operator publishes
- * on status. Radar previously showed only the REQUESTED size and storage class,
+ * on status. KubeAtlas previously showed only the REQUESTED size and storage class,
  * which are spec-side intentions — a cluster whose volumes had failed rendered
  * a cheerful "20Gi" with nothing to suggest otherwise.
  *

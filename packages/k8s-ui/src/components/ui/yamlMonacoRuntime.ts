@@ -20,7 +20,7 @@ function createYamlFacade(): typeof monaco {
   const nativeCreateWebWorker = monaco.editor.createWebWorker.bind(monaco.editor)
   const createWebWorker = (options: LegacyWorkerOptions) => {
     const worker = new Worker(new URL('./monacoYaml.worker.ts', import.meta.url), {
-      name: 'radar-monaco-yaml',
+      name: 'kubeatlas-monaco-yaml',
       type: 'module',
     })
     worker.postMessage({ type: 'bootstrap' })
@@ -85,7 +85,7 @@ export async function registerYamlSchema(
   schemaRegistrations.set(modelUri, {
     token,
     schema,
-    schemaUri: `radar://schemas/schema-${++schemaSerial}.json`,
+    schemaUri: `kubeatlas://schemas/schema-${++schemaSerial}.json`,
   })
   await refreshSchemas()
   return () => {

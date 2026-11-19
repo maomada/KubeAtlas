@@ -38,7 +38,7 @@ import (
 
 var clusterConnectionProbe = k8s.TestClusterConnection
 
-// AppConfig holds all parsed configuration for the Radar application.
+// AppConfig holds all parsed configuration for the KubeAtlas application.
 type AppConfig struct {
 	Kubeconfig     string
 	KubeconfigDirs []string
@@ -570,9 +570,9 @@ func CreateServer(cfg AppConfig) *server.Server {
 	mcppkg.SetExecToolsEnabled(mcpExecTools)
 	serverCfg.MCPExecTools = mcpExecTools
 	if cfg.MCPEnabled {
-		// The same in-memory registry must back both ends of Radar's private
+		// The same in-memory registry must back both ends of KubeAtlas's private
 		// evidence protocol: DiagnoseStream owns active turn scopes, while the MCP
-		// handler records exactly what Radar returned inside those scopes.
+		// handler records exactly what KubeAtlas returned inside those scopes.
 		evidenceRefs := investigationrefs.NewRegistry()
 		serverCfg.InvestigationRefs = evidenceRefs
 		if !cfg.MCPReadOnly {
@@ -711,8 +711,8 @@ func InitializeCluster() {
 }
 
 // mcpPortFileDisabled suppresses port-file writes AND removals — an ephemeral
-// instance (radar diagnose --standalone) must never clobber or delete the slot
-// a real long-running Radar owns.
+// instance (kubeatlas diagnose --standalone) must never clobber or delete the slot
+// a real long-running KubeAtlas owns.
 var mcpPortFileDisabled bool
 
 // DisableMCPPortFile makes Write/RemoveMCPPortFile no-ops for this process.

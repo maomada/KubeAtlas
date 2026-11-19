@@ -88,9 +88,9 @@ describe('NamespacePicker incomplete-list notice', () => {
     expect(warning).toBe(false)
   })
 
-  it('says Radar can\u2019t list namespaces when the host can help and nothing is picked', async () => {
+  it('says KubeAtlas can\u2019t list namespaces when the host can help and nothing is picked', async () => {
     const { tooltip } = await renderOpen({ actives: [], mode: 'restricted' }, { limitedListHelp: help })
-    expect(tooltip).toBe('Radar 无法列出此集群中的命名空间。')
+    expect(tooltip).toBe('KubeAtlas 无法列出此集群中的命名空间。')
   })
 
   // A picked view keeps describing its filter; the footer carries the help.
@@ -101,7 +101,7 @@ describe('NamespacePicker incomplete-list notice', () => {
   })
 
   // Without a host action the list is usually the viewer's complete RBAC view
-  // (auth-enabled installs, Radar Cloud), so say what it is rather than warn.
+  // (auth-enabled installs, KubeAtlas Cloud), so say what it is rather than warn.
   it('describes an RBAC-scoped list with nothing picked', async () => {
     const { tooltip, text } = await renderOpen({ actives: [], mode: 'restricted' })
     expect(tooltip).toBe('正在显示你的账号有权访问的命名空间。')

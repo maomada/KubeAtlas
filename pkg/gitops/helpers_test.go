@@ -40,14 +40,14 @@ func TestParseFluxInventoryID(t *testing.T) {
 }
 
 // A Kustomization can list thousands of objects, and a search reads a
-// manager's whole inventory to tell whether Radar can trust it.
+// manager's whole inventory to tell whether KubeAtlas can trust it.
 func TestParseFluxInventoryIDAllocatesNothing(t *testing.T) {
 	if n := testing.AllocsPerRun(100, func() { ParseFluxInventoryID("flux-system_my_weird_name_apps_Deployment") }); n != 0 {
 		t.Fatalf("%v allocations per entry", n)
 	}
 }
 
-// Telling whether Radar can read an inventory decodes no names, so an RBAC
+// Telling whether KubeAtlas can read an inventory decodes no names, so an RBAC
 // name Flux writes with a colon costs nothing either.
 func TestFluxMembersReadableAllocatesNothing(t *testing.T) {
 	entries := make([]any, 1000)

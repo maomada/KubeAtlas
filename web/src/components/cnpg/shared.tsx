@@ -6,10 +6,10 @@ import {
   FoldSection,
   coverageReadable,
   PaneLoader,
-  RadarUpgradeAction,
-  getRadarUpgradeRequirement,
-  radarUpgradeDetail,
-  radarUpgradeHeadline,
+  KubeAtlasUpgradeAction,
+  getKubeAtlasUpgradeRequirement,
+  kubeatlasUpgradeDetail,
+  kubeatlasUpgradeHeadline,
   type CNPGFleet,
   type CNPGKindCoverage,
   type CNPGWorkspaceResponse,
@@ -130,16 +130,16 @@ export function CNPGScreenGate({
   const data = query.data
   if (!data && query.isLoading) return <PaneLoader label="Loading CloudNativePG…" className="flex-1" />
   if (!data) {
-    const upgrade = getRadarUpgradeRequirement(query.error)
+    const upgrade = getKubeAtlasUpgradeRequirement(query.error)
     if (upgrade) {
       return (
         <ScreenEmptyState
           icon={Database}
-          title={radarUpgradeHeadline('CloudNativePG')}
-          detail={radarUpgradeDetail(upgrade)}
+          title={kubeatlasUpgradeHeadline('CloudNativePG')}
+          detail={kubeatlasUpgradeDetail(upgrade)}
           action={
             <div className="mt-3 text-sm">
-              <RadarUpgradeAction requirement={upgrade} />
+              <KubeAtlasUpgradeAction requirement={upgrade} />
             </div>
           }
         />

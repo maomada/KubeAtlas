@@ -4,7 +4,7 @@ import "testing"
 
 func eff(kind, group, ns, name, checkID, category, rawSev, msg string) EffectiveFinding {
 	return EffectiveFinding{
-		Source:            SourceRadarBuiltin,
+		Source:            SourceKubeAtlasBuiltin,
 		Resource:          ResourceRef{ClusterID: "cl_1", Group: group, Kind: kind, Namespace: ns, Name: name},
 		CheckID:           checkID,
 		Category:          category,
@@ -66,7 +66,7 @@ func TestBuildChecks_GroupByCheck(t *testing.T) {
 	if rr.EffectiveSeverity != SeverityHigh {
 		t.Errorf("run-as-root effective severity = %q, want high", rr.EffectiveSeverity)
 	}
-	if rr.ID != "cl_1|radar_builtin|run-as-root" {
+	if rr.ID != "cl_1|kubeatlas_builtin|run-as-root" {
 		t.Errorf("check id = %q", rr.ID)
 	}
 }
@@ -105,7 +105,7 @@ func TestBuildChecks_VisibleOrder(t *testing.T) {
 
 func TestBuildChecks_EnvironmentContext(t *testing.T) {
 	// env flows through to the Environment context tag; OSS (env "") leaves it
-	// empty — there is no fleet environment in standalone Radar.
+	// empty — there is no fleet environment in standalone KubeAtlas.
 	for _, c := range BuildChecks(fixture(), catalog, "cl_1", "prod") {
 		if c.Environment != "prod" {
 			t.Errorf("%s: Environment = %q, want prod", c.CheckID, c.Environment)

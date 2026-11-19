@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bootstrap a disposable kind cluster with Kubecost 3, deterministic prices,
-# and recognizable workloads for exercising Radar's Kubecost cost source.
+# and recognizable workloads for exercising KubeAtlas's Kubecost cost source.
 #
 # Subcommands:
 #   up             Create the cluster, install Kubecost, deploy fixtures, and
@@ -9,25 +9,25 @@
 #   reset          down + up.
 #   status         Show Kubecost and fixture inventory.
 #   query          Query the Aggregator allocation and asset APIs directly.
-#   install-radar  Build the current Go tree, install Radar in-cluster, and
+#   install-kubeatlas  Build the current Go tree, install KubeAtlas in-cluster, and
 #                  exercise the Service-DNS connection lane.
-#   radar-smoke    Assert current summary/workload/node responses and retained
-#                  cluster history against in-cluster Radar, or local Radar
+#   kubeatlas-smoke    Assert current summary/workload/node responses and retained
+#                  cluster history against in-cluster KubeAtlas, or local KubeAtlas
 #                  when KUBEATLAS_BASE_URL is set.
 #   help           Show this message.
 #
 # Prerequisites:
 #   - kind, kubectl, helm, curl, jq
-#   - docker + go (install-radar only)
+#   - docker + go (install-kubeatlas only)
 #
-# Set CLUSTER_NAME=foo to use another cluster (default: radar-kubecost-demo).
+# Set CLUSTER_NAME=foo to use another cluster (default: kubeatlas-kubecost-demo).
 # Set KUBECOST_CHART_VERSION deliberately when testing a chart upgrade.
 #
 # See scripts/kubecost-demo/README.md before changing the topology or versions.
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-kubecost-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-kubecost-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 KIND_NODE_IMAGE="${KIND_NODE_IMAGE:-kindest/node:v1.34.0}"
 KUBECOST_CHART_VERSION="${KUBECOST_CHART_VERSION:-3.2.4}"
@@ -35,7 +35,7 @@ KUBECOST_CHART_REPO="${KUBECOST_CHART_REPO:-https://kubecost.github.io/kubecost/
 KUBECOST_RELEASE="${KUBECOST_RELEASE:-kubecost}"
 KUBECOST_NS="${KUBECOST_NS:-kubecost}"
 DEMO_NS="${DEMO_NS:-cost-demo}"
-KUBEATLAS_NS="${KUBEATLAS_NS:-radar}"
+KUBEATLAS_NS="${KUBEATLAS_NS:-kubeatlas}"
 CLUSTER_ID="${CLUSTER_ID:-${CLUSTER_NAME}}"
 DISPLAY_CURRENCY="$(printf '%s' "${DISPLAY_CURRENCY:-EUR}" | tr '[:lower:]' '[:upper:]')"
 KUBECOST_LOCAL_PORT="${KUBECOST_LOCAL_PORT:-39004}"
@@ -138,7 +138,7 @@ start_forward() {
   FORWARD_PID=$!
 
   local attempt
-  for attempt in $(seq 1 30); do
+  for ((attempt = 1; attempt <= 30; attempt++)); do
     assert_forward_alive
     if grep -q "^Forwarding from 127[.]0[.]0[.]1:${local_port} " "${FORWARD_LOG}" &&
       curl "${CURL_OPTS[@]}" "${ready_url}" >/dev/null 2>&1; then
@@ -427,8 +427,8 @@ cmd_up() {
   ok "Kubecost demo ready"
   note "Context: ${KUBECTL_CTX}"
   note "Run '$0 query' to inspect the raw allocation and asset APIs."
-  note "For local Radar: kubectl config use-context ${KUBECTL_CTX}"
-  note "Then run Radar with KUBEATLAS_COST_SOURCE=kubecost and KUBEATLAS_KUBECOST_CLUSTER_ID=${CLUSTER_ID}."
+  note "For local KubeAtlas: kubectl config use-context ${KUBECTL_CTX}"
+  note "Then run KubeAtlas with KUBEATLAS_COST_SOURCE=kubecost and KUBEATLAS_KUBECOST_CLUSTER_ID=${CLUSTER_ID}."
 }
 
 cmd_query() {
@@ -486,13 +486,13 @@ cmd_status() {
   kctl -n "${KUBECOST_NS}" get service "${KUBECOST_RELEASE}-aggregator" -o wide 2>/dev/null || warn "service missing"
   step "Cost fixtures"
   kctl -n "${DEMO_NS}" get deployment,statefulset,daemonset,pod 2>/dev/null || warn "fixtures missing"
-  if kctl -n "${KUBEATLAS_NS}" get deployment radar >/dev/null 2>&1; then
-    step "In-cluster Radar"
+  if kctl -n "${KUBEATLAS_NS}" get deployment kubeatlas >/dev/null 2>&1; then
+    step "In-cluster KubeAtlas"
     kctl -n "${KUBEATLAS_NS}" get deployment,pod
   fi
 }
 
-cmd_install_radar() {
+cmd_install_kubeatlas() {
   require_cluster
   require_cmd docker "https://docs.docker.com/get-docker/"
   require_cmd helm "https://helm.sh/docs/intro/install/"
@@ -508,7 +508,7 @@ cmd_install_radar() {
   build_dir="$(mktemp -d)"
   TEMP_PATHS+=("${build_dir}")
 
-  step "Building current Radar backend for linux/${arch}"
+  step "Building current KubeAtlas backend for linux/${arch}"
   (cd "${repo_root}" && CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build -o "${build_dir}/kubeatlas" ./cmd/explorer)
   cat >"${build_dir}/Dockerfile" <<'EOF'
 FROM alpine:3.20
@@ -516,27 +516,27 @@ RUN apk add --no-cache ca-certificates
 COPY kubeatlas /kubeatlas
 ENTRYPOINT ["/kubeatlas"]
 EOF
-  docker build --platform "linux/${arch}" -q -t radar-kubecost-demo:dev "${build_dir}" >/dev/null
-  kind load docker-image radar-kubecost-demo:dev --name "${CLUSTER_NAME}" >/dev/null
+  docker build --platform "linux/${arch}" -q -t kubeatlas-kubecost-demo:dev "${build_dir}" >/dev/null
+  kind load docker-image kubeatlas-kubecost-demo:dev --name "${CLUSTER_NAME}" >/dev/null
   rm -rf "${build_dir}"
 
-  step "Installing current Radar with Kubecost pinned as the source"
-  helm_ctx upgrade --install radar "${repo_root}/deploy/helm/kubeatlas" \
+  step "Installing current KubeAtlas with Kubecost pinned as the source"
+  helm_ctx upgrade --install kubeatlas "${repo_root}/deploy/helm/kubeatlas" \
     --namespace "${KUBEATLAS_NS}" --create-namespace \
-    --set image.repository=radar-kubecost-demo \
+    --set image.repository=kubeatlas-kubecost-demo \
     --set image.tag=dev \
     --set image.pullPolicy=Never \
     --set cost.source=kubecost \
     --set cost.kubecost.clusterId="${CLUSTER_ID}" \
     --set rbac.portForward=false \
     --wait --timeout 180s >/dev/null
-  kctl -n "${KUBEATLAS_NS}" rollout restart deployment/radar >/dev/null
-  kctl -n "${KUBEATLAS_NS}" rollout status deployment/radar --timeout=180s >/dev/null
-  ok "Radar is running in-cluster against Kubecost Service DNS"
-  note "Run '$0 radar-smoke' to assert Radar's API contract."
+  kctl -n "${KUBEATLAS_NS}" rollout restart deployment/kubeatlas >/dev/null
+  kctl -n "${KUBEATLAS_NS}" rollout status deployment/kubeatlas --timeout=180s >/dev/null
+  ok "KubeAtlas is running in-cluster against Kubecost Service DNS"
+  note "Run '$0 kubeatlas-smoke' to assert KubeAtlas's API contract."
 }
 
-cmd_radar_smoke() {
+cmd_kubeatlas_smoke() {
   validate_currency
   require_cluster
   require_cmd curl "https://curl.se/download.html"
@@ -565,7 +565,7 @@ cmd_radar_smoke() {
       .properties.pod == "orders-0" and
       (.properties.controller == null or .properties.controller == "__unallocated__"))
     ' >/dev/null <<<"${raw_allocations}"; then
-    ok "Kubecost left orders-0 unresolved in ${raw_window}, exercising Radar's pod-owner fallback"
+    ok "Kubecost left orders-0 unresolved in ${raw_window}, exercising KubeAtlas's pod-owner fallback"
   elif [ "${KUBECOST_CHART_VERSION}" = "3.2.4" ]; then
     warn "Kubecost 3.2.4 no longer exposes the unresolved orders-0 premise expected by this smoke test"
     premise_drift=true
@@ -574,20 +574,20 @@ cmd_radar_smoke() {
   fi
   stop_forward
 
-  local radar_root base
-  radar_root="${KUBEATLAS_BASE_URL:-}"
-  if [ -n "${radar_root}" ]; then
-    radar_root="${radar_root%/}"
-    note "Testing local Radar at ${radar_root}"
+  local kubeatlas_root base
+  kubeatlas_root="${KUBEATLAS_BASE_URL:-}"
+  if [ -n "${kubeatlas_root}" ]; then
+    kubeatlas_root="${kubeatlas_root%/}"
+    note "Testing local KubeAtlas at ${kubeatlas_root}"
   else
-    kctl -n "${KUBEATLAS_NS}" get deployment radar >/dev/null 2>&1 || fail "Radar is not installed. Run '$0 install-radar' first, or set KUBEATLAS_BASE_URL for local Radar."
-    start_forward "${KUBEATLAS_NS}" "deployment/radar" "${KUBEATLAS_LOCAL_PORT}:9280" \
+    kctl -n "${KUBEATLAS_NS}" get deployment kubeatlas >/dev/null 2>&1 || fail "KubeAtlas is not installed. Run '$0 install-kubeatlas' first, or set KUBEATLAS_BASE_URL for local KubeAtlas."
+    start_forward "${KUBEATLAS_NS}" "deployment/kubeatlas" "${KUBEATLAS_LOCAL_PORT}:9280" \
       "http://127.0.0.1:${KUBEATLAS_LOCAL_PORT}/api/cluster-info"
-    radar_root="http://127.0.0.1:${KUBEATLAS_LOCAL_PORT}"
+    kubeatlas_root="http://127.0.0.1:${KUBEATLAS_LOCAL_PORT}"
   fi
-  base="${radar_root}/api/opencost"
+  base="${kubeatlas_root}/api/opencost"
 
-  step "Waiting for Radar's Kubecost responses (120s retry window; in-flight requests may extend it)"
+  step "Waiting for KubeAtlas's Kubecost responses (120s retry window; in-flight requests may extend it)"
   local summary="" workloads="" nodes="" trend="" deadline smoke_ready=false
   deadline=$(($(date +%s) + 120))
   while [ "$(date +%s)" -lt "${deadline}" ]; do
@@ -616,42 +616,42 @@ cmd_radar_smoke() {
   done
   if [ "${smoke_ready}" != true ]; then
     if ! jq -e '.available == true' >/dev/null 2>&1 <<<"${summary}"; then
-      printf 'Last Radar summary response:\n%s\n' "${summary}" >&2
-      fail "Radar summary did not return available cost data"
+      printf 'Last KubeAtlas summary response:\n%s\n' "${summary}" >&2
+      fail "KubeAtlas summary did not return available cost data"
     fi
     if ! jq -e '.source == "kubecost"' >/dev/null 2>&1 <<<"${summary}"; then
-      printf 'Last Radar summary response:\n%s\n' "${summary}" >&2
-      fail "Radar summary did not select Kubecost"
+      printf 'Last KubeAtlas summary response:\n%s\n' "${summary}" >&2
+      fail "KubeAtlas summary did not select Kubecost"
     fi
     if ! jq -e --arg currency "${DISPLAY_CURRENCY}" '.currency == $currency' >/dev/null 2>&1 <<<"${summary}"; then
-      printf 'Last Radar summary response:\n%s\n' "${summary}" >&2
-      fail "Radar summary currency was not ${DISPLAY_CURRENCY}"
+      printf 'Last KubeAtlas summary response:\n%s\n' "${summary}" >&2
+      fail "KubeAtlas summary currency was not ${DISPLAY_CURRENCY}"
     fi
     if ! jq -e '(.dataThrough | type == "string" and length > 0) and (.namespaces | length > 0)' >/dev/null 2>&1 <<<"${summary}"; then
-      printf 'Last Radar summary response:\n%s\n' "${summary}" >&2
-      fail "Radar summary did not include current namespace cost data"
+      printf 'Last KubeAtlas summary response:\n%s\n' "${summary}" >&2
+      fail "KubeAtlas summary did not include current namespace cost data"
     fi
     if ! jq -e '.available == true and .source == "kubecost" and (.dataThrough | type == "string" and length > 0) and any(.workloads[]?; .name == "checkout" and .kind == "Deployment") and any(.workloads[]?; .name == "orders" and .kind == "StatefulSet") and any(.workloads[]?; .name == "telemetry" and .kind == "DaemonSet")' >/dev/null 2>&1 <<<"${workloads}"; then
-      printf 'Last Radar workload response:\n%s\n' "${workloads}" >&2
-      fail "Radar workload response did not include all three cost-demo controllers"
+      printf 'Last KubeAtlas workload response:\n%s\n' "${workloads}" >&2
+      fail "KubeAtlas workload response did not include all three cost-demo controllers"
     fi
     if ! jq -e '.available == true and .source == "kubecost" and (.nodes | length > 0)' >/dev/null 2>&1 <<<"${nodes}"; then
-      printf 'Last Radar node response:\n%s\n' "${nodes}" >&2
-      fail "Radar node response did not include Kubecost assets"
+      printf 'Last KubeAtlas node response:\n%s\n' "${nodes}" >&2
+      fail "KubeAtlas node response did not include Kubecost assets"
     fi
     if ! jq -e --arg currency "${DISPLAY_CURRENCY}" '.available == true and .source == "kubecost" and .currency == $currency and (.series | length > 0) and ([.series[].dataPoints[].timestamp] | unique | length >= 2)' >/dev/null 2>&1 <<<"${trend}"; then
-      printf 'Last Radar trend response:\n%s\n' "${trend}" >&2
-      fail "Radar trend response did not include Kubecost allocation history"
+      printf 'Last KubeAtlas trend response:\n%s\n' "${trend}" >&2
+      fail "KubeAtlas trend response did not include Kubecost allocation history"
     fi
   fi
 
-  ok "Radar Kubecost smoke checks passed"
+  ok "KubeAtlas Kubecost smoke checks passed"
   jq '{available, source, currency, dataThrough, namespaceCount: (.namespaces | length)}' <<<"${summary}"
   jq '{available, source, workloadCount: (.workloads | length)}' <<<"${workloads}"
   jq '{available, source, nodeCount: (.nodes | length)}' <<<"${nodes}"
   jq '{available, source, currency, range, seriesCount: (.series | length), pointCount: ([.series[].dataPoints[].timestamp] | unique | length)}' <<<"${trend}"
   if [ "${premise_drift}" = true ]; then
-    fail "Radar's API contract passed, but Kubecost 3.2.4 did not exercise the pod-owner fallback premise"
+    fail "KubeAtlas's API contract passed, but Kubecost 3.2.4 did not exercise the pod-owner fallback premise"
   fi
 }
 
@@ -675,8 +675,8 @@ case "${1:-help}" in
   reset) cmd_down; cmd_up ;;
   status) cmd_status ;;
   query) cmd_query ;;
-  install-radar) cmd_install_radar ;;
-  radar-smoke) cmd_radar_smoke ;;
+  install-kubeatlas) cmd_install_kubeatlas ;;
+  kubeatlas-smoke) cmd_kubeatlas_smoke ;;
   help|-h|--help) usage ;;
   *) fail "unknown subcommand: $1 (try '$0 help')" ;;
 esac

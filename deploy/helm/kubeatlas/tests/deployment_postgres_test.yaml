@@ -8,7 +8,7 @@ tests:
         storage: postgres
         retention: 720h
         postgres:
-          existingSecret: radar-postgres
+          existingSecret: kubeatlas-postgres
           secretKey: dsn
     asserts:
       - contains:
@@ -23,7 +23,7 @@ tests:
             name: KUBEATLAS_TIMELINE_POSTGRES_DSN
             valueFrom:
               secretKeyRef:
-                name: radar-postgres
+                name: kubeatlas-postgres
                 key: dsn
       - notContains:
           path: spec.template.spec.containers[0].args
@@ -44,7 +44,7 @@ tests:
           content:
             name: data
             persistentVolumeClaim:
-              claimName: radar
+              claimName: kubeatlas
           any: true
 
   - it: fails when postgres storage is selected without existingSecret
@@ -77,7 +77,7 @@ tests:
       timeline:
         storage: postgres
         postgres:
-          existingSecret: radar-postgres
+          existingSecret: kubeatlas-postgres
       persistence:
         enabled: true
     asserts:

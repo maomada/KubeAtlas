@@ -55,7 +55,7 @@ const (
 
 // Overlay is the optional Tier-2 "application" identity ABOVE a package — the
 // grouping key the Applications fleet surface uses (see
-// radar-hub/docs/ADDONS-AND-APPLICATIONS-PLAN.md). It mirrors
+// kubeatlas-hub/docs/ADDONS-AND-APPLICATIONS-PLAN.md). It mirrors
 // pkg/subject.AppOverlay but with plain fields, so pkg/packages stays free of
 // pkg/subject + metav1: the caller resolves subject.ResolveOverlay (for
 // workloads) or maps a GitOps declaration's identity, then sets this.
@@ -148,7 +148,7 @@ type Declaration struct {
 // Sources is the input struct fed to Aggregate. Every field is optional;
 // missing data sources just don't contribute. Callers populate from
 // whatever they have access to — Hub-mode might pass all five, a
-// minimal RBAC-restricted Radar might pass only Workloads + CRDs.
+// minimal RBAC-restricted KubeAtlas might pass only Workloads + CRDs.
 type Sources struct {
 	Helm               []HelmRelease `json:"helm,omitempty"`
 	Workloads          []Workload    `json:"workloads,omitempty"`
@@ -181,7 +181,7 @@ type SourceContribution struct {
 	DeclarationName      string `json:"declarationName,omitempty"`
 	DeclarationNamespace string `json:"declarationNamespace,omitempty"`
 	// Cluster identifies the cluster this contribution came from.
-	// Always empty in single-cluster output (Radar standalone). Hub
+	// Always empty in single-cluster output (KubeAtlas standalone). Hub
 	// populates this when fanning rows in across clusters so the
 	// merge key effectively becomes (Source, Cluster) — preserving
 	// per-cluster Argo identity in the "same chart, different Apps,
@@ -197,7 +197,7 @@ type SourceContribution struct {
 // Hub fan-in note: AddContribution dedupes on (Source, Cluster). When
 // Hub merges rows from N clusters, it stamps each contribution with the
 // originating cluster so Argo App identity from cluster A and from
-// cluster B both survive on the merged row. Single-cluster Radar
+// cluster B both survive on the merged row. Single-cluster KubeAtlas
 // leaves Cluster empty, so dedupe collapses to Source alone.
 type PackageRow struct {
 	// Chart name. Always populated. Derived from (in priority order):

@@ -345,7 +345,7 @@ func TestIssueReleasesReadOnlyFailedOrPendingReleasesInFull(t *testing.T) {
 // namespace that failed, so one bad namespace can't hide the rest.
 func TestIssueReleasesSkipOnlyDeniedNamespaces(t *testing.T) {
 	impersonation := apierrors.NewForbidden(schema.GroupResource{Resource: "users"}, "alice",
-		fmt.Errorf(`User "system:serviceaccount:radar:radar" cannot impersonate resource "users" in API group "" at the cluster scope`))
+		fmt.Errorf(`User "system:serviceaccount:kubeatlas:kubeatlas" cannot impersonate resource "users" in API group "" at the cluster scope`))
 	cases := []struct {
 		name       string
 		err        error
@@ -356,7 +356,7 @@ func TestIssueReleasesSkipOnlyDeniedNamespaces(t *testing.T) {
 		{name: "forbidden", err: apierrors.NewForbidden(schema.GroupResource{Resource: "secrets"}, "", fmt.Errorf("denied"))},
 		{name: "unauthorized", err: apierrors.NewUnauthorized("Unauthorized"), unchecked: true, reason: issuesapi.UncheckedReasonReadFailed, wantFailed: []string{"blocked"}},
 		{name: "server error", err: apierrors.NewInternalError(fmt.Errorf("etcdserver: request timed out")), unchecked: true, reason: issuesapi.UncheckedReasonReadFailed, wantFailed: []string{"blocked"}},
-		{name: "Radar may not impersonate", err: impersonation, unchecked: true, reason: issuesapi.UncheckedReasonCollectorAccessDenied, wantFailed: []string{"blocked"}},
+		{name: "KubeAtlas may not impersonate", err: impersonation, unchecked: true, reason: issuesapi.UncheckedReasonCollectorAccessDenied, wantFailed: []string{"blocked"}},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -408,10 +408,10 @@ func TestIssueReleasesFailWholeWhenNoNamespaceWasRead(t *testing.T) {
 }
 
 // A missing impersonate permission refuses every user the same way. It is
-// Radar's own access failing, not the caller's permission boundary.
+// KubeAtlas's own access failing, not the caller's permission boundary.
 func TestImpersonationDenialIsNotTheCallersDenial(t *testing.T) {
 	err := apierrors.NewForbidden(schema.GroupResource{Resource: "users"}, "alice",
-		fmt.Errorf(`User "system:serviceaccount:radar:radar" cannot impersonate resource "users" in API group "" at the cluster scope`))
+		fmt.Errorf(`User "system:serviceaccount:kubeatlas:kubeatlas" cannot impersonate resource "users" in API group "" at the cluster scope`))
 	if ReleaseReadDeniedForCaller(err) {
 		t.Fatal("impersonation denial read as the caller's own denial")
 	}

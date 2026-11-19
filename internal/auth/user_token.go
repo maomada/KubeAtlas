@@ -15,7 +15,7 @@ import (
 // reports for that token; the forwarded username must match it. Without a
 // token, an allow-listed system identity is accepted as is, and anyone else
 // keeps the forwarded identity for cached reads only (see k8s.UserRESTConfig).
-// radar:* and cloud:* groups never become part of a Kubernetes identity: they
+// kubeatlas:* and cloud:* groups never become part of a Kubernetes identity: they
 // carry the Hub role and nothing else.
 func userTokenIdentity(w http.ResponseWriter, r *http.Request, cfg Config, username string, groups []string) (*User, bool) {
 	if !ForwardedIdentityAllowed(username, groups, false) {
@@ -25,7 +25,7 @@ func userTokenIdentity(w http.ResponseWriter, r *http.Request, cfg Config, usern
 	hubGroups := []string{}
 	var kubeGroups []string
 	for _, g := range groups {
-		if pkgauth.IsRadarVocabularyGroup(g) || (pkgauth.IsReservedPrincipal(g) && g != "system:authenticated") {
+		if pkgauth.IsKubeAtlasVocabularyGroup(g) || (pkgauth.IsReservedPrincipal(g) && g != "system:authenticated") {
 			hubGroups = append(hubGroups, g)
 		} else {
 			kubeGroups = append(kubeGroups, g)
@@ -41,7 +41,7 @@ func userTokenIdentity(w http.ResponseWriter, r *http.Request, cfg Config, usern
 	}
 
 	if cfg.TokenReviewer == nil {
-		writeUserTokenError(w, http.StatusServiceUnavailable, "token_review_unavailable", "Radar cannot verify Kubernetes tokens", cfg.Mode)
+		writeUserTokenError(w, http.StatusServiceUnavailable, "token_review_unavailable", "KubeAtlas cannot verify Kubernetes tokens", cfg.Mode)
 		return nil, false
 	}
 	reviewed, err := cfg.TokenReviewer(r.Context(), token)
@@ -57,7 +57,7 @@ func userTokenIdentity(w http.ResponseWriter, r *http.Request, cfg Config, usern
 		// Timeouts, 5xx, a server without SelfSubjectReview: the token may be
 		// fine, so signing in again would not help.
 		log.Print("[auth] Kubernetes token review unavailable")
-		writeUserTokenError(w, http.StatusServiceUnavailable, "token_review_unavailable", "Radar could not check your sign-in token with the Kubernetes API server", cfg.Mode)
+		writeUserTokenError(w, http.StatusServiceUnavailable, "token_review_unavailable", "KubeAtlas could not check your sign-in token with the Kubernetes API server", cfg.Mode)
 		return nil, false
 	}
 	if reviewed.Username != username {
@@ -67,12 +67,12 @@ func userTokenIdentity(w http.ResponseWriter, r *http.Request, cfg Config, usern
 	}
 	for _, g := range reviewed.Groups {
 		// The API server applies these groups to the token directly, so one
-		// named like a Radar group would match the chart's radar:system or
-		// radar:ai:reader bindings, and an IdP group named system:masters
+		// named like a KubeAtlas group would match the chart's kubeatlas:system or
+		// kubeatlas:ai:reader bindings, and an IdP group named system:masters
 		// would be cluster-admin. Only system:authenticated is expected here.
-		if pkgauth.IsRadarVocabularyGroup(g) || (pkgauth.IsReservedPrincipal(g) && g != "system:authenticated") {
+		if pkgauth.IsKubeAtlasVocabularyGroup(g) || (pkgauth.IsReservedPrincipal(g) && g != "system:authenticated") {
 			log.Print("[auth] token identity carries a reserved group")
-			writeUserTokenError(w, http.StatusForbidden, "token_reserved_group", "Your identity provider puts you in group "+g+"; groups starting with radar:, cloud: or system: are reserved. Rename the group or set a groups prefix on your API server.", cfg.Mode)
+			writeUserTokenError(w, http.StatusForbidden, "token_reserved_group", "Your identity provider puts you in group "+g+"; groups starting with kubeatlas:, cloud: or system: are reserved. Rename the group or set a groups prefix on your API server.", cfg.Mode)
 			return nil, false
 		}
 	}

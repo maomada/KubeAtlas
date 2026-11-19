@@ -2,7 +2,7 @@
 // HTTP-level invariants every server speaking the timeline contract must hold,
 // driven as real requests through the server's own http.Handler. It mirrors
 // the storetest idiom (pkg/timeline/storetest) — the properties live once,
-// here, and each server (radar OSS from internal/server, radar-hub from its
+// here, and each server (kubeatlas OSS from internal/server, kubeatlas-hub from its
 // own handler) supplies its live handler plus a seed hook and runs the same
 // suite.
 //
@@ -35,10 +35,10 @@ import (
 type CursorKind int
 
 const (
-	// CursorEpochSeq is radar OSS's "<epoch>:<seq>" cursor — an observation
+	// CursorEpochSeq is kubeatlas OSS's "<epoch>:<seq>" cursor — an observation
 	// epoch and a monotonic arrival counter.
 	CursorEpochSeq CursorKind = iota
-	// CursorNanoFrontier is radar-hub's single nanosecond event-time frontier.
+	// CursorNanoFrontier is kubeatlas-hub's single nanosecond event-time frontier.
 	CursorNanoFrontier
 )
 
@@ -81,10 +81,10 @@ type Config struct {
 	// RejectsOverLimit declares what the server does with a limit above MaxRows.
 	//
 	// false (default) = the server CLAMPS the over-cap limit to its max and
-	// returns 200. radar OSS is a local, single-user tool: an oversized limit
+	// returns 200. kubeatlas OSS is a local, single-user tool: an oversized limit
 	// costs nothing shared, so it forgives the caller and serves up to the cap.
 	//
-	// true = the server REJECTS limit > MaxRows with HTTP 400. radar-hub is a
+	// true = the server REJECTS limit > MaxRows with HTTP 400. kubeatlas-hub is a
 	// multi-tenant service where an oversized query reads shared storage on
 	// behalf of one tenant; it fails loud at the boundary rather than silently
 	// truncating, so the caller learns the request was too big instead of

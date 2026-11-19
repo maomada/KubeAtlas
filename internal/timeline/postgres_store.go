@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"io"
 	"io/fs"
 	"log"
@@ -51,8 +52,8 @@ const (
 // appends. The queries these serve (scoped history by subject and owner UID)
 // work without them, only slower.
 var postgresBackgroundIndexes = []struct{ name, column string }{
-	{"radar_timeline_events_uid_idx", "uid"},
-	{"radar_timeline_events_owner_uid_idx", "owner_uid"},
+	{"kubeatlas_timeline_events_uid_idx", "uid"},
+	{"kubeatlas_timeline_events_owner_uid_idx", "owner_uid"},
 }
 
 var postgresPingTimeout = 10 * time.Second
@@ -245,7 +246,7 @@ func (s *PostgresStore) buildBackgroundIndexes() {
 	}
 	defer conn.Close()
 	var locked bool
-	if err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock($1, $2)",
+	if err := conn.QueryRowContext(ctx, compat.PhysicalTimelineSQL("SELECT pg_try_advisory_lock($1, $2)"),
 		postgresMigrationLockNamespace, postgresIndexBuildLockID).Scan(&locked); err != nil {
 		log.Printf("[timeline] Failed to build indexes: take build lock: %v", err)
 		return
@@ -256,19 +257,20 @@ func (s *PostgresStore) buildBackgroundIndexes() {
 	defer func() {
 		unlockCtx, cancelUnlock := context.WithTimeout(context.Background(), postgresUnlockTimeout)
 		defer cancelUnlock()
-		_, _ = conn.ExecContext(unlockCtx, "SELECT pg_advisory_unlock($1, $2)",
+		_, _ = conn.ExecContext(unlockCtx, compat.PhysicalTimelineSQL("SELECT pg_advisory_unlock($1, $2)"),
 			postgresMigrationLockNamespace, postgresIndexBuildLockID)
 	}()
 
 	for _, index := range postgresBackgroundIndexes {
+		index.name = compat.PhysicalTimelineSQL(index.name)
 		var valid bool
 		err := conn.QueryRowContext(ctx,
-			"SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid = to_regclass($1)", index.name).Scan(&valid)
+			compat.PhysicalTimelineSQL("SELECT i.indisvalid FROM pg_index i WHERE i.indexrelid = to_regclass($1)"), index.name).Scan(&valid)
 		switch {
 		case err == nil && valid:
 			continue
 		case err == nil:
-			if _, err := conn.ExecContext(ctx, "DROP INDEX CONCURRENTLY IF EXISTS "+index.name); err != nil {
+			if _, err := conn.ExecContext(ctx, compat.PhysicalTimelineSQL("DROP INDEX CONCURRENTLY IF EXISTS "+index.name)); err != nil {
 				log.Printf("[timeline] Failed to drop invalid index %s: %v", index.name, err)
 				return
 			}
@@ -276,8 +278,8 @@ func (s *PostgresStore) buildBackgroundIndexes() {
 			log.Printf("[timeline] Failed to check index %s: %v", index.name, err)
 			return
 		}
-		if _, err := conn.ExecContext(ctx, "CREATE INDEX CONCURRENTLY IF NOT EXISTS "+index.name+
-			" ON radar_timeline_events ("+index.column+")"); err != nil {
+		if _, err := conn.ExecContext(ctx, compat.PhysicalTimelineSQL("CREATE INDEX CONCURRENTLY IF NOT EXISTS "+index.name+
+			" ON kubeatlas_timeline_events ("+index.column+")")); err != nil {
 			log.Printf("[timeline] Failed to build index %s: %v", index.name, err)
 			return
 		}
@@ -286,29 +288,30 @@ func (s *PostgresStore) buildBackgroundIndexes() {
 
 func validatePostgresSchema(ctx context.Context, db *sql.DB) error {
 	for _, relation := range []string{
-		"radar_timeline_events",
-		"radar_timeline_event_seq",
-		"radar_timeline_seen_resources",
+		"kubeatlas_timeline_events",
+		"kubeatlas_timeline_event_seq",
+		"kubeatlas_timeline_seen_resources",
 	} {
+		relation = compat.PhysicalTimelineSQL(relation)
 		var exists bool
-		if err := db.QueryRowContext(ctx, "SELECT to_regclass($1) IS NOT NULL", relation).Scan(&exists); err != nil {
+		if err := db.QueryRowContext(ctx, compat.PhysicalTimelineSQL("SELECT to_regclass($1) IS NOT NULL"), relation).Scan(&exists); err != nil {
 			return fmt.Errorf("check required relation %q: %w", relation, err)
 		}
 		if !exists {
 			return fmt.Errorf("required relation %q is missing", relation)
 		}
 	}
-	if _, err := db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, compat.PhysicalTimelineSQL(`
 		SELECT id, timestamp, source, kind, api_version, namespace, name, uid,
 		       event_type, reason, message, diff_json, health_state, owner_kind,
 		       owner_name, owner_api_version, owner_uid, owner_evidence, labels_json, count, correlation_id, created_at,
 		       cluster_context, resource_created_at, seq
-		FROM radar_timeline_events
+		FROM kubeatlas_timeline_events
 		LIMIT 0
-	`); err != nil {
+	`)); err != nil {
 		return fmt.Errorf("check timeline events schema: %w", err)
 	}
-	if _, err := db.ExecContext(ctx, "SELECT resource_key, seen_at FROM radar_timeline_seen_resources LIMIT 0"); err != nil {
+	if _, err := db.ExecContext(ctx, compat.PhysicalTimelineSQL("SELECT resource_key, seen_at FROM kubeatlas_timeline_seen_resources LIMIT 0")); err != nil {
 		return fmt.Errorf("check seen resources schema: %w", err)
 	}
 	return nil
@@ -356,7 +359,7 @@ func (s *PostgresStore) applyUnclearedSeenBeforeClose() {
 	// context switch.
 	ctx, cancel := context.WithTimeout(context.Background(), postgresPingTimeout)
 	defer cancel()
-	if _, err := s.db.ExecContext(ctx, "DELETE FROM radar_timeline_seen_resources WHERE resource_key = ANY($1)", keys); err != nil {
+	if _, err := s.db.ExecContext(ctx, compat.PhysicalTimelineSQL("DELETE FROM kubeatlas_timeline_seen_resources WHERE resource_key = ANY($1)"), keys); err != nil {
 		log.Printf("[timeline] %d seen-resource clear(s) could not be applied before closing: %v; "+
 			"after a restart, a resource among them recreated under the same name may not have its creation recorded", len(keys), err)
 	}
@@ -397,21 +400,21 @@ func (s *PostgresStore) appendBatch(ctx context.Context, events []TimelineEvent)
 	// in flight, permanently skipping the later event.
 	if _, err := tx.ExecContext(
 		ctx,
-		"SELECT pg_advisory_xact_lock($1, $2)",
+		compat.PhysicalTimelineSQL("SELECT pg_advisory_xact_lock($1, $2)"),
 		postgresAppendLockNamespace,
 		postgresAppendLockID,
 	); err != nil {
 		return fmt.Errorf("acquire append lock: %w", err)
 	}
 
-	stmt, err := tx.PrepareContext(ctx, `
-		INSERT INTO radar_timeline_events (
+	stmt, err := tx.PrepareContext(ctx, compat.PhysicalTimelineSQL(`
+		INSERT INTO kubeatlas_timeline_events (
 			id, timestamp, source, kind, api_version, namespace, name, uid, event_type,
 			reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence,
 			labels_json, count, correlation_id, cluster_context, resource_created_at, seq
 		) VALUES (
 			$1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15,
-			$16, $17, $18, $19, $20, $21, $22, $23, nextval('radar_timeline_event_seq')
+			$16, $17, $18, $19, $20, $21, $22, $23, nextval('kubeatlas_timeline_event_seq')
 		)
 		ON CONFLICT(id) DO UPDATE SET
 			timestamp = excluded.timestamp,
@@ -423,18 +426,18 @@ func (s *PostgresStore) appendBatch(ctx context.Context, events []TimelineEvent)
 			seq = excluded.seq,
 			namespace = excluded.namespace,
 			uid = excluded.uid,
-			resource_created_at = COALESCE(excluded.resource_created_at, radar_timeline_events.resource_created_at),
+			resource_created_at = COALESCE(excluded.resource_created_at, kubeatlas_timeline_events.resource_created_at),
 			-- The owner tuple moves as one; OwnerReplacesOnUpsert states the rule.
-			owner_kind = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_kind ELSE radar_timeline_events.owner_kind END,
-			owner_name = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_name ELSE radar_timeline_events.owner_name END,
-			owner_api_version = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_api_version ELSE radar_timeline_events.owner_api_version END,
-			owner_uid = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_uid ELSE radar_timeline_events.owner_uid END,
-			owner_evidence = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_evidence ELSE radar_timeline_events.owner_evidence END,
-			labels_json = CASE WHEN excluded.labels_json IS NOT NULL THEN excluded.labels_json ELSE radar_timeline_events.labels_json END
-		WHERE radar_timeline_events.source = 'k8s_event'
+			owner_kind = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_kind ELSE kubeatlas_timeline_events.owner_kind END,
+			owner_name = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_name ELSE kubeatlas_timeline_events.owner_name END,
+			owner_api_version = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_api_version ELSE kubeatlas_timeline_events.owner_api_version END,
+			owner_uid = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_uid ELSE kubeatlas_timeline_events.owner_uid END,
+			owner_evidence = CASE WHEN (excluded.owner_evidence IN ('enriched', 'unidentified') OR (COALESCE(excluded.owner_evidence, '') = '' AND COALESCE(excluded.owner_kind, '') != '')) THEN excluded.owner_evidence ELSE kubeatlas_timeline_events.owner_evidence END,
+			labels_json = CASE WHEN excluded.labels_json IS NOT NULL THEN excluded.labels_json ELSE kubeatlas_timeline_events.labels_json END
+		WHERE kubeatlas_timeline_events.source = 'k8s_event'
 			AND excluded.source = 'k8s_event'
-			AND excluded.timestamp >= radar_timeline_events.timestamp
-	`)
+			AND excluded.timestamp >= kubeatlas_timeline_events.timestamp
+	`))
 	if err != nil {
 		return fmt.Errorf("prepare append statement: %w", err)
 	}
@@ -528,7 +531,7 @@ func (s *PostgresStore) query(ctx context.Context, opts QueryOptions) ([]Timelin
 		return nil, err
 	}
 
-	rows, err := s.db.QueryContext(ctx, q, args...)
+	rows, err := s.db.QueryContext(ctx, compat.PhysicalTimelineSQL(q), args...)
 	if err != nil {
 		return nil, fmt.Errorf("query events: %w", err)
 	}
@@ -573,9 +576,9 @@ func (s *PostgresStore) getEvent(ctx context.Context, id string) (*TimelineEvent
 	query := `SELECT id, timestamp, source, kind, api_version, namespace, name, uid, event_type,
 		reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence,
 		labels_json, count, correlation_id, cluster_context, resource_created_at, seq
-		FROM radar_timeline_events WHERE id = $1`
+		FROM kubeatlas_timeline_events WHERE id = $1`
 
-	row := s.db.QueryRowContext(ctx, query, id)
+	row := s.db.QueryRowContext(ctx, compat.PhysicalTimelineSQL(query), id)
 	event, err := s.scanEventRow(row)
 	if err == sql.ErrNoRows {
 		return nil, nil
@@ -623,7 +626,7 @@ func (s *PostgresStore) ClearResourceSeen(clusterContext, group, kind, namespace
 	done := make(chan struct{})
 	if !s.enqueueSeenClear(ctx, seenResourceWrite{key: key, delete: true, done: done}) {
 		log.Printf("[timeline] seen-resource clear did not reach the write queue in %s; "+
-			"Radar retries it until it reaches the database", postgresOperationTimeout)
+			"KubeAtlas retries it until it reaches the database", postgresOperationTimeout)
 		s.noteUncleared([]string{key})
 		s.noteError(context.DeadlineExceeded)
 		return
@@ -832,11 +835,11 @@ func (s *PostgresStore) flushSeenWrites(pending []seenResourceWrite) {
 		var err error
 		if pending[start].delete {
 			_, err = s.db.ExecContext(ctx,
-				"DELETE FROM radar_timeline_seen_resources WHERE resource_key = ANY($1)", keys)
+				compat.PhysicalTimelineSQL("DELETE FROM kubeatlas_timeline_seen_resources WHERE resource_key = ANY($1)"), keys)
 		} else {
 			_, err = s.db.ExecContext(ctx,
-				`INSERT INTO radar_timeline_seen_resources (resource_key)
-				 SELECT unnest($1::bytea[]) ON CONFLICT (resource_key) DO NOTHING`, keys)
+				compat.PhysicalTimelineSQL(`INSERT INTO kubeatlas_timeline_seen_resources (resource_key)
+				 SELECT unnest($1::bytea[]) ON CONFLICT (resource_key) DO NOTHING`), keys)
 		}
 		if err != nil {
 			log.Printf("[timeline] failed to persist %d seen-resource changes: %v", end-start, err)
@@ -866,10 +869,10 @@ func (s *PostgresStore) Stats() StoreStats {
 	ctx, cancel := context.WithTimeout(context.Background(), postgresOperationTimeout)
 	defer cancel()
 
-	row := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM radar_timeline_events")
+	row := s.db.QueryRowContext(ctx, compat.PhysicalTimelineSQL("SELECT COUNT(*) FROM kubeatlas_timeline_events"))
 	row.Scan(&stats.TotalEvents)
 
-	row = s.db.QueryRowContext(ctx, "SELECT MIN(timestamp), MAX(timestamp) FROM radar_timeline_events")
+	row = s.db.QueryRowContext(ctx, compat.PhysicalTimelineSQL("SELECT MIN(timestamp), MAX(timestamp) FROM kubeatlas_timeline_events"))
 	var oldest, newest sql.NullInt64
 	row.Scan(&oldest, &newest)
 	if oldest.Valid {
@@ -879,10 +882,10 @@ func (s *PostgresStore) Stats() StoreStats {
 		stats.NewestEvent = time.Unix(0, newest.Int64).UTC()
 	}
 
-	row = s.db.QueryRowContext(ctx, `
+	row = s.db.QueryRowContext(ctx, compat.PhysicalTimelineSQL(`
 		SELECT COALESCE(MIN(seq), 0), COALESCE(MAX(seq), 0)
-		FROM radar_timeline_events
-	`)
+		FROM kubeatlas_timeline_events
+	`))
 	row.Scan(&stats.OldestSeq, &stats.NewestSeq)
 
 	stats.StorageBytes = s.storageBytes(ctx)
@@ -911,18 +914,18 @@ func (s *PostgresStore) Cleanup(ctx context.Context, maxAge time.Duration) (int6
 	const batchSize = 1000
 
 	for {
-		result, err := s.db.ExecContext(ctx, `
+		result, err := s.db.ExecContext(ctx, compat.PhysicalTimelineSQL(`
 			WITH doomed AS (
 				SELECT id
-				FROM radar_timeline_events
+				FROM kubeatlas_timeline_events
 				WHERE timestamp < $1
 				ORDER BY timestamp ASC
 				LIMIT $2
 			)
-			DELETE FROM radar_timeline_events
+			DELETE FROM kubeatlas_timeline_events
 			USING doomed
-			WHERE radar_timeline_events.id = doomed.id
-		`, cutoff, batchSize)
+			WHERE kubeatlas_timeline_events.id = doomed.id
+		`), cutoff, batchSize)
 		if err != nil {
 			return totalDeleted, err
 		}
@@ -1017,10 +1020,10 @@ func (s *PostgresStore) runCleanup(retention time.Duration) {
 // indexes. Errors are ignored so a size-query failure does not break Stats.
 func (s *PostgresStore) storageBytes(ctx context.Context) int64 {
 	var total sql.NullInt64
-	row := s.db.QueryRowContext(ctx, `
-		SELECT pg_total_relation_size('radar_timeline_events') +
-		       pg_total_relation_size('radar_timeline_seen_resources')
-	`)
+	row := s.db.QueryRowContext(ctx, compat.PhysicalTimelineSQL(`
+		SELECT pg_total_relation_size('kubeatlas_timeline_events') +
+		       pg_total_relation_size('kubeatlas_timeline_seen_resources')
+	`))
 	if err := row.Scan(&total); err != nil {
 		log.Printf("[timeline] failed to query PostgreSQL relation size: %v", err)
 		return 0
@@ -1042,7 +1045,7 @@ func (s *PostgresStore) ownedUIDs(ctx context.Context, clusterContext string, ow
 	}
 	ctx, cancel := withPostgresOperationTimeout(ctx)
 	defer cancel()
-	query := `SELECT DISTINCT uid FROM radar_timeline_events
+	query := `SELECT DISTINCT uid FROM kubeatlas_timeline_events
 		WHERE COALESCE(uid, '') <> '' AND owner_uid = ANY($1::text[])`
 	args := []any{ownerUIDs}
 	if clusterContext != "" {
@@ -1051,7 +1054,7 @@ func (s *PostgresStore) ownedUIDs(ctx context.Context, clusterContext string, ow
 	}
 	query += fmt.Sprintf(" LIMIT $%d", len(args)+1)
 	args = append(args, limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, compat.PhysicalTimelineSQL(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("query owned uids: %w", err)
 	}
@@ -1081,7 +1084,7 @@ func (s *PostgresStore) identities(ctx context.Context, q IdentityQuery, limit i
 	}
 	ctx, cancel := withPostgresOperationTimeout(ctx)
 	defer cancel()
-	query := "SELECT DISTINCT COALESCE(api_version, ''), kind, name, COALESCE(uid, ''), COALESCE(owner_uid, '') FROM radar_timeline_events WHERE true"
+	query := "SELECT DISTINCT COALESCE(api_version, ''), kind, name, COALESCE(uid, ''), COALESCE(owner_uid, '') FROM kubeatlas_timeline_events WHERE true"
 	var args []any
 	arg := func(v any) string {
 		args = append(args, v)
@@ -1107,7 +1110,7 @@ func (s *PostgresStore) identities(ctx context.Context, q IdentityQuery, limit i
 		query += ownerUnknownSQL
 	}
 	query += " LIMIT " + arg(limit)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.db.QueryContext(ctx, compat.PhysicalTimelineSQL(query), args...)
 	if err != nil {
 		return nil, fmt.Errorf("query identities: %w", err)
 	}
@@ -1131,7 +1134,7 @@ func (s *PostgresStore) buildQuery(opts QueryOptions, excludeManaged bool) (stri
 	query.WriteString(`SELECT id, timestamp, source, kind, api_version, namespace, name, uid, event_type,
 		reason, message, diff_json, health_state, owner_kind, owner_name, owner_api_version, owner_uid, owner_evidence,
 		labels_json, count, correlation_id, cluster_context, resource_created_at, seq
-		FROM radar_timeline_events WHERE 1=1`)
+		FROM kubeatlas_timeline_events WHERE 1=1`)
 
 	var args []any
 	argN := 1
@@ -1406,7 +1409,7 @@ func (s *PostgresStore) getOrCompileFilter(presetName string) (*CompiledFilter, 
 func (s *PostgresStore) hydrateSeenResources(ctx context.Context) error {
 	rows, err := s.db.QueryContext(
 		ctx,
-		"SELECT resource_key FROM radar_timeline_seen_resources",
+		compat.PhysicalTimelineSQL("SELECT resource_key FROM kubeatlas_timeline_seen_resources"),
 	)
 	if err != nil {
 		return err
@@ -1458,7 +1461,7 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 
 	if _, err := conn.ExecContext(
 		ctx,
-		"SELECT pg_advisory_lock($1, $2)",
+		compat.PhysicalTimelineSQL("SELECT pg_advisory_lock($1, $2)"),
 		postgresMigrationLockNamespace,
 		postgresMigrationLockID,
 	); err != nil {
@@ -1474,7 +1477,7 @@ func runPostgresMigrations(ctx context.Context, db *sql.DB) error {
 	var unlocked bool
 	unlockErr := conn.QueryRowContext(
 		unlockCtx,
-		"SELECT pg_advisory_unlock($1, $2)",
+		compat.PhysicalTimelineSQL("SELECT pg_advisory_unlock($1, $2)"),
 		postgresMigrationLockNamespace,
 		postgresMigrationLockID,
 	).Scan(&unlocked)
@@ -1500,12 +1503,12 @@ func applyPostgresMigrations(
 	conn *sql.Conn,
 	migrations []postgresMigration,
 ) error {
-	if _, err := conn.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS radar_timeline_schema_migrations (
+	if _, err := conn.ExecContext(ctx, compat.PhysicalTimelineSQL(`
+		CREATE TABLE IF NOT EXISTS kubeatlas_timeline_schema_migrations (
 			version    bigint PRIMARY KEY,
 			applied_at timestamptz NOT NULL DEFAULT now()
 		)
-	`); err != nil {
+	`)); err != nil {
 		return fmt.Errorf("create migration table: %w", err)
 	}
 
@@ -1520,18 +1523,18 @@ func applyPostgresMigrations(
 		}
 
 		// New migrations must remain additive while rolling upgrades can run old
-		// and new Radar pods against the same database.
+		// and new KubeAtlas pods against the same database.
 		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return fmt.Errorf("begin migration %s: %w", migration.name, err)
 		}
-		if _, err := tx.ExecContext(ctx, migration.sql); err != nil {
+		if _, err := tx.ExecContext(ctx, compat.PhysicalTimelineSQL(migration.sql)); err != nil {
 			_ = tx.Rollback()
 			return fmt.Errorf("apply migration %s: %w", migration.name, err)
 		}
 		if _, err := tx.ExecContext(
 			ctx,
-			"INSERT INTO radar_timeline_schema_migrations (version) VALUES ($1)",
+			compat.PhysicalTimelineSQL("INSERT INTO kubeatlas_timeline_schema_migrations (version) VALUES ($1)"),
 			migration.version,
 		); err != nil {
 			_ = tx.Rollback()
@@ -1550,7 +1553,7 @@ func appliedPostgresMigrationVersions(
 ) (map[int64]bool, error) {
 	rows, err := conn.QueryContext(
 		ctx,
-		"SELECT version FROM radar_timeline_schema_migrations",
+		compat.PhysicalTimelineSQL("SELECT version FROM kubeatlas_timeline_schema_migrations"),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("query applied migrations: %w", err)
@@ -1621,7 +1624,7 @@ func loadPostgresMigrations() ([]postgresMigration, error) {
 	return migrations, nil
 }
 
-// DatabaseUnreachable reports whether err means Radar lost or could not open
+// DatabaseUnreachable reports whether err means KubeAtlas lost or could not open
 // its connection to PostgreSQL, as opposed to a query the server received and
 // rejected. A database that goes away mid-run first fails pooled connections
 // (EOF, or a shutdown code from the server) and then fails new ones to connect;

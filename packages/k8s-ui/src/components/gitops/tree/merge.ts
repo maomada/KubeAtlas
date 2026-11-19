@@ -1,7 +1,7 @@
 import type { GitOpsResourceTree, GitOpsTreeEdge, GitOpsTreeNode, GitOpsTreeRef } from '../../../types/gitops-tree'
 
 // =============================================================================
-// mergeGitOpsTrees — used by Radar Hub's fleet GitOps detail page to compose
+// mergeGitOpsTrees — used by KubeAtlas Hub's fleet GitOps detail page to compose
 // a complete cross-cluster tree from two independent fetches:
 //
 //   1. The controller cluster's /api/gitops/tree/{kind}/{ns}/{name} response
@@ -19,10 +19,10 @@ import type { GitOpsResourceTree, GitOpsTreeEdge, GitOpsTreeNode, GitOpsTreeRef 
 //      for "is this pod actually running") AND the walked descendant
 //      subtree (Deployment → ReplicaSet → Pod) that the controller can't see.
 //
-// Single-cluster Radar never needs this — for in-cluster apps the controller
-// tree already has everything because Radar runs in the same cluster as
-// the workloads. The merge is what makes Radar Hub's cross-cluster view
-// strictly more complete than self-hosted Radar, not just a list of apps.
+// Single-cluster KubeAtlas never needs this — for in-cluster apps the controller
+// tree already has everything because KubeAtlas runs in the same cluster as
+// the workloads. The merge is what makes KubeAtlas Hub's cross-cluster view
+// strictly more complete than self-hosted KubeAtlas, not just a list of apps.
 //
 // Strategy: controller is the spine (preserves Argo's declared view +
 // per-resource sync state); destination provides (a) live health/info
@@ -33,7 +33,7 @@ import type { GitOpsResourceTree, GitOpsTreeEdge, GitOpsTreeNode, GitOpsTreeRef 
 //
 // Each output node carries an explicit `data._source` field set to
 // `'controller'` or `'destination'`, which downstream consumers
-// (Radar Hub's fleet detail page) use to route resource-viewer clicks
+// (KubeAtlas Hub's fleet detail page) use to route resource-viewer clicks
 // to the correct cluster. The `dest:` ID prefix is preserved for graph
 // rendering (duplicate IDs would break edge resolution) but NOT used as
 // the routing signal — that's the explicit `data._source` field. This

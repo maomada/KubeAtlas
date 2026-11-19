@@ -167,7 +167,7 @@ func TestComputeCoverage_ExternalNameRouteFromAliasHop(t *testing.T) {
 	}
 }
 
-// A laptop dials the external host from Radar's own network - that is NOT proof of
+// A laptop dials the external host from KubeAtlas's own network - that is NOT proof of
 // real in-cluster reachability, so the route must be INDIRECT (never a green "real").
 func TestComputeCoverage_ExternalNameLocalVantageIsIndirect(t *testing.T) {
 	tr := &Trace{
@@ -864,7 +864,7 @@ func TestComputeCoverage_ScaledToZeroNonHTTPCandidateIsBenign(t *testing.T) {
 		probe.LayerHTTP,
 		"port 6379",
 		probe.VantageLocal,
-		"Port named \"redis\" looks non-HTTP. Run Radar from in-cluster to verify TCP reachability.",
+		"Port named \"redis\" looks non-HTTP. Run KubeAtlas from in-cluster to verify TCP reachability.",
 		"kubectl port-forward svc/sleeper 6379:6379",
 	)
 	skip.Port = 6379
@@ -921,7 +921,7 @@ func TestMarkBenignServiceSkips_LeavesOtherPortGap(t *testing.T) {
 			{Target: "mixed:8080", Outcome: OutcomeNotTested},
 		},
 		NotTested: []RouteSkip{
-			{Route: "port 6379", Reason: "run Radar in-cluster", ReasonClass: SkipClassVantage, Command: "kubectl port-forward svc/mixed 6379:6379"},
+			{Route: "port 6379", Reason: "run KubeAtlas in-cluster", ReasonClass: SkipClassVantage, Command: "kubectl port-forward svc/mixed 6379:6379"},
 			{Route: "port 8080", Reason: "budget exhausted", ReasonClass: SkipClassCoverage, Command: "curl localhost:8080"},
 		},
 	}
@@ -1441,7 +1441,7 @@ func TestComputeCoverage_NonHTTPServiceBuildsInClusterCandidate(t *testing.T) {
 		probe.LayerHTTP,
 		"port 6379",
 		probe.VantageLocal,
-		"Port 6379 is a well-known non-HTTP port. Run Radar from in-cluster to verify TCP reachability.",
+		"Port 6379 is a well-known non-HTTP port. Run KubeAtlas from in-cluster to verify TCP reachability.",
 		"kubectl port-forward svc/valkey 6379:6379",
 	)
 	serviceSkip.Port = 6379
@@ -1504,7 +1504,7 @@ func TestComputeCoverage_SameNumberMultiProtocolServiceGetsTCPCandidate(t *testi
 		probe.LayerHTTP,
 		"port 53",
 		probe.VantageLocal,
-		"Port 53 is not HTTP. Run Radar from in-cluster to verify TCP reachability.",
+		"Port 53 is not HTTP. Run KubeAtlas from in-cluster to verify TCP reachability.",
 		"",
 	)
 	tcpSkip.Port = 53
@@ -1560,7 +1560,7 @@ func TestRecountCoverage_SingleHostNotTestedNoDoubleCount(t *testing.T) {
 		// The route's own skipped transport probe, keyed by host in NotTested.
 		NotTested: []RouteSkip{{
 			Route:       "shop.example.com:443",
-			Reason:      "the entry path couldn't be reached from where Radar ran",
+			Reason:      "the entry path couldn't be reached from where KubeAtlas ran",
 			ReasonClass: SkipClassVantage,
 		}},
 	}
@@ -1606,7 +1606,7 @@ func TestRecountCoverage_MultiHostNotTestedDedup(t *testing.T) {
 		}},
 		NotTested: []RouteSkip{{
 			Route:       "shop.example.com:443",
-			Reason:      "the entry path couldn't be reached from where Radar ran",
+			Reason:      "the entry path couldn't be reached from where KubeAtlas ran",
 			ReasonClass: SkipClassVantage,
 		}},
 	}
@@ -1638,7 +1638,7 @@ func TestRecountCoverage_HostSkipDoesNotSwallowSiblingRoutes(t *testing.T) {
 		},
 		NotTested: []RouteSkip{{
 			Route:       "shop.example.com:443",
-			Reason:      "the entry path couldn't be reached from where Radar ran",
+			Reason:      "the entry path couldn't be reached from where KubeAtlas ran",
 			ReasonClass: SkipClassVantage,
 		}},
 	}
@@ -1798,7 +1798,7 @@ func TestBuildRoutes_MultiHostDefaultBackendScopedToOwnHost(t *testing.T) {
 // their row count.
 func TestRecountCoverage_SkipAbsorptionTruthTable(t *testing.T) {
 	row := func(target string) RouteSkip {
-		return RouteSkip{Route: target, Reason: "couldn't be reached from where Radar ran", ReasonClass: SkipClassVantage}
+		return RouteSkip{Route: target, Reason: "couldn't be reached from where KubeAtlas ran", ReasonClass: SkipClassVantage}
 	}
 	route := func(path string) RouteResult {
 		return RouteResult{Route: path, Target: "shop:80", Outcome: OutcomeNotTested,
@@ -2116,7 +2116,7 @@ func TestDuplicatePortNumber_IsNotAnIdentity(t *testing.T) {
 }
 
 // The PR contract both reviewers converged on: a transport-only TCP reach on
-// an HTTPS port must not swallow the HTTPS application-layer gap. Radar
+// an HTTPS port must not swallow the HTTPS application-layer gap. KubeAtlas
 // in-cluster dials TCP directly and the HTTPS proxy skip must SURVIVE as a
 // counted gap - coverage reads "1 got through · 1 couldn't be tried", never a
 // clean pass with TLS/HTTP unrun.
@@ -2297,7 +2297,7 @@ func TestComputeEntryProblems_IgnoresSiblingMissingRef(t *testing.T) {
 	}
 }
 
-// A route Radar dialled and watched fail is the strongest fault it can report.
+// A route KubeAtlas dialled and watched fail is the strongest fault it can report.
 // The UI renders anything short of critical as a warning, so an unset severity
 // on this path would make confirmed unreachability look weaker than a predicted
 // one.

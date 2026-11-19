@@ -90,7 +90,7 @@ const FAILOVER_SOURCE = "Publisher's spec.replicationSlots.highAvailability (ena
  */
 export function cnpgSlotFailover(publisher: CNPGPublisher, subscription: any): Fact {
   if (publisher.kind !== 'cluster') {
-    return { text: 'Unknown: the publisher is not a CloudNativePG Cluster Radar can see', tone: 'unknown', source: FAILOVER_SOURCE }
+    return { text: 'Unknown: the publisher is not a CloudNativePG Cluster KubeAtlas can see', tone: 'unknown', source: FAILOVER_SOURCE }
   }
   const c = publisher.cluster
   if ((c?.spec?.instances ?? 1) <= 1) {
@@ -119,7 +119,7 @@ export function cnpgSlotFailover(publisher: CNPGPublisher, subscription: any): F
   }
   if (major < 17) {
     return {
-      text: 'Synchronized only if pg_failover_slots is loaded on the publisher (PostgreSQL < 17); Radar cannot tell',
+      text: 'Synchronized only if pg_failover_slots is loaded on the publisher (PostgreSQL < 17); KubeAtlas cannot tell',
       tone: 'unknown',
       source: FAILOVER_SOURCE,
     }

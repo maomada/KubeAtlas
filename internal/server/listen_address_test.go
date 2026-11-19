@@ -34,7 +34,7 @@ func TestNormalizeListenAddress(t *testing.T) {
 		{name: "expanded ipv6", input: "0:0:0:0:0:0:0:1", want: "::1"},
 		{name: "mapped loopback", input: "::ffff:127.0.0.1", want: DefaultListenAddress},
 		{name: "mapped wildcard", input: "::ffff:0.0.0.0", want: AllInterfacesAddress},
-		{name: "arbitrary hostname", input: "radar.internal", wantErr: true},
+		{name: "arbitrary hostname", input: "kubeatlas.internal", wantErr: true},
 		{name: "uppercase localhost", input: "LOCALHOST", wantErr: true},
 		{name: "bracketed ipv6", input: "[::1]", wantErr: true},
 		{name: "host and port", input: "127.0.0.1:9280", wantErr: true},
@@ -85,7 +85,7 @@ func TestNormalizePortForwardAddress(t *testing.T) {
 			t.Errorf("normalizePortForwardAddress(%q) = %q, %v; want %q", input, got, err, want)
 		}
 	}
-	for _, input := range []string{"192.0.2.10", "127.0.0.2", "::1", "::", "radar.internal"} {
+	for _, input := range []string{"192.0.2.10", "127.0.0.2", "::1", "::", "kubeatlas.internal"} {
 		if _, err := normalizePortForwardAddress(input); err == nil {
 			t.Errorf("port-forward accepted unsupported address %q", input)
 		}
@@ -164,11 +164,11 @@ func TestServerListenAddress(t *testing.T) {
 }
 
 func TestServerRejectsInvalidListenAddress(t *testing.T) {
-	srv := New(Config{Port: 0, ListenAddress: "radar.internal"})
+	srv := New(Config{Port: 0, ListenAddress: "kubeatlas.internal"})
 
 	if err := srv.StartWithReady(nil); err == nil {
 		t.Fatal("StartWithReady() error = nil, want invalid listen address error")
-	} else if !strings.Contains(err.Error(), `invalid listen address "radar.internal"`) {
+	} else if !strings.Contains(err.Error(), `invalid listen address "kubeatlas.internal"`) {
 		t.Fatalf("StartWithReady() error = %q, want rejected address", err)
 	}
 	if srv.listener != nil {
@@ -242,35 +242,35 @@ func TestProtectUnauthenticatedHost(t *testing.T) {
 		wantBody      string
 	}{
 		{name: "loopback host", listenAddress: DefaultListenAddress, host: "localhost:9280", wantStatus: http.StatusNoContent},
-		{name: "localhost subdomain", listenAddress: DefaultListenAddress, host: "radar.localhost:9280", wantStatus: http.StatusNoContent},
+		{name: "localhost subdomain", listenAddress: DefaultListenAddress, host: "kubeatlas.localhost:9280", wantStatus: http.StatusNoContent},
 		{name: "localhost trailing dot", listenAddress: DefaultListenAddress, host: "localhost.:9280", wantStatus: http.StatusNoContent},
 		{name: "IPv6 loopback host", listenAddress: DefaultListenAddress, host: "[::1]:9280", wantStatus: http.StatusNoContent},
 		{name: "rebinding host", listenAddress: DefaultListenAddress, host: "attacker.example:9280", wantStatus: http.StatusForbidden},
 		{name: "localhost lookalike", listenAddress: DefaultListenAddress, host: "localhost.evil.example:9280", wantStatus: http.StatusForbidden},
 		{name: "shared listener rebinding", listenAddress: AllInterfacesAddress, host: "attacker.example:9280", wantStatus: http.StatusForbidden, wantBody: `add \"attacker.example\" to --allowed-hosts`},
-		{name: "shared listener unlisted name", listenAddress: AllInterfacesAddress, host: "radar.example.com", wantStatus: http.StatusForbidden},
-		{name: "shared listener listed name", listenAddress: AllInterfacesAddress, host: "Radar.Example.com.:443", allowedHosts: []string{"radar.example.com"}, wantStatus: http.StatusNoContent},
+		{name: "shared listener unlisted name", listenAddress: AllInterfacesAddress, host: "kubeatlas.example.com", wantStatus: http.StatusForbidden},
+		{name: "shared listener listed name", listenAddress: AllInterfacesAddress, host: "KubeAtlas.Example.com.:443", allowedHosts: []string{"kubeatlas.example.com"}, wantStatus: http.StatusNoContent},
 		{name: "shared listener any host", listenAddress: AllInterfacesAddress, host: "attacker.example", allowAnyHost: true, wantStatus: http.StatusNoContent},
 		{name: "shared listener localhost", listenAddress: AllInterfacesAddress, host: "localhost:9280", wantStatus: http.StatusNoContent},
 		{name: "shared listener IPv4", listenAddress: AllInterfacesAddress, host: "192.168.1.6:9280", wantStatus: http.StatusNoContent},
 		{name: "shared listener IPv6", listenAddress: AllInterfacesAddress, host: "[2001:db8::10]:9280", wantStatus: http.StatusNoContent},
-		{name: "shared listener single-label name", listenAddress: AllInterfacesAddress, host: "radar:9280", wantStatus: http.StatusNoContent},
-		{name: "shared listener service name", listenAddress: AllInterfacesAddress, host: "radar.radar.svc:9280", wantStatus: http.StatusNoContent},
-		{name: "shared listener service FQDN", listenAddress: AllInterfacesAddress, host: "radar.radar.svc.cluster.local.:9280", wantStatus: http.StatusNoContent},
-		{name: "shared listener svc lookalike", listenAddress: AllInterfacesAddress, host: "radar.svc.attacker.example", wantStatus: http.StatusForbidden},
+		{name: "shared listener single-label name", listenAddress: AllInterfacesAddress, host: "kubeatlas:9280", wantStatus: http.StatusNoContent},
+		{name: "shared listener service name", listenAddress: AllInterfacesAddress, host: "kubeatlas.kubeatlas.svc:9280", wantStatus: http.StatusNoContent},
+		{name: "shared listener service FQDN", listenAddress: AllInterfacesAddress, host: "kubeatlas.kubeatlas.svc.cluster.local.:9280", wantStatus: http.StatusNoContent},
+		{name: "shared listener svc lookalike", listenAddress: AllInterfacesAddress, host: "kubeatlas.svc.attacker.example", wantStatus: http.StatusForbidden},
 		{name: "shared listener cluster.local lookalike", listenAddress: AllInterfacesAddress, host: "svc.cluster.local.attacker.example", wantStatus: http.StatusForbidden},
 		{name: "shared listener empty host", listenAddress: AllInterfacesAddress, host: "", wantStatus: http.StatusForbidden},
 		{name: "authenticated shared listener", listenAddress: AllInterfacesAddress, host: "attacker.example", authConfig: auth.Config{Mode: "proxy"}, wantStatus: http.StatusNoContent},
 		{name: "shared listener tunnel", listenAddress: AllInterfacesAddress, host: "hub.example.com", tunnel: true, wantStatus: http.StatusNoContent},
 		{name: "explicit ipv4 listener rebinding", listenAddress: "192.0.2.10", host: "attacker.example:9280", wantStatus: http.StatusForbidden},
-		{name: "shared listener wildcard subdomain", listenAddress: AllInterfacesAddress, host: "radar.example.com", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusNoContent},
-		{name: "shared listener wildcard nested", listenAddress: AllInterfacesAddress, host: "a.radar.example.com", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusNoContent},
+		{name: "shared listener wildcard subdomain", listenAddress: AllInterfacesAddress, host: "kubeatlas.example.com", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusNoContent},
+		{name: "shared listener wildcard nested", listenAddress: AllInterfacesAddress, host: "a.kubeatlas.example.com", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusNoContent},
 		{name: "shared listener wildcard excludes apex", listenAddress: AllInterfacesAddress, host: "example.com", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusForbidden},
-		{name: "shared listener wildcard lookalike", listenAddress: AllInterfacesAddress, host: "radar.example.com.attacker.example", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusForbidden},
-		{name: "shared listener wildcard suffix lookalike", listenAddress: AllInterfacesAddress, host: "radarexample.com", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusForbidden},
+		{name: "shared listener wildcard lookalike", listenAddress: AllInterfacesAddress, host: "kubeatlas.example.com.attacker.example", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusForbidden},
+		{name: "shared listener wildcard suffix lookalike", listenAddress: AllInterfacesAddress, host: "kubeatlasexample.com", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusForbidden},
 		{name: "shared listener oversized host", listenAddress: AllInterfacesAddress, host: strings.Repeat("a.", 200) + "example.com", allowedHosts: []string{"*.example.com"}, wantStatus: http.StatusForbidden},
-		{name: "loopback ignores allowed hosts", listenAddress: DefaultListenAddress, host: "radar.example.com", allowedHosts: []string{"radar.example.com"}, wantStatus: http.StatusForbidden},
-		{name: "authenticated deployment", listenAddress: DefaultListenAddress, host: "radar.example.com", authConfig: auth.Config{Mode: "oidc"}, wantStatus: http.StatusNoContent},
+		{name: "loopback ignores allowed hosts", listenAddress: DefaultListenAddress, host: "kubeatlas.example.com", allowedHosts: []string{"kubeatlas.example.com"}, wantStatus: http.StatusForbidden},
+		{name: "authenticated deployment", listenAddress: DefaultListenAddress, host: "kubeatlas.example.com", authConfig: auth.Config{Mode: "oidc"}, wantStatus: http.StatusNoContent},
 		{name: "authenticated tunnel", listenAddress: DefaultListenAddress, host: "hub.example.com", tunnel: true, wantStatus: http.StatusNoContent},
 		{name: "alternate loopback host", listenAddress: "127.0.0.2", host: "127.0.0.2:9280", wantStatus: http.StatusNoContent},
 		{name: "alternate loopback rebinding", listenAddress: "127.0.0.2", host: "attacker.example:9280", wantStatus: http.StatusForbidden},
@@ -333,8 +333,8 @@ func TestSharedListenerHostProtectionIsMounted(t *testing.T) {
 	mcp := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusNoContent) })
 	s := New(Config{
 		ListenAddress:  AllInterfacesAddress,
-		AllowedHosts:   []string{"radar.internal"},
-		TrustedOrigins: []string{"https://radar.example.com:8443", "http://bücher.example"},
+		AllowedHosts:   []string{"kubeatlas.internal"},
+		TrustedOrigins: []string{"https://kubeatlas.example.com:8443", "http://bücher.example"},
 		MCPHandler:     mcp,
 	})
 
@@ -349,8 +349,8 @@ func TestSharedListenerHostProtectionIsMounted(t *testing.T) {
 		{name: "api write rebinding", method: http.MethodPost, path: "/api/cluster/namespace", host: "attacker.example:9280", wantStatus: http.StatusForbidden},
 		{name: "health rebinding", method: http.MethodGet, path: "/api/health", host: "attacker.example:9280", wantStatus: http.StatusForbidden},
 		{name: "mcp by IP", method: http.MethodPost, path: "/mcp", host: "192.168.1.6:9280", wantStatus: http.StatusNoContent},
-		{name: "mcp allowed host", method: http.MethodPost, path: "/mcp", host: "radar.internal:9280", wantStatus: http.StatusNoContent},
-		{name: "mcp trusted origin host", method: http.MethodPost, path: "/mcp", host: "radar.example.com", wantStatus: http.StatusNoContent},
+		{name: "mcp allowed host", method: http.MethodPost, path: "/mcp", host: "kubeatlas.internal:9280", wantStatus: http.StatusNoContent},
+		{name: "mcp trusted origin host", method: http.MethodPost, path: "/mcp", host: "kubeatlas.example.com", wantStatus: http.StatusNoContent},
 		{name: "mcp trusted origin IDN host", method: http.MethodPost, path: "/mcp", host: "xn--bcher-kva.example", wantStatus: http.StatusNoContent},
 		{name: "health by pod IP", method: http.MethodGet, path: "/api/health", host: "10.0.0.7:9280", wantStatus: http.StatusOK},
 	}
@@ -371,14 +371,14 @@ func TestSharedListenerHostProtectionIsMounted(t *testing.T) {
 }
 
 func TestParseAllowedHosts(t *testing.T) {
-	hosts, err := ParseAllowedHosts(" Radar.Example.com. , *, radar.internal,*.Corp.Example,bücher.example,*.Bücher.example,,")
+	hosts, err := ParseAllowedHosts(" KubeAtlas.Example.com. , *, kubeatlas.internal,*.Corp.Example,bücher.example,*.Bücher.example,,")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(hosts, ",") != "radar.example.com,*,radar.internal,*.corp.example,xn--bcher-kva.example,*.xn--bcher-kva.example" {
+	if strings.Join(hosts, ",") != "kubeatlas.example.com,*,kubeatlas.internal,*.corp.example,xn--bcher-kva.example,*.xn--bcher-kva.example" {
 		t.Fatalf("hosts = %q", hosts)
 	}
-	for _, bad := range []string{"https://radar.example.com", "radar.example.com:9280", "*.com", "a.*.example.com", "**.example.com", "user@radar", "[::1]"} {
+	for _, bad := range []string{"https://kubeatlas.example.com", "kubeatlas.example.com:9280", "*.com", "a.*.example.com", "**.example.com", "user@kubeatlas", "[::1]"} {
 		if hosts, err := ParseAllowedHosts(bad + ",ok.example"); err == nil || strings.Join(hosts, ",") != "ok.example" {
 			t.Errorf("%q: hosts=%q err=%v, want rejected entry and ok.example kept", bad, hosts, err)
 		}

@@ -5,7 +5,7 @@ import { FilterLocationProvider, type FilterLocation } from '@maomada/k8s-ui';
 // Adapts OSS KubeAtlas's react-router search params to the app-agnostic
 // FilterLocation seam that @maomada/k8s-ui's useFilterState reads. Mounted
 // once inside the router; every list view's shared filter state flows through
-// it, keeping the URL the single source of truth. (Radar Hub provides its own
+// it, keeping the URL the single source of truth. (KubeAtlas Hub provides its own
 // bridge over its router — k8s-ui itself never depends on react-router.)
 export function FilterLocationBridge({ children }: { children: ReactNode }) {
   const [searchParams, setSearchParams] = useSearchParams();

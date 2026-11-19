@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { useSyncExternalStore } from 'react'
 import { getApiBase } from '../../../api/config'
 import { supersedeFor, type CNPGTrackedOperation } from './model'
@@ -5,10 +6,10 @@ import { supersedeFor, type CNPGTrackedOperation } from './model'
 // Tracked operations for this browser session: they survive tab changes and
 // reloads of the page, and end with the session. Storage can be unavailable
 // (private windows, blocked site data); the tracker then lives in memory. One
-// key holds the records of every cluster a Radar Hub tab shows, so each record
+// key holds the records of every cluster a KubeAtlas Hub tab shows, so each record
 // carries the API base it was issued against.
 
-const STORAGE_KEY = 'radar.cnpg.operations.v1'
+const STORAGE_KEY = 'kubeatlas.cnpg.operations.v1'
 const MAX_OPS = 50
 // Finished operations stay visible this long, then drop out on their own.
 const KEEP_FINISHED_MS = 30 * 60_000
@@ -18,7 +19,7 @@ const listeners = new Set<() => void>()
 
 function load(): CNPGTrackedOperation[] {
   try {
-    const raw = sessionStorage.getItem(STORAGE_KEY)
+    const raw = readProductStorage(sessionStorage, STORAGE_KEY)
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch {

@@ -1,4 +1,5 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
+import { EVIDENCE_MARKER_SOURCE, EVIDENCE_ANCHOR_SOURCE } from '@maomada/k8s-ui/utils/legacy-brand';
 import { clsx } from "clsx";
 import { TRANSITION_CHEVRON } from "@maomada/k8s-ui/utils/animation";
 import { AlertTriangle, ChevronDown, FileSearch } from "lucide-react";
@@ -142,7 +143,7 @@ export function resolveStoryPlacements(
     const autoPlaced: number[] = [];
     const autoCompact = new Set<number>();
     for (const match of markdown.matchAll(
-      /\[\[\[radar:evidence([^\]]*)\]\]\]\(#radar-evidence-(-?\d+)\)/g,
+      new RegExp(`\\[\\[\\[${EVIDENCE_MARKER_SOURCE}([^\\]]*)\\]\\]\\]\\(#${EVIDENCE_ANCHOR_SOURCE}(-?\\d+)\\)`, 'g'),
     )) {
       const index = Number(match[2]);
       if (match[1].endsWith("|compact")) autoCompact.add(index);
@@ -191,7 +192,7 @@ export function resolveStoryPlacements(
 // line break, is the agent's.
 function removeInlineMarker(markdown: string, index: number): string {
   const match = new RegExp(
-    `\\[\\[\\[radar:evidence[^\\]]*\\]\\]\\]\\(#radar-evidence-${index}\\)`,
+    `\\[\\[\\[${EVIDENCE_MARKER_SOURCE}[^\\]]*\\]\\]\\]\\(#${EVIDENCE_ANCHOR_SOURCE}${index}\\)`,
   ).exec(markdown);
   if (!match) return markdown;
   let before = markdown.slice(0, match.index);

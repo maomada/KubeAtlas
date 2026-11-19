@@ -37,7 +37,7 @@ func overlayTree(mode gitopstree.HealthMode, remote bool) *gitopstree.ResourceTr
 		Nodes: []gitopstree.Node{
 			{Role: gitopstree.RoleRoot, Ref: gitopstree.ResourceRef{Group: "argoproj.io", Kind: "Application", Namespace: "argocd", Name: "app"}, Health: "Degraded"},
 			{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "external-secrets.io", Kind: "ClusterSecretStore", Name: "platform"}},
-			{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "prod", Name: "web"}, Health: "Progressing", HealthSource: gitopstree.HealthSourceRadar, TopologyStatus: "degraded"},
+			{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "prod", Name: "web"}, Health: "Progressing", HealthSource: gitopstree.HealthSourceKubeAtlas, TopologyStatus: "degraded"},
 			{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "prod", Name: "api"}, Health: "Healthy", HealthSource: gitopstree.HealthSourceController, TopologyStatus: "healthy"},
 			{Role: gitopstree.RoleDeclared, Ref: gitopstree.ResourceRef{Kind: "ConfigMap", Namespace: "prod", Name: "vars"}},
 			{Role: gitopstree.RoleGenerated, Ref: gitopstree.ResourceRef{Kind: "Pod", Namespace: "prod", Name: "web-1"}},
@@ -60,17 +60,17 @@ func fakeProblems(calls *[]string) func(group, kind, namespace, name string) []g
 	}
 }
 
-func TestOverlayRadarHealth_FillsOnlyEmptyDeclaredNodes(t *testing.T) {
+func TestOverlayKubeAtlasHealth_FillsOnlyEmptyDeclaredNodes(t *testing.T) {
 	tree := overlayTree(gitopstree.HealthModeAppTree, false)
 	var calls []string
-	overlayRadarHealth(tree, overlayApp("Degraded"), fakeProblems(&calls))
+	overlayKubeAtlasHealth(tree, overlayApp("Degraded"), fakeProblems(&calls))
 
 	css := tree.Nodes[1]
-	if css.Health != "Degraded" || css.HealthSource != gitopstree.HealthSourceRadar || css.HealthReason != "Ready: InvalidProviderConfig" || css.HealthMessage != "no route to host" || css.HealthSeverity != "warning" || css.TopologyStatus != "unhealthy" {
-		t.Errorf("ClusterSecretStore should carry the engine's finding as Radar-sourced Degraded, got %+v", css)
+	if css.Health != "Degraded" || css.HealthSource != gitopstree.HealthSourceKubeAtlas || css.HealthReason != "Ready: InvalidProviderConfig" || css.HealthMessage != "no route to host" || css.HealthSeverity != "warning" || css.TopologyStatus != "unhealthy" {
+		t.Errorf("ClusterSecretStore should carry the engine's finding as KubeAtlas-sourced Degraded, got %+v", css)
 	}
 	if dep := tree.Nodes[2]; dep.Health != "Degraded" || dep.HealthReason != "CrashLoopBackOff" || dep.HealthSeverity != "critical" || dep.TopologyStatus != "unhealthy" {
-		t.Errorf("Radar's topology read (Progressing) must give way to the engine's classified finding, got %+v", dep)
+		t.Errorf("KubeAtlas's topology read (Progressing) must give way to the engine's classified finding, got %+v", dep)
 	}
 	if api := tree.Nodes[3]; api.Health != "Healthy" || api.HealthSource != gitopstree.HealthSourceController || api.HealthReason != "" {
 		t.Errorf("controller-sourced health is final; the engine must not overwrite it, got %+v", api)
@@ -85,7 +85,7 @@ func TestOverlayRadarHealth_FillsOnlyEmptyDeclaredNodes(t *testing.T) {
 	}
 }
 
-func TestOverlayRadarHealth_SkipsInlineModeRemoteDestinationAndHealthyApp(t *testing.T) {
+func TestOverlayKubeAtlasHealth_SkipsInlineModeRemoteDestinationAndHealthyApp(t *testing.T) {
 	cases := []struct {
 		name string
 		tree *gitopstree.ResourceTree
@@ -98,7 +98,7 @@ func TestOverlayRadarHealth_SkipsInlineModeRemoteDestinationAndHealthyApp(t *tes
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			var calls []string
-			overlayRadarHealth(tc.tree, tc.app, fakeProblems(&calls))
+			overlayKubeAtlasHealth(tc.tree, tc.app, fakeProblems(&calls))
 			if len(calls) != 0 {
 				t.Errorf("engine must not be consulted, got calls %v", calls)
 			}
@@ -116,7 +116,7 @@ func apiHealthFetch(h *argoapi.ApplicationHealth, calls *int) func(context.Conte
 	}
 }
 
-func TestOverlayArgoAPIHealth_AppliesVerdictsAndClearsRadarFill(t *testing.T) {
+func TestOverlayArgoAPIHealth_AppliesVerdictsAndClearsKubeAtlasFill(t *testing.T) {
 	tree := overlayTree(gitopstree.HealthModeAppTree, false)
 	app := overlayApp("Degraded")
 	app.SetUID("app-uid")
@@ -136,7 +136,7 @@ func TestOverlayArgoAPIHealth_AppliesVerdictsAndClearsRadarFill(t *testing.T) {
 		t.Errorf("ClusterSecretStore = %+v, want Argo's Degraded verdict from the API", css)
 	}
 	if dep := tree.Nodes[2]; dep.Health != "" || dep.HealthSource != "" || dep.TopologyStatus != "unknown" {
-		t.Errorf("Radar's topology fill must be cleared when Argo has no verdict for the kind, got %+v", dep)
+		t.Errorf("KubeAtlas's topology fill must be cleared when Argo has no verdict for the kind, got %+v", dep)
 	}
 	if pod := tree.Nodes[5]; pod.Role != gitopstree.RoleGenerated {
 		t.Errorf("generated nodes untouched, got %+v", pod)
@@ -145,7 +145,7 @@ func TestOverlayArgoAPIHealth_AppliesVerdictsAndClearsRadarFill(t *testing.T) {
 
 // TestOverlayArgoAPIHealth_HealthlessAnswerIsStillArgos: a tree in which
 // Argo has no check for anything is an answer — every node is cleared,
-// including a value the CR still carried from before, and no Radar read
+// including a value the CR still carried from before, and no KubeAtlas read
 // runs on top.
 func TestOverlayArgoAPIHealth_HealthlessAnswerIsStillArgos(t *testing.T) {
 	tree := overlayTree(gitopstree.HealthModeAppTree, false)
@@ -260,7 +260,7 @@ func TestArgoAPIHealth_SavedSettingsFailureNamesSettings(t *testing.T) {
 		want string
 	}{
 		{"saved settings need review", &connections.SettingsError{Kind: config.IntegrationArgoCD, Err: errors.New("cluster connection changed")}, "this cluster's saved integration settings need review in Settings"},
-		{"launch configuration invalid", &connections.SettingsError{Kind: config.IntegrationArgoCD, Launch: true, Err: errors.New("Argo CD environment configuration requires a token")}, "its startup configuration for this launch is invalid; check Radar's logs"},
+		{"launch configuration invalid", &connections.SettingsError{Kind: config.IntegrationArgoCD, Launch: true, Err: errors.New("Argo CD environment configuration requires a token")}, "its startup configuration for this launch is invalid; check KubeAtlas's logs"},
 		{"not configured", errors.New("cluster disconnected"), ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -294,7 +294,7 @@ func hungArgoServer(t *testing.T) *httptest.Server {
 	return srv
 }
 
-// While Radar connects to argocd-server the page gets an answer at once:
+// While KubeAtlas connects to argocd-server the page gets an answer at once:
 // the notice says so, and the page is told to ask again.
 func TestArgoAPIHealth_SaysItIsStillConnecting(t *testing.T) {
 	s := setupArgoCDTest(t)
@@ -333,7 +333,7 @@ func TestOverlayArgoAPIHealth_RetryingShowsTheFailureAndAsksAgain(t *testing.T) 
 
 // End to end through the manager: a configured server that refuses
 // connections first answers "connecting", then, once that connect failed,
-// the failure with the page told to keep asking while Radar retries.
+// the failure with the page told to keep asking while KubeAtlas retries.
 func TestArgoAPIHealth_RetryingAfterAFailedConnect(t *testing.T) {
 	s := setupArgoCDTest(t)
 	argocd.SetConfig("http://127.0.0.1:1", "argo-secret", false, true)

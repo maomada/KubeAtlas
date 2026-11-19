@@ -55,7 +55,7 @@ func dialPostgres(cfg StoreConfig) (*PostgresStore, error) {
 // because a migration or permission error does not name it.
 func recordPostgresUnavailable(err error, target string, retryIn time.Duration) {
 	postgresUnavailableReason.Store(err.Error())
-	log.Printf("[timeline] can't connect to PostgreSQL (%s); the timeline is not recording changes and the rest of Radar is unaffected. Retrying in %s: %v", target, retryIn, err)
+	log.Printf("[timeline] can't connect to PostgreSQL (%s); the timeline is not recording changes and the rest of KubeAtlas is unaffected. Retrying in %s: %v", target, retryIn, err)
 }
 
 // recordWorkerUnavailable records a worker's failed attempt. A retired worker
@@ -184,7 +184,7 @@ func TimelineUnavailableReason() string {
 // that has to tell "nothing changed" from "history could not be checked".
 func StoreMissingError() error {
 	if reason := TimelineUnavailableReason(); reason != "" {
-		return fmt.Errorf("timeline history is unavailable because Radar can't connect to its PostgreSQL database: %s", reason)
+		return fmt.Errorf("timeline history is unavailable because KubeAtlas can't connect to its PostgreSQL database: %s", reason)
 	}
 	return errors.New("timeline store not initialized")
 }
@@ -327,7 +327,7 @@ func watchPostgresOutage(pg *PostgresStore, cause error, interval time.Duration,
 		return
 	}
 	since := time.Now()
-	if !logIfStillWatching(pg, quit, fmt.Sprintf("[timeline] lost the connection to PostgreSQL (%s); the timeline is not recording changes, and the rest of Radar is unaffected. Checking again in %s, and until it answers: %v",
+	if !logIfStillWatching(pg, quit, fmt.Sprintf("[timeline] lost the connection to PostgreSQL (%s); the timeline is not recording changes, and the rest of KubeAtlas is unaffected. Checking again in %s, and until it answers: %v",
 		pg.target, interval, cause)) {
 		return
 	}

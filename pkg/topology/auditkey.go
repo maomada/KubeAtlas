@@ -6,7 +6,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/resourceid"
 )
 
-// collisionKindToK8sKind maps the disambiguated NodeKind labels Radar uses for
+// collisionKindToK8sKind maps the disambiguated NodeKind labels KubeAtlas uses for
 // CRDs whose Kind collides with a core (or another) kind back to the real
 // Kubernetes Kind. The audit suite keys findings by the real Kind, so without
 // this remap a node like KindIstioGateway ("IstioGateway") would never match a
@@ -28,7 +28,7 @@ var collisionKindToK8sKind = map[NodeKind]string{
 }
 
 // KubernetesKindForNode returns the Kubernetes Kind represented by a topology
-// node, undoing Radar's collision and provider-specific pseudo-kinds.
+// node, undoing KubeAtlas's collision and provider-specific pseudo-kinds.
 func KubernetesKindForNode(node *Node) string {
 	if node == nil {
 		return ""

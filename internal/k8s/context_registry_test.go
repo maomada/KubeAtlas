@@ -874,7 +874,7 @@ func injectEmptyExec(t *testing.T, path, userName string) {
 }
 
 // SKY-834 bug 52: kubeconfig files rewritten or deleted on disk
-// after Radar startup kept showing their old contexts in the
+// after KubeAtlas startup kept showing their old contexts in the
 // cluster dropdown — the in-memory registry was built once in
 // setupIsolatedLoad and never refreshed in multi-file mode. The
 // user saw "junk clusters" that errored out on switch.
@@ -1058,7 +1058,7 @@ func TestRefreshContextRegistry_DropsContextRemovedFromFile(t *testing.T) {
 func TestRefreshContextRegistry_PicksUpNewContextInSameFile(t *testing.T) {
 	// `kubectl config set-context foo` adds a new entry to an
 	// existing file. The new context should appear after refresh
-	// without needing a Radar restart.
+	// without needing a KubeAtlas restart.
 	dir := t.TempDir()
 	f1 := writeKubeconfig(t, dir, "one.yaml", "ctx-original", []kubeEntry{
 		{ctxName: "ctx-original", userName: "u", clusterName: "c1"},

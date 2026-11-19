@@ -662,7 +662,7 @@ func TestArgoCDStatus_ReportsAFailedReadWhileConnected(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
-	if !out.Connected || out.Reason != "Radar's last read from Argo CD failed: the request timed out." {
+	if !out.Connected || out.Reason != "KubeAtlas's last read from Argo CD failed: the request timed out." {
 		t.Fatalf("status = %+v, want connected with the failed read", out)
 	}
 }

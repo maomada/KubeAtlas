@@ -46,7 +46,7 @@ func CiliumIdentityFor(pod *corev1.Pod, ns *corev1.Namespace) CiliumIdentity {
 // that selects the pod and has a section for the direction (allow or deny)
 // means the policy governs it. A spec without any rule sections is read
 // conservatively as governing both directions. decided is false when the
-// selector cannot be judged from what Radar knows.
+// selector cannot be judged from what KubeAtlas knows.
 //
 // The caller scopes the policies: a CiliumNetworkPolicy applies only to pods
 // in its own namespace, which this function does not check.
@@ -135,9 +135,9 @@ func ciliumSpecMayAllow(spec map[string]any, dir Direction) bool {
 
 // ciliumSelectorMatches evaluates an endpointSelector against the identity.
 // Cilium label keys carry a source prefix ("k8s:", "any:"). Requirements are
-// ANDed, so the ones Radar can answer are checked first: a definite miss on
+// ANDed, so the ones KubeAtlas can answer are checked first: a definite miss on
 // any of them means the policy does not select the pod, whatever the rest
-// say. Only when every answerable requirement matches does a key Radar
+// say. Only when every answerable requirement matches does a key KubeAtlas
 // cannot reproduce — the cluster name, namespace labels when the Namespace
 // was not readable — make the selector undecidable.
 func ciliumSelectorMatches(selMap map[string]any, id CiliumIdentity) (matches, decided bool, why string) {
@@ -148,7 +148,7 @@ func ciliumSelectorMatches(selMap map[string]any, id CiliumIdentity) (matches, d
 		for k, v := range ml {
 			s, ok := v.(string)
 			if !ok {
-				return false, false, "has a matchLabels value Radar could not read"
+				return false, false, "has a matchLabels value KubeAtlas could not read"
 			}
 			key, ok, why := ciliumSelectorKey(k, id)
 			if !ok {
@@ -164,7 +164,7 @@ func ciliumSelectorMatches(selMap map[string]any, id CiliumIdentity) (matches, d
 		for _, raw := range exprs {
 			e, ok := raw.(map[string]any)
 			if !ok {
-				return false, false, "has a matchExpressions entry Radar could not read"
+				return false, false, "has a matchExpressions entry KubeAtlas could not read"
 			}
 			key, ok, why := ciliumSelectorKey(fmt.Sprint(e["key"]), id)
 			if !ok {
@@ -184,7 +184,7 @@ func ciliumSelectorMatches(selMap map[string]any, id CiliumIdentity) (matches, d
 	}
 	parsed, err := metav1.LabelSelectorAsSelector(&sel)
 	if err != nil {
-		return false, false, "has a selector Radar could not parse"
+		return false, false, "has a selector KubeAtlas could not parse"
 	}
 	if !parsed.Matches(id.set) {
 		return false, true, ""
@@ -204,14 +204,14 @@ func ciliumSelectorKey(raw string, id CiliumIdentity) (key string, ok bool, why 
 	} else if source != "k8s" && source != "any" {
 		// reserved:, cidr:, container: and the like describe endpoints that
 		// are not pods, so a selector on them cannot select this pod — but
-		// whether Cilium attaches such a label to a pod is not Radar's to say.
-		return "", false, "selects on the " + source + " label source, which Radar does not model"
+		// whether Cilium attaches such a label to a pod is not KubeAtlas's to say.
+		return "", false, "selects on the " + source + " label source, which KubeAtlas does not model"
 	}
 	switch {
 	case key == "io.cilium.k8s.policy.cluster":
-		return "", false, "selects on the cluster name, which Radar does not know"
+		return "", false, "selects on the cluster name, which KubeAtlas does not know"
 	case strings.HasPrefix(key, "io.cilium.k8s.namespace.labels.") && !id.nsKnown:
-		return "", false, "selects on namespace labels Radar could not read here"
+		return "", false, "selects on namespace labels KubeAtlas could not read here"
 	}
 	return key, true, ""
 }

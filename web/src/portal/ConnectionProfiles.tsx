@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { cloudRequest } from './cloudApi'
 
@@ -39,7 +40,7 @@ const ConnectionContext = createContext<ConnectionContextValue | undefined>(unde
 
 function storedProfile(): ConnectionProfile {
   try {
-    return window.localStorage.getItem(preferenceKey) === 'public' ? 'public' : 'lan'
+    return readProductStorage(window.localStorage, preferenceKey) === 'public' ? 'public' : 'lan'
   } catch {
     return 'lan'
   }

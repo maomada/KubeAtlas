@@ -84,7 +84,7 @@ func scopedVersionsFixture(t *testing.T, v1, v1beta1 []runtime.Object, v1Scope, 
 			map[schema.GroupVersionResource]string{widgets: "WidgetList", beta: "WidgetList", gadgets: "GadgetList", summaries: "SummaryList"},
 			append(v1, v1beta1...)...)
 		// A version limited to some namespaces may not be listed
-		// cluster-wide, so Radar watches it namespace by namespace.
+		// cluster-wide, so KubeAtlas watches it namespace by namespace.
 		f.dynamic.PrependReactor("list", "widgets", func(a k8stesting.Action) (bool, runtime.Object, error) {
 			if scopes[a.GetResource()] != nil && a.GetNamespace() == "" {
 				return true, nil, apierrors.NewForbidden(a.GetResource().GroupResource(), "", errors.New("namespaces only"))
@@ -124,7 +124,7 @@ func TestDependentCandidatesAcrossVersionsWatchedInDifferentScopes(t *testing.T)
 			betaScope: []string{"alpha"}, wantFound: []resourceid.Ref{w9}},
 		{name: "no cluster-wide watch", v1: []runtime.Object{widget("alpha", "w1", "uid-widget")}, v1beta1: []runtime.Object{betaWidget(widget("beta", "w9", "uid-w9"))},
 			v1Scope: []string{"alpha"}, betaScope: []string{"beta"}, wantFound: []resourceid.Ref{w1, w9},
-			wantGaps: []ownership.Gap{{Kind: widgetKind, Reason: readreason.RadarNamespaceNotCollected}}},
+			wantGaps: []ownership.Gap{{Kind: widgetKind, Reason: readreason.KubeAtlasNamespaceNotCollected}}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := scopedVersionsFixture(t, tc.v1, tc.v1beta1, tc.v1Scope, tc.betaScope)
@@ -264,7 +264,7 @@ func TestDependentCandidatesKeepTheSessionsNamespaceWatches(t *testing.T) {
 	if !slices.Equal(candidateRefs(first), candidateRefs(second)) || !slices.Equal(first.Gaps, second.Gaps) {
 		t.Fatalf("a watch started mid-session changed the session's answer:\n first  %v %+v\n second %v %+v", candidateRefs(first), first.Gaps, candidateRefs(second), second.Gaps)
 	}
-	if !hasGap(first, ownership.Gap{Kind: widgetKind, Reason: readreason.RadarNamespaceNotCollected}) {
+	if !hasGap(first, ownership.Gap{Kind: widgetKind, Reason: readreason.KubeAtlasNamespaceNotCollected}) {
 		t.Fatalf("watched namespace by namespace, the rest must be a gap: %+v", first)
 	}
 	if fresh := begin(t, f.source()).DependentCandidates("uid-deploy", ownership.Everywhere()); slices.Equal(candidateRefs(fresh), candidateRefs(first)) {
@@ -380,7 +380,7 @@ func TestDependentCandidatesOfATypedKindPastItsLoadDeadline(t *testing.T) {
 	}
 }
 
-// A kind Radar doesn't collect is unread in every namespace a search names, for
+// A kind KubeAtlas doesn't collect is unread in every namespace a search names, for
 // one reason, so the search says so once: a caller who may read a hundred
 // namespaces asking about a cluster-scoped owner gets the gaps a caller who
 // may read one gets, not a hundred times as many.
@@ -396,7 +396,7 @@ func TestDependentCandidatesReportAWholeKindsStateOnce(t *testing.T) {
 	}
 	one, hundred := search(1), search(100)
 	gadget := resourceid.GroupKind{Group: "example.io", Kind: "Gadget"}
-	want := ownership.Gap{Kind: gadget, Reason: readreason.RadarKindNotCollected}
+	want := ownership.Gap{Kind: gadget, Reason: readreason.KubeAtlasKindNotCollected}
 	if !slices.Contains(one.Gaps, want) {
 		t.Fatalf("gaps %+v; want %+v for the Gadgets nothing watches", one.Gaps, want)
 	}
@@ -496,7 +496,7 @@ func TestDependentCandidatesReadAClusterWideStoreOncePerSearch(t *testing.T) {
 
 // With one version watched only in alpha and another watched cluster-wide but
 // still loading, alpha is read through the first, and the rest of the
-// namespaces are loading, not outside what Radar collects.
+// namespaces are loading, not outside what KubeAtlas collects.
 func TestDependentCandidatesSayTheRestLoadsWhileAClusterWideVersionLoads(t *testing.T) {
 	beta := schema.GroupVersionResource{Group: "example.io", Version: "v1beta1", Resource: "widgets"}
 	var held atomic.Int32
@@ -565,7 +565,7 @@ func TestDependentCandidatesOfATypedKindLoadingInSomeNamespaces(t *testing.T) {
 		want  []ownership.Gap
 	}{
 		{ownership.SearchScope{Namespaces: []string{"alpha", "beta"}}, []ownership.Gap{{Kind: rs, Namespace: "beta", Reason: readreason.KindSyncPending}}},
-		{ownership.Everywhere(), []ownership.Gap{{Kind: rs, Reason: readreason.RadarNamespaceNotCollected}, {Kind: rs, Namespace: "beta", Reason: readreason.KindSyncPending}}},
+		{ownership.Everywhere(), []ownership.Gap{{Kind: rs, Reason: readreason.KubeAtlasNamespaceNotCollected}, {Kind: rs, Namespace: "beta", Reason: readreason.KindSyncPending}}},
 	} {
 		got := begin(t, f.source()).DependentCandidates("uid-deploy", tc.scope)
 		if !slices.ContainsFunc(got.Candidates, func(c ownership.Observation) bool { return c.Ref.GroupKind() == rs && c.Ref.Namespace == "alpha" }) {

@@ -26,7 +26,7 @@ import (
 // Sentinel errors distinguish the cache-loading failure modes so handlers can
 // map them to the right HTTP status. A user without `list deployments` would
 // otherwise see "404 not found" for a workload they simply can't read, and
-// conclude Radar is broken.
+// conclude KubeAtlas is broken.
 var (
 	errCacheNotReady   = errors.New("resource cache not initialized")
 	errKindRBACDenied  = errors.New("kind not listable by service account")
@@ -52,7 +52,7 @@ const (
 	ReasonRightsizingQueriesFailed = "Prometheus rightsizing queries failed."
 	ReasonNoOwnerSamples           = "No current or retained workload ownership samples are available."
 	ReasonNoUsageSamples           = "No workload usage samples are available in the last 7d."
-	ReasonPodInventoryUnreadable   = "Radar could not read this workload's pods, and no retained ownership history was available, so there was nothing to measure."
+	ReasonPodInventoryUnreadable   = "KubeAtlas could not read this workload's pods, and no retained ownership history was available, so there was nothing to measure."
 )
 
 // IsWithheldRecommendationReason keeps the withheld set with the code that
@@ -187,7 +187,7 @@ func handleRightsizing(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-user RBAC: the cache is populated under Radar's SA, so without this
+	// Per-user RBAC: the cache is populated under KubeAtlas's SA, so without this
 	// gate any authenticated user could fetch any namespace's container spec
 	// + P95 by guessing names. Use "get" — matches normal resource-detail reads.
 	if !canRead(r, "apps", ScanKindResource(kind), namespace, "get") {
@@ -219,7 +219,7 @@ func handleRightsizing(w http.ResponseWriter, r *http.Request) {
 
 // RightsizingForWorkload is the shared entry point behind the REST handler and
 // the get_rightsizing MCP tool. It performs no per-user RBAC check: callers own
-// that gate, because the cache is populated under Radar's ServiceAccount.
+// that gate, because the cache is populated under KubeAtlas's ServiceAccount.
 func RightsizingForWorkload(ctx context.Context, kind, namespace, name string) (RightsizingResponse, error) {
 	client, connectionErr := ClientForOperation()
 	if connectionErr != nil {
@@ -236,7 +236,7 @@ func RightsizingForWorkload(ctx context.Context, kind, namespace, name string) (
 	if len(workload.containers) == 0 {
 		return RightsizingResponse{
 			Kind: kind, Namespace: namespace, Name: name,
-			Window: "7d", Source: "radar", SampleAvailable: false,
+			Window: "7d", Source: "kubeatlas", SampleAvailable: false,
 			Rows:   []RightsizingRow{},
 			Reason: ReasonWorkloadNoContainers,
 		}, nil
@@ -518,7 +518,7 @@ func computeRightsizing(ctx context.Context, client rightsizingQuerier, kind, na
 	results := runRightsizingQueries(ctx, client, queries)
 	expected := int(rightsizingWindow / rightsizingStep)
 	resp := RightsizingResponse{
-		Kind: kind, Namespace: namespace, Name: name, Window: "7d", Source: "radar",
+		Kind: kind, Namespace: namespace, Name: name, Window: "7d", Source: "kubeatlas",
 		OwnerCoverage: coverage, Replicas: workload.replicas, ScaledToZero: workload.scaledToZero, ManagedBy: workload.managedBy,
 		Rows: make([]RightsizingRow, 0, len(workload.containers)*2),
 	}

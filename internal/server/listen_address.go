@@ -77,7 +77,7 @@ func requestHostIsLoopback(r *http.Request) bool {
 const AllowAnyHost = "*"
 
 // ParseAllowedHosts reads --allowed-hosts: hostnames, *.<domain> for any name
-// under a domain (as an Ingress or HTTPRoute wildcard host reaches Radar), or
+// under a domain (as an Ingress or HTTPRoute wildcard host reaches KubeAtlas), or
 // "*" alone.
 func ParseAllowedHosts(raw string) ([]string, error) {
 	var hosts []string
@@ -95,7 +95,7 @@ func ParseAllowedHosts(raw string) ([]string, error) {
 		// Browsers send internationalized names in their ASCII (punycode) form.
 		ascii, err := idna.Lookup.ToASCII(name)
 		if err != nil || ascii == "" || strings.ContainsAny(ascii, "*/:@ ") || (wildcard && !strings.Contains(ascii, ".")) {
-			errs = append(errs, fmt.Errorf("%q: expected a hostname such as radar.example.com or *.example.com, without scheme or port (or %q alone)", entry, AllowAnyHost))
+			errs = append(errs, fmt.Errorf("%q: expected a hostname such as kubeatlas.example.com or *.example.com, without scheme or port (or %q alone)", entry, AllowAnyHost))
 			continue
 		}
 		if wildcard {
@@ -147,7 +147,7 @@ func (s *Server) sharedListenerHostAllowed(r *http.Request) bool {
 }
 
 // Without authentication, the request Host is what separates a direct client
-// from a page that rebound its own hostname to Radar's address. A loopback bind
+// from a page that rebound its own hostname to KubeAtlas's address. A loopback bind
 // accepts only loopback names; a shared listener also accepts the names in
 // sharedListenerHostAllowed. Authenticated deployments and the
 // transport-authenticated Cloud tunnel have separate boundaries.
@@ -159,11 +159,11 @@ func (s *Server) protectUnauthenticatedHost(next http.Handler) http.Handler {
 		}
 		if !s.sharedListener() {
 			if !requestHostIsLoopback(r) {
-				s.writeError(w, http.StatusForbidden, "loopback-only Radar requires a loopback request Host; enable authentication for a reverse proxy, or explicitly use --listen-address=0.0.0.0 only on a trusted network")
+				s.writeError(w, http.StatusForbidden, "loopback-only KubeAtlas requires a loopback request Host; enable authentication for a reverse proxy, or explicitly use --listen-address=0.0.0.0 only on a trusted network")
 				return
 			}
 		} else if !s.sharedListenerHostAllowed(r) {
-			s.writeError(w, http.StatusForbidden, fmt.Sprintf("Radar without authentication answers only localhost, IP addresses, Kubernetes Service names and hosts in --allowed-hosts; add %q to --allowed-hosts (Helm: allowedHosts) or enable authentication", requestHostname(r)))
+			s.writeError(w, http.StatusForbidden, fmt.Sprintf("KubeAtlas without authentication answers only localhost, IP addresses, Kubernetes Service names and hosts in --allowed-hosts; add %q to --allowed-hosts (Helm: allowedHosts) or enable authentication", requestHostname(r)))
 			return
 		}
 		next.ServeHTTP(w, r)

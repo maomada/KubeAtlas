@@ -14,7 +14,7 @@ beforeEach(() => {
   vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)
   requested = []
   vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
-    requested.push(new URL(String(input), 'http://radar.invalid'))
+    requested.push(new URL(String(input), 'http://kubeatlas.invalid'))
     return new Promise<Response>(() => {})
   }))
   root = createRoot(document.createElement('div'))

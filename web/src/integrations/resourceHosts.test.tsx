@@ -66,7 +66,7 @@ describe('application resource hosts', () => {
   it('keeps query, tab, context and drawer state when redirecting a generic detail link', () => {
     const search = new URLSearchParams('apiGroup=postgresql.cnpg.io&ctx=kind-demo&tab=events&drawer=pods%3Apg-1&ai-run=run')
     const path = resourceDetailRedirect({ ...cluster, kind: 'clusters' }, search)!
-    const url = new URL(path, 'http://radar.test')
+    const url = new URL(path, 'http://kubeatlas.test')
     expect(url.pathname).toBe('/cnpg/clusters/db/pg')
     expect(Object.fromEntries(url.searchParams)).toEqual({ ctx: 'kind-demo', tab: 'activity', drawer: 'pods:pg-1', 'ai-run': 'run' })
     expect(search.get('tab')).toBe('events')

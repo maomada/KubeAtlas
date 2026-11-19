@@ -265,7 +265,7 @@ func TestIsEphemeralContextReportsCAPIContext(t *testing.T) {
 	durable := writeKubeconfig(t, dir, "durable.yaml", "prod", []kubeEntry{
 		{ctxName: "prod", userName: "u", clusterName: "c"},
 	})
-	temp := writeKubeconfig(t, dir, "radar-capi-kubeconfig-1234.yaml", "workload", []kubeEntry{
+	temp := writeKubeconfig(t, dir, "kubeatlas-capi-kubeconfig-1234.yaml", "workload", []kubeEntry{
 		{ctxName: "workload", userName: "u", clusterName: "c"},
 	})
 

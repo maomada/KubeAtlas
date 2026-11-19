@@ -1,8 +1,8 @@
 {{- $rbac := .Values.cloud.defaultRbac -}}
 {{- $integration := $rbac.integrationRead | default dict -}}
 {{- $cluster := $rbac.clusterScopedRead | default dict -}}
-{{- $systemOn := include "radar.cloudSystemRbac" . | eq "true" -}}
-{{- $aiOn := include "radar.cloudAiRbac" . | eq "true" -}}
+{{- $systemOn := include "kubeatlas.cloudSystemRbac" . | eq "true" -}}
+{{- $aiOn := include "kubeatlas.cloudAiRbac" . | eq "true" -}}
 {{- if and .Values.cloud.enabled .Values.rbac.create (or $rbac.create $systemOn $aiOn) -}}
 {{- $root := . -}}
 {{- $baseline := .Files.Get "files/integration-read-baseline.yaml" | fromYaml -}}
@@ -27,14 +27,14 @@
 {{- end -}}
 {{- end -}}
 {{- if and $tiers $rules }}
-{{- $name := printf "%s-integration-read-%s" (include "radar.fullname" $root) (lower $scope) }}
+{{- $name := printf "%s-integration-read-%s" (include "kubeatlas.fullname" $root) (lower $scope) }}
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
   name: {{ $name }}
   labels:
-    {{- include "radar.labels" $root | nindent 4 }}
+    {{- include "kubeatlas.labels" $root | nindent 4 }}
 rules:
   {{- toYaml $rules | nindent 2 }}
 {{- range $tier := $tiers }}
@@ -42,16 +42,19 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" $root }}-cloud-{{ $tier }}-integration-read-{{ lower $scope }}
+  name: {{ include "kubeatlas.fullname" $root }}-cloud-{{ $tier }}-integration-read-{{ lower $scope }}
   labels:
-    {{- include "radar.labels" $root | nindent 4 }}
+    {{- include "kubeatlas.labels" $root | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: {{ $name }}
 subjects:
   - kind: Group
-    name: radar:{{ if eq $tier "ai" }}ai:reader{{ else }}{{ $tier }}{{ end }}
+    name: kubeatlas:{{ if eq $tier "ai" }}ai:reader{{ else }}{{ $tier }}{{ end }}
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" $tier | quote }}
     apiGroup: rbac.authorization.k8s.io
 {{- if not (has $tier (list "system" "ai")) }}
   - kind: Group

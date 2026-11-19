@@ -1,9 +1,9 @@
 // Package checks is the shared, dependency-light model behind the "Checks"
 // remediation queue. It groups effective findings by check into prioritized
-// rows (Check) — one implementation used by both OSS Radar (single cluster)
-// and Radar Hub (fleet) so the two surfaces can't drift.
+// rows (Check) — one implementation used by both OSS KubeAtlas (single cluster)
+// and KubeAtlas Hub (fleet) so the two surfaces can't drift.
 //
-// It is deliberately k8s-free (stdlib only): Radar Hub imports it without
+// It is deliberately k8s-free (stdlib only): KubeAtlas Hub imports it without
 // pulling k8s.io type libraries into a service that never touches Kubernetes.
 // The k8s-aware audit engine (pkg/audit) layers on top — its CheckMeta is an
 // alias of this package's, and it provides the raw->effective converter.
@@ -74,9 +74,9 @@ func SeverityRank(s Severity) int {
 	}
 }
 
-// SourceRadarBuiltin is the only finding source in V1: Radar's built-in
+// SourceKubeAtlasBuiltin is the only finding source in V1: KubeAtlas's built-in
 // detectors. External detectors (Trivy, Polaris, …) would add more later.
-const SourceRadarBuiltin = "radar_builtin"
+const SourceKubeAtlasBuiltin = "kubeatlas_builtin"
 
 // CheckMeta is a check's static definition (catalog entry). pkg/audit aliases
 // this type so the audit engine's registry and this package share one shape.
@@ -87,7 +87,7 @@ type CheckMeta struct {
 	// DefaultSeverity is the Checks-ladder level (MapSeverity of the detector's
 	// raw severity) a finding carries with no org override — its common/base
 	// case for checks that ramp or split by context. May be empty for catalogs
-	// from a Radar predating the field; consumers fall back to "Default".
+	// from a KubeAtlas predating the field; consumers fall back to "Default".
 	DefaultSeverity string      `json:"defaultSeverity,omitempty"`
 	Description     string      `json:"description"`
 	Remediation     string      `json:"remediation"`
@@ -240,8 +240,8 @@ func BuildChecks(findings []EffectiveFinding, catalog map[string]CheckMeta, clus
 		}
 
 		checks = append(checks, Check{
-			ID:                    clusterID + "|" + SourceRadarBuiltin + "|" + checkID,
-			Source:                SourceRadarBuiltin,
+			ID:                    clusterID + "|" + SourceKubeAtlasBuiltin + "|" + checkID,
+			Source:                SourceKubeAtlasBuiltin,
 			Subject:               rep.Resource,
 			CheckID:               checkID,
 			Category:              rep.Category,

@@ -6,7 +6,7 @@ import { fileURLToPath } from 'node:url'
 
 // KubeAtlas's own build aliases @maomada/k8s-ui to its source, so a deep
 // import that the package's `exports` map can't serve still builds here and
-// only fails in a consumer that installs the published packages (Radar Hub).
+// only fails in a consumer that installs the published packages (KubeAtlas Hub).
 // This resolves every deep import the way Node and bundlers do: the most
 // specific matching key wins, and an array target resolves to its first entry
 // without falling back when that file doesn't exist.
@@ -40,7 +40,7 @@ function resolveExport(subpath: string): string | undefined {
   return join(k8sUiRoot, star === undefined ? first : first.split('*').join(star))
 }
 
-// Everything radar-app publishes that can import from k8s-ui, stylesheets
+// Everything kubeatlas-app publishes that can import from k8s-ui, stylesheets
 // included (vitest doesn't load CSS, so these are read from disk).
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

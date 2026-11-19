@@ -1,5 +1,5 @@
 // @skyhook/k8s-ui — Shared Kubernetes UI types, utilities, and components
-// Used by both radar (OSS) and koala-frontend (Skyhook platform)
+// Used by both kubeatlas (OSS) and koala-frontend (Skyhook platform)
 
 // Types
 export * from './types'
@@ -58,15 +58,15 @@ export * from './components/issues'
 // CloudNativePG workspace model (fleet derivation over /api/cnpg/workspace) and summaries
 export * from './components/cnpg'
 
-// Cluster switcher (shared trigger+dropdown for OSS Radar and Radar Hub)
+// Cluster switcher (shared trigger+dropdown for OSS KubeAtlas and KubeAtlas Hub)
 export * from './components/cluster-switcher'
 
-// Namespace picker (shared scope-filter trigger+dropdown for OSS Radar and
-// Radar Hub — pure presentation, data injected via props)
+// Namespace picker (shared scope-filter trigger+dropdown for OSS KubeAtlas and
+// KubeAtlas Hub — pure presentation, data injected via props)
 export * from './components/namespace-switcher'
 
 // Scope pill — the shared bordered shell that groups the cluster + namespace
-// segments into one unit (OSS header + Radar Hub cluster top bar)
+// segments into one unit (OSS header + KubeAtlas Hub cluster top bar)
 export * from './components/scope-pill'
 
 // Filter-state contract — shared URL-synced filter state for list views (OSS +

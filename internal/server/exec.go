@@ -55,7 +55,7 @@ const podExecHeartbeatInterval = 30 * time.Second
 // distro hook in /etc/profile) and then ~/.bashrc (via the canonical
 // `[ -f ~/.bashrc ] && . ~/.bashrc` line in ~/.bash_profile). One of those
 // files sets PS1 — almost always containing \w — which fixes the missing
-// working-directory-in-prompt symptom from skyhook-io/radar#452.
+// working-directory-in-prompt symptom from the historical upstream issue #452.
 const defaultShellScript = "export TERM=xterm-256color; if command -v bash >/dev/null 2>&1; then exec bash -il; elif command -v ash >/dev/null 2>&1; then exec ash; else exec sh; fi"
 
 // windowsDefaultShellScript prefers PowerShell, falling back to cmd.exe.
@@ -265,13 +265,13 @@ func (t *terminalSizeQueue) Next() *remotecommand.TerminalSize {
 
 // errExecDisabled reads as a Kubernetes "forbidden" so callers that classify
 // exec failures treat it as a permission denial.
-var errExecDisabled = errors.New("forbidden: exec is disabled on this Radar instance (--disable-exec)")
+var errExecDisabled = errors.New("forbidden: exec is disabled on this KubeAtlas instance (--disable-exec)")
 
 // requireExecEnabled rejects routes that run commands in Pods or start debug
-// shells when the operator started Radar with --disable-exec.
+// shells when the operator started KubeAtlas with --disable-exec.
 func (s *Server) requireExecEnabled(w http.ResponseWriter) bool {
 	if k8s.ForceDisableExec {
-		s.writeError(w, http.StatusForbidden, "exec is disabled on this Radar instance (--disable-exec)")
+		s.writeError(w, http.StatusForbidden, "exec is disabled on this KubeAtlas instance (--disable-exec)")
 		return false
 	}
 	return true
@@ -532,7 +532,7 @@ func isShellNotFoundError(errMsg string) bool {
 		// runtime error. Our default exec wraps in `sh -c <script>`, so an
 		// exit-127 from that wrapper means `sh` itself couldn't run — i.e.
 		// shell missing. The drift canary picked this up against distroless
-		// coredns; see skyhook-io/radar#456 (comment thread).
+		// coredns; see the historical upstream issue #456 (comment thread).
 		"exit code 127",
 		// Windows-container equivalents. hcsshim (the Host Compute Service
 		// runtime backing containerd on Windows) surfaces missing executables

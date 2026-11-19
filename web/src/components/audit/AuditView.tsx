@@ -18,7 +18,7 @@ interface AuditViewProps {
 // The per-cluster Checks surface. Renders the same shared remediation queue
 // (ChecksView) the Hub fleet view uses — single cluster here, so no cluster
 // label and in-app (client-side) resource navigation. The rollup + priority
-// come pre-computed from radar's /api/audit (pkg/audit.BuildChecks); local
+// come pre-computed from kubeatlas's /api/audit (pkg/audit.BuildChecks); local
 // ~/.kubeatlas settings are this cluster's "policy" and the row hide-menu writes to
 // them.
 export function AuditView({ namespaces, onNavigateToResource }: AuditViewProps) {

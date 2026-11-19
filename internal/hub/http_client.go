@@ -7,6 +7,7 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"io"
 	"math"
 	"net/http"
@@ -162,9 +163,18 @@ func (t *tunnelRoundTripper) RoundTrip(request *http.Request) (*http.Response, e
 	out.Host = "localhost"
 	out.RequestURI = ""
 	out.Close = true
-	out.Header.Set("X-Forwarded-User", t.principal.UserID)
-	if len(t.principal.Groups) > 0 {
-		out.Header.Set("X-Forwarded-Groups", strings.Join(t.principal.Groups, ","))
+	outboundUser, outboundGroups := t.principal.UserID, t.principal.Groups
+	if t.state.legacyVocabulary {
+		var validIdentity bool
+		outboundUser, outboundGroups, validIdentity = compat.OutboundIdentity(outboundUser, outboundGroups)
+		if !validIdentity {
+			lease.close()
+			return nil, tunnelError(CodePermissionDenied, false, nil)
+		}
+	}
+	out.Header.Set("X-Forwarded-User", outboundUser)
+	if len(outboundGroups) > 0 {
+		out.Header.Set("X-Forwarded-Groups", strings.Join(outboundGroups, ","))
 	}
 	stop := context.AfterFunc(request.Context(), lease.close)
 	if err := request.Context().Err(); err != nil {
@@ -658,12 +668,15 @@ func stripInboundHeaders(headers http.Header) {
 }
 
 func isInboundIdentityHeader(name string) bool {
+	if compat.IsLegacyIdentityHeader(name) {
+		return true
+	}
 	switch name {
 	case "remote-user", "remote-groups", "x-user", "x-user-id", "x-group", "x-groups",
 		"x-role", "x-roles", "x-authenticated-user", "x-authenticated-groups",
 		"x-auth-request-user", "x-auth-request-groups", "x-auth-request-email",
-		"x-original-user", "x-original-groups", "x-radar-user", "x-radar-groups",
-		"x-radar-role", "x-radar-roles", "x-radar-identity":
+		"x-original-user", "x-original-groups", "x-kubeatlas-user", "x-kubeatlas-groups",
+		"x-kubeatlas-role", "x-kubeatlas-roles", "x-kubeatlas-identity":
 		return true
 	}
 	return strings.HasPrefix(name, "x-auth-request-") ||

@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { CNPG_WORKSPACE_KEYS, ResourcesSidebar } from '@maomada/k8s-ui'
 import { useCNPGFleet, useCNPGSidebarWorkspace } from './useCNPGSidebarWorkspace'
-import { radarFeatureSupport } from '../../api/radarFeatures'
+import { kubeatlasFeatureSupport } from '../../api/kubeatlasFeatures'
 
 const state = vi.hoisted(() => ({ capabilities: { features: { resourceIssues: true } } as any, diskEnabled: [] as boolean[], metricsEnabled: [] as boolean[], result: undefined as any, workspace: undefined as any }))
 const oldKinds = ['clusters', 'backups', 'scheduledBackups', 'poolers', 'databases', 'publications', 'subscriptions', 'imageCatalogs', 'clusterImageCatalogs', 'objectStores', 'pods']
@@ -11,7 +11,7 @@ const workspace = { installed: true, context: 'test', namespaces: ['db'], covera
 vi.mock('../../api/cnpg', () => ({ useCNPGWorkspace: () => ({ data: state.workspace ?? workspace }) }))
 vi.mock('../../api/cnpg-storage', () => ({ useCNPGFleetDisk: (_ns: string[], enabled: boolean) => { state.diskEnabled.push(enabled); return { error: new Error('Live disk needs a newer KubeAtlas') } } }))
 vi.mock('../../api/cnpg-history', () => ({ useCNPGFleetMetrics: (_ns: string[], enabled: boolean) => { state.metricsEnabled.push(enabled); return {} } }))
-vi.mock('../../api/client', () => ({ useRadarFeature: () => ({ support: radarFeatureSupport('cnpgWorkspace', state.capabilities, 'v1.16.0') }) }))
+vi.mock('../../api/client', () => ({ useKubeAtlasFeature: () => ({ support: kubeatlasFeatureSupport('cnpgWorkspace', state.capabilities, 'v1.16.0') }) }))
 vi.mock('./useCNPGNavigate', () => ({ useCNPGNavigate: () => vi.fn() }))
 beforeEach(() => { state.capabilities = { features: { resourceIssues: true } }; state.diskEnabled = []; state.metricsEnabled = []; state.workspace = undefined })
 function Host() {

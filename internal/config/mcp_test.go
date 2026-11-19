@@ -25,7 +25,7 @@ func TestStartupConfigDoesNotDiscardMCPPolicy(t *testing.T) {
 			if err := os.WriteFile(Path(), []byte(raw), 0o600); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := LoadForStartup(); err == nil || !strings.Contains(err.Error(), "invalid Radar config") {
+			if _, err := LoadForStartup(); err == nil || !strings.Contains(err.Error(), "invalid KubeAtlas config") {
 				t.Fatalf("malformed startup config accepted: %v", err)
 			}
 		})
@@ -53,7 +53,7 @@ func TestStartupConfigUnreadableStopsStartup(t *testing.T) {
 	if err := os.MkdirAll(Path(), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := LoadForStartup(); err == nil || !strings.Contains(err.Error(), "cannot read Radar config") {
+	if _, err := LoadForStartup(); err == nil || !strings.Contains(err.Error(), "cannot read KubeAtlas config") {
 		t.Fatalf("unreadable startup config accepted: %v", err)
 	}
 }

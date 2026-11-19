@@ -38,7 +38,7 @@ func TestRequireSameOriginRefusesCrossSiteWrites(t *testing.T) {
 			map[string]string{"Origin": "https://app.example.com", "Sec-Fetch-Site": "same-site"}, 403},
 		{"sandboxed iframe sends a null Origin", "POST",
 			map[string]string{"Origin": "null", "Content-Type": "text/plain"}, 403},
-		{"same-origin write from Radar's own page", "POST",
+		{"same-origin write from KubeAtlas's own page", "POST",
 			map[string]string{"Origin": "http://localhost:9280", "Sec-Fetch-Site": "same-origin"}, 200},
 		{"script or AI client, no Origin at all", "POST", map[string]string{}, 200},
 		{"cross-site DELETE", "DELETE",
@@ -50,7 +50,7 @@ func TestRequireSameOriginRefusesCrossSiteWrites(t *testing.T) {
 		{"cross-site HEAD", "HEAD", map[string]string{"Sec-Fetch-Site": "cross-site"}, 403},
 		{"GET from another localhost port is same-site", "GET",
 			map[string]string{"Origin": "http://localhost:3000", "Sec-Fetch-Site": "same-site"}, 403},
-		{"same-origin GET from Radar's own page", "GET", map[string]string{"Sec-Fetch-Site": "same-origin"}, 200},
+		{"same-origin GET from KubeAtlas's own page", "GET", map[string]string{"Sec-Fetch-Site": "same-origin"}, 200},
 		{"GET typed into the address bar", "GET", map[string]string{"Sec-Fetch-Site": "none"}, 200},
 		{"GET from curl, no fetch metadata", "GET", map[string]string{}, 200},
 		{"cross-site CORS preflight is still answered", "OPTIONS",
@@ -71,7 +71,7 @@ func TestRequireSameOriginRefusesCrossSiteWrites(t *testing.T) {
 	}
 }
 
-// The Hub forwards the browser's own Origin, which is not Radar's. Cloud writes
+// The Hub forwards the browser's own Origin, which is not KubeAtlas's. Cloud writes
 // are allowed on the strength of the tunnel marker instead, so that branch needs
 // its own case: a bare cross-site POST is refused, the same POST over the tunnel
 // is allowed.
@@ -192,7 +192,7 @@ func TestAPIRoutesAreGuardedOnTheRealRouter(t *testing.T) {
 	stub := http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	param := regexp.MustCompile(`\{[^}]*\}`)
 
-	for _, basePath := range []string{"", "/radar"} {
+	for _, basePath := range []string{"", "/kubeatlas"} {
 		srv := New(Config{DevMode: true, BasePath: basePath, MCPHandler: stub, MCPReadOnlyHandler: stub, MCPInvestigationHandler: stub, MCPApplyHandler: stub})
 		ts := httptest.NewServer(srv.Handler())
 		// Under a base path the app routes sit behind a wrapping handler that
@@ -318,11 +318,11 @@ func TestCrossSiteExemptMatchesWholeSegments(t *testing.T) {
 	}
 }
 
-// Deployment shapes Radar cannot see into. Plain HTTP on a LAN address gets no
+// Deployment shapes KubeAtlas cannot see into. Plain HTTP on a LAN address gets no
 // fetch metadata, so Origin against Host is the only signal; a proxy that
 // rewrites Host needs the operator to trust the address instead.
 func TestBrowserOriginAllowedAcrossDeploymentShapes(t *testing.T) {
-	trusting := New(Config{TrustedOrigins: []string{"https://portal.example.com", "http://radar.internal"}})
+	trusting := New(Config{TrustedOrigins: []string{"https://portal.example.com", "http://kubeatlas.internal"}})
 	defer trusting.Stop()
 	for _, tc := range []struct {
 		name    string
@@ -333,19 +333,19 @@ func TestBrowserOriginAllowedAcrossDeploymentShapes(t *testing.T) {
 	}{
 		{"plain HTTP on a LAN address, no fetch metadata", &Server{}, "10.0.0.5:9280",
 			map[string]string{"Origin": "http://10.0.0.5:9280"}, true},
-		{"proxy rewrote Host, nothing trusted", &Server{}, "radar.radar.svc:9280",
-			map[string]string{"Origin": "http://radar.internal"}, false},
-		{"proxy rewrote Host, address trusted", trusting, "radar.radar.svc:9280",
-			map[string]string{"Origin": "http://radar.internal"}, true},
+		{"proxy rewrote Host, nothing trusted", &Server{}, "kubeatlas.kubeatlas.svc:9280",
+			map[string]string{"Origin": "http://kubeatlas.internal"}, false},
+		{"proxy rewrote Host, address trusted", trusting, "kubeatlas.kubeatlas.svc:9280",
+			map[string]string{"Origin": "http://kubeatlas.internal"}, true},
 		{"user-initiated request (Sec-Fetch-Site none)", &Server{}, "localhost:9280",
 			map[string]string{"Origin": "chrome-extension://abc", "Sec-Fetch-Site": "none"}, true},
-		{"trusted origin, even cross-site", trusting, "radar.example.com",
+		{"trusted origin, even cross-site", trusting, "kubeatlas.example.com",
 			map[string]string{"Origin": "https://portal.example.com", "Sec-Fetch-Site": "cross-site"}, true},
-		{"trusted origin matches with an explicit default port", trusting, "radar.example.com",
+		{"trusted origin matches with an explicit default port", trusting, "kubeatlas.example.com",
 			map[string]string{"Origin": "https://Portal.Example.com:443"}, true},
-		{"trusted list does not admit a neighbour", trusting, "radar.example.com",
+		{"trusted list does not admit a neighbour", trusting, "kubeatlas.example.com",
 			map[string]string{"Origin": "https://evil.example.com", "Sec-Fetch-Site": "cross-site"}, false},
-		{"trusted https origin does not admit its http twin", trusting, "radar.example.com",
+		{"trusted https origin does not admit its http twin", trusting, "kubeatlas.example.com",
 			map[string]string{"Origin": "http://portal.example.com", "Sec-Fetch-Site": "cross-site"}, false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -361,14 +361,14 @@ func TestBrowserOriginAllowedAcrossDeploymentShapes(t *testing.T) {
 	}
 }
 
-// The only person who reads this 403 is an operator whose proxy hid Radar's
+// The only person who reads this 403 is an operator whose proxy hid KubeAtlas's
 // address, and it reaches them as the detail of the failed action. It has to
 // carry a code the UI can branch on and name the fix.
 func TestRefusedWriteExplainsTheFix(t *testing.T) {
 	h := (&Server{}).requireSameOrigin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
 	r := httptest.NewRequest(http.MethodDelete, "/api/resources/ConfigMap/default/x", nil)
-	r.Host = "radar.radar.svc:9280"
-	r.Header.Set("Origin", "http://radar.internal")
+	r.Host = "kubeatlas.kubeatlas.svc:9280"
+	r.Header.Set("Origin", "http://kubeatlas.internal")
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 
@@ -385,7 +385,7 @@ func TestRefusedWriteExplainsTheFix(t *testing.T) {
 	if body.ErrorCode != "cross_origin_refused" {
 		t.Fatalf("error_code = %q", body.ErrorCode)
 	}
-	for _, want := range []string{"http://radar.internal", "radar.radar.svc:9280", "Host header", "trustedOrigins", "KUBEATLAS_TRUSTED_ORIGINS", "--trusted-origins"} {
+	for _, want := range []string{"http://kubeatlas.internal", "kubeatlas.kubeatlas.svc:9280", "Host header", "trustedOrigins", "KUBEATLAS_TRUSTED_ORIGINS", "--trusted-origins"} {
 		if !strings.Contains(body.Error, want) {
 			t.Fatalf("message %q does not mention %q", body.Error, want)
 		}
@@ -393,23 +393,23 @@ func TestRefusedWriteExplainsTheFix(t *testing.T) {
 }
 
 func TestParseTrustedOrigins(t *testing.T) {
-	got, err := ParseTrustedOrigins(" https://radar.example.com , http://10.0.0.5:9280,,http://[::1]:9280")
+	got, err := ParseTrustedOrigins(" https://kubeatlas.example.com , http://10.0.0.5:9280,,http://[::1]:9280")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if strings.Join(got, " ") != "https://radar.example.com http://10.0.0.5:9280 http://[::1]:9280" {
+	if strings.Join(got, " ") != "https://kubeatlas.example.com http://10.0.0.5:9280 http://[::1]:9280" {
 		t.Fatalf("got %v", got)
 	}
 
 	for _, bad := range []string{
 		"*",
 		"https://*.example.com",
-		"radar.example.com",
-		"ftp://radar.example.com",
-		"https://radar.example.com/radar",
-		"https://user@radar.example.com",
-		"https://radar.example.com?x=1",
-		"https://radar.example.com:99999",
+		"kubeatlas.example.com",
+		"ftp://kubeatlas.example.com",
+		"https://kubeatlas.example.com/kubeatlas",
+		"https://user@kubeatlas.example.com",
+		"https://kubeatlas.example.com?x=1",
+		"https://kubeatlas.example.com:99999",
 		"null",
 	} {
 		if got, err := ParseTrustedOrigins(bad); err == nil || len(got) != 0 {
@@ -418,11 +418,11 @@ func TestParseTrustedOrigins(t *testing.T) {
 	}
 
 	// One bad entry costs that entry only; the good ones still apply.
-	got, err = ParseTrustedOrigins("https://*.example.com,https://radar.example.com")
+	got, err = ParseTrustedOrigins("https://*.example.com,https://kubeatlas.example.com")
 	if err == nil || !strings.Contains(err.Error(), "*.example.com") {
 		t.Fatalf("want the wildcard entry reported, got %v", err)
 	}
-	if len(got) != 1 || got[0] != "https://radar.example.com" {
+	if len(got) != 1 || got[0] != "https://kubeatlas.example.com" {
 		t.Fatalf("want the valid entry kept, got %v", got)
 	}
 }
@@ -439,7 +439,7 @@ func TestBrowserOriginAllowedAcceptsTheServingAuthority(t *testing.T) {
 	}{
 		{name: "no origin (non-browser)", host: "10.0.0.5:9280", want: true},
 		{name: "same non-loopback authority", host: "10.0.0.5:9280", origin: "http://10.0.0.5:9280", want: true},
-		{name: "hostname case is ignored", host: "Radar.Example.com:9280", origin: "http://radar.example.com:9280", want: true},
+		{name: "hostname case is ignored", host: "KubeAtlas.Example.com:9280", origin: "http://kubeatlas.example.com:9280", want: true},
 		{name: "same loopback authority", host: "127.0.0.1:9280", origin: "http://127.0.0.1:9280", want: true},
 		{name: "vite dev proxy, loopback to loopback", host: "localhost:9280", origin: "http://localhost:9273", devMode: true, want: true},
 		{name: "vite port outside dev mode", host: "localhost:9280", origin: "http://localhost:9273", want: false},
@@ -450,7 +450,7 @@ func TestBrowserOriginAllowedAcceptsTheServingAuthority(t *testing.T) {
 		{name: "different port on the same non-loopback host", host: "10.0.0.5:9280", origin: "http://10.0.0.5:9999", want: false},
 		{name: "loopback origin against a non-loopback host", host: "10.0.0.5:9280", origin: "http://127.0.0.1:9280", want: false},
 		{name: "cross-site metadata without origin", host: "10.0.0.5:9280", fetchSite: "cross-site", want: false},
-		{name: "same-origin metadata survives rewritten host", host: "internal:9280", origin: "https://radar.example.com", fetchSite: "same-origin", want: true},
+		{name: "same-origin metadata survives rewritten host", host: "internal:9280", origin: "https://kubeatlas.example.com", fetchSite: "same-origin", want: true},
 		{name: "unparseable origin", host: "10.0.0.5:9280", origin: "://nope", want: false},
 		{name: "opaque (null) origin", host: "10.0.0.5:9280", origin: "null", want: false},
 	}

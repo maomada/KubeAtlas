@@ -54,8 +54,8 @@ const (
 )
 
 const (
-	filteredIssueSetGuidance      = "This response is severity-filtered, so Radar did not promote changes based on links to returned issues; omitted issue rows may explain them."
-	truncatedIssueMembersGuidance = "Radar did not promote changes based on issue linkage because at least one returned grouped issue omitted members; an omitted member may explain a change."
+	filteredIssueSetGuidance      = "This response is severity-filtered, so KubeAtlas did not promote changes based on links to returned issues; omitted issue rows may explain them."
+	truncatedIssueMembersGuidance = "KubeAtlas did not promote changes based on issue linkage because at least one returned grouped issue omitted members; an omitted member may explain a change."
 	// FetchSaturatedGuidance distinguishes an incomplete candidate query from
 	// a complete window whose lower-ranked results were omitted from output.
 	FetchSaturatedGuidance = "A change query exceeded its fetch bound in this window, so relevant changes may be missing; absence from this feed is not evidence they did not occur."
@@ -109,17 +109,17 @@ func PrioritizeIssueChanges(changes []issuesapi.RecentChange, activeIssues []iss
 	}
 	if len(unlinked) > 0 && len(unlinked) <= 2 {
 		if len(unlinked) == 1 {
-			guidance += " Radar could not link " + unlinked[0] +
+			guidance += " KubeAtlas could not link " + unlinked[0] +
 				"'s application-configuration change to an issue in this response, so it appears first within `recent_changes`. " +
 				"Verify it against runtime evidence; this is a lead, not evidence of cause."
 		} else {
-			guidance += " Radar could not link the application-configuration changes on " +
+			guidance += " KubeAtlas could not link the application-configuration changes on " +
 				strings.Join(unlinked, " and ") +
 				" to issues in this response, so they appear first within `recent_changes`. " +
 				"Verify them against runtime evidence; these are leads, not evidence of cause."
 		}
 	} else if len(unlinked) > 2 {
-		guidance += fmt.Sprintf(" Radar could not link %d application-configuration changes to issues in "+
+		guidance += fmt.Sprintf(" KubeAtlas could not link %d application-configuration changes to issues in "+
 			"this response, so they appear first within `recent_changes`. "+
 			"Verify them against runtime evidence; these are leads, not evidence of cause.", len(unlinked))
 	}
@@ -137,7 +137,7 @@ func PrioritizeIssueChanges(changes []issuesapi.RecentChange, activeIssues []iss
 
 // ApplyIssueChanges fills an issues response's recent-changes fields from
 // one Recent answer. A saturated answer, or one whose window starts before the
-// history Radar holds, is reported even when no change survives, so an empty
+// history KubeAtlas holds, is reported even when no change survives, so an empty
 // block never reads as a complete one.
 func ApplyIssueChanges(resp *issuesapi.Response, result RecentResult, activeIssues []issuesapi.Issue, reason string, unfilteredIssueSet, readsAllNamespaces bool) {
 	coverage := HistoryCoverageFor(result.History, readsAllNamespaces)
@@ -286,7 +286,7 @@ type RecentResult struct {
 	Changes        []issuesapi.RecentChange
 	OutputCapped   bool
 	FetchSaturated bool
-	// History reports whether Radar's held history covers the window; see
+	// History reports whether KubeAtlas's held history covers the window; see
 	// HistoryCoverageSince.
 	History issuesapi.HistoryCoverage
 }
@@ -386,21 +386,21 @@ func HistoryCoverageFor(coverage issuesapi.HistoryCoverage, readsAllNamespaces b
 }
 
 // HistoryCoverageGuidance is the sentence an answer carries when its window
-// starts before the history Radar holds.
+// starts before the history KubeAtlas holds.
 func HistoryCoverageGuidance(coverage issuesapi.HistoryCoverage) string {
 	const rest = "; changes before then may be missing, so an empty or short result does not establish that nothing changed. " +
 		"For older changes to one object, check it directly (get_resource, its ReplicaSet revisions)."
 	if coverage.CompleteSince.IsZero() {
-		return "Radar's change history is incomplete for part of this window" + rest
+		return "KubeAtlas's change history is incomplete for part of this window" + rest
 	}
-	return "Radar's change history is complete only from " + coverage.CompleteSince.Format(time.RFC3339) + rest
+	return "KubeAtlas's change history is complete only from " + coverage.CompleteSince.Format(time.RFC3339) + rest
 }
 
-// HistoryCoverageSince reports whether the history Radar holds covers
+// HistoryCoverageSince reports whether the history KubeAtlas holds covers
 // everything from windowStart on. It is incomplete when this process started
 // observing after windowStart, or when the store has deleted events newer than
 // windowStart; CompleteSince is then the later of those two times, rounded up
-// to the second. Rows Radar never saw for other reasons (a missed watch event)
+// to the second. Rows KubeAtlas never saw for other reasons (a missed watch event)
 // are not covered by this.
 func HistoryCoverageSince(windowStart time.Time) issuesapi.HistoryCoverage {
 	var coverage issuesapi.HistoryCoverage

@@ -1,3 +1,4 @@
+import { readProductStorage, removeProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { useState, useEffect, useRef, useId } from 'react'
 import { clsx } from 'clsx'
 import { Download, X, Copy, Check, RotateCw, ArrowDownToLine, Loader2 } from 'lucide-react'
@@ -17,13 +18,13 @@ import { TRANSITION_MENU, overlayExitMs, overlayTransitionStyle } from '../../ut
 import { useAnimatedUnmount } from '../../hooks/useAnimatedUnmount'
 import { IN_CLUSTER_UPGRADE_URL } from '../../utils/version'
 
-const DISMISSED_KEY = 'radar-update-dismissed'
+const DISMISSED_KEY = 'kubeatlas-update-dismissed'
 
 // Whether the notice for this release was dismissed. The usage-data card
 // shares the corner and waits for it.
 export function isUpdateDismissed(latestVersion: string): boolean {
   try {
-    return localStorage.getItem(DISMISSED_KEY) === latestVersion
+    return readProductStorage(localStorage, DISMISSED_KEY) === latestVersion
   } catch {
     // localStorage unavailable (e.g. Safari private mode)
     return false
@@ -63,7 +64,7 @@ export function UpdateNotification({ placement = 'floating' }: { placement?: 'fl
 
   useEffect(() => {
     if (inSettings) return
-    const id = 'radar-manual-update-check'
+    const id = 'kubeatlas-manual-update-check'
     const handler = () => {
       showToast('Checking for updates…', { id, type: 'info', duration: 0 })
     }
@@ -75,7 +76,7 @@ export function UpdateNotification({ placement = 'floating' }: { placement?: 'fl
       }
       void queryClient.cancelQueries({ queryKey: ['version-check', getApiBase()], exact: true })
       setDismissed(false)
-      try { localStorage.removeItem(DISMISSED_KEY) } catch { /* ignore */ }
+      try { removeProductStorage(localStorage, DISMISSED_KEY) } catch { /* ignore */ }
       queryClient.setQueryData(['version-check', getApiBase()], info)
       if (info.updateAvailable) {
         showToast(`KubeAtlas ${info.latestVersion} is available`, { id, type: 'info' })
@@ -86,18 +87,18 @@ export function UpdateNotification({ placement = 'floating' }: { placement?: 'fl
       }
     }
 
-    window.addEventListener('radar:check-for-updates', handler)
-    window.addEventListener('radar:update-check-result', resultHandler)
+    window.addEventListener('kubeatlas:check-for-updates', handler)
+    window.addEventListener('kubeatlas:update-check-result', resultHandler)
     return () => {
-      window.removeEventListener('radar:check-for-updates', handler)
-      window.removeEventListener('radar:update-check-result', resultHandler)
+      window.removeEventListener('kubeatlas:check-for-updates', handler)
+      window.removeEventListener('kubeatlas:update-check-result', resultHandler)
     }
   }, [queryClient, inSettings, showToast])
 
   // Log version check errors for debugging
   useEffect(() => {
     if (versionInfo?.error) {
-      console.debug('[radar] Version check failed:', versionInfo.error)
+      console.debug('[kubeatlas] Version check failed:', versionInfo.error)
     }
   }, [versionInfo?.error])
 
@@ -133,7 +134,7 @@ export function UpdateNotification({ placement = 'floating' }: { placement?: 'fl
         setCopied(true)
         setTimeout(() => setCopied(false), 2000)
       } catch (err) {
-        console.debug('[radar] Clipboard write failed:', err)
+        console.debug('[kubeatlas] Clipboard write failed:', err)
         setCopyFailed(true)
         setTimeout(() => setCopyFailed(false), 2000)
       }

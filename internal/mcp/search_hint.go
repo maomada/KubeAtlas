@@ -14,7 +14,7 @@ import (
 
 // errSearchConnectionChanged rejects a search whose caches were replaced while
 // it ran: its hits may mix two clusters, and a retry may reach a different one.
-var errSearchConnectionChanged = errors.New("connection_changed: Radar's cluster connection changed during this search (a context switch or reconnect), so the result was discarded. Confirm which cluster Radar is connected to, then retry.")
+var errSearchConnectionChanged = errors.New("connection_changed: KubeAtlas's cluster connection changed during this search (a context switch or reconnect), so the result was discarded. Confirm which cluster KubeAtlas is connected to, then retry.")
 
 // maxCoverageSentences bounds coverageHint; further reasons are only counted.
 const maxCoverageSentences = 3
@@ -94,12 +94,12 @@ var coverageTemplates = []coverageTemplate{
 		return fmt.Sprintf("Search doesn't cover %s; use list_resources or get_resource for them.", joinKinds(e, "and", kindPlural))
 	}},
 	{[]readreason.Code{readreason.KindNotWatchable}, func(e, _ []hintEntry) string {
-		return fmt.Sprintf("Radar can't collect %s: the API doesn't support both list and watch, so search can't cover them; read them from the Kubernetes API directly.", joinKinds(e, "and", kindPlural))
+		return fmt.Sprintf("KubeAtlas can't collect %s: the API doesn't support both list and watch, so search can't cover them; read them from the Kubernetes API directly.", joinKinds(e, "and", kindPlural))
 	}},
 	filterErrors,
 	// A findings gap names report kinds; CEL failures name objects instead.
 	{[]readreason.Code{readreason.FindingsScanIncomplete}, func(e, _ []hintEntry) string {
-		return fmt.Sprintf("Radar ran out of time searching the findings of %s, so a CVE or package missing from the hits may be in a report it left out; narrow with kind:, ns: or image: to search them all.", joinKinds(e, "and", kindPlural))
+		return fmt.Sprintf("KubeAtlas ran out of time searching the findings of %s, so a CVE or package missing from the hits may be in a report it left out; narrow with kind:, ns: or image: to search them all.", joinKinds(e, "and", kindPlural))
 	}},
 	{[]readreason.Code{readreason.KindSyncPending}, func(e, _ []hintEntry) string {
 		label, n := kindsLabel(e)
@@ -107,9 +107,9 @@ var coverageTemplates = []coverageTemplate{
 	}},
 	{[]readreason.Code{readreason.UserPermissionCheckFailed}, func(e, _ []hintEntry) string {
 		label, _ := kindsLabel(e)
-		return fmt.Sprintf("Radar couldn't check your access to %s; retry.", label)
+		return fmt.Sprintf("KubeAtlas couldn't check your access to %s; retry.", label)
 	}},
-	{[]readreason.Code{readreason.KindSyncTimedOut, readreason.ReadError, readreason.RadarCredentialsRejected}, func(e, all []hintEntry) string {
+	{[]readreason.Code{readreason.KindSyncTimedOut, readreason.ReadError, readreason.KubeAtlasCredentialsRejected}, func(e, all []hintEntry) string {
 		if slices.ContainsFunc(all, func(u hintEntry) bool { return u.Reason == readreason.KindUnknown }) {
 			// The unknown-kind sentence already explains undiscovered groups.
 			e = slices.DeleteFunc(slices.Clone(e), func(u hintEntry) bool { return u.Kind == "*" && u.Count == 0 })
@@ -141,16 +141,16 @@ var coverageTemplates = []coverageTemplate{
 		return fmt.Sprintf("Namespaces %s don't exist on this cluster.", quoteJoin(namespaces))
 	}},
 	{[]readreason.Code{readreason.OutsideNamespacePin}, func(e, _ []hintEntry) string {
-		return namespaceSentence(e, "Radar is pinned to another namespace with --namespace-scope", "Radar is pinned to another namespace with --namespace-scope")
+		return namespaceSentence(e, "KubeAtlas is pinned to another namespace with --namespace-scope", "KubeAtlas is pinned to another namespace with --namespace-scope")
 	}},
-	{[]readreason.Code{readreason.RadarNamespaceNotCollected}, func(e, _ []hintEntry) string {
-		return namespaceSentence(e, "Radar here watches only some namespaces", "Radar here watches only some namespaces")
+	{[]readreason.Code{readreason.KubeAtlasNamespaceNotCollected}, func(e, _ []hintEntry) string {
+		return namespaceSentence(e, "KubeAtlas here watches only some namespaces", "KubeAtlas here watches only some namespaces")
 	}},
-	{[]readreason.Code{readreason.RadarForbidden}, func(e, _ []hintEntry) string {
-		return fmt.Sprintf("Radar isn't allowed to read %s on this cluster; granting you access won't help.", joinKinds(e, "or", kindPlural))
+	{[]readreason.Code{readreason.KubeAtlasForbidden}, func(e, _ []hintEntry) string {
+		return fmt.Sprintf("KubeAtlas isn't allowed to read %s on this cluster; granting you access won't help.", joinKinds(e, "or", kindPlural))
 	}},
-	{[]readreason.Code{readreason.RadarKindNotCollected}, func(e, _ []hintEntry) string {
-		return fmt.Sprintf("Radar doesn't watch %s on this cluster, so they weren't searched.", joinKinds(e, "or", kindPlural))
+	{[]readreason.Code{readreason.KubeAtlasKindNotCollected}, func(e, _ []hintEntry) string {
+		return fmt.Sprintf("KubeAtlas doesn't watch %s on this cluster, so they weren't searched.", joinKinds(e, "or", kindPlural))
 	}},
 }
 
@@ -158,7 +158,7 @@ var coverageTemplates = []coverageTemplate{
 // reason present, most actionable first, at most maxCoverageSentences and then
 // a count of the rest. Every reason yields a sentence, so it is non-empty
 // whenever the result is partial.
-// scopeHint says how Radar's own setup limits a search that found something:
+// scopeHint says how KubeAtlas's own setup limits a search that found something:
 // an agent reads each answer alone and can't see the install, so without it
 // hits read as everything. The caller's access and uncollected kinds stay
 // quiet: the agent acts for the caller, and kind collection narrows nearly
@@ -166,23 +166,23 @@ var coverageTemplates = []coverageTemplate{
 func scopeHint(cov resourceapi.SearchCoverage) string {
 	var sentences []string
 	if slices.Contains(cov.NarrowedBy, resourceapi.NarrowedByNamespaceCollection) {
-		sentences = append(sentences, "For some kinds, Radar searches only the namespaces it collects; matches for them elsewhere aren't included.")
+		sentences = append(sentences, "For some kinds, KubeAtlas searches only the namespaces it collects; matches for them elsewhere aren't included.")
 	}
 	if slices.Contains(cov.NarrowedBy, resourceapi.NarrowedByNamespacePin) {
-		sentences = append(sentences, "Radar is pinned to one namespace; namespaced matches elsewhere aren't included.")
+		sentences = append(sentences, "KubeAtlas is pinned to one namespace; namespaced matches elsewhere aren't included.")
 	}
 	return strings.Join(sentences, " ")
 }
 
 // searchCoverageHint is a search response's coverageHint: what a partial
 // result missed, that an empty narrowed one doesn't rule out matches outside
-// its scope, and, when there are hits, how Radar's setup limited them.
+// its scope, and, when there are hits, how KubeAtlas's setup limited them.
 func searchCoverageHint(res search.Result, namedKinds bool) string {
 	var hint string
 	if res.Coverage.Status == resourceapi.CoveragePartial {
 		hint = coverageHint(res, namedKinds)
 	} else if len(res.Coverage.NarrowedBy) > 0 && len(res.Hits) == 0 {
-		hint = "No matches within what your access and Radar's collection cover; that does not rule out matches outside them."
+		hint = "No matches within what your access and KubeAtlas's collection cover; that does not rule out matches outside them."
 	}
 	if len(res.Hits) > 0 {
 		if scope := scopeHint(res.Coverage); scope != "" {

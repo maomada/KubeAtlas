@@ -7,7 +7,7 @@ const state = vi.hoisted(() => ({ extraTabs: undefined as any, support: 'support
 vi.mock('./refresh', () => ({ refetchCNPGDetail: state.refetch }))
 vi.mock('../workload/WorkloadView', () => ({ WorkloadView: ({ onRefresh, specTab, renderStatusBadge, extraTabs }: { onRefresh?: () => Promise<unknown>; extraTabs?: any; specTab?: any; renderStatusBadge?: (resource: any) => any }) => { state.extraTabs = extraTabs; state.refresh = onRefresh; state.specTab = specTab; state.renderStatusBadge = renderStatusBadge; return <div>detail</div> } }))
 vi.mock('../../context/ConnectionContext', () => ({ useConnection: () => ({ connection: { context: 'test' } }) }))
-vi.mock('../../api/client', () => ({ useRadarFeature: () => ({ support: state.support }) }))
+vi.mock('../../api/client', () => ({ useKubeAtlasFeature: () => ({ support: state.support }) }))
 vi.mock('./CNPGOperatorBanner', () => ({ CNPGOperatorBanner: () => null }))
 it('passes the detail target to the awaited CNPG refresh hook', async () => {
   const client = new QueryClient()

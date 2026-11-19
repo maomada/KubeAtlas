@@ -41,7 +41,7 @@ func TestStandaloneRejectsMalformedMCPBeforeBoot(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _, err := bootEphemeral("")
-	if err == nil || !strings.Contains(err.Error(), "invalid Radar config") {
+	if err == nil || !strings.Contains(err.Error(), "invalid KubeAtlas config") {
 		t.Fatalf("boot: %v", err)
 	}
 }
@@ -64,11 +64,11 @@ func TestCursorConsentNoticeDisclosesAutoApprovedTools(t *testing.T) {
 func TestOpenCodeConsentNoticeDisclosesAutoPermissions(t *testing.T) {
 	notice := strings.Join(strings.Fields(consentNotice("opencode", ai.ExecutionProfileFullLocal)), " ")
 	for _, want := range []string{
-		"Radar runs OpenCode with --auto",
+		"KubeAtlas runs OpenCode with --auto",
 		"automatically approves actions",
 		"built-in tools and configured MCP servers",
 		"Explicit denials still apply",
-		"Radar does not enforce a CLI sandbox",
+		"KubeAtlas does not enforce a CLI sandbox",
 	} {
 		if !strings.Contains(notice, want) {
 			t.Errorf("OpenCode consent notice missing %q:\n%s", want, notice)
@@ -229,7 +229,7 @@ func createTempFile(t *testing.T) (*os.File, error) {
 }
 
 // TestInterleavedFlagParsing pins kubectl-style invocation: flags may follow
-// the positional target (`radar diagnose pod/web -n prod --json`).
+// the positional target (`kubeatlas diagnose pod/web -n prod --json`).
 func TestInterleavedFlagParsing(t *testing.T) {
 	fs, o := newFlagSet()
 	var positionals []string
@@ -300,14 +300,14 @@ func TestResolveServerReadsBasePathFromDiscoveryFile(t *testing.T) {
 		want     string
 	}{
 		{name: "port only (older instance)", contents: "9280\n", want: "http://localhost:9280"},
-		{name: "port and base path", contents: "9280\n/radar\n", want: "http://localhost:9280/radar"},
-		{name: "nested base path", contents: "9280\n/tools/radar\n", want: "http://localhost:9280/tools/radar"},
-		{name: "trailing slash trimmed", contents: "9280\n/radar/\n", want: "http://localhost:9280/radar"},
-		{name: "no trailing newline", contents: "9280\n/radar", want: "http://localhost:9280/radar"},
+		{name: "port and base path", contents: "9280\n/kubeatlas\n", want: "http://localhost:9280/kubeatlas"},
+		{name: "nested base path", contents: "9280\n/tools/kubeatlas\n", want: "http://localhost:9280/tools/kubeatlas"},
+		{name: "trailing slash trimmed", contents: "9280\n/kubeatlas/\n", want: "http://localhost:9280/kubeatlas"},
+		{name: "no trailing newline", contents: "9280\n/kubeatlas", want: "http://localhost:9280/kubeatlas"},
 		{name: "ipv4 no base path", contents: "9280\n\n192.0.2.10\n", want: "http://192.0.2.10:9280"},
-		{name: "ipv4 base path", contents: "9280\n/radar\n192.0.2.10\n", want: "http://192.0.2.10:9280/radar"},
+		{name: "ipv4 base path", contents: "9280\n/kubeatlas\n192.0.2.10\n", want: "http://192.0.2.10:9280/kubeatlas"},
 		{name: "ipv6 no base path", contents: "9280\n\n::1\n", want: "http://[::1]:9280"},
-		{name: "ipv6 base path", contents: "9280\n/radar\n2001:db8::10\n", want: "http://[2001:db8::10]:9280/radar"},
+		{name: "ipv6 base path", contents: "9280\n/kubeatlas\n2001:db8::10\n", want: "http://[2001:db8::10]:9280/kubeatlas"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -332,7 +332,7 @@ func TestResolveServerReadsBasePathFromDiscoveryFile(t *testing.T) {
 
 func TestDiscoveryFileRoundTrip(t *testing.T) {
 	for _, address := range []string{"localhost:9280", "192.0.2.10:9281", "[::1]:9282", "[2001:db8::10]:9283"} {
-		for _, basePath := range []string{"", "/radar"} {
+		for _, basePath := range []string{"", "/kubeatlas"} {
 			t.Run(address+basePath, func(t *testing.T) {
 				t.Setenv("HOME", t.TempDir())
 				app.WriteMCPPortFile(address, basePath)
@@ -375,9 +375,9 @@ func TestProbeListeningIgnoresBasePathSuffix(t *testing.T) {
 
 	for _, base := range []string{
 		"http://" + addr,
-		"http://" + addr + "/radar",
-		"http://" + addr + "/tools/radar",
-		addr + "/radar",
+		"http://" + addr + "/kubeatlas",
+		"http://" + addr + "/tools/kubeatlas",
+		addr + "/kubeatlas",
 	} {
 		if !probeListening(base) {
 			t.Errorf("probeListening(%q) = false, want true", base)
@@ -390,7 +390,7 @@ func TestProbeListeningIgnoresBasePathSuffix(t *testing.T) {
 	}
 	deadAddr := closed.Addr().String()
 	closed.Close()
-	if probeListening("http://" + deadAddr + "/radar") {
+	if probeListening("http://" + deadAddr + "/kubeatlas") {
 		t.Error("probeListening on a closed port = true, want false")
 	}
 }

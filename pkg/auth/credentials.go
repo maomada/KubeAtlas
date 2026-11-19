@@ -2,27 +2,28 @@ package auth
 
 import (
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"strings"
 	"sync/atomic"
 )
 
-// CredentialMode selects how Radar authenticates the Kubernetes calls it
+// CredentialMode selects how KubeAtlas authenticates the Kubernetes calls it
 // makes for a user.
 type CredentialMode string
 
 const (
-	// CredentialsImpersonate sends Radar's ServiceAccount token with
+	// CredentialsImpersonate sends KubeAtlas's ServiceAccount token with
 	// Impersonate-User/Group headers. The default.
 	CredentialsImpersonate CredentialMode = "impersonate"
 	// CredentialsUserToken sends the user's own token, received on each
 	// request, and never impersonates. Requests without a token may read
-	// Radar's cache but make no live calls, except the system identities
+	// KubeAtlas's cache but make no live calls, except the system identities
 	// accepted by IsSystemIdentity.
 	CredentialsUserToken CredentialMode = "user-token"
 )
 
 // UserTokenHeader carries the user's Kubernetes bearer token from the
-// trusted upstream to Radar in user-token mode.
+// trusted upstream to KubeAtlas in user-token mode.
 const UserTokenHeader = "X-Forwarded-Kubernetes-Token"
 
 // UserTokenRequiredReason marks a live call refused because the request
@@ -55,24 +56,30 @@ func CurrentCredentialMode() CredentialMode {
 	return CredentialsImpersonate
 }
 
-// UserTokenMode reports whether Radar runs in user-token mode.
+// UserTokenMode reports whether KubeAtlas runs in user-token mode.
 func UserTokenMode() bool { return CurrentCredentialMode() == CredentialsUserToken }
 
 const (
-	systemUserPrefix = "radar:system:"
-	systemGroup      = "radar:system"
-	aiUserPrefix     = "radar:ai:"
-	aiReaderGroup    = "radar:ai:reader"
+	systemUserPrefix = "kubeatlas:system:"
+	systemGroup      = "kubeatlas:system"
+	aiUserPrefix     = "kubeatlas:ai:"
+	aiReaderGroup    = "kubeatlas:ai:reader"
 )
 
 // IsSystemIdentity reports whether an identity is exactly one of the
 // background service identities a trusted upstream asserts without a user
-// token: radar:system:<job> in group radar:system, or radar:ai:<org> in group
-// radar:ai:reader. Any extra group disqualifies it, so a human identity can't
+// token: kubeatlas:system:<job> in group kubeatlas:system, or kubeatlas:ai:<org> in group
+// kubeatlas:ai:reader. Any extra group disqualifies it, so a human identity can't
 // pass for one by adding a group.
 func IsSystemIdentity(username string, groups []string) bool {
 	if len(groups) != 1 {
 		return false
+	}
+	if strings.HasPrefix(username, compat.LegacySystemUserPrefix) && len(username) > len(compat.LegacySystemUserPrefix) {
+		return groups[0] == compat.LegacySystemGroup
+	}
+	if strings.HasPrefix(username, compat.LegacyAIUserPrefix) && len(username) > len(compat.LegacyAIUserPrefix) {
+		return groups[0] == compat.LegacyAIReaderGroup
 	}
 	switch {
 	case strings.HasPrefix(username, systemUserPrefix) && len(username) > len(systemUserPrefix):

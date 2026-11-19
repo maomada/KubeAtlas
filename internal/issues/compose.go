@@ -14,7 +14,7 @@ import (
 )
 
 // Provider abstracts the data sources Compose needs. Implementations
-// in production come from the in-process radar caches; tests can
+// in production come from the in-process kubeatlas caches; tests can
 // inject fakes without standing up an informer stack.
 type Provider interface {
 	DetectProblems(namespaces []string) []k8s.Detection

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Reproducible, controller-free GPU/batch/AI ecosystem coverage for Radar.
+# Reproducible, controller-free GPU/batch/AI ecosystem coverage for KubeAtlas.
 # Upstream CRDs are pinned in gpu-ecosystem-demo/resources.tsv; fixtures cover
-# the 37 curated resource identities shipped by Radar without pretending kind
+# the 37 curated resource identities shipped by KubeAtlas without pretending kind
 # can validate real GPU allocation, driver health, utilization, or scheduling.
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-gpu-ecosystem-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-gpu-ecosystem-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 SCENARIO="${SCENARIO:-current}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -15,7 +15,7 @@ DEMO_DIR="${SCRIPT_DIR}/gpu-ecosystem-demo"
 REGISTRY="${DEMO_DIR}/resources.tsv"
 FIXTURES_DIR="${DEMO_DIR}/fixtures"
 DEMO_NS="gpu-demo"
-KUBEATLAS_NS="radar"
+KUBEATLAS_NS="kubeatlas"
 KUBEATLAS_PORT="${KUBEATLAS_PORT:-19280}"
 CLEANUP_DIRS=('')
 CLEANUP_FILES=('')
@@ -88,12 +88,12 @@ scenario_in_cluster() {
 }
 
 assert_matching_scenario() {
-  local installed logical group plural kind scope version scenario url
+  local installed group plural scenario
   installed="$(scenario_in_cluster)"
   if [ -n "${installed}" ] && [ "${installed}" != "${SCENARIO}" ]; then
     fail "Cluster contains '${installed}' fixtures. Run 'SCENARIO=${SCENARIO} $0 reset' to switch inference API families."
   fi
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  while IFS=$'\t' read -r _ group plural _ _ _ scenario _; do
     if [ "${scenario}" != "all" ] && [ "${scenario}" != "${SCENARIO}" ] && \
       kctl get "crd/${plural}.${group}" >/dev/null 2>&1; then
       fail "Cluster already contains the '${scenario}' ${plural}.${group} CRD. Run 'SCENARIO=${SCENARIO} $0 reset' to switch inference API families."
@@ -109,8 +109,8 @@ record_scenario() {
 
 install_crds() {
   step "Installing pinned upstream CRDs for the ${SCENARIO} scenario"
-  local seen='' logical group plural kind scope version scenario url crd
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  local seen='' group plural url crd
+  while IFS=$'\t' read -r _ group plural _ _ _ _ url; do
     crd="${plural}.${group}"
     case " ${seen} " in
       *" ${crd} "*) continue ;;
@@ -228,7 +228,7 @@ cmd_up() {
   install_crds
   apply_fixtures
   cmd_verify
-  note "Run '$0 install-radar' to test the current build with default chart RBAC."
+  note "Run '$0 install-kubeatlas' to test the current build with default chart RBAC."
 }
 
 cmd_down() {
@@ -250,8 +250,8 @@ cmd_verify() {
   [ "$(logical_count)" = "37" ] || fail "Registry resolves to $(logical_count) logical kinds; expected 37"
 
   step "Verifying upstream CRDs and all 37 group-qualified fixtures"
-  local logical group plural kind scope version scenario url crd actual_group actual_plural actual_scope served count
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  local group plural kind scope version crd actual_group actual_plural actual_scope served count
+  while IFS=$'\t' read -r _ group plural kind scope version _; do
     crd="${plural}.${group}"
     actual_group="$(kctl get "crd/${crd}" -o jsonpath='{.spec.group}')"
     actual_plural="$(kctl get "crd/${crd}" -o jsonpath='{.spec.names.plural}')"
@@ -274,7 +274,7 @@ cmd_verify() {
   ok "37 curated identities, served versions, scopes, objects, and collision families verified"
 }
 
-cmd_install_radar() {
+cmd_install_kubeatlas() {
   require_cluster
   require_cmd docker "https://docs.docker.com/get-docker/"
   require_cmd helm "https://helm.sh/docs/intro/install/"
@@ -284,44 +284,44 @@ cmd_install_radar() {
   case "$(uname -m)" in arm64|aarch64) arch=arm64 ;; *) arch=amd64 ;; esac
   tmp="$(mktemp -d)"
   CLEANUP_DIRS+=("${tmp}")
-  image="radar-gpu-ecosystem-demo:dev"
+  image="kubeatlas-gpu-ecosystem-demo:dev"
 
-  step "Building the current frontend, embedded assets, and linux/${arch} Radar binary"
+  step "Building the current frontend, embedded assets, and linux/${arch} KubeAtlas binary"
   (cd "${REPO_ROOT}" && make frontend embed >/dev/null)
   (cd "${REPO_ROOT}" && GOOS=linux GOARCH="${arch}" CGO_ENABLED=0 go build -o "${tmp}/kubeatlas" ./cmd/explorer)
   printf '%s\n' 'FROM alpine:3.20' 'RUN apk add --no-cache ca-certificates' 'COPY kubeatlas /kubeatlas' 'ENTRYPOINT ["/kubeatlas"]' > "${tmp}/Dockerfile"
   docker build -q -t "${image}" "${tmp}" >/dev/null
   kind load docker-image "${image}" --name "${CLUSTER_NAME}" >/dev/null
 
-  step "Installing Radar with the chart's default RBAC"
-  helm --kube-context "${KUBECTL_CTX}" upgrade --install radar "${REPO_ROOT}/deploy/helm/kubeatlas" \
+  step "Installing KubeAtlas with the chart's default RBAC"
+  helm --kube-context "${KUBECTL_CTX}" upgrade --install kubeatlas "${REPO_ROOT}/deploy/helm/kubeatlas" \
     --namespace "${KUBEATLAS_NS}" --create-namespace \
-    --set image.repository=radar-gpu-ecosystem-demo --set image.tag=dev --set image.pullPolicy=Never \
+    --set image.repository=kubeatlas-gpu-ecosystem-demo --set image.tag=dev --set image.pullPolicy=Never \
     --wait --timeout 180s >/dev/null
-  kctl -n "${KUBEATLAS_NS}" rollout restart deploy/radar >/dev/null
-  kctl -n "${KUBEATLAS_NS}" rollout status deploy/radar --timeout=180s >/dev/null
-  ok "Current Radar build is running in-cluster"
-  cmd_verify_radar
+  kctl -n "${KUBEATLAS_NS}" rollout restart deploy/kubeatlas >/dev/null
+  kctl -n "${KUBEATLAS_NS}" rollout status deploy/kubeatlas --timeout=180s >/dev/null
+  ok "Current KubeAtlas build is running in-cluster"
+  cmd_verify_kubeatlas
 }
 
-cmd_verify_radar() {
+cmd_verify_kubeatlas() {
   validate_scenario
   require_cluster
   require_cmd curl "https://curl.se/download.html"
   require_cmd jq "https://jqlang.github.io/jq/download/"
   assert_matching_scenario
-  kctl -n "${KUBEATLAS_NS}" get deploy radar >/dev/null 2>&1 || fail "Radar is not installed. Run '$0 install-radar' first."
+  kctl -n "${KUBEATLAS_NS}" get deploy kubeatlas >/dev/null 2>&1 || fail "KubeAtlas is not installed. Run '$0 install-kubeatlas' first."
 
-  step "Checking the default Radar service account against all 37 resources"
-  local logical group plural kind scope version scenario url answer pid log response ready
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
-    answer="$(kctl auth can-i list "${plural}.${group}" --as "system:serviceaccount:${KUBEATLAS_NS}:radar" 2>/dev/null || true)"
-    [ "${answer}" = "yes" ] || fail "Default Radar SA cannot list ${plural}.${group}"
+  step "Checking the default KubeAtlas service account against all 37 resources"
+  local group plural answer pid log response ready
+  while IFS=$'\t' read -r _ group plural _; do
+    answer="$(kctl auth can-i list "${plural}.${group}" --as "system:serviceaccount:${KUBEATLAS_NS}:kubeatlas" 2>/dev/null || true)"
+    [ "${answer}" = "yes" ] || fail "Default KubeAtlas SA cannot list ${plural}.${group}"
   done < <(registry_rows)
 
   log="$(mktemp)"
   CLEANUP_FILES+=("${log}")
-  kctl -n "${KUBEATLAS_NS}" port-forward svc/radar "${KUBEATLAS_PORT}:9280" >"${log}" 2>&1 &
+  kctl -n "${KUBEATLAS_NS}" port-forward svc/kubeatlas "${KUBEATLAS_PORT}:9280" >"${log}" 2>&1 &
   pid=$!
   CLEANUP_PIDS+=("${pid}")
   ready=false
@@ -331,32 +331,32 @@ cmd_verify_radar() {
       ready=true
       break
     fi
-    kill -0 "${pid}" >/dev/null 2>&1 || fail "Radar port-forward exited: $(tail -n 5 "${log}" | tr '\n' ' ')"
+    kill -0 "${pid}" >/dev/null 2>&1 || fail "KubeAtlas port-forward exited: $(tail -n 5 "${log}" | tr '\n' ' ')"
     sleep 1
   done
-  [ "${ready}" = "true" ] || fail "Radar did not report healthy within 40s; port-forward log: $(tail -n 5 "${log}" | tr '\n' ' ')"
+  [ "${ready}" = "true" ] || fail "KubeAtlas did not report healthy within 40s; port-forward log: $(tail -n 5 "${log}" | tr '\n' ' ')"
 
-  step "Querying Radar's group-aware API for every curated fixture"
-  while IFS=$'\t' read -r logical group plural kind scope version scenario url; do
+  step "Querying KubeAtlas's group-aware API for every curated fixture"
+  while IFS=$'\t' read -r _ group plural _; do
     ready=false
     for _ in $(seq 1 30); do
-      if response="$(curl -fsS "http://127.0.0.1:${KUBEATLAS_PORT}/api/resources/${plural}?group=${group}" 2>/dev/null | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')" && \
+      if response="$(curl -fsS "http://127.0.0.1:${KUBEATLAS_PORT}/api/resources/${plural}?group=${group}" 2>/dev/null | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')" && \
         jq -e --arg g "${group}" 'type == "array" and length > 0 and all(.[]; (.apiVersion | split("/")[0]) == $g)' <<<"${response}" >/dev/null; then
         ready=true
         break
       fi
-      kill -0 "${pid}" >/dev/null 2>&1 || fail "Radar port-forward exited while querying ${plural}.${group}: $(tail -n 5 "${log}" | tr '\n' ' ')"
+      kill -0 "${pid}" >/dev/null 2>&1 || fail "KubeAtlas port-forward exited while querying ${plural}.${group}: $(tail -n 5 "${log}" | tr '\n' ' ')"
       sleep 1
     done
-    [ "${ready}" = "true" ] || fail "Radar did not return group-pure ${plural}.${group} objects within 30s"
+    [ "${ready}" = "true" ] || fail "KubeAtlas did not return group-pure ${plural}.${group} objects within 30s"
   done < <(registry_rows)
 
-  response="$(curl -fsS "http://127.0.0.1:${KUBEATLAS_PORT}/api/resources/jobs?group=batch" | jq -ce 'if .coverage.status == "complete" then .items else error("Radar resource read is incomplete") end')"
+  response="$(curl -fsS "http://127.0.0.1:${KUBEATLAS_PORT}/api/resources/jobs?group=batch" | jq -ce 'if .coverage.status == "complete" then .items else error("KubeAtlas resource read is incomplete") end')"
   jq -e 'length > 0 and all(.[]; (.apiVersion // "batch/v1") == "batch/v1") and any(.[]; .metadata.name == "collision-demo")' \
-    <<<"${response}" >/dev/null || fail "Radar did not keep the core batch/v1 Job collision fixture separate"
+    <<<"${response}" >/dev/null || fail "KubeAtlas did not keep the core batch/v1 Job collision fixture separate"
   kill "${pid}" >/dev/null 2>&1 || true
   wait "${pid}" 2>/dev/null || true
-  ok "Default chart RBAC and Radar discovery/API passed for all 37 identities"
+  ok "Default chart RBAC and KubeAtlas discovery/API passed for all 37 identities"
 }
 
 cmd_status() {
@@ -370,7 +370,7 @@ cmd_status() {
   step "Cluster totals"
   note "curated identities: $(logical_count)"
   note "installed matching CRDs: $(registry_rows | while IFS=$'\t' read -r _ group plural _; do kctl get "crd/${plural}.${group}" -o name 2>/dev/null || true; done | sort -u | wc -l | tr -d ' ')"
-  if kctl -n "${KUBEATLAS_NS}" get deploy radar >/dev/null 2>&1; then
+  if kctl -n "${KUBEATLAS_NS}" get deploy kubeatlas >/dev/null 2>&1; then
     kctl -n "${KUBEATLAS_NS}" get pods
   fi
 }
@@ -383,16 +383,16 @@ Commands:
   up             Create/reuse kind, install pinned upstream CRDs, seed fixtures, verify them
   down           Delete the dedicated kind cluster
   reset          Recreate the cluster and fixtures
-  status         Show scenario, registry, CRD, and Radar inventory
+  status         Show scenario, registry, CRD, and KubeAtlas inventory
   verify         Verify the cluster-side 37-kind contract
-  install-radar  Build current code, install the chart with default RBAC, then verify Radar
-  verify-radar   Verify default chart RBAC plus Radar discovery/API for all 37 kinds
+  install-kubeatlas  Build current code, install the chart with default RBAC, then verify KubeAtlas
+  verify-kubeatlas   Verify default chart RBAC plus KubeAtlas discovery/API for all 37 kinds
   help           Show this message
 
 Environment:
-  CLUSTER_NAME   kind cluster name (default: radar-gpu-ecosystem-demo)
+  CLUSTER_NAME   kind cluster name (default: kubeatlas-gpu-ecosystem-demo)
   SCENARIO       current (default) or experimental inference API family
-  KUBEATLAS_PORT     local port used by verify-radar (default: 19280)
+  KUBEATLAS_PORT     local port used by verify-kubeatlas (default: 19280)
 
 This validates discovery, group collisions, schemas, rendering inputs, and chart RBAC.
 It does not validate GPU hardware, drivers, CUDA, DRA allocation, utilization, or accounting.
@@ -405,8 +405,8 @@ case "${1:-help}" in
   reset) cmd_down; cmd_up ;;
   status) cmd_status ;;
   verify) cmd_verify ;;
-  install-radar) cmd_install_radar ;;
-  verify-radar) cmd_verify_radar ;;
+  install-kubeatlas) cmd_install_kubeatlas ;;
+  verify-kubeatlas) cmd_verify_kubeatlas ;;
   help|-h|--help) usage ;;
   *) fail "unknown subcommand: $1 (try '$0 help')" ;;
 esac

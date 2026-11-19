@@ -6,49 +6,49 @@ kind: Namespace
 metadata:
   name: demo-healthy
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: demo-drift
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: demo-suspended
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: demo-app-of-apps
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: demo-set
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: demo-flux
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 apiVersion: v1
 kind: Namespace
 metadata:
   name: demo-flux-helm
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 # Pre-created so guestbook-rollback can sync into a real namespace.
 # guestbook-broken-* deliberately do NOT have their target namespaces
@@ -58,7 +58,7 @@ kind: Namespace
 metadata:
   name: demo-rollback
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"
 ---
 # Pre-created for the zombie Kustomization. The Kustomization itself is
 # what lands in stuck-Terminating; the namespace stays so the zombie has
@@ -68,4 +68,4 @@ kind: Namespace
 metadata:
   name: demo-zombie
   labels:
-    radar-demo: "true"
+    kubeatlas-demo: "true"

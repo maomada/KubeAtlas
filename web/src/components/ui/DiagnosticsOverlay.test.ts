@@ -5,7 +5,7 @@ import type { DiagnosticsSnapshot } from '../../api/client'
 
 const baseSnapshot: DiagnosticsSnapshot = {
   timestamp: '2026-08-19T10:00:00Z',
-  radarVersion: '1.9.0',
+  kubeatlasVersion: '1.9.0',
   goVersion: 'go1.26.5',
   goos: 'linux',
   goarch: 'amd64',

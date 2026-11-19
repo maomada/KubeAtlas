@@ -42,7 +42,7 @@ describe('a backup whose storage location is unreachable', () => {
 
 /**
  * FailedValidation is the one outcome where Velero usually explains itself, in
- * status.failureReason. Radar's own sentence is the fallback for when it does
+ * status.failureReason. KubeAtlas's own sentence is the fallback for when it does
  * not — a run rejected before it started leaves no errors, no warnings and no
  * item counts, so without either the page is an empty red banner.
  */

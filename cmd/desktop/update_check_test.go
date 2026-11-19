@@ -27,7 +27,7 @@ func TestManualUpdateCheckBridgeCoalescesClicksAndEncodesResult(t *testing.T) {
 	}
 	item := findMenuItem(t, findSubmenu(t, createMenu(a, "1.2.3", "darwin"), "Help"), "Check for Updates...")
 	item.Click(nil)
-	if script := <-scripts; !strings.Contains(script, "radar:check-for-updates") {
+	if script := <-scripts; !strings.Contains(script, "kubeatlas:check-for-updates") {
 		t.Fatalf("missing start event: %s", script)
 	}
 	item.Click(nil)
@@ -46,7 +46,7 @@ func TestManualUpdateCheckBridgeCoalescesClicksAndEncodesResult(t *testing.T) {
 	if strings.Contains(script, "</script>") {
 		t.Fatal("result contains unescaped script content")
 	}
-	payload := strings.TrimSuffix(strings.TrimPrefix(script, "window.dispatchEvent(new CustomEvent('radar:update-check-result', {detail:"), "}))")
+	payload := strings.TrimSuffix(strings.TrimPrefix(script, "window.dispatchEvent(new CustomEvent('kubeatlas:update-check-result', {detail:"), "}))")
 	var got versionpkg.UpdateInfo
 	if err := json.Unmarshal([]byte(payload), &got); err != nil {
 		t.Fatalf("invalid event payload: %v", err)

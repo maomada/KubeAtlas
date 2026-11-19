@@ -6,8 +6,8 @@ import {
   ConfirmDialog,
   FactGrid,
   Input,
-  RadarUpgradeNote,
-  getRadarUpgradeRequirement,
+  KubeAtlasUpgradeNote,
+  getKubeAtlasUpgradeRequirement,
   useDebouncedValue,
 } from '@maomada/k8s-ui'
 import { validateRFC1123Label } from '@maomada/k8s-ui/utils/validators'
@@ -57,7 +57,7 @@ export function CNPGCreateScheduleDialog({
         immediate,
       },
     })
-  const upgrade = getRadarUpgradeRequirement(preview.error)
+  const upgrade = getKubeAtlasUpgradeRequirement(preview.error)
   const changed = context !== connection.context
   if (changed)
     return (
@@ -145,7 +145,7 @@ export function CNPGCreateScheduleDialog({
       }
       notes={['Each scheduled run creates a Backup. This does not change the Cluster or validate credentials.']}
     >
-      {upgrade && <RadarUpgradeNote requirement={upgrade} />}
+      {upgrade && <KubeAtlasUpgradeNote requirement={upgrade} />}
       {draft !== null && (
         <div className="space-y-2 text-xs text-theme-text-secondary">
           <p>

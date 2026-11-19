@@ -30,13 +30,13 @@ const admissionBlockerMaxChanges = 2
 const admissionOrderFetchLimit = 10
 
 // admissionOnsetSlop absorbs the gap between event timestamps (whole
-// seconds, from the controller) and Radar's receipt time for the policy change.
+// seconds, from the controller) and KubeAtlas's receipt time for the policy change.
 const admissionOnsetSlop = 30 * time.Second
 
 // admissionRecordLag is how far a policy add's recorded time may trail the
 // object's creationTimestamp and still date the creation. An add recorded
 // from an informer's (re)list can trail it by up to 30s (isSyncAdd); clock
-// skew between Radar and the API server is the rest of the allowance.
+// skew between KubeAtlas and the API server is the rest of the allowance.
 const admissionRecordLag = 5 * time.Second
 
 const (
@@ -140,7 +140,7 @@ func admissionBlockerForIssue(ctx context.Context, iss *issuesapi.Issue, window 
 		return true
 	}
 	// Without an informer covering the namespace for the kind (no list
-	// access for Radar itself), the timeline holds none of its changes, and
+	// access for KubeAtlas itself), the timeline holds none of its changes, and
 	// an empty answer means nothing.
 	collected := func(kind string) bool {
 		cache := k8s.GetResourceCache()
@@ -204,7 +204,7 @@ func admissionBlockerForIssue(ctx context.Context, iss *issuesapi.Issue, window 
 // states which side changed last, and withdraws a "started at resource
 // creation" timing that the policy change contradicts. subject holds the
 // workload side's visible changes; subjectComplete says an empty subject list
-// is a true "no recorded change". absenceKnown says Radar has observed long
+// is a true "no recorded change". absenceKnown says KubeAtlas has observed long
 // enough for a side with no recorded change to count as unchanged. It returns
 // false, leaving the issue untouched, when neither side has a visible change.
 func attachAdmissionBlocker(iss *issuesapi.Issue, ev *admissionBlockerEvidence, subject []issuesapi.RecentChange, subjectComplete, absenceKnown bool, window time.Duration) bool {
@@ -241,7 +241,7 @@ func attachAdmissionBlocker(iss *issuesapi.Issue, ev *admissionBlockerEvidence, 
 
 // admissionChangeOrder states which side of an admission rejection changed
 // last, from recorded changes only. Empty when neither side has a recorded
-// change, or when the side without one may have changes Radar did not see.
+// change, or when the side without one may have changes KubeAtlas did not see.
 // When both sides have one, each record shows that side was being watched by
 // then, so the order holds however young the store is; a side with none
 // counts as unchanged only when absenceKnown.
@@ -264,8 +264,8 @@ func admissionChangeOrder(iss *issuesapi.Issue, ev *admissionBlockerEvidence, su
 		// there would reverse it.
 		policy := ev.changes[0]
 		if changeTime(policy).Equal(changeTime(*newestSubject)) {
-			// Change times are Radar's whole-second receipt times.
-			return fmt.Sprintf("%s and %s: Radar recorded both in the same second, so it can't tell which changed last.", describeChange(policy), describeChange(*newestSubject)), false
+			// Change times are KubeAtlas's whole-second receipt times.
+			return fmt.Sprintf("%s and %s: KubeAtlas recorded both in the same second, so it can't tell which changed last.", describeChange(policy), describeChange(*newestSubject)), false
 		}
 		if changeTime(policy).After(changeTime(*newestSubject)) {
 			if !subjectComplete || !creationTimeKnown(policy) {

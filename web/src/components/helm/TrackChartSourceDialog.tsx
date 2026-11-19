@@ -13,7 +13,7 @@ import {
   useHelmSourceStatus,
   useRemoveOCISource,
   useSetHelmSource,
-  useRadarFeature,
+  useKubeAtlasFeature,
 } from '../../api/client'
 import { OperatorManagedNotice } from '../settings/OperatorManagedNotice'
 import { ArtifactHubSourceSearch, publicChartSourceURL } from './ArtifactHubSourceSearch'
@@ -164,7 +164,7 @@ function ChartSourcePicker({
   sourceIssue,
   sourceError,
 }: TrackChartSourceDialogProps) {
-  const sourceFeature = useRadarFeature('helmSourceIdentity')
+  const sourceFeature = useKubeAtlasFeature('helmSourceIdentity')
   const [view, setView] = useState<'added' | 'public' | 'manual'>('added')
   const [manualType, setManualType] = useState<'repository' | 'oci'>('repository')
   const [selectedKey, setSelectedKey] = useState('')

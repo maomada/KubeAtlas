@@ -3,7 +3,7 @@ export interface NamespacedRef {
   name: string
   /**
    * Optional cluster scope. Populated by cross-cluster compare flows
-   * (Radar Hub fleet search) so the same `kube-system/coredns` in two
+   * (KubeAtlas Hub fleet search) so the same `kube-system/coredns` in two
    * different clusters can both be picked. Undefined in OSS single-
    * cluster compare; equality then falls back to namespace+name only.
    */

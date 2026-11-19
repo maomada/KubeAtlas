@@ -18,7 +18,7 @@ import (
 	k8stesting "k8s.io/client-go/testing"
 )
 
-// lockedDiscovery lets a test change the served resources while Radar
+// lockedDiscovery lets a test change the served resources while KubeAtlas
 // refreshes discovery in the background.
 type lockedDiscovery struct {
 	*fakediscovery.FakeDiscovery

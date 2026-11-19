@@ -29,7 +29,7 @@ export function GitOpsManaged() {
       onConfirm={noop}
       agentLabel="Codex"
       resourceLabel="Deployment payments/checkout-api"
-      context="kind-radar-gitops-demo"
+      context="kind-kubeatlas-gitops-demo"
       fix={'Point the image back to the last tag that pulled successfully:\n\n```\nkubectl -n payments set image deployment/checkout-api checkout-api=ghcr.io/acme/checkout-api:v2.14.1\n```'}
       managedBy="Argo CD"
       confidence={0.42}

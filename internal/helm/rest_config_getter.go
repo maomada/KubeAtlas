@@ -17,7 +17,7 @@ import (
 )
 
 // restConfigGetter implements genericclioptions.RESTClientGetter by
-// reusing a *rest.Config Radar already resolved at boot, instead of
+// reusing a *rest.Config KubeAtlas already resolved at boot, instead of
 // asking Helm to re-resolve from kubeconfig.
 //
 // Used whenever no single kubeconfig file path is available to hand
@@ -27,11 +27,11 @@ import (
 //     the pod. Helm's default ConfigFlags would fall through to
 //     localhost:8080.
 //  2. Multi-source kubeconfig on a laptop (--kubeconfig-dir or a
-//     KUBECONFIG env var with multiple paths): Radar uses isolated
+//     KUBECONFIG env var with multiple paths): KubeAtlas uses isolated
 //     per-file loading, so there isn't one path Helm can re-parse —
 //     it would silently pick a different file from its own precedence.
 //
-// In both cases we hand Helm the exact rest.Config Radar's K8s client
+// In both cases we hand Helm the exact rest.Config KubeAtlas's K8s client
 // is already using, so Helm can't drift to a different cluster or
 // fabricate a localhost target.
 type restConfigGetter struct {

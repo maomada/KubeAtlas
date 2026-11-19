@@ -68,7 +68,7 @@ func ResolveHelmNamespaces(ctx context.Context, authz EvidenceAuthorizer, namesp
 			// of 403-ing. Authenticated users are handled below; Helm lists
 			// impersonate them directly, so narrowing them with the backend
 			// client's fallback namespaces would under-list users whose RBAC is
-			// wider than Radar's own ServiceAccount.
+			// wider than KubeAtlas's own ServiceAccount.
 			if fallback := helm.ResolveNoAuthListNamespaces(ctx); len(fallback) > 0 {
 				return fallback, true
 			}

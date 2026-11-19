@@ -89,7 +89,7 @@ type PermissionCheckResult struct {
 }
 
 // CredentialRejectedNamespaces returns, sorted, the namespaces among
-// namespaces (nil: every namespace) where Kubernetes rejected Radar's
+// namespaces (nil: every namespace) where Kubernetes rejected KubeAtlas's
 // credentials (401) when it checked its access to resource.
 func (r *PermissionCheckResult) CredentialRejectedNamespaces(resource string, namespaces []string) []string {
 	if r == nil {
@@ -120,7 +120,7 @@ type Capabilities struct {
 	MCPReadOnly      bool                     `json:"mcpReadOnly"`
 	MCPExecTools     bool                     `json:"mcpExecTools"`
 	MCPEnabled       bool                     `json:"mcpEnabled"`              // MCP server is running
-	Deployment       DeploymentInfo           `json:"deployment"`              // How / where this Radar binary is running. Tells the UI which chrome to render or suppress (e.g. embedded mode hides the cluster headline + local-MCP card because the hub already renders both).
+	Deployment       DeploymentInfo           `json:"deployment"`              // How / where this KubeAtlas binary is running. Tells the UI which chrome to render or suppress (e.g. embedded mode hides the cluster headline + local-MCP card because the hub already renders both).
 	Features         FeatureCapabilities      `json:"features"`                // Versioned server features that newer embedded frontends must negotiate
 	AuthEnabled      bool                     `json:"authEnabled,omitempty"`   // Auth is enabled on the server
 	Username         string                   `json:"username,omitempty"`      // Authenticated username (when auth enabled)
@@ -154,12 +154,12 @@ type CloudConnectCapability struct {
 }
 
 // FeatureCapabilities advertises endpoints by meaning rather than by version,
-// so an embedding host running a newer frontend (Radar Hub) can tell what this
+// so an embedding host running a newer frontend (KubeAtlas Hub) can tell what this
 // binary serves. A flag, once added, is always true here: older binaries simply
 // lack it, and the frontend falls back to a minimum-version check for them.
 //
 // A new endpoint that the frontend calls as an optional feature gets its flag
-// here in the same change, plus an entry in web/src/api/radarFeatures.ts
+// here in the same change, plus an entry in web/src/api/kubeatlasFeatures.ts
 // (TestFeatureFlagsHaveFrontendGates enforces the pairing).
 type FeatureCapabilities struct {
 	HelmSourceIdentity    bool `json:"helmSourceIdentity"`
@@ -217,10 +217,10 @@ type NamespaceCapabilities struct {
 	Errors         NamespaceCapabilityErrors `json:"-"`
 }
 
-// DeploymentInfo describes how / where this Radar binary is running.
+// DeploymentInfo describes how / where this KubeAtlas binary is running.
 // The frontend uses Mode to gate chrome that only makes sense in some
 // topologies — e.g. cloud-connected mode hides the cluster headline
-// because Radar Cloud's hub renders it in the top bar; in-cluster mode
+// because KubeAtlas Cloud's hub renders it in the top bar; in-cluster mode
 // falls back to the platform label for the cluster name because the
 // kubeconfig context is the meaningless "in-cluster" sentinel.
 //
@@ -231,16 +231,16 @@ type NamespaceCapabilities struct {
 type DeploymentMode string
 
 const (
-	// DeploymentModeLocal: Radar binary running on a developer's
+	// DeploymentModeLocal: KubeAtlas binary running on a developer's
 	// machine with a kubeconfig. The most common OSS path.
 	DeploymentModeLocal DeploymentMode = "local"
-	// DeploymentModeInCluster: Radar pod running inside the cluster
+	// DeploymentModeInCluster: KubeAtlas pod running inside the cluster
 	// it's observing, with no kubeconfig. The kubeconfig context name
 	// is set to the literal "in-cluster" sentinel during bootstrap.
 	// Frontend should fall back to the platform label for headlines.
 	DeploymentModeInCluster DeploymentMode = "in-cluster"
-	// DeploymentModeCloud: Radar pod running in-cluster AND tunneled
-	// to Radar Cloud's hub (KUBEATLAS_CLOUD_MODE=true; technically a
+	// DeploymentModeCloud: KubeAtlas pod running in-cluster AND tunneled
+	// to KubeAtlas Cloud's hub (KUBEATLAS_CLOUD_MODE=true; technically a
 	// superset of in-cluster mode plus the outbound tunnel). The hub
 	// shell renders cluster identity + MCP discovery surfaces, so the
 	// embedded UI suppresses both.
@@ -381,8 +381,8 @@ func CheckCapabilities(ctx context.Context) (*Capabilities, error) {
 	// Local terminal is not RBAC-gated — it depends on runtime mode only
 	caps.LocalTerminal = !IsInCluster() && !ForceDisableLocalTerminal
 
-	// Port-forward binds a local TCP listener on the radar host; like the local
-	// terminal it's meaningless in-cluster (the listener would be on the radar
+	// Port-forward binds a local TCP listener on the kubeatlas host; like the local
+	// terminal it's meaningless in-cluster (the listener would be on the kubeatlas
 	// pod, not the user's machine), so force it off regardless of RBAC. The HTTP
 	// capabilities handler re-applies this after its namespace merge.
 	if IsInCluster() {
@@ -1003,7 +1003,7 @@ func resolveProbeGVRs(p resourceProbe) []schema.GroupVersionResource {
 //   - Cluster-wide list?limit=1 first.
 //   - If 403 and the kind is namespaceable AND fallback namespaces are set,
 //     retry scoped to those namespaces.
-//   - A 401 rejects Radar's identity, not one scope, so a cluster-wide 401
+//   - A 401 rejects KubeAtlas's identity, not one scope, so a cluster-wide 401
 //     skips the namespace walk and keeps the rejection. A 401 from a namespace
 //     probe is kept even when another namespace grants access.
 //   - Anything still 403/401 → that scope is denied.
@@ -1137,7 +1137,7 @@ func buildScopeCandidates(ctx context.Context) ([]string, bool) {
 	if !authoritative {
 		// Authoritative=false means the user can't list namespaces. Without
 		// that list the probe can only try whatever the operator named
-		// explicitly — log it so an operator diagnosing "Radar disabled my
+		// explicitly — log it so an operator diagnosing "KubeAtlas disabled my
 		// kinds" has a breadcrumb instead of silence.
 		log.Printf("RBAC: namespace discovery non-authoritative (cluster-wide list namespaces denied); fallback candidates limited to %v", out)
 	}
@@ -1388,7 +1388,7 @@ func probeResourceAccess(ctx context.Context, dyn dynamic.Interface, scopeNamesp
 
 	if ctx.Err() != nil {
 		// Deadline expired mid-probe. Keep every outcome that completed —
-		// returning empty scopes here would silently start Radar with no
+		// returning empty scopes here would silently start KubeAtlas with no
 		// typed informers at all. hadErrors forces the short error TTL, so
 		// a full re-probe happens soon regardless.
 		hadErrors.Store(true)

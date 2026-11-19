@@ -1,6 +1,10 @@
 package auth
 
-import "testing"
+import (
+	"context"
+	"github.com/maomada/KubeAtlas/pkg/compat"
+	"testing"
+)
 
 func TestForwardedIdentityAllowed(t *testing.T) {
 	cases := []struct {
@@ -19,19 +23,19 @@ func TestForwardedIdentityAllowed(t *testing.T) {
 		{"non-cloud: serviceaccount username rejected", "system:serviceaccount:kube-system:default", nil, false, false},
 
 		// Cloud: reserved-principal rejection.
-		{"cloud: system:masters group rejected", "user_01ABC", []string{"radar:owner", "system:masters"}, true, false},
-		{"cloud: system username rejected", "system:node:x", []string{"radar:owner"}, true, false},
+		{"cloud: system:masters group rejected", "user_01ABC", []string{"kubeatlas:owner", "system:masters"}, true, false},
+		{"cloud: system username rejected", "system:node:x", []string{"kubeatlas:owner"}, true, false},
 		{"cloud: serviceaccount group rejected", "user_01ABC", []string{"system:serviceaccounts:kube-system"}, true, false},
 
 		// Cloud: vocabulary allowlist.
-		{"cloud: radar tier allowed", "user_01ABC", []string{"radar:owner", "radar:org:o1", "radar:user:u1"}, true, true},
+		{"cloud: kubeatlas tier allowed", "user_01ABC", []string{"kubeatlas:owner", "kubeatlas:org:o1", "kubeatlas:user:u1"}, true, true},
 		{"cloud: legacy cloud tier allowed", "user_01ABC", []string{"cloud:viewer", "cloud:org:o1"}, true, true},
-		{"cloud: radar:idp group allowed", "user_01ABC", []string{"radar:idp:f81d4fae"}, true, true},
-		{"cloud: radar:email allowed", "user_01ABC", []string{"radar:email:a@b.com"}, true, true},
-		{"cloud: non-vocabulary group rejected", "user_01ABC", []string{"radar:owner", "sre-team"}, true, false},
-		{"cloud: empty username rejected", "", []string{"radar:owner"}, true, false},
-		{"cloud mode internal synthetic username allowed", "radar:system:alerts:o1", []string{"radar:owner"}, true, true},
-		{"cloud: AI reader identity allowed", "radar:ai:o1", []string{"radar:ai:reader"}, true, true},
+		{"cloud: kubeatlas:idp group allowed", "user_01ABC", []string{"kubeatlas:idp:f81d4fae"}, true, true},
+		{"cloud: kubeatlas:email allowed", "user_01ABC", []string{"kubeatlas:email:a@b.com"}, true, true},
+		{"cloud: non-vocabulary group rejected", "user_01ABC", []string{"kubeatlas:owner", "sre-team"}, true, false},
+		{"cloud: empty username rejected", "", []string{"kubeatlas:owner"}, true, false},
+		{"cloud mode internal synthetic username allowed", "kubeatlas:system:alerts:o1", []string{"kubeatlas:owner"}, true, true},
+		{"cloud: AI reader identity allowed", "kubeatlas:ai:o1", []string{"kubeatlas:ai:reader"}, true, true},
 		{"cloud: no groups, valid user, allowed", "user_01ABC", nil, true, true},
 		{"cloud: Hub owner group allowed", "user_01ABC", []string{"kubeatlas:hub:owner"}, true, true},
 		{"cloud: Hub member group allowed", "user_01ABC", []string{"kubeatlas:hub:member"}, true, true},
@@ -57,11 +61,57 @@ func TestIsReservedPrincipal(t *testing.T) {
 			t.Errorf("IsReservedPrincipal(%q) = false, want true", p)
 		}
 	}
-	// Radar's own namespaced synthetic principals must NOT be treated as reserved.
-	notReserved := []string{"radar:system:alerts:o1", "radar:system", "radar:owner", "alice@company.com", "sre-team", ""}
+	// KubeAtlas's own namespaced synthetic principals must NOT be treated as reserved.
+	notReserved := []string{"kubeatlas:system:alerts:o1", "kubeatlas:system", "kubeatlas:owner", "alice@company.com", "sre-team", ""}
 	for _, p := range notReserved {
 		if IsReservedPrincipal(p) {
 			t.Errorf("IsReservedPrincipal(%q) = true, want false", p)
+		}
+	}
+}
+
+func TestForwardedIdentityRejectsUnknownReservedVocabulary(t *testing.T) {
+	for _, prefix := range []string{"kubeatlas:", compat.LegacyTierPrefix, "cloud:"} {
+		for _, role := range []string{"owner", "member", "viewer"} {
+			if !ForwardedIdentityAllowed("fixture", []string{prefix + role}, true) {
+				t.Fatalf("known tier rejected:%s%s", prefix, role)
+			}
+		}
+		for _, field := range []string{"org:", "user:", "idp:", "email:"} {
+			if !ForwardedIdentityAllowed("fixture", []string{prefix + field + "fixture"}, true) {
+				t.Fatalf("known identity metadata rejected:%s%s", prefix, field)
+			}
+		}
+		invalid := [][]string{{prefix + "org:"}, {prefix + "ai:owner"}}
+		if prefix == "kubeatlas:" {
+			invalid = append(invalid, []string{prefix + "evil"}, []string{prefix + "owner", prefix + "evil"})
+		}
+		for _, groups := range invalid {
+			if ForwardedIdentityAllowed("fixture", groups, true) {
+				t.Fatalf("unknown reserved vocabulary accepted:%v", groups)
+			}
+		}
+	}
+	for _, pair := range [][2]string{{"kubeatlas:system:fixture", "kubeatlas:system"}, {"kubeatlas:ai:fixture", "kubeatlas:ai:reader"}, {compat.LegacySystemUserPrefix + "fixture", compat.LegacySystemGroup}, {compat.LegacyAIUserPrefix + "fixture", compat.LegacyAIReaderGroup}} {
+		if !ForwardedIdentityAllowed(pair[0], []string{pair[1]}, true) {
+			t.Fatal("defined background identity rejected")
+		}
+	}
+}
+
+func TestLegacyOpaqueGroupsRetainNamesWithoutCreatingCloudRoles(t *testing.T) {
+	for _, prefix := range []string{compat.LegacyTierPrefix, "cloud:"} {
+		group := prefix + "custom-readers"
+		if !ForwardedIdentityAllowed("fixture", []string{group}, true) {
+			t.Fatal("deployed opaque group rejected")
+		}
+		user := &User{Username: "fixture", Groups: []string{group}, Cloud: true}
+		role := CloudRoleFromContext(ContextWithUser(context.Background(), user))
+		if role != RoleDenied || role.AtLeast(RoleViewer) || role.AtLeast(RoleOwner) {
+			t.Fatalf("opaque group became role %q", role)
+		}
+		if ForwardedIdentityAllowed("fixture", []string{group, "system:masters"}, true) {
+			t.Fatal("legacy group bypassed Kubernetes reserved-group guard")
 		}
 	}
 }

@@ -17,7 +17,7 @@ type authenticatedTunnelRequestKey struct{}
 
 // IsAuthenticatedTunnelRequest reports whether r arrived over the authenticated
 // Hub yamux session. Cloud proxy auth uses this in addition to the forwarded
-// identity headers so a pod that reaches Radar's ordinary TCP listener cannot
+// identity headers so a pod that reaches KubeAtlas's ordinary TCP listener cannot
 // turn spoofed headers into Kubernetes impersonation credentials.
 func IsAuthenticatedTunnelRequest(ctx context.Context) bool {
 	marked, _ := ctx.Value(authenticatedTunnelRequestKey{}).(bool)
@@ -34,7 +34,7 @@ func AuthenticatedTunnelHandler(next http.Handler) http.Handler {
 	})
 }
 
-// serve accepts yamux streams and hands them to http.Serve using Radar's
+// serve accepts yamux streams and hands them to http.Serve using KubeAtlas's
 // existing HTTP handler. Each accepted stream is a net.Conn; http.Serve
 // reads one HTTP request (or WebSocket upgrade) per connection. Long-lived
 // responses (SSE, exec WebSocket) stay on the same stream until the browser
@@ -46,7 +46,7 @@ func serve(ctx context.Context, sess *yamux.Session, handler http.Handler) error
 
 	// Use http.Server rather than http.Serve so we can cleanly shut down on
 	// ctx cancellation. Marking happens here, at the transport boundary: the
-	// same Radar router is also attached to a local TCP listener, so marking it
+	// same KubeAtlas router is also attached to a local TCP listener, so marking it
 	// inside the router would let direct in-cluster callers spoof Cloud identity.
 	srv := &http.Server{Handler: AuthenticatedTunnelHandler(handler)}
 

@@ -25,7 +25,7 @@ export function launchAgentLabel(run: RunSummary): string {
 // so it can't use the dock hook directly — it dispatches this event instead.
 export function openInTerminal(command: string, title: string) {
   window.dispatchEvent(
-    new CustomEvent("radar:open-local-terminal", {
+    new CustomEvent("kubeatlas:open-local-terminal", {
       detail: { command, title },
     }),
   );
@@ -55,15 +55,15 @@ export function buildLaunchCommand(
   }
   if (run.agent === "codex") {
     // Codex threads are stored globally by id (cwd-independent); -c re-attaches MCP.
-    return `codex resume ${sq(run.sessionId)} -c ${sq(`mcp_servers.radar.url="${mcpUrl}"`)}`;
+    return `codex resume ${sq(run.sessionId)} -c ${sq(`mcp_servers.kubeatlas.url="${mcpUrl}"`)}`;
   }
   // Claude Code: --resume is cwd-scoped, and KubeAtlas runs its headless sessions from
   // the home dir (see claudeAgent). The KubeAtlas terminal starts there too, but a user
   // pasting this into their own terminal is usually in a project dir — so prefix
   // `cd ~` to resolve the session wherever it's run (harmless in the home-dir case).
-  // --mcp-config MERGES radar alongside the user's own servers.
+  // --mcp-config MERGES kubeatlas alongside the user's own servers.
   const cfg = JSON.stringify({
-    mcpServers: { radar: { type: "http", url: mcpUrl } },
+    mcpServers: { kubeatlas: { type: "http", url: mcpUrl } },
   });
   return `cd ~ && claude --resume ${sq(run.sessionId)} --mcp-config ${sq(cfg)}`;
 }

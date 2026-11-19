@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { useCallback, useEffect, useId, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { useLocation, useSearchParams } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
@@ -23,10 +24,10 @@ import {
 import type { UsageDataStatus } from '../../api/usage-data'
 import { UsageDataAsk } from '../usage-data/UsageDataAsk'
 
-const LAST_SEEN_KEY = 'radar-whats-new-seen'
+const LAST_SEEN_KEY = 'kubeatlas-whats-new-seen'
 const PREVIEW_PARAM = 'whats-new'
 const PREVIEW_FROM_PARAM = 'whats-new-from'
-export const SHOW_WHATS_NEW_EVENT = 'radar:show-whats-new'
+export const SHOW_WHATS_NEW_EVENT = 'kubeatlas:show-whats-new'
 
 /**
  * The notes to open automatically, if any: the unseen releases, composed, when
@@ -67,26 +68,26 @@ function normalize(version: string): string {
 // keeps its own. undefined = nothing can be recorded, so don't auto-open.
 function readBrowserLastSeen(): string | null | undefined {
   try {
-    return localStorage.getItem(LAST_SEEN_KEY)
+    return readProductStorage(localStorage, LAST_SEEN_KEY)
   } catch {
     return undefined
   }
 }
 
-function hadRadarStateBeforeThisSession(): boolean {
+function hadKubeAtlasStateBeforeThisSession(): boolean {
   try {
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i)
-      if (key && key !== LAST_SEEN_KEY && key.startsWith('radar')) return true
+      if (key && key !== LAST_SEEN_KEY && key.startsWith('kubeatlas')) return true
     }
   } catch { /* ignore */ }
   return false
 }
 
-// Read at module load, before this session's own queries write radar-* keys
+// Read at module load, before this session's own queries write kubeatlas-* keys
 // (the version check records its last run), which would make every fresh
 // install look like an upgrade.
-const HAD_PRIOR_KUBEATLAS_STATE = hadRadarStateBeforeThisSession()
+const HAD_PRIOR_KUBEATLAS_STATE = hadKubeAtlasStateBeforeThisSession()
 
 function writeBrowserLastSeen(version: string) {
   try { localStorage.setItem(LAST_SEEN_KEY, version) } catch { /* ignore */ }
@@ -271,7 +272,7 @@ export function WhatsNew({ onNavigate, usageData }: WhatsNewProps) {
 
   const readAboutUsageData = useCallback(() => {
     close()
-    window.dispatchEvent(new CustomEvent('radar:open-settings', { detail: { section: 'privacy' } }))
+    window.dispatchEvent(new CustomEvent('kubeatlas:open-settings', { detail: { section: 'privacy' } }))
   }, [close])
 
   if (isCloud) return null

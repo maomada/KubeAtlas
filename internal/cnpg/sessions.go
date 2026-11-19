@@ -31,7 +31,7 @@ const (
 	cnpgExecConcurrency = 4
 	cnpgSessionsMaxRows = 200
 	cnpgQueryTextChars  = 200
-	cnpgDiagnosticsApp  = "radar-diagnostics"
+	cnpgDiagnosticsApp  = "kubeatlas-diagnostics"
 	execStateDenied     = runtimeStateDenied
 	cnpgPsqlDatabase    = "postgres"
 	cnpgSignalCancel    = "cancel"

@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/maomada/KubeAtlas/internal/k8s"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"github.com/maomada/KubeAtlas/pkg/probe"
 	authzv1 "k8s.io/api/authorization/v1"
 	batchv1 "k8s.io/api/batch/v1"
@@ -100,7 +101,7 @@ func DefaultImage() string {
 
 // selfPodImage reads KubeAtlas's own pod (named by the MY_POD_NAME /
 // MY_POD_NAMESPACE downward-API env the chart injects) and returns the image of
-// its "kubeatlas" container, or the legacy "radar" container. It trusts the
+// its "kubeatlas" container, or its deployed legacy container name. It trusts the
 // first container only when it is the sole container. Returns "" when the env
 // is unset, the client is nil, the Get fails (e.g. no get-pods RBAC), or the pod
 // has no containers - every such case falls through to the next image source.
@@ -119,7 +120,7 @@ func selfPodImage(ctx context.Context, selfClient kubernetes.Interface) string {
 		}
 	}
 	for _, c := range pod.Spec.Containers {
-		if c.Name == "radar" {
+		if c.Name == compat.LegacyContainerName {
 			return c.Image
 		}
 	}
@@ -267,7 +268,7 @@ func canI(ctx context.Context, client kubernetes.Interface, namespace string, c 
 // probeRunLabelKey is the runner's own per-run label. Unlike the k8s-managed
 // batch.kubernetes.io/job-name label (added only on clusters >= 1.27) it is
 // guaranteed present, so the pod wait selector is version-independent.
-const probeRunLabelKey = "radar.skyhook.io/probe-run"
+const probeRunLabelKey = "kubeatlas.io/probe-run"
 
 // buildProbeJob is the security core: a restricted-PSA, self-destructing Job that
 // runs `kubeatlas probe` once. Pure (no I/O) so it is unit-tested.
@@ -296,12 +297,12 @@ func buildProbeJob(opts RunOptions) *batchv1.Job {
 	deadline := int64(25)
 	ttl := int32(60)
 	labels := map[string]string{
-		"app.kubernetes.io/managed-by": "radar",
+		"app.kubernetes.io/managed-by": "kubeatlas",
 		probeRunLabelKey:               id,
 	}
 
 	return &batchv1.Job{
-		ObjectMeta: metav1.ObjectMeta{Name: "radar-probe-" + id, Namespace: opts.Namespace, Labels: labels},
+		ObjectMeta: metav1.ObjectMeta{Name: "kubeatlas-probe-" + id, Namespace: opts.Namespace, Labels: labels},
 		Spec: batchv1.JobSpec{
 			BackoffLimit:            &backoff,
 			ActiveDeadlineSeconds:   &deadline,
@@ -339,7 +340,7 @@ func buildProbeJob(opts RunOptions) *batchv1.Job {
 
 // waitAndReadProbeJob polls the Job's pod to completion (or ctx deadline) and
 // returns the parsed probe results from its logs. selector is the runner's own
-// guaranteed label (radar.skyhook.io/probe-run=<id>), not the k8s-managed
+// guaranteed label (kubeatlas.io/probe-run=<id>), not the k8s-managed
 // job-name label that only exists on clusters >= 1.27. grantedBudget > 0 means
 // the run started with less than jobTimeout of request budget - an expiry then
 // names the budget, not the cluster.
@@ -461,14 +462,14 @@ func probeTimeoutError(pod *corev1.Pod, listErr error, grantedBudget time.Durati
 	const tail = " - try again, or run the command below"
 	// The probe container's own image-pull failure is probe INFRASTRUCTURE
 	// failing, not a timeout and never a result about the target - classify it as
-	// couldn't-run and name the remedy. The usual cause: radar's image lives in a
+	// couldn't-run and name the remedy. The usual cause: kubeatlas's image lives in a
 	// private registry, and the probe Job runs in the TARGET namespace under the
-	// default ServiceAccount, where radar's imagePullSecrets don't apply
+	// default ServiceAccount, where kubeatlas's imagePullSecrets don't apply
 	// (pull secrets are namespace-local, so they can't travel with the Job).
 	// This outranks the budget framing: a pull failure would also have doomed a
 	// full-length run.
 	if reason := probeImagePullReason(pod); reason != "" {
-		return fmt.Errorf("in-cluster test couldn't run - probe infrastructure failed to pull its image (%s), so the target was NOT tested. If the Radar image needs registry credentials, they don't apply in the target namespace (pull secrets are namespace-local) - set --reachability-image to an image that namespace can pull", reason)
+		return fmt.Errorf("in-cluster test couldn't run - probe infrastructure failed to pull its image (%s), so the target was NOT tested. If the KubeAtlas image needs registry credentials, they don't apply in the target namespace (pull secrets are namespace-local) - set --reachability-image to an image that namespace can pull", reason)
 	}
 	if grantedBudget > 0 {
 		detail := ""
@@ -486,9 +487,9 @@ func probeTimeoutError(pod *corev1.Pod, listErr error, grantedBudget time.Durati
 		// that real error rather than asserting a cluster-config cause we can't
 		// confirm. Otherwise name the usual suspects honestly without overclaiming.
 		if listErr != nil {
-			return fmt.Errorf("in-cluster probe timed out: Radar couldn't read the probe pod (%v)%s", listErr, tail)
+			return fmt.Errorf("in-cluster probe timed out: KubeAtlas couldn't read the probe pod (%v)%s", listErr, tail)
 		}
-		return fmt.Errorf("in-cluster probe timed out: Radar never saw the probe pod run - it may have been blocked by an admission webhook, denied by quota, or left unschedulable%s", tail)
+		return fmt.Errorf("in-cluster probe timed out: KubeAtlas never saw the probe pod run - it may have been blocked by an admission webhook, denied by quota, or left unschedulable%s", tail)
 	}
 	if reason := podStartupBlock(pod); reason != "" {
 		return fmt.Errorf("in-cluster probe timed out: %s%s", reason, tail)
@@ -623,7 +624,7 @@ func FallbackCommand(opts RunOptions) string {
 				"seccompProfile": map[string]any{"type": "RuntimeDefault"},
 			},
 			"containers": []any{map[string]any{
-				"name": "radar-probe-manual",
+				"name": "kubeatlas-probe-manual",
 				"securityContext": map[string]any{
 					"allowPrivilegeEscalation": false,
 					"readOnlyRootFilesystem":   true,
@@ -637,7 +638,7 @@ func FallbackCommand(opts RunOptions) string {
 	// Only the user-controlled VALUES are shell-quoted (a crafted host/path can't
 	// break out); the fixed kubectl flags stay bare so the command reads cleanly.
 	parts := []string{
-		"kubectl run radar-probe-manual -n " + shellQuote(opts.Namespace),
+		"kubectl run kubeatlas-probe-manual -n " + shellQuote(opts.Namespace),
 		"--image=" + shellQuote(image), "--restart=Never --rm -i",
 		"--override-type=strategic --overrides=" + shellQuote(string(ov)),
 		"--command --",

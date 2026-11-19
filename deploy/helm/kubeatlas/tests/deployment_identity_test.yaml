@@ -2,7 +2,7 @@ suite: deployment identity env
 templates:
   - deployment.yaml
 tests:
-  # Radar needs to know which object it is to describe itself for the Cloud
+  # KubeAtlas needs to know which object it is to describe itself for the Cloud
   # connect handoff. That is read-only and must not depend on the RBAC that
   # lets it patch itself, which is off by default.
   - it: ships downward-API identity without self-upgrade RBAC

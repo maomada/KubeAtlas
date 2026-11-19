@@ -59,7 +59,7 @@ func TestRememberDesktopPort(t *testing.T) {
 		canBind bool
 		want    int
 	}{
-		{"a second window holds it", ownerRadar, false, 51000},
+		{"a second window holds it", ownerKubeAtlas, false, 51000},
 		{"no answer in time", ownerUnknown, false, 51000},
 		{"nothing there, and it binds again", ownerSilent, true, 51000},
 		{"nothing there, and it still can't be bound", ownerSilent, false, 52000},
@@ -93,7 +93,7 @@ func TestLoopbackPortBindable(t *testing.T) {
 func TestPortOwner(t *testing.T) {
 	port := func(addr net.Addr) int { return addr.(*net.TCPAddr).Port }
 
-	radar := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	kubeatlas := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/connection" {
 			http.NotFound(w, r)
 			return
@@ -106,9 +106,9 @@ func TestPortOwner(t *testing.T) {
 		}
 		_, _ = w.Write([]byte(`{"state":"connected"}`))
 	}))
-	defer radar.Close()
-	if got := portOwner(port(radar.Listener.Addr())); got != ownerRadar {
-		t.Errorf("KubeAtlas: got %v, want ownerRadar", got)
+	defer kubeatlas.Close()
+	if got := portOwner(port(kubeatlas.Listener.Addr())); got != ownerKubeAtlas {
+		t.Errorf("KubeAtlas: got %v, want ownerKubeAtlas", got)
 	}
 
 	other := httptest.NewServer(http.NotFoundHandler())

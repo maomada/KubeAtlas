@@ -3,7 +3,7 @@ import { BarChart3, Check } from 'lucide-react'
 import { useMarkUsagePromptShown, useSetUsageData, type UsageDataStatus } from '../../api/usage-data'
 
 export const USAGE_DATA_COPY = {
-  title: '帮助改进Radar',
+  title: '帮助改进KubeAtlas',
   description: '匿名统计，不使用第三方跟踪器。',
   readMore: '查看发送内容',
   send: '发送使用情况统计',

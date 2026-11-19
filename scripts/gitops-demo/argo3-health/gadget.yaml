@@ -1,8 +1,8 @@
 # Argo has NO health check for Gadget, so it contributes nothing to the
-# app's health. Radar's issues engine still reports Ready=False. In the
-# detail page this row must read as Radar's finding (the "Radar" marker and
+# app's health. KubeAtlas's issues engine still reports Ready=False. In the
+# detail page this row must read as KubeAtlas's finding (the "KubeAtlas" marker and
 # the notice above the Issues band), not as something Argo said.
-apiVersion: radar.demo/v1
+apiVersion: kubeatlas.demo/v1
 kind: Gadget
 metadata:
   name: unchecked-gadget

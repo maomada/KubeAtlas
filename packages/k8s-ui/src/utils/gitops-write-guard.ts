@@ -4,7 +4,7 @@
 //
 // Evidence comes from the server (POST /api/gitops/write-evidence), because
 // the facts that matter — the last client-side apply payload and
-// managedFields — are stripped from every cached object Radar serves. Neither
+// managedFields — are stripped from every cached object KubeAtlas serves. Neither
 // is proof of what Git declares today: last-applied is a PREVIOUS apply, and a
 // field missing from both can still be in the source. So absence of evidence
 // is "unknown" (may be overwritten), never "safe".
@@ -81,7 +81,7 @@ export interface GitOpsPathEvidence {
   empty?: boolean
   /** `effective`: the owner is not expected to overwrite it. `comparison-only`: Argo
    *  ignoreDifferences without RespectIgnoreDifferences. `unevaluated`: a
-   *  matching rule uses jqPathExpressions, which Radar doesn't evaluate, or
+   *  matching rule uses jqPathExpressions, which KubeAtlas doesn't evaluate, or
    *  covers only some of the entries a wildcard path matches. */
   ignored?: 'effective' | 'comparison-only' | 'unevaluated'
   ignoredBy?: string
@@ -266,7 +266,7 @@ function declaredOutcome(ctx: Context): Verdict {
   if (!policy) {
     return {
       level: 'may-revert',
-      reason: `Radar couldn't read ${ownerKindRef(owner)}'s sync policy (${ctx.policyUnknown}); the next sync will overwrite it.`,
+      reason: `KubeAtlas couldn't read ${ownerKindRef(owner)}'s sync policy (${ctx.policyUnknown}); the next sync will overwrite it.`,
     }
   }
   if (policy.suspended) {
@@ -318,7 +318,7 @@ function classifyPath(ctx: Context, path: string | null): Verdict {
   if (policy?.objectReconcile === 'if-not-present') {
     return {
       level: 'may-revert',
-      reason: `This object carries ${tool}'s IfNotPresent annotation, but Radar can't confirm the GitOps source declares it; if it doesn't, the next reconcile overwrites this change.`,
+      reason: `This object carries ${tool}'s IfNotPresent annotation, but KubeAtlas can't confirm the GitOps source declares it; if it doesn't, the next reconcile overwrites this change.`,
     }
   }
   if (!helm && ev?.ignored === 'effective') {
@@ -333,7 +333,7 @@ function classifyPath(ctx: Context, path: string | null): Verdict {
     if (ev?.ignored === 'unevaluated') {
       return {
         level: 'may-revert',
-        reason: `Radar can't confirm ${ownerKindRef(owner)}'s ignore rule (${ev.ignoredBy ?? 'spec.ignoreDifferences'}) covers this field, so the next sync may overwrite it.`,
+        reason: `KubeAtlas can't confirm ${ownerKindRef(owner)}'s ignore rule (${ev.ignoredBy ?? 'spec.ignoreDifferences'}) covers this field, so the next sync may overwrite it.`,
       }
     }
     if (ev?.ignored === 'comparison-only') {
@@ -362,18 +362,18 @@ function classifyPath(ctx: Context, path: string | null): Verdict {
 
   const unknown = 'It may be overwritten on sync if the GitOps source declares this field.'
   if (!path) {
-    return { level: 'may-revert', reason: `Radar doesn't know which fields this change touches. ${unknown}` }
+    return { level: 'may-revert', reason: `KubeAtlas doesn't know which fields this change touches. ${unknown}` }
   }
   if (!ev || ev.error) {
     const cause = ev?.error || ctx.input.evidenceError
     return {
       level: 'may-revert',
-      reason: `Radar can't see which fields the GitOps source declares${cause ? ` (${cause})` : ''}. ${unknown}`,
+      reason: `KubeAtlas can't see which fields the GitOps source declares${cause ? ` (${cause})` : ''}. ${unknown}`,
     }
   }
   return {
     level: 'may-revert',
-    reason: `Radar found no record of the GitOps source setting this field, but that doesn't rule it out. ${unknown}`,
+    reason: `KubeAtlas found no record of the GitOps source setting this field, but that doesn't rule it out. ${unknown}`,
   }
 }
 
@@ -393,7 +393,7 @@ function classifyDelete(ctx: Context): Verdict {
   if (!policy) {
     return {
       level: 'may-revert',
-      reason: `Radar couldn't read ${ownerKindRef(owner)}'s sync policy (${ctx.policyUnknown}); the next sync will recreate it.`,
+      reason: `KubeAtlas couldn't read ${ownerKindRef(owner)}'s sync policy (${ctx.policyUnknown}); the next sync will recreate it.`,
     }
   }
   if (policy.objectReconcile === 'ignore') {
@@ -543,7 +543,7 @@ export function gitOpsWriteHeadline(guard: GitOpsWriteGuard): string {
 }
 
 // unconfirmed reports whether the answer names candidates without confirming
-// one Radar can act on: a claim, or a candidate this UI can't open (no lead,
+// one KubeAtlas can act on: a claim, or a candidate this UI can't open (no lead,
 // or a manager kind it doesn't know). A native Helm lead has its own rules.
 function unconfirmed(manager: ManagerAnswer, owner: GitOpsOwnerRef | null, input: GitOpsWriteGuardInput, candidates: ResourceRef[]): boolean {
   if (!candidates.length || !owner && input.helmRelease) return false
@@ -587,16 +587,16 @@ function targetOptedOut(input: GitOpsWriteGuardInput): boolean {
   return input.evidence?.policy?.objectReconcile === 'ignore'
 }
 
-// chainUnread: the walk up the controller chain stopped at an owner Radar
+// chainUnread: the walk up the controller chain stopped at an owner KubeAtlas
 // couldn't read or decide, so a manager above it may be missed. An owner that is
 // gone or was replaced ends the chain with an answer.
 function chainUnread(manager: ManagerAnswer): boolean {
-  // A chain end this UI doesn't know (from a newer Radar) stopped short too.
+  // A chain end this UI doesn't know (from a newer KubeAtlas) stopped short too.
   if (manager.chainEnd && manager.chainEnd !== 'unfollowed') return true
   return Boolean(manager.stop && !['gone', 'replaced', 'excluded'].includes(manager.stop.state))
 }
 
-// The states this UI knows. A newer Radar may send another; it is read as
+// The states this UI knows. A newer KubeAtlas may send another; it is read as
 // claimed, which never proves a revert or waives a warning.
 const MANAGER_STATES: Array<string> = ['shared', 'disagree', 'agree', 'listed', 'claimed', 'unknown', 'none']
 
@@ -619,9 +619,9 @@ export function evaluateGitOpsWriteGuard(input: GitOpsWriteGuardInput): GitOpsWr
     ? manager.lead?.kind === 'HelmRelease' && !manager.lead.group ? { namespace: manager.lead.namespace, name: manager.lead.name } : null
     : owner ? null : (input.helmRelease ?? null)
   const ownershipError = unconfirmed
-    ? `Radar couldn't check what manages this resource right now (${unavailable ? gapReasonText(unavailable) : failed}), so it can't tell whether a GitOps tool or Helm reverts this change.${unavailable && ['retry', 'wait'].includes(readActionFor(unavailable) ?? '') ? ' Close and reopen this dialog to check again.' : ''}`
+    ? `KubeAtlas couldn't check what manages this resource right now (${unavailable ? gapReasonText(unavailable) : failed}), so it can't tell whether a GitOps tool or Helm reverts this change.${unavailable && ['retry', 'wait'].includes(readActionFor(unavailable) ?? '') ? ' Close and reopen this dialog to check again.' : ''}`
     : manager && chainUnread(manager)
-      ? "Radar couldn't follow this resource's controller chain, so it can't tell whether a GitOps tool or Helm manages it."
+      ? "KubeAtlas couldn't follow this resource's controller chain, so it can't tell whether a GitOps tool or Helm manages it."
       : owner || helmRelease ? null : (input.ownershipError ?? null)
   const normalized: GitOpsWriteGuardInput = { ...input, manager, owner, helmRelease, ownershipError, ownerMatchedByName: manager ? false : input.ownerMatchedByName }
   const adopted = adoptedHelmRelease(manager)
@@ -635,7 +635,7 @@ export function evaluateGitOpsWriteGuard(input: GitOpsWriteGuardInput): GitOpsWr
       return {
         write,
         level: 'may-revert' as const,
-        reason: `Radar can't confirm ${managerRefLabel(manager.lead!)} applies this object: its status lists it, but the object's metadata doesn't name it. If it does: ${verdict.reason}`,
+        reason: `KubeAtlas can't confirm ${managerRefLabel(manager.lead!)} applies this object: its status lists it, but the object's metadata doesn't name it. If it does: ${verdict.reason}`,
       }
     }
     if (adopted && verdict.level === 'info' && (write.scope === 'metadata' || write.scope === 'spec' || write.scope === 'delete')) {
@@ -649,7 +649,7 @@ export function evaluateGitOpsWriteGuard(input: GitOpsWriteGuardInput): GitOpsWr
       return {
         write,
         level: 'may-revert' as const,
-        reason: `${verdict.reason} Radar matched ${ownerKindRef(owner)} by name only, so it can't confirm this.`,
+        reason: `${verdict.reason} KubeAtlas matched ${ownerKindRef(owner)} by name only, so it can't confirm this.`,
       }
     }
     return { write, ...verdict }

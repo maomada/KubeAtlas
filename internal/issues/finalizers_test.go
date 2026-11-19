@@ -225,7 +225,7 @@ func TestTerminatingGuidanceAndNoise(t *testing.T) {
 		{name: "not found controller that releases infrastructure", finalizers: []string{"crossplane.io/cleanup"}, observation: finalizerObservation{Text: "no recognized controller found", Controller: "crossplane", NotFound: true, ReleasesInfrastructure: true}, wantSeverity: SeverityWarning, wantAction: "Get crossplane running again", wantCalls: 1},
 		{name: "down controller that releases infrastructure", finalizers: []string{"crossplane.io/cleanup"}, observation: finalizerObservation{Text: "crossplane is pending start (1/1 pods Pending)", Controller: "crossplane", Down: true, State: "pending start (1/1 pods Pending)", ReleasesInfrastructure: true}, wantSeverity: SeverityCritical, wantAction: "Fix crossplane, which is pending start", wantCalls: 1},
 		{name: "identified but unconfirmed", finalizers: []string{"crossplane.io/cleanup"}, observation: finalizerObservation{Text: "crossplane has no pods; it may run outside the cluster", Controller: "crossplane"}, wantSeverity: SeverityWarning, wantAction: "can't confirm", wantCalls: 1},
-		{name: "name-only candidate", finalizers: []string{"crossplane.io/cleanup"}, observation: finalizerObservation{Text: "no confident owner (name-only candidate: crossplane-operator is scaled to 0 replicas in namespace ops)", Candidate: "crossplane-operator"}, wantSeverity: SeverityWarning, wantAction: `Radar couldn't confirm which controller owns finalizer "crossplane.io/cleanup"; crossplane-operator resembles its API group by name only.`, wantCalls: 1},
+		{name: "name-only candidate", finalizers: []string{"crossplane.io/cleanup"}, observation: finalizerObservation{Text: "no confident owner (name-only candidate: crossplane-operator is scaled to 0 replicas in namespace ops)", Candidate: "crossplane-operator"}, wantSeverity: SeverityWarning, wantAction: `KubeAtlas couldn't confirm which controller owns finalizer "crossplane.io/cleanup"; crossplane-operator resembles its API group by name only.`, wantCalls: 1},
 		{name: "unknown", finalizers: []string{"crossplane.io/cleanup"}, observation: finalizerObservation{Text: "controller unknown"}, wantSeverity: SeverityWarning, wantAction: "couldn't identify", wantCalls: 1},
 		{name: "foreground only", finalizers: []string{metav1.FinalizerDeleteDependents}, wantSeverity: SeverityCritical, wantAction: "dependents"},
 		{name: "orphan only", finalizers: []string{metav1.FinalizerOrphanDependents}, wantSeverity: SeverityCritical, wantAction: "Orphaning preserves the dependents"},
@@ -631,7 +631,7 @@ func TestFinalizerOwnerRemovalEvidence(t *testing.T) {
 
 // Real finalizer keys from infrastructure operators. Removing any of them while
 // their controller may still be deleting cloud resources orphans that
-// infrastructure, so only a catalog controller Radar searched for completely
+// infrastructure, so only a catalog controller KubeAtlas searched for completely
 // and found no running copy of gets a removal, and only as a cleanup
 // conditioned on an intentional uninstall: never as the next step.
 func TestStuckDeletionCleanupNeedsNoRecognizedController(t *testing.T) {

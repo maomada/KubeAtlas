@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { useCallback, useEffect, useState } from 'react'
 
 // Pin state for the primary left nav rail.
@@ -11,7 +12,7 @@ import { useCallback, useEffect, useState } from 'react'
 // fly-out labels + the ⌘K palette + `g`-mnemonic shortcuts cover the collapsed
 // state's discoverability.
 
-const STORAGE_KEY = 'radar.navRail.pinned'
+const STORAGE_KEY = 'kubeatlas.navRail.pinned'
 
 function readInitial(): boolean {
   if (typeof window === 'undefined') return true
@@ -19,7 +20,7 @@ function readInitial(): boolean {
   // sandboxed embeds, some privacy modes. Default to pinned (expanded), the
   // friendlier first-run state for a non-k8s-expert; power users unpin once.
   try {
-    return window.localStorage.getItem(STORAGE_KEY) !== 'false'
+    return readProductStorage(window.localStorage, STORAGE_KEY) !== 'false'
   } catch {
     return true
   }

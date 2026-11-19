@@ -99,7 +99,7 @@ func TestDashboardSecretDerivedProblemsDegrade(t *testing.T) {
 		t.Fatalf("stale-env problem without Secret access = %q, want the degraded form", stale)
 	}
 	perms.SetCanI("get", "", "secrets", ns, true)
-	if stale, _ := problems(); !strings.Contains(stale, "before Radar observed") {
+	if stale, _ := problems(); !strings.Contains(stale, "before KubeAtlas observed") {
 		t.Fatalf("stale-env problem with Secret access = %q, want the full form", stale)
 	}
 }

@@ -124,7 +124,7 @@ func TestTrivyAccessPrecedesCollectorStateAndWarming(t *testing.T) {
 }
 
 func TestTypedGapsPreserveSearchedExtent(t *testing.T) {
-	for _, code := range []readreason.Code{readreason.KindSyncPending, readreason.KindSyncTimedOut, readreason.RadarCredentialsRejected, readreason.ReadError} {
+	for _, code := range []readreason.Code{readreason.KindSyncPending, readreason.KindSyncTimedOut, readreason.KubeAtlasCredentialsRejected, readreason.ReadError} {
 		for _, whole := range []bool{false, true} {
 			p := &fakeProvider{typedNamespaceReasons: map[string]map[string]string{"Pod": {"read-b": string(code)}}}
 			if whole {

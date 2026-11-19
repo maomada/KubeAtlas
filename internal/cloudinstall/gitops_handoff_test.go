@@ -10,11 +10,11 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/subject"
 )
 
-func verifiedHandoffTarget(candidate ControllerCandidate) RadarTarget {
-	return RadarTarget{
+func verifiedHandoffTarget(candidate ControllerCandidate) KubeAtlasTarget {
+	return KubeAtlasTarget{
 		Namespace:      "observability",
-		DeploymentName: "prod-radar",
-		Chart:          "radar-1.5.4",
+		DeploymentName: "prod-kubeatlas",
+		Chart:          "kubeatlas-1.5.4",
 		ReleaseName:    "prod",
 		Ownership: TargetOwnership{
 			Classification: OwnershipGitOpsVerified,
@@ -29,7 +29,7 @@ func handoffConfig(candidate ControllerCandidate) GitOpsHandoffConfig {
 		CloudURL:  "wss://api.example.test/agent",
 		ClusterID: "cluster-id",
 		Current: GitOpsVersionSummary{
-			Chart: "radar-1.5.4",
+			Chart: "kubeatlas-1.5.4",
 			App:   "ghcr.io/maomada/kubeatlas:1.5.8",
 		},
 		TargetVersion: GitOpsVersionSummary{Chart: "1.6.0", App: "1.6.2"},
@@ -39,7 +39,7 @@ func handoffConfig(candidate ControllerCandidate) GitOpsHandoffConfig {
 func TestBuildGitOpsHandoffFluxHelmReleaseIsTokenSafe(t *testing.T) {
 	ref := subject.Ref{
 		Group: "helm.toolkit.fluxcd.io", Kind: "HelmRelease",
-		Namespace: "flux-system", Name: "radar-prod",
+		Namespace: "flux-system", Name: "kubeatlas-prod",
 	}
 	candidate := ControllerCandidate{
 		Ref: ref, Verification: ControllerVerified,
@@ -88,12 +88,12 @@ func TestBuildGitOpsHandoffFluxHelmReleaseIsTokenSafe(t *testing.T) {
 		t.Fatal("Secret command interpolated a raw token")
 	}
 	for _, want := range []string{
-		"Flux HelmRelease flux-system/radar-prod",
-		"Radar target: observability/prod",
-		"Chart: radar-1.5.4 -> 1.6.0",
+		"Flux HelmRelease flux-system/kubeatlas-prod",
+		"KubeAtlas target: observability/prod",
+		"Chart: kubeatlas-1.5.4 -> 1.6.0",
 		"App: ghcr.io/maomada/kubeatlas:1.5.8 -> 1.6.2",
 		"merge the fragment",
-		"set the Radar container tag to 1.6.2",
+		"set the KubeAtlas container tag to 1.6.2",
 		"rbac.selfUpgrade is forced off",
 		"does not apply anything",
 	} {
@@ -159,7 +159,7 @@ func TestBuildGitOpsHandoffPreservesExactControllerRefs(t *testing.T) {
 			name: "Flux Kustomization",
 			ref: subject.Ref{
 				Group: "kustomize.toolkit.fluxcd.io", Kind: "Kustomization",
-				Namespace: "flux-tenancy", Name: "radar-stack",
+				Namespace: "flux-tenancy", Name: "kubeatlas-stack",
 			},
 			tool: GitOpsFluxKustomize,
 		},
@@ -167,7 +167,7 @@ func TestBuildGitOpsHandoffPreservesExactControllerRefs(t *testing.T) {
 			name: "Argo Application",
 			ref: subject.Ref{
 				Group: "argoproj.io", Kind: "Application",
-				Namespace: "argocd", Name: "radar-production",
+				Namespace: "argocd", Name: "kubeatlas-production",
 			},
 			tool: GitOpsArgoApplication,
 		},
@@ -196,7 +196,7 @@ func TestBuildGitOpsHandoffPreservesExactControllerRefs(t *testing.T) {
 func TestBuildGitOpsHandoffRejectsUnverifiedOrInexactOwnership(t *testing.T) {
 	base := ControllerCandidate{
 		Ref: subject.Ref{
-			Group: "argoproj.io", Kind: "Application", Namespace: "argocd", Name: "radar",
+			Group: "argoproj.io", Kind: "Application", Namespace: "argocd", Name: "kubeatlas",
 		},
 		Verification: ControllerVerified,
 	}
@@ -244,7 +244,7 @@ func TestBuildGitOpsHandoffRejectsMismatchedHelmReleaseTarget(t *testing.T) {
 	candidate := ControllerCandidate{
 		Ref: subject.Ref{
 			Group: "helm.toolkit.fluxcd.io", Kind: "HelmRelease",
-			Namespace: "flux-system", Name: "radar-prod",
+			Namespace: "flux-system", Name: "kubeatlas-prod",
 		},
 		Verification: ControllerVerified,
 		ReleaseName:  "other", TargetNamespace: "other",
@@ -258,12 +258,12 @@ func TestBuildGitOpsHandoffRejectsChartDowngrade(t *testing.T) {
 	candidate := ControllerCandidate{
 		Ref: subject.Ref{
 			Group: "argoproj.io", Kind: "Application",
-			Namespace: "argocd", Name: "radar",
+			Namespace: "argocd", Name: "kubeatlas",
 		},
 		Verification: ControllerVerified,
 	}
 	cfg := handoffConfig(candidate)
-	cfg.Current.Chart = "radar-2.0.0"
+	cfg.Current.Chart = "kubeatlas-2.0.0"
 	cfg.TargetVersion.Chart = "1.9.0"
 	if _, err := BuildGitOpsHandoff(cfg); err == nil || !strings.Contains(err.Error(), "refusing to downgrade") {
 		t.Fatalf("downgrade error = %v", err)

@@ -1,10 +1,10 @@
 // Package search provides cluster-wide free-text search over typed and
-// dynamic-cached resources. It walks the in-memory radar cache, scores
+// dynamic-cached resources. It walks the in-memory kubeatlas cache, scores
 // each object against the parsed query, and returns ranked hits with
 // optional minified summaries or detail payloads.
 //
 // Search is O(N) per kind: we scan each lister rather than maintaining
-// inverted indexes. For radar's typical cluster sizes (≤50K objects)
+// inverted indexes. For kubeatlas's typical cluster sizes (≤50K objects)
 // this stays well under a second per query and avoids any cache-update
 // invalidation bookkeeping.
 package search
@@ -234,7 +234,7 @@ func Search(ctx context.Context, p Provider, q Query, opts Options) (Result, err
 	// Coverage order, for typed and dynamic kinds alike: a kind search can't
 	// collect at all is reported without asking about the caller. Otherwise the
 	// caller's own access is checked first, so a kind the caller can't read is
-	// reported as theirs to fix (rbac_denied), never as Radar's denial, still
+	// reported as theirs to fix (rbac_denied), never as KubeAtlas's denial, still
 	// loading or failed.
 
 	// Typed kinds.
@@ -289,7 +289,7 @@ func Search(ctx context.Context, p Provider, q Query, opts Options) (Result, err
 			plan = p.PlanTyped(tk.Kind, listNs)
 		}
 		if plan.CollectionLimited && !clusterScoped {
-			cov.narrow(readreason.RadarNamespaceNotCollected)
+			cov.narrow(readreason.KubeAtlasNamespaceNotCollected)
 		}
 		readable := []string{}
 		hasGap := false
@@ -302,7 +302,7 @@ func Search(ctx context.Context, p Provider, q Query, opts Options) (Result, err
 				readable = append(readable, part.Namespaces...)
 			case readplan.OutsideCollection:
 				hasGap = true
-				cov.kindNamespaces(readreason.RadarNamespaceNotCollected, part.Namespaces...)
+				cov.kindNamespaces(readreason.KubeAtlasNamespaceNotCollected, part.Namespaces...)
 			case readplan.Gap:
 				hasGap = true
 				cov.kindGap(tk.Kind, tk.Group, part.Verdict.Code, scopeNarrowed || partOfScope(plan, part.Verdict.Code))
@@ -533,7 +533,7 @@ func Search(ctx context.Context, p Provider, q Query, opts Options) (Result, err
 				current = p.PlanDynamic(gvr, target, clusterScoped)
 			}
 			if ns == "" && current.CollectionLimited && !nsObservation.ProbeRetrying && len(nsObservation.UnansweredNamespaces) == 0 && nsObservation.ReasonCode != "scope_probe_incomplete" {
-				cov.kindNamespaces(readreason.RadarNamespaceNotCollected, "")
+				cov.kindNamespaces(readreason.KubeAtlasNamespaceNotCollected, "")
 			}
 			if warmErr != nil {
 				var codes []readreason.Code
@@ -541,14 +541,14 @@ func Search(ctx context.Context, p Provider, q Query, opts Options) (Result, err
 					codes = append(codes, part.Verdict.Code)
 				}
 				code := readreason.Primary(codes)
-				if code == "" || code == readreason.RadarKindNotCollected || code == readreason.RadarNamespaceNotCollected {
+				if code == "" || code == readreason.KubeAtlasKindNotCollected || code == readreason.KubeAtlasNamespaceNotCollected {
 					code = listErrorReason(warmErr)
 				}
 				if code == readreason.ConnectionChanged {
 					return Result{}, ErrConnectionChanged
 				}
-				if outsideScope && code == readreason.RadarForbidden {
-					cov.kindNamespaces(readreason.RadarNamespaceNotCollected, ns)
+				if outsideScope && code == readreason.KubeAtlasForbidden {
+					cov.kindNamespaces(readreason.KubeAtlasNamespaceNotCollected, ns)
 				} else {
 					kindGap(ns, code)
 				}
@@ -578,10 +578,10 @@ func Search(ctx context.Context, p Provider, q Query, opts Options) (Result, err
 					}
 					switch state {
 					case readplan.OutsideCollection:
-						cov.kindNamespaces(readreason.RadarNamespaceNotCollected, target)
+						cov.kindNamespaces(readreason.KubeAtlasNamespaceNotCollected, target)
 					case readplan.Gap:
-						if code == readreason.RadarForbidden && outsideScope && !slices.Contains(nsObservation.Namespaces, target) {
-							cov.kindNamespaces(readreason.RadarNamespaceNotCollected, target)
+						if code == readreason.KubeAtlasForbidden && outsideScope && !slices.Contains(nsObservation.Namespaces, target) {
+							cov.kindNamespaces(readreason.KubeAtlasNamespaceNotCollected, target)
 							continue
 						}
 						gapNS := target

@@ -125,9 +125,9 @@ func TestDetectExternalManager(t *testing.T) {
 		},
 		{
 			// Case-insensitive exclusion — a regression making this case-sensitive
-			// would warn on every radar-applied resource.
-			name:        "radar excluded case-insensitive",
-			obj:         mk(map[string]any{"app.kubernetes.io/managed-by": "Radar"}, nil),
+			// would warn on every kubeatlas-applied resource.
+			name:        "kubeatlas excluded case-insensitive",
+			obj:         mk(map[string]any{"app.kubernetes.io/managed-by": "KubeAtlas"}, nil),
 			wantManager: "",
 		},
 		{
@@ -178,7 +178,7 @@ func TestCheckFieldRemoval(t *testing.T) {
 	t.Run("deployment container probe survives", func(t *testing.T) {
 		pre := mkWorkload(t, "Deployment", map[string]any{"containers": []any{ctr("app", "readinessProbe")}})
 		subm := mkWorkload(t, "Deployment", map[string]any{"containers": []any{ctr("app")}})
-		post := mkWorkload(t, "Deployment", map[string]any{"containers": []any{ctr("app", "readinessProbe")}}, "kube-controller-manager", "radar")
+		post := mkWorkload(t, "Deployment", map[string]any{"containers": []any{ctr("app", "readinessProbe")}}, "kube-controller-manager", "kubeatlas")
 
 		w := checkFieldRemoval(subm, pre, post)
 		if len(w) != 1 {

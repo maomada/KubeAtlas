@@ -70,7 +70,7 @@ function render(change: unknown = secretChange): string {
             summary: JSON.stringify({ namespace: "secret-feed-proof" }),
             result: JSON.stringify({ changes: [change] }),
             isError: false,
-            radarEvidence: true,
+            kubeatlasEvidence: true,
           },
         ],
       },

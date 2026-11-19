@@ -40,8 +40,8 @@ func TestIssuesToolSaysWhenHelmReleasesCouldNotBeChecked(t *testing.T) {
 			body:   `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"secrets is forbidden","reason":"Forbidden","code":403}`,
 		},
 		{
-			// Radar's own credentials failing is not the caller's permissions.
-			name:          "API server rejects Radar's credentials",
+			// KubeAtlas's own credentials failing is not the caller's permissions.
+			name:          "API server rejects KubeAtlas's credentials",
 			status:        http.StatusUnauthorized,
 			body:          `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"Unauthorized","reason":"Unauthorized","code":401}`,
 			wantUnchecked: true,
@@ -127,14 +127,14 @@ func TestDashboardHelmSeparatesDeniedFromFailed(t *testing.T) {
 			wantDenied: true,
 		},
 		{
-			name:   "API server rejects Radar's credentials",
+			name:   "API server rejects KubeAtlas's credentials",
 			status: http.StatusUnauthorized,
 			body:   `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"Unauthorized","reason":"Unauthorized","code":401}`,
 		},
 		{
-			name:   "Radar may not impersonate the caller",
+			name:   "KubeAtlas may not impersonate the caller",
 			status: http.StatusForbidden,
-			body:   `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"users \"dev\" is forbidden: User \"system:serviceaccount:radar:radar\" cannot impersonate resource \"users\" in API group \"\" at the cluster scope","reason":"Forbidden","code":403}`,
+			body:   `{"kind":"Status","apiVersion":"v1","status":"Failure","message":"users \"dev\" is forbidden: User \"system:serviceaccount:kubeatlas:kubeatlas\" cannot impersonate resource \"users\" in API group \"\" at the cluster scope","reason":"Forbidden","code":403}`,
 		},
 	}
 	for _, tc := range cases {

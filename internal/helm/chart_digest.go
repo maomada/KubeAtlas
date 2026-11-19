@@ -54,7 +54,7 @@ func withChartDigestGuidance(err error, freshIndex bool) error {
 		return err
 	}
 	if freshIndex {
-		return fmt.Errorf("%w. Radar just downloaded the repository index. Contact the repository maintainer", err)
+		return fmt.Errorf("%w. KubeAtlas just downloaded the repository index. Contact the repository maintainer", err)
 	}
 	return fmt.Errorf("%w. Refresh the repository and retry. If it still fails, contact the repository maintainer", err)
 }

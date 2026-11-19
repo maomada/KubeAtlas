@@ -3,8 +3,8 @@ import { ConfirmDialog } from '../ui/ConfirmDialog'
 import { Badge, type BadgeSeverity } from '../ui/Badge'
 import { AlertBanner } from '../ui/drawer-components'
 import { Tooltip } from '../ui/Tooltip'
-import { RadarUpgradeNote } from '../ui/RadarUpgradeNote'
-import type { RadarUpgradeRequirement } from '../../types/fetch-error'
+import { KubeAtlasUpgradeNote } from '../ui/KubeAtlasUpgradeNote'
+import type { KubeAtlasUpgradeRequirement } from '../../types/fetch-error'
 
 // Shapes returned by POST /api/nodes/{name}/drain-plan.
 export type DrainOutcome = 'evict' | 'skip' | 'may-block'
@@ -96,7 +96,7 @@ const OUTCOME_LABEL: Record<DrainOutcome, string> = {
 const ESTIMATE_CAVEAT =
   '这是估算，并非保证：执行时 Drain 会重新读取实时状态，在此之前 Pod、预算和权限都可能发生变化。' +
   '通常 Drain 最多等待 2 分钟完成驱逐和删除 Pod；如果驱逐暂时受中断预算阻止，会重试。' +
-  '较旧版本的 Radar 可能会在 Pod 删除前返回。若某个 Pod 同时受多个预算约束，系统会直接拒绝驱逐。'
+  '较旧版本的 KubeAtlas 可能会在 Pod 删除前返回。若某个 Pod 同时受多个预算约束，系统会直接拒绝驱逐。'
 
 interface DrainPlanContentProps {
   nodeName: string
@@ -106,8 +106,8 @@ interface DrainPlanContentProps {
   options: DrainDialogOptions
   onOptionsChange: (options: DrainDialogOptions) => void
   planSupported: boolean
-  /** Why there is no plan, when the connected Radar predates drain plans. */
-  planUpgrade?: RadarUpgradeRequirement | null
+  /** Why there is no plan, when the connected KubeAtlas predates drain plans. */
+  planUpgrade?: KubeAtlasUpgradeRequirement | null
   /** Recompute the plan with the current options; also the retry after a failed plan. */
   onRefreshPlan?: () => void
 }
@@ -146,7 +146,7 @@ export function DrainPlanContent({
         </label>
       </div>
 
-      {!planSupported && planUpgrade && <RadarUpgradeNote requirement={{ ...planUpgrade, feature: '驱逐计划' }} />}
+      {!planSupported && planUpgrade && <KubeAtlasUpgradeNote requirement={{ ...planUpgrade, feature: '驱逐计划' }} />}
 
       {planSupported && loading && (
         <div className="flex items-center gap-2 text-theme-text-secondary">
@@ -269,8 +269,8 @@ interface DrainPlanDialogProps {
   isDraining: boolean
   /** Whether the host can compute plans. Without it the dialog confirms without one. */
   planSupported: boolean
-  /** Why there is no plan, when the connected Radar predates drain plans. */
-  planUpgrade?: RadarUpgradeRequirement | null
+  /** Why there is no plan, when the connected KubeAtlas predates drain plans. */
+  planUpgrade?: KubeAtlasUpgradeRequirement | null
   /** Recompute the plan with the current options; also the retry after a failed plan. */
   onRefreshPlan?: () => void
 }

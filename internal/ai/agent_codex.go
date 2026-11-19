@@ -16,7 +16,7 @@ import (
 
 // codexAgent drives the Codex CLI (`codex exec`). Codex has no per-MCP-tool
 // allowlist and its shell can't be disabled, so containment differs from Claude:
-//   - cluster access is gated by the read-only MCP MOUNT (radar-side), not flags;
+//   - cluster access is gated by the read-only MCP MOUNT (kubeatlas-side), not flags;
 //   - --sandbox read-only blocks the model's shell from network + filesystem
 //     writes (verified: no loopback, no kubectl), though it can still READ local
 //     files into context — disclosed to the user;
@@ -42,13 +42,13 @@ func (a *codexAgent) command(ctx context.Context, s turnSpec) (*exec.Cmd, func()
 	if s.systemPrompt != "" {
 		prompt = s.systemPrompt + "\n\n" + prompt
 	}
-	mcpCfg := fmt.Sprintf("mcp_servers.radar.url=%q", s.mcpURL)
+	mcpCfg := fmt.Sprintf("mcp_servers.kubeatlas.url=%q", s.mcpURL)
 
 	// Always start from the base flags; safeguards add --ignore-user-config, an
 	// empty cwd, and a minimal env. Full-local keeps the user's config (their other
 	// MCP servers, guidelines), their full env, and their home cwd. The shell stays
 	// --sandbox read-only in BOTH modes — but the "cluster writes go only through
-	// Radar's read-only MCP" containment holds ONLY when safeguarded. In full-local
+	// KubeAtlas's read-only MCP" containment holds ONLY when safeguarded. In full-local
 	// the agent also gets the user's own MCP servers (possibly write/network/cloud
 	// capable) + local file reads: a deliberate trusted mode, not a contained one.
 	base := []string{"--json", "--skip-git-repo-check", "-c", mcpCfg}
@@ -95,8 +95,8 @@ func (a *codexAgent) command(ctx context.Context, s turnSpec) (*exec.Cmd, func()
 
 	cleanup := func() {}
 	if s.profile == ExecutionProfileSafeguarded {
-		// Empty working dir so the model's shell can't read radar's source / cwd.
-		dir, err := os.MkdirTemp("", "radar-codex-")
+		// Empty working dir so the model's shell can't read kubeatlas's source / cwd.
+		dir, err := os.MkdirTemp("", "kubeatlas-codex-")
 		if err != nil {
 			return nil, nil, fmt.Errorf("ai: codex workdir: %w", err)
 		}
@@ -104,7 +104,7 @@ func (a *codexAgent) command(ctx context.Context, s turnSpec) (*exec.Cmd, func()
 		cmd.Dir = dir
 		cmd.Env = codexEnv()
 	}
-	// Full-local: inherit radar's cwd + full env so the user's auth/config/MCPs work.
+	// Full-local: inherit kubeatlas's cwd + full env so the user's auth/config/MCPs work.
 
 	return cmd, cleanup, nil
 }

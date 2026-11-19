@@ -2,6 +2,7 @@ package hubstate
 
 import (
 	"encoding/json"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"slices"
 	"strings"
 	"testing"
@@ -75,7 +76,7 @@ func TestEnsurePlatformOwnerMigratesPriorRecoveryMemberships(t *testing.T) {
 	membership := next.Memberships[organization.ID]["portal:old"]
 	membership.LegacyRestricted = true
 	membership.ClusterIDs = []string{cluster.Cluster.ID}
-	membership.KubernetesGroups = []string{"radar:legacy"}
+	membership.KubernetesGroups = []string{compat.LegacyTierPrefix + "legacy"}
 	next.Memberships[organization.ID]["portal:old"] = membership
 	syncAliasesFromPrimary(&next)
 	if err := store.commit(next); err != nil {
@@ -100,7 +101,7 @@ func TestEnsurePlatformOwnerMigratesPriorRecoveryMemberships(t *testing.T) {
 	migrated, ok := reopened.MemberForOrganization(organization.ID, "portal:new")
 	if !ok || migrated.Role != "owner" || !migrated.LegacyRestricted ||
 		!slices.Equal(migrated.ClusterIDs, []string{"secondary"}) ||
-		!slices.Equal(migrated.KubernetesGroups, []string{"radar:legacy"}) {
+		!slices.Equal(migrated.KubernetesGroups, []string{compat.LegacyTierPrefix + "legacy"}) {
 		t.Fatalf("replacement recovery membership = %#v, ok=%v", migrated, ok)
 	}
 	if _, ok := reopened.MemberForOrganization(organization.ID, "portal:old"); ok {

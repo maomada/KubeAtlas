@@ -7,6 +7,7 @@ import { PortalEntry } from './CloudPortal'
 import { navigateCloud } from './cloudNavigation'
 import { logoutPortal, type HubContext } from './CloudOrganization'
 import { HUB_YAML_DRAFT_AUTHORITY_MARKER, yamlDraftStorageKey } from '@maomada/k8s-ui'
+import { LEGACY_YAML_DRAFT_CHANNEL } from '@maomada/k8s-ui/utils/legacy-brand'
 
 const portalNavigation = vi.hoisted(() => ({
   replace: vi.fn(), nativeClient: undefined as unknown, nativeProps: undefined as unknown,
@@ -29,10 +30,10 @@ const portalHub = {
   organizations: [{ id: 'org-1', name: 'Organization One', role: 'owner' as const }],
 }
 
-vi.mock('../RadarApp', async () => {
+vi.mock('../KubeAtlasApp', async () => {
   const { useEffect, useState } = await import('react')
   return {
-    RadarApp: (props: { queryClient: QueryClientType; apiBase?: string; yamlDraftScope?: string; yamlReadOnly?: boolean }) => {
+    KubeAtlasApp: (props: { queryClient: QueryClientType; apiBase?: string; yamlDraftScope?: string; yamlReadOnly?: boolean }) => {
       portalNavigation.beforeNativeRender?.(props)
       portalNavigation.nativeProps = props
       const [reviewOpen, setReviewOpen] = useState(false)
@@ -108,7 +109,6 @@ it.each([
     }
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     throw new Error(`Unexpected request: ${path}`)
   })
   vi.stubGlobal('fetch', fetch)
@@ -144,7 +144,6 @@ it.each([
     if (path === '/api/hub') return Response.json(portalHub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: ['alpha', 'beta'].map(id => ({ id, organizationId: 'org-1', name: id === 'alpha' ? 'Alpha' : 'Beta', state: 'connected' })) })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === `/c/${id}/api/agents`) return Response.json({ eligible, enabled: false, agents: [] })
     if (path === `/c/${id}/api/cluster/namespace-scope`) return Response.json(scope)
     if (path === `/c/${id}/api/api-resources`) return Response.json([])
@@ -179,7 +178,6 @@ it('reserves host search shortcuts before native listeners without stealing edit
     if (path === '/api/hub') return Response.json(portalHub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
     throw new Error(`Unexpected request: ${path}`)
@@ -245,7 +243,6 @@ it('shares the native namespace cache when entering and switching clusters', asy
       '/api/hub': portalHub,
       '/api/hub/connections': connections,
       '/api/hub/clusters': { clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }, { id: 'beta', organizationId: 'org-1', name: 'Beta', state: 'connected' }] },
-      '/api/mcp/credentials': { credentials: [], serverTime: '2026-01-01T00:00:00Z' },
       '/c/alpha/api/cluster/namespace-scope': scope,
       '/c/alpha/api/api-resources': [],
       '/c/beta/api/cluster/namespace-scope': scope,
@@ -295,7 +292,6 @@ it('reconciles the namespace cache after an uncertain host write', async () => {
     if (path === '/api/hub') return Response.json(portalHub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/cluster/namespace-scope') {
       scopeReads++
       return Response.json(scopeReads === 1 ? scope : updatedScope)
@@ -397,7 +393,6 @@ it('shows a retry for a non-401 session failure without mounting Portal resource
     if (path === '/api/hub') return Response.json(portalHub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     throw new Error('Unexpected request: ' + path)
   })
   vi.stubGlobal('fetch', fetch)
@@ -472,7 +467,6 @@ it('clears both query clients and reloads after the exact organization-select re
     if (path === '/api/hub') return Response.json(hub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/api/hub/organization/select') return new Response(null, { status: 204 })
     throw new Error('Unexpected request: ' + path)
   })
@@ -519,7 +513,6 @@ it('keeps the current organization and reports a failed switch without reloading
     if (path === '/api/hub') return Response.json(hub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/api/hub/organization/select' && init?.method === 'POST') return Response.json({ message: 'switch rejected' }, { status: 503 })
     throw new Error('Unexpected request: ' + path)
   })
@@ -590,7 +583,6 @@ it.each(authorizationTransitions)('clears old caches after $label, but not for a
     if (path === '/api/hub') return Response.json(hubResponses[Math.min(hubReads++, hubResponses.length - 1)])
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Old organization cluster', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [oldOrganizationCredential], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
     throw new Error('Unexpected request: ' + path)
@@ -619,9 +611,10 @@ it.each(authorizationTransitions)('clears old caches after $label, but not for a
     let portalClient: QueryClientType | undefined
     const mcpQueryKey = ['portal', '/api', '/mcp/credentials'] as const
     await waitForPortal(() => {
-      portalClient = [...queryClients].find(client => client.getQueryData(mcpQueryKey) !== undefined && client.getQueryData(['portal', '/api', '/hub']) !== undefined)
+      portalClient = [...queryClients].find(client => client.getQueryData(['portal', '/api', '/hub']) !== undefined)
       expect(portalClient).toBeDefined()
     })
+    act(() => { portalClient!.setQueryData(mcpQueryKey, { credentials: [oldOrganizationCredential], serverTime: '2026-01-01T00:00:00Z' }) })
     expect((portalClient!.getQueryData(mcpQueryKey) as { credentials: { organizationId: string }[] }).credentials[0]?.organizationId).toBe('org-1')
 
     await act(async () => { await portalClient!.invalidateQueries({ queryKey: ['portal', '/api', '/hub'] }) })
@@ -642,7 +635,7 @@ it.each(authorizationTransitions)('clears old caches after $label, but not for a
     expect(portalClient!.getQueryData(mcpQueryKey)).toBeUndefined()
     expect(nativeClient.getQueryData(['namespace-scope'])).toBeUndefined()
     expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/hub/clusters')).toHaveLength(1)
-    expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/mcp/credentials')).toHaveLength(1)
+    expect(fetch.mock.calls.filter(([url]) => String(url) === '/api/mcp/credentials')).toHaveLength(0)
     expect(clear.mock.calls.length).toBeGreaterThanOrEqual(2)
     expect(cancel.mock.calls.length).toBeGreaterThanOrEqual(2)
   } finally {
@@ -656,16 +649,21 @@ it.each(authorizationTransitions)('clears old caches after $label, but not for a
   }
 })
 
-it('keeps platform endpoints inaccessible to an organization owner', async () => {
+const platformLocations = [
+  { label: 'canonical', initial: '/platform?source=bookmark#accounts', legacy: false },
+  { label: 'legacy', initial: '/settings/platform?source=bookmark#accounts', legacy: true },
+]
+
+it.each(platformLocations)('keeps $label platform endpoints inaccessible to an organization owner named admin', async ({ initial }) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  window.history.replaceState({}, '', '/settings/platform')
+  window.history.replaceState({}, '', initial)
+  const hub = { ...portalHub, userId: 'admin', member: { ...portalHub.member, userId: 'admin', displayName: 'admin' } }
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     const path = String(input)
     if (path === '/api/auth/session') return new Response(null, { status: 204 })
-    if (path === '/api/hub') return Response.json(portalHub)
+    if (path === '/api/hub') return Response.json(hub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     throw new Error('Unauthorized platform request: ' + path)
   })
   vi.stubGlobal('fetch', fetch)
@@ -675,8 +673,13 @@ it('keeps platform endpoints inaccessible to an organization owner', async () =>
   try {
     await act(async () => root.render(<PortalEntry />))
     await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
-    await waitForPortal(() => expect(host.textContent).toContain('平台管理需要明确的平台 Owner 权限'))
+    await waitForPortal(() => expect(host.querySelector('[role="alert"]')?.textContent).toContain('platformOwner'))
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe('/platform?source=bookmark#accounts')
+    expect(host.querySelector('.cloud-settings')).toBeNull()
+    expect(host.querySelector('a[aria-label="平台管理"]')).toBeNull()
+    expect(host.querySelector('a[aria-label="设置"][aria-current="page"]')).toBeNull()
     expect(fetch.mock.calls.some(([url]) => String(url).includes('/hub/platform/') || String(url) === '/api/hub/organizations')).toBe(false)
+    expect(fetch.mock.calls.some(([url]) => String(url) === '/api/mcp/credentials')).toBe(false)
   } finally {
     act(() => root.unmount())
     host.remove()
@@ -685,9 +688,11 @@ it('keeps platform endpoints inaccessible to an organization owner', async () =>
   }
 })
 
-it('allows an explicit platform owner to manage users without an active organization', async () => {
+it.each(platformLocations)('allows a $label platform owner route without an active organization', async ({ initial, legacy }) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
-  window.history.replaceState({}, '', '/settings/platform')
+  window.history.replaceState({}, '', initial)
+  const replaceHistory = vi.spyOn(window.history, 'replaceState')
+  const pushHistory = vi.spyOn(window.history, 'pushState')
   const hub = { enabled: true, userId: 'platform-user', authorizationRevision: '1', platformOwner: true, activeOrganizationId: null, organizations: [] }
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     const path = String(input)
@@ -704,8 +709,101 @@ it('allows an explicit platform owner to manage users without an active organiza
   const root = createRoot(host)
   try {
     await act(async () => root.render(<PortalEntry />))
-    await waitForPortal(() => expect(host.textContent).toContain('平台管理'))
-    expect(fetch.mock.calls.some(([url]) => ['/api/hub/platform/users', '/api/hub/organizations', '/api/hub/platform/clusters'].includes(String(url)))).toBe(true)
+    await waitForPortal(() => expect(host.querySelector('main h1')?.textContent).toBe('平台管理'))
+    await waitForPortal(() => expect(fetch.mock.calls.filter(([url]) => ['/api/hub/platform/users', '/api/hub/organizations', '/api/hub/platform/clusters'].includes(String(url)))).toHaveLength(3))
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe('/platform?source=bookmark#accounts')
+    expect(replaceHistory.mock.calls.filter(([, , url]) => String(url) === '/platform?source=bookmark#accounts')).toHaveLength(legacy ? 1 : 0)
+    expect(pushHistory).not.toHaveBeenCalled()
+    expect(portalNavigation.replace).not.toHaveBeenCalled()
+    expect(host.querySelector('.cloud-platform-only')).not.toBeNull()
+    expect(host.querySelector('.cloud-settings')).toBeNull()
+    expect(host.querySelector('.cloud-shell')).toBeNull()
+    expect(fetch.mock.calls.some(([url]) => ['/api/hub/connections', '/api/hub/clusters', '/api/mcp/credentials'].includes(String(url)))).toBe(false)
+  } finally {
+    act(() => root.unmount())
+    replaceHistory.mockRestore()
+    pushHistory.mockRestore()
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it.each(platformLocations)('keeps $label platform administration outside settings for an active-organization admin', async ({ initial, legacy }) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', initial)
+  const replaceHistory = vi.spyOn(window.history, 'replaceState')
+  const pushHistory = vi.spyOn(window.history, 'pushState')
+  const hub = { ...portalHub, platformOwner: true }
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: 204 })
+    if (path === '/api/hub') return Response.json(hub)
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
+    if (path === '/api/hub/platform/users') return Response.json({ users: [] })
+    if (path === '/api/hub/organizations') return Response.json({ organizations: [] })
+    if (path === '/api/hub/platform/clusters') return Response.json({ clusters: [] })
+    throw new Error('Unexpected platform route request: ' + path)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.querySelector('main h1')?.textContent).toBe('平台管理'))
+    await waitForPortal(() => expect(fetch.mock.calls.filter(([url]) => ['/api/hub/platform/users', '/api/hub/organizations', '/api/hub/platform/clusters'].includes(String(url)))).toHaveLength(3))
+    expect(window.location.pathname + window.location.search + window.location.hash).toBe('/platform?source=bookmark#accounts')
+    expect(replaceHistory.mock.calls.filter(([, , url]) => String(url) === '/platform?source=bookmark#accounts')).toHaveLength(legacy ? 1 : 0)
+    expect(pushHistory).not.toHaveBeenCalled()
+    expect(portalNavigation.replace).not.toHaveBeenCalled()
+    expect(host.querySelector('.cloud-shell')).not.toBeNull()
+    expect(host.querySelector('.cloud-settings')).toBeNull()
+    expect(host.querySelector('a[aria-label="平台管理"]')?.getAttribute('href')).toBe('/platform')
+    expect(host.querySelector('a[aria-label="平台管理"]')?.getAttribute('aria-current')).toBe('page')
+    expect(host.querySelector('a[aria-label="设置"]')?.hasAttribute('aria-current')).toBe(false)
+    expect(host.querySelector('a[href="/settings/platform"]')).toBeNull()
+    expect(host.querySelector('.cloud-setup')).toBeNull()
+    expect(host.textContent).not.toContain('入门设置')
+    expect(host.textContent).not.toContain('设置自托管 Hub')
+    expect(fetch.mock.calls.some(([url]) => String(url) === '/api/mcp/credentials')).toBe(false)
+  } finally {
+    act(() => root.unmount())
+    replaceHistory.mockRestore()
+    pushHistory.mockRestore()
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it('opens canonical platform administration from organization selection without mounting organization resources', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/')
+  const hub = { enabled: true, userId: 'platform-user', authorizationRevision: '1', platformOwner: true, activeOrganizationId: null, organizations: [] }
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: 204 })
+    if (path === '/api/hub') return Response.json(hub)
+    if (path === '/api/hub/platform/users') return Response.json({ users: [] })
+    if (path === '/api/hub/organizations') return Response.json({ organizations: [] })
+    if (path === '/api/hub/platform/clusters') return Response.json({ clusters: [] })
+    throw new Error('Unexpected no-organization request: ' + path)
+  })
+  vi.stubGlobal('fetch', fetch)
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.querySelector('a[href="/platform"]')?.textContent).toBe('平台管理'))
+    expect(fetch.mock.calls.some(([url]) => String(url).includes('/hub/platform/') || String(url) === '/api/hub/organizations')).toBe(false)
+    await act(async () => host.querySelector<HTMLAnchorElement>('a[href="/platform"]')!.click())
+    await waitForPortal(() => expect(host.querySelector('main h1')?.textContent).toBe('平台管理'))
+    expect(window.location.pathname).toBe('/platform')
+    expect(host.querySelector('.cloud-platform-only')).not.toBeNull()
+    expect(host.querySelector('.cloud-settings')).toBeNull()
     expect(fetch.mock.calls.some(([url]) => ['/api/hub/connections', '/api/hub/clusters', '/api/mcp/credentials'].includes(String(url)))).toBe(false)
   } finally {
     act(() => root.unmount())
@@ -725,7 +823,6 @@ it('mounts an active-organization shell for an explicit platform owner without a
     if (path === '/api/hub') return Response.json(hub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     throw new Error('Unexpected request: ' + path)
   })
   vi.stubGlobal('fetch', fetch)
@@ -735,12 +832,20 @@ it('mounts an active-organization shell for an explicit platform owner without a
   try {
     await act(async () => root.render(<PortalEntry />))
     await waitForPortal(() => expect(host.querySelector('.cloud-shell')).not.toBeNull())
-    expect(host.querySelector('a[aria-label="平台管理"]')).not.toBeNull()
+    expect(host.querySelector('a[aria-label="平台管理"]')?.getAttribute('href')).toBe('/platform')
     await act(async () => {
       window.history.replaceState({}, '', '/settings')
       window.dispatchEvent(new PopStateEvent('popstate'))
     })
-    await waitForPortal(() => expect(host.querySelector('.cloud-settings a[href="/settings/platform"]')?.textContent).toBe('平台管理'))
+    await waitForPortal(() => expect(host.querySelector('.cloud-settings')).not.toBeNull())
+    expect([...host.querySelectorAll('.cloud-settings > aside h2')].map(heading => heading.textContent)).toEqual(['个人', '组织'])
+    expect(host.querySelector('.cloud-settings a[href="/platform"], .cloud-settings a[href="/settings/platform"]')).toBeNull()
+    expect(host.querySelector('a[aria-label="平台管理"]')?.getAttribute('href')).toBe('/platform')
+    expect(host.querySelector('a[aria-label="设置"]')?.getAttribute('aria-current')).toBe('page')
+    expect(host.querySelector('.cloud-setup')).toBeNull()
+    expect(host.textContent).not.toContain('入门设置')
+    expect(host.textContent).not.toContain('设置自托管 Hub')
+    expect(fetch.mock.calls.some(([url]) => String(url) === '/api/mcp/credentials')).toBe(false)
     expect(fetch.mock.calls.some(([url]) => String(url) === '/api/hub/connections')).toBe(true)
   } finally {
     act(() => root.unmount())
@@ -765,7 +870,6 @@ it('keeps a native review mounted while an unchanged Hub poll is pending and aft
     }
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
@@ -828,7 +932,6 @@ it('purges the prior YAML draft scope before native mount after a fresh login at
     if (path === '/api/hub') return Response.json(hub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
@@ -914,7 +1017,6 @@ it('retains same-revision YAML drafts through a session 401 and a fresh Portal m
     if (path === '/api/hub') return Response.json(portalHub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
@@ -985,7 +1087,6 @@ it('unmounts native editing before local logout purges drafts and stays gated af
     if (path === '/api/hub') return Response.json(portalHub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
@@ -1046,7 +1147,6 @@ it('attempts server logout when local draft removal fails and stays gated', asyn
     if (path === '/api/hub') return Response.json(portalHub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
@@ -1123,7 +1223,6 @@ it('keeps Portal gated and reports remote YAML storage failure honestly', async 
     if (path === '/api/hub') return Response.json(portalHub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
@@ -1147,7 +1246,7 @@ it('keeps Portal gated and reports remote YAML storage failure honestly', async 
       nativeUnmountsWhenClearStarted = portalNavigation.nativeUnmounts
       throw new Error('Storage access denied')
     })
-    remoteSender = new BroadcastChannel('kubeatlas-hub-yaml-draft-purge')
+    remoteSender = new BroadcastChannel(LEGACY_YAML_DRAFT_CHANNEL)
 
     await act(async () => {
       remoteSender?.postMessage({ type: 'purge' })
@@ -1177,7 +1276,7 @@ it('wires scoped read-only YAML policy and purges drafts on a mounted same-org r
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   window.history.replaceState({}, '', '/c/alpha/resources/configmaps')
   sessionStorage.clear()
-  sessionStorage.setItem('radar_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0', 'legacy-owner-draft')
+  sessionStorage.setItem('kubeatlas_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0', 'legacy-owner-draft')
   let hub: HubContext = portalHub
   const fetch = vi.fn<typeof globalThis.fetch>(async input => {
     const path = String(input)
@@ -1185,7 +1284,6 @@ it('wires scoped read-only YAML policy and purges drafts on a mounted same-org r
     if (path === '/api/hub') return Response.json(hub)
     if (path === '/api/hub/connections') return Response.json(connections)
     if (path === '/api/hub/clusters') return Response.json({ clusters: [{ id: 'alpha', organizationId: 'org-1', name: 'Alpha', state: 'connected' }] })
-    if (path === '/api/mcp/credentials') return Response.json({ credentials: [], serverTime: '2026-01-01T00:00:00Z' })
     if (path === '/c/alpha/api/agents') return Response.json({ eligible: true, enabled: false, agents: [] })
     if (path === '/c/alpha/api/cluster/namespace-scope') return Response.json(scope)
     if (path === '/c/alpha/api/api-resources') return Response.json([])
@@ -1215,7 +1313,7 @@ it('wires scoped read-only YAML policy and purges drafts on a mounted same-org r
     expect(ownerProps.yamlReadOnly).toBe(false)
     expect(ownerProps.yamlDraftScope).toContain('"clusterId":"alpha"')
     expect(ownerProps.yamlDraftScope).toContain('/c/alpha/api')
-    expect(sessionStorage.getItem('radar_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0')).toBeNull()
+    expect(sessionStorage.getItem('kubeatlas_yaml_draft:ConfigMap/qa-cdf2599-native/kubeatlas-agent-88ca3f0')).toBeNull()
     expect(sessionStorage.getItem('activeOrganizationId')).toBeNull()
     const oldDraftKey = yamlDraftStorageKey(ownerProps.yamlDraftScope!, {
       group: '', kind: 'ConfigMap', namespace: 'qa-cdf2599-native', name: 'kubeatlas-agent-88ca3f0',

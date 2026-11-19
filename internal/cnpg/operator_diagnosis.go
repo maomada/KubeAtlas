@@ -83,7 +83,7 @@ type CNPGOperatorLeader struct {
 
 // CNPGOperatorWatch: All when WATCH_NAMESPACE is unset or empty. Source names
 // where the value came from; Unresolved is set when it comes from somewhere
-// Radar does not follow (a ConfigMap or Secret key reference).
+// KubeAtlas does not follow (a ConfigMap or Secret key reference).
 type CNPGOperatorWatch struct {
 	All        bool     `json:"all"`
 	Namespaces []string `json:"namespaces"`
@@ -288,7 +288,7 @@ func cnpgOperatorWatchOf(c *corev1.Container, operatorNamespace string) CNPGOper
 			case e.ValueFrom.SecretKeyRef != nil:
 				out.Unresolved = fmt.Sprintf("set from Secret %s key %s", e.ValueFrom.SecretKeyRef.Name, e.ValueFrom.SecretKeyRef.Key)
 			default:
-				out.Unresolved = "set from a field reference Radar does not resolve"
+				out.Unresolved = "set from a field reference KubeAtlas does not resolve"
 			}
 		}
 	}

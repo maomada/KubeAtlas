@@ -62,7 +62,7 @@ func (v *View) read(ref resourceid.Ref) (ObjectRead, Decision) {
 }
 
 // Seed reads o as its object when the session can't, as when the caller
-// fetched it from the API and Radar doesn't collect its kind. A read that
+// fetched it from the API and KubeAtlas doesn't collect its kind. A read that
 // holds the object stands, as does an excluded one or one the caller may not
 // make. Seed an object before asking about it, so every answer reads it the
 // same way. The view keeps o, which must not be modified afterwards.
@@ -198,7 +198,7 @@ func (v *View) Children(ref resourceid.Ref) ChildrenAnswer {
 	candidates, unread, undecided := v.candidates(found)
 	// Saying a check failed would say a child may be there.
 	a.Narrowed = v.access != Unrestricted() || undecided
-	// unresolved are the gaps of references to the owner's UID that Radar
+	// unresolved are the gaps of references to the owner's UID that KubeAtlas
 	// can't resolve: the collector retries them, so their objects may be
 	// children.
 	var unresolved []Gap
@@ -237,7 +237,7 @@ func (v *View) Children(ref resourceid.Ref) ChildrenAnswer {
 }
 
 // mayResolveTo reports whether a reference naming ref's UID, whose resolution
-// is unknown, may still resolve to ref: it names ref's name, and a kind Radar
+// is unknown, may still resolve to ref: it names ref's name, and a kind KubeAtlas
 // resolved to ref's or couldn't resolve with ref's group and kind. UIDs are unique,
 // so a reference to other coordinates never resolves to the object holding
 // its UID, however the read of those coordinates goes.
@@ -375,12 +375,12 @@ type MembersAnswer struct {
 	// are set only when it is MembersRecorded. A remote manager's destination
 	// isn't confirmed to be this cluster, so none of its list is shown here.
 	Membership MembershipState
-	// Members are the recorded objects Radar holds that the caller may read,
+	// Members are the recorded objects KubeAtlas holds that the caller may read,
 	// sorted.
 	Members []Observation
-	// Missing counts the recorded objects Radar has loaded the stores of and
+	// Missing counts the recorded objects KubeAtlas has loaded the stores of and
 	// doesn't hold. Withheld counts those the caller may not read, and
-	// Unknown those Radar can't say whether it holds (Gaps say why). The
+	// Unknown those KubeAtlas can't say whether it holds (Gaps say why). The
 	// manager's status, which the caller can read, names them all; Events,
 	// which ownership doesn't read, are left out.
 	Missing, Withheld, Unknown int
@@ -398,7 +398,7 @@ func (v *View) Members(manager resourceid.Ref) MembersAnswer {
 	inventory := v.session.Members(manager)
 	switch {
 	case inventory.Manager.State == Unavailable:
-		// As when the caller fetched a manager Radar doesn't collect.
+		// As when the caller fetched a manager KubeAtlas doesn't collect.
 		a.Gaps = append(a.Gaps, inventory.Manager.Gap)
 		return a
 	case inventory.Manager.State != Present || inventory.Manager.Object.UID != subject.Read.Object.UID:
@@ -449,12 +449,12 @@ type RecordingManagersAnswer struct {
 	// can't be read, any of which may name the object, sorted.
 	Unreadable []resourceid.Ref
 	// Remote are the managers the caller may read whose lists name an
-	// object at the same coordinates in a cluster Radar can't confirm is this
+	// object at the same coordinates in a cluster KubeAtlas can't confirm is this
 	// one, sorted.
 	Remote []resourceid.Ref
 	// Gaps are the search's gaps the caller may read; see RecordingManagersRead.Gaps.
 	Gaps []Gap
-	// Undecided: Radar couldn't check whether the caller may read some of the
+	// Undecided: KubeAtlas couldn't check whether the caller may read some of the
 	// managers or gaps the search found, so the answer may lack some it may.
 	Undecided bool
 	// searchGaps are all the search's gaps, for Searched.
@@ -462,16 +462,16 @@ type RecordingManagersAnswer struct {
 }
 
 // Searched reports whether the search read the member list of manager, a
-// manager the caller may read and Radar holds: no gap the search reported,
+// manager the caller may read and KubeAtlas holds: no gap the search reported,
 // whether or not the caller may read it, leaves manager's kind unread where
 // manager is. A gap across all namespaces that stands for the namespaces
-// Radar doesn't collect leaves manager's own read.
+// KubeAtlas doesn't collect leaves manager's own read.
 func (a RecordingManagersAnswer) Searched(manager resourceid.Ref) bool {
 	return !slices.ContainsFunc(a.searchGaps, func(g Gap) bool { return covers(g, manager) })
 }
 
 // covers reports whether a search's gap left ref's kind and place unread, ref
-// being an object Radar holds.
+// being an object KubeAtlas holds.
 func covers(g Gap, ref resourceid.Ref) bool {
 	switch {
 	case g.Kind != ref.GroupKind():
@@ -481,7 +481,7 @@ func covers(g Gap, ref resourceid.Ref) bool {
 	case g.Namespace != "":
 		return false
 	}
-	return g.Reason != readreason.RadarNamespaceNotCollected
+	return g.Reason != readreason.KubeAtlasNamespaceNotCollected
 }
 
 // RecordingManagers finds the local managers whose member lists name ref, among those
@@ -506,7 +506,7 @@ func (v *View) recordingManagers(ref resourceid.Ref) RecordingManagersAnswer {
 		return d == Allowed
 	}
 	for _, g := range found.Gaps {
-		// A gap the caller may not read would say what Radar collects where
+		// A gap the caller may not read would say what KubeAtlas collects where
 		// the caller can't look.
 		if may(g.Kind, g.Namespace) {
 			a.Gaps = append(a.Gaps, g)

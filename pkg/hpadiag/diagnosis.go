@@ -227,7 +227,7 @@ func isPinned(min, max int32) bool {
 	return max > 0 && min == max
 }
 
-// The reason leads with Radar's reading of the condition and keeps the
+// The reason leads with KubeAtlas's reading of the condition and keeps the
 // controller's own sentence as detail: the raw text ("the desired replica
 // count is less than the minimum replica count") names neither the bound nor
 // the number, which is what a reader scanning a card needs.

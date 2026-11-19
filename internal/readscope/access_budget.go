@@ -8,7 +8,7 @@ import (
 )
 
 // MaxAccessChecks bounds uncached SubjectAccessReviews shared by one request.
-// They share Radar's client rate limit with every other screen, and a caller
+// They share KubeAtlas's client rate limit with every other screen, and a caller
 // can see hundreds of namespaces.
 const MaxAccessChecks = 64
 

@@ -276,7 +276,7 @@ func TestHandleDiagnoseRunStreamReplaysPersistedEvidenceProvenance(t *testing.T)
 		{Seq: 1, Event: ai.StreamEvent{Type: "step", Step: &ai.StepInfo{
 			ID: "logs", Tool: "get_pod_logs", Status: "done",
 			Result: `{"logs":["authentication failed"]}`, EvidenceRef: ref,
-			RadarEvidence: true, IsError: &success,
+			KubeAtlasEvidence: true, IsError: &success,
 		}}},
 		{Seq: 2, Event: ai.StreamEvent{Type: "done", Diag: &ai.Diagnosis{
 			Verdict: investigation.Verdict{
@@ -314,7 +314,7 @@ func TestHandleDiagnoseRunStreamReplaysPersistedEvidenceProvenance(t *testing.T)
 	body := recorder.Body.String()
 	for _, want := range []string{
 		`"evidenceRef":"` + ref + `"`,
-		`"radarEvidence":true`,
+		`"kubeatlasEvidence":true`,
 		`"rootCauseEvidence":{"status":"linked","refs":["` + ref + `"]}`,
 	} {
 		if !strings.Contains(body, want) {
@@ -339,7 +339,7 @@ func TestHandleDiagnoseRunStreamReplaysPersistedEvidenceProvenance(t *testing.T)
 			replayedDiagnosis = event.Diag
 		}
 	}
-	if replayedStep == nil || replayedStep.EvidenceRef != ref || !replayedStep.RadarEvidence {
+	if replayedStep == nil || replayedStep.EvidenceRef != ref || !replayedStep.KubeAtlasEvidence {
 		t.Fatalf("replayed step lost evidence provenance: %+v; body=%q", replayedStep, body)
 	}
 	wantEvidence := &investigation.RootCauseEvidence{Status: investigation.Linked, Refs: []string{ref}}

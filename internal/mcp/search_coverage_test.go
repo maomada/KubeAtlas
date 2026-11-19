@@ -277,9 +277,9 @@ func TestHandleSearchCoverageHintIsIndependentOfNarrowHint(t *testing.T) {
 
 func TestSearchCoverageHintSaysSetupLimitsOnHits(t *testing.T) {
 	const (
-		collection = "For some kinds, Radar searches only the namespaces it collects; matches for them elsewhere aren't included."
-		pin        = "Radar is pinned to one namespace; namespaced matches elsewhere aren't included."
-		empty      = "No matches within what your access and Radar's collection cover; that does not rule out matches outside them."
+		collection = "For some kinds, KubeAtlas searches only the namespaces it collects; matches for them elsewhere aren't included."
+		pin        = "KubeAtlas is pinned to one namespace; namespaced matches elsewhere aren't included."
+		empty      = "No matches within what your access and KubeAtlas's collection cover; that does not rule out matches outside them."
 		denied     = "Your access doesn't include all Secrets; this result says nothing about the rest."
 	)
 	hits := []search.Hit{{Kind: "Secret", Namespace: "read-a", Name: "db-creds"}}
@@ -342,25 +342,25 @@ func TestCoverageHintTemplates(t *testing.T) {
 		{"unknown with undiscovered groups", hintResult{Unsearched: []hintEntry{{Kind: "*", Reason: readreason.ReadError}, gap("Certificate", "", readreason.KindUnknown)}},
 			"Kind 'Certificate' wasn't recognized, but some API groups couldn't be discovered: it may be served by one of them; retry."},
 		{"read directly", hintResult{Unsearched: []hintEntry{gap("Lease", "coordination.k8s.io", readreason.KindNotSearchable)}}, "Search doesn't cover Leases; use list_resources kind=Lease or get_resource."},
-		{"unsupported", hintResult{Unsearched: []hintEntry{gap("PodMetrics", "metrics.k8s.io", readreason.KindNotWatchable)}}, "Radar can't collect PodMetrics: the API doesn't support both list and watch, so search can't cover them; read them from the Kubernetes API directly."},
+		{"unsupported", hintResult{Unsearched: []hintEntry{gap("PodMetrics", "metrics.k8s.io", readreason.KindNotWatchable)}}, "KubeAtlas can't collect PodMetrics: the API doesn't support both list and watch, so search can't cover them; read them from the Kubernetes API directly."},
 		{"rbac namespace", hintResult{Unsearched: []hintEntry{{Kind: "*", Reason: readreason.UserNamespaceNotVisible, Namespaces: []string{"payments-prd"}}}},
 			"Namespace payments-prd wasn't searched: it isn't among the namespaces you can see, or doesn't exist."},
 		{"missing namespace", hintResult{Unsearched: []hintEntry{{Kind: "*", Reason: readreason.NamespaceNotFound, Namespaces: []string{"payments-prd"}}}},
 			"Namespace 'payments-prd' doesn't exist on this cluster."},
 		{"unknown kinds", hintResult{Unsearched: []hintEntry{gap("CiliumNetworkPolicy", "", readreason.KindUnknown), gap("Deploymnet", "", readreason.KindUnknown)}},
 			"Kinds 'CiliumNetworkPolicy' and 'Deploymnet' aren't recognized on this cluster: they may not be installed here, or the names may be misspelled."},
-		{"scope namespace", hintResult{Unsearched: []hintEntry{{Kind: "*", Reason: readreason.RadarNamespaceNotCollected, Namespaces: []string{"billing"}}}},
-			"Namespace billing wasn't searched: Radar here watches only some namespaces."},
+		{"scope namespace", hintResult{Unsearched: []hintEntry{{Kind: "*", Reason: readreason.KubeAtlasNamespaceNotCollected, Namespaces: []string{"billing"}}}},
+			"Namespace billing wasn't searched: KubeAtlas here watches only some namespaces."},
 		{"check failed", hintResult{Unsearched: []hintEntry{gap("Secret", "", readreason.UserPermissionCheckFailed)}},
-			"Radar couldn't check your access to Secret; retry."},
-		{"collector", hintResult{Unsearched: []hintEntry{gap("Node", "", readreason.RadarForbidden)}},
-			"Radar isn't allowed to read Nodes on this cluster; granting you access won't help."},
-		{"not watched", hintResult{Unsearched: []hintEntry{gap("Role", "rbac.authorization.k8s.io", readreason.RadarKindNotCollected)}},
-			"Radar doesn't watch Roles on this cluster, so they weren't searched."},
+			"KubeAtlas couldn't check your access to Secret; retry."},
+		{"collector", hintResult{Unsearched: []hintEntry{gap("Node", "", readreason.KubeAtlasForbidden)}},
+			"KubeAtlas isn't allowed to read Nodes on this cluster; granting you access won't help."},
+		{"not watched", hintResult{Unsearched: []hintEntry{gap("Role", "rbac.authorization.k8s.io", readreason.KubeAtlasKindNotCollected)}},
+			"KubeAtlas doesn't watch Roles on this cluster, so they weren't searched."},
 		{"filter", hintResult{FilterErrors: 143, FilterErrorSample: "no such key: readyReplicas"},
 			"143 objects failed the filter (no such key: readyReplicas): Kubernetes omits fields that are 0 or empty, so guard them with has() and match a zero with kind == \"K\" && (!has(x) || x == 0)."},
 		{"ordered and capped", hintResult{FilterErrors: 1, FilterErrorSample: "no such key: x", Unsearched: []hintEntry{
-			gap("Secret", "", readreason.UserForbidden), {Kind: "*", Reason: readreason.KindSyncPending, Count: 2}, gap("Deploymnet", "", readreason.KindUnknown), gap("Node", "", readreason.RadarForbidden),
+			gap("Secret", "", readreason.UserForbidden), {Kind: "*", Reason: readreason.KindSyncPending, Count: 2}, gap("Deploymnet", "", readreason.KindUnknown), gap("Node", "", readreason.KubeAtlasForbidden),
 		}}, "Kind 'Deploymnet' isn't recognized on this cluster: it may not be installed here, or the name may be misspelled. 1 object failed the filter (no such key: x): Kubernetes omits fields that are 0 or empty, so guard them with has() and match a zero with kind == \"K\" && (!has(x) || x == 0). 2 kinds were still loading; retry in a few seconds before concluding absence. +2 more reasons."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -400,7 +400,7 @@ func TestHandleSearchReportsFailedNamespaceDiscovery(t *testing.T) {
 	}
 }
 
-// The --namespace-scope pin is Radar's setup, so a namespace outside it is
+// The --namespace-scope pin is KubeAtlas's setup, so a namespace outside it is
 // namespace_scope_limited, never blamed on the caller's RBAC.
 func TestHandleSearchAttributesNamedNamespacesToThePin(t *testing.T) {
 	setupFakeCacheForFilterTests(t)
@@ -468,7 +468,7 @@ func TestCoverageHintReadRecovery(t *testing.T) {
 		{"named read error", "kind:Certificate renewal", readreason.ReadError, "Couldn't read Certificate (cert-manager.io); matches of that kind may be missing."},
 		{"plural alias", "K:certificates renewal", readreason.ReadError, "Couldn't read Certificate (cert-manager.io); matches of that kind may be missing."},
 		{"stalled watch", "renewal", readreason.KindSyncTimedOut, "Couldn't read Certificate (cert-manager.io); matches of that kind may be missing."},
-		{"credentials rejected", "renewal", readreason.RadarCredentialsRejected, "Couldn't read Certificate (cert-manager.io); matches of that kind may be missing."},
+		{"credentials rejected", "renewal", readreason.KubeAtlasCredentialsRejected, "Couldn't read Certificate (cert-manager.io); matches of that kind may be missing."},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			res := hintResult{Partial: true, Unsearched: []hintEntry{{Kind: "Certificate", Group: "cert-manager.io", Reason: tc.reason}}}
@@ -492,9 +492,9 @@ func TestCoverageHintReadRecoveryFoldAndBudget(t *testing.T) {
 	res.Unsearched = append(res.Unsearched,
 		hintEntry{Kind: "*", Reason: readreason.KindSyncPending, Count: 1},
 		hintEntry{Kind: "Secret", Reason: readreason.UserPermissionCheckFailed},
-		hintEntry{Kind: "Node", Reason: readreason.RadarForbidden},
+		hintEntry{Kind: "Node", Reason: readreason.KubeAtlasForbidden},
 	)
-	want = "1 kind was still loading; retry in a few seconds before concluding absence. Radar couldn't check your access to Secret; retry. Couldn't read 6 kinds (Certificate, Issuer, …); matches of those kinds may be missing; retry with kind:Certificate for a kind you need before concluding absence. +1 more reason."
+	want = "1 kind was still loading; retry in a few seconds before concluding absence. KubeAtlas couldn't check your access to Secret; retry. Couldn't read 6 kinds (Certificate, Issuer, …); matches of those kinds may be missing; retry with kind:Certificate for a kind you need before concluding absence. +1 more reason."
 	if got := hintOf(res, false); got != want {
 		t.Fatalf("cap/order: %q, want %q", got, want)
 	}
@@ -519,14 +519,14 @@ func TestCoverageHintCapsNamedTargets(t *testing.T) {
 		entries[i] = hintEntry{Kind: names[i], Reason: readreason.KindUnknown}
 	}
 	var cases []hintResult
-	for _, reason := range []readreason.Code{readreason.KindUnknown, readreason.UserForbidden, readreason.RadarForbidden, readreason.KindNotWatchable} {
+	for _, reason := range []readreason.Code{readreason.KindUnknown, readreason.UserForbidden, readreason.KubeAtlasForbidden, readreason.KindNotWatchable} {
 		gaps := slices.Clone(entries)
 		for i := range gaps {
 			gaps[i].Reason = reason
 		}
 		cases = append(cases, hintResult{Partial: true, Unsearched: gaps})
 	}
-	for _, reason := range []readreason.Code{readreason.UserNamespaceNotVisible, readreason.OutsideNamespacePin, readreason.RadarNamespaceNotCollected} {
+	for _, reason := range []readreason.Code{readreason.UserNamespaceNotVisible, readreason.OutsideNamespacePin, readreason.KubeAtlasNamespaceNotCollected} {
 		cases = append(cases, hintResult{Partial: true, Unsearched: []hintEntry{{Kind: "*", Reason: reason, Namespaces: names}}})
 	}
 	for _, res := range cases {
@@ -700,8 +700,8 @@ func TestSearchTrivyClusterCheckKeepsAuthority(t *testing.T) {
 }
 
 func TestSearchPartialNamespaceHint(t *testing.T) {
-	res := search.Result{Coverage: resourceapi.SearchCoverage{Status: resourceapi.CoveragePartial, Gaps: []resourceapi.Gap{{Code: readreason.RadarNamespaceNotCollected, Kinds: resourceapi.UnknownKinds(), Namespaces: resourceapi.Names([]string{"alpha"}, 1)}}}}
-	if got := coverageHint(res, true); got != "Some kinds weren't searched in namespace alpha: Radar here watches only some namespaces." {
+	res := search.Result{Coverage: resourceapi.SearchCoverage{Status: resourceapi.CoveragePartial, Gaps: []resourceapi.Gap{{Code: readreason.KubeAtlasNamespaceNotCollected, Kinds: resourceapi.UnknownKinds(), Namespaces: resourceapi.Names([]string{"alpha"}, 1)}}}}
+	if got := coverageHint(res, true); got != "Some kinds weren't searched in namespace alpha: KubeAtlas here watches only some namespaces." {
 		t.Fatalf("hint: %q", got)
 	}
 }

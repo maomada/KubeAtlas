@@ -164,7 +164,7 @@ func TestSearchProbeRetryForbiddenBecomesCollectorScope(t *testing.T) {
 	}{
 		{"robusta", nil, []UnsearchedKind{}},
 		{"kind:Widget robusta", nil, []UnsearchedKind{}},
-		{"ns:b robusta", []string{"b"}, []UnsearchedKind{{Kind: "*", Reason: readreason.RadarNamespaceNotCollected, Namespaces: []string{"b"}}}},
+		{"ns:b robusta", []string{"b"}, []UnsearchedKind{{Kind: "*", Reason: readreason.KubeAtlasNamespaceNotCollected, Namespaces: []string{"b"}}}},
 	} {
 		p.warmError = apierrors.NewForbidden(gvr.GroupResource(), "", fmt.Errorf("collector scope"))
 		res, err := Search(t.Context(), p, Parse(tc.query), Options{Selection: readscope.Selection{Namespaces: tc.ns}})

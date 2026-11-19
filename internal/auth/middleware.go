@@ -12,7 +12,7 @@ import (
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
 )
 
-// cloudMode reports whether Radar is running under Radar Cloud. Reads
+// cloudMode reports whether KubeAtlas is running under KubeAtlas Cloud. Reads
 // the resolved deployment mode from internal/cloud (single source of
 // truth across server, auth, and main; normalizes KUBEATLAS_CLOUD_MODE
 // via strconv.ParseBool so a typo'd "True" / "1" doesn't silently
@@ -36,7 +36,7 @@ func Authenticate(cfg Config) func(http.Handler) http.Handler {
 			cloudProxyMode := cfg.Mode == "proxy" && cloudMode()
 			if cloudProxyMode && !cloud.IsAuthenticatedTunnelRequest(r.Context()) {
 				// Forwarded identity is authoritative only inside the yamux transport
-				// established with the cluster token. Radar also has an ordinary TCP
+				// established with the cluster token. KubeAtlas also has an ordinary TCP
 				// listener for kubelet health checks; a pod reaching that listener can
 				// spoof headers, but it cannot forge the private context marker.
 				w.Header().Set("Content-Type", "application/json")
@@ -54,7 +54,7 @@ func Authenticate(cfg Config) func(http.Handler) http.Handler {
 			secure := cfg.Mode == "oidc" || r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https"
 
 			// Cloud proxy identity is authoritative on every tunneled request. A
-			// browser-carried Radar session must never override the Hub-injected
+			// browser-carried KubeAtlas session must never override the Hub-injected
 			// user/groups if an upstream cookie-strip defense regresses.
 			var session *Session
 			if !cloudProxyMode {
@@ -76,8 +76,8 @@ func Authenticate(cfg Config) func(http.Handler) http.Handler {
 					return
 				}
 
-				// A signed cookie proves Radar issued it, not that its identity
-				// is still one Radar will impersonate; re-check it every request.
+				// A signed cookie proves KubeAtlas issued it, not that its identity
+				// is still one KubeAtlas will impersonate; re-check it every request.
 				if !ForwardedIdentityAllowed(session.User.Username, session.User.Groups, false) {
 					for _, c := range ClearSessionCookie(r) {
 						http.SetCookie(w, c)
@@ -129,20 +129,21 @@ func Authenticate(cfg Config) func(http.Handler) http.Handler {
 						if !ok {
 							return
 						}
+						user.Cloud = true
 						logAcceptedForwardedIdentity(user)
 						next.ServeHTTP(w, r.WithContext(ContextWithUser(r.Context(), user)))
 						return
 					}
 
 					// Never impersonate reserved K8s principals (system:masters etc.);
-					// under Cloud, also require the radar:/cloud: group vocabulary.
+					// under Cloud, also require the kubeatlas:/cloud: group vocabulary.
 					// Reject the whole request rather than dropping values.
 					if !ForwardedIdentityAllowed(username, groups, cloudProxyMode) {
 						rejectDisallowedIdentity(w, username, cloudProxyMode)
 						return
 					}
 
-					user := &User{Username: username, Groups: groups}
+					user := &User{Username: username, Groups: groups, Cloud: cloudProxyMode}
 					logAcceptedForwardedIdentity(user)
 					if !cloudProxyMode {
 						cookies := CreateSessionCookie(user, NewSessionID(), "", cfg.Secret, cfg.CookieTTL, secure)
@@ -190,7 +191,7 @@ func isExemptPath(path string) bool {
 	// check as defense in depth: process diagnostics must never bypass the
 	// Hub identity boundary. Profiling routes are omitted entirely in Cloud mode.
 	if cloudMode() {
-		// Cloud owns authentication; Radar's own login/callback endpoints must
+		// Cloud owns authentication; KubeAtlas's own login/callback endpoints must
 		// not be reachable without the Hub identity boundary. The exact health
 		// path remains public for kubelet probes on the health-only TCP listener.
 		return path == "/api/health"

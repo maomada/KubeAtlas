@@ -96,7 +96,7 @@ type Detection struct {
 	Reason                     string
 	Message                    string
 	RawMessage                 string
-	// MessageSource is issuesapi.MessageSourceRadar when Message is Radar's
+	// MessageSource is issuesapi.MessageSourceKubeAtlas when Message is KubeAtlas's
 	// own summary rather than text from Kubernetes or a controller.
 	MessageSource     string
 	Age               string // human-readable

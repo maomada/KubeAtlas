@@ -26,7 +26,7 @@ func TestCloudConnectStopsBeforeHubAndPointsToSupportedPath(t *testing.T) {
 	for _, want := range []string{
 		"local preview mode is not available yet",
 		"no request was sent to the hub",
-		`radar cloud install --hub-url="https://hub.example" --name="prod"`,
+		`kubeatlas cloud install --hub-url="https://hub.example" --name="prod"`,
 		"native Helm adoption or GitOps handoff",
 	} {
 		if !strings.Contains(got, want) {
@@ -41,13 +41,13 @@ func TestCloudConnectStopsBeforeHubAndPointsToSupportedPath(t *testing.T) {
 func TestPostApprovalRecoveryGuidanceDoesNotRecommendImmediateRetry(t *testing.T) {
 	var out bytes.Buffer
 	printPostApprovalRecoveryGuidance(&out, "clus_existing", "https://app.example.test/c/clus_existing", cloudProvisionRecovery{
-		Mode: cloudinstall.ProvisionFresh, ReleaseName: "prod", Namespace: "radar-prod",
-		Deployment: helm.DeploymentRef{Name: "prod-radar", Namespace: "radar-prod"},
+		Mode: cloudinstall.ProvisionFresh, ReleaseName: "prod", Namespace: "kubeatlas-prod",
+		Deployment: helm.DeploymentRef{Name: "prod-kubeatlas", Namespace: "kubeatlas-prod"},
 	}, errors.New("install failed"), cloudCommandTarget{})
 	got := out.String()
 	for _, want := range []string{
 		"clus_existing", "Do not rerun", "first inspect the existing attempt",
-		"helm status prod -n radar-prod", "secret/radar-cloud-config", "deployment/prod-radar",
+		"helm status prod -n kubeatlas-prod", "secret/kubeatlas-cloud-config", "deployment/prod-kubeatlas",
 		"If the token Secret remains", "If the Secret was cleaned up", "token is no longer recoverable",
 	} {
 		if !strings.Contains(got, want) {
@@ -58,8 +58,8 @@ func TestPostApprovalRecoveryGuidanceDoesNotRecommendImmediateRetry(t *testing.T
 
 func TestAdoptionPreMutationRecoveryDoesNotInventRollbackOrSecret(t *testing.T) {
 	recovery := cloudProvisionRecovery{
-		Mode: cloudinstall.ProvisionAdopt, ReleaseName: "radar", Namespace: "radar",
-		Deployment: helm.DeploymentRef{Name: "radar", Namespace: "radar"}, CurrentRevision: 4,
+		Mode: cloudinstall.ProvisionAdopt, ReleaseName: "kubeatlas", Namespace: "kubeatlas",
+		Deployment: helm.DeploymentRef{Name: "kubeatlas", Namespace: "kubeatlas"}, CurrentRevision: 4,
 	}
 	var out bytes.Buffer
 	printPostApprovalRecoveryGuidance(&out, "clus_existing", "https://app.example.test/c/clus_existing", recovery,
@@ -80,11 +80,11 @@ func TestAdoptionPreMutationRecoveryDoesNotInventRollbackOrSecret(t *testing.T) 
 func TestAdoptionUncertainSecretCreateRecoverySaysInspect(t *testing.T) {
 	var out bytes.Buffer
 	printPostApprovalRecoveryGuidance(&out, "clus_existing", "https://app.example.test/c/clus_existing", cloudProvisionRecovery{
-		Mode: cloudinstall.ProvisionAdopt, ReleaseName: "radar", Namespace: "radar",
-		Deployment: helm.DeploymentRef{Name: "radar", Namespace: "radar"}, CurrentRevision: 4,
+		Mode: cloudinstall.ProvisionAdopt, ReleaseName: "kubeatlas", Namespace: "kubeatlas",
+		Deployment: helm.DeploymentRef{Name: "kubeatlas", Namespace: "kubeatlas"}, CurrentRevision: 4,
 	}, &cloudinstall.ProvisionPreMutationError{Err: errors.New("connection reset"), TokenSecretMayExist: true}, cloudCommandTarget{})
 	got := out.String()
-	if !strings.Contains(got, "did not confirm whether the Cloud token Secret was created") || !strings.Contains(got, "get secret/radar-cloud-config") {
+	if !strings.Contains(got, "did not confirm whether the Cloud token Secret was created") || !strings.Contains(got, "get secret/kubeatlas-cloud-config") {
 		t.Fatalf("uncertain Secret guidance is incomplete:\n%s", got)
 	}
 }
@@ -97,7 +97,7 @@ func TestAdoptionRollbackGuidanceIncludesHubCleanup(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		"helm rollback prod 7 -n observability",
-		"delete secret/radar-cloud-config",
+		"delete secret/kubeatlas-cloud-config",
 		"organization owner",
 		"delete the connected cluster",
 		"https://app.example.test/c/clus_existing",
@@ -131,7 +131,7 @@ func TestCloudConnectHelpDoesNotAdvertisePreviewAsAvailable(t *testing.T) {
 	if code := cloudConnect([]string{"--help"}, &out); code != 0 {
 		t.Fatalf("exit code = %d, want 0", code)
 	}
-	if !strings.Contains(out.String(), "preview mode is not available yet") || !strings.Contains(out.String(), "radar cloud install") {
+	if !strings.Contains(out.String(), "preview mode is not available yet") || !strings.Contains(out.String(), "kubeatlas cloud install") {
 		t.Fatalf("help omitted availability guidance:\n%s", out.String())
 	}
 	if strings.Contains(out.String(), "upstream Cloud") {
@@ -150,11 +150,11 @@ func TestCloudConnectRejectsUnexpectedArguments(t *testing.T) {
 }
 
 func TestNormalizeCloudInstallNames(t *testing.T) {
-	namespace, release, err := normalizeCloudInstallNames("  radar-prod  ", "  prod-radar  ")
+	namespace, release, err := normalizeCloudInstallNames("  kubeatlas-prod  ", "  prod-kubeatlas  ")
 	if err != nil {
 		t.Fatalf("normalizeCloudInstallNames() error = %v", err)
 	}
-	if namespace != "radar-prod" || release != "prod-radar" {
+	if namespace != "kubeatlas-prod" || release != "prod-kubeatlas" {
 		t.Fatalf("normalizeCloudInstallNames() = %q, %q", namespace, release)
 	}
 }
@@ -180,7 +180,7 @@ func TestCloudInstallExactTargetRequiresNamespaceAndRelease(t *testing.T) {
 }
 
 func TestNormalizeCloudInstallNamesRejectsInvalidNamespace(t *testing.T) {
-	_, _, err := normalizeCloudInstallNames("Prod.Cluster", "radar")
+	_, _, err := normalizeCloudInstallNames("Prod.Cluster", "kubeatlas")
 	if err == nil || !strings.Contains(err.Error(), "invalid --namespace") {
 		t.Fatalf("error = %v, want invalid namespace", err)
 	}
@@ -189,7 +189,7 @@ func TestNormalizeCloudInstallNamesRejectsInvalidNamespace(t *testing.T) {
 func TestNormalizeCloudInstallNamesUsesHelmReleaseRules(t *testing.T) {
 	for _, release := range []string{"Prod", strings.Repeat("a", 54), ""} {
 		t.Run(release, func(t *testing.T) {
-			_, _, err := normalizeCloudInstallNames("radar", release)
+			_, _, err := normalizeCloudInstallNames("kubeatlas", release)
 			if err == nil || !strings.Contains(err.Error(), "invalid --release") {
 				t.Fatalf("error = %v, want invalid release", err)
 			}
@@ -369,7 +369,7 @@ func TestCanceledAfterApprovalPointsToPendingInstallRecovery(t *testing.T) {
 	var out bytes.Buffer
 	printCanceledAfterApproval(&out, "clus_existing", "https://app.example.test/c/clus_existing")
 	got := out.String()
-	for _, want := range []string{"clus_existing", "No token Secret or Helm release was written", "Rerun `radar cloud install`", "pending cluster in KubeAtlas", "organization owner", "https://app.example.test/c/clus_existing"} {
+	for _, want := range []string{"clus_existing", "No token Secret or Helm release was written", "Rerun `kubeatlas cloud install`", "pending cluster in KubeAtlas", "organization owner", "https://app.example.test/c/clus_existing"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("cancellation recovery missing %q: %q", want, got)
 		}
@@ -381,12 +381,12 @@ func TestCanceledAfterApprovalPointsToPendingInstallRecovery(t *testing.T) {
 
 func TestPrintInstallSuccessUsesRenderedDeploymentName(t *testing.T) {
 	var out bytes.Buffer
-	printInstallSuccess(&out, "production", "https://app.example.test/c/clus_123", helm.DeploymentRef{Name: "prod-radar", Namespace: "radar-prod"}, cloudCommandTarget{})
+	printInstallSuccess(&out, "production", "https://app.example.test/c/clus_123", helm.DeploymentRef{Name: "prod-kubeatlas", Namespace: "kubeatlas-prod"}, cloudCommandTarget{})
 	got := out.String()
 	for _, want := range []string{
 		`Cluster "production" is connected to KubeAtlas`,
 		"Open: https://app.example.test/c/clus_123",
-		"kubectl -n radar-prod rollout status deployment/prod-radar",
+		"kubectl -n kubeatlas-prod rollout status deployment/prod-kubeatlas",
 	} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("success guidance missing %q:\n%s", want, got)
@@ -405,18 +405,18 @@ func TestFollowUpCommandsPinSelectedContextAndKubeconfig(t *testing.T) {
 
 	var success bytes.Buffer
 	printInstallSuccess(&success, "production", "https://app.example.test/c/clus_123",
-		helm.DeploymentRef{Name: "prod-radar", Namespace: "radar-prod"}, target)
-	if want := `kubectl --kubeconfig '/tmp/kube config' --context 'team'"'"'s prod' -n radar-prod rollout status deployment/prod-radar`; !strings.Contains(success.String(), want) {
+		helm.DeploymentRef{Name: "prod-kubeatlas", Namespace: "kubeatlas-prod"}, target)
+	if want := `kubectl --kubeconfig '/tmp/kube config' --context 'team'"'"'s prod' -n kubeatlas-prod rollout status deployment/prod-kubeatlas`; !strings.Contains(success.String(), want) {
 		t.Fatalf("success command did not pin the selected target; want %q in:\n%s", want, success.String())
 	}
 
 	var rollback bytes.Buffer
 	printAdoptionRollbackGuidance(&rollback, cloudProvisionRecovery{
-		Mode: cloudinstall.ProvisionAdopt, ReleaseName: "prod", Namespace: "radar-prod", CurrentRevision: 7,
+		Mode: cloudinstall.ProvisionAdopt, ReleaseName: "prod", Namespace: "kubeatlas-prod", CurrentRevision: 7,
 	}, "https://app.example.test/c/clus_123", target)
 	for _, want := range []string{
-		`helm --kubeconfig '/tmp/kube config' --kube-context 'team'"'"'s prod' rollback prod 7 -n radar-prod`,
-		`kubectl --kubeconfig '/tmp/kube config' --context 'team'"'"'s prod' -n radar-prod delete secret/radar-cloud-config`,
+		`helm --kubeconfig '/tmp/kube config' --kube-context 'team'"'"'s prod' rollback prod 7 -n kubeatlas-prod`,
+		`kubectl --kubeconfig '/tmp/kube config' --context 'team'"'"'s prod' -n kubeatlas-prod delete secret/kubeatlas-cloud-config`,
 	} {
 		if !strings.Contains(rollback.String(), want) {
 			t.Fatalf("rollback command did not pin the selected target; want %q in:\n%s", want, rollback.String())
@@ -447,13 +447,13 @@ func TestPrintConnectFailurePointsToClusterRecovery(t *testing.T) {
 
 func TestPrintTokenSecretConflict(t *testing.T) {
 	var out bytes.Buffer
-	err := fmt.Errorf("wrapped: %w", &cloudinstall.TokenSecretExistsError{Name: "radar-cloud-config", Namespace: "ops"})
-	if !printTokenSecretConflict(&out, err, "radar", cloudCommandTarget{Context: "prod context"}) {
+	err := fmt.Errorf("wrapped: %w", &cloudinstall.TokenSecretExistsError{Name: "kubeatlas-cloud-config", Namespace: "ops"})
+	if !printTokenSecretConflict(&out, err, "kubeatlas", cloudCommandTarget{Context: "prod context"}) {
 		t.Fatal("typed Secret conflict was not classified")
 	}
 	for _, want := range []string{
 		"will not overwrite",
-		"radar cloud status --context 'prod context' --namespace 'ops' --release 'radar'",
+		"kubeatlas cloud status --context 'prod context' --namespace 'ops' --release 'kubeatlas'",
 		"Recover that installation",
 		"corresponding Hub cluster",
 	} {
@@ -466,12 +466,12 @@ func TestPrintTokenSecretConflict(t *testing.T) {
 func TestTunnelConfirmationFailurePreservesExistingInstall(t *testing.T) {
 	var out bytes.Buffer
 	printTunnelConfirmationFailure(&out, cloud.ErrConnectConsumptionTimeout, "clus_existing", "wss://api.example/agent", "https://app.example/c/clus_existing", helm.DeploymentRef{
-		Name: "prod-radar", Namespace: "radar-prod",
+		Name: "prod-kubeatlas", Namespace: "kubeatlas-prod",
 	}, cloudCommandTarget{})
 	got := out.String()
 	for _, want := range []string{
 		"KubeAtlas was provisioned", "clus_existing", "five-minute confirmation window",
-		"Do not rerun", "deployment/prod-radar", "logs deployment/prod-radar",
+		"Do not rerun", "deployment/prod-kubeatlas", "logs deployment/prod-kubeatlas",
 		"Open: https://app.example/c/clus_existing",
 		"outbound WSS/HTTPS access to wss://api.example/agent", "Only if you deliberately abandon",
 	} {
@@ -484,7 +484,7 @@ func TestTunnelConfirmationFailurePreservesExistingInstall(t *testing.T) {
 func TestTunnelConfirmationPickupExpiryDoesNotRepeatDeleteAdvice(t *testing.T) {
 	var out bytes.Buffer
 	err := fmt.Errorf("%w: delete pending cluster", cloud.ErrConnectPickupExpired)
-	printTunnelConfirmationFailure(&out, err, "clus_existing", "wss://api.example/agent", "https://app.example/c/clus_existing", helm.DeploymentRef{Name: "radar", Namespace: "radar"}, cloudCommandTarget{})
+	printTunnelConfirmationFailure(&out, err, "clus_existing", "wss://api.example/agent", "https://app.example/c/clus_existing", helm.DeploymentRef{Name: "kubeatlas", Namespace: "kubeatlas"}, cloudCommandTarget{})
 	got := out.String()
 	if strings.Contains(got, "delete pending cluster") {
 		t.Fatalf("post-install guidance repeated pre-install deletion advice:\n%s", got)
@@ -502,23 +502,23 @@ func TestPrintFreshInstallConflict(t *testing.T) {
 	}{
 		{
 			name: "deployed",
-			err:  &helm.ReleaseExistsError{Name: "radar", Namespace: "ops", Revision: 4},
+			err:  &helm.ReleaseExistsError{Name: "kubeatlas", Namespace: "ops", Revision: 4},
 			want: []string{"already deployed", "prepared fresh-install plan is stale", "--adopt-existing", "revision 4"},
 		},
 		{
 			name: "pending",
-			err:  &helm.ReleasePendingError{Name: "radar", Namespace: "ops", Status: "pending-upgrade", Revision: 5},
-			want: []string{"pending-upgrade", "Wait for the current Helm operation", "helm status radar -n ops"},
+			err:  &helm.ReleasePendingError{Name: "kubeatlas", Namespace: "ops", Status: "pending-upgrade", Revision: 5},
+			want: []string{"pending-upgrade", "Wait for the current Helm operation", "helm status kubeatlas -n ops"},
 		},
 		{
 			name: "unknown",
-			err:  &helm.ReleasePendingError{Name: "radar", Namespace: "ops", Status: "unknown", Revision: 5},
-			want: []string{"cannot safely determine", "helm status radar -n ops"},
+			err:  &helm.ReleasePendingError{Name: "kubeatlas", Namespace: "ops", Status: "unknown", Revision: 5},
+			want: []string{"cannot safely determine", "helm status kubeatlas -n ops"},
 		},
 		{
 			name: "retained history",
-			err:  &helm.ReleaseHistoryError{Name: "radar", Namespace: "ops", Status: "failed", Revision: 3},
-			want: []string{"retained \"failed\" history", "helm history radar -n ops", "new --release"},
+			err:  &helm.ReleaseHistoryError{Name: "kubeatlas", Namespace: "ops", Status: "failed", Revision: 3},
+			want: []string{"retained \"failed\" history", "helm history kubeatlas -n ops", "new --release"},
 		},
 	}
 	for _, tc := range tests {

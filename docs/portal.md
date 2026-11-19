@@ -3,8 +3,13 @@
 Public registrations create pending accounts with no organization membership or
 active session. The platform owner approves pending accounts and grants initial
 membership; organization owners manage roles and scope for existing approved
-members in their organization. The configured recovery identity is the only
-platform owner; only its exact local `User` identity receives `cluster-admin`.
+members in their organization. Organization member lists and counts exclude
+platform administrators and local recovery accounts. Organization member
+updates and removals reject those platform identities, and last-owner
+protection counts only active ordinary organization owners. Existing internal
+recovery memberships remain compatible; they do not grant visibility or editing
+through the organization member directory. The configured recovery identity is
+the only platform owner; only its exact local `User` identity receives `cluster-admin`.
 The chart maps organization role groups to `admin`, `edit`, or `view`, plus
 limited infrastructure-read access. Existing Agent deployments need an
 operator-controlled chart rollout to apply those bindings; the Hub does not
@@ -27,7 +32,7 @@ authority. Missing or malformed revision metadata fails closed in the UI.
 The `kubeatlas-portal` binary name is retained for a self-hosted Cloud Hub that
 serves the Cloud UI, member identity, browser proxy, and live MCP transport.
 It is separate from the native KubeAtlas Agent. This repository does not
-provide a hosted Radar Cloud service.
+provide a hosted KubeAtlas Cloud service.
 
 The Hub uses connected Agents for live cluster access. It does not read remote
 kubeconfigs or make Kubernetes API requests itself, and it does not collect or
@@ -51,7 +56,7 @@ The local owner account is configured with
 `KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD`. The username must
 be 1–256 bytes without a colon or control characters, and the password must be
 16–4096 bytes; these existing recovery-login limits are unchanged. Public
-registration has a separate rule: passwords must contain at least 12 Unicode
+registration has a separate rule: passwords must contain at least 6 Unicode
 scalar values, be valid UTF-8, and contain at most 72 UTF-8 bytes because
 passwords are hashed with bcrypt. The owner can configure the organization,
 manage members and cluster assignments, and issue or revoke scoped MCP
@@ -99,6 +104,12 @@ Hub bearer credentials are never taken from browser cookies. They expire and
 can be revoked or refreshed through the authenticated Hub API. The live path
 uses the member's principal and tunneled Kubernetes identity; it does not
 fall back to cached snapshots or direct Fleet tools.
+
+The Agent page provides client-neutral Streamable HTTP connection details.
+After issuance, the one-time copy action includes the endpoint and the
+`Authorization: Bearer` header. Tokens are never appended to URLs. Credential
+names start empty, and confirmed revocations disappear from the page while
+the backend retains the revoked metadata for its normal retention period.
 
 See [Hub state](hub-state.md) for persistence and validation,
 [self-hosted identity](self-hosted-hub-identity.md) for login and membership,

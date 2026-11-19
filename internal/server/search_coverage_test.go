@@ -374,7 +374,7 @@ func TestSearchReportsFailedNamespaceDiscovery(t *testing.T) {
 	}
 }
 
-// The --namespace-scope pin is Radar's setup, reported for a namespace an ns:
+// The --namespace-scope pin is KubeAtlas's setup, reported for a namespace an ns:
 // term names whether or not the search drops the saved pick.
 func TestSearchAttributesNamedNamespacesToThePin(t *testing.T) {
 	useTestResourceCache(t, fake.NewClientset(

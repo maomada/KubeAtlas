@@ -177,7 +177,7 @@ func checkStorage(tr *evalTracker, input *CheckInput, now time.Time) []Finding {
 		}
 		inDeleteGrace := !releasedAt.IsZero() && now.Sub(releasedAt.Time) <= pvDeleteGrace
 		if pv.Spec.PersistentVolumeReclaimPolicy == corev1.PersistentVolumeReclaimDelete && inDeleteGrace && !recentFailure && !deletionEventsComplete {
-			// A warning Radar can't see may already show this deletion failing.
+			// A warning KubeAtlas can't see may already show this deletion failing.
 			tr.skip("pv-deletion-events")
 			continue
 		}

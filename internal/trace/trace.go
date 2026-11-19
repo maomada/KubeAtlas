@@ -47,7 +47,7 @@ const (
 	gatewayRouteCap = 20
 )
 
-// Deps lets the trace builder share Radar's caches with the call site. The
+// Deps lets the trace builder share KubeAtlas's caches with the call site. The
 // typed/unstructured split mirrors internal/k8s/detect_missing_refs.go:
 // Services/Pods/Ingresses/NetworkPolicies come from typed listers; Gateway API
 // kinds come from the dynamic cache as *unstructured.Unstructured.
@@ -341,8 +341,8 @@ type Trace struct {
 	// Truncated is set when fan-out (e.g. Gateway attached routes) exceeded
 	// the cap, so the UI can surface "showing N of M".
 	Truncated bool `json:"truncated,omitempty"`
-	// RunVantage names WHERE Radar itself runs, and so where its inline probes are
-	// sent from: "in-cluster" (Radar is a pod - its direct probes are real
+	// RunVantage names WHERE KubeAtlas itself runs, and so where its inline probes are
+	// sent from: "in-cluster" (KubeAtlas is a pod - its direct probes are real
 	// pod-to-pod, the in-cluster data path is already covered, and it CANNOT test
 	// an external ingress front door) or "local" (a laptop - the direct probes are
 	// the external client's view, and the in-cluster data path needs the manual
@@ -351,10 +351,10 @@ type Trace struct {
 	// labels columns, gates the in-cluster button, and words the verdict honestly
 	// per architecture.
 	RunVantage string `json:"runVantage,omitempty"`
-	// radarUnmeshed is set when Radar's own pod was read and carries no
+	// kubeatlasUnmeshed is set when KubeAtlas's own pod was read and carries no
 	// sidecar proxy, so a probe it sends through a Service is answered by the
 	// backend rather than by a local proxy.
-	radarUnmeshed bool
+	kubeatlasUnmeshed bool
 
 	// Coverage-honest projection of the trace, computed server-side alongside
 	// the verdict (computeCoverage). These describe ONLY what was actually
@@ -472,10 +472,10 @@ func BuildTraceWithOptions(ctx context.Context, deps Deps, kind, namespace, name
 	ctx, cancel := context.WithTimeout(ctx, totalBudget)
 	defer cancel()
 
-	// Stamped before any probe runs. Where Radar sits is a deployment fact, not a
+	// Stamped before any probe runs. Where KubeAtlas sits is a deployment fact, not a
 	// result, and the UI needs it on the static trace too: it decides which
 	// vantages are even offerable, and a trace with no probes would otherwise
-	// advertise a workstation vantage that a Radar running as a Pod can never use.
+	// advertise a workstation vantage that a KubeAtlas running as a Pod can never use.
 	t := &Trace{Subject: subject, BrokenAt: -1, RunVantage: string(detectVantage())}
 
 	switch normalizeKind(kind) {

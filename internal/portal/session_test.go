@@ -61,7 +61,7 @@ func TestViewerSessionLifecycle(t *testing.T) {
 		t.Fatalf("public login shell: %d", w.Code)
 	}
 	cookie := loginForTest(t, h)
-	if cookie.Name != "__Host-radar_portal_session" || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" || cookie.Domain != "" || cookie.MaxAge != int(sessionLifetime.Seconds()) {
+	if cookie.Name != "__Host-kubeatlas_portal_session" || !cookie.HttpOnly || !cookie.Secure || cookie.SameSite != http.SameSiteStrictMode || cookie.Path != "/" || cookie.Domain != "" || cookie.MaxAge != int(sessionLifetime.Seconds()) {
 		t.Fatalf("unsafe session cookie attributes")
 	}
 	if w := request("GET", "/api/hub", cookie); w.Code != 200 {
@@ -337,7 +337,7 @@ func TestViewerSessionRejectsBasicAndForgedCookies(t *testing.T) {
 	}
 	h.secureCookies = false
 	cookie := loginForTest(t, h)
-	if cookie.Secure || cookie.Name != "radar_portal_session" {
+	if cookie.Secure || cookie.Name != "kubeatlas_portal_session" {
 		t.Fatal("explicit local development cookie not configured")
 	}
 }

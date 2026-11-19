@@ -164,7 +164,7 @@ func TestDeleteNodeDebugPodRejectsMalformedIdentity(t *testing.T) {
 
 func TestValidateNodeDebugPodIdentityAcceptsKubernetesNames(t *testing.T) {
 	for _, tc := range []struct{ namespace, podName string }{
-		{"default", "radar-node-debug-worker-1-123"},
+		{"default", "kubeatlas-node-debug-worker-1-123"},
 		{"team-a", "debug.worker-1"},
 		{strings.Repeat("a", 63), strings.Repeat("a", 253)},
 	} {

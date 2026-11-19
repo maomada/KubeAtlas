@@ -77,10 +77,10 @@ export type { CardSectionTone } from "./CardSection";
 export { MultiSelectPicker } from "./MultiSelectPicker";
 export type { MultiSelectPickerProps } from "./MultiSelectPicker";
 export {
-  RadarUpgradeNote,
-  RadarUpgradeAction,
-  RadarUpgradeContext,
-  radarUpgradeDetail,
-  radarUpgradeHeadline,
-} from "./RadarUpgradeNote";
-export type { RadarUpgradeActions } from "./RadarUpgradeNote";
+  KubeAtlasUpgradeNote,
+  KubeAtlasUpgradeAction,
+  KubeAtlasUpgradeContext,
+  kubeatlasUpgradeDetail,
+  kubeatlasUpgradeHeadline,
+} from "./KubeAtlasUpgradeNote";
+export type { KubeAtlasUpgradeActions } from "./KubeAtlasUpgradeNote";

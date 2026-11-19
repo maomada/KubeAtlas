@@ -19,12 +19,12 @@ import {
   CollapseChevron,
   EmptyState,
   FreshnessControl,
-  getRadarUpgradeRequirement,
+  getKubeAtlasUpgradeRequirement,
   PageHeader,
   PaneLoader,
-  RadarUpgradeAction,
-  radarUpgradeDetail,
-  radarUpgradeHeadline,
+  KubeAtlasUpgradeAction,
+  kubeatlasUpgradeDetail,
+  kubeatlasUpgradeHeadline,
   SelectMenu,
 } from '@maomada/k8s-ui'
 import {
@@ -253,15 +253,15 @@ export function UpgradeReadinessView({ namespaces, onNavigateToResource }: Upgra
 }
 
 export function UpgradeReadinessError({ error, onResetTarget }: { error: unknown; onResetTarget?: () => void }) {
-  const upgrade = getRadarUpgradeRequirement(error)
+  const upgrade = getKubeAtlasUpgradeRequirement(error)
   if (upgrade) {
     return (
       <EmptyState
         tone="neutral"
         icon={ShieldAlert}
-        headline={radarUpgradeHeadline('Upgrade impact')}
-        body={radarUpgradeDetail(upgrade)}
-        action={<RadarUpgradeAction requirement={upgrade} />}
+        headline={kubeatlasUpgradeHeadline('Upgrade impact')}
+        body={kubeatlasUpgradeDetail(upgrade)}
+        action={<KubeAtlasUpgradeAction requirement={upgrade} />}
       />
     )
   }

@@ -246,7 +246,7 @@ func TestMCPIssuesCarryConditionalCleanup(t *testing.T) {
 	}
 }
 
-// Evidence is authorized at the granularity Radar reads it: namespace access
+// Evidence is authorized at the granularity KubeAtlas reads it: namespace access
 // for a namespace's inventories, a Secrets check for Secrets, the SAR for a
 // cluster-wide read.
 func TestMCPCachedIssuesAuthorizeEvidenceAtReadGranularity(t *testing.T) {

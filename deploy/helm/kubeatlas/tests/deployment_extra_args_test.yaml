@@ -34,7 +34,7 @@ tests:
           path: spec.template.spec.containers[0].args[-1]
           value: --list-page-size=200
 
-  # A repeatable flag is appended, not substituted. radar rejects a duplicate
+  # A repeatable flag is appended, not substituted. kubeatlas rejects a duplicate
   # --prometheus-cluster-label key, so both are rendered and the operator is
   # told in values.yaml to use traffic.prometheusClusterLabels instead. This
   # pins the behaviour rather than endorsing it.

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { LEGACY_YAML_DRAFT_CHANNEL } from '@maomada/k8s-ui/utils/legacy-brand'
 import {
   hubYamlDraftScope,
   invalidateHubYamlDrafts,
@@ -7,7 +8,7 @@ import {
   type HubYamlDraftInvalidationEvent,
 } from './hubYamlDrafts'
 
-const channelName = 'kubeatlas-hub-yaml-draft-purge'
+const channelName = LEGACY_YAML_DRAFT_CHANNEL
 type TestMessageListener = (event: MessageEvent<unknown>) => void
 
 class TestChannel {
@@ -54,13 +55,13 @@ it('scopes drafts by full authority and logical API target, not physical cluster
 
 it('shares one channel for local purge publishing without self-delivery', () => {
   vi.stubGlobal('BroadcastChannel', TestChannel)
-  sessionStorage.setItem('radar_yaml_draft:ConfigMap/qa/config', 'unsaved')
-  sessionStorage.setItem('radar_yaml_draft:hub_authority', 'old-authority')
+  sessionStorage.setItem('kubeatlas_yaml_draft:ConfigMap/qa/config', 'unsaved')
+  sessionStorage.setItem('kubeatlas_yaml_draft:hub_authority', 'old-authority')
   sessionStorage.setItem('activeOrganizationId', 'org-a')
   const observedDuringPurge: string[] = []
   const onInvalidation = vi.fn((event: HubYamlDraftInvalidationEvent) => {
     if (event.type === 'purge' && event.source === 'local') {
-      observedDuringPurge.push(sessionStorage.getItem('radar_yaml_draft:ConfigMap/qa/config') ?? '')
+      observedDuringPurge.push(sessionStorage.getItem('kubeatlas_yaml_draft:ConfigMap/qa/config') ?? '')
     }
   })
   const secondListener = vi.fn()
@@ -70,8 +71,8 @@ it('shares one channel for local purge publishing without self-delivery', () => 
 
   try {
     expect(invalidateHubYamlDrafts()).toBe(true)
-    expect(sessionStorage.getItem('radar_yaml_draft:ConfigMap/qa/config')).toBeNull()
-    expect(sessionStorage.getItem('radar_yaml_draft:hub_authority')).toBeNull()
+    expect(sessionStorage.getItem('kubeatlas_yaml_draft:ConfigMap/qa/config')).toBeNull()
+    expect(sessionStorage.getItem('kubeatlas_yaml_draft:hub_authority')).toBeNull()
     expect(sessionStorage.getItem('activeOrganizationId')).toBe('org-a')
     expect(observedDuringPurge).toEqual(['unsaved'])
     expect(onInvalidation).toHaveBeenCalledTimes(1)
@@ -105,7 +106,7 @@ it('closes a temporary publisher when invalidation has no subscribers', () => {
 
 it('notifies and gates before clearing a remote purge, then reports completion', () => {
   vi.stubGlobal('BroadcastChannel', TestChannel)
-  const draftKey = 'radar_yaml_draft:ConfigMap/qa/config'
+  const draftKey = 'kubeatlas_yaml_draft:ConfigMap/qa/config'
   sessionStorage.setItem(draftKey, 'unsaved')
   const observed: string[] = []
   const onInvalidation = vi.fn((event: HubYamlDraftInvalidationEvent) => {
@@ -131,7 +132,7 @@ it('notifies and gates before clearing a remote purge, then reports completion',
 
 it('reports remote storage failure without claiming that drafts were discarded', () => {
   vi.stubGlobal('BroadcastChannel', TestChannel)
-  const draftKey = 'radar_yaml_draft:ConfigMap/qa/config'
+  const draftKey = 'kubeatlas_yaml_draft:ConfigMap/qa/config'
   sessionStorage.setItem(draftKey, 'unsaved')
   const observed: Array<{ type: string; source?: string; draft: string | null; message?: string }> = []
   const onInvalidation = vi.fn((event: HubYamlDraftInvalidationEvent) => {

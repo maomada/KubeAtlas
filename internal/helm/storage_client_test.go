@@ -38,15 +38,15 @@ func countingHelmStorage(t *testing.T) (*httptest.Server, *atomic.Int32) {
 }
 
 // A client bound to an explicit rest.Config must read release storage on
-// that cluster, even when Radar's own client points somewhere else.
+// that cluster, even when KubeAtlas's own client points somewhere else.
 func TestStandaloneClientReadsReleaseStorageOnItsOwnCluster(t *testing.T) {
-	radarCluster, radarLists := countingHelmStorage(t)
+	kubeatlasCluster, kubeatlasLists := countingHelmStorage(t)
 	ownCluster, ownLists := countingHelmStorage(t)
-	radarClient, err := kubernetes.NewForConfig(&rest.Config{Host: radarCluster.URL})
+	kubeatlasClient, err := kubernetes.NewForConfig(&rest.Config{Host: kubeatlasCluster.URL})
 	if err != nil {
 		t.Fatal(err)
 	}
-	previous := k8s.SetTestClient(radarClient)
+	previous := k8s.SetTestClient(kubeatlasClient)
 	t.Cleanup(func() { k8s.SetTestClient(previous) })
 
 	c := NewStandaloneClient(&rest.Config{Host: ownCluster.URL})
@@ -60,12 +60,12 @@ func TestStandaloneClientReadsReleaseStorageOnItsOwnCluster(t *testing.T) {
 	if _, err := c.ListReleases(ctx, "shop"); err != nil {
 		t.Fatalf("ListReleases: %v", err)
 	}
-	if radarLists.Load() != 0 || ownLists.Load() != 3 {
-		t.Fatalf("release storage lists: Radar's cluster %d, the client's own %d; want 0 and 3", radarLists.Load(), ownLists.Load())
+	if kubeatlasLists.Load() != 0 || ownLists.Load() != 3 {
+		t.Fatalf("release storage lists: KubeAtlas's cluster %d, the client's own %d; want 0 and 3", kubeatlasLists.Load(), ownLists.Load())
 	}
 }
 
-// With no explicit rest.Config and Radar's client not set up yet, a release
+// With no explicit rest.Config and KubeAtlas's client not set up yet, a release
 // read reports that instead of panicking on a nil client.
 func TestReleaseStorageReadWithoutAClusterClientFails(t *testing.T) {
 	previous := k8s.SetTestClient(nil)

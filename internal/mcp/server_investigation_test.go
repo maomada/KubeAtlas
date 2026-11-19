@@ -65,7 +65,7 @@ func TestInvestigationEvidenceReferenceMiddlewareScopesSuccessfulToolResults(t *
 	}
 	got := result.(*mcpsdk.CallToolResult)
 	marker := got.Content[0].(*mcpsdk.TextContent).Text
-	prefix := "[[radar:evidence-ref=ev_" + scope + "_"
+	prefix := "[[kubeatlas:evidence-ref=ev_" + scope + "_"
 	if !strings.HasPrefix(marker, prefix) || !strings.HasSuffix(marker, "]]\n") {
 		t.Fatalf("marker = %q, want scoped prefix %q", marker, prefix)
 	}
@@ -161,8 +161,8 @@ func TestInvestigationHandlerRequiresTurnScope(t *testing.T) {
 	refs := investigationrefs.NewRegistry()
 	handler := NewInvestigationHandler(refs)
 	for _, target := range []string{
-		"http://radar.test/mcp-investigation",
-		"http://radar.test/mcp-investigation?scope=not-a-scope",
+		"http://kubeatlas.test/mcp-investigation",
+		"http://kubeatlas.test/mcp-investigation?scope=not-a-scope",
 	} {
 		recorder := httptest.NewRecorder()
 		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodPost, target, nil))
@@ -173,7 +173,7 @@ func TestInvestigationHandlerRequiresTurnScope(t *testing.T) {
 	recorder := httptest.NewRecorder()
 	handler.ServeHTTP(recorder, httptest.NewRequest(
 		http.MethodPost,
-		"http://radar.test/mcp-investigation?scope="+strings.Repeat("a", 26),
+		"http://kubeatlas.test/mcp-investigation?scope="+strings.Repeat("a", 26),
 		nil,
 	))
 	if recorder.Code != http.StatusForbidden {
@@ -200,7 +200,7 @@ func testInvestigationHandlerAnnotates(t *testing.T, protocolVersion string) {
 
 	newFixtureServer := func() *mcpsdk.Server {
 		server := mcpsdk.NewServer(
-			&mcpsdk.Implementation{Name: "radar-investigation-test", Version: "test"},
+			&mcpsdk.Implementation{Name: "kubeatlas-investigation-test", Version: "test"},
 			nil,
 		)
 		server.AddTool(&mcpsdk.Tool{
@@ -223,7 +223,7 @@ func testInvestigationHandlerAnnotates(t *testing.T, protocolVersion string) {
 	callFixture := func(endpoint string) *mcpsdk.CallToolResult {
 		t.Helper()
 		client := mcpsdk.NewClient(
-			&mcpsdk.Implementation{Name: "radar-investigation-test-client", Version: "test"},
+			&mcpsdk.Implementation{Name: "kubeatlas-investigation-test-client", Version: "test"},
 			nil,
 		)
 		session, err := client.Connect(
@@ -272,7 +272,7 @@ func testInvestigationHandlerAnnotates(t *testing.T, protocolVersion string) {
 	if !ok {
 		t.Fatalf("private marker type = %T, want TextContent", privateResult.Content[0])
 	}
-	wantPrefix := "[[radar:evidence-ref=ev_" + scope + "_"
+	wantPrefix := "[[kubeatlas:evidence-ref=ev_" + scope + "_"
 	if !strings.HasPrefix(marker.Text, wantPrefix) || !strings.HasSuffix(marker.Text, "]]\n") {
 		t.Fatalf("private marker = %q, want scoped prefix %q", marker.Text, wantPrefix)
 	}

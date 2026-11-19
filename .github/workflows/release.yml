@@ -501,7 +501,7 @@ jobs:
             --artifact-root "$ARTIFACT_ROOT" --source-sha "$SOURCE_SHA" \
             --version "$RELEASE_VERSION" --build-run-id "$BUILD_RUN_ID"
       - name: Copy KubeAtlas image archive to GHCR
-        id: push-radar
+        id: push-kubeatlas
         env:
           TARGET_REF: ghcr.io/maomada/kubeatlas:${{ needs.validate.outputs.version }}
           ARCHIVE: ${{ runner.temp }}/release-artifacts/images/release-image-kubeatlas/kubeatlas.oci.tar
@@ -537,7 +537,7 @@ jobs:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
       - name: Push KubeAtlas chart
-        id: push-radar-chart
+        id: push-kubeatlas-chart
         env:
           TARGET_REF: ghcr.io/maomada/charts/kubeatlas:${{ needs.validate.outputs.version }}
           ARCHIVE: ${{ runner.temp }}/release-artifacts/charts/kubeatlas-${{ needs.validate.outputs.version }}.tgz

@@ -8,10 +8,10 @@ import {fileURLToPath} from 'node:url';
 import {resolve, join} from 'node:path';
 
 const [kubeconfig, context, mode = 'check'] = process.argv.slice(2);
-if (!kubeconfig || context !== 'kind-radar-workload-metrics-demo') throw Error('Use workload-metrics-demo.sh check with its isolated kind kubeconfig.');
+if (!kubeconfig || context !== 'kind-kubeatlas-workload-metrics-demo') throw Error('Use workload-metrics-demo.sh check with its isolated kind kubeconfig.');
 if (!['check', 'history'].includes(mode)) throw Error('Expected check or history mode.');
 const root = fileURLToPath(new URL('../../', import.meta.url));
-const evidence = await mkdtemp(join(tmpdir(), 'radar-workload-check-'));
+const evidence = await mkdtemp(join(tmpdir(), 'kubeatlas-workload-check-'));
 const children = [];
 const logs = [];
 const abort = new AbortController();
@@ -34,10 +34,10 @@ function start(command, args, name) {
 
 const cases = [
   {workload: 'Deployment/demo/web', source: 'beyla', pods: 2, http: true, errorBand: [20, 45]},
-  {workload: 'Deployment/radar-metrics-fixture/web', source: 'istio', pods: 2, http: true, errorBand: [15, 35]},
-  {workload: 'Deployment/radar-metrics-fixture/worker', pods: 1},
-  {workload: 'StatefulSet/radar-metrics-fixture/redis', pods: 1},
-  {workload: 'DaemonSet/radar-metrics-fixture/node-worker', pods: 1},
+  {workload: 'Deployment/kubeatlas-metrics-fixture/web', source: 'istio', pods: 2, http: true, errorBand: [15, 35]},
+  {workload: 'Deployment/kubeatlas-metrics-fixture/worker', pods: 1},
+  {workload: 'StatefulSet/kubeatlas-metrics-fixture/redis', pods: 1},
+  {workload: 'DaemonSet/kubeatlas-metrics-fixture/node-worker', pods: 1},
 ];
 
 function failures(response, test) {
@@ -82,9 +82,9 @@ try {
   await once(socket, 'listening');
   const port = socket.address().port;
   await new Promise(resolve => socket.close(resolve));
-  const radar = start(resolve(root, 'radar'), [`--kubeconfig=${kubeconfig}`, '--kubeconfig-dir=', '--listen-address=127.0.0.1', `--port=${port}`, '--no-browser', '--prometheus-header=X-Radar-Demo=true', '--prometheus-header-from-env=X-Radar-Demo-Env=KUBEATLAS_METRICS_DEMO_HEADER', `--prometheus-url=http://127.0.0.1:${promPort}`], 'radar');
+  const kubeatlas = start(resolve(root, 'kubeatlas'), [`--kubeconfig=${kubeconfig}`, '--kubeconfig-dir=', '--listen-address=127.0.0.1', `--port=${port}`, '--no-browser', '--prometheus-header=X-KubeAtlas-Demo=true', '--prometheus-header-from-env=X-KubeAtlas-Demo-Env=KUBEATLAS_METRICS_DEMO_HEADER', `--prometheus-url=http://127.0.0.1:${promPort}`], 'kubeatlas');
   const get = async path => {
-    if (abort.signal.aborted || radar.exitCode !== null || forward.exitCode !== null) throw Error('An owned test process stopped');
+    if (abort.signal.aborted || kubeatlas.exitCode !== null || forward.exitCode !== null) throw Error('An owned test process stopped');
     const response = await fetch(`http://127.0.0.1:${port}${path}`, {signal: AbortSignal.any([abort.signal, AbortSignal.timeout(30000)])});
     if (!response.ok) throw Object.assign(Error(`HTTP ${response.status}`), {status: response.status});
     return response.json();
@@ -92,12 +92,12 @@ try {
   let ready = false;
   for (let i = 0; i < 60; i++) {
     try { results.cluster = await get('/api/cluster-info'); ready = true; break; } catch {
-      if (radar.exitCode !== null || abort.signal.aborted) throw Error('Radar failed startup');
+      if (kubeatlas.exitCode !== null || abort.signal.aborted) throw Error('KubeAtlas failed startup');
       await delay(1000);
     }
   }
-  if (!ready) throw Error('Radar readiness timeout');
-  if (results.cluster.context !== context) throw Error('Radar connected to an unexpected Kubernetes context');
+  if (!ready) throw Error('KubeAtlas readiness timeout');
+  if (results.cluster.context !== context) throw Error('KubeAtlas connected to an unexpected Kubernetes context');
   for (const test of cases) {
     const deadline = Date.now() + 180000;
     let response, errors;

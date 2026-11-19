@@ -1,5 +1,5 @@
 import { CNPG_KIND_BY_KEY, type CNPGWorkspaceKey } from '@maomada/k8s-ui'
-import type { RadarFeatureSupport } from '../../api/radarFeatures'
+import type { KubeAtlasFeatureSupport } from '../../api/kubeatlasFeatures'
 
 export type CNPGScreen = 'overview' | 'protection' | 'declarations' | 'pooling' | 'operator'
 
@@ -74,7 +74,7 @@ export function isCNPGClusterKind(kind: { name: string; group: string } | null |
  */
 export function cnpgClusterKindListMode(
   kind: { name: string; group: string } | null | undefined,
-  support: RadarFeatureSupport,
+  support: KubeAtlasFeatureSupport,
   capabilitiesPending: boolean,
 ): 'view' | 'wait' | 'table' {
   if (!isCNPGClusterKind(kind)) return 'table'

@@ -6,8 +6,8 @@ import (
 	"github.com/maomada/KubeAtlas/internal/settings"
 )
 
-// The zero value is what a terminal entrypoint passes: `kubectl radar` and
-// `radar diagnose --standalone` start where the shell says they do, so a
+// The zero value is what a terminal entrypoint passes: `kubectl kubeatlas` and
+// `kubeatlas diagnose --standalone` start where the shell says they do, so a
 // switch made in Desktop can't steer a command typed after
 // `kubectl config use-context`.
 func TestTerminalEntrypointDoesNotRememberTheContext(t *testing.T) {

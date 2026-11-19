@@ -562,7 +562,7 @@ function withUpstreamUnassessed(replica: { source?: string }, dim: CNPGDimension
     ...dim,
     tone: calm ? 'unknown' : dim.tone,
     text: dim.tone === 'unknown' && dim.text === 'unassessed' ? dim.text : `${dim.text} · upstream feed not assessed`,
-    source: `${dim.source}. The designated primary replays WAL from ${replica.source ? `external cluster ${replica.source}` : 'an external cluster'}; Radar does not assess that feed`,
+    source: `${dim.source}. The designated primary replays WAL from ${replica.source ? `external cluster ${replica.source}` : 'an external cluster'}; KubeAtlas does not assess that feed`,
   }
 }
 

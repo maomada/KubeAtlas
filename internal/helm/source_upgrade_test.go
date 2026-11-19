@@ -23,7 +23,7 @@ import (
 )
 
 func sourceTestChart(marker string) *chart.Chart {
-	return &chart.Chart{Metadata: &chart.Metadata{Name: "radar", Version: "1.0.0", APIVersion: "v2"}, Templates: []*chart.File{{Name: "templates/configmap.yaml", Data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: " + marker + "\ndata:\n  publisher: " + marker + "\n")}}}
+	return &chart.Chart{Metadata: &chart.Metadata{Name: "kubeatlas", Version: "1.0.0", APIVersion: "v2"}, Templates: []*chart.File{{Name: "templates/configmap.yaml", Data: []byte("apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: " + marker + "\ndata:\n  publisher: " + marker + "\n")}}}
 }
 
 func bindTestRelease(rel *release.Release, source ChartSourceCandidate) {
@@ -232,7 +232,7 @@ func TestSourceDownloadsWithSameNameAndVersionRemainIsolated(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				ch, _, err := c.loadSourceChart(nil, source, "radar", "1.0.0")
+				ch, _, err := c.loadSourceChart(nil, source, "kubeatlas", "1.0.0")
 				if err != nil {
 					t.Error(err)
 					return
@@ -347,7 +347,7 @@ func TestUnconfirmedOCIOriginalSourceCanBeVerified(t *testing.T) {
 		t.Fatal(err)
 	}
 	c.chartPathLocator = func(_ *action.Configuration, ref, version string) (string, error) {
-		if ref != "oci://registry.example.test/charts/radar" || version != "1.0.0" {
+		if ref != "oci://registry.example.test/charts/kubeatlas" || version != "1.0.0" {
 			t.Errorf("incorrect source resolution: %s %s", ref, version)
 		}
 		return file, nil
@@ -359,7 +359,7 @@ func TestUnconfirmedOCIOriginalSourceCanBeVerified(t *testing.T) {
 	if err := cfg.Releases.Update(rel); err != nil {
 		t.Fatal(err)
 	}
-	selected := ChartSourceCandidate{Type: "oci", Reference: "oci://registry.example.test/charts/radar"}
+	selected := ChartSourceCandidate{Type: "oci", Reference: "oci://registry.example.test/charts/kubeatlas"}
 	if err := c.setSourceWith(cfg, "demo", selected); err != nil {
 		t.Fatal(err)
 	}
@@ -384,7 +384,7 @@ func TestSelectedRepositoryCanRecoverItsMissingIndex(t *testing.T) {
 	if err := c.UpdateRepository("fixture"); err != nil {
 		t.Fatal(err)
 	}
-	versions, err := c.sourceVersions(ChartSourceCandidate{Type: "repository", Reference: "fixture", URL: srv.URL}, "radar")
+	versions, err := c.sourceVersions(ChartSourceCandidate{Type: "repository", Reference: "fixture", URL: srv.URL}, "kubeatlas")
 	if err != nil || len(versions) != 1 || versions[0] != "1.0.0" {
 		t.Fatalf("source index not recovered: %v %v", versions, err)
 	}

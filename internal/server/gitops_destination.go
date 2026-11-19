@@ -25,7 +25,7 @@ var argoApplicationGVR = schema.GroupVersionResource{Group: "argoproj.io", Versi
 
 type gitOpsDestinationResponse struct {
 	// Server is the destination's API server as scheme://host[:port], for
-	// display. Empty when Radar can't tell which cluster it is.
+	// display. Empty when KubeAtlas can't tell which cluster it is.
 	Server string `json:"server"`
 	// Contexts are the kubeconfig contexts, other than the current one, whose
 	// cluster is served at the destination's full API server URL.
@@ -214,7 +214,7 @@ func registeredClusterServers(secrets []*corev1.Secret, scopedTo, appNamespace, 
 // "value", then "value.yaml", unless the ref names a key), or the "address"
 // of a workload-identity ConfigMap. A missing Secret or ConfigMap, or a
 // kubeconfig without a usable server, resolves to "" rather than an error:
-// the object still targets another cluster, just not one Radar can name.
+// the object still targets another cluster, just not one KubeAtlas can name.
 func fluxTargetServer(
 	ctx context.Context,
 	obj *unstructured.Unstructured,

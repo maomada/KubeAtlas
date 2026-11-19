@@ -14,13 +14,13 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/probe"
 )
 
-// runProbeCommand implements `radar probe` - run reachability probes against ONE
+// runProbeCommand implements `kubeatlas probe` - run reachability probes against ONE
 // target from wherever this process runs and print the results as JSON. When the
 // process runs inside a cluster pod, the probes traverse the real dataplane
 // (subject to NetworkPolicy + mesh mTLS), which is exactly what the laptop's
 // apiserver-proxy view cannot confirm. No HTTP server, no Kubernetes client:
 // probe-and-exit. This is the binary the in-cluster reachability runner executes
-// (the KubeAtlas image invoked as `radar probe ...`).
+// (the KubeAtlas image invoked as `kubeatlas probe ...`).
 func runProbeCommand(args []string) int {
 	fs := flag.NewFlagSet("probe", flag.ContinueOnError)
 	target := fs.String("target", "", "host:port to probe (host alone for a dns-only check)")
@@ -34,7 +34,7 @@ func runProbeCommand(args []string) int {
 		return 2
 	}
 	if *target == "" {
-		fmt.Fprintln(os.Stderr, "radar probe: --target host:port is required")
+		fmt.Fprintln(os.Stderr, "kubeatlas probe: --target host:port is required")
 		return 2
 	}
 

@@ -59,7 +59,7 @@ func FindPodEnvChanges(ctx context.Context, cache *ResourceCache, pod *corev1.Po
 	}
 	coverage.Degraded = stats.Degraded
 	if stats.Degraded {
-		coverage.DegradedReason = "Change history is limited to this Radar session."
+		coverage.DegradedReason = "Change history is limited to this KubeAtlas session."
 	}
 
 	names := podEnvSourceNames(pod)
@@ -293,7 +293,7 @@ func newPodEnvChange(container, variable, kind, name, key, changeKind string, ch
 		Evidence: envresolve.ChangeEvidence{
 			Kind:      changeKind,
 			ChangedAt: changedAt,
-			Message:   fmt.Sprintf("Radar observed that %s/%s key %s %s after this container started.", kind, name, key, verb),
+			Message:   fmt.Sprintf("KubeAtlas observed that %s/%s key %s %s after this container started.", kind, name, key, verb),
 		},
 	}
 }

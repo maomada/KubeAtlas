@@ -25,7 +25,7 @@ import {
   gitOpsDetailGroup,
   isDestinationRef,
   isArgoOperationInProgress,
-  isArgoSuspendedByRadar,
+  isArgoSuspendedByKubeAtlas,
   gitOpsInsightChangeKey,
   kindToPluralWithGroup,
   normalizeArgoApplication,
@@ -165,7 +165,7 @@ function GitOpsTableView({ namespaces, onClearNamespaces }: { namespaces: string
     hasAPIResource(apiResources, 'helmreleases', 'helm.toolkit.fluxcd.io')
   ), [apiResources])
 
-  // Counts come from radar's /api/resource-counts. The extracted
+  // Counts come from kubeatlas's /api/resource-counts. The extracted
   // GitOpsTableView reads only the GitOps keys for mode tabs + empty-state
   // checks.
   const countsQuery = useQuery({
@@ -411,9 +411,9 @@ function GitOpsDetailView({ namespaces, onOpenResource, onOpenSettings }: GitOps
   // the app is in a deliberately-paused state (vs. Manual mode, which is a
   // normal operational choice) and should surface a Suspended chip alongside
   // the other status indicators. Shared with the fleet table's row normalizer
-  // (isArgoSuspendedByRadar) so both surfaces agree on what "suspended" means.
-  const argoSuspendedByRadar = isArgoApp && isArgoSuspendedByRadar(resourceQ.data)
-  const effectiveSuspended = (status?.suspended ?? false) || argoSuspendedByRadar
+  // (isArgoSuspendedByKubeAtlas) so both surfaces agree on what "suspended" means.
+  const argoSuspendedByKubeAtlas = isArgoApp && isArgoSuspendedByKubeAtlas(resourceQ.data)
+  const effectiveSuspended = (status?.suspended ?? false) || argoSuspendedByKubeAtlas
   // Lifecycle gate: when the resource is pending deletion, mutating
   // actions are futile (the controller is processing finalizers and
   // ignores reconcile/sync triggers). Surface it visually + disable
@@ -783,7 +783,7 @@ function GitOpsDetailView({ namespaces, onOpenResource, onOpenSettings }: GitOps
           search: params.toString(),
         })
       } : undefined}
-      manageDocumentTitle={false /* title handled centrally in App's radarPageTitle */}
+      manageDocumentTitle={false /* title handled centrally in App's kubeatlasPageTitle */}
       renderTabBarCounts={({ tab }) => (
         tab === 'topology' && tree ? <TopologyCounts tree={tree} /> : null
       )}

@@ -1,4 +1,5 @@
-export const YAML_DRAFT_NAMESPACE = 'radar_yaml_draft:'
+import { readProductStorage, removeProductStorage, LEGACY_YAML_DRAFT_NAMESPACE } from '../../utils/legacy-brand'
+export const YAML_DRAFT_NAMESPACE = 'kubeatlas_yaml_draft:'
 export const HUB_YAML_DRAFT_AUTHORITY_MARKER = `${YAML_DRAFT_NAMESPACE}hub_authority`
 
 export interface YamlDraftResourceIdentity {
@@ -27,7 +28,7 @@ export function clearYamlDraftNamespace(): boolean {
   try {
     for (let index = sessionStorage.length - 1; index >= 0; index--) {
       const key = sessionStorage.key(index)
-      if (key?.startsWith(YAML_DRAFT_NAMESPACE)) sessionStorage.removeItem(key)
+      if (key?.startsWith(YAML_DRAFT_NAMESPACE) || key?.startsWith(LEGACY_YAML_DRAFT_NAMESPACE)) removeProductStorage(sessionStorage, key)
     }
     return true
   } catch {
@@ -38,7 +39,11 @@ export function clearYamlDraftNamespace(): boolean {
 export function reconcileHubYamlDraftScope(authority: string, clusterScope?: string): boolean {
   if (!authority) return false
   try {
-    const rawMarker = sessionStorage.getItem(HUB_YAML_DRAFT_AUTHORITY_MARKER)
+    for (let index = sessionStorage.length - 1; index >= 0; index--) {
+      const key = sessionStorage.key(index)
+      if (key?.startsWith(LEGACY_YAML_DRAFT_NAMESPACE)) sessionStorage.removeItem(key)
+    }
+    const rawMarker = readProductStorage(sessionStorage, HUB_YAML_DRAFT_AUTHORITY_MARKER)
     let previous: HubYamlDraftMarker | null = null
     if (rawMarker) {
       try {

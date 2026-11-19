@@ -2,14 +2,14 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { useQuery } from '@tanstack/react-query'
 import { fetchJSON } from './client'
 import { useCNPGClusterActivity, useCNPGOperator, useCNPGWorkspace, useCNPGRuntime } from './cnpg'
-import { guardRadarFeature, radarFeatureSupport } from './radarFeatures'
+import { guardKubeAtlasFeature, kubeatlasFeatureSupport } from './kubeatlasFeatures'
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: vi.fn(), useMutation: vi.fn(), useQueryClient: vi.fn() }))
 vi.mock('./client', () => ({
   fetchJSON: vi.fn(),
-  useRadarFeature: () => {
-    const support = radarFeatureSupport('cnpgWorkspace', { features: { resourceIssues: true } }, 'v1.16.0')
-    return { support, gatedKey: ['radar-feature-unsupported'], guard: (request: () => Promise<unknown>) => guardRadarFeature('cnpgWorkspace', support, {}, request) }
+  useKubeAtlasFeature: () => {
+    const support = kubeatlasFeatureSupport('cnpgWorkspace', { features: { resourceIssues: true } }, 'v1.16.0')
+    return { support, gatedKey: ['kubeatlas-feature-unsupported'], guard: (request: () => Promise<unknown>) => guardKubeAtlasFeature('cnpgWorkspace', support, {}, request) }
   },
 }))
 beforeEach(() => vi.clearAllMocks())

@@ -3,7 +3,7 @@
 # A backup of an empty namespace completes without exercising anything. This is
 # small but real: a Deployment, a Service, a ConfigMap and a Secret, so the
 # backup has items to count and a restore has objects to recreate — and the item
-# counts Radar renders come from work Velero did rather than from a number typed
+# counts KubeAtlas renders come from work Velero did rather than from a number typed
 # into a fixture.
 apiVersion: v1
 kind: Namespace

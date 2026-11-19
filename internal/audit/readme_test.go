@@ -19,6 +19,6 @@ func TestREADMECheckCountMatchesRegistry(t *testing.T) {
 		t.Fatal(`README.md no longer says "scanner with N checks" in the Cluster Audit section`)
 	}
 	if n, _ := strconv.Atoi(string(m[1])); n != len(bp.CheckRegistry) {
-		t.Errorf("README.md says %d audit checks, CheckRegistry has %d: update README.md, and the marketing site's AUDIT_CHECK_COUNT and the radar-docs Cluster Audit page, which list the checks too", n, len(bp.CheckRegistry))
+		t.Errorf("README.md says %d audit checks, CheckRegistry has %d: update README.md, and any configured companion documentation that also lists these checks", n, len(bp.CheckRegistry))
 	}
 }

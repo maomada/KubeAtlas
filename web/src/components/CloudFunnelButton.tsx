@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { useEffect, useId, useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Bell, Check, Cloud, Globe, History, Sparkles, Users, X } from 'lucide-react'
@@ -20,7 +21,7 @@ import {
   ApiError,
   cloudInstallActive,
   type CloudConnectSelf,
-  type CloudInstallConnectedRadar,
+  type CloudInstallConnectedKubeAtlas,
   type CloudInstallBlocked,
   type CloudInstallStatus,
   prepareCloudInstall,
@@ -44,7 +45,7 @@ import {
 // below. The request names the lane the footer renders and where this KubeAtlas
 // runs, both closed enums. The links into the Hub carry utm_content naming
 // the link that was clicked and, after an in-app attempt that did not connect,
-// radar_outcome saying what happened; see cloudConnectHandoff.ts.
+// kubeatlas_outcome saying what happened; see cloudConnectHandoff.ts.
 const FALLBACK_APP_URL = ''
 
 // Rendered until (or unless) the Hub states its own. Keeping the compiled-in
@@ -67,7 +68,7 @@ const DEFAULT_ASSURANCES = [
 // point at upstream Cloud by asking this button to open its dialog, so there
 // is one pitch and one flow. The button is mounted whenever KubeAtlas runs
 // standalone; embedded hosts never mount it and never dispatch this.
-const OPEN_EVENT = 'radar:open-cloud-funnel'
+const OPEN_EVENT = 'kubeatlas:open-cloud-funnel'
 
 export function openCloudFunnel() {
   window.dispatchEvent(new Event(OPEN_EVENT))
@@ -75,7 +76,7 @@ export function openCloudFunnel() {
 const ABOUT_URL = 'https://github.com/maomada/KubeAtlas/blob/main/README.md'
 const BENCHMARK_URL = 'https://github.com/maomada/KubeAtlas/blob/main/docs/loadtest.md'
 const PRICING_URL = 'https://github.com/maomada/KubeAtlas/blob/main/README.md'
-const SEEN_KEY = 'radar.cloudFunnel.seen'
+const SEEN_KEY = 'kubeatlas.cloudFunnel.seen'
 
 // localStorage access can throw (SecurityError) where storage is denied —
 // sandboxed embeds, some privacy modes. This button mounts in the top bar
@@ -84,7 +85,7 @@ const SEEN_KEY = 'radar.cloudFunnel.seen'
 function readSeen(): boolean {
   if (typeof window === 'undefined') return false
   try {
-    return window.localStorage.getItem(SEEN_KEY) === 'true'
+    return readProductStorage(window.localStorage, SEEN_KEY) === 'true'
   } catch {
     return false
   }
@@ -399,7 +400,7 @@ function assuranceItems(fromHub?: string[]): string[] {
   return fromHub?.length ? fromHub : DEFAULT_ASSURANCES
 }
 
-function RadarSweep() {
+function KubeAtlasSweep() {
   return (
     <div
       aria-hidden
@@ -418,7 +419,7 @@ function RadarSweep() {
 function Eyebrow() {
   return (
     <div className="flex items-center gap-3 mb-5">
-      <RadarSweep />
+      <KubeAtlasSweep />
       <span className="font-mono text-[16px] tracking-[0.12em] uppercase text-emerald-600 dark:text-emerald-400">upstream Cloud</span>
     </div>
   )
@@ -464,7 +465,7 @@ function ModalFooter({
   // on the name.
   clusterName?: string
   // Driver lane: a KubeAtlas in the cluster that already carries Cloud settings.
-  alreadyConnected?: CloudInstallConnectedRadar
+  alreadyConnected?: CloudInstallConnectedKubeAtlas
   connectedCount?: number
   // True while that lookup is in flight: a click now would start the very
   // plan the lookup exists to pre-empt, and the flow view would then hide
@@ -496,7 +497,7 @@ function ModalFooter({
             <>
               KubeAtlas found conflicting management metadata on this install, so it can't say whether a Helm
               upgrade or a repository change is the right move. Run{' '}
-              <code className="font-mono text-[11px]">radar cloud install</code> from a machine with
+              <code className="font-mono text-[11px]">kubeatlas cloud install</code> from a machine with
               kubectl. It inspects the release and refuses rather than guessing.
             </>
           ) : gitops ? (
@@ -507,7 +508,7 @@ function ModalFooter({
               {cliOnly ? (
                 <>
                   KubeAtlas found that evidence but couldn't confirm it against the live object, so run{' '}
-                  <code className="font-mono text-[11px]">radar cloud install</code> from a machine with
+                  <code className="font-mono text-[11px]">kubeatlas cloud install</code> from a machine with
                   kubectl. It inspects the release before generating anything.
                 </>
               ) : (
@@ -547,7 +548,7 @@ function ModalFooter({
           ) : (
             <>
               with Cloud settings KubeAtlas can’t read from here. Look for it in upstream Cloud; if it isn’t there, an admin can
-              recover the pairing with <code className="font-mono text-[11px] text-theme-text-primary">radar cloud status</code>.
+              recover the pairing with <code className="font-mono text-[11px] text-theme-text-primary">kubeatlas cloud status</code>.
             </>
           )}
           {connectedCount > 1 && <> {connectedCount - 1} more install{connectedCount > 2 ? 's' : ''} carry Cloud settings too.</>}

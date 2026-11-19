@@ -34,7 +34,7 @@ func TestFindStaleEnvConsumersOfSecret(t *testing.T) {
 			fact.SourceKind != "Secret" || fact.EvidenceSource != staleSecretEvidenceObservedChange || !fact.ChangedAt.Equal(changedAt) {
 			t.Fatalf("unexpected fact: %+v", fact)
 		}
-		want := fmt.Sprintf("Pod catalog container app reads Secret/db-conn key password as env DB_PASSWORD and started at %s, before Radar observed a write to that key at %s. Env values don't refresh, so it likely still holds the earlier value until it restarts.",
+		want := fmt.Sprintf("Pod catalog container app reads Secret/db-conn key password as env DB_PASSWORD and started at %s, before KubeAtlas observed a write to that key at %s. Env values don't refresh, so it likely still holds the earlier value until it restarts.",
 			startedAt.Format(time.RFC3339), changedAt.Format(time.RFC3339))
 		if fact.Message != want {
 			t.Fatalf("message = %q\nwant      %q", fact.Message, want)
@@ -86,7 +86,7 @@ func TestFindStaleEnvConsumersOfSecret(t *testing.T) {
 		}
 	})
 
-	t.Run("managedFields write before Radar started keeps the hedge", func(t *testing.T) {
+	t.Run("managedFields write before KubeAtlas started keeps the hedge", func(t *testing.T) {
 		pod := staleSecretEnvPod("catalog", startedAt, true, secretKeyEnv("DB_PASSWORD", "db-conn", "password"))
 		withWrite := secret.DeepCopy()
 		withWrite.ManagedFields = []metav1.ManagedFieldsEntry{{
@@ -165,7 +165,7 @@ func TestFindStaleEnvConfigMap(t *testing.T) {
 			LocalObjectReference: corev1.LocalObjectReference{Name: "settings"}, Key: key,
 		}}}
 	}
-	// Radar diffs ConfigMap values structurally, as data.<key>.
+	// KubeAtlas diffs ConfigMap values structurally, as data.<key>.
 	modified := envHistoryEvent(changedAt, "ConfigMap", "shop", "settings", "data.log.level", "info", "debug")
 
 	t.Run("modified dotted key read as env is flagged on the ConfigMap and the Pod", func(t *testing.T) {

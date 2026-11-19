@@ -246,10 +246,10 @@ export function CNPGPublicationSummary({
 
       <Reconciled resource={resource} />
 
-      <SectionHeading hint="Subscription objects Radar can see">Subscribers</SectionHeading>
+      <SectionHeading hint="Subscription objects KubeAtlas can see">Subscribers</SectionHeading>
       {readings.length === 0 ? (
         <div className="text-sm text-theme-text-tertiary">
-          {subsUnavailable ?? 'No visible Subscription object reads this publication. Subscribers outside Radar\'s view, or created in SQL, are not listed.'}
+          {subsUnavailable ?? 'No visible Subscription object reads this publication. Subscribers outside KubeAtlas\'s view, or created in SQL, are not listed.'}
         </div>
       ) : (
         <div className="space-y-3">

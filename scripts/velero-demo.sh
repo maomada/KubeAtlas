@@ -52,11 +52,11 @@
 #   - python3  (expands the @now tokens; in `live`, also reads the results
 #              file and measures the stalled run against its budget)
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-velero-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-velero-demo).
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-velero-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-velero-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/velero-demo"
@@ -189,7 +189,7 @@ stop_velero_controller() {
   k -n "${NS}" scale deployment/velero --replicas=0 >/dev/null
 
   sel="$(k -n "${NS}" get deployment velero \
-    -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}' 2>/dev/null | sed 's/,$//')"
+    -o go-template="{{range \$k, \$v := .spec.selector.matchLabels}}{{\$k}}={{\$v}},{{end}}" 2>/dev/null | sed 's/,$//')"
   [ -n "${sel}" ] || fail "could not read the velero Deployment's pod selector"
 
   k -n "${NS}" delete pod -l "${sel}" --grace-period=0 --force --ignore-not-found >/dev/null 2>&1 || true
@@ -226,7 +226,7 @@ install_velero() {
     --set "initContainers[0].volumeMounts[0].name=plugins" \
     --set "configuration.backupStorageLocation[0].name=default" \
     --set "configuration.backupStorageLocation[0].provider=aws" \
-    --set "configuration.backupStorageLocation[0].bucket=radar-demo" \
+    --set "configuration.backupStorageLocation[0].bucket=kubeatlas-demo" \
     --set "configuration.backupStorageLocation[0].default=true" \
     --set "configuration.backupStorageLocation[0].config.region=us-east-1" \
     --wait --timeout 5m >/dev/null
@@ -273,7 +273,8 @@ apply_fixtures() {
   local tmp; tmp="$(mktemp -d)"
   RENDER_DIRS+=("${tmp}")
 
-  for f in $(ls "${FIXTURES_DIR}"/*.yaml 2>/dev/null | sort); do
+  for f in "${FIXTURES_DIR}"/*.yaml; do
+    [ -f "$f" ] || continue
     local base; base="$(basename "$f")"
     grep -q '^[[:space:]]*[^#[:space:]]' "$f" || { note "skipping ${base} (comments only)"; continue; }
 
@@ -312,7 +313,7 @@ verify_fixtures() {
   #    container, and Velero's grace period is an hour.
   local vsel vpods
   vsel="$(k -n "${NS}" get deployment velero \
-    -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}' 2>/dev/null | sed 's/,$//')"
+    -o go-template="{{range \$k, \$v := .spec.selector.matchLabels}}{{\$k}}={{\$v}},{{end}}" 2>/dev/null | sed 's/,$//')"
   vpods="$(k -n "${NS}" get pods -l "${vsel:-app.kubernetes.io/name=velero}" --no-headers 2>/dev/null | wc -l | tr -d ' ')"
   if [ "${vpods}" != "0" ]; then
     warn "${vpods} velero controller pod(s) present — fixtures will not survive"; errs=$((errs+1))
@@ -391,7 +392,7 @@ verify_fixtures() {
 # Everything above this line produces states by writing status into fixtures,
 # because without object storage a running Velero has exactly one outcome
 # available to it. `live` gives it a bucket, so the controller produces the
-# states itself and Radar is read against work Velero actually did.
+# states itself and KubeAtlas is read against work Velero actually did.
 #
 # What becomes real here: a Completed backup Velero wrote and can read back, its
 # item counts, a Restore that recreated objects, a location that genuinely stops
@@ -443,7 +444,7 @@ install_minio() {
   # the bucket ("backup already exists in object storage"), so a second `live`
   # run against surviving storage fails on the first backup it takes — and the
   # script advertises being re-runnable.
-  step "Creating empty buckets radar-demo and radar-dr"
+  step "Creating empty buckets kubeatlas-demo and kubeatlas-dr"
   k -n "${MINIO_NS}" delete job mc-mb --ignore-not-found >/dev/null 2>&1 || true
   cat <<EOF | k apply -f - >/dev/null
 apiVersion: batch/v1
@@ -463,14 +464,14 @@ spec:
           args:
             - |
               mc alias set local http://minio.${MINIO_NS}.svc:9000 minioadmin minioadmin &&
-              mc rb --force local/radar-demo || true &&
-              mc rb --force local/radar-dr || true &&
-              mc mb local/radar-demo &&
-              mc mb local/radar-dr
+              mc rb --force local/kubeatlas-demo || true &&
+              mc rb --force local/kubeatlas-dr || true &&
+              mc mb local/kubeatlas-demo &&
+              mc mb local/kubeatlas-dr
 EOF
   k -n "${MINIO_NS}" wait --for=condition=complete job/mc-mb --timeout=120s >/dev/null \
     || fail "bucket creation job did not complete"
-  ok "Buckets radar-demo and radar-dr created"
+  ok "Buckets kubeatlas-demo and kubeatlas-dr created"
 
   # The host has to reach MinIO on the mapped port, because that is the address
   # Velero signs its download URLs for. A cluster created before this mapping
@@ -526,7 +527,7 @@ spec:
   provider: aws
   default: true
   objectStorage:
-    bucket: radar-demo
+    bucket: kubeatlas-demo
   credential:
     name: cloud-credentials
     key: cloud
@@ -535,7 +536,7 @@ spec:
     s3Url: http://minio.${MINIO_NS}.svc:9000
     # What the controller writes through vs. what a client is told to read
     # from. Without publicUrl, Velero signs download URLs for the in-cluster
-    # host and anything outside the cluster — Radar on a laptop — cannot
+    # host and anything outside the cluster — KubeAtlas on a laptop — cannot
     # resolve them.
     publicUrl: http://localhost:30900
     s3ForcePathStyle: "true"
@@ -548,7 +549,7 @@ metadata:
 spec:
   provider: aws
   objectStorage:
-    bucket: radar-dr
+    bucket: kubeatlas-dr
   credential:
     name: cloud-credentials
     key: cloud
@@ -557,7 +558,7 @@ spec:
     s3Url: http://minio.${MINIO_NS}.svc:9000
     # What the controller writes through vs. what a client is told to read
     # from. Without publicUrl, Velero signs download URLs for the in-cluster
-    # host and anything outside the cluster — Radar on a laptop — cannot
+    # host and anything outside the cluster — KubeAtlas on a laptop — cannot
     # resolve them.
     publicUrl: http://localhost:30900
     s3ForcePathStyle: "true"
@@ -636,9 +637,11 @@ spec:
   includedNamespaces: ["demo-app"]
 EOF
   wait_for_restore_phase live-restore
-  k -n demo-app get cm app-config >/dev/null 2>&1 \
-    && ok "demo-app/app-config exists again — the restore recreated real objects" \
-    || warn "restore finished but app-config is absent"
+  if k -n demo-app get cm app-config >/dev/null 2>&1; then
+    ok "demo-app/app-config exists again — the restore recreated real objects"
+  else
+    warn "restore finished but app-config is absent"
+  fi
 
   # 2a. A backup that genuinely half-worked.
   #
@@ -680,10 +683,10 @@ EOF
 
   # 2b. Prove the messages behind the counts are actually reachable.
   #
-  #     Radar reads a run's warnings by creating a DownloadRequest and fetching
+  #     KubeAtlas reads a run's warnings by creating a DownloadRequest and fetching
   #     the pre-signed URL Velero answers with. That URL is signed for the
   #     location's publicUrl, so this checks the whole chain — controller,
-  #     signature, NodePort, the host's route to MinIO — from where Radar runs
+  #     signature, NodePort, the host's route to MinIO — from where KubeAtlas runs
   #     rather than from inside the cluster.
   #
   #     Done here because it needs the controller, and the next steps take it
@@ -744,7 +747,7 @@ PYEOF
   step "Taking a backup into dr-replica, then deleting that bucket underneath it"
   new_backup live-stranded dr-replica "720h0m0s" ""
   wait_for_backup_phase live-stranded Completed
-  ok "live-stranded written to radar-dr"
+  ok "live-stranded written to kubeatlas-dr"
 
   k -n "${MINIO_NS}" delete job mc-rb --ignore-not-found >/dev/null 2>&1 || true
   cat <<EOF | k apply -f - >/dev/null
@@ -765,10 +768,10 @@ spec:
           args:
             - |
               mc alias set local http://minio.${MINIO_NS}.svc:9000 minioadmin minioadmin &&
-              mc rb --force local/radar-dr
+              mc rb --force local/kubeatlas-dr
 EOF
   k -n "${MINIO_NS}" wait --for=condition=complete job/mc-rb --timeout=120s >/dev/null || true
-  ok "radar-dr bucket deleted — waiting for Velero to notice"
+  ok "kubeatlas-dr bucket deleted — waiting for Velero to notice"
   wait_for_bsl dr-replica Unavailable
   ok "dr-replica marked Unavailable by Velero, still holding a Completed backup"
 
@@ -844,7 +847,7 @@ EOF
   # Only now is the claim true. The run has to actually outlive the budget it
   # declared before anything can say it has — the detector compares
   # startTimestamp against itemOperationTimeout, so until that minute is up
-  # Radar correctly reports nothing, and a summary saying otherwise would be
+  # KubeAtlas correctly reports nothing, and a summary saying otherwise would be
   # describing a state the cluster has not reached yet.
   step "Waiting out the one-minute budget so the run is genuinely past it"
   local started elapsed
@@ -867,7 +870,7 @@ print(int((datetime.datetime.now(datetime.timezone.utc) - started).total_seconds
 
 wait_for_restore_phase() {
   local name="$1" i phase
-  for i in $(seq 1 90); do
+  for ((i = 1; i <= 90; i++)); do
     phase="$(k -n "${NS}" get restores.velero.io "${name}" -o jsonpath='{.status.phase}' 2>/dev/null || true)"
     case "${phase}" in Completed|PartiallyFailed|Failed|FailedValidation) ok "${name} reached ${phase}"; return 0 ;; esac
     sleep 2
@@ -964,7 +967,7 @@ verify_live() {
   # and Velero's grace period is an hour. Ask whether a pod exists.
   local vsel
   vsel="$(k -n "${NS}" get deployment velero \
-    -o go-template='{{range $k, $v := .spec.selector.matchLabels}}{{$k}}={{$v}},{{end}}' 2>/dev/null | sed 's/,$//')"
+    -o go-template="{{range \$k, \$v := .spec.selector.matchLabels}}{{\$k}}={{\$v}},{{end}}" 2>/dev/null | sed 's/,$//')"
   [ -z "$(k -n "${NS}" get pods -l "${vsel:-app.kubernetes.io/name=velero}" -o name 2>/dev/null)" ] \
     || fail "a velero controller pod is still running, so the in-flight run is not stalled"
   ok "no controller pod, so the in-flight run cannot advance"
@@ -974,7 +977,7 @@ print_live_summary() {
   echo
   step "Ready (live)"
   note "context:  ${KUBECTL_CTX}"
-  note "point Radar at it:  kubectl config use-context ${KUBECTL_CTX} && make restart"
+  note "point KubeAtlas at it:  kubectl config use-context ${KUBECTL_CTX} && make restart"
   echo
   note "Produced by Velero itself:"
   note "  live-completed   Completed, item counts from a real backup into MinIO"
@@ -1015,7 +1018,7 @@ print_summary() {
   echo
   step "Ready"
   note "context:  ${KUBECTL_CTX}"
-  note "point Radar at it:  kubectl config use-context ${KUBECTL_CTX} && make restart"
+  note "point KubeAtlas at it:  kubectl config use-context ${KUBECTL_CTX} && make restart"
   note "coverage matrix:    scripts/velero-demo/README.md"
   note "inventory:          $0 status"
 }

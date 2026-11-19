@@ -12,7 +12,7 @@ import (
 	"time"
 )
 
-// mainCookie returns the primary radar_session cookie from a returned set,
+// mainCookie returns the primary kubeatlas_session cookie from a returned set,
 // ignoring housekeeping cookies (e.g. a chunk meta-cookie cleared on the
 // single-cookie path).
 func mainCookie(t *testing.T, cookies []*http.Cookie) *http.Cookie {
@@ -30,6 +30,11 @@ func mainCookie(t *testing.T, cookies []*http.Cookie) *http.Cookie {
 // back all cookies the server previously set.
 func addCookies(req *http.Request, cookies []*http.Cookie) {
 	for _, c := range cookies {
+		// A browser removes deletion cookies instead of returning them alongside
+		// an existing main cookie. Raw duplicates are exercised separately.
+		if c.MaxAge < 0 {
+			continue
+		}
 		req.AddCookie(c)
 	}
 }

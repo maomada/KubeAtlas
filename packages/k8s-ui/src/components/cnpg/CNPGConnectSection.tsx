@@ -110,7 +110,7 @@ export function CNPGConnectSection({
                 </div>
                 {onOpenReachability ? (
                   <Tooltip
-                    content="Radar's check of this Service's path: endpoints, ready Pods and the NetworkPolicy rules in the way. It does not log in to PostgreSQL."
+                    content="KubeAtlas's check of this Service's path: endpoints, ready Pods and the NetworkPolicy rules in the way. It does not log in to PostgreSQL."
                     position="top"
                   >
                     <button type="button" onClick={() => onOpenReachability({ namespace: ns, name: ep.name })} className="text-xs text-accent-text hover:underline">
@@ -147,7 +147,7 @@ export function CNPGConnectSection({
             </RefLink>
           </span>
           <div className="mt-0.5 text-[11.5px] text-theme-text-tertiary">
-            {info.secret.source} · Radar does not read it; the password is its <span className="font-mono">password</span> key
+            {info.secret.source} · KubeAtlas does not read it; the password is its <span className="font-mono">password</span> key
           </div>
         </FactRow>
         {info.database.value && (

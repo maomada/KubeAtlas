@@ -28,10 +28,10 @@ import (
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
 )
 
-// UserRESTConfig returns the config Radar uses for a user's Kubernetes calls.
+// UserRESTConfig returns the config KubeAtlas uses for a user's Kubernetes calls.
 // In impersonate mode it impersonates the user. In user-token mode it never
 // does: a user with a token gets a config carrying only that token, an
-// allow-listed system identity gets Radar's own credentials behind a
+// allow-listed system identity gets KubeAtlas's own credentials behind a
 // SubjectAccessReview of every request, and anyone else gets a config whose
 // every request is refused.
 func UserRESTConfig(base *rest.Config, user *pkgauth.User) *rest.Config {
@@ -86,7 +86,7 @@ func (t *systemReviewTransport) RoundTrip(req *http.Request) (*http.Response, er
 	}
 	info, err := requestInfoFactory.NewRequestInfo(parse)
 	if err != nil {
-		return deny(req, "Radar could not authorize this request: "+err.Error(), metav1.StatusReasonForbidden)
+		return deny(req, "KubeAtlas could not authorize this request: "+err.Error(), metav1.StatusReasonForbidden)
 	}
 	// The API server adds system:authenticated to every impersonated user;
 	// a SubjectAccessReview checks only the groups it is given, and discovery
@@ -112,15 +112,15 @@ func (t *systemReviewTransport) RoundTrip(req *http.Request) (*http.Response, er
 		spec.NonResourceAttributes = &authv1.NonResourceAttributes{Path: info.Path, Verb: info.Verb}
 	}
 	if !readVerbs.Has(reviewSpec(spec).verb()) {
-		// Background identities only read. The request would run as Radar's
+		// Background identities only read. The request would run as KubeAtlas's
 		// ServiceAccount, so a write would be judged by admission and RBAC
 		// escalation checks as the ServiceAccount, not as this identity.
-		return deny(req, t.user.Username+" may only read through Radar", metav1.StatusReasonForbidden)
+		return deny(req, t.user.Username+" may only read through KubeAtlas", metav1.StatusReasonForbidden)
 	}
 	allowed, err := t.reviewer.allowed(req.Context(), spec)
 	if err != nil {
 		log.Printf("[auth] SubjectAccessReview for %s failed: %v", SanitizeForLog(t.user.Username), err)
-		return denyStatus(req, http.StatusServiceUnavailable, "Radar could not check permissions for "+t.user.Username+" with the API server", metav1.StatusReasonServiceUnavailable)
+		return denyStatus(req, http.StatusServiceUnavailable, "KubeAtlas could not check permissions for "+t.user.Username+" with the API server", metav1.StatusReasonServiceUnavailable)
 	}
 	if !allowed {
 		return deny(req, fmt.Sprintf("%s is not allowed to %s this resource", t.user.Username, reviewSpec(spec).verb()), metav1.StatusReasonForbidden)
@@ -225,7 +225,7 @@ func subjectReviewer(base *rest.Config) *cachedSubjectReviewer {
 	return r
 }
 
-// reviewerKey names the API server and the credentials Radar reviews with,
+// reviewerKey names the API server and the credentials KubeAtlas reviews with,
 // so a context switch to other credentials on the same server gets its own
 // reviewer.
 func reviewerKey(base *rest.Config) string {

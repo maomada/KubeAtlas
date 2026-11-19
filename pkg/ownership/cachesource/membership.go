@@ -57,7 +57,7 @@ func memberState(gk resourceid.GroupKind, u *unstructured.Unstructured) ownershi
 }
 
 // appliesElsewhere reports whether a manager is known to apply to another
-// cluster, whose objects alone its list can name, whether Radar can read the
+// cluster, whose objects alone its list can name, whether KubeAtlas can read the
 // list or not.
 func appliesElsewhere(gk resourceid.GroupKind, u *unstructured.Unstructured) bool {
 	if gk == ownership.ArgoApplication {
@@ -66,7 +66,7 @@ func appliesElsewhere(gk resourceid.GroupKind, u *unstructured.Unstructured) boo
 	return !gitops.FluxTargetsLocalCluster(u)
 }
 
-// located is whether a manager whose list Radar reads applies it here.
+// located is whether a manager whose list KubeAtlas reads applies it here.
 func located(gk resourceid.GroupKind, u *unstructured.Unstructured) ownership.MembershipState {
 	if appliesHere(gk, u) {
 		return ownership.MembersRecorded
@@ -129,7 +129,7 @@ func builtinKind(group, kind string) (resourceid.Builtin, bool) {
 	return b, ok && b.Group == group
 }
 
-// scopeOf says whether gk is namespaced, and whether Radar can tell: a
+// scopeOf says whether gk is namespaced, and whether KubeAtlas can tell: a
 // built-in kind's scope is its own unless discovery is ambiguous about the
 // kind or serves it with the other scope; any other kind's is the catalog's.
 func (s *session) scopeOf(gk resourceid.GroupKind) (namespaced, known bool) {
@@ -143,7 +143,7 @@ func (s *session) scopeOf(gk resourceid.GroupKind) (namespaced, known bool) {
 	return k.Namespaced, served
 }
 
-// align reads an entry as its kind's scope says, or as recorded when Radar
+// align reads an entry as its kind's scope says, or as recorded when KubeAtlas
 // can't tell the scope.
 func (s *session) align(e gitops.Member, destination string) resourceid.Ref {
 	ref := resourceid.Ref{Group: e.Group, Kind: e.Kind, Namespace: e.Namespace, Name: e.Name}
@@ -164,7 +164,7 @@ func (s *session) placements(ref resourceid.Ref) ([]string, readreason.Code) {
 	_, builtin := builtinKind(ref.Group, ref.Kind)
 	switch {
 	case !known && (builtin || s.catalog.Ambiguous(gk) || !s.catalog.Complete()):
-		// Radar can't tell the kind's scope.
+		// KubeAtlas can't tell the kind's scope.
 		return nil, readreason.ReadError
 	case !known:
 		// No object of the kind can exist; entries name it as recorded.

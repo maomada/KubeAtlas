@@ -37,7 +37,7 @@ var cnpgPlainDatabaseName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_$-]{0,62}$`
 var cnpgParameterName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_.]{0,62}$`)
 
 // CNPGRestoreChecksResponse is GET /api/cnpg/clusters/{ns}/{name}/restore-checks:
-// what Radar read in the primary of a Cluster bootstrapped from a backup.
+// what KubeAtlas read in the primary of a Cluster bootstrapped from a backup.
 // These are observations, not a verdict on the restore: where recovery
 // stopped is shown beside the declared target, never matched against it, and
 // a database or role existing does not prove what it holds (CloudNativePG
@@ -276,7 +276,7 @@ func readCNPGRestoreChecks(ctx context.Context, exec ExecFunc, namespace, pod st
 
 	contents := func(src CNPGRuntimeSource) { resp.ContentsSource = &src }
 	if !cnpgPlainDatabaseName.MatchString(resp.Database) {
-		contents(CNPGRuntimeSource{State: runtimeStateError, Error: fmt.Sprintf("%q is not a plain database name, so Radar does not connect to it", resp.Database)})
+		contents(CNPGRuntimeSource{State: runtimeStateError, Error: fmt.Sprintf("%q is not a plain database name, so KubeAtlas does not connect to it", resp.Database)})
 		return
 	}
 	if !cnpgHasDatabase(facts, resp.Database) {
@@ -313,7 +313,7 @@ func cnpgHasDatabase(f *CNPGRestoreFacts, db string) bool {
 
 // CNPGParametersResponse is GET /api/cnpg/clusters/{ns}/{name}/parameters: for
 // each name in spec.postgresql.parameters, what each instance's PostgreSQL
-// reports in a fresh session of Radar's — the server's value, which a
+// reports in a fresh session of KubeAtlas's — the server's value, which a
 // client's own session, role or database settings can still override.
 type CNPGParametersResponse struct {
 	Cluster    CNPGRuntimeObjectRef   `json:"cluster"`
@@ -370,7 +370,7 @@ WHERE s.name = ANY (string_to_array(:'names', ','));
 `
 
 // declaredParameters returns spec.postgresql.parameters sorted, capped,
-// and split into names Radar can ask about and names it skips.
+// and split into names KubeAtlas can ask about and names it skips.
 func declaredParameters(cluster *unstructured.Unstructured) (declared []CNPGParameterValue, query []string, skipped []string, omitted int) {
 	params, _, _ := unstructured.NestedMap(cluster.Object, "spec", "postgresql", "parameters")
 	names := make([]string, 0, len(params))

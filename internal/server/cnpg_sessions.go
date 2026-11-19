@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Diagnosis inside PostgreSQL. Radar runs fixed SQL with psql in the
+// Diagnosis inside PostgreSQL. KubeAtlas runs fixed SQL with psql in the
 // instance's postgres container through the caller's own pods/exec — the same
 // access that lets them open psql themselves, which is why query text is
 // shown to them. Nothing a caller sends is ever part of the SQL text: the only

@@ -222,7 +222,7 @@ func TestPodLogs_PreviousRunAnswerFollowsRestartCount(t *testing.T) {
 	}
 }
 
-// The node's "could not read logs" answer is about the cluster, not a Radar
+// The node's "could not read logs" answer is about the cluster, not a KubeAtlas
 // failure, so it carries a code the viewer can show it by.
 func TestPodLogs_LogsUnavailableCarriesCode(t *testing.T) {
 	useLogsUnavailableServer(t)
@@ -246,7 +246,7 @@ func waitingPod(name string) *corev1.Pod {
 
 // A container that has not started (an image that cannot be pulled, a missing
 // ConfigMap, ContainerCreating) is a fact about the pod. It reached the viewer
-// as a 500, which told the reader Radar had broken.
+// as a 500, which told the reader KubeAtlas had broken.
 func TestPodLogs_ContainerNotStartedIsAnAnswer(t *testing.T) {
 	seedCNPGPods(t, waitingPod("pulling"))
 	client := logAPIServer(t, http.StatusBadRequest, "application/json", waitingAnswer)

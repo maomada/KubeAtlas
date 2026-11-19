@@ -26,6 +26,7 @@ func TestEnrollmentClusterIssuanceRevalidatesApproverMembership(t *testing.T) {
 	if err := store.RevokeAgentTokenForOrganization("self-hosted", input.ID); err != nil {
 		t.Fatal(err)
 	}
+	addOrganizationBoundaryAccount(t, store, "oidc:"+strings.Repeat("e", 64), "active", OrganizationMembership{OrganizationID: "self-hosted", Role: "owner"})
 	if _, err := store.RemoveOrganizationMember("self-hosted", ownerID); err != nil {
 		t.Fatal(err)
 	}

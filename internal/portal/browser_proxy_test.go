@@ -100,7 +100,7 @@ func TestBrowserProxyConnectionHeadersCannotStripTunnelIdentity(t *testing.T) {
 			t.Fatal("test Agent did not become ready")
 		}
 	}
-	principal := hub.Principal{UserID: "portal:user", Groups: []string{"radar:viewer"}, ClusterIDs: []string{"alpha"}}
+	principal := hub.Principal{UserID: "portal:user", Groups: []string{"kubeatlas:viewer"}, ClusterIDs: []string{"alpha"}}
 	client, err := transport.BrowserHTTPClient("alpha", principal)
 	if err != nil {
 		t.Fatal(err)

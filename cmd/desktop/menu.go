@@ -93,7 +93,7 @@ func createMenu(desktopApp *DesktopApp, version, goos string) *menu.Menu {
 	// File menu
 	fileMenu := appMenu.AddSubmenu("File")
 	fileMenu.AddText("Settings...", keys.CmdOrCtrl(","), func(_ *menu.CallbackData) {
-		runtime.WindowExecJS(desktopApp.ctx, `window.dispatchEvent(new Event('radar:open-settings'))`)
+		runtime.WindowExecJS(desktopApp.ctx, `window.dispatchEvent(new Event('kubeatlas:open-settings'))`)
 	})
 	if mac {
 		fileMenu.AddText("Close Window", keys.CmdOrCtrl("w"), func(_ *menu.CallbackData) {
@@ -152,7 +152,7 @@ func createMenu(desktopApp *DesktopApp, version, goos string) *menu.Menu {
 				// Monaco's DOM paste handler reads the system clipboard again for
 				// rich paste formats. Use its text paste command with the text we
 				// already have so WKWebView does not request clipboard permission.
-				var editor = window.__radarMonacoEditor;
+				var editor = window.__kubeatlasMonacoEditor;
 				if (editor && editor.hasTextFocus()) {
 					editor.trigger('keyboard', 'paste', {text: text});
 					return;
@@ -213,7 +213,7 @@ func createMenu(desktopApp *DesktopApp, version, goos string) *menu.Menu {
 			runtime.MessageDialog(desktopApp.ctx, runtime.MessageDialogOptions{
 				Type:    runtime.InfoDialog,
 				Title:   "About KubeAtlas",
-				Message: "KubeAtlas — Kubernetes Visibility Tool\nIndependently maintained by maomada\nDerived from Radar; see NOTICE\n\nVersion: " + version + "\n\nhttps://github.com/maomada/KubeAtlas",
+				Message: "KubeAtlas — Kubernetes Visibility Tool\nIndependently maintained by maomada\nSee NOTICE for upstream attribution; see NOTICE\n\nVersion: " + version + "\n\nhttps://github.com/maomada/KubeAtlas",
 			})
 		})
 	}

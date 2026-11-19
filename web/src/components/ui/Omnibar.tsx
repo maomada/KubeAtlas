@@ -174,7 +174,7 @@ function pillsToQuery(pills: SearchModifier[]): string {
 // (ns:, kind:, …) become removable pills. Resources lead, commands follow.
 //
 // Injectable: all data — search, commands, recents, modifier options — flows in
-// via props, so KubeAtlas standalone (cluster /api/search) and Radar Hub (fleet
+// via props, so KubeAtlas standalone (cluster /api/search) and KubeAtlas Hub (fleet
 // search) share the same UX. ⌘K focus is wired by the host.
 export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
   {

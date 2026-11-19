@@ -18,11 +18,11 @@
 #   - kind         https://kind.sigs.k8s.io/
 #   - kubectl
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-rollouts-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-rollouts-demo).
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-rollouts-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-rollouts-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/rollouts-demo"
@@ -115,7 +115,8 @@ apply_fixtures() {
 
   # Numeric order matters: namespace, then the metric endpoint the
   # AnalysisTemplates point at, then the templates, then the Rollouts.
-  for f in $(ls "${FIXTURES_DIR}"/*.yaml 2>/dev/null | sort); do
+  for f in "${FIXTURES_DIR}"/*.yaml; do
+    [ -f "$f" ] || continue
     note "applying $(basename "$f")"
     kc apply -f "$f" >/dev/null
   done
@@ -331,7 +332,7 @@ park_native_visibility() {
   kc -n demo-rollouts patch daemonset ondelete-daemon --type json \
     -p '[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"argoproj/rollouts-demo:yellow"}]' >/dev/null
   kc -n demo-rollouts patch deployment image-failure --type json \
-    -p '[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"registry.invalid/radar/does-not-exist:visual-test"}]' >/dev/null
+    -p '[{"op":"replace","path":"/spec/template/spec/containers/0/image","value":"registry.invalid/kubeatlas/does-not-exist:visual-test"}]' >/dev/null
 
   ok "native-paused, OnDelete, and new-revision image failure states parked"
 }
@@ -381,16 +382,16 @@ cmd_status() {
 
   step "Cluster: ${CLUSTER_NAME} (context ${KUBECTL_CTX})"
 
-  printf "\n${C_BLUE}Rollouts controller${C_RESET}\n"
+  printf '\n%bRollouts controller%b\n' "$C_BLUE" "$C_RESET"
   kc -n argo-rollouts get pods --no-headers 2>/dev/null \
     | awk '{ printf "    %s %s\n", $1, $3 }' || warn "controller not installed"
 
-  printf "\n${C_BLUE}Rollouts${C_RESET}\n"
+  printf '\n%bRollouts%b\n' "$C_BLUE" "$C_RESET"
   kc -n demo-rollouts get rollouts.argoproj.io -o \
     custom-columns='NAME:.metadata.name,PHASE:.status.phase,STEP:.status.currentStepIndex,ABORT:.status.abort,PAUSE:.status.pauseConditions[*].reason' \
     --no-headers 2>/dev/null | sed 's/^/    /' || note "(none)"
 
-  printf "\n${C_BLUE}AnalysisRuns${C_RESET}\n"
+  printf '\n%bAnalysisRuns%b\n' "$C_BLUE" "$C_RESET"
   kc -n demo-rollouts get analysisruns.argoproj.io -o \
     custom-columns='NAME:.metadata.name,PHASE:.status.phase,TRIGGER:.metadata.labels.rollout-type' \
     --no-headers 2>/dev/null | sed 's/^/    /' || note "(none)"
@@ -419,7 +420,7 @@ print_summary() {
                          → rollback must patch the Deployment
     metric-endpoint      Static JSON backing the web metric provider
 
-  Run Radar against this cluster:
+  Run KubeAtlas against this cluster:
     kubectl config use-context ${KUBECTL_CTX}
     ./scripts/visual-test-start.sh
 

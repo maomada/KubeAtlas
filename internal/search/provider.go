@@ -18,7 +18,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/readreason"
 )
 
-// CacheProvider adapts radar's in-process cache to the search Provider interface.
+// CacheProvider adapts kubeatlas's in-process cache to the search Provider interface.
 //
 // Use NewCacheProvider to capture the live cache handles and collector probe
 // results for one search request.
@@ -31,7 +31,7 @@ type CacheProvider struct {
 	catalogResources []k8score.APIResource
 }
 
-// NewCacheProvider returns a Provider over the live radar caches.
+// NewCacheProvider returns a Provider over the live kubeatlas caches.
 // Returns nil when the typed cache is unavailable or connection handles change
 // during capture.
 func NewCacheProvider() *CacheProvider {
@@ -117,7 +117,7 @@ func (p *CacheProvider) DynamicResources() ([]schema.GroupVersionResource, error
 	if len(resources) == 0 {
 		return nil, fmt.Errorf("%w: API discovery", k8s.ErrDynamicNotReady)
 	}
-	// Until CRD discovery completes, kinds Radar is about to watch still look
+	// Until CRD discovery completes, kinds KubeAtlas is about to watch still look
 	// unwatched; until API discovery answers for every group, a kind may be
 	// missing from the catalog.
 	switch {
@@ -180,7 +180,7 @@ func (p *CacheProvider) PlanDynamic(gvr schema.GroupVersionResource, namespaces 
 	return plan
 }
 
-// Current reports whether the provider still reads the connection Radar is
+// Current reports whether the provider still reads the connection KubeAtlas is
 // on: a search whose caches were replaced mid-read mixes two clusters.
 func (p *CacheProvider) Current() bool {
 	return p.cache == k8s.GetResourceCache() && p.dynamic == k8s.GetDynamicResourceCache() && p.discovery == k8s.GetResourceDiscovery()
@@ -207,7 +207,7 @@ func (p *CacheProvider) NamespaceObservation(gvr schema.GroupVersionResource, na
 	} else {
 		observation = p.dynamic.NamespaceObservation(gvr, namespace)
 	}
-	// Radar reads these high-churn built-ins directly and never watches them,
+	// KubeAtlas reads these high-churn built-ins directly and never watches them,
 	// so search treats them like list-only APIs instead of warming an informer.
 	if k8s.ShouldBypassDynamicInformer(gvr) && observation.State != k8score.DynamicObservationSynced && observation.State != k8score.DynamicObservationSyncing {
 		return k8score.DynamicResourceObservation{State: k8score.DynamicObservationUnsupported, ReasonCode: "direct_read_only"}

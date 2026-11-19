@@ -147,7 +147,7 @@ func TestWorkloadGoldenVectors(t *testing.T) {
 // the instant the spec changed — before the controller had created a single
 // pod. That is controller lag, not an outage.
 //
-// The contract is Neutral, never Healthy: radar declines to call it broken
+// The contract is Neutral, never Healthy: kubeatlas declines to call it broken
 // without claiming it is fine.
 func TestWorkloadConvergenceGrace(t *testing.T) {
 	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)

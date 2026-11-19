@@ -16,7 +16,7 @@ type ControllerTeardown struct {
 	// Action is "prune" (managed resources are deleted) or "uninstall" (the
 	// Helm release is uninstalled).
 	Action string `json:"action"`
-	// Resources are the managed resources Radar observes; the controller acts
+	// Resources are the managed resources KubeAtlas observes; the controller acts
 	// on its own inventory, which can hold more, and skips resources that opt
 	// out of deletion.
 	Resources []ResourceRef    `json:"resources,omitempty"`

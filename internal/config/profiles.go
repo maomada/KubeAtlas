@@ -86,7 +86,7 @@ func (s *ProfileStore) ReadSince(previous string) (ClusterProfiles, string, bool
 		return result, "", false, invalidProfileJSON(s.Path, err)
 	}
 	if header.Version > 1 {
-		return result, "", false, fmt.Errorf("clusters.json uses a newer format (version %d); upgrade Radar to read it; the file was not changed", header.Version)
+		return result, "", false, fmt.Errorf("clusters.json uses a newer format (version %d); upgrade KubeAtlas to read it; the file was not changed", header.Version)
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()

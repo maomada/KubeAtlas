@@ -68,7 +68,7 @@ func TestDiagnosticsRedactsLocalKubeconfigError(t *testing.T) {
 	if err := json.Unmarshal(diagnosticsBody(t)["connection"], &connection); err != nil {
 		t.Fatalf("decode connection diagnostics: %v", err)
 	}
-	if connection.Error != "Kubeconfig initialization failed; see local Radar logs for details" {
+	if connection.Error != "Kubeconfig initialization failed; see local KubeAtlas logs for details" {
 		t.Fatalf("connection error = %q", connection.Error)
 	}
 }

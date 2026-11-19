@@ -2,9 +2,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { cnpgHost } from './host'
 import { renderCNPGHeaderActions } from './actions/renderCNPGHeaderActions'
-import { radarFeatureSupport } from '../../api/radarFeatures'
+import { kubeatlasFeatureSupport } from '../../api/kubeatlasFeatures'
 const state = vi.hoisted(() => ({ capabilities: { features: { resourceIssues: true } } as any }))
-vi.mock('../../api/client', async original => ({ ...await original<typeof import('../../api/client')>(), useRadarFeature: () => ({ support: radarFeatureSupport('cnpgWorkspace', state.capabilities, 'v1.16.0') }) }))
+vi.mock('../../api/client', async original => ({ ...await original<typeof import('../../api/client')>(), useKubeAtlasFeature: () => ({ support: kubeatlasFeatureSupport('cnpgWorkspace', state.capabilities, 'v1.16.0') }) }))
 vi.mock('./CNPGClusterTabs', () => ({ CNPGInvestigationAction: () => <span>CNPG investigation</span> }))
 vi.mock('./actions/CNPGClusterActions', () => ({ CNPGClusterActions: () => <span>CNPG write actions</span> }))
 vi.mock('./actions/CNPGConnectButton', () => ({ CNPGConnectButton: () => null }))

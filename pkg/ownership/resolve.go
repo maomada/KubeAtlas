@@ -64,7 +64,7 @@ func (s OwnerState) String() string {
 type OwnerResolution struct {
 	State OwnerState
 	// Ref is where the reference points. It is unset when the reference is
-	// unresolvable, and when Radar can't map its kind or version to a scope
+	// unresolvable, and when KubeAtlas can't map its kind or version to a scope
 	// (OwnerUnknown with a gap saying why).
 	Ref resourceid.Ref
 	// Owner is the object at Ref, when Found or Replaced.

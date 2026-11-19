@@ -8,8 +8,8 @@ spec:
     type: NewCluster
   serveConfigV2: |
     applications:
-      - name: radar-demo
-        import_path: radar_serve:app
+      - name: kubeatlas-demo
+        import_path: kubeatlas_serve:app
         route_prefix: /
   rayClusterConfig:
     rayVersion: "2.55.0"
@@ -23,7 +23,7 @@ spec:
               image: rayproject/ray:2.55.0@sha256:71bbcb7cf031c290d9f23a8fd54d8602c8f0f2004b73d616f97dddc1975e9bd4
               env:
                 - name: PYTHONPATH
-                  value: /home/ray/radar-demo
+                  value: /home/ray/kubeatlas-demo
               ports:
                 - name: gcs-server
                   containerPort: 6379
@@ -41,9 +41,9 @@ spec:
                   cpu: "2"
                   memory: 3Gi
               volumeMounts:
-                - name: radar-ray-serve
-                  mountPath: /home/ray/radar-demo
+                - name: kubeatlas-ray-serve
+                  mountPath: /home/ray/kubeatlas-demo
           volumes:
-            - name: radar-ray-serve
+            - name: kubeatlas-ray-serve
               configMap:
-                name: radar-ray-serve
+                name: kubeatlas-ray-serve

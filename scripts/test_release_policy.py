@@ -25,8 +25,8 @@ class ReleasePolicyTests(unittest.TestCase):
         for version in ("0.1.0", "2.0.0-rc.1"):
             policy.validate_inputs(policy.REPOSITORY, "refs/heads/main", SHA, version)
         for repository, ref, sha, version in (
-            ("skyhook-io/radar", "refs/heads/main", SHA, "1.0.0"),
-            ("maomada/radar", "refs/heads/main", SHA, "1.0.0"),
+            ("untrusted/example-project", "refs/heads/main", SHA, "1.0.0"),
+            ("maomada/kubeatlas", "refs/heads/main", SHA, "1.0.0"),
             (policy.REPOSITORY, "refs/heads/test", SHA, "1.0.0"),
             (policy.REPOSITORY, "refs/heads/main", "main", "1.0.0"),
             (policy.REPOSITORY, "refs/heads/main", SHA, "v1.0.0"),
@@ -59,7 +59,7 @@ class ReleasePolicyTests(unittest.TestCase):
         for workflow in policy.WORKFLOWS:
             for key, value in (
                 ("head_sha", "b" * 40), ("event", "pull_request"),
-                ("head_branch", "feature"), ("head_repository", {"full_name": "other/radar"}),
+                ("head_branch", "feature"), ("head_repository", {"full_name": "other/kubeatlas"}),
                 ("path", ".github/workflows/other.yml"),
             ):
                 with self.subTest(workflow=workflow, key=key):

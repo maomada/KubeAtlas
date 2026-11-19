@@ -6,8 +6,8 @@ import { Collapse, CollapseChevron, useDisclosure } from './Collapse'
 // replacement for native <details>/<summary> on primary paths. Native details
 // snaps open with no transition and its marker ignores the caret language;
 // this pairs a button header (aria-expanded / aria-controls via useDisclosure)
-// with CollapseChevron and an animated Collapse panel. Shared by Radar and
-// Radar Cloud so both open alike.
+// with CollapseChevron and an animated Collapse panel. Shared by KubeAtlas and
+// KubeAtlas Cloud so both open alike.
 //
 // Content stays mounted while closed (Collapse's default), exactly like native
 // details — server-rendered markup and in-page search still see the collapsed

@@ -61,7 +61,7 @@ func (s *Server) decodeActionRequest(w http.ResponseWriter, r *http.Request) (in
 }
 
 // requireConnectedForAction is requireConnected for a write handler: its 503
-// says Radar refused before writing, so the client can retry it.
+// says KubeAtlas refused before writing, so the client can retry it.
 func (s *Server) requireConnectedForAction(w http.ResponseWriter) bool {
 	if k8s.IsConnected() {
 		return true

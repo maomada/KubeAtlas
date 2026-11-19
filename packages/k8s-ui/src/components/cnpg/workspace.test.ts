@@ -212,7 +212,7 @@ describe('buildCNPGFleet', () => {
     }
     const note = (uid: string) =>
       JSON.stringify({ version: 1, recordedAt: '2026-09-29T10:00:00Z', recordedBy: 'alice', checked: 'row counts on orders', source: { namespace: 'db', name: 'pg-a', uid, verified: true } })
-    const noted = cluster('pg-a-restore', 'db', { metadata: { annotations: { 'radar.skyhook.io/restore-validation': note('uid-a') } }, spec: restoredSpec })
+    const noted = cluster('pg-a-restore', 'db', { metadata: { annotations: { 'kubeatlas.io/restore-validation': note('uid-a') } }, spec: restoredSpec })
     const fleet = buildCNPGFleet(resp({ clusters: [src, noted] }))
     const fact = fleet.rows.find((r) => r.name === 'pg-a')!.protection.restoreValidation
     expect(fact.text).toBe('Validation recorded')
@@ -220,10 +220,10 @@ describe('buildCNPGFleet', () => {
     expect(fact.at).toBe('2026-09-29T10:00:00Z')
     expect(fact.source).toContain('by alice on pg-a-restore')
 
-    const otherUID = cluster('pg-a-restore', 'db', { metadata: { annotations: { 'radar.skyhook.io/restore-validation': note('uid-previous-incarnation') } }, spec: restoredSpec })
+    const otherUID = cluster('pg-a-restore', 'db', { metadata: { annotations: { 'kubeatlas.io/restore-validation': note('uid-previous-incarnation') } }, spec: restoredSpec })
     expect(buildCNPGFleet(resp({ clusters: [src, otherUID] })).rows.find((r) => r.name === 'pg-a')!.protection.restoreValidation.text).toBe('None recorded')
 
-    const malformed = cluster('pg-a-restore', 'db', { metadata: { annotations: { 'radar.skyhook.io/restore-validation': '{not json' } }, spec: restoredSpec })
+    const malformed = cluster('pg-a-restore', 'db', { metadata: { annotations: { 'kubeatlas.io/restore-validation': '{not json' } }, spec: restoredSpec })
     expect(buildCNPGFleet(resp({ clusters: [src, malformed] })).rows.find((r) => r.name === 'pg-a')!.protection.restoreValidation.text).toBe('Archive restored into pg-a-restore')
   })
 
@@ -363,9 +363,9 @@ describe('buildCNPGFleet', () => {
     const denied = buildCNPGFleet(resp({ clusters: [cluster('pg-a', 'db')] }, { coverage: { backups: { state: 'partial', allowedNamespaces: ['other'], deniedNamespaces: ['db'] } } }))
     expect(denied.rows[0].protection.lastSuccessfulBackup.text).toBe('No access to Backups')
     const uncached = buildCNPGFleet(resp({ clusters: [cluster('pg-a', 'db')] }, { coverage: { pods: { state: 'partial', allowedNamespaces: ['other'], uncachedNamespaces: ['db'] } } }))
-    expect(uncached.rows[0].replication.text).toBe('Radar does not cache Pods in db')
+    expect(uncached.rows[0].replication.text).toBe('KubeAtlas does not cache Pods in db')
     const none = buildCNPGFleet(resp({ clusters: [cluster('pg-a', 'db')] }, { coverage: { pods: { state: 'uncached' } } }))
-    expect(none.rows[0].replication.text).toBe('Radar does not cache Pods')
+    expect(none.rows[0].replication.text).toBe('KubeAtlas does not cache Pods')
     const mixed = buildCNPGFleet(resp({ clusters: [cluster('pg-a', 'db')] }, { coverage: { pods: { state: 'uncached', uncachedNamespaces: ['other'], deniedNamespaces: ['db'] } } }))
     expect(mixed.rows[0].replication.text).toBe('No access to Pods')
   })
@@ -613,7 +613,7 @@ it('does not attribute predecessor plugin restores or notes to a recreated sourc
   expect(fact(pinned, [oldBackup]).text).toBe('None recorded')
   const pitr = { ...restored, spec: { ...restored.spec, bootstrap: { recovery: { source: 'origin', recoveryTarget: { targetTime: '2026-09-30T23:00:00Z' } } } } }
   expect(fact(pitr).text).toBe('None recorded')
-  const withNote = (sourceUID?: string, targetUID = 'restored', version = 1) => ({ ...restored, metadata: { ...restored.metadata, annotations: { 'radar.skyhook.io/restore-validation': JSON.stringify({ version, recordedAt: '2026-10-02T02:00:00Z', checked: 'application data', source: { namespace: 'db', name: 'pg-a', uid: sourceUID, verified: !!sourceUID }, target: { namespace: 'db', name: 'restored', uid: targetUID, verified: true } }) } } })
+  const withNote = (sourceUID?: string, targetUID = 'restored', version = 1) => ({ ...restored, metadata: { ...restored.metadata, annotations: { 'kubeatlas.io/restore-validation': JSON.stringify({ version, recordedAt: '2026-10-02T02:00:00Z', checked: 'application data', source: { namespace: 'db', name: 'pg-a', uid: sourceUID, verified: !!sourceUID }, target: { namespace: 'db', name: 'restored', uid: targetUID, verified: true } }) } } })
   expect(fact(withNote('previous')).text).toBe('None recorded')
   expect(fact(withNote()).text).toBe('Archive restored into restored')
   expect(fact(withNote('current')).text).toBe('Validation recorded')

@@ -146,7 +146,7 @@ func diffDaemonSetRolloutConfig(oldSpec, newSpec appsv1.DaemonSetSpec) ([]FieldC
 // newTemplateRevision states only what a pod-template metadata change is
 // known to cause. Whether and when pods are replaced depends on the kind,
 // strategy, pause state and partition, and what an annotation such as
-// checksum/config hashes is a chart convention Radar cannot verify.
+// checksum/config hashes is a chart convention KubeAtlas cannot verify.
 const newTemplateRevision = " (new pod template revision)"
 
 // diffPodTemplateMetadata covers pod-template labels and annotations. Changing

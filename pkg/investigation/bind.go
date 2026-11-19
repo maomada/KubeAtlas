@@ -2,7 +2,7 @@ package investigation
 
 // Bind promotes the agent's citations to server-authored provenance. linked
 // reports whether one ref names exactly one eligible recorded result; what
-// makes a result eligible (a completed, successful read from Radar's own
+// makes a result eligible (a completed, successful read from KubeAtlas's own
 // transport, in this turn or an earlier one of the same run) is the product's
 // decision, since only the party that issued the ref can make it.
 //

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import type { CNPGFleetMetricsReading, Grant } from '@maomada/k8s-ui'
-import { fetchJSON, useRadarFeature } from './client'
-import { shouldRetryRadarQuery } from './radarFeatures'
+import { fetchJSON, useKubeAtlasFeature } from './client'
+import { shouldRetryKubeAtlasQuery } from './kubeatlasFeatures'
 import type { CNPGClusterActivityResponse } from './cnpg'
 
 export type CNPGHistoryRange = '15m' | '1h' | '6h' | '24h'
@@ -64,7 +64,7 @@ export interface CNPGClusterHistoryResponse {
 // /api/cnpg/clusters/{ns}/{name}/history — server-built Prometheus range
 // queries for the Runtime Trends section.
 export function useCNPGClusterHistory(namespace: string, name: string, range: CNPGHistoryRange, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGClusterHistoryResponse>({
     queryKey: ['cnpg', 'history', namespace, name, range, ...gatedKey],
     queryFn: ({ signal }) => guard(() =>
@@ -93,7 +93,7 @@ export interface CNPGFleetMetricsResponse {
 // /api/cnpg/fleet-metrics — each visible Cluster's largest standby replay lag
 // and volume growth, read with the workspace's namespace set.
 export function useCNPGFleetMetrics(namespaces: string[], enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   const ns = [...namespaces].sort().join(',')
   return useQuery<CNPGFleetMetricsResponse>({
     queryKey: ['cnpg', 'fleet-metrics', ns, ...gatedKey],
@@ -108,7 +108,7 @@ export function useCNPGFleetMetrics(namespaces: string[], enabled = true) {
 
 // The Cluster's activity inside one interval, both bounds applied server-side.
 export function useCNPGClusterActivityWindow(namespace: string, name: string, since: string, until: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGClusterActivityResponse>({
     queryKey: ['cnpg', 'activity-window', namespace, name, since, until, ...gatedKey],
     queryFn: ({ signal }) => guard(() =>
@@ -118,6 +118,6 @@ export function useCNPGClusterActivityWindow(namespace: string, name: string, si
       )),
     enabled: enabled && !!name,
     staleTime: 30_000,
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
   })
 }

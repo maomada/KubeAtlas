@@ -62,7 +62,7 @@ func useTestResourceCache(t *testing.T, client *fake.Clientset) {
 }
 
 // testNamespaces is a Namespace for each name. A real cluster has one for
-// every namespace that holds objects, and Radar tells a caller who can see
+// every namespace that holds objects, and KubeAtlas tells a caller who can see
 // every namespace when a namespace they named doesn't exist.
 func testNamespaces(names ...string) []runtime.Object {
 	out := make([]runtime.Object, 0, len(names))
@@ -103,7 +103,7 @@ func addPackageNamespaces(t *testing.T, names ...string) {
 func TestMain(m *testing.M) {
 	// The Cloud-funnel rollout gate mints an install ID in ~/.kubeatlas on first
 	// use; redirect HOME so no test run touches the developer's real settings.
-	tmpHome, err := os.MkdirTemp("", "radar-server-test-home")
+	tmpHome, err := os.MkdirTemp("", "kubeatlas-server-test-home")
 	if err == nil {
 		os.Setenv("HOME", tmpHome)
 		os.Setenv("USERPROFILE", tmpHome)
@@ -493,9 +493,9 @@ func TestSmokeMetricsEndpoint(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"radar_sse_connected_clients",
-		"radar_sse_topology_broadcasts_total",
-		"radar_sse_dropped_events_total",
+		"kubeatlas_sse_connected_clients",
+		"kubeatlas_sse_topology_broadcasts_total",
+		"kubeatlas_sse_dropped_events_total",
 	} {
 		if !strings.Contains(string(body), want) {
 			t.Fatalf("expected %s in metrics output, got:\n%s", want, body)
@@ -2119,7 +2119,7 @@ func TestSmokeCapabilitiesShape(t *testing.T) {
 	}
 
 	// Every advertised feature flag must be on: a false one would make a newer
-	// embedded frontend tell the user to upgrade a Radar that already serves it.
+	// embedded frontend tell the user to upgrade a KubeAtlas that already serves it.
 	featuresType := reflect.TypeOf(k8s.FeatureCapabilities{})
 	for i := 0; i < featuresType.NumField(); i++ {
 		tag := featuresType.Field(i).Tag.Get("json")

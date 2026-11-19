@@ -11,33 +11,33 @@ import (
 // The codes are wire values clients branch on; a rename here must fail.
 func TestCodeWireValues(t *testing.T) {
 	want := map[Code]string{
-		UserForbidden:              "user_forbidden",
-		UserNoNamespaceAccess:      "user_no_namespace_access",
-		UserPermissionCheckFailed:  "user_permission_check_failed",
-		RadarForbidden:             "radar_forbidden",
-		RadarCredentialsRejected:   "radar_credentials_rejected",
-		RadarNamespaceNotCollected: "radar_namespace_not_collected",
-		KindSyncPending:            "kind_sync_pending",
-		KindSyncTimedOut:           "kind_sync_timed_out",
-		RadarKindNotCollected:      "radar_kind_not_collected",
-		KindUnknown:                "kind_unknown",
-		KindNotWatchable:           "kind_not_watchable",
-		KindNotSearchable:          "kind_not_searchable",
-		OutsideNamespacePin:        "outside_namespace_pin",
-		UserNamespaceNotVisible:    "user_namespace_not_visible",
-		NamespaceNotFound:          "namespace_not_found",
-		NamespaceRequired:          "namespace_required",
-		ObjectNotFound:             "object_not_found",
-		ListTooLarge:               "list_too_large",
-		InvalidParameters:          "invalid_parameters",
-		InvalidCursor:              "invalid_cursor",
-		CursorExpired:              "cursor_expired",
-		FilterEvalFailed:           "filter_eval_failed",
-		FindingsScanIncomplete:     "findings_scan_incomplete",
-		ClusterConnecting:          "cluster_connecting",
-		ClusterDisconnected:        "cluster_disconnected",
-		ConnectionChanged:          "connection_changed",
-		ReadError:                  "read_error",
+		UserForbidden:                  "user_forbidden",
+		UserNoNamespaceAccess:          "user_no_namespace_access",
+		UserPermissionCheckFailed:      "user_permission_check_failed",
+		KubeAtlasForbidden:             "kubeatlas_forbidden",
+		KubeAtlasCredentialsRejected:   "kubeatlas_credentials_rejected",
+		KubeAtlasNamespaceNotCollected: "kubeatlas_namespace_not_collected",
+		KindSyncPending:                "kind_sync_pending",
+		KindSyncTimedOut:               "kind_sync_timed_out",
+		KubeAtlasKindNotCollected:      "kubeatlas_kind_not_collected",
+		KindUnknown:                    "kind_unknown",
+		KindNotWatchable:               "kind_not_watchable",
+		KindNotSearchable:              "kind_not_searchable",
+		OutsideNamespacePin:            "outside_namespace_pin",
+		UserNamespaceNotVisible:        "user_namespace_not_visible",
+		NamespaceNotFound:              "namespace_not_found",
+		NamespaceRequired:              "namespace_required",
+		ObjectNotFound:                 "object_not_found",
+		ListTooLarge:                   "list_too_large",
+		InvalidParameters:              "invalid_parameters",
+		InvalidCursor:                  "invalid_cursor",
+		CursorExpired:                  "cursor_expired",
+		FilterEvalFailed:               "filter_eval_failed",
+		FindingsScanIncomplete:         "findings_scan_incomplete",
+		ClusterConnecting:              "cluster_connecting",
+		ClusterDisconnected:            "cluster_disconnected",
+		ConnectionChanged:              "connection_changed",
+		ReadError:                      "read_error",
 	}
 	for code, spelling := range want {
 		if string(code) != spelling {
@@ -77,15 +77,15 @@ func TestPrimaryIgnoresOrder(t *testing.T) {
 
 // A read that served nothing because part of it is still loading names the
 // loading: a retry returns at least that part. Otherwise the caller's own
-// access comes before Radar's limits.
+// access comes before KubeAtlas's limits.
 func TestPrimaryPrefersWhatAResolvesFirst(t *testing.T) {
-	if got := Primary([]Code{RadarNamespaceNotCollected, UserForbidden, KindSyncPending}); got != KindSyncPending {
+	if got := Primary([]Code{KubeAtlasNamespaceNotCollected, UserForbidden, KindSyncPending}); got != KindSyncPending {
 		t.Fatalf("Primary = %s", got)
 	}
-	if got := Primary([]Code{RadarNamespaceNotCollected, UserForbidden}); got != UserForbidden {
+	if got := Primary([]Code{KubeAtlasNamespaceNotCollected, UserForbidden}); got != UserForbidden {
 		t.Fatalf("Primary = %s", got)
 	}
-	if got := Primary([]Code{KindSyncTimedOut, RadarForbidden}); got != RadarForbidden {
+	if got := Primary([]Code{KindSyncTimedOut, KubeAtlasForbidden}); got != KubeAtlasForbidden {
 		t.Fatalf("Primary = %s", got)
 	}
 	if got := Primary([]Code{KindSyncPending, KindUnknown}); got != KindUnknown {
@@ -133,7 +133,7 @@ func TestAffectsWholeCluster(t *testing.T) {
 			t.Errorf("AffectsWholeCluster(%s) = false", c)
 		}
 	}
-	for _, c := range []Code{RadarCredentialsRejected, RadarForbidden, ConnectionChanged, KindSyncPending, UserForbidden} {
+	for _, c := range []Code{KubeAtlasCredentialsRejected, KubeAtlasForbidden, ConnectionChanged, KindSyncPending, UserForbidden} {
 		if AffectsWholeCluster(c) {
 			t.Errorf("AffectsWholeCluster(%s) = true", c)
 		}

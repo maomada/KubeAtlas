@@ -40,7 +40,7 @@ func FetchRelease(ctx context.Context) (*githubReleaseWithAssets, error) {
 	if err != nil {
 		return nil, fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("radar/%s", Current))
+	req.Header.Set("User-Agent", fmt.Sprintf("kubeatlas/%s", Current))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -96,7 +96,7 @@ func DownloadAsset(ctx context.Context, url string, dest string, progress Progre
 	if err != nil {
 		return fmt.Errorf("create request: %w", err)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("radar/%s", Current))
+	req.Header.Set("User-Agent", fmt.Sprintf("kubeatlas/%s", Current))
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -173,7 +173,7 @@ func VerifyChecksum(ctx context.Context, release *githubReleaseWithAssets, asset
 	if err != nil {
 		return fmt.Errorf("create checksum request: %w", err)
 	}
-	req.Header.Set("User-Agent", fmt.Sprintf("radar/%s", Current))
+	req.Header.Set("User-Agent", fmt.Sprintf("kubeatlas/%s", Current))
 
 	resp, err := client.Do(req)
 	if err != nil {

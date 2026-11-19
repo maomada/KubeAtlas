@@ -11,7 +11,7 @@ import (
 
 func TestApplyMountExcludesExecTools(t *testing.T) {
 	enableExecToolsForTest(t)
-	for _, base := range []string{"", "/radar"} {
+	for _, base := range []string{"", "/kubeatlas"} {
 		t.Run(base, func(t *testing.T) {
 			srv := server.New(server.Config{BasePath: base, MCPHandler: NewHandler(), MCPApplyHandler: NewApplyHandler()})
 			for _, path := range []string{"/mcp", "/mcp-apply"} {

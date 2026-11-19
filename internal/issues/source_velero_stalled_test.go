@@ -134,7 +134,7 @@ func TestVeleroStalledRun(t *testing.T) {
 	})
 }
 
-// The docs say Radar reports a Backup OR Restore still in flight. Restores went
+// The docs say KubeAtlas reports a Backup OR Restore still in flight. Restores went
 // down a different branch that never reached the check, so the claim was true of
 // half the kinds it named — and a stuck restore is the more urgent of the two,
 // because someone is waiting on it to get their data back.
@@ -411,7 +411,7 @@ func TestVeleroStalledDatesTheProblemNotTheRun(t *testing.T) {
 // Both numbers in a stall message run through the same formatter, and Velero
 // accepts a sub-minute itemOperationTimeout — so a formatter that bottoms out at
 // minutes turns the whole claim into "for 0m — past the 0m", which reads as a
-// bug in Radar rather than a stalled backup.
+// bug in KubeAtlas rather than a stalled backup.
 func TestVeleroDurationWordingCoversEveryScale(t *testing.T) {
 	for _, tc := range []struct {
 		d    time.Duration

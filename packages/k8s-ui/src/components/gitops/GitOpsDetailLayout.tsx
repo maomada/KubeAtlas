@@ -41,7 +41,7 @@ export interface GitOpsDetailStatus {
   sync: SyncStatus
   health: GitOpsHealthStatus
   // suspended is the *effective* suspended state (status-derived OR
-  // suspended-by-Radar via annotations). Caller resolves the OR.
+  // suspended-by-KubeAtlas via annotations). Caller resolves the OR.
   suspended: boolean
 }
 
@@ -198,15 +198,15 @@ export interface GitOpsDetailLayoutProps {
 
   // Fleet context — when true, render a destination cluster chip in the
   // header next to the title. Hub-web sets this to surface cross-cluster
-  // lineage; OSS leaves it false so single-cluster Radar's UX is unchanged.
+  // lineage; OSS leaves it false so single-cluster KubeAtlas's UX is unchanged.
   isFleetContext?: boolean
   destinationCluster?: { id: string; name: string }
 
-  // Tab-title side effect — sets document.title to "<name> · Radar" while
+  // Tab-title side effect — sets document.title to "<name> · KubeAtlas" while
   // mounted, restores on unmount. Opt-in so hub-web fleet detail can pick
   // its own title format ("<name> — Fleet GitOps").
   manageDocumentTitle?: boolean
-  documentTitleSuffix?: string                // defaults to " · Radar"
+  documentTitleSuffix?: string                // defaults to " · KubeAtlas"
 
   // Children slot — for dialogs (SyncOptionsDialog, RollbackDialog, …)
   // that should portal to body. Caller owns dialog state. Children render
@@ -273,7 +273,7 @@ export function GitOpsDetailLayout(props: GitOpsDetailLayoutProps) {
   useEffect(() => {
     if (!manageDocumentTitle) return
     const previous = document.title
-    const suffix = documentTitleSuffix ?? ' · Radar'
+    const suffix = documentTitleSuffix ?? ' · KubeAtlas'
     document.title = `${identity.name}${suffix}`
     return () => { document.title = previous }
   }, [identity.name, manageDocumentTitle, documentTitleSuffix])

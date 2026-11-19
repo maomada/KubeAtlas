@@ -154,11 +154,6 @@ func (p *portalHub) manageMembers(w http.ResponseWriter, r *http.Request, member
 		return
 	}
 	members := p.store.MembersForOrganization(organizationID)
-	for i := range members {
-		if members[i].ID == p.ownerID {
-			members[i].ID = hubstate.LocalMemberID
-		}
-	}
 	hubJSON(w, http.StatusOK, map[string]any{"members": members})
 }
 

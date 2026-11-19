@@ -392,7 +392,7 @@ it("uses the accent token for a generic ConfigMap Edit control", () => {
 it("keeps the SSA omission caveat in a direct editor save with a known paused baseline", () => {
   const target = { kind: "TaskBucket", namespace: "shop", name: "archive" };
   const baseline = { apiVersion: "example.test/v1", kind: "TaskBucket", metadata: { name: "archive", namespace: "shop", annotations: { "crossplane.io/paused": "true" } }, spec: { providerConfigRef: { name: "default" } } };
-  sessionStorage.setItem("radar_yaml_draft:TaskBucket/shop/archive", "apiVersion: example.test/v1\nkind: TaskBucket\nmetadata:\n  name: archive\n  namespace: shop\nspec:\n  providerConfigRef:\n    name: default\n");
+  sessionStorage.setItem("kubeatlas_yaml_draft:TaskBucket/shop/archive", "apiVersion: example.test/v1\nkind: TaskBucket\nmetadata:\n  name: archive\n  namespace: shop\nspec:\n  providerConfigRef:\n    name: default\n");
   act(() => root.render(<EditableYamlView resource={target as never} data={baseline} onCopy={() => {}} copied={false} onSave={async () => {}} />));
   expect(text()).toContain("Pause affects reconciliation");
   expect(text()).toContain("Omitting the annotation from server-side apply YAML does not guarantee its removal");
@@ -403,7 +403,7 @@ it("does not carry a paused baseline to a different API group in a direct editor
   const baseline = { apiVersion: "example.test/v1", kind: "TaskBucket", metadata: { name: "archive", namespace: "shop", annotations: { "crossplane.io/paused": "true" } }, spec: { providerConfigRef: { name: "default" } } };
   const yaml = "apiVersion: another.example.test/v1\nkind: TaskBucket\nmetadata:\n  name: archive\n  namespace: shop\nspec: {}\n";
   const onSave = vi.fn(async () => {});
-  sessionStorage.setItem("radar_yaml_draft:TaskBucket/shop/archive", yaml);
+  sessionStorage.setItem("kubeatlas_yaml_draft:TaskBucket/shop/archive", yaml);
   act(() => root.render(<EditableYamlView resource={target as never} data={baseline} onCopy={() => {}} copied={false} onSave={onSave} />));
   expect(text()).not.toContain("Pause affects reconciliation");
   expect(text()).not.toContain("Existing pause state is unknown");
@@ -449,19 +449,19 @@ it("keeps standalone recovery while ignoring legacy drafts in scoped Hub mode", 
   const draft = "apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: app\n  namespace: shop\ndata:\n  owner: unsaved\n";
   const onSave = vi.fn(async () => {});
   const onPreview = vi.fn(async () => reviewed("1"));
-  sessionStorage.setItem("radar_yaml_draft:ConfigMap/shop/app", draft);
+  sessionStorage.setItem("kubeatlas_yaml_draft:ConfigMap/shop/app", draft);
   render({ onSave, onPreview });
   expect(text()).toContain("正在编辑资源");
   expect(text()).toContain("查看更改");
 
   sessionStorage.clear();
-  sessionStorage.setItem("radar_yaml_draft:ConfigMap/shop/app", draft);
+  sessionStorage.setItem("kubeatlas_yaml_draft:ConfigMap/shop/app", draft);
   renderWithPolicy({ onSave, onPreview }, "hub-owner-a-cluster-a");
   expect(text()).not.toContain("正在编辑资源");
   expect(text()).not.toContain("查看更改");
   expect(onPreview).not.toHaveBeenCalled();
   expect(onSave).not.toHaveBeenCalled();
-  expect(sessionStorage.getItem("radar_yaml_draft:ConfigMap/shop/app")).toBe(draft);
+  expect(sessionStorage.getItem("kubeatlas_yaml_draft:ConfigMap/shop/app")).toBe(draft);
 });
 
 it("restores a scoped draft after a same-scope remount and ignores it in another scope", () => {
@@ -500,7 +500,7 @@ it("restores a scoped draft after a same-scope remount and ignores it in another
 
 it("keeps a leaf read-only policy additive to a writable host policy", () => {
   const draft = "owner-unsaved";
-  sessionStorage.setItem("radar_yaml_draft:ConfigMap/shop/app", draft);
+  sessionStorage.setItem("kubeatlas_yaml_draft:ConfigMap/shop/app", draft);
   sessionStorage.setItem(yamlDraftStorageKey("library-scope", resource), draft);
   act(() => root.render(
     <YamlDraftPolicyProvider scope="library-scope" readOnly={false}>

@@ -1,5 +1,5 @@
-// Coverage of a Radar read, as Radar's pkg/resourceapi serializes it. Codes
-// come from Radar's pkg/readreason.
+// Coverage of a KubeAtlas read, as KubeAtlas's pkg/resourceapi serializes it. Codes
+// come from KubeAtlas's pkg/readreason.
 
 /**
  * A known, finite set of `count` members. `names` lists all of them, sorted,
@@ -35,7 +35,7 @@ export interface ReadObjectRef {
 }
 
 /**
- * Part of an answer Radar did not read, and why. A gap covers every
+ * Part of an answer KubeAtlas did not read, and why. A gap covers every
  * combination of its axes. An axis that applies is always present, listed or
  * as an extent; an absent axis doesn't apply to the gap (namespaces on a
  * cluster-scoped kind). Within one answer a namespace is in at most one gap.
@@ -56,7 +56,7 @@ export type ReadNarrowing = 'user_access' | 'namespace_pin' | 'namespace_collect
 /**
  * A search's coverage: `partial` when something the query named couldn't be
  * searched or a read failed; `narrowedBy` when a broad query searched only
- * what the caller's access and Radar's collection allow.
+ * what the caller's access and KubeAtlas's collection allow.
  */
 export interface SearchCoverage {
   status: 'complete' | 'partial'

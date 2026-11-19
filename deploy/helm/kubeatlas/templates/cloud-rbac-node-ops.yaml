@@ -1,7 +1,7 @@
 {{- /*
-Node operations for the owner tier — cordon / uncordon / drain from Radar.
+Node operations for the owner tier — cordon / uncordon / drain from KubeAtlas.
 
-These are the exact verbs Radar's node-ops path uses (pkg/k8score/node_ops.go):
+These are the exact verbs KubeAtlas's node-ops path uses (pkg/k8score/node_ops.go):
   - patch nodes            → cordon / uncordon (spec.unschedulable strategic merge)
   - list pods (all ns)     → enumerate pods on the node to drain
   - create pods/eviction   → evict them (PodDisruptionBudgets are enforced by the
@@ -27,9 +27,9 @@ toString-eq gate: only a literal true enables a cluster-scoped write — a strin
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "radar.fullname" . }}-node-ops
+  name: {{ include "kubeatlas.fullname" . }}-node-ops
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
     resources: ["nodes"]
@@ -44,16 +44,19 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-owner-node-ops
+  name: {{ include "kubeatlas.fullname" . }}-cloud-owner-node-ops
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "radar.fullname" . }}-node-ops
+  name: {{ include "kubeatlas.fullname" . }}-node-ops
 subjects:
   - kind: Group
-    name: radar:owner
+    name: kubeatlas:owner
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "owner" | quote }}
     apiGroup: rbac.authorization.k8s.io
   # Legacy pre-rename vocabulary; kept for older hubs. Removed in v2.
   - kind: Group

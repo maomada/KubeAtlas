@@ -26,14 +26,14 @@
 #   - kubectl
 #   - helm
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-kyverno-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-kyverno-demo).
 #
 # See scripts/kyverno-demo/README.md for the coverage matrix and the
 # 1.20-simulation gotcha.
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-kyverno-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-kyverno-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/kyverno-demo"
@@ -90,7 +90,7 @@ cmd_up() {
   cmd_status
 
   printf "\n"
-  step "Run Radar against it"
+  step "Run KubeAtlas against it"
   note "kubectl config use-context ${KUBECTL_CTX}"
   note "./scripts/visual-test-start.sh"
 }
@@ -324,7 +324,7 @@ cmd_openreports() {
   printf "\n"
   note "Both families are now served; only one holds data. Selection that"
   note "takes the first SERVED group picks the empty one and reports zero"
-  note "findings. Radar probes each group for actual objects instead —"
+  note "findings. KubeAtlas probes each group for actual objects instead —"
   note "check the log for 'warming up N report CRDs from [openreports.io]'."
 }
 
@@ -339,7 +339,7 @@ cmd_modern_only() {
   note "that state — it sanity-checks for clusterpolicies.kyverno.io and"
   note "policies.kyverno.io at startup and exits when they are absent."
   note ""
-  note "That is upstream behaviour, not a Radar bug and not a broken cluster."
+  note "That is upstream behaviour, not a KubeAtlas bug and not a broken cluster."
   note "The reports controller stays healthy and the existing PolicyReports"
   note "survive, which is what the detection gate is tested against."
   note ""
@@ -384,7 +384,7 @@ cmd_modern_only() {
   ok "PolicyReports surviving: ${reports}"
   printf "\n"
   note "Detection keyed only on the legacy family would now report"
-  note "'not_installed' and drop the entire report index. Check Radar's log"
+  note "'not_installed' and drop the entire report index. Check KubeAtlas's log"
   note "for 'Kyverno detected' plus 'Index initialized with N subjects'."
 }
 

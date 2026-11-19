@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useLocation } from 'react-router-dom'
+import { getApiBase } from '../../api/config'
 import {
   COST_DISCOVERY_GRACE_MS,
   useClusterInfo,
@@ -42,6 +43,7 @@ import { RightsizingScanView } from '../rightsizing/RightsizingScanView'
 import { CostViewTabs } from './CostViewTabs'
 import { useNavCustomization } from '../../context/NavCustomization'
 import { CostConnectionAction } from './CostConnectionAction'
+import { OpenCostInstallAction } from './OpenCostInstallAction'
 import {
   costFreshnessLabel,
   costIntegrationUnavailableMessage,
@@ -96,7 +98,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
   if (!data || !data.available) {
     const reason = data?.reason
     const discoveryAgeMs = discoverySince == null ? 0 : Date.now() - discoverySince
-    if (isCostDiscoveryPending(reason) && discoveryAgeMs < COST_DISCOVERY_GRACE_MS) {
+    if (reason === 'no_prometheus' && discoveryAgeMs < COST_DISCOVERY_GRACE_MS) {
       return (
         <CostOverviewState>
           <div className="flex min-h-64 items-center justify-center">
@@ -130,13 +132,18 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
       settingsAvailable,
       namespaceScoped: namespaceScopeCount > 0,
     })
+    const apiBase = getApiBase()
+    const cluster = navCustomization.clusterDisplayName ?? ''
+    const canOfferInstall = Boolean(cluster) && navCustomization.embedded && /^\/c\/[a-z0-9][a-z0-9-]{0,62}\/api$/.test(apiBase)
+      && reason === 'no_cost_source' && namespaceScopeCount === 0 && connection.state === 'connected'
 
     return (
       <CostOverviewState>
         <div className="flex min-h-64 items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-theme-text-secondary">
             <Coins className="w-8 h-8 text-theme-text-tertiary/40" />
-            <p className="text-sm">{message}</p>
+            <p className="text-sm">{canOfferInstall ? '尚未接入成本数据。' : message}</p>
+            {canOfferInstall && <OpenCostInstallAction key={apiBase} cluster={cluster} onInstalled={() => { void refetch() }} />}
             <CostConnectionAction reason={reason}>
             {(reason === 'no_prometheus' || reason === 'no_cost_source' || reason === 'source_unavailable') && (
               <button
@@ -147,7 +154,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
                 disabled={isFetching}
                 className="rounded-md border border-theme-border px-3 py-1.5 text-xs text-theme-text-secondary transition-colors hover:bg-theme-hover hover:text-theme-text-primary disabled:cursor-not-allowed disabled:text-theme-text-disabled"
               >
-                {isFetching ? 'Checking…' : 'Check again'}
+                {isFetching ? '正在检查…' : '重新检测'}
               </button>
             )}
             </CostConnectionAction>
@@ -155,7 +162,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
               onClick={onBack}
               className="text-xs text-accent-text hover:text-theme-text-primary transition-colors"
             >
-              Back to Dashboard
+              返回概览
             </button>
           </div>
         </div>

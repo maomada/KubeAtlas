@@ -31,7 +31,7 @@ func (c *Client) workloadScopeNotice() string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	if c.workloadScopeEverSet && c.workloadScope == nil {
-		return "The previous cluster-scope override was cleared because the cluster or metrics connection changed. Radar is checking metric identity automatically."
+		return "The previous cluster-scope override was cleared because the cluster or metrics connection changed. KubeAtlas is checking metric identity automatically."
 	}
 	return ""
 }

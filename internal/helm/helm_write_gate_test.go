@@ -22,7 +22,7 @@ import (
 )
 
 // With a signed-in caller the Helm write gate asks about the caller, in the
-// release's namespace, not about Radar's ServiceAccount: an IdP group bound to
+// release's namespace, not about KubeAtlas's ServiceAccount: an IdP group bound to
 // edit in one namespace can manage releases there without rbac.helm=true.
 func TestRequireHelmWrite_ChecksCallerInNamespace(t *testing.T) {
 	var reviews atomic.Int32
@@ -38,7 +38,7 @@ func TestRequireHelmWrite_ChecksCallerInNamespace(t *testing.T) {
 		}
 		a := review.Spec.ResourceAttributes
 		allowed := a != nil && a.Namespace == "payments" && a.Resource == "secrets" && a.Verb == "create" &&
-			slices.Contains(review.Spec.Groups, "radar:idp:platform-eng")
+			slices.Contains(review.Spec.Groups, "kubeatlas:idp:platform-eng")
 		w.Header().Set("Content-Type", "application/json")
 		writeTestJSON(t, w, authv1.SubjectAccessReview{
 			TypeMeta: metav1.TypeMeta{APIVersion: "authorization.k8s.io/v1", Kind: "SubjectAccessReview"},
@@ -63,11 +63,11 @@ func TestRequireHelmWrite_ChecksCallerInNamespace(t *testing.T) {
 		namespace string
 		want      int
 	}{
-		{"group bound in the namespace", "helm-gate-dana", []string{"radar:viewer", "radar:idp:platform-eng"}, "payments", http.StatusOK},
-		{"same user after the IdP removes the group", "helm-gate-dana", []string{"radar:viewer"}, "payments", http.StatusForbidden},
-		{"same group, another namespace", "helm-gate-dana", []string{"radar:viewer", "radar:idp:platform-eng"}, "billing", http.StatusForbidden},
-		{"hub role alone grants nothing here", "helm-gate-eli", []string{"radar:owner"}, "payments", http.StatusForbidden},
-		{"pod-local change needs no cluster permission", "helm-gate-fay", []string{"radar:viewer"}, "", http.StatusOK},
+		{"group bound in the namespace", "helm-gate-dana", []string{"kubeatlas:viewer", "kubeatlas:idp:platform-eng"}, "payments", http.StatusOK},
+		{"same user after the IdP removes the group", "helm-gate-dana", []string{"kubeatlas:viewer"}, "payments", http.StatusForbidden},
+		{"same group, another namespace", "helm-gate-dana", []string{"kubeatlas:viewer", "kubeatlas:idp:platform-eng"}, "billing", http.StatusForbidden},
+		{"hub role alone grants nothing here", "helm-gate-eli", []string{"kubeatlas:owner"}, "payments", http.StatusForbidden},
+		{"pod-local change needs no cluster permission", "helm-gate-fay", []string{"kubeatlas:viewer"}, "", http.StatusOK},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -95,7 +95,7 @@ func TestRequireHelmWrite_ChecksCallerInNamespace(t *testing.T) {
 		rctx.URLParams.Add("namespace", "billing")
 		rctx.URLParams.Add("name", "web")
 		ctx := context.WithValue(req.Context(), chi.RouteCtxKey, rctx)
-		req = req.WithContext(auth.ContextWithUser(ctx, &auth.User{Username: "helm-gate-dana", Groups: []string{"radar:viewer", "radar:idp:platform-eng"}}))
+		req = req.WithContext(auth.ContextWithUser(ctx, &auth.User{Username: "helm-gate-dana", Groups: []string{"kubeatlas:viewer", "kubeatlas:idp:platform-eng"}}))
 		rec := httptest.NewRecorder()
 		NewHandlers(nil).handlePreviewValues(rec, req)
 		if rec.Code != http.StatusForbidden {

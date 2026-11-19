@@ -46,7 +46,7 @@ const (
 //
 // A policy is declared intent: whether it is enforced depends on the network
 // plugin, so the copy says "would", and the severity stays warning. Policy
-// APIs Radar doesn't evaluate can allow what core policies deny, so a Service
+// APIs KubeAtlas doesn't evaluate can allow what core policies deny, so a Service
 // whose backends one of them may select is skipped.
 func detectNetworkPolicyDenyAllIngress(cache *ResourceCache, namespace string, podsByNamespace map[string][]*corev1.Pod, now time.Time) []Detection {
 	// A partly synced policy list can hold a deny-all without the policy that
@@ -103,7 +103,7 @@ func detectNetworkPolicyDenyAllIngress(cache *ResourceCache, namespace string, p
 
 // otherPolicyAPIs can allow traffic that the core NetworkPolicies alone would
 // deny: Antrea and AWS VPC CNI policies add allow rules to the same pods, and
-// admin-tier cluster policies are evaluated ahead of them. Radar doesn't
+// admin-tier cluster policies are evaluated ahead of them. KubeAtlas doesn't
 // evaluate their rules or selectors, so a namespace where any of them may
 // apply gets no deny-all verdict. Cilium and Calico policies are matched per
 // pod instead (ciliumMaySelect, calicoMaySelect), because a cluster-wide one
@@ -129,10 +129,10 @@ type policyObjectLister interface {
 	IsSynced(gvr schema.GroupVersionResource) bool
 }
 
-// otherPolicyView answers, per namespace, whether a policy Radar doesn't
+// otherPolicyView answers, per namespace, whether a policy KubeAtlas doesn't
 // evaluate may apply there. Anything it can't rule out counts as applying: an
 // API that is served but can't be listed or isn't synced, a missing dynamic
-// cache, or a selector Radar can't judge.
+// cache, or a selector KubeAtlas can't judge.
 type otherPolicyView struct {
 	discovery policyAPIDiscovery
 	lister    policyObjectLister // nil when no dynamic cache exists
@@ -299,7 +299,7 @@ func (v *otherPolicyView) clusterWidePolicyApplies() bool {
 }
 
 // ciliumMaySelect reports whether a Cilium policy has allow rules in dir for
-// any of the pods, or can't be ruled out (a selector on a label Radar can't
+// any of the pods, or can't be ruled out (a selector on a label KubeAtlas can't
 // reproduce). Cilium adds its allow rules to those of core policies, so such
 // a policy may allow what they deny.
 func ciliumMaySelect(policy *unstructured.Unstructured, pods []*corev1.Pod, ns *corev1.Namespace, dir netpol.Direction) bool {
@@ -313,7 +313,7 @@ func ciliumMaySelect(policy *unstructured.Unstructured, pods []*corev1.Pod, ns *
 }
 
 // calicoMaySelect reports whether a Calico policy that may allow traffic in
-// dir selects any of the pods, or can't be ruled out. Radar doesn't read
+// dir selects any of the pods, or can't be ruled out. KubeAtlas doesn't read
 // ServiceAccount labels here, and namespace labels may be unknown, so those
 // selectors are dropped before matching: what remains can still exclude the
 // pods, but a match only means the policy may apply.
@@ -381,7 +381,7 @@ func calicoCovers(policy *unstructured.Unstructured, dir netpol.Direction) bool 
 
 // calicoMayAllow reports whether a policy has a rule in dir that may allow
 // traffic: Allow, Pass (a Pass in the default tier falls through to profiles,
-// which allow), or an action Radar can't read. A policy with no rules there,
+// which allow), or an action KubeAtlas can't read. A policy with no rules there,
 // or only Deny and Log rules, can't allow what a core NetworkPolicy denies;
 // Calico's recommended global default-deny is one.
 func calicoMayAllow(policy *unstructured.Unstructured, dir netpol.Direction) bool {
@@ -439,7 +439,7 @@ type denyAllIngressImpact struct {
 // namespace's policies, Services and pods. Zero fields mean "nothing": no
 // other policy engine applies, and no owners are resolved.
 type denyAllEnv struct {
-	// otherMayApply reports whether a policy Radar doesn't evaluate may allow
+	// otherMayApply reports whether a policy KubeAtlas doesn't evaluate may allow
 	// traffic in a direction for any of a Service's backends.
 	otherMayApply func([]*corev1.Pod, netpol.Direction) bool
 	ownerOf       func(*corev1.Pod) (group, kind, name string)
@@ -698,7 +698,7 @@ func denyAllIngressDetection(np *networkingv1.NetworkPolicy, impact *denyAllIngr
 		Severity:          "warning",
 		Reason:            NetworkPolicyDenyAllIngressReason,
 		Message:           message,
-		MessageSource:     issuesapi.MessageSourceRadar,
+		MessageSource:     issuesapi.MessageSourceKubeAtlas,
 		Cause:             cause,
 		Action:            action,
 		Fingerprint:       NetworkPolicyDenyAllIngressFingerprint,

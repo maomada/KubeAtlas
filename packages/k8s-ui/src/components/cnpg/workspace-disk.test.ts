@@ -58,7 +58,7 @@ describe('cnpgDiskFact', () => {
 
 describe('applyCNPGDisk', () => {
   it('says when the volume stats were matched to the cluster by claim name only', () => {
-    const note = "Matched by namespace and claim names. Radar couldn't confirm these volume stats belong to this exact cluster (no cluster label it could check)"
+    const note = "Matched by namespace and claim names. KubeAtlas couldn't confirm these volume stats belong to this exact cluster (no cluster label it could check)"
     const fleet = applyCNPGDisk(fleetOf('pg-a'), [reading('pg-a', { max: max(0.95), isolation: { mode: 'unverified', note } })])
     const p = fleet.rows[0].problems[0]
     expect(p).toMatchObject({ measuredBy: 'kubelet, matched by claim name', unverifiedMatch: true })
@@ -85,9 +85,9 @@ describe('applyCNPGDisk', () => {
   })
 
   it('raises nothing without a measurement', () => {
-    const fleet = applyCNPGDisk(fleetOf('pg-a'), [reading('pg-a', { state: 'noPrometheus', measured: 0, reason: 'Radar is not connected to Prometheus: x' })])
+    const fleet = applyCNPGDisk(fleetOf('pg-a'), [reading('pg-a', { state: 'noPrometheus', measured: 0, reason: 'KubeAtlas is not connected to Prometheus: x' })])
     expect(fleet.attentionCount).toBe(0)
-    expect(fleet.rows[0].disk).toMatchObject({ text: 'No usage metrics', source: 'Prometheus not connected', detail: 'Radar is not connected to Prometheus: x' })
+    expect(fleet.rows[0].disk).toMatchObject({ text: 'No usage metrics', source: 'Prometheus not connected', detail: 'KubeAtlas is not connected to Prometheus: x' })
   })
 
   it('leaves the fleet as built when no reading was requested', () => {

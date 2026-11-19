@@ -171,7 +171,7 @@ func (d *DynamicResourceCache) retainObservation(gvr schema.GroupVersionResource
 }
 
 // retainAuthProbeFailure records an access probe that failed authentication
-// or authorization, and reports whether err was one. A 401 rejects Radar's
+// or authorization, and reports whether err was one. A 401 rejects KubeAtlas's
 // credentials, which no grant on this kind fixes, so it is recorded apart from
 // an RBAC denial.
 func (d *DynamicResourceCache) retainAuthProbeFailure(gvr schema.GroupVersionResource, preferredNS string, complete bool, err error) bool {
@@ -396,7 +396,7 @@ func (d *DynamicResourceCache) ensureWatching(gvr schema.GroupVersionResource, p
 
 // EnsureWatchingContext starts watching gvr if no watch covers preferredNS yet
 // ("" for every namespace). ctx bounds only how long this caller waits for
-// discovery and for Radar's access check; the check and any watches it starts
+// discovery and for KubeAtlas's access check; the check and any watches it starts
 // belong to the cache and outlive ctx.
 func (d *DynamicResourceCache) EnsureWatchingContext(ctx context.Context, gvr schema.GroupVersionResource, preferredNS string) error {
 	if err := ctx.Err(); err != nil {
@@ -585,7 +585,7 @@ func (d *DynamicResourceCache) startWatchingScope(gvr schema.GroupVersionResourc
 	if err := informer.SetTransform(DropUnstructuredManagedFields); err != nil {
 		log.Printf("Warning: SetTransform failed for %v: %v (cache will retain managedFields/CRD schemas)", gvr, err)
 	}
-	// The factory makes one informer per GVR and Radar never drops a
+	// The factory makes one informer per GVR and KubeAtlas never drops a
 	// cluster-wide one, so this informer is new. Code that stops informers
 	// must build a fresh factory: this one would hand back a stopped informer
 	// that reports synced. Without an index, reads of it from this GVR fail
@@ -954,7 +954,7 @@ type probeRetry struct {
 	running bool
 	// owned: a goroutine is re-checking this record, fast or slowly.
 	owned bool
-	// rejected: Kubernetes rejected Radar's credentials during a re-check,
+	// rejected: Kubernetes rejected KubeAtlas's credentials during a re-check,
 	// so nothing re-checks the record again.
 	rejected bool
 	answered map[string]time.Time
@@ -1143,7 +1143,7 @@ func waitFor(ctx context.Context, delay time.Duration) bool {
 // retryOnce re-checks r's unanswered access checks once: the whole walk when
 // the cluster-wide check never answered, otherwise each unanswered namespace.
 // It reports whether retrying should stop: the checks settled, ctx ended, a
-// watch couldn't start, or Kubernetes rejected Radar's credentials.
+// watch couldn't start, or Kubernetes rejected KubeAtlas's credentials.
 func (d *DynamicResourceCache) retryOnce(ctx context.Context, gvr schema.GroupVersionResource, r *probeRetry) bool {
 	d.mu.RLock()
 	pending, whole, fullWalk := slices.Clone(r.unanswered), r.whole, r.fullWalk
@@ -1199,7 +1199,7 @@ func (d *DynamicResourceCache) retryOnce(ctx context.Context, gvr schema.GroupVe
 			cancel()
 			<-d.probeSlots
 			if apierrors.IsUnauthorized(probeErr) {
-				// A 401 rejects Radar's credentials, not this namespace:
+				// A 401 rejects KubeAtlas's credentials, not this namespace:
 				// stop for good, as the first walk does.
 				d.retainAuthProbeFailure(gvr, "", true, probeErr)
 				d.mu.Lock()
@@ -1458,7 +1458,7 @@ func (d *DynamicResourceCache) enqueueDynamicChange(kind string, gvr schema.Grou
 	}
 	// Callbacks consume the resource object, not client-go's delivery
 	// wrapper. Keeping the wrapper here silently drops dynamic deletes in
-	// Radar's timeline callback even though identity was resolved above.
+	// KubeAtlas's timeline callback even though identity was resolved above.
 	obj = u
 
 	namespace := u.GetNamespace()
@@ -1501,7 +1501,7 @@ func (d *DynamicResourceCache) enqueueDynamicChange(kind string, gvr schema.Grou
 		Resource:  gvr.Resource,
 	}
 
-	// Always fire OnChange (even during sync adds — Radar uses this for timeline)
+	// Always fire OnChange (even during sync adds — KubeAtlas uses this for timeline)
 	if d.config.OnChange != nil {
 		d.safeCallback("OnChange", func() { d.config.OnChange(change, obj, oldObj) })
 	}
@@ -1593,7 +1593,7 @@ func (d *DynamicResourceCache) readEntries(gvr schema.GroupVersionResource, ns s
 		}
 		return nil
 	}
-	// ns == "" ("all namespaces") with no cluster-wide informer. When Radar
+	// ns == "" ("all namespaces") with no cluster-wide informer. When KubeAtlas
 	// connects with a namespace-restricted identity (fallbacks configured),
 	// cluster-wide list was denied so the only informers for this GVR are
 	// per-namespace — union them, otherwise an all-namespaces read returns

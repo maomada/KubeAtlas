@@ -13,7 +13,7 @@ func loadFixture(t *testing.T, name string) string {
 	if err != nil {
 		t.Fatalf("read fixture %s: %v", name, err)
 	}
-	return string(b)
+	return strings.ReplaceAll(string(b), "\r\n", "\n")
 }
 
 func mustInt(t *testing.T, p *int, label string) int {

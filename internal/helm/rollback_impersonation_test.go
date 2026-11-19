@@ -13,7 +13,7 @@ import (
 )
 
 // The streaming rollback is a cluster write; when a user is attached it must
-// reach the API server as that user, never as Radar's ServiceAccount.
+// reach the API server as that user, never as KubeAtlas's ServiceAccount.
 func TestRollbackWithProgressAsUser_Impersonates(t *testing.T) {
 	var mu sync.Mutex
 	var seen []string
@@ -28,7 +28,7 @@ func TestRollbackWithProgressAsUser_Impersonates(t *testing.T) {
 	defer srv.Close()
 
 	c := &Client{settings: cli.New(), restConfig: &rest.Config{Host: srv.URL}}
-	if err := c.RollbackWithProgressAsUser("team-a", "web", 1, &pkgauth.User{Username: "alice", Groups: []string{"radar:idp:team-a"}}, nil); err == nil {
+	if err := c.RollbackWithProgressAsUser("team-a", "web", 1, &pkgauth.User{Username: "alice", Groups: []string{"kubeatlas:idp:team-a"}}, nil); err == nil {
 		t.Fatal("rollback succeeded against a server that forbids everything")
 	}
 
@@ -43,8 +43,8 @@ func TestRollbackWithProgressAsUser_Impersonates(t *testing.T) {
 		}
 		// IdP orgs grant access through the group, so dropping it would deny
 		// a user Kubernetes allows.
-		if !slices.Contains(groups[i], "radar:idp:team-a") {
-			t.Errorf("request %d Impersonate-Group = %v, want radar:idp:team-a", i, groups[i])
+		if !slices.Contains(groups[i], "kubeatlas:idp:team-a") {
+			t.Errorf("request %d Impersonate-Group = %v, want kubeatlas:idp:team-a", i, groups[i])
 		}
 	}
 }

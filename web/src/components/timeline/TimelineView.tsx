@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { useState, useMemo, useRef, useCallback, useEffect } from 'react'
 import { useNavigate, useSearchParams } from 'react-router-dom'
 import type { ReactNode } from 'react'
@@ -42,10 +43,10 @@ const EMPTY_EVENTS: never[] = []
 // enough to render the label with zero event data — either a resource ref or an
 // app-group ref. isPinnedLaneRef tolerates legacy entries (resource refs written
 // before app-group pins existed carry no `type` discriminant).
-const PINNED_LANES_KEY = 'radar.timeline.pinnedLanes'
+const PINNED_LANES_KEY = 'kubeatlas.timeline.pinnedLanes'
 function loadPinnedLanes(): PinnedLaneRef[] {
   try {
-    const raw = localStorage.getItem(PINNED_LANES_KEY)
+    const raw = readProductStorage(localStorage, PINNED_LANES_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw)
     if (!Array.isArray(parsed)) return []

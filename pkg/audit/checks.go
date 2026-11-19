@@ -168,7 +168,7 @@ func RunChecks(input *CheckInput) *ScanResults {
 	findings = append(findings, checkCNPGDeclarativeBackup(tr, input)...)
 	findings = append(findings, checkStorage(tr, input, time.Now())...)
 
-	// --- Per-resource opt-outs (radarhq.io/ignore-checks) ---
+	// --- Per-resource opt-outs (kubeatlas.io/ignore-checks) ---
 	// One central seam instead of a per-check concern: every check emits
 	// normally, then a subject's annotation withdraws its own findings and its
 	// own evaluated tally before results are built.
@@ -870,7 +870,7 @@ func checkPodSpecEfficiency(tr *evalTracker, kind, namespace, name string, spec 
 }
 
 // ============================================================================
-// Cross-resource checks (Radar-native)
+// Cross-resource checks (KubeAtlas-native)
 // ============================================================================
 
 func checkServiceNoMatchingPods(tr *evalTracker, services []*corev1.Service, podsBySelector map[string][]*corev1.Pod) []Finding {

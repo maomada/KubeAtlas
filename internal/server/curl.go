@@ -149,13 +149,13 @@ func (s *Server) authorizeCurl(ctx context.Context, r *http.Request, namespace, 
 // originates in-cluster and the response flows back to the browser. Critically it
 // dials the Service directly rather than via the apiserver services/proxy — the
 // latter forwards the caller's Kubernetes credentials to the workload, which would
-// leak Radar's token to anything you curl. Authorization is re-created with an
+// leak KubeAtlas's token to anything you curl. Authorization is re-created with an
 // explicit SubjectAccessReview.
 func (s *Server) handleCurlService(w http.ResponseWriter, r *http.Request) {
 	// Direct dial only works from inside the cluster network (Cloud / in-cluster).
 	// Locally you'd port-forward instead.
 	if !k8s.IsInCluster() {
-		s.writeError(w, http.StatusBadRequest, "Service curl is only available when Radar runs in-cluster")
+		s.writeError(w, http.StatusBadRequest, "Service curl is only available when KubeAtlas runs in-cluster")
 		return
 	}
 

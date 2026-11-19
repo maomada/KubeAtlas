@@ -18,7 +18,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/resourceid"
 )
 
-// charSource serves the fixture to the ownership source through Radar's own
+// charSource serves the fixture to the ownership source through KubeAtlas's own
 // caches: its typed objects from a fake clientset, with every kind the typed
 // cache holds collected, and its custom resources from a fake dynamic client,
 // each kind watched at its fixture version. Discovery
@@ -32,7 +32,7 @@ func charSource(t *testing.T, f *charFixture) ownership.Source {
 			typed = append(typed, o.obj.(runtime.Object).DeepCopyObject())
 		}
 	}
-	// Every kind Radar's typed cache holds, as production collects them.
+	// Every kind KubeAtlas's typed cache holds, as production collects them.
 	enabled := map[string]bool{}
 	for _, kl := range k8score.AllKindListers() {
 		if b, ok := resourceid.BuiltinForKind(kl.Kind()); ok && b.Group == kl.Group() && b.Kind != "Event" {

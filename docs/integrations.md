@@ -889,7 +889,7 @@ They roll up under three categories, split by what you'd go and look at: `backup
 
 KubeAtlas surfaces failure evidence from `KafkaConnector` resources in `kafka.strimzi.io` through Issues, including the API and MCP. A connector can remain `RUNNING` while an individual task is `FAILED`; KubeAtlas checks both. Explicit connector/task failures and `NotReady=True` produce one warning per connector, attributed to Strimzi's operator snapshot. Task IDs are bounded; configurations, exception messages and stack traces are not included in the issue.
 
-This requires existing Kubernetes read access to the connector CRs, with no Kafka credentials or additional settings. Connectors managed only through the Connect REST API are outside this coverage. KubeAtlas does not connect to Connect or Kafka directly. The default integration-read role used by legacy upstream Radar Cloud does not add `kafkaconnectors` access because full connector objects can contain credentials; callers need an existing separately authorized read grant.
+This requires existing Kubernetes read access to the connector CRs, with no Kafka credentials or additional settings. Connectors managed only through the Connect REST API are outside this coverage. KubeAtlas does not connect to Connect or Kafka directly. The default integration-read role used by legacy upstream cloud does not add `kafkaconnectors` access because full connector objects can contain credentials; callers need an existing separately authorized read grant.
 
 Missing or malformed observations do not establish health. KubeAtlas suppresses these warnings when the observed generation is absent or differs from the resource generation, reconciliation is paused, or the resource is terminating. Matching generations only establishes that Strimzi processed that specification; runtime state can change before the next reconciliation. Intentional `PAUSED`/`STOPPED` states and task-count differences are not treated as failures. Failure onset is unknown because operator condition timestamps do not reliably establish when a task failed.
 
@@ -1190,7 +1190,7 @@ The count of queued work appears **on the policy itself**, above its configurati
 | EphemeralReport | `reports.kyverno.io/v1` | — | Yes | — |
 | ClusterEphemeralReport | `reports.kyverno.io/v1` | — | Yes | — |
 
-PolicyReport findings are policy posture, not live operational failure, so they are **not** part of the `/api/issues` stream. They surface per-resource: the PolicyReport detail view (above) and the `resourceContext` policy rollup on a resource fetched via `get_resource`. (The cluster audit — `/api/audit` + MCP `get_cluster_audit` — is radar's own static best-practice scanner and does **not** include PolicyReport results.)
+PolicyReport findings are policy posture, not live operational failure, so they are **not** part of the `/api/issues` stream. They surface per-resource: the PolicyReport detail view (above) and the `resourceContext` policy rollup on a resource fetched via `get_resource`. (The cluster audit — `/api/audit` + MCP `get_cluster_audit` — is kubeatlas's own static best-practice scanner and does **not** include PolicyReport results.)
 
 **Limitations**:
 - Queued work (`UpdateRequest`) is only shown for policies that generate or mutate existing resources, and only while it is in flight — Kyverno deletes these seconds after the work completes, so an empty section is the normal resting state rather than evidence that nothing ran.

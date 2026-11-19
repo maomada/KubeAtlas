@@ -100,7 +100,7 @@ func TestHasCloudLBAnnotations(t *testing.T) {
 // address signals must read as served, not broken.
 func TestIngressControllerFinding_Honesty(t *testing.T) {
 	t.Run("unwired deps (couldn't read IngressClasses) → soft pill, NEVER condemn", func(t *testing.T) {
-		// Deps{} has a nil Dynamic/Discovery - Radar couldn't READ the classes,
+		// Deps{} has a nil Dynamic/Discovery - KubeAtlas couldn't READ the classes,
 		// which is not the same as "none configured". Fail toward silence: a soft
 		// "couldn't identify the controller" pill, never the no-controller condemn
 		// of a possibly-healthy Ingress.
@@ -383,7 +383,7 @@ func TestIngressControllerStatus_ScopedCallerRedaction(t *testing.T) {
 		deps.AllowedNamespaces = []string{"ns"} // the Ingress's own namespace only
 
 		// Wait until the pod cache serves the pods, so the test pins the
-		// REDACTION (pods visible to radar, withheld from the caller), not a
+		// REDACTION (pods visible to kubeatlas, withheld from the caller), not a
 		// cold cache.
 		waitFor(t, func() bool {
 			unscoped := deps

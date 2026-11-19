@@ -15,6 +15,7 @@ import (
 
 	"github.com/maomada/KubeAtlas/internal/cloud"
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 )
 
 func TestUserTokenFailureLogsDoNotExposeClaimsOrReviewErrors(t *testing.T) {
@@ -32,7 +33,7 @@ func TestUserTokenFailureLogsDoNotExposeClaimsOrReviewErrors(t *testing.T) {
 		{"rejected", nil, apierrors.NewUnauthorized(reviewError + " " + token), http.StatusForbidden, "token_rejected", "Kubernetes rejected the sign-in token"},
 		{"outage", nil, errors.New(reviewError + " " + token), http.StatusServiceUnavailable, "token_review_unavailable", "Kubernetes token review unavailable"},
 		{"mismatch", &User{Username: "other-private-user"}, nil, http.StatusForbidden, "token_identity_mismatch", "token identity does not match forwarded identity"},
-		{"reserved group", &User{Username: username, Groups: []string{"radar:private-group"}}, nil, http.StatusForbidden, "token_reserved_group", "token identity carries a reserved group"},
+		{"reserved group", &User{Username: username, Groups: []string{"kubeatlas:private-group"}}, nil, http.StatusForbidden, "token_reserved_group", "token identity carries a reserved group"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var output bytes.Buffer
@@ -53,7 +54,7 @@ func TestUserTokenFailureLogsDoNotExposeClaimsOrReviewErrors(t *testing.T) {
 			if !strings.Contains(output.String(), tc.event) {
 				t.Fatal("missing authentication outcome event")
 			}
-			for _, sensitive := range []string{username, token, reviewError, "other-private-user", "radar:private-group"} {
+			for _, sensitive := range []string{username, token, reviewError, "other-private-user", "kubeatlas:private-group"} {
 				if strings.Contains(output.String(), sensitive) {
 					t.Error("diagnostic log includes a private claim or upstream error")
 				}
@@ -104,7 +105,7 @@ func reviewerFor(username string, groups ...string) func(context.Context, string
 func TestUserToken_TokenIdentityComesFromTheAPIServer(t *testing.T) {
 	userTokenMode(t)
 	rec, got := serveUserToken(t, reviewerFor("oidc:alice@example.com", "k8s-admins", "system:authenticated"),
-		"oidc:alice@example.com", "k8s-admins-forged,radar:member,radar:org:o1,radar:user:u1", "good-token")
+		"oidc:alice@example.com", "k8s-admins-forged,kubeatlas:member,kubeatlas:org:o1,kubeatlas:user:u1", "good-token")
 	if rec.Code != http.StatusOK || got == nil {
 		t.Fatalf("status = %d, user = %v", rec.Code, got)
 	}
@@ -114,7 +115,7 @@ func TestUserToken_TokenIdentityComesFromTheAPIServer(t *testing.T) {
 	if !slices.Equal(got.Groups, []string{"k8s-admins", "system:authenticated"}) {
 		t.Fatalf("groups = %v, want the API server's groups only", got.Groups)
 	}
-	if !slices.Equal(got.HubGroups, []string{"radar:member", "radar:org:o1", "radar:user:u1"}) {
+	if !slices.Equal(got.HubGroups, []string{"kubeatlas:member", "kubeatlas:org:o1", "kubeatlas:user:u1"}) {
 		t.Fatalf("hub groups = %v", got.HubGroups)
 	}
 	ctx := ContextWithUser(context.Background(), got)
@@ -125,7 +126,7 @@ func TestUserToken_TokenIdentityComesFromTheAPIServer(t *testing.T) {
 
 func TestUserToken_ForwardedUserMustMatchToken(t *testing.T) {
 	userTokenMode(t)
-	rec, got := serveUserToken(t, reviewerFor("oidc:bob@example.com"), "oidc:alice@example.com", "radar:owner", "good-token")
+	rec, got := serveUserToken(t, reviewerFor("oidc:bob@example.com"), "oidc:alice@example.com", "kubeatlas:owner", "good-token")
 	if rec.Code != http.StatusForbidden || got != nil {
 		t.Fatalf("status = %d, want 403 without reaching the handler", rec.Code)
 	}
@@ -133,7 +134,7 @@ func TestUserToken_ForwardedUserMustMatchToken(t *testing.T) {
 
 func TestUserToken_RejectedTokenIs403(t *testing.T) {
 	userTokenMode(t)
-	rec, got := serveUserToken(t, reviewerFor("oidc:alice@example.com"), "oidc:alice@example.com", "radar:owner", "expired-token")
+	rec, got := serveUserToken(t, reviewerFor("oidc:alice@example.com"), "oidc:alice@example.com", "kubeatlas:owner", "expired-token")
 	if rec.Code != http.StatusForbidden || got != nil {
 		t.Fatalf("status = %d, want 403 (a 401 reloads the web client in a loop)", rec.Code)
 	}
@@ -141,8 +142,8 @@ func TestUserToken_RejectedTokenIs403(t *testing.T) {
 
 func TestUserToken_ReservedTokenGroupRefused(t *testing.T) {
 	userTokenMode(t)
-	for _, g := range []string{"radar:system", "radar:ai:reader", "cloud:owner", "system:masters"} {
-		rec, got := serveUserToken(t, reviewerFor("oidc:alice@example.com", "shop-admins", g), "oidc:alice@example.com", "radar:member", "good-token")
+	for _, g := range []string{"kubeatlas:system", "kubeatlas:ai:reader", "cloud:owner", "system:masters"} {
+		rec, got := serveUserToken(t, reviewerFor("oidc:alice@example.com", "shop-admins", g), "oidc:alice@example.com", "kubeatlas:member", "good-token")
 		if rec.Code != http.StatusForbidden || got != nil {
 			t.Errorf("token group %s: status = %d, want 403", g, rec.Code)
 		}
@@ -151,7 +152,7 @@ func TestUserToken_ReservedTokenGroupRefused(t *testing.T) {
 
 func TestUserToken_ReviewOutageIs503(t *testing.T) {
 	userTokenMode(t)
-	rec, got := serveUserToken(t, reviewerFor("oidc:alice@example.com"), "oidc:alice@example.com", "radar:owner", "flaky-token")
+	rec, got := serveUserToken(t, reviewerFor("oidc:alice@example.com"), "oidc:alice@example.com", "kubeatlas:owner", "flaky-token")
 	if rec.Code != http.StatusServiceUnavailable || got != nil {
 		t.Fatalf("status = %d, want 503 so the person isn't sent to sign in again", rec.Code)
 	}
@@ -159,7 +160,7 @@ func TestUserToken_ReviewOutageIs503(t *testing.T) {
 
 func TestUserToken_NoTokenHumanKeepsKubernetesGroupsApartFromHubGroups(t *testing.T) {
 	userTokenMode(t)
-	rec, got := serveUserToken(t, nil, "oidc:alice@example.com", "k8s-admins,radar:owner,radar:org:o1", "")
+	rec, got := serveUserToken(t, nil, "oidc:alice@example.com", "k8s-admins,kubeatlas:owner,kubeatlas:org:o1", "")
 	if rec.Code != http.StatusOK || got == nil {
 		t.Fatalf("status = %d", rec.Code)
 	}
@@ -167,9 +168,9 @@ func TestUserToken_NoTokenHumanKeepsKubernetesGroupsApartFromHubGroups(t *testin
 		t.Fatalf("no-token human got %+v", got)
 	}
 	if !slices.Equal(got.Groups, []string{"k8s-admins"}) {
-		t.Fatalf("groups = %v, want radar:* groups excluded from the Kubernetes identity", got.Groups)
+		t.Fatalf("groups = %v, want kubeatlas:* groups excluded from the Kubernetes identity", got.Groups)
 	}
-	if !slices.Equal(got.HubGroups, []string{"radar:owner", "radar:org:o1"}) {
+	if !slices.Equal(got.HubGroups, []string{"kubeatlas:owner", "kubeatlas:org:o1"}) {
 		t.Fatalf("hub groups = %v", got.HubGroups)
 	}
 }
@@ -180,12 +181,14 @@ func TestUserToken_SystemIdentityAllowList(t *testing.T) {
 		user, groups string
 		system       bool
 	}{
-		{"radar:system:hub-timeline-puller", "radar:system", true},
-		{"radar:system:alerts:org-1", "radar:system", true},
-		{"radar:ai:org-1", "radar:ai:reader", true},
-		{"radar:system:alerts:org-1", "radar:system,radar:owner", false},
-		{"radar:ai:org-1", "radar:system", false},
-		{"oidc:alice@example.com", "radar:system", false},
+		{"kubeatlas:system:hub-timeline-puller", "kubeatlas:system", true},
+		{"kubeatlas:system:alerts:org-1", "kubeatlas:system", true},
+		{"kubeatlas:ai:org-1", "kubeatlas:ai:reader", true},
+		{compat.LegacySystemUserPrefix + "fixture", compat.LegacySystemGroup, true},
+		{compat.LegacyAIUserPrefix + "fixture", compat.LegacyAIReaderGroup, true},
+		{"kubeatlas:system:alerts:org-1", "kubeatlas:system,kubeatlas:owner", false},
+		{"kubeatlas:ai:org-1", "kubeatlas:system", false},
+		{"oidc:alice@example.com", "kubeatlas:system", false},
 	} {
 		rec, got := serveUserToken(t, nil, tc.user, tc.groups, "")
 		if rec.Code != http.StatusOK || got == nil {
@@ -194,15 +197,21 @@ func TestUserToken_SystemIdentityAllowList(t *testing.T) {
 		if got.System != tc.system {
 			t.Errorf("%s/%s: system = %v, want %v", tc.user, tc.groups, got.System, tc.system)
 		}
-		if tc.system && CloudRoleFromContext(ContextWithUser(context.Background(), got)) != RoleNone {
-			t.Errorf("%s: system identity must carry no Hub role", tc.user)
+		if tc.system {
+			if len(got.HubGroups) != 0 || got.Token != "" || !got.Cloud {
+				t.Errorf("%s: service identity acquired Hub groups or a token", tc.user)
+			}
+			role := CloudRoleFromContext(ContextWithUser(context.Background(), got))
+			if role != RoleViewer || !role.AtLeast(RoleViewer) || role.AtLeast(RoleMember) || role.AtLeast(RoleOwner) {
+				t.Errorf("%s: service identity role=%q must allow reads and deny member/owner gates", tc.user, role)
+			}
 		}
 	}
 }
 
 func TestUserToken_ReservedForwardedGroupRejected(t *testing.T) {
 	userTokenMode(t)
-	rec, got := serveUserToken(t, nil, "oidc:alice@example.com", "system:masters,radar:viewer", "")
+	rec, got := serveUserToken(t, nil, "oidc:alice@example.com", "system:masters,kubeatlas:viewer", "")
 	if rec.Code != http.StatusForbidden || got != nil {
 		t.Fatalf("status = %d, want 403", rec.Code)
 	}
@@ -210,8 +219,8 @@ func TestUserToken_ReservedForwardedGroupRejected(t *testing.T) {
 
 func TestUserToken_OffByDefaultKeepsCloudVocabularyRule(t *testing.T) {
 	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")
-	rec, got := serveUserToken(t, nil, "oidc:alice@example.com", "k8s-admins,radar:viewer", "good-token")
+	rec, got := serveUserToken(t, nil, "oidc:alice@example.com", "k8s-admins,kubeatlas:viewer", "good-token")
 	if rec.Code != http.StatusForbidden || got != nil {
-		t.Fatalf("status = %d, want impersonate mode to keep rejecting non-radar groups", rec.Code)
+		t.Fatalf("status = %d, want impersonate mode to keep rejecting non-kubeatlas groups", rec.Code)
 	}
 }

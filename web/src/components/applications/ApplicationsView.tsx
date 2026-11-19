@@ -4,11 +4,11 @@ import {
   ApplicationsList,
   ApplicationDetail,
   CenteredEmpty,
-  getRadarUpgradeRequirement,
+  getKubeAtlasUpgradeRequirement,
   PageHeader,
-  RadarUpgradeAction,
-  radarUpgradeDetail,
-  radarUpgradeHeadline,
+  KubeAtlasUpgradeAction,
+  kubeatlasUpgradeDetail,
+  kubeatlasUpgradeHeadline,
   FreshnessControl,
   IssueRow,
   ISSUE_SEVERITY_RANK,
@@ -171,7 +171,7 @@ export function ApplicationsView({
     );
   }
   if (query.error) {
-    const upgrade = getRadarUpgradeRequirement(query.error);
+    const upgrade = getKubeAtlasUpgradeRequirement(query.error);
     return (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div className="shrink-0 border-b border-theme-border px-4 py-4">
@@ -184,9 +184,9 @@ export function ApplicationsView({
         {upgrade ? (
           <CenteredEmpty
             icon={Boxes}
-            headline={radarUpgradeHeadline("Applications")}
-            body={radarUpgradeDetail(upgrade)}
-            action={<RadarUpgradeAction requirement={upgrade} />}
+            headline={kubeatlasUpgradeHeadline("Applications")}
+            body={kubeatlasUpgradeDetail(upgrade)}
+            action={<KubeAtlasUpgradeAction requirement={upgrade} />}
           />
         ) : (
           <CenteredEmpty

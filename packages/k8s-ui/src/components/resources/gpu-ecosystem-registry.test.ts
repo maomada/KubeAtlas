@@ -15,7 +15,7 @@ type RegistryRow = {
 }
 
 const REGISTRY_PATH = join(__dirname, '../../../../../scripts/gpu-ecosystem-demo/resources.tsv')
-const [header, ...lines] = readFileSync(REGISTRY_PATH, 'utf8').trim().split('\n')
+const [header, ...lines] = readFileSync(REGISTRY_PATH, 'utf8').trim().split(/\r?\n/)
 
 if (header.replace(/^# /, '') !== 'logical_id\tgroup\tplural\tkind\tscope\tapi_version\tscenario\tcrd_url') {
   throw new Error(`Unexpected GPU ecosystem registry header: ${header}`)
@@ -37,7 +37,7 @@ describe.each(['current', 'experimental'] as const)('GPU ecosystem %s registry',
     expect(new Set(scenarioRows.map(row => row.logicalId)).size).toBe(37)
   })
 
-  it('maps every registered upstream resource to curated Radar columns', () => {
+  it('maps every registered upstream resource to curated KubeAtlas columns', () => {
     const uncurated = scenarioRows
       .filter(row => !hasCuratedColumns(row.plural, row.group))
       .map(row => `${row.plural}.${row.group}`)

@@ -350,7 +350,7 @@ func safeRatio(num, den float64) float64 {
 	return num / den
 }
 
-// ComputeCostSummaryFromProm is the PromQL-based compute path used by Radar's
+// ComputeCostSummaryFromProm is the PromQL-based compute path used by KubeAtlas's
 // server handlers and other callers with scraped OpenCost metrics.
 //
 // Contract:

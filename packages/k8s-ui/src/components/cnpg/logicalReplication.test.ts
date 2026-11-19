@@ -74,7 +74,7 @@ describe('slot failover', () => {
     expect(f.tone).toBe('degraded')
     expect(f.text).toContain('HA replication slots are disabled')
   })
-  it('is unknown before 17 (pg_failover_slots), without a major, or outside Radar', () => {
+  it('is unknown before 17 (pg_failover_slots), without a major, or outside KubeAtlas', () => {
     expect(failoverOf(synced(16)).tone).toBe('unknown')
     expect(failoverOf(cluster('src', 'src', { replicationSlots: { highAvailability: { synchronizeLogicalDecoding: true } } })).tone).toBe('unknown')
     expect(cnpgLogicalPaths([sub({})], [subscriber('db.example.com')], [], [])[0].failover.tone).toBe('unknown')

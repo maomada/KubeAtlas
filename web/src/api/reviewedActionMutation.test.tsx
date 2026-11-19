@@ -6,7 +6,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { useReviewedActionMutation } from './reviewedActionMutation'
 import { ApiError } from './client'
 import { actionErrorCode, actionCompleted } from './actions'
-import { RadarFeatureUnsupportedError } from './radarFeatures'
+import { KubeAtlasFeatureUnsupportedError } from './kubeatlasFeatures'
 
 ;(globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true
 
@@ -93,7 +93,7 @@ describe('reviewed action lifetime', () => {
   it.each([
     new ApiError('Facts changed', 409, { code: 'changed' }),
     new ApiError('The operator webhook did not answer', 503, { code: 'operator_webhook_unavailable' }),
-    new RadarFeatureUnsupportedError('cnpgWorkspace', {}),
+    new KubeAtlasFeatureUnsupportedError('cnpgWorkspace', {}),
   ])('keeps a known refusal retryable after remount: %s', async (failure) => {
     const client = new QueryClient()
     const host = document.body.appendChild(document.createElement('div'))

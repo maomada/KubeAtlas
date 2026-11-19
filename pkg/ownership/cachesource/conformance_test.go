@@ -148,7 +148,7 @@ func (alphaOnly) CanRead(gk resourceid.GroupKind, namespace string) ownership.De
 }
 func (alphaOnly) Namespaces() ([]string, bool) { return []string{"alpha"}, false }
 
-// storedObjects deep-copies every object Radar's stores hold, by kind.
+// storedObjects deep-copies every object KubeAtlas's stores hold, by kind.
 func (r *rendered) storedObjects() map[string][]runtime.Object {
 	out := map[string][]runtime.Object{}
 	for _, k := range ownershiptest.Kinds {

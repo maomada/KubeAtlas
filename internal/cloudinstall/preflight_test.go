@@ -16,12 +16,12 @@ func TestPreflightCause(t *testing.T) {
 	}{
 		{"nothing blocking", func(r *PreflightResult) {}, ""},
 		{"only denials", func(r *PreflightResult) {
-			r.blockDenied("create ClusterRole \"radar\": forbidden")
-			r.blockDenied("create Deployment \"radar\": forbidden")
+			r.blockDenied("create ClusterRole \"kubeatlas\": forbidden")
+			r.blockDenied("create Deployment \"kubeatlas\": forbidden")
 		}, BlockCausePermissions},
 		{"a refusal outranks denials", func(r *PreflightResult) {
-			r.blockDenied("create ClusterRole \"radar\": forbidden")
-			r.blockRefused("create Deployment \"radar\": an object already exists but is not owned by the current Helm release")
+			r.blockDenied("create ClusterRole \"kubeatlas\": forbidden")
+			r.blockRefused("create Deployment \"kubeatlas\": an object already exists but is not owned by the current Helm release")
 		}, BlockCauseCluster},
 		{"a refusal outranks unverifiable", func(r *PreflightResult) {
 			r.blockUnverifiable("inspect rendered chart Secrets: hidden")
@@ -32,7 +32,7 @@ func TestPreflightCause(t *testing.T) {
 		}, BlockCauseVerification},
 		{"denial outranks unverifiable", func(r *PreflightResult) {
 			r.blockUnverifiable("inspect rendered chart Secrets: hidden")
-			r.blockDenied("create Secret \"radar\": forbidden")
+			r.blockDenied("create Secret \"kubeatlas\": forbidden")
 		}, BlockCausePermissions},
 	}
 	for _, tc := range cases {
@@ -51,14 +51,14 @@ func TestPreflightCause(t *testing.T) {
 
 func TestDryRunForbiddenIsDeniedOnlyForAuthorizerPhrasing(t *testing.T) {
 	var r PreflightResult
-	authz := apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, "radar",
+	authz := apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, "kubeatlas",
 		errors.New(`User "dev" cannot create resource "namespaces" in API group "" at the cluster scope`))
-	if err := recordMutationError(&r, "t", "create Namespace \"radar\"", authz); err != nil {
+	if err := recordMutationError(&r, "t", "create Namespace \"kubeatlas\"", authz); err != nil {
 		t.Fatal(err)
 	}
-	admission := apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, "radar",
+	admission := apierrors.NewForbidden(schema.GroupResource{Resource: "namespaces"}, "kubeatlas",
 		errors.New(`admission webhook "policy.example" denied the request: namespaces must carry a team label`))
-	if err := recordMutationError(&r, "t", "create Namespace \"radar\"", admission); err != nil {
+	if err := recordMutationError(&r, "t", "create Namespace \"kubeatlas\"", admission); err != nil {
 		t.Fatal(err)
 	}
 	if len(r.Blocking) != 2 || len(r.Denied) != 1 {
@@ -78,7 +78,7 @@ func TestDryRunForbiddenRBACEscalationIsADenial(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var r PreflightResult
-			err := apierrors.NewForbidden(schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: tc.resource}, "radar", errors.New(tc.msg))
+			err := apierrors.NewForbidden(schema.GroupResource{Group: "rbac.authorization.k8s.io", Resource: tc.resource}, "kubeatlas", errors.New(tc.msg))
 			if err := recordMutationError(&r, "t", "create "+tc.resource, err); err != nil {
 				t.Fatal(err)
 			}

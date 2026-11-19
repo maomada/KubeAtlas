@@ -3,7 +3,7 @@ import { Database, FileCheck2, Settings2, ShieldCheck, Waypoints } from 'lucide-
 import { applyCNPGDisk, applyCNPGFleetMetrics, buildCNPGFleet, type CNPGDiskReading, type CNPGFleet, type SidebarCategoryWorkspace } from '@maomada/k8s-ui'
 import type { APIResource } from '../../types'
 import { useCNPGWorkspace } from '../../api/cnpg'
-import { useRadarFeature } from '../../api/client'
+import { useKubeAtlasFeature } from '../../api/client'
 import { useCNPGFleetDisk } from '../../api/cnpg-storage'
 import { useCNPGFleetMetrics } from '../../api/cnpg-history'
 import { CNPG_SCREENS, type CNPGScreen } from './routes'
@@ -30,7 +30,7 @@ export function cnpgDiscovered(apiResources: APIResource[] | undefined): boolean
 // pass withMetrics=false.
 export function useCNPGFleet(namespaces: string[], enabled = true, withMetrics = true) {
   const query = useCNPGWorkspace(namespaces, { enabled })
-  const { support } = useRadarFeature('cnpgWorkspace')
+  const { support } = useKubeAtlasFeature('cnpgWorkspace')
   const enrich = enabled && withMetrics && support === 'supported' && !!query.data?.installed
   const disk = useCNPGFleetDisk(namespaces, enrich)
   const metrics = useCNPGFleetMetrics(namespaces, enrich)

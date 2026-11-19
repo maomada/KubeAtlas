@@ -611,9 +611,9 @@ type OwnershipCoverage struct {
 	Managers *ManagersCoverage `json:"managers,omitempty"`
 	// Manager is what manages the resource, from the evidence on it or, when
 	// that doesn't settle it, on its nearest controller ancestor. Absent means
-	// no answer (an older Radar, or UnavailableReason), never "none".
+	// no answer (an older KubeAtlas, or UnavailableReason), never "none".
 	Manager *ManagerAnswer `json:"manager,omitempty"`
-	// UnavailableReason is a reason code when Radar couldn't answer at all.
+	// UnavailableReason is a reason code when KubeAtlas couldn't answer at all.
 	UnavailableReason string `json:"unavailableReason,omitempty"`
 }
 
@@ -623,7 +623,7 @@ type ChildrenCoverage struct {
 	// Complete: Children and OlderRevisions are every child the caller may
 	// read.
 	Complete bool `json:"complete"`
-	// NotChecked are the kinds and namespaces Radar couldn't search, and why.
+	// NotChecked are the kinds and namespaces KubeAtlas couldn't search, and why.
 	NotChecked []OwnershipGap `json:"notChecked,omitempty"`
 	// Truncated: there were more children than the response lists; the cap
 	// applies before OlderRevisions are set apart.
@@ -633,8 +633,8 @@ type ChildrenCoverage struct {
 	Narrowed bool `json:"narrowed,omitempty"`
 }
 
-// OwnershipGap is a kind that Radar couldn't read, with a readreason code
-// saying why, from Radar's caches or the caller's access: in Namespace, or
+// OwnershipGap is a kind that KubeAtlas couldn't read, with a readreason code
+// saying why, from KubeAtlas's caches or the caller's access: in Namespace, or
 // with no Namespace in several namespaces, every one, or the cluster for a
 // cluster-scoped kind. An empty Kind stands for kinds discovery didn't list;
 // an empty Group is the core group.
@@ -648,13 +648,13 @@ type OwnershipGap struct {
 // ManagersCoverage says which GitOps managers the search for the resource's
 // Managers couldn't settle.
 type ManagersCoverage struct {
-	// Unreadable managers have a member list Radar can't read, so any of them
+	// Unreadable managers have a member list KubeAtlas can't read, so any of them
 	// may list the resource.
 	Unreadable int `json:"unreadable,omitempty"`
 	// Remote managers list an object at the resource's coordinates, in a
-	// cluster Radar can't confirm is this one.
+	// cluster KubeAtlas can't confirm is this one.
 	Remote int `json:"remote,omitempty"`
-	// NotChecked are the manager kinds and namespaces Radar couldn't search,
+	// NotChecked are the manager kinds and namespaces KubeAtlas couldn't search,
 	// and why.
 	NotChecked []OwnershipGap `json:"notChecked,omitempty"`
 }
@@ -669,8 +669,8 @@ type ManagerAnswer struct {
 	// manager), "listed" (one list names it, no claim counts),
 	// "disagree" (one list names it and a claim names another manager),
 	// "shared" (several lists name it), "claimed" (only claims name a
-	// manager), "unknown" (no evidence, and Radar couldn't look everywhere)
-	// or "none" (no evidence in what Radar collects and the caller may read;
+	// manager), "unknown" (no evidence, and KubeAtlas couldn't look everywhere)
+	// or "none" (no evidence in what KubeAtlas collects and the caller may read;
 	// not a statement that nothing manages it).
 	State string `json:"state"`
 	// Lead is the manager to show first, never a verdict: the recorder for
@@ -719,7 +719,7 @@ type ManagerChainStop struct {
 }
 
 // ManagerEvidence is what names the managers of one object. Which managers
-// Radar couldn't search is not part of it: State says whether that left the
+// KubeAtlas couldn't search is not part of it: State says whether that left the
 // answer unknown, and for the resource itself OwnershipCoverage.Managers says
 // what its own search missed.
 type ManagerEvidence struct {
@@ -743,11 +743,11 @@ type ManagerClaim struct {
 	Source string `json:"source"`
 	// Check is what checking the claim found: "recorded" (its list names
 	// the object), "omitted" (its list, read, doesn't), "unreadable" (its list
-	// can't be read), "remote" (it applies to a cluster Radar can't confirm
+	// can't be read), "remote" (it applies to a cluster KubeAtlas can't confirm
 	// is this one), "missing" (no such manager here), "not-recording" (a
 	// native Helm release, which keeps no list), "unresolved" (no namespace,
 	// and no listing manager has its name), "withheld" (the caller may not
-	// read it) or "unchecked" (Radar couldn't establish what its list says).
+	// read it) or "unchecked" (KubeAtlas couldn't establish what its list says).
 	Check string `json:"check"`
 	// Copied: an Argo CD tracking ID naming another object.
 	Copied bool `json:"copied,omitempty"`
@@ -763,13 +763,13 @@ type ManagerClaim struct {
 type MembersCoverage struct {
 	// Membership is "recorded", "remote" (its destination isn't confirmed to
 	// be this cluster, so its members aren't listed) or "unreadable" (the
-	// status lists none Radar can read).
+	// status lists none KubeAtlas can read).
 	Membership string `json:"membership"`
 	// UnavailableReason is a readreason code when the member list couldn't be read,
 	// as opposed to the status recording none.
 	UnavailableReason string `json:"unavailableReason,omitempty"`
-	// Missing members Radar doesn't hold, Withheld ones the caller may not
-	// read, Unknown ones Radar can't say whether it holds.
+	// Missing members KubeAtlas doesn't hold, Withheld ones the caller may not
+	// read, Unknown ones KubeAtlas can't say whether it holds.
 	Missing  int `json:"missing,omitempty"`
 	Withheld int `json:"withheld,omitempty"`
 	Unknown  int `json:"unknown,omitempty"`

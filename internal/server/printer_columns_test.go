@@ -78,7 +78,7 @@ func TestTableFromCRD_EvaluatesAndTypesCells(t *testing.T) {
 	}
 }
 
-func TestTableFromCRD_DropsColumnsRadarAlreadyRenders(t *testing.T) {
+func TestTableFromCRD_DropsColumnsKubeAtlasAlreadyRenders(t *testing.T) {
 	crd := crdWith("v1", []map[string]any{
 		pcCol("Age", ".metadata.creationTimestamp", "date", 0),
 		pcCol("Namespace", ".metadata.namespace", "string", 0),

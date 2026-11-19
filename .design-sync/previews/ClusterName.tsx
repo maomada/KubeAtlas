@@ -25,7 +25,7 @@ export function Providers() {
         <ClusterName name="clusterUser_rg-platform_aks-prod-westeurope" />
       </div>
       <div style={cell}>
-        <ClusterName name="kind-radar-gitops-demo" fallbackBadge={<span style={wheel}>⎈</span>} />
+        <ClusterName name="kind-kubeatlas-gitops-demo" fallbackBadge={<span style={wheel}>⎈</span>} />
       </div>
     </div>
   )

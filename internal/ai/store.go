@@ -1,7 +1,7 @@
 // SQLite persistence for AI investigation runs — the durable backing behind
 // RunManager's in-memory state, so history, transcripts, and the agent-session
-// hand-off survive a Radar restart. Single local user (the feature is gated to
-// no-auth standalone radar), so one DB file with a single writer is plenty.
+// hand-off survive a KubeAtlas restart. Single local user (the feature is gated to
+// no-auth standalone kubeatlas), so one DB file with a single writer is plenty.
 package ai
 
 import (
@@ -44,7 +44,7 @@ type RunStore interface {
 	// ClearTerminal synchronously removes every non-running run and its events in
 	// ONE transaction. The store derives the live set from the same database
 	// snapshot used by the delete: a manager's in-memory run list is deliberately
-	// incomplete when another Radar process owns a live run in this shared DB.
+	// incomplete when another KubeAtlas process owns a live run in this shared DB.
 	ClearTerminal() error
 	// Degraded reports that persistence has stopped working (disk error or a
 	// saturated write queue) — history will not survive a restart.

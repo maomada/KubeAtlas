@@ -37,7 +37,7 @@ func atGeneration(u *unstructured.Unstructured, generation int64) *unstructured.
 var localDestination = map[string]any{"destination": map[string]any{"namespace": "shop", "server": "https://kubernetes.default.svc"}}
 
 // The status shapes Argo CD 3 and Flux 2.8 controllers write, read entry by
-// entry; a list Radar can't trust in full is unreadable as a whole.
+// entry; a list KubeAtlas can't trust in full is unreadable as a whole.
 func TestMembersReadTheShapesControllersWrite(t *testing.T) {
 	app, ks, hr := ownership.ArgoApplication, ownership.FluxKustomization, ownership.FluxHelmRelease
 	for _, tc := range []struct {

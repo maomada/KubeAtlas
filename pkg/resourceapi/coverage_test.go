@@ -82,7 +82,7 @@ func TestCoverageGapsMarshalAsAnArray(t *testing.T) {
 	}
 }
 
-// Narrowing values are wire contracts: a released Radar's values must keep
+// Narrowing values are wire contracts: a released KubeAtlas's values must keep
 // meaning the same thing to every later consumer.
 func TestNarrowingSpellings(t *testing.T) {
 	got := []Narrowing{NarrowedByUserAccess, NarrowedByNamespacePin, NarrowedByNamespaceCollection, NarrowedByKindCollection}
@@ -100,7 +100,7 @@ func TestGapsStateExtentAndAction(t *testing.T) {
 		want string
 	}{
 		{Gap{Code: "kind_sync_pending", Namespaces: AllNames()}, `{"code":"kind_sync_pending","action":"retry","namespaces":{"extent":"all"}}`},
-		{Gap{Code: "radar_namespace_not_collected", Namespaces: UnknownNames()}, `{"code":"radar_namespace_not_collected","action":"radar_config","namespaces":{"extent":"unknown"}}`},
+		{Gap{Code: "kubeatlas_namespace_not_collected", Namespaces: UnknownNames()}, `{"code":"kubeatlas_namespace_not_collected","action":"kubeatlas_config","namespaces":{"extent":"unknown"}}`},
 		{Gap{Code: "read_error", Kinds: UnknownKinds()}, `{"code":"read_error","action":"retry","kinds":{"extent":"unknown"}}`},
 		{Gap{Code: "user_forbidden", Namespaces: Names([]string{"b"}, MCPSetLimit)}, `{"code":"user_forbidden","action":"user_access","namespaces":{"count":1,"names":["b"]}}`},
 		{Gap{Code: "some_future_code", Namespaces: AllNames()}, `{"code":"some_future_code","namespaces":{"extent":"all"}}`},
@@ -125,8 +125,8 @@ func TestValidate(t *testing.T) {
 		{Status: CoveragePartial, Scope: scoped(ns("a", "g")), Read: ptr(scoped(ns("a"))), Gaps: []Gap{{Code: "kind_sync_pending", Namespaces: ns("g")}}},
 		{Status: CoveragePartial, Scope: scoped(&NameSet{Count: 20}), Read: ptr(scoped(ns("a", "b"))), Gaps: []Gap{{Code: "kind_sync_pending", Namespaces: &NameSet{Count: 18}}}},
 		{Status: CoveragePartial, Scope: all, Gaps: []Gap{{Code: "kind_sync_pending", Namespaces: AllNames()}}},
-		{Status: CoveragePartial, Scope: scoped(ns("a", "b")), Gaps: []Gap{{Code: "user_forbidden", Namespaces: ns("a")}, {Code: "radar_kind_not_collected", Namespaces: ns("b")}}},
-		{Status: CoveragePartial, Scope: all, Read: ptr(scoped(ns("a"))), Gaps: []Gap{{Code: "radar_namespace_not_collected", Namespaces: UnknownNames()}}},
+		{Status: CoveragePartial, Scope: scoped(ns("a", "b")), Gaps: []Gap{{Code: "user_forbidden", Namespaces: ns("a")}, {Code: "kubeatlas_kind_not_collected", Namespaces: ns("b")}}},
+		{Status: CoveragePartial, Scope: all, Read: ptr(scoped(ns("a"))), Gaps: []Gap{{Code: "kubeatlas_namespace_not_collected", Namespaces: UnknownNames()}}},
 	}
 	for i, c := range valid {
 		if err := c.Validate(); err != nil {

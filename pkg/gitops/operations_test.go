@@ -636,7 +636,7 @@ func TestArgoResourceValidationResultCorrelatesAndReturnsTarget(t *testing.T) {
 				"operationState": map[string]any{
 					"phase": phase,
 					"operation": map[string]any{
-						"info": []any{map[string]any{"name": "radar-validation-id", "value": id}},
+						"info": []any{map[string]any{"name": "kubeatlas-validation-id", "value": id}},
 					},
 					"syncResult": map[string]any{"resources": resources},
 				},
@@ -682,8 +682,8 @@ func TestArgoResourceValidationResultCorrelatesAndReturnsTarget(t *testing.T) {
 }
 
 // TestSetArgoAutoSyncResumeRestoresSettings pins the legacy / current
-// annotation lookup on resume. Older Radar builds wrote skyhook.io/* keys;
-// the current writer uses radarhq.io/*. Resume must read either, prefer
+// annotation lookup on resume. Older KubeAtlas builds wrote skyhook.io/* keys;
+// the current writer uses kubeatlas.io/*. Resume must read either, prefer
 // the current key when both are present, and fall back to defaults when
 // neither is — and clear all four keys regardless.
 func TestSetArgoAutoSyncResumeRestoresSettings(t *testing.T) {

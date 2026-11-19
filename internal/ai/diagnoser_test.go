@@ -49,7 +49,7 @@ func TestInvestigationEvidenceValidatorUsesAndClearsFullProducerResult(t *testin
 	event := func(ref, result string, producerResult *string, prefilled bool) StreamEvent {
 		return StreamEvent{Type: "step", Step: &StepInfo{
 			ID: "call", Tool: "get_resource", Status: "done",
-			EvidenceRef: ref, Result: result, RadarEvidence: prefilled,
+			EvidenceRef: ref, Result: result, KubeAtlasEvidence: prefilled,
 			producerResult: producerResult,
 		}}
 	}
@@ -64,17 +64,17 @@ func TestInvestigationEvidenceValidatorUsesAndClearsFullProducerResult(t *testin
 
 	podPayload := `{"kind":"Pod"}`
 	spoofed := validate(event("", podPayload, &podPayload, true))
-	if spoofed.Step.RadarEvidence {
+	if spoofed.Step.KubeAtlasEvidence {
 		t.Fatal("adapter-authored provenance survived without a private reference")
 	}
 	missingProducerResult := validate(event(ref, podPayload, nil, true))
-	if missingProducerResult.Step.RadarEvidence {
-		t.Fatal("retained result received Radar provenance without its transient producer result")
+	if missingProducerResult.Step.KubeAtlasEvidence {
+		t.Fatal("retained result received KubeAtlas provenance without its transient producer result")
 	}
 	deploymentPayload := `{"kind":"Deployment"}`
 	substituted := validate(event(ref, deploymentPayload, &deploymentPayload, true))
-	if substituted.Step.RadarEvidence {
-		t.Fatal("substituted payload received Radar provenance")
+	if substituted.Step.KubeAtlasEvidence {
+		t.Fatal("substituted payload received KubeAtlas provenance")
 	}
 	cappedResult, truncated := capPayload(largePayload)
 	if !truncated {
@@ -82,21 +82,21 @@ func TestInvestigationEvidenceValidatorUsesAndClearsFullProducerResult(t *testin
 	}
 	tamperedCappedEvent := event(largeRef, "tampered retained result", &largePayload, true)
 	tamperedCappedEvent.Step.Truncated = true
-	if got := validate(tamperedCappedEvent); got.Step.RadarEvidence {
+	if got := validate(tamperedCappedEvent); got.Step.KubeAtlasEvidence {
 		t.Fatal("uncapped ledger match overrode a tampered retained result")
 	}
 	cappedEvent := event(largeRef, cappedResult, &largePayload, false)
 	cappedEvent.Step.Truncated = true
 	validatedCapped := validate(cappedEvent)
-	if !validatedCapped.Step.RadarEvidence {
+	if !validatedCapped.Step.KubeAtlasEvidence {
 		t.Fatal("exact uncapped private result did not validate after its retained preview was capped")
 	}
 	legitimate := validate(event(ref, podPayload, &podPayload, false))
-	if !legitimate.Step.RadarEvidence {
-		t.Fatal("exact first private result did not receive Radar provenance")
+	if !legitimate.Step.KubeAtlasEvidence {
+		t.Fatal("exact first private result did not receive KubeAtlas provenance")
 	}
 	replayed := validate(event(ref, podPayload, &podPayload, false))
-	if replayed.Step.RadarEvidence {
+	if replayed.Step.KubeAtlasEvidence {
 		t.Fatal("a repeated marker was accepted by more than one step")
 	}
 
@@ -105,7 +105,7 @@ func TestInvestigationEvidenceValidatorUsesAndClearsFullProducerResult(t *testin
 		claimed:  make(map[string]struct{}),
 	}
 	applyEvent := applyValidator.validate(event(ref, podPayload, &podPayload, true))
-	if applyEvent.Step.RadarEvidence {
+	if applyEvent.Step.KubeAtlasEvidence {
 		t.Fatal("adapter-authored provenance survived on a write-enabled apply turn")
 	}
 	if applyEvent.Step.producerResult != nil {
@@ -146,8 +146,8 @@ func (agent *captureTurnAgent) command(ctx context.Context, spec turnSpec) (*exe
 		investigation.RefMarker(issuedRef) + agent.payload,
 	)
 	stream := strings.Join([]string{
-		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"radar-read","name":"mcp__radar__get_resource","input":{"kind":"Pod","namespace":"shop","name":"api"}}]}}`,
-		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"radar-read","content":` + string(content) + `}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"kubeatlas-read","name":"mcp__kubeatlas__get_resource","input":{"kind":"Pod","namespace":"shop","name":"api"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"kubeatlas-read","content":` + string(content) + `}]}}`,
 		`{"type":"result","result":"` + "```json\\n{\\\"root_cause\\\":\\\"bad tag\\\"}\\n```" + `"}`,
 	}, "\n")
 	return exec.CommandContext(ctx, "printf", "%s\n", stream), func() {}, nil
@@ -163,12 +163,12 @@ func TestDiagnoseStreamUsesListenerAddress(t *testing.T) {
 				scope := strings.Repeat("a", 26)
 				_, err := diagnoser.DiagnoseStream(context.Background(), Request{
 					Kind: "Pod", Namespace: "shop", Name: "api", MCPAddress: address,
-					MCPBasePath: "/radar", EvidenceScope: scope, Apply: apply,
+					MCPBasePath: "/kubeatlas", EvidenceScope: scope, Apply: apply,
 				}, nil)
 				if err != nil {
 					t.Fatal(err)
 				}
-				want := "http://" + address + "/radar/mcp"
+				want := "http://" + address + "/kubeatlas/mcp"
 				if !apply {
 					want += "-investigation?scope=" + scope
 				} else {
@@ -227,7 +227,7 @@ func (agent *adapterAuthoredEvidenceAgent) parseStream(_ io.Reader, onEvent func
 func TestDiagnoseStreamClearsAdapterProvenanceOnApplyTurn(t *testing.T) {
 	agent := &adapterAuthoredEvidenceAgent{event: StreamEvent{Type: "step", Step: &StepInfo{
 		ID: "foreign-write", Tool: "patch_resource", Status: "done",
-		Result: `{"patched":true}`, EvidenceRef: testEvidenceRef('a', 'b'), RadarEvidence: true,
+		Result: `{"patched":true}`, EvidenceRef: testEvidenceRef('a', 'b'), KubeAtlasEvidence: true,
 	}}}
 	diagnoser := &Diagnoser{
 		agents:  map[string]Agent{"claude": agent},
@@ -245,7 +245,7 @@ func TestDiagnoseStreamClearsAdapterProvenanceOnApplyTurn(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if delivered == nil || delivered.RadarEvidence {
+	if delivered == nil || delivered.KubeAtlasEvidence {
 		t.Fatalf("apply event retained adapter-authored provenance: %+v", delivered)
 	}
 }
@@ -262,7 +262,7 @@ func TestDiagnoseStreamUsesPerTurnScopedInvestigationMount(t *testing.T) {
 	var evidenceStep *StepInfo
 	diagnosis, err := diagnoser.DiagnoseStream(context.Background(), Request{
 		Kind: "Pod", Namespace: "shop", Name: "api", MCPAddress: "localhost:9280",
-		MCPBasePath: "/radar", EvidenceScope: scope,
+		MCPBasePath: "/kubeatlas", EvidenceScope: scope,
 	}, func(event StreamEvent) {
 		if event.Step != nil && event.Step.Status == "done" {
 			evidenceStep = event.Step
@@ -271,7 +271,7 @@ func TestDiagnoseStreamUsesPerTurnScopedInvestigationMount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantURL := "http://localhost:9280/radar/mcp-investigation?scope=" + scope
+	wantURL := "http://localhost:9280/kubeatlas/mcp-investigation?scope=" + scope
 	if agent.spec.mcpURL != wantURL {
 		t.Fatalf("mcp URL = %q, want %q", agent.spec.mcpURL, wantURL)
 	}
@@ -281,7 +281,7 @@ func TestDiagnoseStreamUsesPerTurnScopedInvestigationMount(t *testing.T) {
 	if payload := diagnosis.issuedEvidence[agent.issuedRef]; payload != agent.payload {
 		t.Fatalf("issued payload = %q, want exact %q", payload, agent.payload)
 	}
-	if evidenceStep == nil || !evidenceStep.RadarEvidence ||
+	if evidenceStep == nil || !evidenceStep.KubeAtlasEvidence ||
 		evidenceStep.EvidenceRef != agent.issuedRef || evidenceStep.Result != agent.payload {
 		t.Fatalf("validated evidence step = %+v", evidenceStep)
 	}
@@ -299,8 +299,8 @@ func TestParseStream_FormatPin(t *testing.T) {
 	ref := testEvidenceRef('a', 'b')
 	stream := strings.Join([]string{
 		`{"type":"assistant","message":{"content":[{"type":"thinking","thinking":"hmm"}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"mcp__radar__diagnose","input":{"name":"x"}}]}}`,
-		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"[[radar:evidence-ref=` + ref + `]]\ncrashloop"}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"mcp__kubeatlas__diagnose","input":{"name":"x"}}]}}`,
+		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"[[kubeatlas:evidence-ref=` + ref + `]]\ncrashloop"}]}}`,
 		`{"type":"result","result":"bad tag.\n\n` + "```json\\n" + `{\"root_cause\":\"bad tag\"}` + "\\n```" + `","num_turns":2,"total_cost_usd":0.42}`,
 	}, "\n")
 
@@ -335,7 +335,7 @@ func TestParseStream_FormatPin(t *testing.T) {
 	if doneResult == "" {
 		t.Errorf("expected tool result preview on done step")
 	}
-	if doneEvidenceRef != ref || strings.Contains(doneResult, "radar:evidence-ref") {
+	if doneEvidenceRef != ref || strings.Contains(doneResult, "kubeatlas:evidence-ref") {
 		t.Errorf("marker extraction result=%q ref=%q", doneResult, doneEvidenceRef)
 	}
 	if doneIsError == nil || *doneIsError {
@@ -437,7 +437,7 @@ func TestClaudeToolResultErrorState(t *testing.T) {
 }
 
 // TestReadTools_ExcludeWrites is the fail-closed guard: the read allowlist must
-// never contain a Radar write tool.
+// never contain a KubeAtlas write tool.
 // TestDetectAgents_OnlyKnownNames ensures detection never reports a binary
 // outside the fixed known list (we only ever exec literal known names).
 func TestDetectAgents_OnlyKnownNames(t *testing.T) {
@@ -565,7 +565,7 @@ func TestCapPayloadPreservesProducerBoundedDiagnoseEnvelope(t *testing.T) {
 func TestParseStream_InterleavesNarration(t *testing.T) {
 	stream := strings.Join([]string{
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"Let me check the deployment."}]}}`,
-		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"mcp__radar__get_resource","input":{"name":"x"}}]}}`,
+		`{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"mcp__kubeatlas__get_resource","input":{"name":"x"}}]}}`,
 		`{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}`,
 		`{"type":"assistant","message":{"content":[{"type":"text","text":"The root cause is the bad image."}]}}`,
 		`{"type":"result","result":"The root cause is the bad image.","num_turns":1}`,
@@ -667,12 +667,12 @@ func TestDiagnoseStream_ProcessAndStreamErrors(t *testing.T) {
 }
 
 // TestParseStream_InitReportsAgentReady pins the Claude Code system/init line:
-// the resolved model, the Radar tool count by MCP prefix, and every MCP
+// the resolved model, the KubeAtlas tool count by MCP prefix, and every MCP
 // server's status, including a failed one the UI must surface as a warning.
 func TestParseStream_InitReportsAgentReady(t *testing.T) {
 	stream := strings.Join([]string{
 		`{"type":"system","subtype":"hook_started","hook_name":"SessionStart:startup","session_id":"s1"}`,
-		`{"type":"system","subtype":"init","session_id":"s1","tools":["Bash","mcp__radar__diagnose","mcp__radar__get_resource","mcp__other__ping"],"mcp_servers":[{"name":"radar","status":"connected"},{"name":"other","status":"failed"}],"model":"claude-opus-5[1m]"}`,
+		`{"type":"system","subtype":"init","session_id":"s1","tools":["Bash","mcp__kubeatlas__diagnose","mcp__kubeatlas__get_resource","mcp__other__ping"],"mcp_servers":[{"name":"kubeatlas","status":"connected"},{"name":"other","status":"failed"}],"model":"claude-opus-5[1m]"}`,
 		`{"type":"result","result":"done","num_turns":1}`,
 	}, "\n")
 	var ready []StreamEvent
@@ -689,9 +689,9 @@ func TestParseStream_InitReportsAgentReady(t *testing.T) {
 		t.Errorf("model = %q", got.Model)
 	}
 	if got.ToolCount == nil || *got.ToolCount != 2 {
-		t.Errorf("radar tool count = %v, want 2", got.ToolCount)
+		t.Errorf("kubeatlas tool count = %v, want 2", got.ToolCount)
 	}
-	want := []MCPServerStatus{{Name: "radar", Status: "connected"}, {Name: "other", Status: "failed"}}
+	want := []MCPServerStatus{{Name: "kubeatlas", Status: "connected"}, {Name: "other", Status: "failed"}}
 	if len(got.MCPServers) != len(want) {
 		t.Fatalf("mcp servers = %+v, want %+v", got.MCPServers, want)
 	}
@@ -711,7 +711,7 @@ func TestParseStream_InitReportsAgentReady(t *testing.T) {
 	}
 	zero := agentReadyEvent("m", nil, nil)
 	if raw, _ := json.Marshal(zero); !strings.Contains(string(raw), `"toolCount":0`) {
-		t.Errorf("a zero Radar tool count must serialize, got %s", raw)
+		t.Errorf("a zero KubeAtlas tool count must serialize, got %s", raw)
 	}
 }
 

@@ -126,7 +126,7 @@ func TestDetectSources_DropsAnActiveSourceThatStoppedBeingAvailable(t *testing.T
 		t.Fatalf("an available source must become active, got %q", m.GetActiveSourceName())
 	}
 
-	// The network feature is turned off underneath a running Radar.
+	// The network feature is turned off underneath a running KubeAtlas.
 	beyla.result = &DetectionResult{
 		Available: false,
 		Present:   true,

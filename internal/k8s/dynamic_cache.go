@@ -17,7 +17,7 @@ import (
 )
 
 // DynamicResourceCache wraps the shared k8score implementation.
-// Singleton + Radar-specific warmup list stay here.
+// Singleton + KubeAtlas-specific warmup list stay here.
 type DynamicResourceCache struct {
 	*k8score.DynamicResourceCache
 }
@@ -176,7 +176,7 @@ type supportedCRDResource struct {
 }
 
 // supportedCRDFallbacks is the server-side catalog of dynamic integrations
-// Radar intentionally observes. Discovery supplies the served GVR; this
+// KubeAtlas intentionally observes. Discovery supplies the served GVR; this
 // catalog supplies the supported identity and version fallback order used by
 // partial-discovery recovery, startup warmup, capability probes, and chart-RBAC
 // drift checks. Only installed catalog entries are warmed, so watch identities

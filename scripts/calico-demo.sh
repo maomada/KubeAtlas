@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bootstrap a kind cluster running real Calico, pre-populated with the policy
-# shapes Radar's Calico surfaces have to render correctly. Idempotent — re-run
+# shapes KubeAtlas's Calico surfaces have to render correctly. Idempotent — re-run
 # to apply fixture updates without recreating the cluster.
 #
 # Subcommands:
@@ -14,14 +14,14 @@
 #   - kind         https://kind.sigs.k8s.io/
 #   - kubectl
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-calico-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-calico-demo).
 #
 # See scripts/calico-demo/README.md for the coverage matrix and the two Calico
 # behaviours that are easy to get wrong without a cluster to check against.
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-calico-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-calico-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/calico-demo"
@@ -68,7 +68,7 @@ install_calico() {
 
   # The APIServer CR is what makes projectcalico.org available alongside the
   # crd.projectcalico.org CRDs. Both groups then serve the same stored objects,
-  # which is the case Radar's Calico handling exists for — without it the demo
+  # which is the case KubeAtlas's Calico handling exists for — without it the demo
   # cannot exercise the dual-group paths at all.
   kubectl apply -f - <<'EOF'
 apiVersion: operator.tigera.io/v1
@@ -141,7 +141,7 @@ cmd_up() {
   install_calico
   apply_fixtures
   echo
-  log "ready. Point Radar at it:"
+  log "ready. Point KubeAtlas at it:"
   echo "    kubectl config use-context $KUBECTL_CTX"
   echo "    ./scripts/visual-test-start.sh"
 }

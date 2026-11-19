@@ -1,5 +1,5 @@
 // Package health is the canonical, pure resource health-classification engine
-// for Radar. It lives in pkg/ (not internal/) so every consumer — topology,
+// for KubeAtlas. It lives in pkg/ (not internal/) so every consumer — topology,
 // timeline, packages, resourcecontext, the REST/MCP servers — can share ONE
 // classifier instead of the parallel copies that drifted historically.
 //

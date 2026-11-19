@@ -9,7 +9,7 @@ import (
 // get_resource on a rotated Secret, or on a Pod or workload that consumes it,
 // carries staleEnv even with context=none. The diagnose fixture's cart Pod
 // reads Secret/cart-db key password as env DB_PASSWORD and started before the
-// Secret's managedFields data write, which Radar did not observe.
+// Secret's managedFields data write, which KubeAtlas did not observe.
 func TestGetResourceStaleEnv(t *testing.T) {
 	grant := func(t *testing.T, pods, secrets bool) context.Context {
 		t.Helper()

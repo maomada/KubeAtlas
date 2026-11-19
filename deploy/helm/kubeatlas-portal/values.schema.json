@@ -21,7 +21,15 @@
       "additionalProperties": false,
       "properties": {
         "enabled": { "type": "boolean" },
-        "existingClaim": { "type": "string" }
+        "existingClaim": { "type": "string" },
+        "previous": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "existingClaim": { "type": "string" },
+            "version": { "type": "string" }
+          }
+        }
       }
     },
     "service": {

@@ -166,7 +166,7 @@ func TestSharedKubernetesClientsPreserveUserAgent(t *testing.T) {
 		want       string
 	}{
 		{name: "default", want: rest.DefaultKubernetesUserAgent()},
-		{name: "configured", configured: "radar-runtime-auth-test", want: "radar-runtime-auth-test"},
+		{name: "configured", configured: "kubeatlas-runtime-auth-test", want: "kubeatlas-runtime-auth-test"},
 	}
 
 	for _, tt := range tests {
@@ -1470,7 +1470,7 @@ func prepareRuntimeAuthTest(t *testing.T) uint64 {
 	// Without a kubeconfig path the package reads as in-cluster
 	// (isInClusterLocked), where runtimeAuthStateIsCurrent is always false and
 	// every assertion below would pass vacuously.
-	kubeconfigPath = "/tmp/radar-runtime-auth-test"
+	kubeconfigPath = "/tmp/kubeatlas-runtime-auth-test"
 	activeClientGeneration = generation
 	clientMu.Unlock()
 	t.Cleanup(func() {
@@ -1598,7 +1598,7 @@ func TestRuntimeAuthExecCredentialExpiry(t *testing.T) {
 	select {
 	case <-sessionStopped:
 	case <-time.After(3 * time.Second):
-		t.Fatal("runtime exec credential failure did not quiesce Radar")
+		t.Fatal("runtime exec credential failure did not quiesce KubeAtlas")
 	}
 	waitForRuntimeAuthCheck(t, clients.generation)
 	if status := GetConnectionStatus(); status.State != StateDisconnected || status.ErrorType != "auth" {
@@ -1636,7 +1636,7 @@ func TestRuntimeAuthExecCredentialExpiry(t *testing.T) {
 	select {
 	case <-sessionStopped:
 	case <-time.After(3 * time.Second):
-		t.Fatal("second runtime exec credential failure did not quiesce Radar")
+		t.Fatal("second runtime exec credential failure did not quiesce KubeAtlas")
 	}
 	waitForRuntimeAuthCheck(t, recoveredClients.generation)
 	if status := GetConnectionStatus(); status.State != StateDisconnected || status.ErrorType != "auth" {

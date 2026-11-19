@@ -293,15 +293,15 @@ func cnpgDesiredImage(cluster *unstructured.Unstructured) string {
 func cnpgUncachedReason(fact, kind, namespace string, assessment k8score.KindReadAssessment) string {
 	switch {
 	case len(assessment.Uncovered) > 0:
-		return fmt.Sprintf("%s unknown: Radar watches %s only in the namespaces it chose when it connected, and %s is not one of them", fact, kind, namespace)
+		return fmt.Sprintf("%s unknown: KubeAtlas watches %s only in the namespaces it chose when it connected, and %s is not one of them", fact, kind, namespace)
 	case assessment.Readiness == k8score.KindUnavailable:
-		return fmt.Sprintf("%s unknown: Radar is not collecting %s", fact, kind)
+		return fmt.Sprintf("%s unknown: KubeAtlas is not collecting %s", fact, kind)
 	}
 	switch assessment.TargetReadiness() {
 	case k8score.KindPending:
-		return fmt.Sprintf("%s unknown: Radar is still loading %s", fact, kind)
+		return fmt.Sprintf("%s unknown: KubeAtlas is still loading %s", fact, kind)
 	case k8score.KindFailed:
-		return fmt.Sprintf("%s unknown: Radar failed to load %s", fact, kind)
+		return fmt.Sprintf("%s unknown: KubeAtlas failed to load %s", fact, kind)
 	}
 	return ""
 }
@@ -420,7 +420,7 @@ func (s *Reader) hAQuorum(ctx context.Context, callerCtx context.Context, c HACl
 // cnpgQuorumArithmetic fills N, W, R and whether R + W > N. A reset object
 // (no standby names) records no configuration: nothing is computed. R counts
 // the standby names that are instances of this Cluster with a ready Pod, other
-// than the recorded primary — Pod readiness is Radar's view of "able to report
+// than the recorded primary — Pod readiness is KubeAtlas's view of "able to report
 // its state", which the operator checks directly.
 func cnpgQuorumArithmetic(q *CNPGHAQuorum, pods []*corev1.Pod, podsKnown bool) {
 	st := q.Status
@@ -572,9 +572,9 @@ func (s *Reader) hAOperatorLease(ctx context.Context, callerCtx context.Context,
 		case integration.KindCoverageSyncing:
 			reason = "Deployments are still loading, so the operator's namespace is unknown"
 		case integration.KindCoverageError:
-			reason = "Radar could not load Deployments, so the operator's namespace is unknown"
+			reason = "KubeAtlas could not load Deployments, so the operator's namespace is unknown"
 		case integration.KindCoverageUncached:
-			reason = "Radar does not watch Deployments in the namespaces you can read, so the operator's namespace is unknown"
+			reason = "KubeAtlas does not watch Deployments in the namespaces you can read, so the operator's namespace is unknown"
 		}
 		return CNPGHALease{ReadSource: integration.ReadSource{State: cnpgHAStateUnavailable, Reason: reason}, Name: cnpgOperatorLeaseName}
 	}

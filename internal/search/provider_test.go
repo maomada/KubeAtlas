@@ -42,9 +42,9 @@ func TestCacheProviderTypedPlanUsesReadinessAndScope(t *testing.T) {
 	}{
 		{"Pod", []string{"team-a"}, nil, false},
 		{"Pod", nil, nil, true},
-		{"Pod", []string{"team-b"}, []readreason.Code{readreason.RadarNamespaceNotCollected}, false},
-		{"Pod", []string{"team-a", "team-b"}, []readreason.Code{readreason.RadarNamespaceNotCollected}, false},
-		{"Secret", []string{"team-a"}, []readreason.Code{readreason.RadarKindNotCollected}, false},
+		{"Pod", []string{"team-b"}, []readreason.Code{readreason.KubeAtlasNamespaceNotCollected}, false},
+		{"Pod", []string{"team-a", "team-b"}, []readreason.Code{readreason.KubeAtlasNamespaceNotCollected}, false},
+		{"Secret", []string{"team-a"}, []readreason.Code{readreason.KubeAtlasKindNotCollected}, false},
 	} {
 		plan := p.PlanTyped(tc.kind, tc.namespaces)
 		if got := planCodes(plan); !slices.Equal(got, tc.codes) || plan.CollectionLimited != tc.limited {
@@ -54,7 +54,7 @@ func TestCacheProviderTypedPlanUsesReadinessAndScope(t *testing.T) {
 }
 
 // A target read in full is not held back by another namespace of the kind
-// that is still loading, and Radar collecting the kind in only part of a
+// that is still loading, and KubeAtlas collecting the kind in only part of a
 // target is reported apart from readiness.
 func TestCacheProviderTypedPlanJudgesOnlyTheTarget(t *testing.T) {
 	client := fake.NewClientset()
@@ -91,8 +91,8 @@ func TestCacheProviderTypedPlanJudgesOnlyTheTarget(t *testing.T) {
 	}{
 		{[]string{"alpha"}, nil, false},
 		{[]string{"alpha", "gamma"}, []readreason.Code{readreason.KindSyncPending}, false},
-		{[]string{"alpha", "beta"}, []readreason.Code{readreason.RadarNamespaceNotCollected}, true},
-		{[]string{"gamma", "beta"}, []readreason.Code{readreason.KindSyncPending, readreason.RadarNamespaceNotCollected}, true},
+		{[]string{"alpha", "beta"}, []readreason.Code{readreason.KubeAtlasNamespaceNotCollected}, true},
+		{[]string{"gamma", "beta"}, []readreason.Code{readreason.KindSyncPending, readreason.KubeAtlasNamespaceNotCollected}, true},
 		{nil, []readreason.Code{readreason.KindSyncPending}, true},
 	} {
 		plan := p.PlanTyped("ConfigMap", tc.namespaces)
@@ -126,13 +126,13 @@ func TestCacheProviderUnavailableTypedUsesCollectorPermissions(t *testing.T) {
 	p := &CacheProvider{cache: &k8s.ResourceCache{ResourceCache: cache}, permissions: &k8s.PermissionCheckResult{Perms: &k8s.ResourcePermissions{}, Scopes: map[string]k8score.ResourceScope{}}}
 	for _, tk := range typedKinds {
 		p.permissions.Scopes[k8s.CanonicalBuiltinKind(tk.Kind)] = k8score.ResourceScope{Enabled: false}
-		if got := planCodes(p.PlanTyped(tk.Kind, nil)); !slices.Equal(got, []readreason.Code{readreason.RadarForbidden}) {
+		if got := planCodes(p.PlanTyped(tk.Kind, nil)); !slices.Equal(got, []readreason.Code{readreason.KubeAtlasForbidden}) {
 			t.Errorf("%s: %v", tk.Kind, got)
 		}
 	}
 	p.permissions.Perms.Secrets = true
 	p.permissions.Scopes["secrets"] = k8score.ResourceScope{Enabled: true}
-	if got := planCodes(p.PlanTyped("Secret", nil)); !slices.Equal(got, []readreason.Code{readreason.RadarKindNotCollected}) {
+	if got := planCodes(p.PlanTyped("Secret", nil)); !slices.Equal(got, []readreason.Code{readreason.KubeAtlasKindNotCollected}) {
 		t.Fatalf("allowed but unavailable: %q", got)
 	}
 }
@@ -161,12 +161,12 @@ func TestCacheProviderNeverWarmsDirectReadBuiltins(t *testing.T) {
 		}
 	}
 	crd := schema.GroupVersionResource{Group: "example.io", Version: "v1", Resource: "widgets"}
-	if got := planCodes(p.PlanDynamic(crd, nil, false)); !slices.Equal(got, []readreason.Code{readreason.RadarKindNotCollected}) {
+	if got := planCodes(p.PlanDynamic(crd, nil, false)); !slices.Equal(got, []readreason.Code{readreason.KubeAtlasKindNotCollected}) {
 		t.Fatalf("unwatched CRD: %q", got)
 	}
 }
 
-// Namespace informers sync independently, and in a shared Radar the one still
+// Namespace informers sync independently, and in a shared KubeAtlas the one still
 // loading may be another user's. It must not hide hits from a namespace whose
 // informer is ready.
 func TestDynamicReadinessIsJudgedPerNamespace(t *testing.T) {
@@ -246,7 +246,7 @@ func completeCRDDiscovery(t *testing.T, dynamic *k8score.DynamicResourceCache) {
 	}
 }
 
-// Until API discovery has answered and CRD discovery completes, kinds Radar is
+// Until API discovery has answered and CRD discovery completes, kinds KubeAtlas is
 // about to watch eagerly still look unwatched or absent, so search can't rule
 // them out: the catalog reports loading while what is cached keeps answering.
 func TestCacheProviderCatalogLoadsUntilCRDDiscoveryCompletes(t *testing.T) {
@@ -291,9 +291,9 @@ func TestTypedSearchCoveragePreservesKnownExclusionBeforeSync(t *testing.T) {
 		namespaces []string
 		codes      []readreason.Code
 	}{
-		{[]string{"team-b"}, []readreason.Code{readreason.RadarNamespaceNotCollected}},
+		{[]string{"team-b"}, []readreason.Code{readreason.KubeAtlasNamespaceNotCollected}},
 		{[]string{"team-a"}, []readreason.Code{readreason.KindSyncPending}},
-		{[]string{"team-a", "team-b"}, []readreason.Code{readreason.KindSyncPending, readreason.RadarNamespaceNotCollected}},
+		{[]string{"team-a", "team-b"}, []readreason.Code{readreason.KindSyncPending, readreason.KubeAtlasNamespaceNotCollected}},
 		{nil, []readreason.Code{readreason.KindSyncPending}},
 	} {
 		if got := planCodes(provider.PlanTyped("Pod", tc.namespaces)); !slices.Equal(got, tc.codes) {

@@ -120,7 +120,7 @@ func TestMiddleware_ProxyHeaders_LogsAcceptedIdentity(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/api/resources/pods", nil)
 	req.Header.Set("X-Forwarded-User", "dave")
-	req.Header.Set("X-Forwarded-Groups", "radar:idp:read-only-team")
+	req.Header.Set("X-Forwarded-Groups", "kubeatlas:idp:read-only-team")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -132,7 +132,7 @@ func TestMiddleware_ProxyHeaders_LogsAcceptedIdentity(t *testing.T) {
 	if !strings.Contains(line, "[auth] accepted forwarded identity") {
 		t.Fatalf("expected accepted-identity log line, got: %q", line)
 	}
-	if strings.Contains(line, "dave") || strings.Contains(line, "radar:idp:read-only-team") {
+	if strings.Contains(line, "dave") || strings.Contains(line, "kubeatlas:idp:read-only-team") {
 		t.Error("diagnostic log includes forwarded identity claims")
 	}
 }
@@ -286,13 +286,13 @@ func TestMiddleware_CloudProxyHeadersOverrideSessionWithoutSettingCookie(t *test
 	handler := cloud.AuthenticatedTunnelHandler(Authenticate(cfg)(http.HandlerFunc(echoUser)))
 
 	cookie := CreateSessionCookie(
-		&User{Username: "stale-user", Groups: []string{"radar:owner"}},
+		&User{Username: "stale-user", Groups: []string{"kubeatlas:owner"}},
 		NewSessionID(), "", cfg.Secret, cfg.CookieTTL, false,
 	)[0]
 	req := httptest.NewRequest(http.MethodGet, "/api/topology", nil)
 	req.AddCookie(cookie)
 	req.Header.Set(cfg.UserHeader, "current-user")
-	req.Header.Set(cfg.GroupsHeader, "radar:viewer, radar:org:org-1")
+	req.Header.Set(cfg.GroupsHeader, "kubeatlas:viewer, kubeatlas:org:org-1")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -307,7 +307,7 @@ func TestMiddleware_CloudProxyHeadersOverrideSessionWithoutSettingCookie(t *test
 	if got.Username != "current-user" {
 		t.Fatalf("username = %q, want current Hub header identity", got.Username)
 	}
-	if len(got.Groups) != 2 || got.Groups[0] != "radar:viewer" || got.Groups[1] != "radar:org:org-1" {
+	if len(got.Groups) != 2 || got.Groups[0] != "kubeatlas:viewer" || got.Groups[1] != "kubeatlas:org:org-1" {
 		t.Fatalf("groups = %v, want current Hub header groups", got.Groups)
 	}
 	if values := rec.Header().Values("Set-Cookie"); len(values) != 0 {
@@ -342,7 +342,7 @@ func TestMiddleware_CloudProxyRejectsSpoofedHeadersOutsideTunnel(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodGet, "/api/topology", nil)
 	req.Header.Set(cfg.UserHeader, "attacker")
-	req.Header.Set(cfg.GroupsHeader, "radar:owner")
+	req.Header.Set(cfg.GroupsHeader, "kubeatlas:owner")
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -492,7 +492,7 @@ func TestIsExemptPath(t *testing.T) {
 }
 
 // TestIsExemptPath_CloudMode verifies that cloud-mode narrows the exempt set to
-// the exact kubelet health path. Cloud owns authentication, so Radar's local
+// the exact kubelet health path. Cloud owns authentication, so KubeAtlas's local
 // /auth/* endpoints and static assets must not bypass the tunnel identity.
 func TestIsExemptPath_CloudMode(t *testing.T) {
 	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")

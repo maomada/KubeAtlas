@@ -16,7 +16,7 @@ import (
 )
 
 // TestQueryTrue pins the truthy forms queryTrue accepts. The load-bearing case
-// is "true": Radar Cloud's Hub fleet fan-out requests /api/audit?raw=true to
+// is "true": KubeAtlas Cloud's Hub fleet fan-out requests /api/audit?raw=true to
 // skip local audit settings (the Hub owns effective Checks config). A silent
 // drift here would re-introduce the settings-inversion the cloud unwind fixed.
 func TestQueryTrue(t *testing.T) {

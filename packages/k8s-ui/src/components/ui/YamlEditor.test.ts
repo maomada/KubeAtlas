@@ -94,7 +94,7 @@ describe('isBlockingYamlDiagnostic', () => {
       isBlockingYamlDiagnostic(
         'warning',
         undefined,
-        '[radar-advisory:deprecated] Use spec.newField instead.',
+        '[kubeatlas-advisory:deprecated] Use spec.newField instead.',
       ),
     ).toBe(false)
   })

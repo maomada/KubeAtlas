@@ -138,10 +138,10 @@ func runProbes(ctx context.Context, t *Trace, opts Options, client kubernetes.In
 	probeHops(t.Downstream)
 	probeHops(t.Upstreams)
 	wg.Wait()
-	// A sidecar proxy in Radar's own pod can accept a connection before the
+	// A sidecar proxy in KubeAtlas's own pod can accept a connection before the
 	// backend does; record it on the results, as for a probe Job.
 	mesh, known := selfPodMesh()
-	t.radarUnmeshed = known && mesh == ""
+	t.kubeatlasUnmeshed = known && mesh == ""
 	if mesh != "" {
 		for _, hops := range [][]Hop{t.Downstream, t.Upstreams} {
 			for i := range hops {
@@ -190,9 +190,9 @@ func reconcilePolicyFindings(t *Trace) {
 			var svcProbes []probe.Result
 			if i > 0 && h.Edge == "Service->Pods" && hops[i-1].Resource.Kind == "Service" {
 				svc = &hops[i-1]
-				// Only when Radar's own pod is known to run without a
+				// Only when KubeAtlas's own pod is known to run without a
 				// sidecar: otherwise its proxy may have answered.
-				if t.radarUnmeshed {
+				if t.kubeatlasUnmeshed {
 					svcProbes = unmeshed(svc.Probes)
 				}
 			}
@@ -302,8 +302,8 @@ func unmeshed(results []probe.Result) []probe.Result {
 	return out
 }
 
-// selfPodMesh names the mesh whose sidecar proxy runs in Radar's own pod, found
-// in the cache by the chart's downward-API env. known is false when Radar
+// selfPodMesh names the mesh whose sidecar proxy runs in KubeAtlas's own pod, found
+// in the cache by the chart's downward-API env. known is false when KubeAtlas
 // isn't a pod or its pod isn't in the cache (a namespace-scoped install that
 // doesn't cover its own namespace).
 func selfPodMesh() (mesh string, known bool) {
@@ -529,7 +529,7 @@ func pathDivergenceFindings(probes []probe.Result) []Finding {
 			out = append(out, Finding{
 				Code:     "probe:apiserver-path-only-broken",
 				Severity: SeverityInfo,
-				Message:  fmt.Sprintf("A direct workload-to-workload connection on port %s succeeded, but Radar's check through the Kubernetes API server could not reach the same target. Real workload traffic is probably fine - this usually reflects a limit of testing through the API server, not an outage.", k),
+				Message:  fmt.Sprintf("A direct workload-to-workload connection on port %s succeeded, but KubeAtlas's check through the Kubernetes API server could not reach the same target. Real workload traffic is probably fine - this usually reflects a limit of testing through the API server, not an outage.", k),
 				Cause:    "The API server's proxy was refused, or the port speaks a protocol the proxy can't relay (it only relays HTTP).",
 				Action:   "This usually needs no action. To make the API-server check work, confirm your identity has get services/proxy or get pods/proxy in this namespace, and that the port serves HTTP.",
 			})
@@ -564,10 +564,10 @@ func probeHop(ctx context.Context, h *Hop, vantage probe.Vantage, client kuberne
 		// L4 routes are inventoried on the Gateway trace but not traced or
 		// tested - say so instead of leaving the hop's coverage unexplained.
 		return []probe.Result{probe.Skipped(probe.LayerTCP, "", vantage,
-			"L4 route - radar doesn't trace or test TCPRoute/TLSRoute backends; the parent Gateway listener's TCP reachability is still probed")}
+			"L4 route - kubeatlas doesn't trace or test TCPRoute/TLSRoute backends; the parent Gateway listener's TCP reachability is still probed")}
 	case "UDPRoute":
 		return []probe.Result{probe.Skipped(probe.LayerTCP, "", vantage,
-			"UDP route - radar doesn't trace or test UDPRoute backends, and UDP listeners aren't probed")}
+			"UDP route - kubeatlas doesn't trace or test UDPRoute backends, and UDP listeners aren't probed")}
 	}
 	return nil
 }
@@ -603,11 +603,11 @@ func probeExternalName(ctx context.Context, h *Hop, vantage probe.Vantage, path 
 		// An ExternalName can alias a cluster-internal / split-horizon host a laptop
 		// can't resolve. A failed LOCAL lookup isn't proof the alias is broken -
 		// demote to a skip instead of a confident red row (mirrors probeIngress's
-		// local-vantage demotion). Radar's in-cluster test never dials external
+		// local-vantage demotion). KubeAtlas's in-cluster test never dials external
 		// aliases (its probes stay inside the cluster), so the skip must not
 		// prescribe it - it hands a copyable manual check instead.
 		return []probe.Result{classed(probe.SkippedCmd(probe.LayerDNS, host, vantage,
-			"couldn't resolve this external alias from where Radar runs - it may be a split-horizon or cluster-internal name that only resolves inside the cluster. Radar doesn't test external aliases from in-cluster; check it from a pod by hand.",
+			"couldn't resolve this external alias from where KubeAtlas runs - it may be a split-horizon or cluster-internal name that only resolves inside the cluster. KubeAtlas doesn't test external aliases from in-cluster; check it from a pod by hand.",
 			fmt.Sprintf("kubectl run alias-check --rm -i --restart=Never --image=busybox:1.36 -- nslookup %s", host)), SkipClassVantage)}
 	}
 	dns.Path = probe.PathData
@@ -684,7 +684,7 @@ func probeExternalNamePort(ctx context.Context, host, path string, p PortMap, va
 	}
 	if !r.OK && internalOnly {
 		skip := probe.SkippedCmd(r.Layer, r.Target, vantage,
-			fmt.Sprintf("%q resolves to an internal address your machine can't reach - it may be cluster-internal. Radar doesn't test external aliases from in-cluster; check it from a pod by hand.", host),
+			fmt.Sprintf("%q resolves to an internal address your machine can't reach - it may be cluster-internal. KubeAtlas doesn't test external aliases from in-cluster; check it from a pod by hand.", host),
 			fmt.Sprintf("kubectl run alias-check --rm -i --restart=Never --image=busybox:1.36 -- nc -vz -w 3 %s %d", host, p.Port))
 		skip.Path = probe.PathData
 		skip.Port = p.Port
@@ -1118,7 +1118,7 @@ func curlReachCmd(scheme, host string) string {
 func nonHTTPSkipReason(portName, appProtocol string, port int32, vantage probe.Vantage, tcpRan bool) string {
 	base := nonHTTPBaseReason(portName, appProtocol, port)
 	if vantage == probe.VantageLocal {
-		return base + " Run Radar from in-cluster to verify TCP reachability."
+		return base + " Run KubeAtlas from in-cluster to verify TCP reachability."
 	}
 	// Only claim TCP was checked when a data-path TCP probe actually ran on this
 	// hop. From a laptop the caller has appended the "run in-cluster" hint instead.
@@ -1436,7 +1436,7 @@ func probeIngress(ctx context.Context, h *Hop, vantage probe.Vantage, path strin
 			// In-cluster, an unresolvable host IS real evidence - keep it.
 			if vantage == probe.VantageLocal {
 				out = append(out, classed(probe.SkippedCmd(probe.LayerDNS, host, vantage,
-					fmt.Sprintf("%q doesn't resolve from your machine - it may be cluster-internal DNS. Run Radar in-cluster, or test from a host that resolves it.", host),
+					fmt.Sprintf("%q doesn't resolve from your machine - it may be cluster-internal DNS. Run KubeAtlas in-cluster, or test from a host that resolves it.", host),
 					curlReachCmd("https", host)+"   # from a host that resolves it; or http://"), SkipClassVantage))
 				continue
 			}
@@ -1487,7 +1487,7 @@ func probeIngress(ctx context.Context, h *Hop, vantage probe.Vantage, path strin
 			}
 			if !tcpRes.OK && internalOnly {
 				out = append(out, classed(probe.SkippedCmd(probe.LayerTCP, addr, vantage,
-					fmt.Sprintf("%q resolves to an internal address your machine can't reach - it may be cluster-internal. Run Radar in-cluster, or test from a host that routes to it.", host),
+					fmt.Sprintf("%q resolves to an internal address your machine can't reach - it may be cluster-internal. Run KubeAtlas in-cluster, or test from a host that routes to it.", host),
 					curlReachCmd("http", host)), SkipClassVantage))
 				continue
 			}
@@ -1611,7 +1611,7 @@ func probeGateway(ctx context.Context, h *Hop, vantage probe.Vantage, path strin
 			// internal addresses; in-cluster failures stay real evidence.
 			if !tcpRes.OK && vantage == probe.VantageLocal && (isInternalAddr(addr) || hostResolvesInternalOnly(ctx, addr)) {
 				out = append(out, classed(probe.SkippedCmd(probe.LayerTCP, target, vantage,
-					fmt.Sprintf("couldn't reach internal address %s from your machine - it may be cluster-internal. Run Radar in-cluster, or test from a host that routes to it.", addr),
+					fmt.Sprintf("couldn't reach internal address %s from your machine - it may be cluster-internal. Run KubeAtlas in-cluster, or test from a host that routes to it.", addr),
 					fmt.Sprintf("nc -vz %s %d", addr, l.Port)), SkipClassVantage))
 				continue
 			}

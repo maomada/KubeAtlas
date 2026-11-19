@@ -77,7 +77,7 @@ type requestDeadlineRoundTripper struct {
 // connection error: client-go retries those inside a single Watch call and
 // can swallow the last one, while this error reaches the reflector, which
 // then lists again.
-var errRequestEnded = errors.New("request ended by Radar")
+var errRequestEnded = errors.New("request ended by KubeAtlas")
 
 func (t *requestDeadlineRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	bounded, watchDeadline := t.classify(req)

@@ -2,7 +2,7 @@
 
 Bootstraps a `kind` cluster with Crossplane installed (core + provider-kubernetes +
 function-patch-and-transform) and a curated set of Crossplane fixtures covering the
-resource kinds Radar's Crossplane UI needs to render. Use it for visual-testing
+resource kinds KubeAtlas's Crossplane UI needs to render. Use it for visual-testing
 changes to the Crossplane surfaces (resource list, MR/XR/Claim/Composition/XRD/Function
 renderers, composed-resources panel) without needing a real cluster running a cloud
 provider.
@@ -21,8 +21,8 @@ Both reconcile **healthy**.
 ./scripts/crossplane-demo.sh up        # ~4-6 minutes on first run
 ./scripts/crossplane-demo.sh status    # inventory what's installed
 
-# Run Radar against it
-kubectl config use-context kind-radar-crossplane-demo
+# Run KubeAtlas against it
+kubectl config use-context kind-kubeatlas-crossplane-demo
 ./scripts/visual-test-start.sh
 
 # When done

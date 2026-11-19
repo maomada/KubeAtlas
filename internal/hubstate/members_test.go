@@ -3,6 +3,7 @@ package hubstate
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"os"
 	"path/filepath"
 	"slices"
@@ -32,7 +33,7 @@ func TestMemberPersistenceScopeAndCredentialRevocation(t *testing.T) {
 	}
 	member, changed, err := store.UpdateMember(id, MemberInput{
 		Role: "member", Status: "active", ClusterIDs: []string{"alpha"},
-		KubernetesGroups: []string{"radar:reader"},
+		KubernetesGroups: []string{"kubeatlas:idp:reader"},
 	})
 	if err != nil || !changed || member.Status != "active" {
 		t.Fatalf("activate member = %#v, changed=%v, err=%v", member, changed, err)
@@ -54,7 +55,7 @@ func TestMemberPersistenceScopeAndCredentialRevocation(t *testing.T) {
 	}
 	if _, _, err := store.UpdateMember(id, MemberInput{
 		Role: "viewer", Status: "active", ClusterIDs: []string{"alpha"},
-		KubernetesGroups: []string{"radar:reader"},
+		KubernetesGroups: []string{"kubeatlas:idp:reader"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestMemberPersistenceScopeAndCredentialRevocation(t *testing.T) {
 	}
 	if _, _, err := store.UpdateMember(id, MemberInput{
 		Role: "viewer", Status: "active", ClusterIDs: []string{},
-		KubernetesGroups: []string{"radar:reader"},
+		KubernetesGroups: []string{"kubeatlas:idp:reader"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -181,11 +182,11 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	adminID, memberID, viewerID := "oidc:"+strings.Repeat("a", 64), "oidc:"+strings.Repeat("b", 64), "oidc:"+strings.Repeat("c", 64)
 	legacyMembers := map[string]Member{
 		adminID: {ID: adminID, UserID: "kubeatlas:" + adminID, DisplayName: "Legacy Admin", Role: "admin", Status: "active",
-			ClusterIDs: []string{}, KubernetesGroups: []string{"radar:legacy-admin"}, CreatedAt: now, UpdatedAt: now},
+			ClusterIDs: []string{}, KubernetesGroups: []string{compat.LegacyTierPrefix + "legacy-admin"}, CreatedAt: now, UpdatedAt: now},
 		memberID: {ID: memberID, UserID: "kubeatlas:" + memberID, DisplayName: "Legacy Member", Role: "member", Status: "active",
-			ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{"radar:legacy-member"}, CreatedAt: now, UpdatedAt: now},
+			ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{compat.LegacyTierPrefix + "legacy-member"}, CreatedAt: now, UpdatedAt: now},
 		viewerID: {ID: viewerID, UserID: "kubeatlas:" + viewerID, DisplayName: "Legacy Viewer", Role: "viewer", Status: "active",
-			ClusterIDs: []string{}, KubernetesGroups: []string{"radar:legacy-viewer"}, CreatedAt: now, UpdatedAt: now},
+			ClusterIDs: []string{}, KubernetesGroups: []string{compat.LegacyTierPrefix + "legacy-viewer"}, CreatedAt: now, UpdatedAt: now},
 	}
 	legacy["members"], err = json.Marshal(legacyMembers)
 	if err != nil {
@@ -241,10 +242,14 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 		if !ok || !member.LegacyRestricted {
 			t.Fatalf("legacy restriction marker missing for %s: %#v", test.id, member)
 		}
+		if !slices.Equal(member.KubernetesGroups, legacyMembers[test.id].KubernetesGroups) {
+			t.Fatalf("legacy Kubernetes groups changed for %s: %v", test.id, member.KubernetesGroups)
+		}
 	}
 	if err := migrated.EnsurePlatformOwner("portal:recovery", "kubeatlas:recovery", "Recovery"); err != nil {
 		t.Fatal(err)
 	}
+	addOrganizationBoundaryAccount(t, migrated, "oidc:"+strings.Repeat("e", 64), "active", OrganizationMembership{OrganizationID: "self-hosted", Role: "owner"})
 	if _, _, err := migrated.UpdateOrganizationMemberRole("self-hosted", adminID, "member"); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +278,7 @@ func TestLegacyStoreMigrationPreservesExistingState(t *testing.T) {
 	}
 	reopened.now = store.now
 	if organization := reopened.Organization(); organization.Name != "KubeAtlas Local" ||
-		len(reopened.Clusters()) != 2 || len(reopened.Members()) != 4 {
+		len(reopened.Clusters()) != 2 || len(reopened.Members()) != 5 {
 		t.Fatalf("migrated state did not survive restart: organization=%#v", organization)
 	}
 	if _, err := reopened.Authenticate(issued.Token, "owner"); err != nil {

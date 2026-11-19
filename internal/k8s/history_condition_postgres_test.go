@@ -27,7 +27,7 @@ func TestComputeDiff_ConditionPostgresRoundTrip(t *testing.T) {
 			t.Errorf("close PostgreSQL test database: %v", err)
 		}
 	})
-	schema := fmt.Sprintf("radar_condition_test_%d", time.Now().UnixNano())
+	schema := fmt.Sprintf("kubeatlas_condition_test_%d", time.Now().UnixNano())
 	if _, err := admin.ExecContext(t.Context(), "CREATE SCHEMA "+schema); err != nil {
 		t.Fatalf("create PostgreSQL test schema: %v", err)
 	}

@@ -68,12 +68,12 @@ func TestStoreEvidenceProvenanceSurvivesReopen(t *testing.T) {
 		{Seq: 2, Event: StreamEvent{Type: "step", Step: &StepInfo{
 			ID: "logs", Tool: "get_pod_logs", Status: "done",
 			Result: `{"logs":["authentication failed"]}`, EvidenceRef: firstRef,
-			RadarEvidence: true, IsError: &success,
+			KubeAtlasEvidence: true, IsError: &success,
 		}}},
 		{Seq: 3, Event: StreamEvent{Type: "step", Step: &StepInfo{
 			ID: "secret", Tool: "get_resource", Status: "done",
 			Result: `{"kind":"Secret"}`, EvidenceRef: secondRef,
-			RadarEvidence: true, IsError: &success,
+			KubeAtlasEvidence: true, IsError: &success,
 		}}},
 		{Seq: 4, Event: StreamEvent{Type: "done", Diag: &Diagnosis{
 			Verdict: investigation.Verdict{

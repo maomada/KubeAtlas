@@ -54,7 +54,7 @@ func emitAgentLog(f agentLogFields) {
 }
 
 // resultBytes computes the wire-payload size of a CallToolResult. We sum the
-// text length of every TextContent (the only content type radar tools emit
+// text length of every TextContent (the only content type kubeatlas tools emit
 // today) plus a marshaled view of any StructuredContent. JSON-marshaling the
 // whole result would double-count, so we approximate the body size instead.
 func resultBytes(result *mcp.CallToolResult) int {
@@ -115,7 +115,7 @@ func extractKindNamespace(input any) (kind string, ns string) {
 // dev log AND a structured agent-log line. Every `mcp.AddTool` registration
 // goes through this single wrap point so the log surface is uniform.
 //
-// The dev log preserves the colored, terminal-friendly behavior radar already
+// The dev log preserves the colored, terminal-friendly behavior kubeatlas already
 // had; the structured line is the machine-readable companion that downstream
 // tooling parses for response-size and latency data.
 //

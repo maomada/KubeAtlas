@@ -18,8 +18,8 @@ func TestCollectorErrorCode(t *testing.T) {
 		err  error
 		code readreason.Code
 	}{
-		{apierrors.NewUnauthorized("rejected"), readreason.RadarCredentialsRejected},
-		{apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "", errors.New("denied")), readreason.RadarForbidden},
+		{apierrors.NewUnauthorized("rejected"), readreason.KubeAtlasCredentialsRejected},
+		{apierrors.NewForbidden(schema.GroupResource{Resource: "pods"}, "", errors.New("denied")), readreason.KubeAtlasForbidden},
 		{k8score.ErrResourceListTooLarge, readreason.ListTooLarge},
 		{k8score.ErrCollectionNotSupported, readreason.KindNotWatchable},
 		{k8s.ErrUnknownDynamicKind, readreason.KindUnknown},

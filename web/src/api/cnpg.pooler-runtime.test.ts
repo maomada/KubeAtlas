@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useCNPGPoolerRuntime } from './cnpg'
 
 vi.mock('@tanstack/react-query', () => ({ useQuery: vi.fn(), useMutation: vi.fn(), useQueryClient: vi.fn() }))
-vi.mock('./client', () => ({ fetchJSON: vi.fn(), useRadarFeature: () => ({ guard: (f: () => unknown) => f(), gatedKey: [] }) }))
+vi.mock('./client', () => ({ fetchJSON: vi.fn(), useKubeAtlasFeature: () => ({ guard: (f: () => unknown) => f(), gatedKey: [] }) }))
 
 it('keeps the scheduling inventory fresh even when live proxy measurements are denied', () => {
   useCNPGPoolerRuntime('prod', 'pooler')

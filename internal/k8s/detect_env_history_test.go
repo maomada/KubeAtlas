@@ -127,18 +127,18 @@ func TestStaleSecretEnvExposureAndFalsePositiveMatrix(t *testing.T) {
 			t.Fatalf("unexpected Ready-pod detection: %+v", detections)
 		}
 		detection := detections[0]
-		wantMessage := "Pod/catalog-healthy is Ready, and a running container in it started before Radar observed a Secret key it references change: container app started at " +
-			startedAt.Format(time.RFC3339) + " and references Secret/db-conn key password as env DB_PASSWORD; Radar observed that key change at " +
+		wantMessage := "Pod/catalog-healthy is Ready, and a running container in it started before KubeAtlas observed a Secret key it references change: container app started at " +
+			startedAt.Format(time.RFC3339) + " and references Secret/db-conn key password as env DB_PASSWORD; KubeAtlas observed that key change at " +
 			changedAt.Format(time.RFC3339) + ". Kubernetes reads Secret-backed env values only when a container starts."
 		if detection.Message != wantMessage ||
 			!strings.Contains(detection.Cause, "does not refresh") || !strings.Contains(detection.Action, "Confirm no replacement") {
 			t.Fatalf("Ready-pod detection did not state its observed evidence:\n got %q\nwant %q", detection.Message, wantMessage)
 		}
-		// The change time is when Radar observed the update, not when it was
+		// The change time is when KubeAtlas observed the update, not when it was
 		// written, so the message must not claim which value the container read.
 		for _, overclaim := range []string{"stale", "pre-change", "old value", "still hold"} {
 			if strings.Contains(detection.Message, overclaim) {
-				t.Fatalf("Ready-pod message claims more than Radar observed (%q): %q", overclaim, detection.Message)
+				t.Fatalf("Ready-pod message claims more than KubeAtlas observed (%q): %q", overclaim, detection.Message)
 			}
 		}
 	})
@@ -169,10 +169,10 @@ func TestStaleSecretEnvExposureAndFalsePositiveMatrix(t *testing.T) {
 		if len(detections) != 1 || detections[0].Reason != "StaleSecretEnv" || detections[0].Severity != "warning" || detections[0].Kind != "Pod" || detections[0].Name != pod.Name || detections[0].Fingerprint != "stale-secret-env" {
 			t.Fatalf("unexpected promoted detection: %+v", detections)
 		}
-		if detections[0].Message != "The pod is not Ready, and running containers in it started before Radar observed Secret keys they reference change: container app started at "+
-			startedAt.Format(time.RFC3339)+" and references Secret/db-conn key password as env DB_PASSWORD; Radar observed that key change at "+
+		if detections[0].Message != "The pod is not Ready, and running containers in it started before KubeAtlas observed Secret keys they reference change: container app started at "+
+			startedAt.Format(time.RFC3339)+" and references Secret/db-conn key password as env DB_PASSWORD; KubeAtlas observed that key change at "+
 			changedAt.Format(time.RFC3339)+". Restart the pod to refresh them." ||
-			detections[0].Cause != "A running container that references a Secret key in its environment started before Radar observed that key change." ||
+			detections[0].Cause != "A running container that references a Secret key in its environment started before KubeAtlas observed that key change." ||
 			detections[0].Action != "Restart the pod so its containers re-read Secret-backed environment variables." {
 			t.Fatalf("not-Ready detection contract changed: %+v", detections[0])
 		}
@@ -392,7 +392,7 @@ func TestStaleSecretEnvExposureAndFalsePositiveMatrix(t *testing.T) {
 		cache := envHistoryTestCache(t, pod, secret)
 		setEnvHistoryEvents(t, change)
 		detections := detectStaleSecretEnv(cache, "shop", now)
-		if len(detections) != 1 || !strings.Contains(detections[0].Message, "started before Radar observed") ||
+		if len(detections) != 1 || !strings.Contains(detections[0].Message, "started before KubeAtlas observed") ||
 			strings.Contains(detections[0].Message, "because") {
 			t.Fatalf("expected one non-causal warning for the coincidental case: %+v", detections)
 		}
@@ -1302,7 +1302,7 @@ func assertStaleSecretEnvDegraded(t *testing.T, d Detection, action string) {
 	}
 	if !strings.Contains(degraded.Message, "stale Secret-backed environment values") || !strings.HasPrefix(degraded.Action, action) ||
 		!strings.Contains(degraded.Cause, "shown only to callers who can read the Secret") ||
-		!strings.HasPrefix(degraded.Cause, "Radar observed a change") {
+		!strings.HasPrefix(degraded.Cause, "KubeAtlas observed a change") {
 		t.Fatalf("degraded form isn't actionable: %+v", degraded)
 	}
 	text := degraded.Message + degraded.Cause + degraded.Action
@@ -1696,9 +1696,9 @@ func TestStaleSecretEnvMessagesStateObservedFacts(t *testing.T) {
 	t.Run("one Ready pod of a workload is named", func(t *testing.T) {
 		got := staleSecretEnvReadyDetectionMessage(staleSecretEnvSubject{kind: "Deployment", name: "product-catalog"},
 			[]StaleSecretEnvCheck{check("product-catalog-67666986b8-x2kq9", "product-catalog", "DB_CONNECTION_STRING", "product-catalog-db-conn", "DB_CONNECTION_STRING", late)})
-		want := "Deployment/product-catalog has a Ready pod (product-catalog-67666986b8-x2kq9) with a running container that started before Radar observed a Secret key it references change: " +
+		want := "Deployment/product-catalog has a Ready pod (product-catalog-67666986b8-x2kq9) with a running container that started before KubeAtlas observed a Secret key it references change: " +
 			"container product-catalog started at 2026-10-16T15:19:25Z and references Secret/product-catalog-db-conn key DB_CONNECTION_STRING as env DB_CONNECTION_STRING; " +
-			"Radar observed that key change at 2026-10-16T15:19:41Z. Kubernetes reads Secret-backed env values only when a container starts."
+			"KubeAtlas observed that key change at 2026-10-16T15:19:41Z. Kubernetes reads Secret-backed env values only when a container starts."
 		if got != want {
 			t.Fatalf("message:\n got %q\nwant %q", got, want)
 		}
@@ -1707,7 +1707,7 @@ func TestStaleSecretEnvMessagesStateObservedFacts(t *testing.T) {
 	t.Run("per-check context names facts without claiming the env value", func(t *testing.T) {
 		pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "p", Namespace: "shop"}}
 		got := newStaleSecretEnvCheck(pod, "app", "DB_PASSWORD", "secretKeyRef", "", "db", "password", early, changedAt).Message
-		want := "Container app started at 2026-10-16T14:59:41Z, before Radar observed Secret/db key password change at 2026-10-16T15:19:41Z; Kubernetes does not refresh env DB_PASSWORD in a running container."
+		want := "Container app started at 2026-10-16T14:59:41Z, before KubeAtlas observed Secret/db key password change at 2026-10-16T15:19:41Z; Kubernetes does not refresh env DB_PASSWORD in a running container."
 		if got != want {
 			t.Fatalf("message:\n got %q\nwant %q", got, want)
 		}
@@ -1722,7 +1722,7 @@ func TestStaleSecretEnvMessagesStateObservedFacts(t *testing.T) {
 			check("api-1", "app", "D", "s", "d", early),
 		})
 		for _, want := range []string{
-			"Deployment/api has 2 Ready pods with running containers that started before Radar observed Secret keys they reference change: ",
+			"Deployment/api has 2 Ready pods with running containers that started before KubeAtlas observed Secret keys they reference change: ",
 			"2 app containers started at or before 2026-10-16T15:19:25Z and reference Secret/s key a as env A",
 			"container app started at 2026-10-16T14:59:41Z and references Secret/s key b as env B",
 			"; +1 more.",

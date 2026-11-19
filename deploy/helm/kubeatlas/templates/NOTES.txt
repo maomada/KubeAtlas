@@ -3,15 +3,15 @@
        scaffold. Keep it that way: don't add claims the docs don't make.
        Never print a value that can hold a credential. cloud.url is named, not
        printed, because a URL can carry userinfo or a token in its query. */ -}}
-{{- $fullName := include "radar.fullname" . -}}
+{{- $fullName := include "kubeatlas.fullname" . -}}
 {{- $ns := .Release.Namespace -}}
 {{- $port := .Values.service.port -}}
-{{- $basePath := include "radar.basePath" . -}}
+{{- $basePath := include "kubeatlas.basePath" . -}}
 {{- $authDocs := "https://github.com/maomada/KubeAtlas/blob/main/docs/authentication.md" -}}
 {{- $mode := .Values.auth.mode -}}
 {{- $routed := or .Values.ingress.enabled .Values.httpRoute.enabled -}}
 {{- $proxyAuth := printf "Authentication: proxy (auth.mode=proxy). Users authenticate through the proxy,\nwhich forwards their identity to KubeAtlas via HTTP headers. The auth proxy should\nbe the only path to KubeAtlas.\nSetup: %s" $authDocs -}}
-{{- if include "radar.cloudEnrollmentMode" . | eq "true" }}
+{{- if include "kubeatlas.cloudEnrollmentMode" . | eq "true" }}
 Cloud enrollment is unavailable in KubeAtlas. The self-hosted Cloud Hub is a separate deployment.
 {{- else if .Values.cloud.enabled }}
 Cloud connectivity is unavailable in KubeAtlas. The self-hosted Cloud Hub is a separate deployment.

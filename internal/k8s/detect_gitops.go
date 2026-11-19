@@ -71,7 +71,7 @@ type argoDriftEntry struct {
 
 // argoDriftTracker records how long each manual-sync Application has been
 // continuously OutOfSync. It hangs off the per-cluster ResourceCache, so a
-// kubeconfig context switch drops it naturally; a Radar restart resets every
+// kubeconfig context switch drops it naturally; a KubeAtlas restart resets every
 // clock, which is why the gated warning is deliberately conservative (we would
 // rather under-warn than invent a drift-onset time we never observed).
 type argoDriftTracker struct {
@@ -155,7 +155,7 @@ func DetectGitOpsProblems(dynamicCache *DynamicResourceCache, discovery *Resourc
 		return items
 	}
 
-	// The typed cache carries Radar-tracked state (manual-drift continuity) and
+	// The typed cache carries KubeAtlas-tracked state (manual-drift continuity) and
 	// the typed listers (controller pods, argocd-cm) the stale detector needs.
 	// nil in unit tests that only stand up the dynamic cache — every consumer
 	// here degrades gracefully.
@@ -537,7 +537,7 @@ func detectFluxProblems(items []*unstructured.Unstructured, kind, group string, 
 }
 
 // argoControllerHealth summarizes the application-controller's pod health for
-// the stale-comparison detector. visible reports whether Radar can see the
+// the stale-comparison detector. visible reports whether KubeAtlas can see the
 // controller pods at all — RBAC may hide them — in which case we cannot pin
 // staleness on the controller and fall back to per-app rows. subject* name the
 // controller workload the pods roll up to, used as the rollup issue's subject.

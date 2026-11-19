@@ -23,7 +23,7 @@ import type { MainView } from "../../types";
 import { Tooltip } from "../ui/Tooltip";
 import { assetUrl } from "@maomada/k8s-ui";
 
-const radarLogoUrl = assetUrl("/images/kubeatlas/kubeatlas-icon.svg");
+const kubeatlasLogoUrl = assetUrl("/images/kubeatlas/kubeatlas-icon.svg");
 
 // The views the rail can navigate to. Broader than k8s-ui's ExtendedMainView
 // (which omits 'applications') — it mirrors the navigable subset of App.tsx's
@@ -40,7 +40,7 @@ type NavRailView =
 
 // Primary left nav rail for standalone (non-embedded) KubeAtlas.
 //
-// Ported from radar-hub-web's src/shell/LeftRail.tsx, simplified for OSS:
+// Ported from kubeatlas-hub-web's src/shell/LeftRail.tsx, simplified for OSS:
 // KubeAtlas's window is desktop-only (App.tsx outer `min-w-[800px]`), so there's
 // no mobile slide-in sheet — just two committed states driven by a persisted
 // pin (see useNavRailPinned):
@@ -49,7 +49,7 @@ type NavRailView =
 //                on hover (NOT a whole-rail hover-expand, which would reflow
 //                content under the cursor).
 //
-// In embedded mode (Radar Hub) this rail is not rendered at all — the host
+// In embedded mode (KubeAtlas Hub) this rail is not rendered at all — the host
 // owns primary view navigation via its own fleet LeftRail.
 
 interface NavItemDef {
@@ -246,7 +246,7 @@ function BrandRow({
         <span className="flex w-14 shrink-0 items-center justify-center">
           <span className="relative w-7 h-7 rounded-lg overflow-hidden bg-accent-muted border border-theme-border">
             <img
-              src={radarLogoUrl}
+              src={kubeatlasLogoUrl}
               alt=""
               aria-hidden
               className="w-full h-full p-0.5"

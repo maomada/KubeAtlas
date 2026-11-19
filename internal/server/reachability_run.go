@@ -37,7 +37,7 @@ type probeCapabilityResponse struct {
 // actually run for this caller, so the button only appears when it works (a
 // button that 403s mid-incident is worse than none). It also names the cluster +
 // namespace the probe pod would be created in - the safety rail, since the
-// runner creates pods in whatever cluster Radar is connected to. Cluster is the
+// runner creates pods in whatever cluster KubeAtlas is connected to. Cluster is the
 // readable context label, or the opaque cluster UID when an in-cluster install
 // has no distinguishing label. ClusterKey is the separate source-scoped identity
 // the frontend uses for "don't ask again"; keeping the two separate avoids

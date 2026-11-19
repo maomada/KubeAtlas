@@ -37,7 +37,7 @@ import (
 //
 // Two things this cannot do, both reported rather than hidden: it needs Velero's
 // controller running (nothing else serves a DownloadRequest), and it needs the
-// object storage the URL points at to be reachable from wherever Radar runs.
+// object storage the URL points at to be reachable from wherever KubeAtlas runs.
 
 var downloadRequestGVR = schema.GroupVersionResource{
 	Group: veleroGroup, Version: "v1", Resource: "downloadrequests",
@@ -122,7 +122,7 @@ const (
 //
 // POST because it creates a DownloadRequest. Impersonated, so the apiserver
 // decides whether this caller may ask — a reader who cannot create
-// DownloadRequests gets the apiserver's own answer rather than Radar's guess.
+// DownloadRequests gets the apiserver's own answer rather than KubeAtlas's guess.
 func (s *Server) handleVeleroRunMessages(w http.ResponseWriter, r *http.Request) {
 	if !s.requireConnected(w) {
 		return
@@ -247,7 +247,7 @@ func (s *Server) handleVeleroRunMessages(w http.ResponseWriter, r *http.Request)
 // a different thing to check from the Velero controller, and a store that
 // answered with the wrong bytes is different again.
 func veleroFetchMessage(err error) string {
-	const reach = "Radar reaches the object store directly, so it has to be reachable from wherever Radar runs."
+	const reach = "KubeAtlas reaches the object store directly, so it has to be reachable from wherever KubeAtlas runs."
 	switch {
 	case errors.Is(err, errStorageUnreachable):
 		return "Velero returned a link to the messages, but the object store did not answer. " + reach
@@ -256,13 +256,13 @@ func veleroFetchMessage(err error) string {
 			"A pre-signed link is only valid for a short window, and the credentials Velero signed it with must still be valid."
 	case errors.Is(err, errStorageRedirected):
 		return "Velero returned a link to the messages, but the object store redirected it. " +
-			"Radar does not follow redirects on a signed link, because that is how a link reaches a host nobody named."
+			"KubeAtlas does not follow redirects on a signed link, because that is how a link reaches a host nobody named."
 	case errors.Is(err, errNotAResultsFile):
 		return "Velero returned a link to the messages, but what came back is not a results file."
 	case errors.Is(err, errMalformedURL):
-		return "Velero returned a link to the messages that Radar could not parse."
+		return "Velero returned a link to the messages that KubeAtlas could not parse."
 	default:
-		return "Velero returned a link to the messages, but Radar could not read it. " + reach
+		return "Velero returned a link to the messages, but KubeAtlas could not read it. " + reach
 	}
 }
 
@@ -299,10 +299,10 @@ func awaitDownloadURL(ctx context.Context, client dynamic.Interface, namespace, 
 //
 // The URL comes from Velero's status, which comes from the storage location a
 // cluster administrator configured — the same trust boundary as every other
-// field Radar reads. It is still bounded: http(s) only, one timeout, one size
+// field KubeAtlas reads. It is still bounded: http(s) only, one timeout, one size
 // cap, and redirects are not followed at all.
 //
-// Not following them is the point. Radar is not always run by whoever
+// Not following them is the point. KubeAtlas is not always run by whoever
 // administers the cluster — in a hosted deployment this process sits on a
 // different network — and a redirect is how a location's URL reaches a host the
 // caller never named. Object storage answers a pre-signed GET directly; it has

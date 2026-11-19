@@ -194,7 +194,7 @@ export function TerminalTab({
             xterm.write('\r\n\x1b[2m[Process exited]\x1b[0m\r\n')
           } else if (msg.type === 'error' && msg.data) {
             setError(msg.data)
-            // Support both camelCase (radar) and snake_case (conduit) error type field
+            // Support both camelCase (kubeatlas) and snake_case (conduit) error type field
             setErrorType(msg.errorType ?? msg.error_type ?? 'exec_error')
             setIsConnected(false)
           }

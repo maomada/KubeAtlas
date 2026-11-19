@@ -93,7 +93,7 @@ func recentChangeViewer(ctx context.Context) meaningfulchanges.Viewer {
 }
 
 // callerReadsAllNamespaces reports whether the caller is unrestricted by
-// namespace. Store-wide facts, such as when Radar's held history becomes
+// namespace. Store-wide facts, such as when KubeAtlas's held history becomes
 // complete, go only to such callers.
 func callerReadsAllNamespaces(ctx context.Context) bool {
 	return filterNamespacesForUser(ctx, nil) == nil
@@ -231,7 +231,7 @@ func filterNamespacesForUserWithStatus(ctx context.Context, requested []string) 
 // mirroring Server.openCostRouteScope and parseNamespacesForUser. Prometheus
 // and Kubecost answer cluster-wide no matter which namespace the informer
 // caches are pinned to, so a tool reading them must clamp the scope itself or a
-// namespace-scoped Radar reports spend for namespaces it was told to ignore.
+// namespace-scoped KubeAtlas reports spend for namespaces it was told to ignore.
 func scopedNamespacesForUser(ctx context.Context, requested []string) []string {
 	clamped, ok := clampToNamespacePin(requested)
 	if !ok {
@@ -250,7 +250,7 @@ func namespaceWithinPin(namespace string) bool {
 // deniedScopeReason names why a namespace request resolved to nothing. The pin
 // and an RBAC denial are indistinguishable in the resulting namespace list, so
 // the cause has to be re-derived from configuration: "you cannot read this"
-// and "radar was started with --namespace-scope" need different answers. The
+// and "kubeatlas was started with --namespace-scope" need different answers. The
 // pin is the answer only for namespaces the caller can see: one they can't is
 // an access denial either way, so guessing names can't find the pin.
 func deniedScopeReason(ctx context.Context, requested []string) string {

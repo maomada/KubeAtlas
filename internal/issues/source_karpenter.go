@@ -40,7 +40,7 @@ type karpenterResourceInventory struct {
 	Coverage karpenterResourceCoverage
 	// Gap says why an installed kind's inventory is unknown, when that
 	// leaves its issues unchecked. Empty when the kind isn't installed, or
-	// Radar's own access excludes it by configuration.
+	// KubeAtlas's own access excludes it by configuration.
 	Gap issuesapi.UncheckedReason
 }
 

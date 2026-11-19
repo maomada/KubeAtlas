@@ -24,7 +24,7 @@
 // (not DOM selection), so window.getSelection() doesn't work — we access the
 // editor instance exposed by YamlEditor.tsx.
 function getMonacoSelection(): { text: string; editor: any } | null {
-  const editor = (window as any).__radarMonacoEditor
+  const editor = (window as any).__kubeatlasMonacoEditor
   if (!editor?.hasTextFocus?.()) return null
   const sel = editor.getSelection()
   const model = editor.getModel()

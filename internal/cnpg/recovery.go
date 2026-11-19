@@ -24,12 +24,13 @@ import (
 
 	auth "github.com/maomada/KubeAtlas/internal/auth"
 	integration "github.com/maomada/KubeAtlas/internal/integration"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 )
 
 const (
-	cnpgRestoreValidationAnno = "radar.skyhook.io/restore-validation"
+	cnpgRestoreValidationAnno = "kubeatlas.io/restore-validation"
 	// cnpgRestoreValidationVersion is the annotation's format. The note lives
-	// on the Cluster, where Radars of other versions read it: a reader skips a
+	// on the Cluster, where KubeAtlas instances of other versions read it: a reader skips a
 	// format it does not know rather than read it with this one's meaning.
 	cnpgRestoreValidationVersion = 1
 	cnpgRestoreValidationMax     = 2000
@@ -174,7 +175,7 @@ type CNPGRestoreValidation struct {
 	Target     CNPGRestoreValidationRef  `json:"target"`
 }
 
-// CNPGRestoreValidationRef names a Cluster; UID is empty when Radar could not
+// CNPGRestoreValidationRef names a Cluster; UID is empty when KubeAtlas could not
 // read it as the recording user, and Verified says so.
 type CNPGRestoreValidationRef struct {
 	Namespace string `json:"namespace"`
@@ -208,7 +209,12 @@ func (s *Reader) RecoverySnapshot(callerCtx context.Context, typed kubernetes.In
 		Coverage:   map[string]integration.ReadSource{},
 		CapturedAt: time.Now().UTC().Format(time.RFC3339),
 	}
-	resp.Validation, resp.ValidationError = parseCNPGRestoreValidation(cluster.GetAnnotations()[cnpgRestoreValidationAnno], cluster.GetUID())
+	rawValidation, validNames := compat.OwnedValue(cluster.GetAnnotations(), cnpgRestoreValidationAnno, compat.LegacyCNPGRestoreValidation)
+	if !validNames {
+		resp.ValidationError = "Conflicting restore-validation annotations"
+	} else {
+		resp.Validation, resp.ValidationError = parseCNPGRestoreValidation(rawValidation, cluster.GetUID())
+	}
 
 	selector := labels.SelectorFromSet(labels.Set{clusterLabel: name}).String()
 	var jobs []batchv1.Job
@@ -466,7 +472,7 @@ func parseCNPGRestoreValidation(raw string, clusterUID types.UID) (*CNPGRestoreV
 		return nil, "the " + cnpgRestoreValidationAnno + " annotation is not valid JSON"
 	}
 	if v.Version != cnpgRestoreValidationVersion {
-		return nil, fmt.Sprintf("the %s annotation has format version %d, which this Radar does not read", cnpgRestoreValidationAnno, v.Version)
+		return nil, fmt.Sprintf("the %s annotation has format version %d, which this KubeAtlas does not read", cnpgRestoreValidationAnno, v.Version)
 	}
 	if v.RecordedAt == "" || v.Checked == "" {
 		return nil, "the " + cnpgRestoreValidationAnno + " annotation is missing recordedAt or checked"
@@ -540,7 +546,7 @@ func RecordCNPGRestoreValidation(ctx context.Context, dyn dynamic.Interface, nam
 		return nil, err
 	}
 	if err := integration.MergePatchAtVersion(ctx, dyn, ClusterGVR, cluster, map[string]any{
-		"metadata": map[string]any{"annotations": map[string]any{cnpgRestoreValidationAnno: string(data)}},
+		"metadata": map[string]any{"annotations": map[string]any{cnpgRestoreValidationAnno: string(data), compat.LegacyCNPGRestoreValidation: nil}},
 	}); err != nil {
 		if apierrors.IsConflict(err) {
 			return nil, integration.ChangedAction(nil, "Cluster %s/%s changed while the note was being recorded; try again", namespace, name)

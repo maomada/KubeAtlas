@@ -12,7 +12,7 @@ func TestPrincipalGroupsKeepRecoveryIdentityExactAndSortOrganizationRoles(t *tes
 	h, _ := newPortalHubFixture(t, false)
 	p := h.liveHub
 	recoveryGroups := p.principalGroups(p.ownerID, "self-hosted", p.localMember())
-	if !slices.Equal(recoveryGroups, []string{"radar:idp:operators"}) {
+	if !slices.Equal(recoveryGroups, []string{"kubeatlas:idp:operators"}) {
 		t.Fatalf("recovery principal groups = %v", recoveryGroups)
 	}
 	ownerID := "oidc:" + strings.Repeat("9", 64)

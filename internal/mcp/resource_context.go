@@ -28,7 +28,7 @@ type mcpPolicyReportLookupAdapter struct {
 }
 
 // Unavailable implements resourcecontext.PolicyReportAvailability so an agent
-// can tell "no violations" from "Radar could not read the policy reports".
+// can tell "no violations" from "KubeAtlas could not read the policy reports".
 func (a mcpPolicyReportLookupAdapter) Unavailable() (resourcecontext.OmittedReason, bool) {
 	// Install status first. With no policy engine there is nothing to withhold,
 	// and the mapping above is deliberately silent there — a denial note on every
@@ -267,7 +267,7 @@ func issueSubjectAccess(ctx context.Context) func(issues.Ref) bool {
 }
 
 // issueEvidenceAccess authorizes an inventory a finding was derived from at
-// the granularity Radar reads it: a namespaced read needs namespace access
+// the granularity KubeAtlas reads it: a namespaced read needs namespace access
 // (and a Secret read a Secrets check); a cluster-wide read needs the SAR.
 func issueEvidenceAccess(ctx context.Context) func(issues.EvidenceRead) bool {
 	inNamespace := callerNamespaces(ctx)

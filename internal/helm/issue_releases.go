@@ -71,23 +71,23 @@ func (c *Client) ListIssueReleasesAcrossNamespaces(ctx context.Context, namespac
 
 // IssueReadDenied reports whether a failed ListIssueReleasesAcrossNamespaces
 // was Kubernetes refusing the caller's release Secret list. A 401 is not: it
-// is Radar's own credentials failing. Neither is Radar's ServiceAccount being
+// is KubeAtlas's own credentials failing. Neither is KubeAtlas's ServiceAccount being
 // refused impersonation of the caller.
 func IssueReadDenied(err error) bool {
 	return ReleaseReadDeniedForCaller(err)
 }
 
 // ReleaseReadDeniedForCaller reports whether err is Kubernetes refusing the
-// caller's own read of release storage, as opposed to a failure of Radar's
+// caller's own read of release storage, as opposed to a failure of KubeAtlas's
 // access: rejected credentials (401), or a ServiceAccount without the
-// impersonate permission, which refuses every user the same way. Radar's own
+// impersonate permission, which refuses every user the same way. KubeAtlas's own
 // refusal of a request without a user token isn't either: the caller's RBAC
 // was never asked.
 func ReleaseReadDeniedForCaller(err error) bool {
 	return err != nil && isReleaseReadForbidden(err) && !isImpersonationDenied(err) && !k8s.IsUserTokenRequired(err.Error())
 }
 
-// isImpersonationDenied matches the API server refusing Radar's identity
+// isImpersonationDenied matches the API server refusing KubeAtlas's identity
 // permission to impersonate the caller ("... cannot impersonate resource
 // \"users\" ..."). The request never reached the caller's own RBAC.
 func issueReadReason(err error) issuesapi.UncheckedReason {
@@ -105,7 +105,7 @@ func isImpersonationDenied(err error) bool {
 // leaves unchecked, if anything. A denial leaves nothing unchecked: the caller
 // may not read release Secrets, so it sees no Helm issues, like any other kind
 // it can't list. Neither does a caller that left, since nobody gets the
-// answer. Radar's own request deadline does: the caller is still waiting. A
+// answer. KubeAtlas's own request deadline does: the caller is still waiting. A
 // *PartialReadError names the namespaces that failed; the releases returned
 // with it are still valid.
 func IssueReadUnchecked(ctx context.Context, err error) (issuesapi.UncheckedSource, bool) {
@@ -208,7 +208,7 @@ func listIssueReleasesWithClients(ctx context.Context, client kubernetes.Interfa
 // issueStorageClients builds the label and Secret clients from one config,
 // so a context switch between the two lists can't send them to different
 // clusters. Like storageClient, it uses c's own rest.Config when it has one,
-// else Radar's current cluster.
+// else KubeAtlas's current cluster.
 func (c *Client) issueStorageClients(user *pkgauth.User) (kubernetes.Interface, metadata.Interface, error) {
 	c.mu.RLock()
 	restConfig := c.restConfig

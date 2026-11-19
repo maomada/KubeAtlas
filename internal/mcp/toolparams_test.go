@@ -23,7 +23,7 @@ func registerToolsOnce(t *testing.T) {
 	if accepted, _ := lookupToolParams("get_subject_permissions"); len(accepted) > 0 {
 		return
 	}
-	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "radar", Version: "test"}, nil)
+	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kubeatlas", Version: "test"}, nil)
 	registerTools(server, true, true, defaultToolParams)
 }
 
@@ -64,7 +64,7 @@ func TestSubjectPermissionsAliasRepairsTheBenchmarkFailure(t *testing.T) {
 func TestOrthographicRepairCrossesTheSnakeCamelSplit(t *testing.T) {
 	registerToolsOnce(t)
 
-	// radar publishes snake_case throughout, so repair must absorb the camelCase
+	// kubeatlas publishes snake_case throughout, so repair must absorb the camelCase
 	// spelling an agent is most likely to guess: camelCase is what most
 	// third-party MCP servers publish and what Kubernetes uses in manifests.
 	cases := []struct{ tool, supplied, want string }{
@@ -344,7 +344,7 @@ func TestMiddlewareDeliversRepairedArgsToHandler(t *testing.T) {
 	registerToolsOnce(t)
 	prevAccepted, prevRequired := lookupToolParams("get_subject_permissions")
 
-	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "radar-test", Version: "test"}, nil)
+	server := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "kubeatlas-test", Version: "test"}, nil)
 	server.AddReceivingMiddleware(paramRepairMiddleware)
 	addTool(server, &mcpsdk.Tool{Name: "get_subject_permissions", Description: "sentinel"},
 		func(_ context.Context, _ *mcpsdk.CallToolRequest, in sentinelIn) (*mcpsdk.CallToolResult, any, error) {
@@ -482,7 +482,7 @@ func renderContent(content []mcpsdk.Content) string {
 	return b.String()
 }
 
-// connectTestServer wires a client to a full radar MCP server over an in-memory
+// connectTestServer wires a client to a full kubeatlas MCP server over an in-memory
 // transport, so tests exercise the real middleware chain.
 func connectTestServer(t *testing.T) *mcpsdk.ClientSession {
 	t.Helper()
@@ -495,7 +495,7 @@ func connectTo(t *testing.T, server *mcpsdk.Server) *mcpsdk.ClientSession {
 	t.Helper()
 	ctx := context.Background()
 
-	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "radar-test-client", Version: "test"}, nil)
+	client := mcpsdk.NewClient(&mcpsdk.Implementation{Name: "kubeatlas-test-client", Version: "test"}, nil)
 	serverTransport, clientTransport := mcpsdk.NewInMemoryTransports()
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	if err != nil {
@@ -573,7 +573,7 @@ func checkToolAgainstRegistry(t *testing.T, registry *toolParamRegistry, tool *m
 
 // TestParameterNamingStaysConsistent stops the footgun class from growing.
 //
-// Every radar parameter is snake_case. A lone camelCase outlier is what lets an
+// Every kubeatlas parameter is snake_case. A lone camelCase outlier is what lets an
 // agent that learned one tool's spelling get hard-rejected by another for the
 // same concept, so the invariant is worth enforcing rather than repairing.
 //
@@ -589,7 +589,7 @@ func TestParameterNamingStaysConsistent(t *testing.T) {
 				if slices.Contains(grandfathered[tool], p) {
 					continue
 				}
-				t.Errorf("%s.%s is camelCase; radar parameters are snake_case (want %q). "+
+				t.Errorf("%s.%s is camelCase; kubeatlas parameters are snake_case (want %q). "+
 					"Mixed spellings across tools cause hard schema rejections for agents.",
 					tool, p, toSnake(p))
 			}
@@ -625,7 +625,7 @@ func TestAliasTargetsExist(t *testing.T) {
 // The first case is the exact call that lost a benchmark investigation. The
 // agent had already identified cleanup-controller as the finalizer's owner and
 // asked the right question; the rejection sent it to an unrelated crashloop and
-// a wrong conclusion. It had read "cleanup-controller" out of radar's own
+// a wrong conclusion. It had read "cleanup-controller" out of kubeatlas's own
 // get_resource output, under the field name serviceAccountName.
 func TestServiceAccountShorthandExpands(t *testing.T) {
 	registerToolsOnce(t)

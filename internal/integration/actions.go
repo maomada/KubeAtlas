@@ -26,7 +26,7 @@ const (
 	ActionCodeContextChanged = "context_changed"
 	ActionCodeBlocked        = "blocked"
 	ActionCodePartial        = "partial"
-	// ActionCodeUnavailable: Radar refused before any write because it has no
+	// ActionCodeUnavailable: KubeAtlas refused before any write because it has no
 	// connection or client, or could not run a permission check it requires.
 	// Without a code a 503 may come from a proxy that already forwarded the write.
 	ActionCodeUnavailable = "unavailable"

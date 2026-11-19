@@ -36,8 +36,8 @@ type Report struct {
 	Clusters   ClusterSummary `json:"clusters"`
 }
 
-// Setup is how this Radar is configured. Every field is a value from a
-// fixed vocabulary Radar defines, never something the user typed.
+// Setup is how this KubeAtlas is configured. Every field is a value from a
+// fixed vocabulary KubeAtlas defines, never something the user typed.
 type Setup struct {
 	AuthMode        string   `json:"authMode"`
 	TimelineStorage string   `json:"timelineStorage"`
@@ -53,7 +53,7 @@ type Engagement struct {
 	ActiveMinutes string `json:"activeMinutes"`
 }
 
-// ClusterSummary covers every cluster Radar was connected to that day.
+// ClusterSummary covers every cluster KubeAtlas was connected to that day.
 type ClusterSummary struct {
 	Contexts string         `json:"contexts"`
 	Used     int            `json:"used"`
@@ -118,7 +118,7 @@ type pending struct {
 	Clusters      map[string]ClusterShape `json:"clusters,omitempty"`
 }
 
-// empty means nobody used Radar in the period; cluster shape alone is not use.
+// empty means nobody used KubeAtlas in the period; cluster shape alone is not use.
 func (p *pending) empty() bool {
 	return len(p.Views) == 0 && len(p.Actions) == 0 && len(p.MCPTools) == 0 &&
 		len(p.UIEvents) == 0 && len(p.Errors) == 0 && p.Sessions == 0 && p.ActiveMinutes == 0

@@ -3,7 +3,7 @@ import type { CNPGRuntimeResponse } from '../../../api/cnpg'
 import type { ActionCapability } from '../../../api/actions'
 import type { CNPGRecoveryResponse, CNPGRecoveryPod } from '../../../api/cnpg-recovery'
 
-export const RESTORE_VALIDATION_ANNOTATION = 'radar.skyhook.io/restore-validation'
+export const RESTORE_VALIDATION_ANNOTATION = 'kubeatlas.io/restore-validation'
 const HEALTHY_PHASE = 'Cluster in healthy state'
 
 /**

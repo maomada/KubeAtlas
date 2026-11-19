@@ -31,8 +31,8 @@ func TestInspectCloudReleaseWithClassifiesEnrollmentStates(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			cfg := memoryActionConfig(t)
-			seedRelease(t, cfg, "radar", tc.status, 4)
-			got, err := inspectCloudReleaseWith(cfg, "radar")
+			seedRelease(t, cfg, "kubeatlas", tc.status, 4)
+			got, err := inspectCloudReleaseWith(cfg, "kubeatlas")
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -42,7 +42,7 @@ func TestInspectCloudReleaseWithClassifiesEnrollmentStates(t *testing.T) {
 		})
 	}
 
-	got, err := inspectCloudReleaseWith(memoryActionConfig(t), "radar")
+	got, err := inspectCloudReleaseWith(memoryActionConfig(t), "kubeatlas")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -53,12 +53,12 @@ func TestInspectCloudReleaseWithClassifiesEnrollmentStates(t *testing.T) {
 
 func TestCloudUpgradeValuesClearsOnlyImageTag(t *testing.T) {
 	input := map[string]any{
-		"image": map[string]any{"repository": "mirror.example/radar", "tag": "old-pin"},
+		"image": map[string]any{"repository": "mirror.example/kubeatlas", "tag": "old-pin"},
 		"rbac":  map[string]any{"selfUpgrade": false},
 	}
 	got := cloudUpgradeValues(input)
 	image := got["image"].(map[string]any)
-	if image["tag"] != "" || image["repository"] != "mirror.example/radar" {
+	if image["tag"] != "" || image["repository"] != "mirror.example/kubeatlas" {
 		t.Fatalf("image override = %#v", image)
 	}
 	if got["rbac"].(map[string]any)["selfUpgrade"] != false {
@@ -86,25 +86,25 @@ func TestPreCloudDeploymentRefDoesNotRequireCloudMode(t *testing.T) {
 	manifest := `apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: custom-radar
+  name: custom-kubeatlas
   namespace: observability
   labels:
-    helm.sh/chart: radar-1.4.0
+    helm.sh/chart: kubeatlas-1.4.0
     app.kubernetes.io/instance: custom
 spec:
   selector:
-    matchLabels: {app.kubernetes.io/name: radar, app.kubernetes.io/instance: custom}
+    matchLabels: {app.kubernetes.io/name: kubeatlas, app.kubernetes.io/instance: custom}
   template:
     spec:
       containers:
-      - name: radar
+      - name: kubeatlas
         image: ghcr.io/maomada/kubeatlas:1.4.2
 `
 	ref, err := preCloudDeploymentRef(manifest, "fallback", "custom")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if ref.Name != "custom-radar" || ref.Namespace != "observability" {
+	if ref.Name != "custom-kubeatlas" || ref.Namespace != "observability" {
 		t.Fatalf("deployment = %+v", ref)
 	}
 	if _, err := cloudDeploymentRef(manifest, "fallback"); err == nil {
@@ -143,18 +143,18 @@ func TestSummarizeCloudUpgradeValuesUsesEffectiveChartDefaults(t *testing.T) {
 	}
 }
 
-func TestValidateOfficialRadarChart(t *testing.T) {
+func TestValidateOfficialKubeAtlasChart(t *testing.T) {
 	official := &chart.Chart{Metadata: &chart.Metadata{
 		Name: "kubeatlas", Version: "1.7.0", Sources: []string{"https://github.com/maomada/KubeAtlas"},
 	}}
-	if err := validateOfficialRadarChart("radar", "radar", official); err != nil {
+	if err := validateOfficialKubeAtlasChart("kubeatlas", "kubeatlas", official); err != nil {
 		t.Fatal(err)
 	}
 	lookalike := &chart.Chart{Metadata: &chart.Metadata{
 		Name: "kubeatlas", Version: "1.7.0", Sources: []string{"https://example.com/lookalike"},
 	}}
-	err := validateOfficialRadarChart("radar", "radar", lookalike)
-	if _, ok := err.(*NotOfficialRadarReleaseError); !ok {
+	err := validateOfficialKubeAtlasChart("kubeatlas", "kubeatlas", lookalike)
+	if _, ok := err.(*NotOfficialKubeAtlasReleaseError); !ok {
 		t.Fatalf("lookalike error = %T: %v", err, err)
 	}
 }
@@ -172,7 +172,7 @@ func TestDeployedCloudDisabledRequiresSafeRollbackState(t *testing.T) {
 	if err != nil || !safe {
 		t.Fatalf("standalone deployed release safe = %v, %v", safe, err)
 	}
-	rel.Config = map[string]any{"cloud": map[string]any{"enabled": true, "existingSecret": "radar-cloud-config"}}
+	rel.Config = map[string]any{"cloud": map[string]any{"enabled": true, "existingSecret": "kubeatlas-cloud-config"}}
 	safe, err = deployedCloudDisabled(rel)
 	if err != nil || safe {
 		t.Fatalf("Cloud deployed release safe = %v, %v", safe, err)
@@ -188,9 +188,9 @@ func TestDeployedCloudDisabledRequiresSafeRollbackState(t *testing.T) {
 func TestPreparedReleaseIdentityRollbackMatchIgnoresOnlyRevision(t *testing.T) {
 	original := preparedReleaseIdentity{
 		revision:     4,
-		namespace:    "radar",
+		namespace:    "kubeatlas",
 		status:       release.StatusDeployed,
-		chartName:    "radar",
+		chartName:    "kubeatlas",
 		chartVersion: "1.5.4",
 		appVersion:   "1.6.1",
 		manifestHash: sha256.Sum256([]byte("manifest")),
@@ -217,7 +217,7 @@ func TestPreparedReleaseIdentityRollbackMatchIgnoresOnlyRevision(t *testing.T) {
 		t.Fatal("rollback recorded in another namespace was accepted")
 	}
 
-	rel := &release.Release{Name: "radar", Namespace: "radar", Version: 4, Info: &release.Info{Status: release.StatusDeployed}, Manifest: "manifest"}
+	rel := &release.Release{Name: "kubeatlas", Namespace: "kubeatlas", Version: 4, Info: &release.Info{Status: release.StatusDeployed}, Manifest: "manifest"}
 	moved := *rel
 	moved.Namespace = "other"
 	before, err := releaseIdentity(rel)
@@ -254,7 +254,7 @@ func TestPrepareCloudUpgradeRefusesReleaseRunningOutsideItsStorageNamespace(t *t
 	currentChart := loadKubeAtlasTestChart(t)
 	currentChart.Metadata.Version = "1.6.0"
 	currentChart.Metadata.AppVersion = "1.6.2"
-	currentReq := &InstallRequest{ReleaseName: "radar", Namespace: "radar-system", ChartName: "kubeatlas", Version: "1.6.0", Repository: "unused"}
+	currentReq := &InstallRequest{ReleaseName: "kubeatlas", Namespace: "kubeatlas-system", ChartName: "kubeatlas", Version: "1.6.0", Repository: "unused"}
 	current, err := runServerDryRun(context.Background(), cfg, currentReq, currentChart)
 	if err != nil {
 		t.Fatalf("render current release: %v", err)
@@ -265,9 +265,9 @@ func TestPrepareCloudUpgradeRefusesReleaseRunningOutsideItsStorageNamespace(t *t
 		t.Fatal(err)
 	}
 
-	request := InstallRequest{ReleaseName: "radar", Namespace: "flux-system", ChartName: "kubeatlas", Repository: "unused"}
+	request := InstallRequest{ReleaseName: "kubeatlas", Namespace: "flux-system", ChartName: "kubeatlas", Repository: "unused"}
 	_, err = (&Client{}).prepareCloudUpgradeWith(context.Background(), cfg, request, "1.5.4")
-	if err == nil || !strings.Contains(err.Error(), `history in namespace "flux-system" but runs in "radar-system"`) {
+	if err == nil || !strings.Contains(err.Error(), `history in namespace "flux-system" but runs in "kubeatlas-system"`) {
 		t.Fatalf("split-namespace release was not refused: %v", err)
 	}
 
@@ -297,7 +297,7 @@ func TestPrepareCloudUpgradePinsReleaseAndUpgradesToChartAppVersion(t *testing.T
 	currentChart.Metadata.Version = "1.6.0"
 	currentChart.Metadata.AppVersion = "1.6.2"
 	currentReq := &InstallRequest{
-		ReleaseName: "radar", Namespace: "default", ChartName: "kubeatlas",
+		ReleaseName: "kubeatlas", Namespace: "default", ChartName: "kubeatlas",
 		Version: "1.6.0", Repository: "unused",
 		Values: map[string]any{"image": map[string]any{"tag": "1.5.9-pinned"}},
 	}
@@ -320,12 +320,12 @@ func TestPrepareCloudUpgradePinsReleaseAndUpgradesToChartAppVersion(t *testing.T
 	server := preparedChartServer(t, targetChart)
 	defer server.Close()
 	request := InstallRequest{
-		ReleaseName: "radar", Namespace: "default", ChartName: "kubeatlas", Repository: server.URL,
+		ReleaseName: "kubeatlas", Namespace: "default", ChartName: "kubeatlas", Repository: server.URL,
 		Values: map[string]any{
 			"image": map[string]any{"repository": "ghcr.io/maomada/kubeatlas"},
 			"cloud": map[string]any{
 				"enabled": true, "url": "wss://cloud.invalid/agent",
-				"clusterName": "cluster-id", "existingSecret": "radar-cloud-config",
+				"clusterName": "cluster-id", "existingSecret": "kubeatlas-cloud-config",
 			},
 			"auth": map[string]any{"mode": "proxy"},
 		},
@@ -350,7 +350,7 @@ func TestPrepareCloudUpgradePinsReleaseAndUpgradesToChartAppVersion(t *testing.T
 	if strings.Contains(prepared.TargetManifest(), "1.5.9-pinned") {
 		t.Fatal("target manifest retained the old image.tag pin")
 	}
-	if prepared.CurrentDeployment().Name != "radar-kubeatlas" || prepared.Deployment().Name != "radar-kubeatlas" {
+	if prepared.CurrentDeployment().Name != "kubeatlas" || prepared.Deployment().Name != "kubeatlas" {
 		t.Fatalf("workloads = current %+v, target %+v", prepared.CurrentDeployment(), prepared.Deployment())
 	}
 
@@ -388,7 +388,7 @@ func TestResolvePreparedChartSummaryUsesVerifiedArchive(t *testing.T) {
 	defer server.Close()
 	client := &Client{repositoryNetwork: testHelmRepositoryNetwork()}
 	summary, err := client.ResolvePreparedChartSummary(context.Background(), &InstallRequest{
-		ReleaseName: "radar", Namespace: "radar", ChartName: "kubeatlas", Repository: server.URL,
+		ReleaseName: "kubeatlas", Namespace: "kubeatlas", ChartName: "kubeatlas", Repository: server.URL,
 	}, "1.5.4")
 	if err != nil {
 		t.Fatal(err)
@@ -408,10 +408,11 @@ func loadKubeAtlasTestChart(t *testing.T) *chart.Chart {
 	for _, template := range loaded.Templates {
 		if strings.HasSuffix(template.Name, "templates/deployment.yaml") {
 			const guard = "{{- if .Values.cloud.enabled }}\n{{- fail \"cloud.enabled is unavailable in KubeAtlas\" }}\n{{- end }}\n"
-			if !strings.Contains(string(template.Data), guard) {
+			normalized := strings.ReplaceAll(string(template.Data), "\r\n", "\n")
+			if !strings.Contains(normalized, guard) {
 				t.Fatal("Cloud guard not found in KubeAtlas test chart")
 			}
-			template.Data = []byte(strings.Replace(string(template.Data), guard, "", 1))
+			template.Data = []byte(strings.Replace(normalized, guard, "", 1))
 			break
 		}
 	}

@@ -258,9 +258,9 @@ describe('PodRenderer resolved environment', () => {
 
     const limitedHistory = render({
       ...environment,
-      coverage: { degraded: true, degradedReason: 'Change history is limited to this Radar session.', saturated: true },
+      coverage: { degraded: true, degradedReason: 'Change history is limited to this KubeAtlas session.', saturated: true },
     })
-    expect(limitedHistory).toContain('Change history is limited to this Radar session.')
+    expect(limitedHistory).toContain('Change history is limited to this KubeAtlas session.')
     expect(limitedHistory).toContain('部分近期变化可能未显示。')
 
     const changed = render({
@@ -440,8 +440,8 @@ describe('PodRenderer metrics', () => {
     )
 
     expect(html).toContain('资源使用情况')
-    expect(html).toContain('指标不可用。Radar 无法读取 metrics.k8s.io。')
-    expect(html).toContain('Radar 无法读取 metrics.k8s.io')
+    expect(html).toContain('指标不可用。KubeAtlas 无法读取 metrics.k8s.io。')
+    expect(html).toContain('KubeAtlas 无法读取 metrics.k8s.io')
     expect(html).toContain('指标错误详情')
     expect(html).not.toContain('Install or repair metrics-server and its APIService')
     expect(html).not.toContain('指标收集错误：')
@@ -462,7 +462,7 @@ describe('PodRenderer metrics', () => {
       />,
     )
 
-    expect(html).toContain('指标不可用。Radar 无法读取 metrics.k8s.io。')
+    expect(html).toContain('指标不可用。KubeAtlas 无法读取 metrics.k8s.io。')
     expect(html).not.toContain('100m')
     expect(html).not.toContain('Last updated')
   })
@@ -483,7 +483,7 @@ describe('PodRenderer metrics', () => {
       />,
     )
 
-    expect(html).toContain('指标不可用。Radar 无法读取 metrics.k8s.io。')
+    expect(html).toContain('指标不可用。KubeAtlas 无法读取 metrics.k8s.io。')
     expect(html).toContain('CPU')
     expect(html).toContain('内存')
     expect(html).not.toContain('Last updated')
@@ -525,10 +525,10 @@ describe('PodRenderer metrics', () => {
   })
 })
 
-describe('PodRenderer on a Radar without variable sources', () => {
+describe('PodRenderer on a KubeAtlas without variable sources', () => {
   it('falls back to the spec view with an upgrade note, not an error', () => {
     const unsupported = Object.assign(new Error('unsupported'), {
-      radarUpgrade: { feature: 'Values from ConfigMaps and Secrets', minimumVersion: 'v1.9.0', currentVersion: 'v1.7.2' },
+      kubeatlasUpgrade: { feature: 'Values from ConfigMaps and Secrets', minimumVersion: 'v1.9.0', currentVersion: 'v1.7.2' },
     })
     const html = renderToString(
       <PodRenderer data={pod} onCopy={() => undefined} copied={null} environmentError={unsupported} />,
@@ -545,10 +545,10 @@ describe('PodRenderer pending Pods, including non-CNPG workloads', () => {
   const render = (data: any, metricsHistory: any = { containers: [], metricsAPIReachable: true }) => renderToString(<PodRenderer data={data} onCopy={() => {}} copied={null} metricsUnavailable metricsHistory={metricsHistory} />)
   it('shows no usage yet only with a successful metrics API collection', () => {
     expect(render(pending)).toContain('暂无用量：此 Pod 尚未运行')
-    expect(render(pending)).not.toContain('Radar 无法读取 metrics.k8s.io')
-    expect(render(pending, { containers: [], metricsAPIReachable: false })).toContain('Radar 无法读取 metrics.k8s.io')
+    expect(render(pending)).not.toContain('KubeAtlas 无法读取 metrics.k8s.io')
+    expect(render(pending, { containers: [], metricsAPIReachable: false })).toContain('KubeAtlas 无法读取 metrics.k8s.io')
     expect(render(pending, { containers: [], collectionError: 'forbidden' })).toContain('forbidden')
-    expect(render({ ...pending, status: { phase: 'Running' } })).toContain('Radar 无法读取 metrics.k8s.io')
+    expect(render({ ...pending, status: { phase: 'Running' } })).toContain('KubeAtlas 无法读取 metrics.k8s.io')
     expect(render({ ...pending, status: { phase: 'Pending', initContainerStatuses: [{ name: 'setup', state: { running: {} } }] } })).not.toContain('No usage yet')
   })
   it('shows unstarted regular and init containers neutrally', () => {
@@ -578,7 +578,7 @@ describe('finished Pod resource usage',()=>{
   expect(html).toContain('Live resource usage has ended for this Pod')
   expect(html).toContain('No recorded usage is available.')
   expect(html).not.toContain('指标收集错误：')
-  expect(html).not.toContain('Radar 无法读取 metrics.k8s.io')
+  expect(html).not.toContain('KubeAtlas 无法读取 metrics.k8s.io')
   expect(html).not.toContain('暂无用量：此 Pod 尚未运行')
  })
  it('keeps a genuine collector error qualified as current on a finished Pod',()=>{

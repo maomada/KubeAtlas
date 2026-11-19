@@ -33,7 +33,7 @@ type coreDNSAccess struct {
 	replicaSets bool
 }
 
-// CacheProvider adapts radar's in-process caches to the Provider
+// CacheProvider adapts kubeatlas's in-process caches to the Provider
 // interface. Uses the package-level singletons (k8s.GetResourceCache,
 // k8s.GetDynamicResourceCache, k8s.GetResourceDiscovery).
 type CacheProvider struct {
@@ -46,7 +46,7 @@ type CacheProvider struct {
 	podTemplateSources podTemplateSources
 }
 
-// NewCacheProvider returns a Provider over the live radar caches, or
+// NewCacheProvider returns a Provider over the live kubeatlas caches, or
 // nil if the typed cache isn't ready (cluster connection still pending).
 func NewCacheProvider() *CacheProvider {
 	cache := k8s.GetResourceCache()
@@ -622,7 +622,7 @@ func observedCoreDNSConfigMapChangeSignal() string {
 		if e.EventType != timeline.EventTypeUpdate || !strings.Contains(strings.ToLower(e.Name), "coredns") {
 			continue
 		}
-		return fmt.Sprintf("Radar observed ConfigMap kube-system/%s update %s ago", e.Name, timeutil.FormatAgeShort(time.Since(e.Timestamp)))
+		return fmt.Sprintf("KubeAtlas observed ConfigMap kube-system/%s update %s ago", e.Name, timeutil.FormatAgeShort(time.Since(e.Timestamp)))
 	}
 	return ""
 }
@@ -838,7 +838,7 @@ func (p *CacheProvider) karpenterResources(group, kind string) karpenterResource
 	gvr := schema.GroupVersionResource{Group: apiResource.Group, Version: apiResource.Version, Resource: apiResource.Name}
 	unknown := karpenterResourceInventory{GVR: gvr, Coverage: karpenterCoverageUnknown}
 	if err := p.dynamic.EnsureWatching(gvr); err != nil {
-		// Radar's own identity being denied the kind is a configuration
+		// KubeAtlas's own identity being denied the kind is a configuration
 		// choice (the chart's Karpenter collection is off), not a failure.
 		if p.dynamic.Observation(gvr).State != k8score.DynamicObservationDenied {
 			unknown.Gap = issuesapi.UncheckedReasonReadFailed

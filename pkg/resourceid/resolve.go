@@ -22,7 +22,7 @@ const (
 	// Resolved: the reference itself carried the group.
 	Resolved
 	// InferredBuiltin: the group was missing and the Kind is built-in, so the
-	// built-in group was chosen. This is Radar's policy; kubectl usually lands on
+	// built-in group was chosen. This is KubeAtlas's policy; kubectl usually lands on
 	// the same group because discovery lists built-in groups first.
 	InferredBuiltin
 	// InferredUnique: the group was missing and exactly one group serves the

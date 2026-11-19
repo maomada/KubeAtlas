@@ -94,7 +94,7 @@ const (
 )
 
 // appIdentityAnnotation is the explicit, user-declared cross-cluster app key. Set
-// the SAME value on an app's workloads in every cluster and Radar folds them — the
+// the SAME value on an app's workloads in every cluster and KubeAtlas folds them — the
 // canonical answer to "how do I force grouping?" for non-GitOps apps. Deliberate
 // (zero-collision), so it is authoritative over every inferred/declared tier.
 const appIdentityAnnotation = "app.skyhook.io/app"
@@ -122,7 +122,7 @@ func trioEnv(tok string) (string, bool) {
 // extension of the recommended-labels set, plain environment/env are the
 // common shorthands, and tags.datadoghq.com/env is Datadog's Unified Service
 // Tagging key (already deployed in many fleets). Set any of these on a
-// workload or its namespace and Radar takes your word over every heuristic.
+// workload or its namespace and KubeAtlas takes your word over every heuristic.
 var envLabelKeys = []string{
 	"app.kubernetes.io/environment",
 	"environment",

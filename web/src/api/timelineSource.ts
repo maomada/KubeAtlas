@@ -7,7 +7,7 @@
 //                  (relative to apiBase) as GET {apiBase}/timeline/events and
 //                  GET {apiBase}/timeline/overview. This is an extension point:
 //                  the standalone binary never selects it; a host that embeds
-//                  RadarApp behind a proxy that serves retained history opts in
+//                  KubeAtlasApp behind a proxy that serves retained history opts in
 //                  via the `timelineSource` prop.
 //
 // Both sources expose the same `useEvents(query)` hook shape so the timeline
@@ -133,7 +133,7 @@ export interface TimelineSource {
   fetchOverview?: (range: TimelineRange) => Promise<TimelineOverviewResult>
 }
 
-// Config carried by the RadarApp `timelineSource` prop. Absent = local.
+// Config carried by the KubeAtlasApp `timelineSource` prop. Absent = local.
 export interface TimelineSourceConfig {
   mode: 'retained'
   maxRangeDays?: number

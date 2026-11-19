@@ -19,8 +19,8 @@ describe('shortClusterName', () => {
   })
 
   test('user-named clusters (kind, k3d, plain) pass through unchanged', () => {
-    expect(shortClusterName('k3d-radar-demo')).toBe('k3d-radar-demo')
-    expect(shortClusterName('kind-radar-gitops-demo')).toBe('kind-radar-gitops-demo')
+    expect(shortClusterName('k3d-kubeatlas-demo')).toBe('k3d-kubeatlas-demo')
+    expect(shortClusterName('kind-kubeatlas-gitops-demo')).toBe('kind-kubeatlas-gitops-demo')
     expect(shortClusterName('production')).toBe('production')
   })
 

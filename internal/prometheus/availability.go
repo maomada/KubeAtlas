@@ -8,7 +8,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/prom"
 )
 
-// AvailabilityStatus is the coarse answer to "can Radar reach Prometheus
+// AvailabilityStatus is the coarse answer to "can KubeAtlas reach Prometheus
 // right now", for callers that decide whether to run metrics work at all
 // (the investigation runner's prompt, the diagnose tool's vitals) rather
 // than callers that need a client.

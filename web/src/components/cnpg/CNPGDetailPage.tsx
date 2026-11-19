@@ -6,7 +6,7 @@ import { Activity, Database, Gauge, HardDrive, Network, Settings2, ShieldCheck, 
 import { CNPG_GROUP, refToSelectedResource, Tooltip, Badge, type WorkloadExtraTab } from '@maomada/k8s-ui'
 import type { SelectedResource } from '../../types'
 import { useConnection } from '../../context/ConnectionContext'
-import { useContexts, useRadarFeature } from '../../api/client'
+import { useContexts, useKubeAtlasFeature } from '../../api/client'
 import { useContextSwitchFlow } from '../useContextSwitchFlow'
 import { WorkloadView } from '../workload/WorkloadView'
 import { CNPGClusterActivity } from './CNPGClusterActivity'
@@ -85,7 +85,7 @@ export function CNPGDetailPage({
   )
 
   // The extra tabs require the advertised runtime contracts.
-  const cnpgWorkspace = useRadarFeature('cnpgWorkspace').support === 'supported'
+  const cnpgWorkspace = useKubeAtlasFeature('cnpgWorkspace').support === 'supported'
   const isCluster = target.plural === 'clusters' && target.group === CNPG_GROUP && cnpgWorkspace
   // A tab change on this page, applied like a tab click: the previous tab's
   // own params (section, chart group, instance) are dropped unless named.

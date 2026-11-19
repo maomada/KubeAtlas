@@ -150,7 +150,7 @@ const PortForwardContext = createContext<PortForwardContextValue | null>(null)
 
 export function PortForwardProvider({ children }: { children: ReactNode }) {
   // Gate the session-list poll on runtime mode, not the RBAC capability: port-forward
-  // only works when radar runs as a local binary, so in-cluster (upstream Cloud) we never
+  // only works when kubeatlas runs as a local binary, so in-cluster (upstream Cloud) we never
   // poll /portforwards. We deliberately do NOT gate on `portForward` (RBAC) — a local
   // user with portforward rights in only some namespaces must still see/stop the
   // sessions they start (the start buttons gate per-namespace separately). Using the

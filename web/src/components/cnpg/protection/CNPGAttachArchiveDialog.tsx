@@ -4,8 +4,8 @@ import {
   FactGrid,
   FactRow,
   Input,
-  RadarUpgradeNote,
-  getRadarUpgradeRequirement,
+  KubeAtlasUpgradeNote,
+  getKubeAtlasUpgradeRequirement,
 } from '@maomada/k8s-ui'
 import { useCNPGArchivingPreview, useCNPGProtectionAction } from '../../../api/cnpg-protection'
 import { useConnection } from '../../../context/ConnectionContext'
@@ -42,7 +42,7 @@ export function CNPGAttachArchiveDialog({
   const { showSuccess } = useToast()
   const changed = connection.context !== context
   const reviewed = preview.data
-  const upgrade = getRadarUpgradeRequirement(write.error || preview.error)
+  const upgrade = getKubeAtlasUpgradeRequirement(write.error || preview.error)
   const result = actionDialogResult(write.outcomeError ?? write.error, { error: reviewed ? undefined : 'Attachment could not be reviewed', unknown: 'An earlier write to this Cluster may have taken effect' })
     ?? (preview.error ? { state: 'error' as const, message: preview.error.message, title: reviewed ? undefined : 'Attachment could not be reviewed' } : undefined)
   return (
@@ -118,7 +118,7 @@ export function CNPGAttachArchiveDialog({
           : undefined
       }
     >
-      {upgrade && <RadarUpgradeNote requirement={upgrade} />}
+      {upgrade && <KubeAtlasUpgradeNote requirement={upgrade} />}
       {reviewed ? (
         <div className="space-y-3">
           <FactGrid>

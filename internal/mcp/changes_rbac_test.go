@@ -28,7 +28,7 @@ func TestFilterRecentChangesRBAC(t *testing.T) {
 		return false
 	}
 
-	// No per-user RBAC on context (radar-SA / benchmark): nothing is filtered.
+	// No per-user RBAC on context (kubeatlas-SA / benchmark): nothing is filtered.
 	if got := filterRecentChangesRBAC(context.Background(), clone()); len(got) != len(changes) {
 		t.Fatalf("no-user context must keep all changes, got %+v", got)
 	}

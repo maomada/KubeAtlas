@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { beforeEach, expect, it, vi } from 'vitest'
-import { RadarFeatureUnsupportedError } from '../../../api/radarFeatures'
+import { KubeAtlasFeatureUnsupportedError } from '../../../api/kubeatlasFeatures'
 import { ServiceRenderer } from './ServiceRenderer'
 
 const mock = vi.hoisted(() => ({
@@ -21,7 +21,7 @@ const service = { apiVersion: 'v1', kind: 'Service', metadata: { name: 'web', na
 const selectorless = { ...service, spec: {} }
 const slice = (name: string, labels?: Record<string, string>) => ({ apiVersion: 'discovery.k8s.io/v1', kind: 'EndpointSlice', metadata: { namespace: 'team', name, labels } })
 const render = (data: any = service) => renderToStaticMarkup(<ServiceRenderer data={data} onCopy={() => {}} copied={null} />)
-const unsupported = () => new RadarFeatureUnsupportedError('serviceEndpointSlices', { currentVersion: 'v1.7.0' })
+const unsupported = () => new KubeAtlasFeatureUnsupportedError('serviceEndpointSlices', { currentVersion: 'v1.7.0' })
 
 beforeEach(() => {
   mock.serviceQuery = {}

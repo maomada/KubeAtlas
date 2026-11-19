@@ -16,7 +16,7 @@
 #   - kubectl
 #   - helm     https://helm.sh/docs/intro/install/
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-crossplane-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-crossplane-demo).
 #
 # Fixtures cover both Crossplane API models on a single cluster:
 #   - v1 Claim -> bound XR -> composed resources (the v1 claim/XR/MR flow), via
@@ -28,7 +28,7 @@
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-crossplane-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-crossplane-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 
 # Versions pinned so the demo behaves consistently across runs. Bump when
@@ -286,7 +286,7 @@ spec:
         namespace: default
       data:
         managed-by: crossplane
-        purpose: radar-demo-standalone-mr
+        purpose: kubeatlas-demo-standalone-mr
 ---
 apiVersion: kubernetes.crossplane.io/v1alpha1
 kind: Object
@@ -679,49 +679,49 @@ cmd_status() {
 
   step "Cluster: ${CLUSTER_NAME} (context ${KUBECTL_CTX})"
 
-  printf "\n${C_BLUE}Crossplane pods${C_RESET}\n"
+  printf '\n%bCrossplane pods%b\n' "$C_BLUE" "$C_RESET"
   kctl -n crossplane-system get pods --no-headers 2>/dev/null \
     | awk '{ printf "    %s %s\n", $1, $3 }' || warn "no pods (Crossplane not installed?)"
 
-  printf "\n${C_BLUE}Providers${C_RESET}\n"
+  printf '\n%bProviders%b\n' "$C_BLUE" "$C_RESET"
   kctl get providers.pkg.crossplane.io --no-headers 2>/dev/null \
     | awk '{ printf "    %s installed=%s healthy=%s\n", $1, $2, $3 }' || note "(none)"
 
-  printf "\n${C_BLUE}Functions${C_RESET}\n"
+  printf '\n%bFunctions%b\n' "$C_BLUE" "$C_RESET"
   kctl get functions.pkg.crossplane.io --no-headers 2>/dev/null \
     | awk '{ printf "    %s installed=%s healthy=%s\n", $1, $2, $3 }' || note "(none)"
 
-  printf "\n${C_BLUE}ProviderConfigs (kubernetes.crossplane.io)${C_RESET}\n"
+  printf '\n%bProviderConfigs (kubernetes.crossplane.io)%b\n' "$C_BLUE" "$C_RESET"
   kctl get providerconfigs.kubernetes.crossplane.io --no-headers 2>/dev/null \
     | awk '{ printf "    %s\n", $1 }' || note "(none)"
 
-  printf "\n${C_BLUE}XRDs${C_RESET}\n"
+  printf '\n%bXRDs%b\n' "$C_BLUE" "$C_RESET"
   kctl get xrds --no-headers 2>/dev/null \
     | awk '{ printf "    %s established=%s offered=%s\n", $1, $2, $3 }' || note "(none)"
 
-  printf "\n${C_BLUE}Compositions${C_RESET}\n"
+  printf '\n%bCompositions%b\n' "$C_BLUE" "$C_RESET"
   kctl get compositions --no-headers 2>/dev/null \
     | awk '{ printf "    %s\n", $1 }' || note "(none)"
 
-  printf "\n${C_BLUE}CompositionRevisions${C_RESET}\n"
+  printf '\n%bCompositionRevisions%b\n' "$C_BLUE" "$C_RESET"
   kctl get compositionrevisions --no-headers 2>/dev/null \
     | awk '{ printf "    %s revision=%s\n", $1, $2 }' || note "(none)"
 
-  printf "\n${C_BLUE}v1 Claim (demo-app)${C_RESET}\n"
+  printf '\n%bv1 Claim (demo-app)%b\n' "$C_BLUE" "$C_RESET"
   kctl -n demo-app get databaseclaims.demo.example.io --no-headers 2>/dev/null \
     | awk '{ printf "    %s synced=%s ready=%s\n", $1, $2, $3 }' || note "(none)"
 
-  printf "\n${C_BLUE}Composites (XRs)${C_RESET}\n"
+  printf '\n%bComposites (XRs)%b\n' "$C_BLUE" "$C_RESET"
   kctl get xdatabases.demo.example.io --no-headers 2>/dev/null \
     | awk '{ printf "    XDatabase/%s synced=%s ready=%s\n", $1, $2, $3 }' || note "(none)"
   kctl get appstacks.demo.example.io -A --no-headers 2>/dev/null \
     | awk '{ printf "    AppStack/%s (ns %s) synced=%s ready=%s\n", $2, $1, $3, $4 }' || note "(none)"
 
-  printf "\n${C_BLUE}Managed Resources — cluster-scoped (kubernetes.crossplane.io)${C_RESET}\n"
+  printf '\n%bManaged Resources — cluster-scoped (kubernetes.crossplane.io)%b\n' "$C_BLUE" "$C_RESET"
   kctl get objects.kubernetes.crossplane.io --no-headers 2>/dev/null \
     | awk '{ printf "    %s synced=%s ready=%s\n", $1, $2, $3 }' || note "(none)"
 
-  printf "\n${C_BLUE}Managed Resources — namespaced (kubernetes.m.crossplane.io)${C_RESET}\n"
+  printf '\n%bManaged Resources — namespaced (kubernetes.m.crossplane.io)%b\n' "$C_BLUE" "$C_RESET"
   kctl get objects.kubernetes.m.crossplane.io -A --no-headers 2>/dev/null \
     | awk '{ printf "    %s/%s synced=%s ready=%s\n", $1, $2, $3, $4 }' || note "(none)"
 
@@ -750,7 +750,7 @@ print_summary() {
 
   Live reconcile state (Ready/Synced): ${CHAINS_READY_HINT}
 
-  Run Radar against this cluster:
+  Run KubeAtlas against this cluster:
     kubectl config use-context ${KUBECTL_CTX}
     ./scripts/visual-test-start.sh
 

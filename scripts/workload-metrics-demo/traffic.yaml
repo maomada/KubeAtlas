@@ -2,7 +2,7 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   generateName: workload-http-
-  namespace: radar-metrics-fixture
+  namespace: kubeatlas-metrics-fixture
 spec:
   activeDeadlineSeconds: 900
   ttlSecondsAfterFinished: 86400

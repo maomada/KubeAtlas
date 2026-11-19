@@ -50,7 +50,7 @@ export interface DiagnoseStep {
   evidenceRef?: string; // server-issued reference used to bind a root cause to this exact result
   // Server validated KubeAtlas's uncapped producer result and this retained result
   // as its exact capped derivative.
-  radarEvidence?: boolean;
+  kubeatlasEvidence?: boolean;
   isError?: boolean; // authoritative agent-host result; absent means unknown
   truncated?: boolean; // result was capped — payload shown/copied is partial
 }
@@ -219,7 +219,7 @@ export interface DiagnoseStreamEvent {
 }
 
 // A run is a durable, server-owned investigation. Its lifetime is independent of
-// any browser tab — it survives panel close / navigation / refresh while the radar
+// any browser tab — it survives panel close / navigation / refresh while the kubeatlas
 // server runs.
 export interface RunSummary {
   id: string;
@@ -252,7 +252,7 @@ export interface RunSummary {
    *  the reader, when the host knows. Absent: a generic read-only notice. */
   continueBlockedReason?: string;
   trigger?: "interactive" | "background";
-  radarUrl?: string;
+  kubeatlasUrl?: string;
 }
 
 export async function fetchAgents(

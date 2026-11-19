@@ -47,17 +47,11 @@ function safeExternalURL(value: string): string | undefined {
   }
 }
 
-export function openCodeCloudConfig(endpoint: string): string {
+export function mcpConnectionInfo(endpoint: string, token: string): string {
   const url = safeExternalURL(endpoint)
   if (!url) throw new Error('请输入不含凭据、查询参数或片段的 HTTP / HTTPS 地址。')
-  return JSON.stringify({
-    mcp: {
-      'kubeatlas-cloud': {
-        type: 'remote', url, oauth: false,
-        headers: { Authorization: 'Bearer {env:KUBEATLAS_MCP_TOKEN}' },
-      },
-    },
-  }, null, 2)
+  if (!token || /\s/.test(token) || [...token].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) throw new Error('MCP Token 无效。')
+  return `Transport: Streamable HTTP\nURL: ${url}\nAuthorization: Bearer ${token}`
 }
 
 export async function credentialsRequest<T>(path = '', method = 'GET', body?: unknown, signal?: AbortSignal): Promise<T> {

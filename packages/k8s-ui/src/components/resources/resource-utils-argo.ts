@@ -2,6 +2,7 @@
 
 import type { StatusBadge } from './resource-utils'
 import { healthColors } from './resource-utils'
+import { suspendedByProduct } from '../../utils/legacy-brand'
 
 // ============================================================================
 // ARGOCD STATUS UTILITIES
@@ -13,15 +14,15 @@ export function getArgoApplicationStatus(app: any): StatusBadge {
   const opPhase = app.status?.operationState?.phase
 
   // Check for suspended (no automated sync policy). Honor both the current
-  // "radarhq.io/suspended-prune" annotation and the legacy "skyhook.io/..."
-  // key still present on Applications suspended by older Radar builds.
+  // "kubeatlas.io/suspended-prune" annotation and the legacy "skyhook.io/..."
+  // key still present on Applications suspended by older KubeAtlas builds.
   // The annotation value stores the prior prune state as "true"/"false" for
   // restore on resume — both strings are truthy in JS, which is intentional:
   // the *presence* of the annotation is what signals suspended, not its value.
   const hasAutomatedSync = !!app.spec?.syncPolicy?.automated
   const annotations = app.metadata?.annotations
-  const suspendedByRadar = annotations?.['radarhq.io/suspended-prune'] || annotations?.['skyhook.io/suspended-prune']
-  if (health === 'Suspended' || (!hasAutomatedSync && suspendedByRadar)) {
+  const suspendedByKubeAtlas = suspendedByProduct(annotations)
+  if (health === 'Suspended' || (!hasAutomatedSync && suspendedByKubeAtlas)) {
     // Suspended = an operator deliberately paused this app — intentional, not a
     // degradation. Neutral (sky), matching the backend rollup (mapArgoHealth) so a
     // suspended app reads the same Idle tone in Applications, the resource table,
@@ -69,22 +70,17 @@ export function isArgoOperationInProgress(app: any): boolean {
   return app?.operation != null || phase === 'Running' || phase === 'Terminating'
 }
 
-// Radar suspends an Argo Application by clearing spec.syncPolicy.automated and
+// KubeAtlas suspends an Argo Application by clearing spec.syncPolicy.automated and
 // recording the prior prune/selfHeal flags in annotations so Resume can restore
 // them. The *presence* of any of these annotations marks the app as suspended —
 // independent of health.status, which stays whatever the app's resources report
 // (often Missing/OutOfSync, never literally "Suspended"). Both the current
-// radarhq.io keys and the legacy skyhook.io keys (still on apps suspended by
+// canonical keys and legacy annotation namespaces (still on apps suspended by
 // older builds) count. Shared so the fleet table and the detail page can't
 // disagree on whether an app is suspended.
-export function isArgoSuspendedByRadar(app: any): boolean {
+export function isArgoSuspendedByKubeAtlas(app: any): boolean {
   const a = app?.metadata?.annotations
-  return Boolean(
-    a?.['radarhq.io/suspended-prune'] ||
-      a?.['radarhq.io/suspended-selfheal'] ||
-      a?.['skyhook.io/suspended-prune'] ||
-      a?.['skyhook.io/suspended-selfheal'],
-  )
+  return suspendedByProduct(a)
 }
 
 // ============================================================================

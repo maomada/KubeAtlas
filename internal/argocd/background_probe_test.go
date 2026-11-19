@@ -951,7 +951,7 @@ func TestProbe_DropsCachedNoAnswerHealth(t *testing.T) {
 }
 
 // Only a read that got no answer counts as a transport failure; a redirect
-// Radar refused came from a server that answered.
+// KubeAtlas refused came from a server that answered.
 func TestIsTransportFailure(t *testing.T) {
 	wrap := func(err error) error {
 		return fmt.Errorf("argoapi: GET /x: %w", &url.Error{Op: "Get", URL: "http://a", Err: err})
@@ -975,7 +975,7 @@ func TestIsTransportFailure(t *testing.T) {
 	}
 }
 
-// A certificate Radar can't verify is a failed read, but asking again won't
+// A certificate KubeAtlas can't verify is a failed read, but asking again won't
 // fix it, so pages don't keep asking.
 func TestReadMayRecover_CertificateFailureNeedsTheUser(t *testing.T) {
 	wrap := func(err error) error {
@@ -1045,7 +1045,7 @@ func TestFailedConnect_RetryScheduledWhenAPageAsksLater(t *testing.T) {
 	}
 }
 
-// Failures that need the user (a certificate Radar can't verify, a URL that
+// Failures that need the user (a certificate KubeAtlas can't verify, a URL that
 // isn't Argo CD, a rejected token) are not retried as if they might pass.
 func TestTransientConnectFailure(t *testing.T) {
 	tls := fmt.Errorf("%w: %w (cert)", ErrUnreachable, x509.UnknownAuthorityError{})
@@ -1069,7 +1069,7 @@ func TestTransientConnectFailure(t *testing.T) {
 }
 
 // Discovery that finds nothing to connect to (no argocd-server Service, or
-// Radar may not list Services) is not retried on its own, and pages aren't
+// KubeAtlas may not list Services) is not retried on its own, and pages aren't
 // told to keep asking: waiting won't change it.
 func TestDiscover_NothingToConnectToIsNotRetried(t *testing.T) {
 	forbidden := fake.NewSimpleClientset()

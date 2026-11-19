@@ -20,7 +20,7 @@ export interface CompareResourcePickerProps {
   candidates: CompareResourceRef[]
   /** Says the candidate list may be incomplete; shown as a warning above it. */
   coverageNote?: ReactNode
-  /** Says the list covers only the namespaces Radar collects; shown neutrally.
+  /** Says the list covers only the namespaces KubeAtlas collects; shown neutrally.
    *  Ignored when coverageNote is set. */
   scopeNote?: ReactNode
   loading?: boolean

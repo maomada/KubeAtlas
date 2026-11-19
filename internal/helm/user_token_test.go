@@ -17,7 +17,7 @@ import (
 )
 
 // userTokenRequiredError is the error a live call returns for a person
-// without a user token: Radar refuses it before reaching the API server.
+// without a user token: KubeAtlas refuses it before reaching the API server.
 func userTokenRequiredError(t *testing.T) error {
 	t.Helper()
 	prev := pkgauth.CurrentCredentialMode()

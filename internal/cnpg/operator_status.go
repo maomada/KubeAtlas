@@ -32,7 +32,7 @@ const (
 
 // CNPGOperatorVerdict is whether the operator watching one namespace is acting
 // on it. While it is not, CNPG status in that namespace is whatever the
-// operator last wrote, and writes Radar makes wait for it (or, with the
+// operator last wrote, and writes KubeAtlas makes wait for it (or, with the
 // admission webhook down, are rejected outright).
 type CNPGOperatorVerdict struct {
 	State string `json:"state"`
@@ -141,7 +141,7 @@ func (s *Reader) readCNPGOperatorFacts(ctx context.Context) cnpgOperatorFacts {
 	cache := s.Observations.Cache
 	typed := s.Clients.Typed
 	if cache == nil || typed == nil {
-		out.deploymentsUnknown = "Radar is not connected to the cluster"
+		out.deploymentsUnknown = "KubeAtlas is not connected to the cluster"
 		out.webhookUnknown = out.deploymentsUnknown
 		return out
 	}
@@ -154,9 +154,9 @@ func (s *Reader) readCNPGOperatorFacts(ctx context.Context) cnpgOperatorFacts {
 		case integration.KindCoverageSyncing:
 			out.deploymentsUnknown = "Deployments are still syncing"
 		case integration.KindCoverageError:
-			out.deploymentsUnknown = "Radar could not load Deployments, so the operator's status is unknown"
+			out.deploymentsUnknown = "KubeAtlas could not load Deployments, so the operator's status is unknown"
 		case integration.KindCoverageUncached:
-			out.deploymentsUnknown = "Deployments are outside Radar's cache scope, so the operator may be out of view"
+			out.deploymentsUnknown = "Deployments are outside KubeAtlas's cache scope, so the operator may be out of view"
 		}
 	}
 	for _, d := range deployments {
@@ -276,7 +276,7 @@ func dedupeSorted(in []string) []string {
 
 func (f cnpgOperatorFacts) verdict(namespace string) CNPGOperatorVerdict {
 	v := CNPGOperatorVerdict{State: cnpgOperatorUnknown, WebhookRejects: f.webhookRejects, WebhookReason: f.webhookReason}
-	// An operator whose WATCH_NAMESPACE Radar cannot resolve may or may not
+	// An operator whose WATCH_NAMESPACE KubeAtlas cannot resolve may or may not
 	// watch this namespace: it can neither confirm reconciliation nor rule it out.
 	var watching []cnpgOperatorFact
 	var unresolved []string

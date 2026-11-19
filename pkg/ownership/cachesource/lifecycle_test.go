@@ -101,7 +101,7 @@ func (d *driver) delete(ref resourceid.Ref) {
 	d.w.Objects = slices.Delete(d.w.Objects, i, i+1)
 }
 
-// fence waits until every store Radar has loaded holds exactly the World's
+// fence waits until every store KubeAtlas has loaded holds exactly the World's
 // objects of its kind and namespaces, by UID and resource version.
 func (d *driver) fence() {
 	d.t.Helper()

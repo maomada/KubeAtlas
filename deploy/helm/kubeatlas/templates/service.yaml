@@ -1,9 +1,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "radar.fullname" . }}
+  name: {{ include "kubeatlas.fullname" . }}
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
   {{- with .Values.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -16,4 +16,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "radar.selectorLabels" . | nindent 4 }}
+    {{- include "kubeatlas.selectorLabels" . | nindent 4 }}

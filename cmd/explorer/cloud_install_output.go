@@ -113,7 +113,7 @@ func printCloudPermissionFailure(
 	}
 	fmt.Fprintln(w, "\nWhat to do:")
 	fmt.Fprintln(w, "  Have a cluster admin get the install command from upstream Cloud's install page — pick Helm, Argo CD or Flux, whatever this cluster normally uses; it shows exactly what it changes first —")
-	fmt.Fprintf(w, "  or run `radar cloud install` against this cluster (your context %q; theirs may be named differently).\n", contextName)
+	fmt.Fprintf(w, "  or run `kubeatlas cloud install` against this cluster (your context %q; theirs may be named differently).\n", contextName)
 	if cause == cloudinstall.BlockCauseVerification {
 		// This binary's preflight would meet the same marker for them too.
 		fmt.Fprintln(w, "  Prefer the install page here: it installs the same chart with Helm directly.")
@@ -186,7 +186,7 @@ func buildGitOpsHandoff(
 func printGitOpsHandoffFailure(w io.Writer, err error, clusterID, clusterURL string) {
 	fmt.Fprintf(w, "\n%s Could not generate the source-of-truth handoff for Hub cluster %q: %v.\n", cliui.New(w).Marker(cliui.Failure), clusterID, err)
 	fmt.Fprintln(w, "The Hub approval already created this cluster, but no live Kubernetes resource was changed and no GitOps instructions or token Secret were generated.")
-	fmt.Fprintln(w, "Do not rerun `radar cloud install`, because that would create another pending cluster.")
+	fmt.Fprintln(w, "Do not rerun `kubeatlas cloud install`, because that would create another pending cluster.")
 	fmt.Fprintln(w, "The credentials from this attempt were not handed off and cannot be recovered after this command exits.")
 	fmt.Fprintln(w, "An organization owner can open this cluster and choose Resume install to rotate credentials and generate a fresh command, or delete it before deliberately starting over:")
 	fmt.Fprintf(w, "  %s\n", clusterURL)
@@ -204,7 +204,7 @@ func printGitOpsPendingHandoff(w io.Writer, err error, clusterID, clusterURL str
 	}
 	fmt.Fprintf(w, "\n%s GitOps handoff generated for Hub cluster %q, but its in-cluster connection was not confirmed: %s.\n", cliui.New(w).Marker(cliui.Attention), clusterID, reason)
 	fmt.Fprintln(w, "The configuration handoff is ready. Commit the generated configuration and token Secret through the source of truth; the existing Hub cluster remains the one to connect.")
-	fmt.Fprintln(w, "Do not rerun `radar cloud install`, because that would create another pending cluster.")
+	fmt.Fprintln(w, "Do not rerun `kubeatlas cloud install`, because that would create another pending cluster.")
 	fmt.Fprintf(w, "Open or recover this cluster in KubeAtlas: %s\n", clusterURL)
 }
 

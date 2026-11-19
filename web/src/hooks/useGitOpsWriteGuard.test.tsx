@@ -24,13 +24,13 @@ vi.mock('../api/client', () => ({
   },
   useResourceWithRelationships: () => mocks.inherited,
   useResources: (...args: unknown[]) => { mocks.resourceList(...args); return mocks.applications },
-  useRadarFeature: () => ({
+  useKubeAtlasFeature: () => ({
     guard: async (fn: () => unknown) => {
       if (!mocks.evidenceUnsupported) return fn()
-      const { RadarFeatureUnsupportedError } = await import('../api/radarFeatures')
-      throw new RadarFeatureUnsupportedError('gitopsWriteEvidence', { currentVersion: 'v1.16.0' })
+      const { KubeAtlasFeatureUnsupportedError } = await import('../api/kubeatlasFeatures')
+      throw new KubeAtlasFeatureUnsupportedError('gitopsWriteEvidence', { currentVersion: 'v1.16.0' })
     },
-    gatedKey: mocks.evidenceUnsupported ? ['radar-feature-unsupported'] : [],
+    gatedKey: mocks.evidenceUnsupported ? ['kubeatlas-feature-unsupported'] : [],
   }),
   fetchGitOpsWriteEvidence: (...args: unknown[]) => mocks.evidence(...args),
 }))

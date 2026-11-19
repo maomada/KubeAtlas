@@ -45,10 +45,10 @@ func TestValidateWebSocketURLTransportPolicy(t *testing.T) {
 	}
 
 	for _, raw := range []string{
-		"ws://api.radarhq.io/agent",
+		"ws://api.kubeatlas.io/agent",
 		"ws://localhost.example/agent",
 		"https://api.example.test/agent",
-		"wss://user:password@api.radarhq.io/agent",
+		"wss://user:password@api.kubeatlas.io/agent",
 		"wss://api.example.test/agent#fragment",
 		"wss://api.example.test:0/agent",
 		"wss://api.example.test:65536/agent",
@@ -79,7 +79,7 @@ func TestValidateHubOriginTransportPolicy(t *testing.T) {
 	}
 
 	for _, raw := range []string{
-		"http://api.radarhq.io",
+		"http://api.kubeatlas.io",
 		"http://localhost.example",
 		"https://api.example.test/api",
 		"https://api.example.test?org=test",
@@ -139,14 +139,14 @@ func TestHubOriginFromWebSocketURL(t *testing.T) {
 			}
 		})
 	}
-	if _, err := HubOriginFromWebSocketURL("ws://api.radarhq.io/agent"); err == nil {
+	if _, err := HubOriginFromWebSocketURL("ws://api.kubeatlas.io/agent"); err == nil {
 		t.Fatal("plaintext remote WebSocket URL unexpectedly accepted")
 	}
 }
 
 func TestConfigValidateRejectsPlaintextRemoteCloudURL(t *testing.T) {
 	cfg := Config{
-		URL:       "ws://api.radarhq.io/agent",
+		URL:       "ws://api.kubeatlas.io/agent",
 		Token:     "rhc_test",
 		ClusterID: "cluster-test",
 		Handler:   http.HandlerFunc(func(http.ResponseWriter, *http.Request) {}),

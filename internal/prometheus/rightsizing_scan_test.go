@@ -499,7 +499,7 @@ func TestScanMarksOnlyDeploymentsWhenReplicaSetOwnershipIsUnreadable(t *testing.
 }
 
 // A synced, non-nil pod lister still only answers for the namespaces its
-// informer watches. Radar runs this way whenever cluster-wide list is denied
+// informer watches. KubeAtlas runs this way whenever cluster-wide list is denied
 // and the probe falls back to specific namespaces, so a scan can legitimately
 // span one namespace it can read and one it cannot — and an empty result for
 // the second is no answer, not an absence of OOM kills.
@@ -902,7 +902,7 @@ func TestPartiallyCachedKindMakesAnEmptyScanPartialNotComplete(t *testing.T) {
 }
 
 func TestAllKindsPartiallyCachedIsPartialNotUnavailable(t *testing.T) {
-	// A namespace-scoped Radar falls back to namespace informers for all three
+	// A namespace-scoped KubeAtlas falls back to namespace informers for all three
 	// kinds. If the covered namespaces hold no Deployment, StatefulSet or
 	// DaemonSet, every kind is partially cached and no workload is found — but
 	// all three are readable, so the answer is "nothing here in this scope",

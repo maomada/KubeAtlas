@@ -196,7 +196,7 @@ func TestViewChildrenSayWhatTheyReadBeforeItCouldBeRead(t *testing.T) {
 
 // A gap on a namespaced kind across every namespace counts when the caller
 // may read that kind in any of them, or its access couldn't be checked. When
-// it may read the kind nowhere, naming the gap would say how Radar's
+// it may read the kind nowhere, naming the gap would say how KubeAtlas's
 // collection of a kind the caller can't read is going; the gap is left out,
 // and the answer is narrowed anyway.
 func TestViewAuthorizesAnAllNamespacesGapByKind(t *testing.T) {

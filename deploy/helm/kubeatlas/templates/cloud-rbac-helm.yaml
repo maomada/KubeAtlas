@@ -1,6 +1,6 @@
 {{- /*
-Bind Helm add-on ClusterRoles to Radar tiers. radar-helm goes to owner +
-member; radar-helm-admin goes to owner only — see clusterrole-helm-admin.yaml
+Bind Helm add-on ClusterRoles to KubeAtlas tiers. kubeatlas-helm goes to owner +
+member; kubeatlas-helm-admin goes to owner only — see clusterrole-helm-admin.yaml
 for the rationale. Viewer is intentionally not bound; viewers never install.
 The cloud:* subjects below keep rolling hub and chart upgrades compatible
 until v2.
@@ -12,7 +12,7 @@ and the upstream clusterrole-helm.yaml which uses
 installs that set cloud.enabled=true but left auth.mode at the default —
 which is the shape produced by the cloud install wizard. The underlying
 ClusterRoles still rendered, so it looked like Helm RBAC was wired up
-when in fact radar:owner/radar:member groups had no path to them.
+when in fact kubeatlas:owner/kubeatlas:member groups had no path to them.
 Runtime forces --auth-mode=proxy via KUBEATLAS_CLOUD_MODE when cloud.enabled
 is set, so the bindings are always meaningful here regardless of the
 chart-values auth.mode.
@@ -22,16 +22,19 @@ chart-values auth.mode.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-owner-helm
+  name: {{ include "kubeatlas.fullname" . }}-cloud-owner-helm
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "radar.fullname" . }}-helm
+  name: {{ include "kubeatlas.fullname" . }}-helm
 subjects:
   - kind: Group
-    name: radar:owner
+    name: kubeatlas:owner
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "owner" | quote }}
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
     name: cloud:owner
@@ -40,16 +43,19 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-owner-helm-admin
+  name: {{ include "kubeatlas.fullname" . }}-cloud-owner-helm-admin
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "radar.fullname" . }}-helm-admin
+  name: {{ include "kubeatlas.fullname" . }}-helm-admin
 subjects:
   - kind: Group
-    name: radar:owner
+    name: kubeatlas:owner
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "owner" | quote }}
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
     name: cloud:owner
@@ -60,16 +66,19 @@ subjects:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-member-helm
+  name: {{ include "kubeatlas.fullname" . }}-cloud-member-helm
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "radar.fullname" . }}-helm
+  name: {{ include "kubeatlas.fullname" . }}-helm
 subjects:
   - kind: Group
-    name: radar:member
+    name: kubeatlas:member
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "member" | quote }}
     apiGroup: rbac.authorization.k8s.io
   - kind: Group
     name: cloud:member

@@ -8,7 +8,7 @@ import type { GitOpsInsightRef } from '../../types/gitops-insights'
 
 // =============================================================================
 // SyncOptionsDialog — Argo CD Sync drawer, shared between per-cluster
-// Radar (OSS web/) and Radar Hub's fleet GitOps detail page. Presentational
+// KubeAtlas (OSS web/) and KubeAtlas Hub's fleet GitOps detail page. Presentational
 // only: caller controls open state, supplies the app label, and handles
 // the onConfirm callback (POST to /api/argo/applications/{ns}/{name}/sync
 // or the hub-proxied equivalent /c/{ctrl}/api/argo/...).

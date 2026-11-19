@@ -13,7 +13,7 @@ import (
 // rather than the strict `== "true"` an earlier implementation used —
 // a typo'd `True` or `1` silently degrading a Cloud deployment to OSS
 // mode is a settings-leak liability (theme/pinnedKinds get persisted
-// to the shared in-cluster Radar's settings.json instead of Cloud's
+// to the shared in-cluster KubeAtlas's settings.json instead of Cloud's
 // per-user store).
 const cloudModeEnvVar = "KUBEATLAS_CLOUD_MODE"
 

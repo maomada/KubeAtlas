@@ -125,10 +125,10 @@ func (s *Server) handleAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	results := getCachedResults(cache, namespaces, s.auditOptions(r))
 	// `?raw=true` returns the unfiltered scan, skipping the local
-	// ~/.kubeatlas/settings.json audit filters. Radar Cloud's Hub requests raw so
+	// ~/.kubeatlas/settings.json audit filters. KubeAtlas Cloud's Hub requests raw so
 	// it can own the effective Checks config (org policy) centrally rather than
 	// inheriting each cluster's local settings as if they were team policy.
-	// Standalone Radar and the embedded per-cluster audit view omit the param
+	// Standalone KubeAtlas and the embedded per-cluster audit view omit the param
 	// and keep applying local settings.
 	if queryTrue(r, "raw") {
 		// This mixed-version Hub boundary deliberately preserves the scanner's
@@ -190,7 +190,7 @@ func (s *Server) handleAuditResource(w http.ResponseWriter, r *http.Request) {
 	}
 	results := getCachedResults(cache, namespaces, s.auditOptions(r))
 	// Honor ?raw=true here too (mirrors handleAudit), so the per-resource
-	// drill-down and the list endpoint can't drift on the raw contract: Radar
+	// drill-down and the list endpoint can't drift on the raw contract: KubeAtlas
 	// Cloud's Hub owns effective Checks config, standalone keeps local settings.
 	if !queryTrue(r, "raw") {
 		results = applyAuditSettings(results, getAuditConfig())

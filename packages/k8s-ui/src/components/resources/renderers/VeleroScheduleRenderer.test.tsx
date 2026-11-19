@@ -40,7 +40,7 @@ describe('what a schedule promises', () => {
   /**
    * The claim to guard. Velero validates a schedule when it is active and leaves
    * the result in place while it is paused, so a validation error recorded
-   * before the pause may already be fixed in the spec. Radar's issue source
+   * before the pause may already be fixed in the spec. KubeAtlas's issue source
    * deliberately declines to raise this for a paused schedule; the page saying
    * "will not create backups when resumed until this is fixed" made the stronger
    * claim the data does not support.

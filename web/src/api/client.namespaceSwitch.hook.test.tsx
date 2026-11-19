@@ -18,7 +18,7 @@ async function timedOutSwitch(cacheScoped: boolean) {
   const scope = { actives: ["team-a"], kubeconfigNamespace: "", mode: "namespace", accessibleNamespaces: ["team-a"], deniedNamespaces: [], authoritative: true, canClearNamespace: true, cacheScoped };
   const calls: string[] = [];
   vi.stubGlobal("fetch", vi.fn((url: string, init?: RequestInit) => {
-    calls.push(`${init?.method ?? "GET"} ${new URL(url, "http://radar").pathname}`);
+    calls.push(`${init?.method ?? "GET"} ${new URL(url, "http://kubeatlas").pathname}`);
     if (init?.method === "POST") {
       return new Promise((_, reject) => init.signal?.addEventListener("abort", () => reject(Object.assign(new Error("aborted"), { name: "AbortError" }))));
     }

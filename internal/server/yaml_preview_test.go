@@ -305,7 +305,7 @@ func TestReadBoundedTextBodyAcceptsBodyWithinLimit(t *testing.T) {
 }
 
 // An unbounded io.ReadAll on the apply route is a footgun once a file picker
-// feeds it: the caller should learn the body is too large, not have Radar
+// feeds it: the caller should learn the body is too large, not have KubeAtlas
 // buffer it first and then fail with a generic read error.
 func TestReadBoundedTextBodyRejectsOversizeBodyWith413(t *testing.T) {
 	recorder := httptest.NewRecorder()
@@ -413,7 +413,7 @@ func TestApplyDocumentLimitMatchesPreview(t *testing.T) {
 	}
 }
 
-// The limit Radar advertises is an amount of YAML. Apply carries it raw, so its
+// The limit KubeAtlas advertises is an amount of YAML. Apply carries it raw, so its
 // body cap states it directly; preview carries it JSON-escaped inside an
 // envelope, so the envelope must be the looser of the two or preview rejects
 // manifests apply would have taken.

@@ -133,7 +133,7 @@ func networkPolicyWatchWindow(cache *ResourceCache) isolationWindow {
 	return isolationWindow{since: start, policyKinds: kinds}
 }
 
-// otherPolicyAPIList is every policy API Radar doesn't evaluate:
+// otherPolicyAPIList is every policy API KubeAtlas doesn't evaluate:
 // otherPolicyAPIs, Cilium's, and Calico's enforced kinds.
 func otherPolicyAPIList() []struct{ kind, group string } {
 	out := []struct{ kind, group string }{

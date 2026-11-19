@@ -1,5 +1,5 @@
 // Package ownershiptest checks ownership sources against what a cluster is
-// meant to contain. A World states the cluster and how much of it Radar has
+// meant to contain. A World states the cluster and how much of it KubeAtlas has
 // collected; Scan answers from the World by brute force, deliberately sharing
 // no read, scope or coverage code with real sources, so a source that agrees
 // with it on every question is right about what it read and what it couldn't.
@@ -21,7 +21,7 @@ type World struct {
 	// exist.
 	Partial bool
 	Objects []Object
-	// Collection says how much of each kind Radar holds; a kind not listed is
+	// Collection says how much of each kind KubeAtlas holds; a kind not listed is
 	// collected in full.
 	Collection map[resourceid.GroupKind]Collection
 }
@@ -29,7 +29,7 @@ type World struct {
 // Object is one object of a World.
 type Object struct {
 	Ref resourceid.Ref
-	// APIVersion is the version Radar reads the object at.
+	// APIVersion is the version KubeAtlas reads the object at.
 	APIVersion      string
 	UID             types.UID
 	ResourceVersion string
@@ -62,32 +62,32 @@ func (o Object) OwnerRef(controller bool) metav1.OwnerReference {
 	return ref
 }
 
-// CollectionState is how far Radar got collecting a kind.
+// CollectionState is how far KubeAtlas got collecting a kind.
 type CollectionState uint8
 
 const (
-	// Collected: loaded in full wherever Radar collects the kind.
+	// Collected: loaded in full wherever KubeAtlas collects the kind.
 	Collected CollectionState = iota
-	// Loading: Radar watches the kind but hasn't finished its initial load.
+	// Loading: KubeAtlas watches the kind but hasn't finished its initial load.
 	Loading
-	// NotCollected: Radar doesn't watch the kind.
+	// NotCollected: KubeAtlas doesn't watch the kind.
 	NotCollected
-	// Refused: Kubernetes refused Radar's own identity the kind. For a kind
-	// Radar holds in its typed cache, that cache knows only that its access
+	// Refused: Kubernetes refused KubeAtlas's own identity the kind. For a kind
+	// KubeAtlas holds in its typed cache, that cache knows only that its access
 	// probe left the kind off.
 	Refused
-	// Unwatchable: the kind's API can't be list/watched, so Radar can't
+	// Unwatchable: the kind's API can't be list/watched, so KubeAtlas can't
 	// collect it.
 	Unwatchable
 )
 
-// Collection is how much of one kind Radar holds.
+// Collection is how much of one kind KubeAtlas holds.
 type Collection struct {
 	State CollectionState
 	// Namespaces limits a namespaced kind's collection to these namespaces;
 	// nil collects them all.
 	Namespaces []string
-	// OnDemand: Radar starts this kind's watches as reads need them, as it
+	// OnDemand: KubeAtlas starts this kind's watches as reads need them, as it
 	// does for kinds outside its typed cache, so a namespace it doesn't hold
 	// yet is unwatched rather than outside what it collects.
 	OnDemand bool

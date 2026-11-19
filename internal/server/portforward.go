@@ -143,13 +143,13 @@ type PortForwardRequest struct {
 
 // handleStartPortForward creates a new port forward session
 func (s *Server) handleStartPortForward(w http.ResponseWriter, r *http.Request) {
-	// Port-forward opens a local TCP listener on the radar host. In-cluster the
-	// listener lives on the radar pod, unreachable from the user's browser, so
+	// Port-forward opens a local TCP listener on the kubeatlas host. In-cluster the
+	// listener lives on the kubeatlas pod, unreachable from the user's browser, so
 	// the feature can't work — refuse rather than create a session that proxies
 	// to nowhere. The capability is reported false here too, so the UI never
 	// offers this; this guards direct/stale callers.
 	if k8s.IsInCluster() {
-		s.writeError(w, http.StatusBadRequest, "Port forwarding is unavailable when Radar runs in-cluster")
+		s.writeError(w, http.StatusBadRequest, "Port forwarding is unavailable when KubeAtlas runs in-cluster")
 		return
 	}
 

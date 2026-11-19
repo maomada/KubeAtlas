@@ -29,7 +29,7 @@ func kindScopeRequest(env *authTestEnv, user string, perms *auth.UserPermissions
 	return r.WithContext(auth.ContextWithUser(r.Context(), &auth.User{Username: user}))
 }
 
-// A namespace the caller may list but Radar's informer does not hold was not
+// A namespace the caller may list but KubeAtlas's informer does not hold was not
 // read, and it is not a denial: the caller has the permission.
 func TestTypedKindScope_UncachedIsNotDenied(t *testing.T) {
 	env := newAuthTestServer(t)

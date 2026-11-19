@@ -1,7 +1,7 @@
 # GitOps Demo Cluster
 
 Bootstraps a `kind` cluster with Argo CD + Flux installed and a curated
-set of GitOps fixtures covering the scenarios Radar's GitOps tab needs
+set of GitOps fixtures covering the scenarios KubeAtlas's GitOps tab needs
 to render correctly. Use it for visual-testing changes to the GitOps UI
 or for catching regressions across multiple controller states without
 needing a real production cluster.
@@ -13,8 +13,8 @@ needing a real production cluster.
 ./scripts/gitops-demo.sh up        # ~5 minutes on first run
 ./scripts/gitops-demo.sh status    # inventory what's installed
 
-# Run Radar against it
-kubectl config use-context kind-radar-gitops-demo
+# Run KubeAtlas against it
+kubectl config use-context kind-kubeatlas-gitops-demo
 ./scripts/visual-test-start.sh
 
 # When done
@@ -30,15 +30,15 @@ kubectl config use-context kind-radar-gitops-demo
 | `argocd/guestbook-healthy` | Application | Synced + Healthy, auto-sync on, default success path |
 | `argocd/guestbook-drift` | Application | Stable OutOfSync: auto-sync on but `selfHeal: false` — run `make gitops-demo-drift` to induce multi-field drift |
 | `argocd/guestbook-manual` | Application | Auto-sync off → exercises ManualDriftWithoutAutoSync detector once drifted |
-| `argocd/guestbook-suspended` | Application | Suspended via Radar's annotation pattern → Resume button + suspended chip |
+| `argocd/guestbook-suspended` | Application | Suspended via KubeAtlas's annotation pattern → Resume button + suspended chip |
 | `argocd/guestbook-broken-path` | Application | Stable `ComparisonError`: targetRevision points at a non-existent path. Drives the argoApplicationConditions detector. |
 | `argocd/guestbook-broken-sync` | Application | Stable `Failed` operation phase: target namespace doesn't exist + `CreateNamespace=false`. Drives GitOpsFailureCard + parseArgoOperationError + retry/Cause/Stuck. |
 | `argocd/guestbook-rollback` | Application | Manual mode + 2 distinct history entries (orchestrated by the script). Rollback button enabled on the older entry. |
 | `argocd/app-of-apps-parent` | Application | App-of-apps: parent that manages 3 child Applications → portal-node + lineage breadcrumb |
-| `argocd/radar-demo-set` | ApplicationSet | List generator → 3 child Applications (`set-vanilla`, `set-kustomize`, `set-helm`) |
-| `argocd/radar-demo` | AppProject | Custom project (non-default) for fleet view's Project filter |
+| `argocd/kubeatlas-demo-set` | ApplicationSet | List generator → 3 child Applications (`set-vanilla`, `set-kustomize`, `set-helm`) |
+| `argocd/kubeatlas-demo` | AppProject | Custom project (non-default) for fleet view's Project filter |
 | `argocd/argo3-health` | Application | Degraded on Argo CD 3 with **no per-resource health in the CR**. See "Per-resource health on Argo CD 3" below. |
-| `argocd/guestbook-remote` | Application | Destination is a cluster this Argo doesn't have (`InvalidSpecError`). Radar derives nothing for a remote destination and says so; standalone Radar adds the Radar Cloud pointer. |
+| `argocd/guestbook-remote` | Application | Destination is a cluster this Argo doesn't have (`InvalidSpecError`). KubeAtlas derives nothing for a remote destination and says so; standalone KubeAtlas adds the KubeAtlas Cloud pointer. |
 
 ### Flux scenarios
 
@@ -89,7 +89,7 @@ exercises the full diff renderer, not just one scalar.
 ## Journey coverage matrix
 
 How the fixture set maps to the top GitOps user journeys. "Covered" =
-the fixture exercises the journey end-to-end through Radar's UI today.
+the fixture exercises the journey end-to-end through KubeAtlas's UI today.
 "Data shape present" = the fixture cluster contains the resources a
 future feature would consume; UI work is what's missing.
 
@@ -122,13 +122,13 @@ future feature would consume; UI work is what's missing.
 From 3.0, Argo CD stops writing per-resource health into the Application
 object (`status.resourceHealthSource: appTree`, `controller.resource.health.persist=false`
 by default). The app-level health still rolls up, but `status.resources[].health`
-is empty for every kind. Radar's detail page then reads the live resources
+is empty for every kind. KubeAtlas's detail page then reads the live resources
 itself and must say so. `argo3-health` is built to show every branch of that:
 
-| Managed resource | Argo | Radar | What the page must show |
+| Managed resource | Argo | KubeAtlas | What the page must show |
 |---|---|---|---|
-| `Widget/platform-widget` | Has a health check (Lua in `argocd-cm`, installed by the script): `Ready=False` → **Degraded**, rolled up into the app | Issues engine: `Ready: InvalidProviderConfig` | Argo and Radar agree. Row shows Degraded with the **Radar** marker (Argo's verdict is not in the CR, so what's displayed is Radar's) |
-| `Gadget/unchecked-gadget` | **No health check.** Ignored for app health | Issues engine: `Ready: NotConfigured` | Radar reports a problem Argo never counted. The Radar marker + the notice above the Issues band are what keep this honest |
+| `Widget/platform-widget` | Has a health check (Lua in `argocd-cm`, installed by the script): `Ready=False` → **Degraded**, rolled up into the app | Issues engine: `Ready: InvalidProviderConfig` | Argo and KubeAtlas agree. Row shows Degraded with the **KubeAtlas** marker (Argo's verdict is not in the CR, so what's displayed is KubeAtlas's) |
+| `Gadget/unchecked-gadget` | **No health check.** Ignored for app health | Issues engine: `Ready: NotConfigured` | KubeAtlas reports a problem Argo never counted. The KubeAtlas marker + the notice above the Issues band are what keep this honest |
 | `Deployment/crashloop` | Built-in check: Degraded after `progressDeadlineSeconds` | Issues engine: CrashLoopBackOff collapsed onto the Deployment | The mainstream case — a crashloop that Argo 2 used to attribute via the CR |
 
 The manifests live in this repo (`scripts/gitops-demo/argo3-health/`), so the
@@ -159,11 +159,11 @@ notice should appear.
   reference points by Argo + Flux upstream. If we ever need offline
   operation, mirror them into an in-cluster gitea pod and update the
   `repoURL` fields.
-- The Argo `radar-demo` AppProject scopes destinations to `demo-*`
+- The Argo `kubeatlas-demo` AppProject scopes destinations to `demo-*`
   namespaces and sources to `argocd-example-apps` + this repository.
   Adding new demo Applications outside that pattern requires extending
   `02-argo-appproject.yaml`.
-- The zombie Kustomization uses a fake finalizer (`radar-demo.io/intentional-zombie`)
+- The zombie Kustomization uses a fake finalizer (`kubeatlas-demo.io/intentional-zombie`)
   rather than scaling Flux's source-controller down — this keeps the
   zombie isolated, so the healthy Flux fixtures keep reconciling
   normally alongside it. Removing the zombie requires

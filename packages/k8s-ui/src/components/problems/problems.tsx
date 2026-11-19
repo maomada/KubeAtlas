@@ -43,7 +43,7 @@ export type ProblemProvenance =
 
 export type WorkspaceProblem<C extends string = string> = ProblemDetails<C> & ProblemProvenance & { tone: Exclude<HealthLevel, 'healthy'> }
 
-/** A problem's provenance label: where its evidence comes from, never a generic "Radar issue". */
+/** A problem's provenance label: where its evidence comes from, never a generic "KubeAtlas issue". */
 export function problemOriginLabel(problem: WorkspaceProblem): ProblemOrigin {
   switch (problem.source) {
     case 'audit':
@@ -51,7 +51,7 @@ export function problemOriginLabel(problem: WorkspaceProblem): ProblemOrigin {
     case 'measurement':
       return { label: problem.measuredBy ? `Measured by ${problem.measuredBy}` : 'Measured', detail: problem.sourceDetail }
   }
-  return problem.origin ?? { label: 'Detected by Radar' }
+  return problem.origin ?? { label: 'Detected by KubeAtlas' }
 }
 
 /**

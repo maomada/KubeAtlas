@@ -6,7 +6,7 @@ import { HTTPRouteRenderer } from './HTTPRouteRenderer'
 import { GRPCRouteRenderer } from './GRPCRouteRenderer'
 import { SimpleRouteRenderer } from './SimpleRouteRenderer'
 
-const backend = { name: 'custom-backend', kind: 'Widget', group: 'relationships.radar.test', namespace: 'backends' }
+const backend = { name: 'custom-backend', kind: 'Widget', group: 'relationships.kubeatlas.test', namespace: 'backends' }
 const parent = { name: 'mesh-parent', kind: 'Service', group: '', namespace: 'mesh' }
 
 function routeData(kind: string) {

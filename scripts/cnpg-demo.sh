@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Bootstrap a kind cluster pre-populated with CloudNativePG scenarios for
-# visual-testing Radar's CNPG surfaces. Idempotent — re-run to refresh state
+# visual-testing KubeAtlas's CNPG surfaces. Idempotent — re-run to refresh state
 # or apply fixture updates without recreating the cluster.
 #
 # Subcommands:
@@ -18,7 +18,7 @@
 #             frozen): add namespace `pgrt` with MinIO, a 3-instance cluster
 #             archiving to it, a real completed Backup, a restored cluster, a
 #             Pooler, pgbench load + a blocked lock chain, and a Prometheus in
-#             `monitoring` that Radar auto-discovers.
+#             `monitoring` that KubeAtlas auto-discovers.
 #   runtime-lag on|off
 #             Pause (on) / resume (off) WAL replay on a pg-runtime replica so
 #             replay lag grows under the pgbench load.
@@ -31,14 +31,14 @@
 #   - kubectl
 #   - python3
 #
-# Set CLUSTER_NAME=foo to use a different cluster (default: radar-cnpg-demo).
+# Set CLUSTER_NAME=foo to use a different cluster (default: kubeatlas-cnpg-demo).
 #
 # See scripts/cnpg-demo/README.md for the coverage matrix and — more
 # importantly — why some states are patched and others must be real.
 
 set -euo pipefail
 
-CLUSTER_NAME="${CLUSTER_NAME:-radar-cnpg-demo}"
+CLUSTER_NAME="${CLUSTER_NAME:-kubeatlas-cnpg-demo}"
 KUBECTL_CTX="kind-${CLUSTER_NAME}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES_DIR="${SCRIPT_DIR}/cnpg-demo"
@@ -48,7 +48,7 @@ NS=pg
 RT_NS=pgrt
 MON_NS=monitoring
 
-# Pinned so the demo behaves consistently. The phase STRINGS Radar matches on
+# Pinned so the demo behaves consistently. The phase STRINGS KubeAtlas matches on
 # are version-sensitive — they are full English sentences from CNPG's
 # api/v1/cluster_types.go, matched on equality — so bumping this can silently
 # move a cluster into the "unrecognised phase" bucket. Bump deliberately and
@@ -340,7 +340,7 @@ break_wal_archiving() {
   k -n "${NS}" patch cluster.postgresql.cnpg.io pg-wal-failing --type=merge -p '{
     "spec": {"backup": {"barmanObjectStore": {
       "endpointURL": "http://192.0.2.1:9000",
-      "destinationPath": "s3://radar-cnpg-demo/",
+      "destinationPath": "s3://kubeatlas-cnpg-demo/",
       "s3Credentials": {
         "accessKeyId": {"name": "cnpg-demo-object-store", "key": "ACCESS_KEY_ID"},
         "secretAccessKey": {"name": "cnpg-demo-object-store", "key": "ACCESS_SECRET_KEY"}
@@ -351,7 +351,7 @@ break_wal_archiving() {
   # Give the archiver a segment to fail on. An idle cluster may not rotate on
   # its own, and an empty segment can be skipped.
   k -n "${NS}" exec "$primary" -c postgres -- psql -q -U postgres -d postgres -c \
-    "CREATE TABLE IF NOT EXISTS radar_demo_churn AS SELECT g, repeat('x', 512) AS pad FROM generate_series(1, 20000) g;" \
+    "CREATE TABLE IF NOT EXISTS kubeatlas_demo_churn AS SELECT g, repeat('x', 512) AS pad FROM generate_series(1, 20000) g;" \
     >/dev/null 2>&1 || warn "seed write failed (continuing)"
   k -n "${NS}" exec "$primary" -c postgres -- psql -q -U postgres -d postgres -c \
     "SELECT pg_switch_wal();" >/dev/null 2>&1 || warn "pg_switch_wal failed (continuing)"
@@ -751,9 +751,9 @@ rt_wait_lock_chain() {
   local deadline=$((SECONDS + 180)) out="" p
   while [ $SECONDS -lt $deadline ]; do
     p=$(rt_primary)
-    out=$(rt_psql "$p" "SELECT string_agg(application_name || ':' || state || ':' || coalesce(wait_event_type, '-'), ' ' ORDER BY application_name) FROM pg_stat_activity WHERE application_name IN ('radar-lock-holder', 'radar-lock-waiter');" 2>/dev/null || true)
-    if printf '%s' "$out" | grep -q 'radar-lock-holder:idle in transaction' \
-       && printf '%s' "$out" | grep -q 'radar-lock-waiter:active:Lock'; then
+    out=$(rt_psql "$p" "SELECT string_agg(application_name || ':' || state || ':' || coalesce(wait_event_type, '-'), ' ' ORDER BY application_name) FROM pg_stat_activity WHERE application_name IN ('kubeatlas-lock-holder', 'kubeatlas-lock-waiter');" 2>/dev/null || true)
+    if printf '%s' "$out" | grep -q 'kubeatlas-lock-holder:idle in transaction' \
+       && printf '%s' "$out" | grep -q 'kubeatlas-lock-waiter:active:Lock'; then
       ok "$out"
       return 0
     fi
@@ -786,7 +786,7 @@ cmd_runtime() {
   rt_apply "${RUNTIME_DIR}/40-load.yaml"
   ok "pg-load, pg-lock-holder, pg-lock-waiter applied"
 
-  step "Prometheus in '${MON_NS}' (Radar discovers monitoring/prometheus-server:9090)"
+  step "Prometheus in '${MON_NS}' (KubeAtlas discovers monitoring/prometheus-server:9090)"
   rt_apply "${RUNTIME_DIR}/50-prometheus.yaml"
   # The ConfigMap may have changed on a re-run; Prometheus does not watch it.
   k -n "${MON_NS}" rollout restart deploy/prometheus-server >/dev/null 2>&1 || true
@@ -868,7 +868,7 @@ runtime_status() {
   done
   local p
   p=$(rt_primary)
-  [ -n "$p" ] && note "sessions: $(rt_psql "$p" "SELECT string_agg(application_name || '=' || state || coalesce('/' || wait_event_type, ''), ' ') FROM pg_stat_activity WHERE application_name LIKE 'radar-%';" 2>/dev/null)"
+  [ -n "$p" ] && note "sessions: $(rt_psql "$p" "SELECT string_agg(application_name || '=' || state || coalesce('/' || wait_event_type, ''), ' ') FROM pg_stat_activity WHERE application_name LIKE 'kubeatlas-%';" 2>/dev/null)"
   k -n "${MON_NS}" get svc prometheus-server -o custom-columns='PROMETHEUS:.metadata.name,NAMESPACE:.metadata.namespace,PORT:.spec.ports[0].port' 2>/dev/null || true
 }
 
@@ -883,9 +883,9 @@ print_runtime_summary() {
     pg-runtime-restore    1 instance, bootstrap.recovery from minio-store
     pg-runtime-pooler-rw  PgBouncer, transaction mode, 2 pods
     pg-load               pgbench through the Pooler (~5 tps)
-    pg-lock-holder        idle in transaction, holding radar_lock_demo id=1
+    pg-lock-holder        idle in transaction, holding kubeatlas_lock_demo id=1
     pg-lock-waiter        UPDATE blocked on it (wait_event_type=Lock)
-  Prometheus: ${MON_NS}/prometheus-server:9090 — a Radar well-known location
+  Prometheus: ${MON_NS}/prometheus-server:9090 — a KubeAtlas well-known location
 
   Replica lag on demand:
     $0 runtime-lag on | off
@@ -959,7 +959,7 @@ print_summary() {
   Also: Pooler · ScheduledBackup (method: plugin) · a Velero \`backups\` CR ·
         a KubeBlocks \`clusters\` CRD for the shared-plural guards.
 
-  Run Radar against this cluster:
+  Run KubeAtlas against this cluster:
     kubectl config use-context ${KUBECTL_CTX}
     ./scripts/visual-test-start.sh
 
@@ -989,7 +989,7 @@ EOF
         a Velero \`backups\` CR and a KubeBlocks \`clusters\` CRD for the
         shared-plural guards.
 
-  Run Radar against this cluster:
+  Run KubeAtlas against this cluster:
     kubectl config use-context ${KUBECTL_CTX}
     ./scripts/visual-test-start.sh
 

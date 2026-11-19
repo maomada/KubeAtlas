@@ -1,6 +1,8 @@
 import { clearYamlDraftNamespace, reconcileHubYamlDraftScope } from '@maomada/k8s-ui'
+import { LEGACY_YAML_DRAFT_CHANNEL } from '@maomada/k8s-ui/utils/legacy-brand'
 
-const HUB_YAML_DRAFT_CHANNEL = 'kubeatlas-hub-yaml-draft-purge'
+// The stable wire topic keeps sign-out purges visible to already-open tabs.
+const HUB_YAML_DRAFT_CHANNEL = LEGACY_YAML_DRAFT_CHANNEL
 export type HubYamlDraftInvalidationEvent =
   | { type: 'purge'; source: 'local' | 'remote' }
   | { type: 'purge-cleared'; source: 'remote' }

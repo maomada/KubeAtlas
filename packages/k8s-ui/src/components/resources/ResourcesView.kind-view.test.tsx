@@ -42,14 +42,14 @@ describe('custom resource kind view', () => {
     act(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true })))
     act(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
     expect(selected).not.toHaveBeenCalled()
-    expect(storageRead.mock.calls.some(([key]) => String(key).startsWith('radar-columns-'))).toBe(false)
-    expect(storageWrite.mock.calls.some(([key]) => String(key).startsWith('radar-columns-'))).toBe(false)
+    expect(storageRead.mock.calls.some(([key]) => String(key).startsWith('kubeatlas-columns-'))).toBe(false)
+    expect(storageWrite.mock.calls.some(([key]) => String(key).startsWith('kubeatlas-columns-'))).toBe(false)
     render(false)
     expect(host.querySelector('[data-testid="kind-view"]')).toBeNull()
     expect(host.querySelector('table')).not.toBeNull()
     expect(host.textContent).toContain('名称')
     expect(host.textContent).toContain('命名空间')
-    expect(storageRead.mock.calls.some(([key]) => key === 'radar-columns-pods')).toBe(true)
+    expect(storageRead.mock.calls.some(([key]) => key === 'kubeatlas-columns-pods')).toBe(true)
     act(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'j', bubbles: true })))
     act(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })))
     expect(selected).toHaveBeenCalledWith(expect.objectContaining({ kind: 'pods', namespace: 'test', name: 'example' }))
@@ -125,7 +125,7 @@ it('skips hidden-table sort and filter aggregation for a loaded list, then resum
   const getFilterValue = vi.fn((resource: typeof pod) => resource.metadata.name)
   const extraColumns = [{ key: 'fixture-rank', label: 'Fixture rank', render: () => null, getSortValue, getFilterValue }]
   const list = [pod, { ...pod, metadata: { ...pod.metadata, name: 'another', uid: 'another-id' } }]
-  localStorage.setItem('radar-sort-pods', JSON.stringify({ column: 'fixture-rank', direction: 'asc' }))
+  localStorage.setItem('kubeatlas-sort-pods', JSON.stringify({ column: 'fixture-rank', direction: 'asc' }))
   const render = (custom: boolean, data = list) => act(() => root.render(<KeyboardShortcutProvider><ResourcesView
     namespaces={['test']}
     apiResources={[pods]}
@@ -154,7 +154,7 @@ it('skips hidden-table sort and filter aggregation for a loaded list, then resum
 
 const deployments: APIResource = { group: 'apps', version: 'v1', kind: 'Deployment', name: 'deployments', namespaced: true, isCrd: false, verbs: ['get', 'list'] }
 const widgets: APIResource = { group: 'example.com', version: 'v1', kind: 'Widget', name: 'widgets', namespaced: true, isCrd: true, verbs: ['get', 'list'] }
-const checkboxKey = 'radar-resource-checkboxes'
+const checkboxKey = 'kubeatlas-resource-checkboxes'
 const key = (value: string) => act(() => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: value, bubbles: true })))
 const required = <T extends Element>(selector: string, parent: ParentNode = host): T => {
   const element = parent.querySelector<T>(selector)

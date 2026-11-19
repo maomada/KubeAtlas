@@ -1,7 +1,7 @@
 # Calico Demo Cluster
 
 Bootstraps a `kind` cluster running real Calico with its aggregated API server,
-plus the policy shapes Radar's Calico surfaces have to render correctly. Use it
+plus the policy shapes KubeAtlas's Calico surfaces have to render correctly. Use it
 for visual-testing the Calico renderers, the policy topology, and the dashboard's
 network-policy coverage.
 
@@ -12,8 +12,8 @@ network-policy coverage.
 ./scripts/calico-demo.sh up        # ~5 minutes on first run
 ./scripts/calico-demo.sh status    # inventory policies through both API groups
 
-# Run Radar against it
-kubectl config use-context kind-radar-calico-demo
+# Run KubeAtlas against it
+kubectl config use-context kind-kubeatlas-calico-demo
 ./scripts/visual-test-start.sh
 
 # When done
@@ -89,4 +89,4 @@ treating a staged deletion as protection.
 
 Single node, so nothing here exercises BGP peering, cross-node encapsulation, or
 a HostEndpoint on a real uplink. Calico is genuinely enforcing policy, but the
-fixtures are chosen for what Radar renders, not for testing Calico itself.
+fixtures are chosen for what KubeAtlas renders, not for testing Calico itself.

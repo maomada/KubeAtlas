@@ -663,7 +663,7 @@ func l7ByPortAndDestination(l7Flows []Flow) (map[dstPortKey]Flow, map[dstKey]Flo
 // transport, so they land on the same l4Key and one has to win. Keeping both
 // would double the traffic on every Service-routed edge, which is most of them;
 // letting Prometheus result order decide makes the rendered Kind arbitrary.
-// Radar's graph navigates to workloads, so the workload attribution wins.
+// KubeAtlas's graph navigates to workloads, so the workload attribution wins.
 func preferL4(incumbent, candidate *Flow) *Flow {
 	switch {
 	case serviceEndpoints(candidate) < serviceEndpoints(incumbent):

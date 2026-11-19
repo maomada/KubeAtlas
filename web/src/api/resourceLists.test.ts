@@ -3,7 +3,7 @@ import type { ResourceReadCoverage } from '@maomada/k8s-ui/types/resource-covera
 import { combinedListStatus, createListRefetchInterval, listSyncPending, normalizeResourceList } from './resourceLists'
 
 const complete: ResourceReadCoverage = { status: 'complete', gaps: [], scope: { type: 'cluster' }, read: { type: 'cluster' } }
-const partial: ResourceReadCoverage = { ...complete, status: 'partial', gaps: [{ code: 'radar_namespace_not_collected' }] }
+const partial: ResourceReadCoverage = { ...complete, status: 'partial', gaps: [{ code: 'kubeatlas_namespace_not_collected' }] }
 const columns = [{ name: 'State', type: 'string' }]
 
 describe('resource-list responses, read by shape', () => {
@@ -33,7 +33,7 @@ describe('resource-list responses, read by shape', () => {
 
 describe('listSyncPending', () => {
   it('holds only while a partial answer has namespaces still loading', () => {
-    expect(listSyncPending({ ...partial, gaps: [{ code: 'radar_forbidden' }, { code: 'kind_sync_pending' }] })).toBe(true)
+    expect(listSyncPending({ ...partial, gaps: [{ code: 'kubeatlas_forbidden' }, { code: 'kind_sync_pending' }] })).toBe(true)
     expect(listSyncPending(partial)).toBe(false)
     expect(listSyncPending(complete)).toBe(false)
     expect(listSyncPending({ status: 'unknown' })).toBe(false)

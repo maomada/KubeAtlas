@@ -1,5 +1,5 @@
 // Package loadtest generates topology-realistic synthetic Kubernetes objects
-// for driving Radar's UI at high object counts without a real cluster.
+// for driving KubeAtlas's UI at high object counts without a real cluster.
 //
 // The objects form a coherent Deployment -> ReplicaSet -> Pod hierarchy with
 // matching Service selectors, spread across namespaces and nodes, so the

@@ -13,7 +13,7 @@ vi.mock('@maomada/k8s-ui', async (importOriginal) => ({
   showApiError: (title: string) => toasts.errors.push(title),
 }))
 
-const { makeDefaultQueryClient } = await import('../RadarApp')
+const { makeDefaultQueryClient } = await import('../KubeAtlasApp')
 const { useUpdateResource } = await import('./client')
 
 vi.stubGlobal('IS_REACT_ACT_ENVIRONMENT', true)

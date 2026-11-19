@@ -62,12 +62,20 @@ func (c *Catalog) serveDownload(w http.ResponseWriter, r *http.Request) {
 		entry, contentType = c.files[c.bootstrapPath], "text/x-shellscript; charset=utf-8"
 	case "chart.tgz":
 		entry, contentType = c.files[c.chartPath], "application/gzip"
+	case openCostChartName:
+		var ok bool
+		entry, ok = c.files[openCostChartName]
+		if !ok {
+			c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
+			return
+		}
+		contentType = entry.mediaType
 	case "manifest.json":
 		entry, contentType = c.files[c.manifestPath], "application/json"
 	case "image-manifest.json":
 		digest = c.manifest.Image.Digest
 		var ok bool
-		entry, ok = c.manifests[digest]
+		entry, ok = c.agentOCI.manifests[digest]
 		if !ok {
 			c.writeError(w, http.StatusNotFound, "not_found", "Artifact not found")
 			return
@@ -77,6 +85,9 @@ func (c *Catalog) serveDownload(w http.ResponseWriter, r *http.Request) {
 		body := fmt.Sprintf("%s  installer.sh\n%s  chart.tgz\n%s  image-manifest.json\n", c.manifest.Installer.SHA256, c.manifest.Chart.SHA256, strings.TrimPrefix(c.manifest.Image.Digest, "sha256:"))
 		if c.manifest.Bootstrap != nil {
 			body += fmt.Sprintf("%s  bootstrap.sh\n", c.manifest.Bootstrap.SHA256)
+		}
+		if c.manifest.OpenCost != nil {
+			body += fmt.Sprintf("%s  %s\n", c.manifest.OpenCost.ChartSHA256, openCostChartName)
 		}
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("Content-Disposition", `attachment; filename="checksums.txt"`)
@@ -90,37 +101,60 @@ func (c *Catalog) serveDownload(w http.ResponseWriter, r *http.Request) {
 }
 
 func (c *Catalog) serveOCI(w http.ResponseWriter, r *http.Request) {
-	const manifestPrefix = "/v2/kubeatlas/agent/manifests/"
-	const blobPrefix = "/v2/kubeatlas/agent/blobs/"
-	var entry fileEntry
-	var digest string
-	var ok bool
-	manifest := false
-	switch {
-	case strings.HasPrefix(r.URL.Path, manifestPrefix):
-		digest = strings.TrimPrefix(r.URL.Path, manifestPrefix)
-		entry, ok = c.manifests[digest]
-		manifest = true
-	case strings.HasPrefix(r.URL.Path, blobPrefix):
-		digest = strings.TrimPrefix(r.URL.Path, blobPrefix)
-		entry, ok = c.blobs[digest]
-	default:
+	path, ok := strings.CutPrefix(r.URL.Path, "/v2/kubeatlas/")
+	repository, location, _ := strings.Cut(path, "/")
+	kind, digest, _ := strings.Cut(location, "/")
+	var active, previous map[string]fileEntry
+	switch repository {
+	case "agent":
+		active = c.agentOCI.entries(kind)
+		if c.previous != nil {
+			previous = c.previous.agentOCI.entries(kind)
+		}
+	case "opencost":
+		active = c.openCostOCI.entries(kind)
+		if c.previous != nil {
+			previous = c.previous.openCostOCI.entries(kind)
+		}
+	}
+	if !ok || (active == nil && previous == nil) {
 		c.writeOCIError(w, http.StatusNotFound, "NAME_UNKNOWN", "Repository not found")
 		return
 	}
-	if strings.Contains(digest, "/") || !digestPattern.MatchString(digest) || !ok {
+	entry, exists := active[digest]
+	source := c
+	if !exists {
+		if entry, exists = previous[digest]; exists {
+			source = c.previous
+		}
+	}
+	if !digestPattern.MatchString(digest) || !exists {
 		code := "BLOB_UNKNOWN"
-		if manifest {
+		if kind == "manifests" {
 			code = "MANIFEST_UNKNOWN"
 		}
 		c.writeOCIError(w, http.StatusNotFound, code, "Content not found")
 		return
 	}
 	contentType := "application/octet-stream"
-	if manifest {
+	if kind == "manifests" {
 		contentType = entry.mediaType
 	}
-	c.serveFile(w, r, entry, digest, contentType, "")
+	source.serveFile(w, r, entry, digest, contentType, "")
+}
+
+func (r *ociRepository) entries(kind string) map[string]fileEntry {
+	if r == nil {
+		return nil
+	}
+	switch kind {
+	case "manifests":
+		return r.manifests
+	case "blobs":
+		return r.blobs
+	default:
+		return nil
+	}
 }
 
 func (c *Catalog) serveFile(w http.ResponseWriter, r *http.Request, entry fileEntry, digest, contentType, downloadName string) {

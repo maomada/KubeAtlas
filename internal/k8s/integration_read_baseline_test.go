@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"github.com/maomada/KubeAtlas/pkg/topology"
 	"helm.sh/helm/v3/pkg/chart/loader"
 	"helm.sh/helm/v3/pkg/chartutil"
@@ -152,7 +153,7 @@ func renderIntegrationReadChart(t *testing.T, overrides string, removeMap, remov
 	if err := strvals.ParseInto("cloud.enabled=true,cloud.token=dummy,cloud.url=wss://cloud.example,cloud.clusterName=test,"+overrides, values); err != nil {
 		t.Fatal(err)
 	}
-	renderValues, err := chartutil.ToRenderValues(chart, values, chartutil.ReleaseOptions{Name: "radar", Namespace: "radar", IsUpgrade: true}, chartutil.DefaultCapabilities)
+	renderValues, err := chartutil.ToRenderValues(chart, values, chartutil.ReleaseOptions{Name: "kubeatlas", Namespace: "kubeatlas", IsUpgrade: true}, chartutil.DefaultCapabilities)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -182,7 +183,7 @@ func TestIntegrationReadBindings(t *testing.T) {
 		name, overrides      string
 		namespaced, cluster  []string
 		removeMap, removeKey bool
-		// radar:system and radar:ai:reader are bound whenever cloud mode renders
+		// kubeatlas:system and kubeatlas:ai:reader are bound whenever cloud mode renders
 		// RBAC at all, independent of the tier settings.
 		noSystem, noAI bool
 	}{
@@ -222,7 +223,7 @@ func TestIntegrationReadBindings(t *testing.T) {
 					continue
 				}
 				wantDocs += 1 + len(tiers)
-				roleName := "radar-kubeatlas-integration-read-" + scope
+				roleName := "kubeatlas-integration-read-" + scope
 				foundRole := false
 				for _, doc := range docs {
 					if doc.Kind == "ClusterRole" && doc.Name == roleName {
@@ -235,16 +236,21 @@ func TestIntegrationReadBindings(t *testing.T) {
 				for _, tier := range tiers {
 					found := false
 					for _, doc := range docs {
-						if doc.Kind != "ClusterRoleBinding" || doc.Name != "radar-kubeatlas-cloud-"+tier+"-integration-read-"+scope {
+						if doc.Kind != "ClusterRoleBinding" || doc.Name != "kubeatlas-cloud-"+tier+"-integration-read-"+scope {
 							continue
 						}
 						found = true
-						group := "radar:" + tier
+						group := "kubeatlas:" + tier
 						if tier == "ai" {
-							group = "radar:ai:reader"
+							group = "kubeatlas:ai:reader"
 						}
 						wantSubjects := []rbacv1.Subject{{Kind: "Group", Name: group, APIGroup: rbacv1.GroupName}}
-						// radar:system and radar:ai:reader have no legacy cloud:* twin.
+						legacyGroup := compat.LegacyTierPrefix + tier
+						if tier == "ai" {
+							legacyGroup = compat.LegacyAIReaderGroup
+						}
+						wantSubjects = append(wantSubjects, rbacv1.Subject{Kind: "Group", Name: legacyGroup, APIGroup: rbacv1.GroupName})
+						// Human tiers also retain the older cloud:* vocabulary.
 						if tier != "system" && tier != "ai" {
 							wantSubjects = append(wantSubjects, rbacv1.Subject{Kind: "Group", Name: "cloud:" + tier, APIGroup: rbacv1.GroupName})
 						}
@@ -290,7 +296,7 @@ func assertIntegrationReadRules(t *testing.T, docs []integrationRBACDocument, en
 			for _, resource := range rule.Resources {
 				key := rule.APIGroups[0] + "/" + resource
 				scope, ok := want[key]
-				if !ok || doc.Name != "radar-kubeatlas-integration-read-"+scope {
+				if !ok || doc.Name != "kubeatlas-integration-read-"+scope {
 					t.Errorf("unapproved, duplicate or wrong-scope grant %s in %s", key, doc.Name)
 				}
 				delete(want, key)
@@ -333,7 +339,7 @@ func TestIntegrationReadRulesAndCollectionGates(t *testing.T) {
 	for _, key := range []string{"monitoring.coreos.com/prometheusrules", "cilium.io/ciliumnetworkpolicies"} {
 		found := false
 		for _, doc := range clusterOff {
-			if doc.Name != "radar-kubeatlas-integration-read-namespaced" {
+			if doc.Name != "kubeatlas-integration-read-namespaced" {
 				continue
 			}
 			for _, rule := range doc.Rules {

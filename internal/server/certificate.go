@@ -24,11 +24,11 @@ type CertExpiry = topology.CertExpiry
 
 // handleCertificates returns the cluster's unified certificate inventory:
 // cert-manager.io Certificate CRs + raw kubernetes.io/tls secrets, deduped and
-// health-rated by pkg/certs. Backs Radar Hub's fleet Certs view; the merge
+// health-rated by pkg/certs. Backs KubeAtlas Hub's fleet Certs view; the merge
 // lives in pkg/certs so the hub stays a thin pivot.
 //
 // Read pattern mirrors handleListPackages: the ServiceAccount-backed cache
-// performs the read (so cert hygiene survives radar:viewer, whose K8s `view`
+// performs the read (so cert hygiene survives kubeatlas:viewer, whose K8s `view`
 // role excludes secrets), but the response is post-filtered to the caller's
 // RBAC-allowed namespaces. Only public certificate metadata (issuer / domains
 // / expiry) is emitted — never tls.key. A cluster without cert-manager simply

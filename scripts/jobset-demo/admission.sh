@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # Sourced by jobset-demo.sh so ownership, context restoration, and waits stay shared.
 ADMISSION_NS="jobset-admission-demo"
 KUEUE_VERSION="${KUEUE_VERSION:-v0.19.2}"
@@ -71,7 +72,7 @@ cmd_verify_admission() {
   ok "All four Workloads have exact controller ownership and expected Kueue conditions"
 }
 
-radar_admission_matches() {
+kubeatlas_admission_matches() {
   local name="$1" decision="$2" phase="$3" type="$4" status="$5" reason="$6" workload response
   workload="$(admission_workload "${name}")" || return 1
   response="$(curl -fsS "${KUBEATLAS_URL}/api/kueue/admission/jobsets/${ADMISSION_NS}/${name}?group=jobset.x-k8s.io")" || return 1
@@ -85,13 +86,15 @@ radar_admission_matches() {
        .primaryCondition.type == $type and .primaryCondition.status == $status and .primaryCondition.reason == $reason))' <<<"${response}" >/dev/null
 }
 
-cmd_verify_admission_radar() {
-  cmd_verify_radar
+cmd_verify_admission_kubeatlas() {
+  cmd_verify_kubeatlas
+  # wait_until reads these locals through Bash's dynamic scope.
+  # shellcheck disable=SC2034
   local SNAPSHOT_NS="${ADMISSION_NS}" SNAPSHOT_KINDS="jobsets.jobset.x-k8s.io,jobs,pods,workloads.kueue.x-k8s.io"
   cmd_verify_admission
-  wait_until "Radar admitted admission" radar_admission_matches admitted-running satisfied admitted Admitted True Admitted
-  wait_until "Radar quota blocker" radar_admission_matches quota-blocked unsatisfied pending QuotaReserved False Pending
-  wait_until "Radar inactive queue" radar_admission_matches queue-held unsatisfied pending QuotaReserved False Inadmissible
-  wait_until "Radar finished admission" radar_admission_matches finished satisfied finished Finished True Succeeded
-  ok "Radar connects each JobSet to its exact controller-owned admission evidence"
+  wait_until "KubeAtlas admitted admission" kubeatlas_admission_matches admitted-running satisfied admitted Admitted True Admitted
+  wait_until "KubeAtlas quota blocker" kubeatlas_admission_matches quota-blocked unsatisfied pending QuotaReserved False Pending
+  wait_until "KubeAtlas inactive queue" kubeatlas_admission_matches queue-held unsatisfied pending QuotaReserved False Inadmissible
+  wait_until "KubeAtlas finished admission" kubeatlas_admission_matches finished satisfied finished Finished True Succeeded
+  ok "KubeAtlas connects each JobSet to its exact controller-owned admission evidence"
 }

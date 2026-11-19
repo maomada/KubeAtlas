@@ -97,19 +97,21 @@ HTTP_REGISTRY_PY
 # END HTTP_REGISTRY_PREFLIGHT
 
 usage() {
-  printf '%s\n' 'Usage: install-hub-agent.sh --hub-origin ORIGIN --context CONTEXT --cluster-id ID --version VERSION --image-digest sha256:... --chart-sha256 HEX --owner-user-id ID --token-file FILE [--ca-file FILE] [--namespace NS] [--release NAME] [--dry-run] [--yes]'
+  printf '%s\n' 'Usage: install-hub-agent.sh --hub-origin ORIGIN --context CONTEXT --cluster-id ID --version VERSION --image-digest sha256:... --chart-sha256 HEX --owner-user-id ID --token-file FILE [--opencost-chart-sha256 HEX --opencost-image-digest sha256:...] [--ca-file FILE] [--namespace NS] [--release NAME] [--dry-run] [--yes]'
 }
 
 hub_origin='' context='' cluster_id='' version='' image_digest='' chart_sha256='' owner_user_id=''
+opencost_chart_sha256='' opencost_image_digest=''
 token_file='' ca_file='' namespace='kubeatlas' release='kubeatlas' dry_run=false assume_yes=false
 while (($#)); do
   case "$1" in
-    --hub-origin|--context|--cluster-id|--version|--image-digest|--chart-sha256|--owner-user-id|--token-file|--ca-file|--namespace|--release)
+    --hub-origin|--context|--cluster-id|--version|--image-digest|--chart-sha256|--opencost-chart-sha256|--opencost-image-digest|--owner-user-id|--token-file|--ca-file|--namespace|--release)
       (($# >= 2)) || { usage >&2; fail "missing value for $1"; }
       key="$1" value="$2"; shift 2
       case "$key" in
         --hub-origin) hub_origin="$value";; --context) context="$value";; --cluster-id) cluster_id="$value";;
         --version) version="$value";; --image-digest) image_digest="$value";; --chart-sha256) chart_sha256="$value";;
+        --opencost-chart-sha256) opencost_chart_sha256="$value";; --opencost-image-digest) opencost_image_digest="$value";;
         --owner-user-id) owner_user_id="$value";; --token-file) token_file="$value";; --ca-file) ca_file="$value";;
         --namespace) namespace="$value";; --release) release="$value";;
       esac
@@ -160,6 +162,10 @@ hub_origin="${hub_origin%/}"
 [[ "$version" =~ ^[A-Za-z0-9][A-Za-z0-9.+_-]{0,127}$ ]] || fail 'catalog version is invalid'
 [[ "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || fail 'image digest is invalid'
 [[ "$chart_sha256" =~ ^[0-9a-f]{64}$ ]] || fail 'chart checksum is invalid'
+if [[ -n "$opencost_chart_sha256" || -n "$opencost_image_digest" ]]; then
+  [[ "$opencost_chart_sha256" =~ ^[0-9a-f]{64}$ && "$opencost_image_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+    fail 'OpenCost chart and image digests must both be valid'
+fi
 [[ "$owner_user_id" =~ ^kubeatlas:portal:[0-9a-f]{64}$ ]] || fail 'local Hub owner identity is invalid'
 [[ "$namespace" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ && ${#namespace} -le 63 ]] || fail 'namespace is invalid'
 [[ "$release" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ && ${#release} -le 53 ]] || fail 'release name is invalid'
@@ -268,11 +274,15 @@ grep -Eq "^${chart_sha256}[[:space:]]+chart\.tgz$" "$work/checksums.txt" || fail
 download "$hub_origin/downloads/agent/$version/chart.tgz" "$work/chart.tgz"
 printf '%s  %s\n' "$chart_sha256" "$work/chart.tgz" | sha256sum --check --status || fail 'downloaded chart checksum does not match'
 
-status="$(curl "${curl_args[@]}" --dump-header "$work/image-headers" --output "$work/image-manifest" "$hub_origin/v2/kubeatlas/agent/manifests/$image_digest")" || fail 'Hub image manifest preflight failed'
-[[ "$status" == 200 ]] || fail 'Hub image manifest endpoint returned a non-200 response; redirects are not followed'
-header_digest="$(awk 'tolower($1)=="docker-content-digest:" {gsub("\r", "", $2); value=$2} END {print value}' "$work/image-headers")"
-[[ "$header_digest" == "$image_digest" ]] || fail 'Hub image manifest digest header does not match'
-printf '%s  %s\n' "${image_digest#sha256:}" "$work/image-manifest" | sha256sum --check --status || fail 'Hub image manifest digest does not match'
+verify_image_manifest() {
+  local repository="$1" digest="$2" status header_digest
+  status="$(curl "${curl_args[@]}" --dump-header "$work/image-headers" --output "$work/image-manifest" "$hub_origin/v2/kubeatlas/$repository/manifests/$digest")" || fail 'Hub image manifest preflight failed'
+  [[ "$status" == 200 ]] || fail 'Hub image manifest endpoint returned a non-200 response; redirects are not followed'
+  header_digest="$(awk 'tolower($1)=="docker-content-digest:" {gsub("\r", "", $2); value=$2} END {print value}' "$work/image-headers")"
+  [[ "$header_digest" == "$digest" ]] || fail 'Hub image manifest digest header does not match'
+  printf '%s  %s\n' "${digest#sha256:}" "$work/image-manifest" | sha256sum --check --status || fail 'Hub image manifest digest does not match'
+}
+verify_image_manifest agent "$image_digest"
 
 token_secret="${release}-hub-token"
 ca_secret=''
@@ -282,6 +292,49 @@ values=(--set hub.enabled=true --set-string "hub.url=$hub_origin" --set-string "
   --set-string "image.repository=${hub_origin#*://}/kubeatlas/agent" --set-string "image.digest=$image_digest" \
   --set auth.mode=proxy --set mcp.enabled=true)
 if [[ -n "$ca_secret" ]]; then values+=(--set-string "hub.caSecret=$ca_secret"); fi
+if [[ -n "$opencost_chart_sha256" ]]; then
+  download "$hub_origin/downloads/agent/$version/opencost.tgz" "$work/opencost-base.tgz"
+  printf '%s  %s\n' "$opencost_chart_sha256" "$work/opencost-base.tgz" | sha256sum --check --status || fail 'downloaded OpenCost chart checksum does not match'
+  verify_image_manifest opencost "$opencost_image_digest"
+  python3 - "$work/chart.tgz" "$work/prepare-opencost.py" <<'PY' || fail 'OpenCost preparation helper is missing or invalid'
+import pathlib
+import sys
+import tarfile
+
+with tarfile.open(sys.argv[1], "r:gz") as archive:
+    member = archive.getmember("kubeatlas/files/prepare-opencost.py")
+    if not member.isfile() or not 0 < member.size <= 65536:
+        raise ValueError("invalid bundled helper")
+    pathlib.Path(sys.argv[2]).write_bytes(archive.extractfile(member).read())
+PY
+  python3 "$work/prepare-opencost.py" --context "$context" --base "$work/opencost-base.tgz" \
+    --output "$work/opencost.tgz" --registry "${hub_origin#*://}" --image-digest "$opencost_image_digest" \
+    >"$work/opencost-result.json" || fail 'OpenCost chart preflight failed'
+  python3 - "$work" <<'PY' || fail 'cannot prepare OpenCost Helm values'
+import base64
+import hashlib
+import json
+import pathlib
+import sys
+
+work = pathlib.Path(sys.argv[1])
+result = json.loads((work / "opencost-result.json").read_bytes())
+if not result["ready"]:
+    print("OpenCost preparation skipped: " + result["reason"], file=sys.stderr)
+    sys.exit(0)
+data = (work / "opencost.tgz").read_bytes()
+checksum = hashlib.sha256(data).hexdigest()
+if not 0 < len(data) <= 512 * 1024 or checksum != result["chartSHA256"]:
+    raise ValueError("invalid prepared chart")
+helm_values = {
+    "hub": {"openCostBundle": {"sha256": checksum, "data": base64.b64encode(data).decode("ascii")}},
+    "traffic": {"prometheusUrl": result["prometheusURL"]},
+}
+(work / "opencost-values.json").write_text(json.dumps(helm_values), encoding="utf-8")
+print("OpenCost offline package prepared with Prometheus " + result["prometheusURL"], file=sys.stderr)
+PY
+  if [[ -s "$work/opencost-values.json" ]]; then values+=(-f "$work/opencost-values.json"); fi
+fi
 helm template "$release" "$work/chart.tgz" --kube-context "$context" --namespace "$namespace" "${values[@]}" >"$work/rendered.yaml" || fail 'Hub Agent chart preflight render failed'
 
 if [[ "$dry_run" == true ]]; then

@@ -32,7 +32,7 @@ type printerColumn struct {
 }
 
 // resourceTableResponse is the `?table=1` envelope. Its shape does not vary
-// across the outcomes that answer 200: a preflight RBAC denial, a CRD Radar
+// across the outcomes that answer 200: a preflight RBAC denial, a CRD KubeAtlas
 // cannot read, and a kind that simply declares no columns all return the same
 // three fields with Columns/Cells nil, so a consumer never has to switch on the
 // top-level type. Outcomes that answer 4xx/5xx are unchanged — they return
@@ -54,13 +54,13 @@ type resourceTableResponse struct {
 	Cells map[string][]any `json:"cells"`
 }
 
-// minSubstantivePrinterColumns is the eligibility gate. Radar already renders
+// minSubstantivePrinterColumns is the eligibility gate. KubeAtlas already renders
 // Name, Namespace and Age, so a CRD declaring only those (or one lone column
 // beside them) would replace the generic Status column with less than it took
 // away. Such kinds keep the generic columns instead.
 const minSubstantivePrinterColumns = 2
 
-// redundantPrinterColumns are columns Radar renders itself. Most CRDs declare
+// redundantPrinterColumns are columns KubeAtlas renders itself. Most CRDs declare
 // Age, so without this the table would carry it twice.
 var redundantPrinterColumns = map[string]bool{"name": true, "namespace": true, "age": true}
 
@@ -183,7 +183,7 @@ func tableFromCRD(ctx context.Context, crd *unstructured.Unstructured, version s
 		return nil, nil
 	}
 
-	// ConvertToTable prepends a synthetic Name column that Radar already
+	// ConvertToTable prepends a synthetic Name column that KubeAtlas already
 	// renders; drop it and the vendor's own duplicates alongside it. keptIdx
 	// maps a surviving column back to its cell offset in every row.
 	columns := make([]printerColumn, 0, len(table.ColumnDefinitions))

@@ -400,7 +400,7 @@ describe("upsertTool", () => {
     ms: 83,
     result: '{"readyReplicas":1}',
     evidenceRef: "ev-1",
-    radarEvidence: true,
+    kubeatlasEvidence: true,
     isError: false,
     truncated: false,
   };
@@ -448,7 +448,7 @@ describe("upsertTool", () => {
       ...completion,
       result: "Permission denied",
       evidenceRef: "ev-2",
-      radarEvidence: false,
+      kubeatlasEvidence: false,
       isError: true,
       truncated: true,
     };
@@ -532,7 +532,7 @@ describe("Timeline startup signals", () => {
     phase: "ready",
     model: "claude-opus-5",
     toolCount: 24,
-    mcpServers: [{ name: "radar", status: "connected" }],
+    mcpServers: [{ name: "kubeatlas", status: "connected" }],
   };
 
   it("reports each startup phase in place of the generic pending label", () => {
@@ -583,7 +583,7 @@ describe("Timeline startup signals", () => {
       phase: "ready",
       model: "claude-opus-5",
       toolCount: 24,
-      mcpServers: [{ name: "radar", status: "connected" }],
+      mcpServers: [{ name: "kubeatlas", status: "connected" }],
     });
     expect(mergeStartupSignal(ready, { phase: "investigating" })).toBe(late);
     expect(mergeStartupSignal(undefined, { phase: "unknown" })).toBeUndefined();
@@ -647,7 +647,7 @@ describe("Timeline startup signals", () => {
       model: "claude-opus-5",
       toolCount: 24,
       mcpServers: [
-        { name: "radar", status: "connected" },
+        { name: "kubeatlas", status: "connected" },
         { name: "github", status: "pending" },
       ],
     });
@@ -671,7 +671,7 @@ describe("Timeline startup signals", () => {
         startup={mergeStartupSignal(undefined, {
           phase: "ready",
           mcpServers: [
-            { name: "radar", status: "connected" },
+            { name: "kubeatlas", status: "connected" },
             { name: "github", status: "failed" },
           ],
         })}
@@ -686,7 +686,7 @@ describe("Timeline startup signals", () => {
       phase: "ready",
       model: "claude-opus-5",
       toolCount: 0,
-      mcpServers: [{ name: "radar", status: "failed" }],
+      mcpServers: [{ name: "kubeatlas", status: "failed" }],
     });
     const live = renderToStaticMarkup(
       <Timeline

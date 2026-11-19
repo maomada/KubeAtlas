@@ -12,13 +12,13 @@ import (
 // would be pasted straight into a terminal. Every entry, in every guidance
 // variant, must be a runnable command.
 func TestRecoveryGuidanceInspectHoldsOnlyRunnableCommands(t *testing.T) {
-	deployment := helm.DeploymentRef{Namespace: "radar", Name: "radar"}
+	deployment := helm.DeploymentRef{Namespace: "kubeatlas", Name: "kubeatlas"}
 	adopt := ProvisionRecovery{
-		Mode: ProvisionAdopt, ReleaseName: "radar", Namespace: "radar",
+		Mode: ProvisionAdopt, ReleaseName: "kubeatlas", Namespace: "kubeatlas",
 		Deployment: deployment, CurrentRevision: 3,
 	}
 	fresh := ProvisionRecovery{
-		Mode: ProvisionFresh, ReleaseName: "radar", Namespace: "radar",
+		Mode: ProvisionFresh, ReleaseName: "kubeatlas", Namespace: "kubeatlas",
 		Deployment: deployment,
 	}
 	target := CommandTarget{}
@@ -38,7 +38,7 @@ func TestRecoveryGuidanceInspectHoldsOnlyRunnableCommands(t *testing.T) {
 				continue
 			}
 			switch fields[0] {
-			case "helm", "kubectl", "radar":
+			case "helm", "kubectl", "kubeatlas":
 			default:
 				t.Errorf("Inspect entry is not a runnable command: %q (guidance %q)", cmd, g.Summary)
 			}

@@ -25,7 +25,7 @@ import (
 	"k8s.io/client-go/tools/remotecommand"
 
 	pkgauth "github.com/maomada/KubeAtlas/pkg/auth"
-	radarremotecommand "github.com/maomada/KubeAtlas/pkg/remotecommand"
+	kubeatlasremotecommand "github.com/maomada/KubeAtlas/pkg/remotecommand"
 )
 
 type recordedRequest struct {
@@ -90,7 +90,7 @@ func listPods(t *testing.T, cfg *rest.Config) error {
 func TestUserRESTConfig_ImpersonateModeUnchanged(t *testing.T) {
 	srv, seen := recordingAPIServer(t, nil)
 	base := &rest.Config{Host: srv.URL, BearerToken: "sa-token"}
-	if err := listPods(t, UserRESTConfig(base, &pkgauth.User{Username: "alice", Groups: []string{"radar:owner"}})); err != nil {
+	if err := listPods(t, UserRESTConfig(base, &pkgauth.User{Username: "alice", Groups: []string{"kubeatlas:owner"}})); err != nil {
 		t.Fatal(err)
 	}
 	got := seen()
@@ -139,7 +139,7 @@ func TestUserRESTConfig_SystemIdentityReviewedBeforeEachCall(t *testing.T) {
 	withCredentialMode(t, pkgauth.CredentialsUserToken)
 	srv, seen := recordingAPIServer(t, map[string]bool{"list pods": true})
 	base := &rest.Config{Host: srv.URL, BearerToken: "sa-token", ContentConfig: rest.ContentConfig{ContentType: "application/json"}}
-	system := &pkgauth.User{Username: "radar:system:alerts:o1", Groups: []string{"radar:system"}, System: true}
+	system := &pkgauth.User{Username: "kubeatlas:system:alerts:o1", Groups: []string{"kubeatlas:system"}, System: true}
 
 	if err := listPods(t, UserRESTConfig(base, system)); err != nil {
 		t.Fatalf("allowed list: %v", err)
@@ -173,9 +173,9 @@ func TestUserRESTConfig_RefusedExecReturnsErrorInsteadOfPanicking(t *testing.T) 
 	execURL, _ := url.Parse(srv.URL + "/api/v1/namespaces/shop/pods/web/exec?command=sh&stdin=true&stdout=true&tty=true")
 	for name, user := range map[string]*pkgauth.User{
 		"no token":      {Username: "oidc:alice", Groups: []string{"admins"}},
-		"denied system": {Username: "radar:ai:o1", Groups: []string{"radar:ai:reader"}, System: true},
+		"denied system": {Username: "kubeatlas:ai:o1", Groups: []string{"kubeatlas:ai:reader"}, System: true},
 	} {
-		exec, err := radarremotecommand.NewExecutor(UserRESTConfig(base, user), execURL)
+		exec, err := kubeatlasremotecommand.NewExecutor(UserRESTConfig(base, user), execURL)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,7 +215,7 @@ func TestUserRESTConfig_SystemLaneReadsOnlyAsAuthenticated(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	base := &rest.Config{Host: srv.URL + "/k8s/clusters/c-1", BearerToken: "sa-token", ContentConfig: rest.ContentConfig{ContentType: "application/json"}}
-	system := &pkgauth.User{Username: "radar:system:alerts:o1", Groups: []string{"radar:system"}, System: true}
+	system := &pkgauth.User{Username: "kubeatlas:system:alerts:o1", Groups: []string{"kubeatlas:system"}, System: true}
 
 	client, _ := kubernetes.NewForConfig(UserRESTConfig(base, system))
 	if _, err := client.Discovery().ServerVersion(); err != nil {
@@ -224,7 +224,7 @@ func TestUserRESTConfig_SystemLaneReadsOnlyAsAuthenticated(t *testing.T) {
 	if err := client.CoreV1().Pods("shop").Delete(context.Background(), "web", metav1.DeleteOptions{}); !apierrors.IsForbidden(err) {
 		t.Fatalf("system delete: err = %v, want 403 without asking", err)
 	}
-	exec, _ := radarremotecommand.NewExecutor(UserRESTConfig(base, system), mustURL(t, srv.URL+"/k8s/clusters/c-1/api/v1/namespaces/shop/pods/web/exec?command=sh"))
+	exec, _ := kubeatlasremotecommand.NewExecutor(UserRESTConfig(base, system), mustURL(t, srv.URL+"/k8s/clusters/c-1/api/v1/namespaces/shop/pods/web/exec?command=sh"))
 	if err := exec.StreamWithContext(context.Background(), remotecommand.StreamOptions{Stdout: io.Discard}); !apierrors.IsForbidden(err) {
 		t.Fatalf("system exec: err = %v, want 403", err)
 	}
@@ -252,7 +252,7 @@ func TestUserRESTConfig_SystemReviewOutageIs503(t *testing.T) {
 	}))
 	t.Cleanup(srv.Close)
 	base := &rest.Config{Host: srv.URL, BearerToken: "sa-token", ContentConfig: rest.ContentConfig{ContentType: "application/json"}}
-	system := &pkgauth.User{Username: "radar:system:x", Groups: []string{"radar:system"}, System: true}
+	system := &pkgauth.User{Username: "kubeatlas:system:x", Groups: []string{"kubeatlas:system"}, System: true}
 	err := listPods(t, UserRESTConfig(base, system))
 	if !apierrors.IsServiceUnavailable(err) {
 		t.Fatalf("err = %v, want 503 so an outage isn't read as denied", err)

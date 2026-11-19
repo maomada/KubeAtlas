@@ -20,7 +20,7 @@ type Client struct {
 
 const MaxWorkloadQueryBytes = 16000
 
-var ErrWorkloadQueryTooLarge = errors.New("Pod-name selection or workload size exceeds Radar's safe metrics query limit")
+var ErrWorkloadQueryTooLarge = errors.New("Pod-name selection or workload size exceeds KubeAtlas's safe metrics query limit")
 
 // NewClient wraps the given Transport.
 func NewClient(t Transport) *Client {

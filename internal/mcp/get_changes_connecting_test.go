@@ -48,7 +48,7 @@ func TestGetChangesRefusesUntilConnected(t *testing.T) {
 	}
 }
 
-// Radar sets up its Helm client once the cluster has connected. Before then,
+// KubeAtlas sets up its Helm client once the cluster has connected. Before then,
 // the Helm tools must not answer "no releases found".
 func TestHelmToolsWhileConnecting(t *testing.T) {
 	helm.ResetClient()

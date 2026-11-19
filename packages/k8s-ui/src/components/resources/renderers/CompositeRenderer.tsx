@@ -28,7 +28,7 @@ import type { StatusBadge } from '../resource-utils'
  * `missing` (404) means the composed resource genuinely doesn't exist yet
  * (reconciliation hasn't created it), which is a normal state for a
  * freshly-applied Composite. Any other failure (401/403/500/network) means
- * Radar can't tell the operator what they want to know, and "missing" would
+ * KubeAtlas can't tell the operator what they want to know, and "missing" would
  * mislead them into thinking the resource is absent.
  */
 export interface ComposedRefStatus {

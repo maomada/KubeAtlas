@@ -31,6 +31,9 @@ jobs:
       - name: Run deterministic local installer fixtures
         run: sh scripts/test-installers.sh
 
+      - name: Test OpenCost bundle preparation
+        run: python3 -B scripts/test_prepare_hub_opencost.py
+
   windows:
     name: Windows installers
     runs-on: windows-latest

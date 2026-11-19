@@ -171,7 +171,7 @@ describe('reachVerdict - no live backend leads with the cause, not "via API serv
         { resource: { kind: 'Service', name: 's' }, edge: 'entry:Service', findings: [] } as Hop,
         { resource: { kind: 'Pods', name: '' }, edge: 'Service->Pods', meta: { ready: 1, selected: 2 }, findings: [
           { code: 'problem:CrashLoopBackOff', severity: 'critical',
-            message: 'CrashLoopBackOff - back-off 5m0s restarting failed container=c pod=dual-bad-844665666-9tl6z_radar-netdiag(7fd8a1c5)',
+            message: 'CrashLoopBackOff - back-off 5m0s restarting failed container=c pod=dual-bad-844665666-9tl6z_kubeatlas-netdiag(7fd8a1c5)',
             cause: 'Container "c" is crash-looping (CrashLoopBackOff)' },
         ] } as Hop,
       ],

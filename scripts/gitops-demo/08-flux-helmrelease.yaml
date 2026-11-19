@@ -25,4 +25,4 @@ spec:
   values:
     replicaCount: 1
     ui:
-      message: "radar gitops demo"
+      message: "kubeatlas gitops demo"

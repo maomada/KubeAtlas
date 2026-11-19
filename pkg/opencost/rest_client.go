@@ -17,7 +17,7 @@ import (
 //  2. Prometheus-format metrics at /metrics — requires a scrape config
 //     in a reachable Prometheus instance. Covered by pkg/prom.
 //
-// This client supports callers that can reach OpenCost directly. Radar's server
+// This client supports callers that can reach OpenCost directly. KubeAtlas's server
 // handlers currently use the Prometheus path because they already discover and
 // connect to a cluster metrics backend.
 type RESTClient struct {

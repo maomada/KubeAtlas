@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stop a running visual test Radar instance and open the screenshot folder.
+# Stop a running visual test KubeAtlas instance and open the screenshot folder.
 # Reads state from .playwright-mcp/visual-test-state.env
 
 set -euo pipefail
@@ -11,13 +11,15 @@ if [[ ! -f "$STATEFILE" ]]; then
   exit 1
 fi
 
+# The start script writes this state file at runtime.
+# shellcheck source=/dev/null
 source "$STATEFILE"
 
-# Kill Radar
+# Kill KubeAtlas
 if kill "$KUBEATLAS_PID" 2>/dev/null; then
-  echo "Radar (PID $KUBEATLAS_PID) stopped."
+  echo "KubeAtlas (PID $KUBEATLAS_PID) stopped."
 else
-  echo "Radar (PID $KUBEATLAS_PID) was already stopped."
+  echo "KubeAtlas (PID $KUBEATLAS_PID) was already stopped."
 fi
 
 # Open the screenshot folder only if something was actually captured.

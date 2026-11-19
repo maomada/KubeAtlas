@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { phaseOnlyHealth } from './TopologyGraph'
 
-// Only reached when the server sent no per-pod status — an older Radar behind a
+// Only reached when the server sent no per-pod status — an older KubeAtlas behind a
 // newer embedding host. The point of the fallback is that it must not repeat the
 // bug it stands in for.
 describe('phaseOnlyHealth', () => {

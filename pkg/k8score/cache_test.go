@@ -1450,7 +1450,7 @@ func TestDynamicResourceCache_ListEmptyNamespaceDoesNotUnion(t *testing.T) {
 	}
 }
 
-// Mirror of ListEmptyNamespaceDoesNotUnion for namespace-scoped mode: when Radar
+// Mirror of ListEmptyNamespaceDoesNotUnion for namespace-scoped mode: when KubeAtlas
 // connects with a namespace-restricted identity (NamespaceFallback set),
 // cluster-wide list is denied so a GVR's only informers are per-namespace. An
 // all-namespaces read — List(gvr, "") and Count(gvr, nil) — MUST union them, or

@@ -21,7 +21,7 @@ import (
 // Each entry must have a matching candidate in supportedCRDFallbacks.
 //
 // These kinds are also "optional" from a UI perspective: a false bool means
-// "CRD not installed", not "RBAC denied something Radar expected". When
+// "CRD not installed", not "RBAC denied something KubeAtlas expected". When
 // changing this list, update OPTIONAL_RESOURCE_KINDS in
 // packages/k8s-ui/src/types/core.ts so the frontend keeps filtering them
 // out of the limited-access banner.

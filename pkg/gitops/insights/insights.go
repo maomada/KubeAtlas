@@ -65,16 +65,16 @@ type Summary struct {
 	Finalizers []string `json:"finalizers,omitempty"`
 	// IgnoredDifferences, when non-nil, discloses the Argo Application's
 	// spec.ignoreDifferences coverage — the field exclusions that suppress
-	// drift from comparison (both Argo's own comparison and Radar's). Nil for
+	// drift from comparison (both Argo's own comparison and KubeAtlas's). Nil for
 	// Flux roots and for Applications that declare no exclusions.
 	IgnoredDifferences *IgnoredDifferencesSummary `json:"ignoredDifferences,omitempty"`
 	// ResourceHealthMode mirrors the tree's HealthMode for Argo roots: where
 	// Argo keeps per-resource health. "appTree" means the controller's
 	// verdicts are not in the CR and per-resource health below, if any, is
-	// Radar's own read — the UI says so.
+	// KubeAtlas's own read — the UI says so.
 	ResourceHealthMode string `json:"resourceHealthMode,omitempty"`
 	// RemoteDestination: the Application or Flux object deploys to another
-	// cluster. Radar derives nothing about its resources from here.
+	// cluster. KubeAtlas derives nothing about its resources from here.
 	RemoteDestination bool `json:"remoteDestination,omitempty"`
 	// ResourceHealthFromAPI: per-resource health came from the controller's
 	// API server, so in appTree mode the verdicts shown are still Argo's.
@@ -95,10 +95,10 @@ type Summary struct {
 // entries; Kinds lists the sorted unique "Group/Kind" targets (just "Kind" for
 // core resources, "group/*" for a group-wide rule that omits kind).
 //
-// UnsupportedRuleCount is the load-bearing field: Radar evaluates only
+// UnsupportedRuleCount is the load-bearing field: KubeAtlas evaluates only
 // jsonPointer rules in its drift filter — jqPathExpressions and
 // managedFieldsManagers rules are not applied — so an Application whose
-// exclusions use those features can surface drift entries in Radar that
+// exclusions use those features can surface drift entries in KubeAtlas that
 // Argo's own UI suppresses. The UI uses this count to warn about that gap.
 type IgnoredDifferencesSummary struct {
 	RuleCount            int      `json:"ruleCount"`
@@ -191,7 +191,7 @@ type Issue struct {
 	// threshold. Drives a stronger visual treatment.
 	Stuck bool `json:"stuck,omitempty"`
 	// Source is set on resource-scoped Issues: "controller" when the GitOps
-	// controller's own per-resource health produced it, "radar" when Radar's
+	// controller's own per-resource health produced it, "kubeatlas" when KubeAtlas's
 	// issues engine did (the controller's verdict wasn't available). The
 	// Reason vocabulary differs too — Argo's "Degraded" vs the engine's
 	// "CrashLoopBackOff" — but the field is the contract.
@@ -408,7 +408,7 @@ func Build(root *unstructured.Unstructured, resourceTree *gitopstree.ResourceTre
 		Capabilities: buildCapabilities(root, tool),
 		Partial:      true,
 	}
-	out.Summary.PartialReason = "Radar shows the controller's drift assessment plus a per-resource field diff and recent events (when available). For the canonical line-by-line diff against Git, use the Argo CD UI or `argocd app diff`."
+	out.Summary.PartialReason = "KubeAtlas shows the controller's drift assessment plus a per-resource field diff and recent events (when available). For the canonical line-by-line diff against Git, use the Argo CD UI or `argocd app diff`."
 	if resourceTree != nil {
 		out.Summary.ResourceHealthMode = string(resourceTree.HealthMode)
 		// An Application with no destination is invalid rather than remote;
@@ -529,7 +529,7 @@ func describeArgoAutoSync(root *unstructured.Unstructured) string {
 func buildIssues(root *unstructured.Unstructured, resourceTree *gitopstree.ResourceTree, tool string, resolver Resolver) []Issue {
 	var out []Issue
 	// Argo's app-level health is its verdict on every resource it assesses.
-	// Radar's own reads (topology fill, degraded counts) must not contradict
+	// KubeAtlas's own reads (topology fill, degraded counts) must not contradict
 	// a Healthy app with Issues. Flux roots carry no status.health, so this
 	// never gates them.
 	appHealth, _, _ := unstructured.NestedString(root.Object, "status", "health", "status")
@@ -661,9 +661,9 @@ func buildIssues(root *unstructured.Unstructured, resourceTree *gitopstree.Resou
 				out = append(out, resourceHealthIssue(change, nil))
 			} else if change.Health == "Degraded" || change.Health == "Missing" {
 				// Argo calling the app Healthy is its verdict on every resource
-				// it assesses; Radar's own read of a resource must not contradict
+				// it assesses; KubeAtlas's own read of a resource must not contradict
 				// that with an Issue (the node chip still shows it).
-				if change.HealthSource == string(gitopstree.HealthSourceRadar) && appHealthy {
+				if change.HealthSource == string(gitopstree.HealthSourceKubeAtlas) && appHealthy {
 					continue
 				}
 				// The issues engine reads this cluster; for an app deploying
@@ -813,7 +813,7 @@ func degradedResourceFromEvents(root *unstructured.Unstructured, resolver Resolv
 // resourceHealthIssue turns a Degraded/Missing managed resource into an
 // Issue. When the controller produced the health, the Issue speaks Argo's
 // vocabulary ("Deployment web is Degraded") and the issues engine is asked
-// for the concrete cause behind it. When Radar's engine produced the health
+// for the concrete cause behind it. When KubeAtlas's engine produced the health
 // (the controller's verdict wasn't available), the Issue IS the engine's
 // finding — its reason, message and severity — and says so via Source, so a
 // warning-tier finding never gets promoted to a critical Issue by the Argo
@@ -831,10 +831,10 @@ func resourceHealthIssue(change Change, resolver Resolver) Issue {
 			Message:  fmt.Sprintf("%s %s is not present in the cluster", change.Ref.Kind, change.Ref.Name),
 			Refs:     []Ref{change.Ref},
 			Action:   action,
-			Source:   string(gitopstree.HealthSourceRadar),
+			Source:   string(gitopstree.HealthSourceKubeAtlas),
 		}
 	}
-	if change.HealthSource == string(gitopstree.HealthSourceRadar) && change.HealthReason != "" {
+	if change.HealthSource == string(gitopstree.HealthSourceKubeAtlas) && change.HealthReason != "" {
 		severity := SeverityWarning
 		if change.HealthSeverity == "critical" {
 			severity = SeverityCritical
@@ -853,11 +853,11 @@ func resourceHealthIssue(change Change, resolver Resolver) Issue {
 			Source:   change.HealthSource,
 		}
 	}
-	// Radar's own topology read with no classified reason is a live-state
+	// KubeAtlas's own topology read with no classified reason is a live-state
 	// observation, not a verdict: warning tier. The controller's Degraded /
 	// Missing is the verdict and stays critical.
 	severity := SeverityCritical
-	if change.HealthSource == string(gitopstree.HealthSourceRadar) {
+	if change.HealthSource == string(gitopstree.HealthSourceKubeAtlas) {
 		severity = SeverityWarning
 	}
 	iss := Issue{
@@ -1004,7 +1004,7 @@ func buildChanges(root *unstructured.Unstructured, resourceTree *gitopstree.Reso
 			category = CategoryUnknown
 		}
 		partial := true
-		note := "Flux inventory confirms this resource is managed; desired manifest content is not available in Radar yet."
+		note := "Flux inventory confirms this resource is managed; desired manifest content is not available in KubeAtlas yet."
 		if n.Dependency {
 			switch related[n.ID] {
 			case gitopstree.EdgeSource:
@@ -1058,7 +1058,7 @@ func parseArgoIgnoreDifferences(root *unstructured.Unstructured) argoIgnoreDiffe
 		// covers the majority of "ignore this field" rules. Future work.
 		if len(ptrs) == 0 {
 			// Affected rules disappear silently otherwise; surface a one-
-			// shot warning so operators can correlate "Radar shows drift
+			// shot warning so operators can correlate "KubeAtlas shows drift
 			// Argo's UI suppresses" with the gap.
 			jq, _, _ := unstructured.NestedStringSlice(m, "jqPathExpressions")
 			if len(jq) > 0 {
@@ -1224,7 +1224,7 @@ func OperationPhase(root *unstructured.Unstructured) string {
 
 // argoResourceChanges lists the Application's managed resources with their
 // resolved health. Health comes from the CR entry when Argo persisted it;
-// otherwise from the resource tree's node, which carries whatever Radar could
+// otherwise from the resource tree's node, which carries whatever KubeAtlas could
 // establish (topology status, or a host-overlaid issues-engine finding) with
 // its provenance. Reading the tree here rather than the CR twice keeps the
 // Changes table, the per-resource Issues and the tree summary on one
@@ -1311,7 +1311,7 @@ func argoResourceChanges(root *unstructured.Unstructured, resourceTree *gitopstr
 			HasLive:        !missing,
 			Missing:        missing,
 			Partial:        true,
-			PartialNote:    "Argo reports resource status here; desired manifest content is not available in Radar yet.",
+			PartialNote:    "Argo reports resource status here; desired manifest content is not available in KubeAtlas yet.",
 		}
 		// Enrich from live cluster state when a resolver is wired. The
 		// drift diff turns the bare "OutOfSync" badge into a concrete
@@ -1519,7 +1519,7 @@ func buildCapabilities(root *unstructured.Unstructured, tool string) Capabilitie
 		return Capabilities{Sync: true, Refresh: true, Terminate: true, Suspend: true, Resume: true, SelectiveSync: true, Rollback: hasHistory, Warnings: []string{"Selective sync skips hooks and is not equivalent to a full application sync."}}
 	}
 	syncWithSource := root.GetKind() == "Kustomization" || root.GetKind() == "HelmRelease"
-	return Capabilities{Sync: true, Suspend: true, Resume: true, SyncWithSource: syncWithSource, UnsupportedReason: "Flux reconciles through source/workload controllers; per-resource selective sync and generic rollback are not exposed by Radar."}
+	return Capabilities{Sync: true, Suspend: true, Resume: true, SyncWithSource: syncWithSource, UnsupportedReason: "Flux reconciles through source/workload controllers; per-resource selective sync and generic rollback are not exposed by KubeAtlas."}
 }
 
 type condition struct {
@@ -1898,7 +1898,7 @@ func logJQIgnoreOnce(group, kind string) {
 	if _, loaded := jqIgnoreLogged.LoadOrStore(key, struct{}{}); loaded {
 		return
 	}
-	log.Printf("[gitops/drift] ignoreDifferences rule for %s/%s uses jqPathExpressions which Radar doesn't evaluate; some drift entries Argo's UI suppresses may appear here", group, kind)
+	log.Printf("[gitops/drift] ignoreDifferences rule for %s/%s uses jqPathExpressions which KubeAtlas doesn't evaluate; some drift entries Argo's UI suppresses may appear here", group, kind)
 }
 
 // detectPendingDeletion returns an Issue when the GitOps root resource has
@@ -1930,7 +1930,7 @@ func detectPendingDeletion(root *unstructured.Unstructured, resolver Resolver) *
 	finalizers := root.GetFinalizers()
 	age := time.Since(dt.Time)
 	// Clock-skew guard: a deletionTimestamp meaningfully in the future
-	// usually means Radar's local clock is behind the cluster API server
+	// usually means KubeAtlas's local clock is behind the cluster API server
 	// (or vice versa). Without this, the severity ramp would treat the
 	// resource as "started 0s ago, info severity" and skip the controller-
 	// health enrichment that gates on warning+. A 6h-stuck zombie with
@@ -1942,7 +1942,7 @@ func detectPendingDeletion(root *unstructured.Unstructured, resolver Resolver) *
 			Severity: SeverityInfo,
 			Scope:    ScopeLifecycle,
 			Reason:   "Terminating",
-			Message:  fmt.Sprintf("This resource is being deleted, but its deletionTimestamp (%s) is in the future relative to Radar — likely clock skew between Radar and the cluster API server.", dt.UTC().Format(time.RFC3339)),
+			Message:  fmt.Sprintf("This resource is being deleted, but its deletionTimestamp (%s) is in the future relative to KubeAtlas — likely clock skew between KubeAtlas and the cluster API server.", dt.UTC().Format(time.RFC3339)),
 			Action:   "Verify NTP / time sync. Once clocks agree, the lifecycle severity will reflect the true deletion age.",
 		}
 	}

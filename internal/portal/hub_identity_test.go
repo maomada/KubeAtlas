@@ -27,7 +27,7 @@ func TestHubMemberScopeAndAuthorization(t *testing.T) {
 	}
 	if _, _, err := h.liveHub.store.UpdateMember(memberID, hubstate.MemberInput{
 		Role: "viewer", Status: "active", ClusterIDs: []string{"alpha"},
-		KubernetesGroups: []string{"radar:readers"},
+		KubernetesGroups: []string{"kubeatlas:idp:readers"},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestHubMemberScopeAndAuthorization(t *testing.T) {
 	organization := decodeHubResponse[struct {
 		MemberCount int `json:"memberCount"`
 	}](t, hubRequest(t, h, cookie, "", http.MethodGet, "/api/hub/organization", "", http.StatusOK))
-	if organization.MemberCount != 2 {
+	if organization.MemberCount != 1 {
 		t.Fatalf("active member count = %d", organization.MemberCount)
 	}
 	directory := decodeHubResponse[struct {
@@ -115,7 +115,7 @@ func TestPendingMemberCannotReachClusterAPIs(t *testing.T) {
 	organization := decodeHubResponse[struct {
 		MemberCount int `json:"memberCount"`
 	}](t, hubRequest(t, h, localCookie, "", http.MethodGet, "/api/hub/organization", "", http.StatusOK))
-	if organization.MemberCount != 1 {
+	if organization.MemberCount != 0 {
 		t.Fatalf("pending member was included in active member count: %d", organization.MemberCount)
 	}
 	if response := hubRequest(t, h, cookie, "", http.MethodGet, "/api/hub/clusters", "", http.StatusForbidden); hubErrorCode(t, response) != "member_pending" {

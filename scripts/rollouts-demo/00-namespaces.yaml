@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   name: demo-rollouts
   labels:
-    radar-demo.io/fixture: argo-rollouts
+    kubeatlas-demo.io/fixture: argo-rollouts

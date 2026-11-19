@@ -22,7 +22,7 @@ import (
 
 // callerReadsAllNamespaces reports whether the caller is unrestricted by
 // namespace, from the permissions parseNamespacesForUser already resolved.
-// Store-wide facts, such as when Radar's held history becomes complete, go
+// Store-wide facts, such as when KubeAtlas's held history becomes complete, go
 // only to such callers.
 func (s *Server) callerReadsAllNamespaces(r *http.Request) bool {
 	user := auth.UserFromContext(r.Context())
@@ -262,7 +262,7 @@ func (s *Server) nativeHelmIssuesForRequest(r *http.Request, namespaces []string
 // grouping, so a member, count or diagnostic link never comes from a namespace
 // or a Secret the caller can't open. A cluster-scoped subject's issues are
 // composed across namespaces, which that per-row gate keeps to the caller's.
-// ?coverage=1 returns an envelope that also says whether Radar watches the
+// ?coverage=1 returns an envelope that also says whether KubeAtlas watches the
 // subject's kind and counts what the caller's access withheld.
 func (s *Server) handleResourceIssues(w http.ResponseWriter, r *http.Request) {
 	if !s.requireConnected(w) {
@@ -532,7 +532,7 @@ func (s *Server) issueSubjectAccess(r *http.Request) func(issues.Ref) bool {
 }
 
 // issueEvidenceAccess authorizes an inventory a finding was derived from at
-// the granularity Radar reads it: a namespaced read needs namespace access
+// the granularity KubeAtlas reads it: a namespaced read needs namespace access
 // (and a Secret read a Secrets check); a cluster-wide read needs the SAR.
 func (s *Server) issueEvidenceAccess(r *http.Request) func(issues.EvidenceRead) bool {
 	if auth.UserFromContext(r.Context()) == nil {

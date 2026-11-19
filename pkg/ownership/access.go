@@ -45,7 +45,7 @@ type Access interface {
 }
 
 // Unrestricted is the access of a caller who may read everything, as anyone
-// may when Radar runs without authentication.
+// may when KubeAtlas runs without authentication.
 func Unrestricted() Access { return unrestricted{} }
 
 type unrestricted struct{}

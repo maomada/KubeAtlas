@@ -94,10 +94,10 @@ curl() {
       [[ -n "$config" && "$(stat -c %a "$config")" == 600 ]] || { printf 'device config is not protected\n' >&2; return 92; }
       grep -Fq -- "$FAKE_DEVICE_SECRET" "$config" || { printf 'device config does not contain expected claim credential\n' >&2; return 93; }
       printf '%s\n' "$(stat -c %a "$config")" >>"$FAKE_DEVICE_MODES"
-      printf '{"status":"approved","clusterId":"%s","ownerUserId":"%s","version":"%s","imageDigest":"%s","chartSHA256":"%s","installerSHA256":"%s","hubOrigin":"%s","namespace":"%s","release":"%s","agentToken":"%s"}\n' \
+      printf '{"status":"approved","clusterId":"%s","ownerUserId":"%s","version":"%s","imageDigest":"%s","chartSHA256":"%s","installerSHA256":"%s","hubOrigin":"%s","namespace":"%s","release":"%s","agentToken":"%s"%s}\n' \
         "$FAKE_CLUSTER_ID" "$FAKE_OWNER_USER_ID" "$FAKE_CLAIM_VERSION" "$FAKE_IMAGE_DIGEST" \
         "$FAKE_CHART_SHA256" "$FAKE_CLAIM_INSTALLER_SHA256" "$FAKE_CLAIM_ORIGIN" \
-        "$FAKE_CLAIM_NAMESPACE" "$FAKE_CLAIM_RELEASE" "$FAKE_AGENT_TOKEN" >"$output"
+        "$FAKE_CLAIM_NAMESPACE" "$FAKE_CLAIM_RELEASE" "$FAKE_AGENT_TOKEN" "$FAKE_OPENCOST_FIELDS" >"$output"
       status="$FAKE_CLAIM_STATUS"
       ;;
     "$FAKE_ORIGIN/downloads/agent/"*/installer.sh)
@@ -198,6 +198,7 @@ reset_case() {
   export FAKE_CLAIM_VERSION=1.2.3 FAKE_CLAIM_ORIGIN="$FAKE_ORIGIN"
   export FAKE_CLAIM_NAMESPACE="$FAKE_NAMESPACE" FAKE_CLAIM_RELEASE="$FAKE_NAMESPACE"
   export FAKE_CLAIM_INSTALLER_SHA256="$FAKE_INSTALLER_SHA256"
+  export FAKE_OPENCOST_FIELDS=''
   export FAKE_INSTALLER_FAIL=0 FAKE_DOCKER_FAIL=0 FAKE_NODE_COUNT=1
   export FAKE_LOCAL_BOOT_ID=11111111-1111-4111-8111-111111111111
   export FAKE_NODE_BOOT_ID="$FAKE_LOCAL_BOOT_ID" FAKE_NODE_RUNTIME=docker://24.0.9
@@ -280,6 +281,25 @@ assert_no_external_downloads
 [[ "$(wc -l <"$FAKE_CURL_URL_LOG")" -eq 3 ]] || { printf 'unexpected download count: %s\n' "$(<"$FAKE_CURL_URL_LOG")" >&2; exit 1; }
 assert_no_cluster_mutation success
 
+reset_case
+opencost_chart="$(printf 'c%.0s' {1..64})"
+opencost_image="sha256:$(printf 'e%.0s' {1..64})"
+export FAKE_OPENCOST_FIELDS=",\"openCostChartSHA256\":\"$opencost_chart\",\"openCostImageDigest\":\"$opencost_image\""
+if ! output="$(printf 'yes\n' | env -u KUBECONFIG bash "$script" 2>&1)"; then
+  printf 'bootstrap OpenCost case failed: %s\n' "$output" >&2
+  exit 1
+fi
+for argument in --opencost-chart-sha256 "$opencost_chart" --opencost-image-digest "$opencost_image"; do
+  grep -Fxq -- "$argument" "$FAKE_INSTALLER_ARGV_LOG" || { printf 'installer did not receive %s\n' "$argument" >&2; exit 1; }
+done
+assert_no_cluster_mutation 'OpenCost prepare arguments'
+assert_safe_argv
+assert_no_external_downloads
+
+reset_case
+export FAKE_OPENCOST_FIELDS=",\"openCostChartSHA256\":\"$opencost_chart\""
+expect_failure 'missing OpenCost image digest' 'OpenCost image digest is invalid'
+
 for permission in 'create namespaces' 'bind clusterroles' 'escalate clusterroles'; do
   reset_case
   export FAKE_DENY_PERMISSION="$permission"
@@ -334,7 +354,7 @@ export FAKE_CLAIM_INSTALLER_SHA256
 expect_failure 'installer checksum mismatch' 'installer checksum mismatch'
 
 use_http_origin() {
-  export FAKE_ORIGIN=http://10.0.100.220:8080 KUBEATLAS_ORIGIN=http://10.0.100.220:8080 FAKE_CLAIM_ORIGIN=http://10.0.100.220:8080
+  export FAKE_ORIGIN=http://192.0.2.220:8080 KUBEATLAS_ORIGIN=http://192.0.2.220:8080 FAKE_CLAIM_ORIGIN=http://192.0.2.220:8080
 }
 
 expect_bootstrap_success() {
@@ -357,16 +377,16 @@ grep -Fq -- '--host unix:///var/run/docker.sock info' "$FAKE_DOCKER_LOG"
 
 reset_case
 use_http_origin
-export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"10.0.100.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"192.0.2.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
 export DOCKER_HOST=ssh://unrelated-daemon DOCKER_CONTEXT=unrelated-context
 expect_bootstrap_success 'exact HTTP registry with remote client overrides'
 
 reset_case
 use_http_origin
-export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{},"InsecureRegistryCIDRs":["10.0.100.0/24"]}'
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{},"InsecureRegistryCIDRs":["192.0.2.0/24"]}'
 expect_bootstrap_success 'HTTP registry allowed by CIDR'
 
-for wrong_authority in 10.0.100.220:5000 10.0.100.220:8081; do
+for wrong_authority in 192.0.2.220:5000 192.0.2.220:8081; do
   reset_case
   use_http_origin
   export FAKE_DOCKER_REGISTRY="{\"IndexConfigs\":{\"$wrong_authority\":{\"Secure\":false}},\"InsecureRegistryCIDRs\":[\"127.0.0.0/8\"]}"

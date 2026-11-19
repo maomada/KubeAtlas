@@ -3,9 +3,9 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 FIXTURES="$SCRIPT_DIR/workload-metrics-demo"
-export CLUSTER_NAME=radar-workload-metrics-demo
+export CLUSTER_NAME=kubeatlas-workload-metrics-demo
 export KUBEATLAS_METRICS_DEMO_HEADER=true
-export KUBECONFIG="${KUBEATLAS_METRICS_DEMO_STATE:-${TMPDIR:-/tmp}/radar-workload-metrics-demo}/kubeconfig"
+export KUBECONFIG="${KUBEATLAS_METRICS_DEMO_STATE:-${TMPDIR:-/tmp}/kubeatlas-workload-metrics-demo}/kubeconfig"
 CTX="kind-$CLUSTER_NAME"
 umask 077
 
@@ -28,18 +28,18 @@ case "${1:-help}" in
     kctl apply -f "$FIXTURES/collector.yaml"
     kctl -n monitoring create configmap prometheus-config --from-file=prometheus.yml="$FIXTURES/prometheus.yaml" --dry-run=client -o yaml | kctl apply -f -
     kctl -n monitoring rollout restart deployment/prometheus
-    hctl upgrade --install radar-istio-base base --repo https://istio-release.storage.googleapis.com/charts --version 1.30.3 --namespace radar-metrics-istio-system --create-namespace -f "$FIXTURES/istio-base-values.yaml" --wait --timeout 5m
-    hctl upgrade --install radar-istio istiod --repo https://istio-release.storage.googleapis.com/charts --version 1.30.3 --namespace radar-metrics-istio-system -f "$FIXTURES/istio-values.yaml" --wait --timeout 5m
+    hctl upgrade --install kubeatlas-istio-base base --repo https://istio-release.storage.googleapis.com/charts --version 1.30.3 --namespace kubeatlas-metrics-istio-system --create-namespace -f "$FIXTURES/istio-base-values.yaml" --wait --timeout 5m
+    hctl upgrade --install kubeatlas-istio istiod --repo https://istio-release.storage.googleapis.com/charts --version 1.30.3 --namespace kubeatlas-metrics-istio-system -f "$FIXTURES/istio-values.yaml" --wait --timeout 5m
     kctl apply -f "$FIXTURES/fixtures.yaml"
     kctl -n monitoring rollout status deployment/prometheus --timeout=180s
     kctl -n monitoring rollout status deployment/kube-state-metrics --timeout=180s
-    for name in web worker; do kctl -n radar-metrics-fixture rollout status "deployment/$name" --timeout=180s; done
-    kctl -n radar-metrics-fixture rollout status statefulset/redis --timeout=180s
-    kctl -n radar-metrics-fixture rollout status daemonset/node-worker --timeout=180s
+    for name in web worker; do kctl -n kubeatlas-metrics-fixture rollout status "deployment/$name" --timeout=180s; done
+    kctl -n kubeatlas-metrics-fixture rollout status statefulset/redis --timeout=180s
+    kctl -n kubeatlas-metrics-fixture rollout status daemonset/node-worker --timeout=180s
     printf 'Ready. Isolated kubeconfig: %s\nRun: bash %s traffic\nThen: bash %s check\n' "$KUBECONFIG" "$0" "$0"
     ;;
   traffic) kctl create -f "$FIXTURES/traffic.yaml" ;;
-  status) kctl get pods -n radar-metrics-fixture; kctl get pods -n monitoring; kctl get jobs -n radar-metrics-fixture ;;
+  status) kctl get pods -n kubeatlas-metrics-fixture; kctl get pods -n monitoring; kctl get jobs -n kubeatlas-metrics-fixture ;;
   check) node "$FIXTURES/check.mjs" "$KUBECONFIG" "$CTX" ;;
   history) node "$FIXTURES/check.mjs" "$KUBECONFIG" "$CTX" history ;;
   down) kind delete cluster --name "$CLUSTER_NAME" --kubeconfig "$KUBECONFIG" ;;

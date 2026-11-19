@@ -152,7 +152,7 @@ export function describeImageUpdateBehavior(
 ): string {
   switch (behavior.type) {
     case 'paused':
-      return 'This controller is paused. Radar will save the template change, but no rollout starts until it is resumed.'
+      return 'This controller is paused. KubeAtlas will save the template change, but no rollout starts until it is resumed.'
     case 'recreate':
       return 'This Deployment uses Recreate. Existing Pods are stopped before replacement Pods start.'
     case 'onDelete':
@@ -396,7 +396,7 @@ export function SetImageDialog({
               <div className="rounded-md border border-theme-border bg-theme-base px-3 py-2 text-xs">
                 <p className="font-medium text-theme-text-primary">Refresh required</p>
                 <p className="mt-1 text-theme-text-secondary">
-                  Radar couldn’t verify the latest images and ownership. {loadError}
+                  KubeAtlas couldn’t verify the latest images and ownership. {loadError}
                 </p>
                 <button
                   type="button"
@@ -412,7 +412,7 @@ export function SetImageDialog({
               <div className="rounded-md border border-theme-border bg-theme-base px-3 py-2 text-xs">
                 <p className="font-medium text-theme-text-primary">Management ownership unavailable</p>
                 <p className="mt-1 text-theme-text-secondary">
-                  The host must verify GitOps and Helm ownership before Radar can safely update a live image.
+                  The host must verify GitOps and Helm ownership before KubeAtlas can safely update a live image.
                 </p>
               </div>
             )}

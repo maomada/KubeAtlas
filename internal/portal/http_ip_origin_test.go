@@ -101,7 +101,7 @@ func TestHTTPIPOriginAllowsFreshStoreLoginWithScopedCookies(t *testing.T) {
 				t.Fatalf("login returned %d cookies, want 1", len(cookies))
 			}
 			cookie := cookies[0]
-			if cookie.Name != "radar_portal_session" || cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Domain != "" || cookie.Path != "/" {
+			if cookie.Name != "kubeatlas_portal_session" || cookie.Secure || !cookie.HttpOnly || cookie.SameSite != http.SameSiteStrictMode || cookie.Domain != "" || cookie.Path != "/" {
 				t.Fatalf("unsafe HTTP-IP session cookie attributes: %#v", cookie)
 			}
 			if !h.liveHub.policySnapshot().allows(r) || h.liveHub.store.Connections().LANURL != "" || h.liveHub.store.Connections().PublicURL != "" {

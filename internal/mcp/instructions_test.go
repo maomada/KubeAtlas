@@ -26,7 +26,7 @@ import (
 // (MAX_NAMESPACE_DESCRIPTION_CHARS in codex-rs/core/src/context/world_state/tools.rs).
 const (
 	maxInstructionChars = 3800
-	// Radar Hub prepends a fleet preamble of about 550 characters to the full
+	// KubeAtlas Hub prepends a fleet preamble of about 550 characters to the full
 	// server's text and keeps the total under 4,000.
 	maxFullServerChars = 3440
 	routingCutoffChars = 2048
@@ -39,12 +39,12 @@ func TestServerInstructionsFitClientLimits(t *testing.T) {
 		if n := len([]rune(text)); n > maxInstructionChars {
 			t.Errorf("includeWrites=%v: %d chars, limit %d", includeWrites, n, maxInstructionChars)
 		}
-		end := strings.Index(text, "READING RADAR'S SIGNALS")
+		end := strings.Index(text, "READING KUBEATLAS'S SIGNALS")
 		if end < 0 || len([]rune(text[:end])) >= routingCutoffChars {
 			t.Errorf("includeWrites=%v: routing ends at char %d, must end before %d", includeWrites, end, routingCutoffChars)
 		}
 		if n := len([]rune(text)); includeWrites && n > maxFullServerChars {
-			t.Errorf("full server text is %d chars, limit %d so Radar Hub's preamble fits", n, maxFullServerChars)
+			t.Errorf("full server text is %d chars, limit %d so KubeAtlas Hub's preamble fits", n, maxFullServerChars)
 		}
 		firstLine, _, _ := strings.Cut(text, "\n")
 		if n := len([]rune(firstLine)); n > firstLineChars {
@@ -213,7 +213,7 @@ func TestInitializeReturnsServerInstructions(t *testing.T) {
 	}{
 		{"/mcp", serverInstructions(true)},
 		{"/mcp-readonly", serverInstructions(false)},
-		// Radar's own investigation agent runs under investigation.SystemPrompt.
+		// KubeAtlas's own investigation agent runs under investigation.SystemPrompt.
 		{"/mcp-investigation?scope=" + scope, ""},
 	}
 	for _, tc := range cases {
@@ -253,7 +253,7 @@ func TestServerInstructionsScopeCreationTimingToResourceOrOwner(t *testing.T) {
 	}
 }
 
-// Radar Hub can hide the Kubernetes write tools from a read-only organization
+// KubeAtlas Hub can hide the Kubernetes write tools from a read-only organization
 // while still listing other vendors' write tools, so the fixes line conditions
 // each Kubernetes write tool on that tool being listed.
 func TestServerInstructionsConditionFixesOnKubernetesWriteTools(t *testing.T) {
@@ -274,8 +274,8 @@ func TestExecServerInstructions(t *testing.T) {
 	if off != investigation.GeneralGuidanceFull {
 		t.Fatal("flag-off instructions changed")
 	}
-	if n := len([]rune(off)); n != 3405 {
-		t.Fatalf("exec=false instructions=%d characters, want 3405", n)
+	if n := len([]rune(off)); n != 3401 {
+		t.Fatalf("exec=false instructions=%d characters, want 3401", n)
 	}
 	TestServerInstructionsFitClientLimits(t)
 	t.Logf("exec=false instructions=%d characters", len([]rune(off)))
@@ -284,8 +284,8 @@ func TestExecServerInstructions(t *testing.T) {
 	if on != investigation.GeneralGuidanceExec || !strings.Contains(on, "each only if listed:") || !strings.Contains(on, "Pod checks: exec_pod if listed.") {
 		t.Fatal("missing conditional exec routing")
 	}
-	if n := len([]rune(on)); n != 3439 {
-		t.Fatalf("exec=true instructions=%d characters, want 3439", n)
+	if n := len([]rune(on)); n != 3435 {
+		t.Fatalf("exec=true instructions=%d characters, want 3435", n)
 	}
 	if serverInstructions(false) != investigation.GeneralGuidanceReadOnly {
 		t.Fatal("exec changed read-only instructions")

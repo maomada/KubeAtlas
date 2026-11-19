@@ -20,7 +20,7 @@ import (
 	dynamicfake "k8s.io/client-go/dynamic/fake"
 )
 
-// Evidence is authorized at the granularity Radar reads it: namespace access
+// Evidence is authorized at the granularity KubeAtlas reads it: namespace access
 // for a namespace's inventories, a Secrets check for Secrets.
 func TestRESTCachedIssuesAuthorizeEvidenceAtReadGranularity(t *testing.T) {
 	s := newAuthServer(auth.Config{Mode: "proxy"})
@@ -236,7 +236,7 @@ func TestRESTIssuesHandlerUsesTerminationReadGranularity(t *testing.T) {
 	}
 }
 
-// The finalizer removal for a catalog controller Radar didn't find travels as
+// The finalizer removal for a catalog controller KubeAtlas didn't find travels as
 // a separate conditional field, never inside the issue's next step.
 func TestRESTIssuesCarryConditionalCleanup(t *testing.T) {
 	k8s.ResetTestDynamicState()

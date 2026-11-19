@@ -22,7 +22,7 @@ import (
 // Clients subscribe to a run's event stream (with replay) to watch live or catch up.
 //
 // Runs live in memory and (when a RunStore is configured) persist to SQLite so
-// history survives restarts. The feature is gated to no-auth standalone radar,
+// history survives restarts. The feature is gated to no-auth standalone kubeatlas,
 // so a single local user owns all runs.
 //
 // Locking: the manager mutex (m.mu) guards the runs map/order. Each Run's mutable
@@ -48,7 +48,7 @@ type RunManager struct {
 
 	// workRoot is a private, randomly-named scratch root created once per process
 	// (mode 0700). Per-run dirs live UNDER it, so run scratch can't collide across
-	// Radar restarts or co-running processes and isn't at a predictable /tmp path.
+	// KubeAtlas restarts or co-running processes and isn't at a predictable /tmp path.
 	// "" only if creating it failed (then runs get no workdir — Cursor falls back to
 	// its own temp workspace per turn, losing cross-turn resume but staying correct).
 	workRoot string
@@ -213,7 +213,7 @@ func turnTimeout() time.Duration {
 func NewRunManager(d *Diagnoser, mcpAddress func() string, mcpBasePath string, ctxLabel func() string, store RunStore) *RunManager {
 	ctx, cancel := context.WithCancel(context.Background())
 	// Best-effort: a failure here just means runs get no shared workdir (logged).
-	root, err := os.MkdirTemp("", "radar-ai-")
+	root, err := os.MkdirTemp("", "kubeatlas-ai-")
 	if err != nil {
 		log.Printf("[ai] could not create AI scratch root: %v (Cursor resume will be degraded)", err)
 		root = ""
@@ -246,7 +246,7 @@ func NewRunManager(d *Diagnoser, mcpAddress func() string, mcpBasePath string, c
 //     lifetime temp dir → drop the sessionID so follow-ups report "no session"
 //     instead of spawning an agent guaranteed to fail;
 //   - run ids are random (newRunID), so ids can't collide across processes
-//     sharing the history DB (an ephemeral `radar diagnose --standalone` next
+//     sharing the history DB (an ephemeral `kubeatlas diagnose --standalone` next
 //     to a long-running instance) or across restarts.
 func (m *RunManager) loadPersisted() {
 	if m.store == nil {
@@ -322,24 +322,24 @@ func restartInterruptionEvent(events []RunEvent, loadErr error) StreamEvent {
 	if loadErr != nil {
 		// Without the transcript we cannot prove that the active turn was
 		// read-only. Preserve the worst credible state: an apply may have reached
-		// the API before Radar restarted, and retrying it blindly could duplicate
+		// the API before KubeAtlas restarted, and retrying it blindly could duplicate
 		// or overwrite work.
 		return StreamEvent{
 			Type:         "error",
 			ApplyOutcome: ApplyMutationUnknown,
-			Error:        "Radar restarted while this investigation was running, and its active transcript could not be reloaded. An apply may have completed without verification; re-check the original cluster before retrying.",
+			Error:        "KubeAtlas restarted while this investigation was running, and its active transcript could not be reloaded. An apply may have completed without verification; re-check the original cluster before retrying.",
 		}
 	}
 	if lastOpenTurnWasApply(events) {
 		return StreamEvent{
 			Type:         "error",
 			ApplyOutcome: ApplyMutationUnknown,
-			Error:        "Radar restarted during an apply. The change may have completed, but Radar could not verify it; re-check the original cluster before retrying.",
+			Error:        "KubeAtlas restarted during an apply. The change may have completed, but KubeAtlas could not verify it; re-check the original cluster before retrying.",
 		}
 	}
 	return StreamEvent{
 		Type:  "error",
-		Error: "Radar restarted while this investigation was running. Start a new investigation to analyze the current cluster.",
+		Error: "KubeAtlas restarted while this investigation was running. Start a new investigation to analyze the current cluster.",
 	}
 }
 
@@ -387,7 +387,7 @@ func (m *RunManager) runWorkDir(id string) string {
 }
 
 // Shutdown cancels every run (killing agent child processes) — called on server
-// stop so local agents don't outlive radar. In-flight runs are marked stopped
+// stop so local agents don't outlive kubeatlas. In-flight runs are marked stopped
 // BEFORE their contexts are cancelled so the run goroutines' terminal-status
 // guard keeps them from persisting a spurious "context canceled" error; the
 // store then drains and closes, and anything appended after that is a no-op.
@@ -411,10 +411,10 @@ func (m *RunManager) Shutdown() {
 			// Keep the status transition and terminal event enqueue in the same
 			// critical section. A later turn can only reserve the run after the old
 			// terminal marker is durably ordered in the store queue.
-			terminal := StreamEvent{Type: "error", Error: "Investigation stopped — Radar was shutting down."}
+			terminal := StreamEvent{Type: "error", Error: "Investigation stopped — KubeAtlas was shutting down."}
 			if r.activeTurnLocked().Apply {
 				terminal.ApplyOutcome = ApplyMutationUnknown
-				terminal.Error = "Radar shut down during an apply. The change may have completed, but Radar could not verify it; re-check current cluster state before retrying."
+				terminal.Error = "KubeAtlas shut down during an apply. The change may have completed, but KubeAtlas could not verify it; re-check current cluster state before retrying."
 			}
 			r.appendLocked(terminal)
 		}
@@ -476,7 +476,7 @@ func (m *RunManager) beginTurn(r *Run, requireSession bool) (string, error) {
 	r.status = "running"
 	r.OwnerPID = os.Getpid()
 	r.updatedAt = nowUTC()
-	// Persist the running transition NOW: if Radar dies mid-turn, restart
+	// Persist the running transition NOW: if KubeAtlas dies mid-turn, restart
 	// recovery keys off the status column — a stale terminal status here would
 	// leave an unterminated turn in the replayed transcript with no repair.
 	if r.store != nil {
@@ -699,7 +699,7 @@ func (m *RunManager) executeTurns(r *Run, turn runTurn) {
 			outcome := mutation.outcome(r.Profile)
 			// A confirmed mutation and an ambiguous attempted mutation both need
 			// current-state evidence. Authoritative failure/no-attempt does not: no
-			// write could have landed through Radar.
+			// write could have landed through KubeAtlas.
 			needsVerification := outcome != ApplyMutationFailed
 			sameContext := m.ctx() == r.Context
 			if needsVerification && sameContext {
@@ -736,9 +736,9 @@ func (m *RunManager) executeTurns(r *Run, turn runTurn) {
 				terminal.Type = "error"
 				terminal.Diag = nil
 				if outcome == ApplyMutationConfirmed {
-					terminal.Error = "A Radar write tool confirmed the mutation, but the cluster context changed before Radar could verify current state. Reconnect to the original cluster and check it before retrying."
+					terminal.Error = "A KubeAtlas write tool confirmed the mutation, but the cluster context changed before KubeAtlas could verify current state. Reconnect to the original cluster and check it before retrying."
 				} else {
-					terminal.Error = "The cluster context changed before Radar could determine whether the apply completed. Reconnect to the original cluster and check current state before retrying."
+					terminal.Error = "The cluster context changed before KubeAtlas could determine whether the apply completed. Reconnect to the original cluster and check current state before retrying."
 				}
 			}
 			r.finishApplyWithoutVerification(terminal)
@@ -765,20 +765,20 @@ func applyTerminalEvent(diag Diagnosis, turnErr error, outcome ApplyMutationOutc
 
 	verificationSuffix := ""
 	if verificationScheduled {
-		verificationSuffix = " Radar scheduled a current-state verification."
+		verificationSuffix = " KubeAtlas scheduled a current-state verification."
 	}
 	switch outcome {
 	case ApplyMutationFailed:
 		if turnErr != nil {
 			event.Error = turnErr.Error()
 			if errors.Is(turnErr, context.DeadlineExceeded) {
-				event.Error = fmt.Sprintf("The apply timed out after %s before any Radar write was confirmed.", timeout)
+				event.Error = fmt.Sprintf("The apply timed out after %s before any KubeAtlas write was confirmed.", timeout)
 			}
 		} else {
-			event.Error = "No change was applied: no Radar write tool reported a successful mutation. Review the failed or missing write call before retrying."
+			event.Error = "No change was applied: no KubeAtlas write tool reported a successful mutation. Review the failed or missing write call before retrying."
 		}
 	case ApplyMutationConfirmed:
-		event.Error = "A Radar write tool confirmed the mutation, but the agent ended before completing its report."
+		event.Error = "A KubeAtlas write tool confirmed the mutation, but the agent ended before completing its report."
 		if turnErr != nil && !errors.Is(turnErr, context.DeadlineExceeded) {
 			event.Error += " " + turnErr.Error()
 		}
@@ -816,7 +816,7 @@ func (r *Run) finishApplyAndBeginVerification(terminal StreamEvent, verifyQuesti
 	r.cancel = verifyCancel
 	// Keep status=running before appending the batch: the done event and the
 	// summary it carries must describe an interrupted compound job as running.
-	// Restart recovery then appends its honest interruption error if Radar exits
+	// Restart recovery then appends its honest interruption error if KubeAtlas exits
 	// before verification completes.
 	r.appendEventsLocked([]StreamEvent{
 		terminal,
@@ -912,15 +912,15 @@ func (r *Run) finishTurnWithBarrier(diag Diagnosis, turnErr error, apply bool, t
 // bindRootCauseEvidenceLocked promotes the model's private reference request
 // only when every ref maps to exactly one complete, confirmed-success read
 // result of this run. A ref from the current turn must also match the exact
-// clean producer payload Radar's private MCP transport recorded while the
+// clean producer payload KubeAtlas's private MCP transport recorded while the
 // turn's scope was active; a ref from an earlier turn is accepted on the
-// persisted RadarEvidence flag, which only that turn's stream validator could
+// persisted KubeAtlasEvidence flag, which only that turn's stream validator could
 // have set against its own live lease. Widening to the run lets a revised
 // assessment keep the observations it still rests on — a previous log or a
 // resource state that may no longer be re-readable — while the frontend shows
 // when each was captured. The model-visible ref is correlation data, not
 // authority. The method scans canonical retained events while r.mu is held, so
-// a callback rejected after Stop/context-switch can never become proof. Radar's
+// a callback rejected after Stop/context-switch can never become proof. KubeAtlas's
 // read-tool allowlist is retained as defense in depth.
 //
 // The same match table binds the agent's case (Evidence, RuledOut) for every
@@ -1009,7 +1009,7 @@ func (r *Run) runEvidenceMatchesLocked(diag *Diagnosis) map[string]evidenceMatch
 		current := i >= turnStart
 		// The current turn is proven against the private transport snapshot
 		// taken as this turn closed. An earlier turn's snapshot is gone; its
-		// proof is the RadarEvidence flag its own validator persisted, and its
+		// proof is the KubeAtlasEvidence flag its own validator persisted, and its
 		// ref must not carry this turn's scope (a marker minted now cannot have
 		// been observed then).
 		var authenticated bool
@@ -1022,7 +1022,7 @@ func (r *Run) runEvidenceMatchesLocked(diag *Diagnosis) map[string]evidenceMatch
 		}
 		candidate.valid = candidate.count == 1 &&
 			authenticated &&
-			step.RadarEvidence &&
+			step.KubeAtlasEvidence &&
 			step.ID != "" && tool.known && !tool.conflicts && investigation.IsReadOnlyTool(tool.name) &&
 			step.Status == "done" &&
 			step.IsError != nil && !*step.IsError &&
@@ -1374,7 +1374,7 @@ func (r *Run) markStale() bool {
 	staleEv := StreamEvent{Type: "error", Error: "Cluster context changed — this investigation was about a different cluster."}
 	if r.activeTurnLocked().Apply {
 		staleEv.ApplyOutcome = ApplyMutationUnknown
-		staleEv.Error = "Cluster context changed during an apply. The change may have completed on the previous cluster, but Radar cannot verify it here; reconnect to that cluster and check current state before retrying."
+		staleEv.Error = "Cluster context changed during an apply. The change may have completed on the previous cluster, but KubeAtlas cannot verify it here; reconnect to that cluster and check current state before retrying."
 	}
 	if r.hydrated {
 		// The terminal pair and stale summary are one store transaction, while the

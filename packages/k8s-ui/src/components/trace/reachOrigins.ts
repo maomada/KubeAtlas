@@ -1,4 +1,5 @@
 import type { Trace, ProbeResult, RouteResult } from './types'
+import { isKubeAtlasSource } from '../../utils/legacy-brand'
 import type { Mark } from './reachMarks'
 import { originRouteEvidence, routeMark } from './reachMarks'
 
@@ -8,19 +9,19 @@ import { originRouteEvidence, routeMark } from './reachMarks'
  * results about the same Service can mean completely different things depending
  * on who sent the request and by what mechanism.
  *
- * Radar has three real origins today. `caller` and `external` are declared here
+ * KubeAtlas has three real origins today. `caller` and `external` are declared here
  * and rendered as unavailable rather than omitted: an operator reading this tab
  * needs to know that the strongest evidence - the real application caller, and a
  * genuine request from outside the cluster - is absent, not merely unrun.
  * Hiding them would make synthetic evidence look complete.
  */
-export type OriginId = 'incluster' | 'radar-incluster' | 'apiserver' | 'local' | 'caller' | 'external'
+export type OriginId = 'incluster' | 'kubeatlas-incluster' | 'apiserver' | 'local' | 'caller' | 'external'
 
 /** Which lane an origin's traffic belongs to. */
 export type Lane = 'dataplane' | 'control'
 
 /** What the origin's identity means for the result's strength. */
-export type OriginKind = 'synthetic' | 'radar' | 'real-client' | 'real-caller' | 'relayed'
+export type OriginKind = 'synthetic' | 'kubeatlas' | 'real-client' | 'real-caller' | 'relayed'
 
 export interface Origin {
   id: OriginId
@@ -36,13 +37,13 @@ export interface Origin {
   mark: Mark
   /** Set when this origin cannot be used at all. Renders instead of an action. */
   unavailable?: string
-  /** True for origins Radar does not implement (vs merely denied by RBAC). */
+  /** True for origins KubeAtlas does not implement (vs merely denied by RBAC). */
   unsupported?: boolean
 }
 
 export const ORIGIN_KIND_TAG: Record<OriginKind, string> = {
   synthetic: 'SYNTHETIC',
-  radar: 'RADAR ITSELF',
+  kubeatlas: 'KUBEATLAS ITSELF',
   'real-client': 'REAL CLIENT',
   'real-caller': 'REAL CALLER',
   relayed: 'RELAYED · NOT A CALLER',
@@ -50,12 +51,12 @@ export const ORIGIN_KIND_TAG: Record<OriginKind, string> = {
 
 /** The laptop's own tag. It shares the 'real-client' KIND with the external
  *  origin, but the tags must differ: a genuine request from the public internet
- *  IS a real client; Radar dialling from the operator's machine behaves AS one
- *  - the sender is Radar, and saying "real client" upgraded it into a user. */
+ *  IS a real client; KubeAtlas dialling from the operator's machine behaves AS one
+ *  - the sender is KubeAtlas, and saying "real client" upgraded it into a user. */
 export const LAPTOP_TAG = 'AS A CLIENT'
 
 /** Evidence strength, strongest first. Drives the "next strongest test" prompt. */
-export const ORIGIN_STRENGTH: OriginId[] = ['caller', 'external', 'incluster', 'radar-incluster', 'local', 'apiserver']
+export const ORIGIN_STRENGTH: OriginId[] = ['caller', 'external', 'incluster', 'kubeatlas-incluster', 'local', 'apiserver']
 
 /** The live work this page actually did: how many real dials were sent, at
  *  which layers, from how many vantages. The route counts alone undersold it -
@@ -80,12 +81,12 @@ export function originOf(p: ProbeResult, runVantage?: string): OriginId {
   if (p.path === 'apiserver') return 'apiserver'
   if (p.vantage !== 'in-cluster') return 'local'
   if (p.source === 'probe-job') return 'incluster'
-  if (p.source === 'radar') return 'radar-incluster'
+  if (isKubeAtlasSource(p.source)) return 'kubeatlas-incluster'
   // No source: an older producer. An in-cluster dataplane probe can only be
-  // Radar's own when Radar itself runs in the cluster; from a laptop the only
+  // KubeAtlas's own when KubeAtlas itself runs in the cluster; from a laptop the only
   // way to get one is the throwaway Job. runVantage is what the producer knows
   // about itself, so it settles the ambiguity without guessing.
-  return runVantage === 'in-cluster' ? 'radar-incluster' : 'incluster'
+  return runVantage === 'in-cluster' ? 'kubeatlas-incluster' : 'incluster'
 }
 
 interface OriginContext {
@@ -233,7 +234,7 @@ export function buildOrigins(trace: Trace | undefined, ctx: OriginContext = {}):
     lane: 'dataplane',
     mark: 'blocked',
     unsupported: true,
-    unavailable: 'Radar can’t send a request from one of your running Pods yet. Until it can, anything that depends on who is calling — mesh mTLS, authorization policy, network policy — stays untested.',
+    unavailable: 'KubeAtlas can’t send a request from one of your running Pods yet. Until it can, anything that depends on who is calling — mesh mTLS, authorization policy, network policy — stays untested.',
   }
   const external: Origin = {
     id: 'external',
@@ -246,7 +247,7 @@ export function buildOrigins(trace: Trace | undefined, ctx: OriginContext = {}):
     lane: 'dataplane',
     mark: 'blocked',
     unsupported: true,
-    unavailable: 'Radar has nowhere to test from that is provably on the public internet. A test from your machine is reported as exactly that, never as “from outside”.',
+    unavailable: 'KubeAtlas has nowhere to test from that is provably on the public internet. A test from your machine is reported as exactly that, never as “from outside”.',
   }
 
   const inClusterProbes = byOrigin.get('incluster') ?? []
@@ -259,10 +260,10 @@ export function buildOrigins(trace: Trace | undefined, ctx: OriginContext = {}):
     id: 'incluster',
     glyph: '⚗',
     name: 'In-cluster probe',
-    mech: 'a throwaway Pod Radar starts inside the cluster',
+    mech: 'a throwaway Pod KubeAtlas starts inside the cluster',
     // The Job sets no serviceAccountName and disables token automount, so it runs
     // as the target namespace's default SA with no credentials mounted - NOT as
-    // Radar. Sidecar injection is admission's call, not ours; the runner handles
+    // KubeAtlas. Sidecar injection is admission's call, not ours; the runner handles
     // injected sidecars precisely because they do appear.
     identity: `in ${ns || 'the namespace'} · the namespace’s default account, no token`,
     kind: 'synthetic',
@@ -283,7 +284,7 @@ export function buildOrigins(trace: Trace | undefined, ctx: OriginContext = {}):
     glyph: '⌸',
     name: 'API-server proxy',
     mech: 'Kubernetes relays the request for us',
-    identity: 'Radar’s own credentials — not a Pod',
+    identity: 'KubeAtlas’s own credentials — not a Pod',
     kind: 'relayed',
     kindTag: ORIGIN_KIND_TAG.relayed,
     lane: 'control',
@@ -302,8 +303,8 @@ export function buildOrigins(trace: Trace | undefined, ctx: OriginContext = {}):
   const localCannotDial = probes.length > 0 && localProbes.length === 0 && localMark === 'untested' && (trace?.upstreams ?? []).length === 0
   // "No Ingress, Gateway or LoadBalancer" is only true of a ClusterIP subject.
   // A LoadBalancer/NodePort Service with no Ingress reaches this branch too -
-  // Radar just doesn't dial its external address yet, which is a claim about
-  // Radar, not about the Service.
+  // KubeAtlas just doesn't dial its external address yet, which is a claim about
+  // KubeAtlas, not about the Service.
   const subjectType = (trace?.downstream ?? [])
     .find((h) => h.resource.kind === 'Service' && h.resource.name === trace?.subject.name)
     ?.config?.serviceType?.trim()
@@ -312,7 +313,7 @@ export function buildOrigins(trace: Trace | undefined, ctx: OriginContext = {}):
   const local: Origin = {
     id: 'local',
     glyph: '▣',
-    name: 'Radar on your machine',
+    name: 'KubeAtlas on your machine',
     mech: 'this machine, over your own network',
     kind: 'real-client',
     kindTag: LAPTOP_TAG,
@@ -326,47 +327,47 @@ export function buildOrigins(trace: Trace | undefined, ctx: OriginContext = {}):
         ? skipReason(localProbes)
         : localCannotDial
           ? externallyAddressable
-            ? 'Radar doesn’t dial this Service’s external address from your machine yet. From here it can only relay through the API-server proxy.'
-            : 'This Service has no entry point Radar can dial from your machine — no Ingress, Gateway address or LoadBalancer. From here Radar can only relay through the API-server proxy.'
+            ? 'KubeAtlas doesn’t dial this Service’s external address from your machine yet. From here it can only relay through the API-server proxy.'
+            : 'This Service has no entry point KubeAtlas can dial from your machine — no Ingress, Gateway address or LoadBalancer. From here KubeAtlas can only relay through the API-server proxy.'
           : undefined,
   }
 
-  const radarProbes = byOrigin.get('radar-incluster') ?? []
-  // Radar running AS a Pod is not the throwaway Job: it dials with Radar's own
-  // ServiceAccount from Radar's own namespace, and whatever sidecars Radar has.
-  // Collapsing the two credited Radar's direct dials to a Job never created.
-  const radarInCluster: Origin = {
-    id: 'radar-incluster',
+  const kubeatlasProbes = byOrigin.get('kubeatlas-incluster') ?? []
+  // KubeAtlas running AS a Pod is not the throwaway Job: it dials with KubeAtlas's own
+  // ServiceAccount from KubeAtlas's own namespace, and whatever sidecars KubeAtlas has.
+  // Collapsing the two credited KubeAtlas's direct dials to a Job never created.
+  const kubeatlasInCluster: Origin = {
+    id: 'kubeatlas-incluster',
     glyph: '◈',
-    name: 'Radar, inside the cluster',
-    mech: 'Radar\u2019s own process, running as a Pod',
-    identity: 'Radar\u2019s own namespace and ServiceAccount',
-    kind: 'radar',
-    kindTag: ORIGIN_KIND_TAG.radar,
+    name: 'KubeAtlas, inside the cluster',
+    mech: 'KubeAtlas\u2019s own process, running as a Pod',
+    identity: 'KubeAtlas\u2019s own namespace and ServiceAccount',
+    kind: 'kubeatlas',
+    kindTag: ORIGIN_KIND_TAG.kubeatlas,
     lane: 'dataplane',
-    mark: markFor(radarProbes, 'radar-incluster', ctx),
-    unsupported: trace?.runVantage !== 'in-cluster' && radarProbes.length === 0,
+    mark: markFor(kubeatlasProbes, 'kubeatlas-incluster', ctx),
+    unsupported: trace?.runVantage !== 'in-cluster' && kubeatlasProbes.length === 0,
     unavailable:
-      trace?.runVantage !== 'in-cluster' && radarProbes.length === 0
-        ? 'Radar is not running in this cluster, so it cannot dial from inside on its own. The in-cluster test starts a throwaway Pod instead.'
+      trace?.runVantage !== 'in-cluster' && kubeatlasProbes.length === 0
+        ? 'KubeAtlas is not running in this cluster, so it cannot dial from inside on its own. The in-cluster test starts a throwaway Pod instead.'
         : undefined,
   }
 
-  const all: Record<OriginId, Origin> = { caller, external, incluster, 'radar-incluster': radarInCluster, local, apiserver }
-  // Radar not being a Pod is not an evidence GAP - the in-cluster Job covers the
+  const all: Record<OriginId, Origin> = { caller, external, incluster, 'kubeatlas-incluster': kubeatlasInCluster, local, apiserver }
+  // KubeAtlas not being a Pod is not an evidence GAP - the in-cluster Job covers the
   // same ground. Listing it as "never tested" would pad the coverage caveat with
   // a deployment detail, next to genuine holes like "as your application".
-  const radarIsAbsent = radarProbes.length === 0 && trace?.runVantage !== 'in-cluster'
-  // The mirror image, and the same reasoning. When Radar runs as a Pod - hosted,
-  // or self-hosted in-cluster - there is no Radar on the operator's machine to
+  const kubeatlasIsAbsent = kubeatlasProbes.length === 0 && trace?.runVantage !== 'in-cluster'
+  // The mirror image, and the same reasoning. When KubeAtlas runs as a Pod - hosted,
+  // or self-hosted in-cluster - there is no KubeAtlas on the operator's machine to
   // dial from, so this vantage is not one that can be run and then isn't. The
-  // browser being on a laptop is irrelevant: the request is sent by the Radar
+  // browser being on a laptop is irrelevant: the request is sent by the KubeAtlas
   // process. What a machine outside the cluster would see is still declared, by
   // the external origin, which is a real gap and stays. Guarded on having no
   // probes so a mislabelled result can never hide evidence that exists.
   const laptopIsAbsent = localProbes.length === 0 && trace?.runVantage === 'in-cluster'
   return ORIGIN_STRENGTH.filter(
-    (id) => !(id === 'radar-incluster' && radarIsAbsent) && !(id === 'local' && laptopIsAbsent),
+    (id) => !(id === 'kubeatlas-incluster' && kubeatlasIsAbsent) && !(id === 'local' && laptopIsAbsent),
   ).map((id) => all[id])
 }
 
@@ -423,13 +424,13 @@ export function headlineEvidenceOrigin(route?: RouteResult): OriginId | undefine
   if (!row) return undefined
   if (row.path === 'apiserver') return 'apiserver'
   if (row.vantage !== 'in-cluster') return 'local'
-  return row.source === 'radar' ? 'radar-incluster' : 'incluster'
+  return isKubeAtlasSource(row.source) ? 'kubeatlas-incluster' : 'incluster'
 }
 
 const isGap = (o: Origin): boolean => o.mark === 'untested' || o.mark === 'denied' || (!!o.unsupported && o.mark === 'blocked')
 
 /**
- * The strongest origin that is not yet proven, including ones Radar cannot use.
+ * The strongest origin that is not yet proven, including ones KubeAtlas cannot use.
  * This is the honest ceiling on the evidence - useful as a caveat, but NEVER as
  * a call to action.
  */
@@ -438,7 +439,7 @@ export function strongestGap(origins: Origin[]): Origin | undefined {
 }
 
 /**
- * The strongest gap Radar can actually close.
+ * The strongest gap KubeAtlas can actually close.
  *
  * Kept separate from `strongestGap` deliberately. The real caller is almost
  * always the strongest missing origin AND permanently unavailable, so driving
@@ -450,7 +451,7 @@ export function actionableGap(origins: Origin[]): Origin | undefined {
   // ORIGIN_STRENGTH is an evidence ranking, and a gap is only worth proposing
   // if it is STRONGER than what has already been proven. Without this the
   // panel told you your laptop (control lane) was "the strongest evidence
-  // Radar can still collect" about in-cluster reachability, after the
+  // KubeAtlas can still collect" about in-cluster reachability, after the
   // in-cluster probe had already succeeded.
   const provenAt = origins.findIndex((o) => o.mark === 'proved')
   const ceiling = provenAt === -1 ? origins.length : provenAt

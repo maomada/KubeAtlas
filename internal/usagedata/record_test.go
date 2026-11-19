@@ -16,16 +16,16 @@ func TestRecordAPIClassifiesByRoutePattern(t *testing.T) {
 	}
 	RecordAPI("POST", "/api/helm/releases/{namespace}/{name}/rollback", 200)
 	RecordAPI("POST", "/api/contexts/{name}", 200)
-	RecordAPI("POST", "/acme/api/radar/api/contexts/{name}", 200) // base path not stripped by the caller
-	RecordAPI("GET", "/api/pods/{namespace}/{name}/exec", 0)      // hijacked WebSocket
-	RecordAPI("GET", "/api/pods/{namespace}/{name}/logs", 200)    // a read that is the action
-	RecordAPI("GET", "/api/dashboard", 200)                       // background polling: ignored
-	RecordAPI("GET", "/api/resources/{kind}", 500)                // failed read
-	RecordAPI("PUT", "/api/settings", 403)                        // failed change
-	RecordAPI("POST", "/api/usage-data/event", 204)               // our own traffic: ignored
-	RecordAPI("GET", "/api/pods/prod/payments-db/logs", 200)      // not a pattern shape we trust? still no braces
-	RecordAPI("POST", "/api/resources/<script>", 200)             // rejected by the pattern check
-	RecordAPI("ACME-PROD", "/api/contexts/{name}", 405)           // a client-chosen method
+	RecordAPI("POST", "/acme/api/kubeatlas/api/contexts/{name}", 200) // base path not stripped by the caller
+	RecordAPI("GET", "/api/pods/{namespace}/{name}/exec", 0)          // hijacked WebSocket
+	RecordAPI("GET", "/api/pods/{namespace}/{name}/logs", 200)        // a read that is the action
+	RecordAPI("GET", "/api/dashboard", 200)                           // background polling: ignored
+	RecordAPI("GET", "/api/resources/{kind}", 500)                    // failed read
+	RecordAPI("PUT", "/api/settings", 403)                            // failed change
+	RecordAPI("POST", "/api/usage-data/event", 204)                   // our own traffic: ignored
+	RecordAPI("GET", "/api/pods/prod/payments-db/logs", 200)          // not a pattern shape we trust? still no braces
+	RecordAPI("POST", "/api/resources/<script>", 200)                 // rejected by the pattern check
+	RecordAPI("ACME-PROD", "/api/contexts/{name}", 405)               // a client-chosen method
 
 	st := h.c.Status()
 	want := map[string]int{
@@ -51,7 +51,7 @@ func TestRecordAPIClassifiesByRoutePattern(t *testing.T) {
 		t.Errorf("errors = %v", st.Preview.Errors)
 	}
 	for k := range st.Preview.Actions {
-		if strings.Contains(k, "acme") || strings.Contains(k, "radar") {
+		if strings.Contains(k, "acme") || strings.Contains(k, "kubeatlas") {
 			t.Errorf("base path leaked into %q", k)
 		}
 	}

@@ -1,6 +1,6 @@
 # Two CRDs that share a plural with CloudNativePG.
 #
-# Radar's renderer dispatch, getResourceStatus and cell dispatch are all gated
+# KubeAtlas's renderer dispatch, getResourceStatus and cell dispatch are all gated
 # on an EXACT API group, with an explicit fall-through to the generic renderer.
 # None of that can be verified with only CNPG installed: with one engine
 # present, a guard that matches everything and a guard that matches the right
@@ -15,7 +15,7 @@
 #                                  must resolve to different column sets and
 #                                  different status readers on one cluster.
 #
-# Both are trimmed to the fields Radar reads. Installing real KubeBlocks or a
+# Both are trimmed to the fields KubeAtlas reads. Installing real KubeBlocks or a
 # real Velero is not the point and costs minutes per run.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition

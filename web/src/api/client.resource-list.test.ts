@@ -60,7 +60,7 @@ describe('read errors that a retry cannot answer', () => {
   it('stops on a request, access or collection problem', () => {
     expect(isUnretryableReadError(failure(400, 'list_too_large'))).toBe(true)
     expect(isUnretryableReadError(failure(400, 'kind_unknown'))).toBe(true)
-    expect(isUnretryableReadError(failure(409, 'radar_namespace_not_collected'))).toBe(true)
+    expect(isUnretryableReadError(failure(409, 'kubeatlas_namespace_not_collected'))).toBe(true)
     expect(isUnretryableReadError(failure(403, 'user_forbidden'))).toBe(true)
     expect(isUnretryableReadError(failure(503, 'kind_sync_timed_out'))).toBe(true)
     // The spellings KubeAtlas releases before the shared vocabulary sent.

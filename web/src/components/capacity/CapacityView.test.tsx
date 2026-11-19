@@ -29,7 +29,7 @@ import { CapacityView } from "./CapacityView";
 import { updateDemandSearchParam } from "./CapacityDemand";
 import { integrationBlock, NodeReadyBadge } from "./shared";
 import { ApiError } from "../../api/client";
-import { RadarFeatureUnsupportedError } from "../../api/radarFeatures";
+import { KubeAtlasFeatureUnsupportedError } from "../../api/kubeatlasFeatures";
 
 vi.mock("../../context/ConnectionContext", () => ({
   useConnection: () => ({ connection: { state: "connected" } }),
@@ -54,7 +54,7 @@ function sourceCoverage(
 const meta: CapacityResponseMeta = {
   schemaVersion: "v1alpha1",
   generatedAt,
-  clusterContext: { contextName: "radar-test-eks", clusterName: "radar-test" },
+  clusterContext: { contextName: "kubeatlas-test-eks", clusterName: "kubeatlas-test" },
   provider: {
     type: "karpenter",
     controllerMode: "self_managed",
@@ -2615,7 +2615,7 @@ describe("CapacityView activity", () => {
 describe("integrationBlock version skew", () => {
   it("maps an unsupported-feature error to the upgrade message, never 'Unknown error'", () => {
     const html = renderToString(
-      <>{integrationBlock(undefined, new RadarFeatureUnsupportedError("capacity", { currentVersion: "v1.7.2" }), false, "Loading")}</>,
+      <>{integrationBlock(undefined, new KubeAtlasFeatureUnsupportedError("capacity", { currentVersion: "v1.7.2" }), false, "Loading")}</>,
     );
     expect(html).toContain("此集群需要更新版本的 KubeAtlas 才能使用容量");
     expect(html).toContain("KubeAtlas v1.9 起提供此功能。此集群当前运行 v1.7.2。");

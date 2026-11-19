@@ -21,7 +21,7 @@ type ClusterFacts struct {
 	NodeCount  *int
 }
 
-// EnrollmentConfig runs a Radar that joins a Hub with a shared enrollment key.
+// EnrollmentConfig runs a KubeAtlas that joins a Hub with a shared enrollment key.
 // The token the Hub hands back lives in memory only: every start joins again
 // and gets a new one.
 type EnrollmentConfig struct {
@@ -29,7 +29,7 @@ type EnrollmentConfig struct {
 	KeyFile   string
 	CA        *x509.CertPool
 	Client    kubernetes.Interface
-	Namespace string // where Radar runs
+	Namespace string // where KubeAtlas runs
 	Release   string
 	Names     NameOptions
 	// Facts is called before each enroll call; nil sends none.
@@ -51,7 +51,7 @@ func (c EnrollmentConfig) validate() error {
 	case c.Client == nil:
 		return errors.New("cloud: Kubernetes client is required")
 	case c.Namespace == "":
-		return errors.New("cloud: Radar's namespace is required (MY_POD_NAMESPACE)")
+		return errors.New("cloud: KubeAtlas's namespace is required (MY_POD_NAMESPACE)")
 	case c.Release == "":
 		return errors.New("cloud: the Helm release name is required (KUBEATLAS_HELM_RELEASE)")
 	case c.Tunnel.Handler == nil:
@@ -71,12 +71,12 @@ var (
 	// A Hub with no org yet (503) is ready the moment its admin first signs
 	// in, so it is retried often and never backs off further.
 	enrollNotReadyDelay = 30 * time.Second
-	// Another Radar with this identity holds the Hub's entry. The Hub frees
-	// it within about 90 seconds of that Radar dying, so this polls often.
+	// Another KubeAtlas with this identity holds the Hub's entry. The Hub frees
+	// it within about 90 seconds of that KubeAtlas dying, so this polls often.
 	enrollConnectedDelay   = 15 * time.Second
 	enrollDefaultRateDelay = time.Minute
 	// A Retry-After longer than this is cut to it, so a proxy in the way
-	// cannot keep Radar from joining for hours.
+	// cannot keep KubeAtlas from joining for hours.
 	enrollMaxRetryAfter = 10 * time.Minute
 	// A refusal repeated with the same reason is logged again after this.
 	enrollRelogAfter = 10 * time.Minute
@@ -87,7 +87,7 @@ type enroller struct {
 	client     *EnrollClient
 	backoff    time.Duration
 	uid        string
-	name       string // the name Radar resolved and sends
+	name       string // the name KubeAtlas resolved and sends
 	source     string
 	lastReason string
 	lastLogAt  time.Time
@@ -185,12 +185,12 @@ func (e *enroller) attempt(ctx context.Context) (*EnrollResult, time.Duration) {
 	}
 
 	req := EnrollRequest{
-		AgentUID:     e.uid,
-		Namespace:    e.cfg.Namespace,
-		Release:      e.cfg.Release,
-		Name:         e.name,
-		NameSource:   e.source,
-		RadarVersion: truncateRunes(Version, 64),
+		AgentUID:         e.uid,
+		Namespace:        e.cfg.Namespace,
+		Release:          e.cfg.Release,
+		Name:             e.name,
+		NameSource:       e.source,
+		KubeAtlasVersion: truncateRunes(Version, 64),
 	}
 	if apiURL, err := validateAPIServerURL(e.cfg.Tunnel.APIServerURL); err == nil {
 		req.APIServerURL = apiURL
@@ -221,7 +221,7 @@ func (e *enroller) attempt(ctx context.Context) (*EnrollResult, time.Duration) {
 	return nil, delay
 }
 
-// enrollOutcome is how Radar reacts to a failed enroll call.
+// enrollOutcome is how KubeAtlas reacts to a failed enroll call.
 type enrollOutcome struct {
 	reason string // one or two sentences for the log
 	// delay before the next attempt; 0 means the regular backoff.
@@ -231,12 +231,12 @@ type enrollOutcome struct {
 }
 
 // classifyEnrollError maps a failed enroll call to an outcome. The Hub's own
-// message, when it sends one, replaces Radar's default reason.
+// message, when it sends one, replaces KubeAtlas's default reason.
 func classifyEnrollError(err error) enrollOutcome {
 	var he *EnrollError
 	if !errors.As(err, &he) {
 		if untrustedCert(err) {
-			return enrollOutcome{reason: fmt.Sprintf("Radar does not trust the Hub's certificate. %s Details: %v.", caBundleFix, err)}
+			return enrollOutcome{reason: fmt.Sprintf("KubeAtlas does not trust the Hub's certificate. %s Details: %v.", caBundleFix, err)}
 		}
 		return enrollOutcome{reason: fmt.Sprintf("Join failed: %v.", err)}
 	}
@@ -251,17 +251,17 @@ func classifyEnrollError(err error) enrollOutcome {
 	}
 	switch {
 	case he.StatusCode == http.StatusUnauthorized:
-		return enrollOutcome{reason: reason("The Hub rejected the enrollment key. Put a current key in its Secret, then restart Radar.")}
+		return enrollOutcome{reason: reason("The Hub rejected the enrollment key. Put a current key in its Secret, then restart KubeAtlas.")}
 	case he.StatusCode == http.StatusPaymentRequired:
 		return long("The Hub refused to add this cluster: its license or plan limit is reached.")
 	case he.StatusCode == http.StatusForbidden && he.Code == "cluster_removed":
-		return long("This cluster was removed in Radar Hub. An owner can let it back in under Settings > Enrollment keys.")
+		return long("This cluster was removed in KubeAtlas Hub. An owner can let it back in under Settings > Enrollment keys.")
 	case he.StatusCode == http.StatusForbidden && he.Code == "pending_approval":
-		return enrollOutcome{reason: reason("This cluster is waiting for an owner to approve it in Radar Hub."), delay: jitter(enrollNotReadyDelay)}
+		return enrollOutcome{reason: reason("This cluster is waiting for an owner to approve it in KubeAtlas Hub."), delay: jitter(enrollNotReadyDelay)}
 	case he.StatusCode == http.StatusConflict && he.Code == "key_full":
-		return long("This enrollment key has reached its cluster limit. An owner can raise it on the Enrollment keys page in Radar Hub.")
+		return long("This enrollment key has reached its cluster limit. An owner can raise it on the Enrollment keys page in KubeAtlas Hub.")
 	case he.StatusCode == http.StatusConflict && he.Code == "already_connected":
-		return enrollOutcome{reason: reason("Another Radar with this cluster's identity is connected to the Hub."), delay: jitter(enrollConnectedDelay)}
+		return enrollOutcome{reason: reason("Another KubeAtlas with this cluster's identity is connected to the Hub."), delay: jitter(enrollConnectedDelay)}
 	case he.StatusCode == http.StatusConflict && he.Code == "no_agent_address":
 		return enrollOutcome{reason: reason("The Hub has no agent address configured.")}
 	case he.StatusCode == http.StatusBadRequest:
@@ -279,7 +279,7 @@ func classifyEnrollError(err error) enrollOutcome {
 	}
 }
 
-const caBundleFix = "If the Hub uses a self-signed or private certificate, give Radar its CA with the chart value cloud.caBundle (or --cloud-ca-file)."
+const caBundleFix = "If the Hub uses a self-signed or private certificate, give KubeAtlas its CA with the chart value cloud.caBundle (or --cloud-ca-file)."
 
 // untrustedCert reports a Hub certificate no trusted CA signed, which
 // caBundleFix fixes.

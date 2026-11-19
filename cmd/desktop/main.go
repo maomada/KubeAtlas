@@ -339,7 +339,7 @@ func main() {
 			TitleBar: mac.TitleBarDefault(),
 			About: &mac.AboutInfo{
 				Title:   "KubeAtlas",
-				Message: "KubeAtlas — Kubernetes Visibility Tool\nIndependently maintained by maomada\nDerived from Radar; see NOTICE\n\nVersion: " + version + "\n\nhttps://github.com/maomada/KubeAtlas",
+				Message: "KubeAtlas — Kubernetes Visibility Tool\nIndependently maintained by maomada\nSee NOTICE for upstream attribution; see NOTICE\n\nVersion: " + version + "\n\nhttps://github.com/maomada/KubeAtlas",
 			},
 		},
 

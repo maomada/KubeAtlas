@@ -12,7 +12,7 @@ import (
 // [--keep-pvc]`: the instance's PVCs are detached (keep) or deleted first, so
 // the operator never sees a dangling PVC and recreates the Pod on it; then the
 // Pod is deleted, then the instance's Jobs. The operator replaces the instance
-// with a new one under a new serial. Unlike upstream, Radar refuses the
+// with a new one under a new serial. Unlike upstream, KubeAtlas refuses the
 // primary (an unplanned failover, which a switchover does safely) and
 // requires the instance to be fenced first: the operator never promotes a
 // fenced instance, which is the only thing that keeps a failover from making

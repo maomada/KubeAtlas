@@ -167,7 +167,7 @@ func readStore(ctx context.Context, dyn dynamic.Interface, namespace, name strin
 }
 
 func checkArchiveIdentity(ctx context.Context, dyn dynamic.Interface, cluster, store *unstructured.Unstructured, chosen archiveLocation, p ArchivingParams) ([]string, error) {
-	warnings := []string{"Radar checks visible declarations, not remote archive contents or credential validity. Confirm this archive identity is reserved for this Cluster.", "Enabling the plugin can reconcile instance Pods and sidecars; inspect the operator and instance progress afterward."}
+	warnings := []string{"KubeAtlas checks visible declarations, not remote archive contents or credential validity. Confirm this archive identity is reserved for this Cluster.", "Enabling the plugin can reconcile instance Pods and sidecars; inspect the operator and instance progress afterward."}
 	namespace := cluster.GetNamespace()
 	location := func(ns, name, server string) (archiveLocation, error) {
 		if ns == namespace && name == store.GetName() {

@@ -51,7 +51,7 @@ conversation. That leaves no way to tell which side initiated it, so excluding o
 selected the reverse half carries ephemeral ports: 287 spurious coredns edges out
 of 289 flows, measured.
 
-Radar keeps `direction="request"` for the edges it can orient, and reads the
+KubeAtlas keeps `direction="request"` for the edges it can orient, and reads the
 `unknown` conversations separately, collapsing each pair into a single edge drawn
 without an arrowhead. The traffic is real; only its direction is not known. That
 also disposes of the cardinality problem, since the pair is grouped without

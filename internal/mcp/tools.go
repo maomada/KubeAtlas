@@ -96,7 +96,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 
 	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
 		Name: "get_dashboard",
-		Description: "Use for inventory-style cluster or namespace health triage, like " +
+		Description: "Inventory-style cluster or namespace health triage: " +
 			"`kubectl get all` plus detected problems and warning events in one call. " +
 			"Returns resource counts, failing pods, unhealthy workloads, Warning-event " +
 			"groups (warningGroups: up to 20, ordered by lastSeen descending; use " +
@@ -104,7 +104,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 			"objectCount for breadth — objects is a capped sample of up to 3 involved " +
 			"resources, objectsTruncated flags more; if warningGroupsTruncated, more " +
 			"groups exist — use get_events with namespace/kind/name and a higher limit), " +
-			"and Helm release status so you can rank likely suspects before " +
+			"and Helm release status to rank suspects before " +
 			"calling get_resource or logs. Routing: unknown broken thing -> issues; " +
 			"content/name search -> search; service routing/dependencies -> get_topology " +
 			"or get_neighborhood; inventory/counts/Helm/events overview -> get_dashboard. " +
@@ -265,8 +265,8 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 
 	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
 		Name: "list_namespaces",
-		Description: "List all Kubernetes namespaces with their status. " +
-			"Use to discover available namespaces before filtering other queries.",
+		Description: "List Kubernetes namespaces and status. " +
+			"Discover namespaces before filtering other queries.",
 		Annotations: readOnly,
 	}, logToolCall("list_namespaces", handleListNamespaces))
 
@@ -480,7 +480,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 			"kind:Pod, ns:foo, label:app=bar, and image:redis narrow a " +
 			"term match; modifier-only queries are enumeration, so use list_resources when " +
 			"you already know the kind/namespace. Returns ranked hits with snippets and " +
-			"summaryContext. Covers what you can list and Radar collects; big CRDs need kind:. Trivy reports match by " +
+			"summaryContext. Covers what you can list and KubeAtlas collects; big CRDs need kind:. Trivy reports match by " +
 			"CVE ID, package or SBOM component. coverage.status=partial: absence unproven, see coverageHint. " +
 			"crossplanePause: requested=exact annotation true; acknowledged=that plus stored Synced=False/ReconcilePaused. Independent of readiness; absence allows other pauses.",
 		Annotations: readOnly,
@@ -501,7 +501,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 			"ServiceAccount authorizer " +
 			"check. In that mode, `resource_namespace` defaults to the ServiceAccount " +
 			"namespace; set it to an empty string for cluster-scoped or cluster-wide access. " +
-			"The caller must be allowed to create SubjectAccessReviews. Radar never retries " +
+			"The caller must be allowed to create SubjectAccessReviews. KubeAtlas never retries " +
 			"with a privileged identity, so authorization errors are explicit. Identify the " +
 			"subject with `kind` (ServiceAccount, User, or Group) and `name`. For " +
 			"ServiceAccounts `name` is the bare object name (`cleanup-controller`) with " +
@@ -517,7 +517,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 		Name: "query_prometheus",
 		Description: "Use when the question needs metric VALUES or history: CPU/memory over time, " +
 			"request rates, error ratios, saturation, restarts trend, 'was there a spike?'. Executes " +
-			"PromQL against the cluster's Prometheus (auto-discovered or configured in Radar; also " +
+			"PromQL against the cluster's Prometheus (auto-discovered or configured; also " +
 			"works with PromQL-compatible backends: Thanos, VictoriaMetrics, Mimir). " +
 			"type=instant returns current values; type=range returns time series for a window " +
 			"(since=1h default). For live top-N snapshots prefer top_resources; for metric/label " +
@@ -643,7 +643,7 @@ func registerTools(server *mcp.Server, includeWrites, includeExec bool, paramReg
 	addToolWithRegistry(paramRegistry, server, &mcp.Tool{
 		Name: "apply_resource",
 		Description: "Create or update a Kubernetes resource from a YAML manifest. " +
-			"In 'apply' mode (default), performs a server-side apply with FieldManager=radar " +
+			"In 'apply' mode (default), performs a server-side apply with FieldManager=kubeatlas " +
 			"and reports field ownership conflicts instead of taking ownership by default. " +
 			"Set force=true only when you intend to take field ownership from other managers " +
 			"(Helm, Flux, GitOps controllers, kubectl). " +
@@ -777,7 +777,7 @@ type issuesInput struct {
 	Severity  string `json:"severity,omitempty" jsonschema:"comma-separated: critical,warning"`
 	Kind      string `json:"kind,omitempty" jsonschema:"comma-separated kind filter (e.g. Deployment,Pod)"`
 	Limit     int    `json:"limit,omitempty" jsonschema:"max issues returned (default 200, max 1000)"`
-	Filter    string `json:"filter,omitempty" jsonschema:"optional CEL boolean expression run against each composed Issue. Bindings: severity (critical|warning), category (e.g. crashloop, image_pull_failed, missing_config_ref, gitops_sync_failed), category_group (startup|runtime|scheduling|configuration|networking|storage|scaling|security|control_plane; runtime here is an issue taxonomy group, not issue_timing), source (problem=built-in Radar detector, missing_ref=dangling by-name reference, scheduling=pod startup blocker, condition=False controller/CRD condition), kind, group, ns (the namespace — use 'ns', not 'namespace' which is a CEL reserved word), name, reason, message, cause, action, remediation_kind, remediation_target, count (int, affected-resource fan-out), grouping_scope (workload|service|node|…), restart_count (int), last_terminated_reason, operation_retry_count (int, GitOps operation retries — distinct from restart_count), stuck (bool), issue_timing (independent timing evidence, not a root-cause verdict: 'started_at_resource_creation' or 'started_after_resource_was_healthy'; absent = unknown), issue_timing_basis ('condition' | 'owner_condition' | 'pod_creation' | 'deletion' | 'phase' | 'spec'), first_seen, onset_unknown, onset_coverage_unknown, resource_created_at, last_seen. Times are unix seconds. first_seen is the earliest evidence-backed active-time anchor and may be Radar's first observation: read it as 'active at least since', not exact onset. It is 0 when unknown. Require first_seen != 0 for any age filter. When the whole row must have exact timing, also require onset_coverage_unknown == 0; onset_unknown alone does not exclude partially dated groups. onset_coverage is emitted only when at least one contributing signal has unknown timing. The owner_condition, pod_creation, and spec bases need not share first_seen's anchor; never subtract resource_created_at from first_seen to infer a healthy duration. resource_created_at is resource-age context, never onset. last_seen updates each compose. For cross-cluster scoping use clusters= (not CEL). Examples: 'issue_timing == \"started_after_resource_was_healthy\"', 'first_seen != 0 && onset_coverage_unknown == 0 && first_seen < timestamp(\"2026-05-01T00:00:00Z\").getSeconds()'"`
+	Filter    string `json:"filter,omitempty" jsonschema:"optional CEL boolean expression run against each composed Issue. Bindings: severity (critical|warning), category (e.g. crashloop, image_pull_failed, missing_config_ref, gitops_sync_failed), category_group (startup|runtime|scheduling|configuration|networking|storage|scaling|security|control_plane; runtime here is an issue taxonomy group, not issue_timing), source (problem=built-in KubeAtlas detector, missing_ref=dangling by-name reference, scheduling=pod startup blocker, condition=False controller/CRD condition), kind, group, ns (the namespace — use 'ns', not 'namespace' which is a CEL reserved word), name, reason, message, cause, action, remediation_kind, remediation_target, count (int, affected-resource fan-out), grouping_scope (workload|service|node|…), restart_count (int), last_terminated_reason, operation_retry_count (int, GitOps operation retries — distinct from restart_count), stuck (bool), issue_timing (independent timing evidence, not a root-cause verdict: 'started_at_resource_creation' or 'started_after_resource_was_healthy'; absent = unknown), issue_timing_basis ('condition' | 'owner_condition' | 'pod_creation' | 'deletion' | 'phase' | 'spec'), first_seen, onset_unknown, onset_coverage_unknown, resource_created_at, last_seen. Times are unix seconds. first_seen is the earliest evidence-backed active-time anchor and may be KubeAtlas's first observation: read it as 'active at least since', not exact onset. It is 0 when unknown. Require first_seen != 0 for any age filter. When the whole row must have exact timing, also require onset_coverage_unknown == 0; onset_unknown alone does not exclude partially dated groups. onset_coverage is emitted only when at least one contributing signal has unknown timing. The owner_condition, pod_creation, and spec bases need not share first_seen's anchor; never subtract resource_created_at from first_seen to infer a healthy duration. resource_created_at is resource-age context, never onset. last_seen updates each compose. For cross-cluster scoping use clusters= (not CEL). Examples: 'issue_timing == \"started_after_resource_was_healthy\"', 'first_seen != 0 && onset_coverage_unknown == 0 && first_seen < timestamp(\"2026-05-01T00:00:00Z\").getSeconds()'"`
 }
 
 // Tool handlers
@@ -943,7 +943,7 @@ func handleListResources(ctx context.Context, req *mcp.CallToolRequest, input li
 		err = errConnectionChanged()
 	}
 	if err != nil {
-		// A read narrowed to what Radar collects reports that scope even when
+		// A read narrowed to what KubeAtlas collects reports that scope even when
 		// none of it could be read.
 		if plan != nil && len(plan.collected) > 0 && !clusterScoped {
 			target = target.narrowedToCollection(plan)
@@ -1010,7 +1010,7 @@ func handleListResources(ctx context.Context, req *mcp.CallToolRequest, input li
 		if errors.As(err, &re) {
 			return nil, nil, err
 		}
-		return nil, nil, readErrorf(readreason.ReadError, "Radar failed to list %s, so it can't say what exists (%w).", kind, err)
+		return nil, nil, readErrorf(readreason.ReadError, "KubeAtlas failed to list %s, so it can't say what exists (%w).", kind, err)
 	}
 
 	if listScope != nil {
@@ -1668,7 +1668,7 @@ func handleGetChanges(ctx context.Context, req *mcp.CallToolRequest, input getCh
 			" Narrow with namespace=, kind= or name=. limit changes how many rows are returned, not the fetch bound."+
 			" Shorten since= only if the shorter window still covers the incident.")
 	} else if recentResult.OutputCapped || totalMatched > len(changes) {
-		hints = append(hints, "Radar fetched every recorded change in this window but returned only the highest-ranked; lower-ranked changes were omitted."+
+		hints = append(hints, "KubeAtlas fetched every recorded change in this window but returned only the highest-ranked; lower-ranked changes were omitted."+
 			" Narrow with namespace=, kind=, name=, shorten since= (e.g. 15m), or raise limit (cap 50).")
 	}
 	if resp.HistoryCoverage != nil {
@@ -1694,7 +1694,7 @@ type getChangesResponseMCP struct {
 	// cluster-scoped admission configuration that applies, or may apply, to
 	// the namespace. Changes above never include cluster-scoped objects.
 	ClusterScopedChanges *issuesapi.ClusterScopedChanges `json:"clusterScopedChanges,omitempty"`
-	// HistoryCoverage is set when the window starts before the history Radar
+	// HistoryCoverage is set when the window starts before the history KubeAtlas
 	// holds, including when no change was returned.
 	HistoryCoverage *issuesapi.HistoryCoverage `json:"historyCoverage,omitempty"`
 }
@@ -3484,7 +3484,7 @@ func handleSearch(ctx context.Context, req *mcp.CallToolRequest, input searchInp
 // searchResponseMCP embeds search.Result so the JSON shape stays identical
 // except for the added hints: narrowHint when the hit limit cut the result,
 // coverageHint whenever it is partial, empty and narrowed, or has hits that
-// Radar's namespace collection or pin limited. Hints serialize before hits so
+// KubeAtlas's namespace collection or pin limited. Hints serialize before hits so
 // agents read the limits before interpreting the matches.
 type searchResponseMCP struct {
 	CoverageHint string `json:"coverageHint,omitempty"`

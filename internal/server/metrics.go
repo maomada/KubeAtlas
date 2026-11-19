@@ -18,7 +18,7 @@ const metricsTimelinePingTimeout = 2 * time.Second
 
 // metricsTimelineCheckTTL is how long a scrape reuses the last database check.
 // The endpoint can be reachable without signing in, so without it any client
-// could make Radar ping PostgreSQL as often as it likes. Scrape intervals are
+// could make KubeAtlas ping PostgreSQL as often as it likes. Scrape intervals are
 // 15s or more, so a fresh check still lands on nearly every scrape.
 const metricsTimelineCheckTTL = 5 * time.Second
 
@@ -52,23 +52,23 @@ func (s *Server) newMetricsHandler() http.Handler {
 
 	registry.MustRegister(
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace: "radar",
+			Namespace: "kubeatlas",
 			Subsystem: "sse",
 			Name:      "connected_clients",
-			Help:      "Current number of clients connected to Radar's SSE stream.",
+			Help:      "Current number of clients connected to KubeAtlas's SSE stream.",
 		}, func() float64 {
 			return float64(s.broadcaster.ClientCount())
 		}),
 		prometheus.NewCounterFunc(prometheus.CounterOpts{
-			Namespace: "radar",
+			Namespace: "kubeatlas",
 			Subsystem: "sse",
 			Name:      "topology_broadcasts_total",
-			Help:      "Total number of topology broadcast cycles sent over Radar's SSE stream.",
+			Help:      "Total number of topology broadcast cycles sent over KubeAtlas's SSE stream.",
 		}, func() float64 {
 			return float64(perfstats.GetSSEStats().TotalBroadcasts)
 		}),
 		prometheus.NewCounterFunc(prometheus.CounterOpts{
-			Namespace: "radar",
+			Namespace: "kubeatlas",
 			Subsystem: "sse",
 			Name:      "dropped_events_total",
 			Help:      "Total number of SSE events dropped because a client channel was full.",
@@ -80,19 +80,19 @@ func (s *Server) newMetricsHandler() http.Handler {
 		// to alert on. Only the 0/1 goes out: the reason names the database
 		// host, and this endpoint can be reachable without signing in.
 		prometheus.NewGaugeFunc(prometheus.GaugeOpts{
-			Namespace: "radar",
+			Namespace: "kubeatlas",
 			Subsystem: "timeline",
 			Name:      "available",
-			Help:      "1 when the timeline can record and serve history, 0 when its storage is unreachable. The reason is in Radar's diagnostics.",
+			Help:      "1 when the timeline can record and serve history, 0 when its storage is unreachable. The reason is in KubeAtlas's diagnostics.",
 		}, timelineCheck.value),
 		timelineDropsCollector{desc: prometheus.NewDesc(
-			"radar_timeline_dropped_events_total",
+			"kubeatlas_timeline_dropped_events_total",
 			"Changes the timeline did not record, by reason. store_unavailable and store_failed are history lost to a storage outage; the other reasons are routine filtering.",
 			[]string{"reason"}, nil,
 		)},
 	)
 
-	return promhttp.HandlerFor(registry, promhttp.HandlerOpts{})
+	return promhttp.HandlerFor(metricsWithLegacyNames{registry}, promhttp.HandlerOpts{})
 }
 
 // timelineDropsCollector exports the timeline's drop counters with the reason as

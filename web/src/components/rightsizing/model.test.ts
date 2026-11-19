@@ -35,7 +35,7 @@ function response(
     state: 'complete',
     scannedAt: '2026-07-12T10:00:00Z',
     window: '7d',
-    source: 'radar',
+    source: 'kubeatlas',
     coverage: {
       workloadsDiscovered: 1,
       workloadsEvaluated: 1,

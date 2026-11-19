@@ -1,4 +1,4 @@
-suite: Cloud radar:system RBAC
+suite: Cloud kubeatlas:system RBAC
 templates:
   - cloud-rbac-system.yaml
   - cloud-rbac-cluster-read.yaml
@@ -34,7 +34,7 @@ tests:
       - notExists:
           path: metadata.labels["rbac.authorization.k8s.io/aggregate-to-admin"]
 
-  - it: keeps radar:system's read binding when the tier bindings are off
+  - it: keeps kubeatlas:system's read binding when the tier bindings are off
     set:
       cloud:
         enabled: true
@@ -57,7 +57,7 @@ tests:
       - isKind:
           of: ClusterRoleBinding
 
-  - it: keeps the cluster-read role for radar:system alone when the role bindings are off
+  - it: keeps the cluster-read role for kubeatlas:system alone when the role bindings are off
     set:
       cloud:
         enabled: true
@@ -80,7 +80,7 @@ tests:
         documentIndex: 1
       - equal:
           path: subjects[0].name
-          value: radar:system
+          value: kubeatlas:system
         documentIndex: 1
 
   - it: grants Secret read only, no writes
@@ -102,7 +102,7 @@ tests:
               resources: ["secrets"]
               verbs: ["get", "list", "watch"]
 
-  - it: binds Secret read to radar:system
+  - it: binds Secret read to kubeatlas:system
     set:
       cloud:
         enabled: true
@@ -118,10 +118,13 @@ tests:
           path: subjects
           value:
             - kind: Group
+              name: kubeatlas:system
+              apiGroup: rbac.authorization.k8s.io
+            - kind: Group
               name: radar:system
               apiGroup: rbac.authorization.k8s.io
 
-  - it: binds only radar:system to the owned read role
+  - it: binds only kubeatlas:system to the owned read role
     set:
       cloud:
         enabled: true
@@ -145,6 +148,9 @@ tests:
       - equal:
           path: subjects
           value:
+            - kind: Group
+              name: kubeatlas:system
+              apiGroup: rbac.authorization.k8s.io
             - kind: Group
               name: radar:system
               apiGroup: rbac.authorization.k8s.io
@@ -210,7 +216,7 @@ tests:
       - hasDocuments:
           count: 0
 
-  - it: gives radar:system the integration-read add-on without the tiers
+  - it: gives kubeatlas:system the integration-read add-on without the tiers
     set:
       cloud:
         enabled: true
@@ -227,6 +233,9 @@ tests:
       - equal:
           path: subjects
           value:
+            - kind: Group
+              name: kubeatlas:system
+              apiGroup: rbac.authorization.k8s.io
             - kind: Group
               name: radar:system
               apiGroup: rbac.authorization.k8s.io

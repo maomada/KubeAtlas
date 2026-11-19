@@ -7,7 +7,7 @@ import { getColumnMinWidth, type Column } from './ResourcesView'
 // 1280, 1920 and 2560 alike. These pin the floor that stops that.
 //
 // Reference measurements taken in the browser against the real header font
-// (DM Sans 500, 12px, uppercase, tracking-wide), on kind-radar-kyverno-demo:
+// (DM Sans 500, 12px, uppercase, tracking-wide), on kind-kubeatlas-kyverno-demo:
 //   RECLAIM       52.7px  ADDRESSES     69.6px
 //   EXPANSION     67.5px  ADDRESS TYPE  87.7px
 const MEASURED = {

@@ -13,6 +13,9 @@ httpIPOrigin: ""
 hubArtifacts:
   enabled: false
   existingClaim: ""
+  previous:
+    existingClaim: ""
+    version: ""
 
 service:
   type: ClusterIP

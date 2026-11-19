@@ -28,7 +28,7 @@ func TestWorkloadAttributionVictoriaMetrics(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	end := time.Now().Truncate(time.Second).Add(-30 * time.Second)
-	ns := fmt.Sprintf("radar-attribution-%d", time.Now().UnixNano())
+	ns := fmt.Sprintf("kubeatlas-attribution-%d", time.Now().UnixNano())
 	pod := prom.WorkloadPodIdentity{Name: "api-0", UID: "030a7597-c1fc-48b0-9bb4-683489285358"}
 	var body bytes.Buffer
 	for _, cluster := range []string{"local", "foreign"} {

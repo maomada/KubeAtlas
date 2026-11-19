@@ -42,7 +42,7 @@ const GROUP_PADDING_NO_HEADER = {
 // Layout engine abstraction
 //
 // Two execution strategies for ELK layout:
-//   'worker'      — Web Worker (Vite/Radar). Keeps the main thread free.
+//   'worker'      — Web Worker (Vite/KubeAtlas). Keeps the main thread free.
 //   'main-thread' — Inline ELK (webpack/Next.js). Workers can't load the
 //                   layout.worker.ts file under webpack, so we run ELK
 //                   directly using elkjs/lib/elk.bundled.js.

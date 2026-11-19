@@ -62,32 +62,32 @@ describe('assetUrl at the root (no base path)', () => {
 
 describe('assetUrl under a base path', () => {
   it('prefixes absolute and relative asset paths', () => {
-    setAssetBase('/radar')
-    expect(assetUrl('/images/kubeatlas/kubeatlas-icon.svg')).toBe('/radar/images/kubeatlas/kubeatlas-icon.svg')
-    expect(assetUrl('./assets/index-abc.js')).toBe('/radar/assets/index-abc.js')
-    expect(assetUrl('assets/index-abc.js')).toBe('/radar/assets/index-abc.js')
+    setAssetBase('/kubeatlas')
+    expect(assetUrl('/images/kubeatlas/kubeatlas-icon.svg')).toBe('/kubeatlas/images/kubeatlas/kubeatlas-icon.svg')
+    expect(assetUrl('./assets/index-abc.js')).toBe('/kubeatlas/assets/index-abc.js')
+    expect(assetUrl('assets/index-abc.js')).toBe('/kubeatlas/assets/index-abc.js')
   })
 
   it('is idempotent for already-prefixed paths', () => {
-    setAssetBase('/radar')
-    expect(assetUrl('/radar/assets/index-abc.js')).toBe('/radar/assets/index-abc.js')
+    setAssetBase('/kubeatlas')
+    expect(assetUrl('/kubeatlas/assets/index-abc.js')).toBe('/kubeatlas/assets/index-abc.js')
   })
 
   it('leaves protocol-relative URLs alone', () => {
-    setAssetBase('/radar')
+    setAssetBase('/kubeatlas')
     expect(assetUrl('//cdn.example.com/x.png')).toBe('//cdn.example.com/x.png')
   })
 
   it('handles a nested base path', () => {
-    setAssetBase('/tools/radar')
-    expect(assetUrl('/favicon.svg')).toBe('/tools/radar/favicon.svg')
+    setAssetBase('/tools/kubeatlas')
+    expect(assetUrl('/favicon.svg')).toBe('/tools/kubeatlas/favicon.svg')
   })
 })
 
 describe('assetUrl inside a Worker', () => {
   it('recovers the base path from the worker script URL', () => {
-    asWorkerAt('/radar/assets/layout.worker-abc.js', () => {
-      expect(assetUrl('/images/x.svg')).toBe('/radar/images/x.svg')
+    asWorkerAt('/kubeatlas/assets/layout.worker-abc.js', () => {
+      expect(assetUrl('/images/x.svg')).toBe('/kubeatlas/images/x.svg')
     })
   })
 
@@ -99,15 +99,15 @@ describe('assetUrl inside a Worker', () => {
 
   // The base path may itself contain "/assets/" — split on the last one.
   it('splits on the last /assets/ segment', () => {
-    asWorkerAt('/host/assets/radar/assets/layout.worker-abc.js', () => {
-      expect(assetUrl('/images/x.svg')).toBe('/host/assets/radar/images/x.svg')
+    asWorkerAt('/host/assets/kubeatlas/assets/layout.worker-abc.js', () => {
+      expect(assetUrl('/images/x.svg')).toBe('/host/assets/kubeatlas/images/x.svg')
     })
   })
 
   it('prefers the injected config over the URL heuristic', () => {
-    setAssetBase('/radar')
+    setAssetBase('/kubeatlas')
     asWorkerAt('/somewhere/assets/worker.js', () => {
-      expect(assetUrl('/images/x.svg')).toBe('/radar/images/x.svg')
+      expect(assetUrl('/images/x.svg')).toBe('/kubeatlas/images/x.svg')
     })
   })
 })

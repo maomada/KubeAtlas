@@ -20,7 +20,7 @@ import (
 // load *only* the initial file via ExplicitPath. Only called from doInit while
 // clientMu is held.
 //
-// This is how Radar avoids client-go's Precedence merge for registry-backed
+// This is how KubeAtlas avoids client-go's Precedence merge for registry-backed
 // loading: each file stays an island. A SwitchContext later
 // looks up the target entry in the registry and loads that one file, so
 // shared user/cluster names across files never collide — see issue #519.
@@ -213,12 +213,12 @@ func sortedContextNames(cfg *clientcmdapi.Config) []string {
 	return names
 }
 
-// pickInitialContext chooses which context Radar should start in when
+// pickInitialContext chooses which context KubeAtlas should start in when
 // using per-file isolated loading. It walks `paths` in order and returns
 // the first non-empty CurrentContext from any file — matching client-go's
 // Precedence merge, which picks the first file's CurrentContext. If no
 // file declares a CurrentContext, it returns the first context from the
-// first file with any contexts at all, so Radar can still come up.
+// first file with any contexts at all, so KubeAtlas can still come up.
 //
 // Returns (qualifiedName, entry, found). `found == false` means there
 // isn't a single usable context anywhere — the caller should surface this
@@ -350,7 +350,7 @@ func refreshContextRegistry(
 	// file), the file's path stays in fileMtimes but no longer
 	// appears in registry. Without seeding from fileMtimes, that
 	// file would never be re-stat'd and any newly-added contexts
-	// to it would be invisible until the user restarted Radar.
+	// to it would be invisible until the user restarted KubeAtlas.
 	// sourceOrder additionally retains deleted paths so restoring a
 	// watched file brings it back without a restart.
 	byFile := make(map[string][]string)

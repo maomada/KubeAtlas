@@ -59,7 +59,7 @@ func (s *Server) redactPolicyRefs(r *http.Request, pv *traffic.PolicyVerdict) *t
 
 // policyRefResource maps the policy kinds a network plugin attributes flows
 // to onto the API resource a caller must be able to list to learn their
-// names. A kind Radar does not know is withheld rather than shown.
+// names. A kind KubeAtlas does not know is withheld rather than shown.
 func policyRefResource(kind string) (group, resource string, ok bool) {
 	switch kind {
 	case "NetworkPolicy":
@@ -95,7 +95,7 @@ const recentSourcesMaxAge = 2 * time.Minute
 // ?recent=1 accepts a detection up to recentSourcesMaxAge old, so browsing
 // workloads or opening the Traffic view from one doesn't re-probe every source.
 // Callers detect afresh when the answer will be shown as setup advice, or when
-// connecting to the reused source failed. A Radar without this parameter
+// connecting to the reused source failed. A KubeAtlas without this parameter
 // ignores it and detects, as before.
 func (s *Server) handleGetTrafficSources(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
@@ -159,10 +159,10 @@ func (s *Server) handleGetTrafficFlows(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, trafficFlowsPayload(response, s.visibleFlows(r, flows, namespaces, opts), byPod))
 }
 
-// resolveFlowWorkloads sets each pod endpoint's workload from Radar's pod
+// resolveFlowWorkloads sets each pod endpoint's workload from KubeAtlas's pod
 // cache: the controller that ultimately owns it, through ReplicaSets and
 // Jobs. A source's own answer is kept for a pod the cache does not hold —
-// one already deleted, or in a namespace Radar cannot list.
+// one already deleted, or in a namespace KubeAtlas cannot list.
 func resolveFlowWorkloads(cache *k8s.ResourceCache, flows []traffic.Flow) []traffic.Flow {
 	if cache == nil || cache.Pods() == nil {
 		return flows
@@ -341,7 +341,7 @@ func addFlowsWarning(result map[string]any, response *traffic.FlowsResponse, flo
 // GET /api/traffic/flows/records?match=<FlowMatch JSON>&since=…&excludeNamespaces=…&excludeHost=true
 //
 // A GET carrying the selection in the query string rather than a POST: a
-// read-only Radar Hub proxy refuses every POST, and this is a read. The
+// read-only KubeAtlas Hub proxy refuses every POST, and this is a read. The
 // selection names the raw endpoints behind a graph node or edge — the graph
 // renames and merges endpoints, so only the client knows which ones a
 // selection stands for. It re-queries the source instead of reusing the

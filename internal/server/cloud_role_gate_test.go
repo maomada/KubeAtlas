@@ -17,9 +17,9 @@ func TestRequireCloudRole_NoTier(t *testing.T) {
 		want   bool
 	}{
 		{"OSS caller without a tier keeps its own config", "false", []string{"oidc:devs"}, true},
-		{"Cloud system identity has no tier", "true", []string{"radar:system", "radar:org:o1"}, false},
-		{"Cloud owner", "true", []string{"radar:owner", "radar:org:o1"}, true},
-		{"Cloud member below owner", "true", []string{"radar:member", "radar:org:o1"}, false},
+		{"Cloud system identity has no tier", "true", []string{"kubeatlas:system", "kubeatlas:org:o1"}, false},
+		{"Cloud owner", "true", []string{"kubeatlas:owner", "kubeatlas:org:o1"}, true},
+		{"Cloud member below owner", "true", []string{"kubeatlas:member", "kubeatlas:org:o1"}, false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -27,7 +27,7 @@ func TestRequireCloudRole_NoTier(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPut, "/api/settings", nil)
 			req = req.WithContext(auth.ContextWithUser(req.Context(), &auth.User{Username: "u", Groups: tc.groups}))
 			rec := httptest.NewRecorder()
-			if got := (&Server{}).requireCloudRole(rec, req, auth.RoleOwner, "modify Radar configuration"); got != tc.want {
+			if got := (&Server{}).requireCloudRole(rec, req, auth.RoleOwner, "modify KubeAtlas configuration"); got != tc.want {
 				t.Fatalf("allowed = %v, want %v (body %s)", got, tc.want, rec.Body.String())
 			}
 			if !tc.want && !strings.Contains(rec.Body.String(), auth.ErrCodeCloudRoleInsufficient) {
@@ -42,9 +42,9 @@ func TestRequireCloudRole_NoTier(t *testing.T) {
 func TestHelmSourceConfigWrite_RequiresCloudOwner(t *testing.T) {
 	t.Setenv("KUBEATLAS_CLOUD_MODE", "true")
 	for groups, want := range map[string]bool{
-		"radar:viewer,radar:org:o1": false,
-		"radar:member,radar:org:o1": false,
-		"radar:owner,radar:org:o1":  true,
+		"kubeatlas:viewer,kubeatlas:org:o1": false,
+		"kubeatlas:member,kubeatlas:org:o1": false,
+		"kubeatlas:owner,kubeatlas:org:o1":  true,
 	} {
 		t.Run(groups, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodPost, "/api/helm/oci-sources", nil)

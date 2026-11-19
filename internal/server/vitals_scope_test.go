@@ -59,7 +59,7 @@ func TestVitalsCollectorScopeMarksPartialWithoutHidingCapacity(t *testing.T) {
 	}
 }
 
-// Which namespaces Radar collects is known while Pods still load, so a
+// Which namespaces KubeAtlas collects is known while Pods still load, so a
 // namespace-scoped cache marks Pods restricted before they finish loading.
 func TestVitalsCollectorScopeMarksPodsRestrictedWhileLoading(t *testing.T) {
 	client := fake.NewClientset(&corev1.Node{ObjectMeta: metav1.ObjectMeta{Name: "node-1"}, Status: corev1.NodeStatus{Allocatable: corev1.ResourceList{corev1.ResourceCPU: mustQty(t, "4"), corev1.ResourceMemory: mustQty(t, "8Gi")}}})

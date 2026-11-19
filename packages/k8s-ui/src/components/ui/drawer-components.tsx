@@ -836,7 +836,7 @@ interface RelatedResourcesSectionProps {
 }
 
 // Kinds whose objects usually own others. An empty Children list for one of
-// these is surprising, so it says it covered only the kinds Radar checked;
+// these is surprising, so it says it covered only the kinds KubeAtlas checked;
 // for any other kind an empty list stays hidden, or nearly every leaf object
 // would carry the note.
 const KINDS_WITH_CHILDREN = new Set(['deployments', 'replicasets', 'statefulsets', 'daemonsets', 'jobs', 'cronjobs', 'services', 'rollouts'])
@@ -856,7 +856,7 @@ export function RelatedResourcesSection({ relationships, onNavigate, kind, track
   let childrenCoverage = childrenNote(relationships.ownership)
   const noChildren = !relationships.children?.length && !relationships.olderRevisions?.length
   if (noChildren && childrenCoverage?.hint && !childrenCoverage.text && kind && KINDS_WITH_CHILDREN.has(kind)) {
-    childrenCoverage = { ...childrenCoverage, text: 'No children among the kinds Radar checked.' }
+    childrenCoverage = { ...childrenCoverage, text: 'No children among the kinds KubeAtlas checked.' }
   }
 
   const hasRelationships =
@@ -1031,12 +1031,12 @@ function ownerNote(coverage: OwnershipCoverage | undefined): RelationshipNote | 
     case 'unresolvable':
       return { text: "Its owner reference can't be resolved in this cluster." }
     case 'excluded':
-      return { text: "Its owner reference names an Event, which Radar doesn't follow as an owner." }
+      return { text: "Its owner reference names an Event, which KubeAtlas doesn't follow as an owner." }
   }
   return undefined
 }
 
-// childrenNote says what a Children list may be missing. Kinds Radar doesn't
+// childrenNote says what a Children list may be missing. Kinds KubeAtlas doesn't
 // collect are a hint, since most lists miss a few; kinds it couldn't check
 // for any other reason, a list cut short, and places the viewer may not read
 // are said outright.
@@ -1049,18 +1049,18 @@ function childrenNote(coverage: OwnershipCoverage | undefined): RelationshipNote
   const pressing = new Map<string, string>()
   for (const g of children.notChecked ?? []) {
     if (!g.kind) undiscovered = true
-    else if (g.reason === 'radar_kind_not_collected') uncollected.add(g.kind)
-    else if (g.reason === 'radar_namespace_not_collected') someNamespaces = true
+    else if (g.reason === 'kubeatlas_kind_not_collected') uncollected.add(g.kind)
+    else if (g.reason === 'kubeatlas_namespace_not_collected') someNamespaces = true
     else if (!pressing.has(g.kind)) pressing.set(g.kind, gapReasonText(g.reason))
   }
   const note: RelationshipNote = {}
   const hint: string[] = []
-  if (uncollected.size > 0) hint.push(`Radar doesn't collect ${joinOr(Array.from(uncollected))} objects, so none of those are listed.`)
-  if (someNamespaces) hint.push("Radar doesn't collect every namespace, so children in the others aren't listed.")
+  if (uncollected.size > 0) hint.push(`KubeAtlas doesn't collect ${joinOr(Array.from(uncollected))} objects, so none of those are listed.`)
+  if (someNamespaces) hint.push("KubeAtlas doesn't collect every namespace, so children in the others aren't listed.")
   // An API group whose discovery fails, often a metrics API with no server
   // behind it, leaves every answer with this gap; most such groups hold no
   // children, so it is a hint, not a warning.
-  if (undiscovered) hint.push("Radar's API discovery missed some API groups, so children of their kinds aren't listed.")
+  if (undiscovered) hint.push("KubeAtlas's API discovery missed some API groups, so children of their kinds aren't listed.")
   if (children.narrowed) hint.push('Only children you can view are listed.')
   if (hint.length > 0) note.hint = hint
   const text: string[] = []
@@ -1082,21 +1082,21 @@ function joinOr(items: string[]): string {
 // Manages lists; listed says whether it lists any.
 function membersNote(manages: OwnershipCoverage['manages'] | undefined, listed: boolean): RelationshipNote | undefined {
   if (!manages) return undefined
-  if (manages.membership === 'remote') return { text: "Its destination isn't this cluster as far as Radar can tell, so its members aren't listed." }
+  if (manages.membership === 'remote') return { text: "Its destination isn't this cluster as far as KubeAtlas can tell, so its members aren't listed." }
   if (manages.membership === 'unreadable') {
     const note: RelationshipNote = {}
     const text: string[] = []
     if (manages.unavailableReason) text.push(`Couldn't read the members its status records (${gapReasonText(manages.unavailableReason)}).`)
     if (manages.truncated) text.push('More members than shown.')
     if (text.length > 0) note.text = text.join(' ')
-    if (listed) note.hint = ["Its status has no member list Radar can read now, so these are the resources the topology links to it."]
-    else if (!manages.unavailableReason) note.hint = ["Its status has no member list Radar can read now."]
+    if (listed) note.hint = ["Its status has no member list KubeAtlas can read now, so these are the resources the topology links to it."]
+    else if (!manages.unavailableReason) note.hint = ["Its status has no member list KubeAtlas can read now."]
     return note
   }
   const extra: string[] = []
   if (manages.missing) extra.push(`${manages.missing} not in the cluster`)
   if (manages.withheld) extra.push(`${manages.withheld} you can't view`)
-  if (manages.unknown) extra.push(`${manages.unknown} Radar can't check`)
+  if (manages.unknown) extra.push(`${manages.unknown} KubeAtlas can't check`)
   const parts: string[] = []
   if (extra.length > 0) parts.push(`Its status also lists ${extra.join(', ')}.`)
   if (manages.truncated) parts.push('More members than shown.')
@@ -1162,7 +1162,7 @@ function managersListOnly(answer: ManagerAnswer | undefined, managers: ResourceR
 
 // managersNote explains Managed By: where it comes from, more than one
 // manager, and the managers the search couldn't settle. With none listed, a
-// remote list naming the resource or a manager kind Radar couldn't search is
+// remote list naming the resource or a manager kind KubeAtlas couldn't search is
 // said outright, so an empty group doesn't read as "no GitOps manager". An
 // unreadable list stays in the hint: it may name any resource, so it would
 // otherwise show beside every one, and the controllers stamp tracking
@@ -1178,15 +1178,15 @@ function managersNote(coverage: OwnershipCoverage | undefined, listed: number, t
   }
   if (coverageOf?.remote) {
     const n = coverageOf.remote
-    open.push(`${n} ${n === 1 ? 'manager lists' : 'managers list'} it for a cluster Radar can't confirm is this one`)
+    open.push(`${n} ${n === 1 ? 'manager lists' : 'managers list'} it for a cluster KubeAtlas can't confirm is this one`)
   }
   const pressing = new Map<string, string>()
   for (const g of coverageOf?.notChecked ?? []) {
     // An unserved manager kind under incomplete discovery reads as read_error
     // on every resource, like discovery's own gap.
-    if (!g.kind) hint.push("Radar's API discovery missed some API groups, so managers of their kinds aren't checked.")
-    else if (g.reason === 'read_error') hint.push(`Radar couldn't search ${g.kind} objects, so those managers aren't checked.`)
-    else if (g.reason === 'radar_kind_not_collected') hint.push(`Radar doesn't collect ${g.kind} objects, so those managers aren't checked.`)
+    if (!g.kind) hint.push("KubeAtlas's API discovery missed some API groups, so managers of their kinds aren't checked.")
+    else if (g.reason === 'read_error') hint.push(`KubeAtlas couldn't search ${g.kind} objects, so those managers aren't checked.`)
+    else if (g.reason === 'kubeatlas_kind_not_collected') hint.push(`KubeAtlas doesn't collect ${g.kind} objects, so those managers aren't checked.`)
     else if (!pressing.has(g.kind)) pressing.set(g.kind, gapReasonText(g.reason))
   }
   if (pressing.size > 0) open.push(`couldn't check ${Array.from(pressing, ([kind, why]) => `${kind} (${why})`).join(', ')}`)

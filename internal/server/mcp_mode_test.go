@@ -80,8 +80,8 @@ func TestReadOnlyMCPRejectsAIApply(t *testing.T) {
 }
 
 func TestStartupReadOnlyMCP(t *testing.T) {
-	got := strings.Join(formatStartupLogSummary(startupLogSummary{mcpEnabled: true, mcpReadOnly: true, basePath: "/radar"}, false), "\n")
-	if !strings.Contains(got, "enabled (read-only at /radar/mcp-readonly)") {
+	got := strings.Join(formatStartupLogSummary(startupLogSummary{mcpEnabled: true, mcpReadOnly: true, basePath: "/kubeatlas"}, false), "\n")
+	if !strings.Contains(got, "enabled (read-only at /kubeatlas/mcp-readonly)") {
 		t.Fatal(got)
 	}
 }

@@ -26,7 +26,7 @@ export interface CNPGTrackedOperation {
   label: string
   /**
    * The KubeAtlas API base the request went to. Every in-cluster KubeAtlas reports
-   * the context "in-cluster", so in Radar Hub this is what tells two
+   * the context "in-cluster", so in KubeAtlas Hub this is what tells two
    * clusters apart.
    */
   apiBase: string

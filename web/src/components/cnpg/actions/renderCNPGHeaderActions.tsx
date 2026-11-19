@@ -1,4 +1,4 @@
-import { useRadarFeature } from '../../../api/client'
+import { useKubeAtlasFeature } from '../../../api/client'
 import type { ReactNode } from 'react'
 import { CNPG_BARMAN_OBJECTSTORE_GROUP, isApiGroup, type NavigateToResource } from '@maomada/k8s-ui'
 import { CNPGClusterActions } from './CNPGClusterActions'
@@ -51,7 +51,7 @@ function headerActions({
 
 
 function CNPGHeaderActionsForServer(props: Parameters<typeof headerActions>[0]) {
-  const { support } = useRadarFeature('cnpgWorkspace')
+  const { support } = useKubeAtlasFeature('cnpgWorkspace')
   return support === 'supported' ? headerActions(props) : null
 }
 

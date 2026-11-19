@@ -4,7 +4,7 @@
 //
 // Unlike /api/* (consumed by the frontend via a generated TypeScript client),
 // the /api/ai/* surface is NOT specified in openapi.yaml. The original
-// motivation for OpenAPI-first in radar was frontend/backend type safety —
+// motivation for OpenAPI-first in kubeatlas was frontend/backend type safety —
 // one spec, regenerated as Go server stubs + TS client. That value
 // proposition does not apply here: the agent consumer doesn't read
 // OpenAPI specs (it reads MCP tool descriptions or in-prompt instructions),
@@ -209,9 +209,9 @@ func (s *Server) handleAIListResources(w http.ResponseWriter, r *http.Request) {
 		}
 		// This agent endpoint still returns a bare list; partial scope cannot be
 		// represented by that contract, so require its entire requested scope.
-		// Nor can it say Radar's collection narrowed it, so that is refused too.
+		// Nor can it say KubeAtlas's collection narrowed it, so that is refused too.
 		if plan.collected != nil {
-			s.writeIncompleteAIList(w, target, []resourceapi.Gap{{Code: readreason.RadarNamespaceNotCollected, Namespaces: resourceapi.UnknownNames()}})
+			s.writeIncompleteAIList(w, target, []resourceapi.Gap{{Code: readreason.KubeAtlasNamespaceNotCollected, Namespaces: resourceapi.UnknownNames()}})
 			return
 		}
 		if len(plan.gaps) > 0 {
@@ -324,7 +324,7 @@ func (s *Server) aiListDynamic(w http.ResponseWriter, r *http.Request, cache *k8
 		return
 	}
 	if list.narrowed {
-		s.writeIncompleteAIList(w, target, append(list.gaps, resourceapi.Gap{Code: readreason.RadarNamespaceNotCollected, Namespaces: resourceapi.UnknownNames()}))
+		s.writeIncompleteAIList(w, target, append(list.gaps, resourceapi.Gap{Code: readreason.KubeAtlasNamespaceNotCollected, Namespaces: resourceapi.UnknownNames()}))
 		return
 	}
 	if len(list.gaps) > 0 {
@@ -528,7 +528,7 @@ func (s *Server) writeAIFetchError(w http.ResponseWriter, kind string, err error
 	case errors.Is(err, k8s.ErrUnknownDynamicKind):
 		s.writeErrorCode(w, http.StatusBadRequest, string(readreason.KindUnknown), err.Error())
 	case strings.HasPrefix(err.Error(), "forbidden:"):
-		s.writeErrorCode(w, readStatusFor(readreason.RadarForbidden), string(readreason.RadarForbidden), fmt.Sprintf("Radar's collector cannot read %s", kind))
+		s.writeErrorCode(w, readStatusFor(readreason.KubeAtlasForbidden), string(readreason.KubeAtlasForbidden), fmt.Sprintf("KubeAtlas's collector cannot read %s", kind))
 	default:
 		s.writeCollectionFailure(w, kind, err)
 	}
@@ -766,9 +766,9 @@ func (s *Server) writeIncompleteAIList(w http.ResponseWriter, target listTarget,
 	}
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(readStatusFor(code))
-	message := "Radar cannot provide a complete list for the requested scope"
-	if code == readreason.RadarNamespaceNotCollected {
-		message = "Radar collects this kind only in some namespaces, which a bare list can't say; name a namespace, or use /api/resources/{kind}, whose coverage says what it read"
+	message := "KubeAtlas cannot provide a complete list for the requested scope"
+	if code == readreason.KubeAtlasNamespaceNotCollected {
+		message = "KubeAtlas collects this kind only in some namespaces, which a bare list can't say; name a namespace, or use /api/resources/{kind}, whose coverage says what it read"
 	}
 	s.writeJSON(w, resourceapi.ReadError{
 		Error:     message,

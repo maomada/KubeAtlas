@@ -141,12 +141,12 @@ diff**: desired (rendered from Git, with Argo's own normalizations and every
 vs live, per managed resource, as a full YAML line diff.
 
 Setup (Settings → Argo CD; the API is `PUT /api/integrations/connections` in
-local CLI and Desktop, and `PUT /api/integrations/argocd` in legacy upstream Radar Cloud):
+local CLI and Desktop, and `PUT /api/integrations/argocd` in legacy upstream cloud):
 
-1. Create a get-only local account in `argocd-cm` (`accounts.radar: apiKey`)
-   and grant it `p, role:radar, applications, get, */*, allow` in
+1. Create a get-only local account in `argocd-cm` (`accounts.kubeatlas: apiKey`)
+   and grant it `p, role:kubeatlas, applications, get, */*, allow` in
    `argocd-rbac-cm`, then mint a token
-   (`argocd account generate-token --account radar`). A project-scoped token
+   (`argocd account generate-token --account kubeatlas`). A project-scoped token
    works too. Don't use an admin/personal token.
 2. Paste the token in Settings. Leave the URL empty for in-cluster
    auto-discovery (the `argocd-server` Service, port-forwarded automatically
@@ -223,7 +223,7 @@ separately. Settings shows the last failed read until a read succeeds, or
 for two minutes after the last page stopped asking.
 
 The gitops-demo cluster mints a ready-to-use token into
-`scripts/gitops-demo/.radar-argocd-token` (see the demo section below).
+`scripts/gitops-demo/.kubeatlas-argocd-token` (see the demo section below).
 
 ### Provisioning the token per deployment shape
 
@@ -234,7 +234,7 @@ operator-controlled and read-only in Settings. Pick by how KubeAtlas runs:
 |------------|------------------|-------|
 | **Local / desktop** | Settings → Argo CD (paste, or set the URL and choose "Connect using CLI token") | Interactive; per-context settings persist to `~/.kubeatlas/clusters.json`. |
 | **In-cluster** | Helm `argocd.existingSecret` (or `argocd.token`) → `KUBEATLAS_ARGOCD_TOKEN` | Declarative, survives restarts, read-only in the UI. |
-| **Legacy upstream Radar Cloud** | The customer's in-cluster KubeAtlas carries the token (as above); the token never reaches the hub. | Same env path; the hub proxies to the binary, which holds the credential. |
+| **Legacy legacy upstream cloud** | The customer's in-cluster KubeAtlas carries the token (as above); the token never reaches the hub. | Same env path; the hub proxies to the binary, which holds the credential. |
 
 When a token is provided via the environment, the integration becomes
 **environment-managed**: the Settings card renders read-only and `PUT
@@ -259,7 +259,7 @@ lands in the release state:
 
 ```yaml
 argocd:
-  existingSecret: radar-argocd-token   # Secret with a `token` key (recommended)
+  existingSecret: kubeatlas-argocd-token   # Secret with a `token` key (recommended)
   # token: argo_xxx                    # or inline (dev only — lands in release values)
   # url: https://argocd.example.com    # optional; blank auto-discovers in-cluster
   # insecureTls: false
@@ -288,7 +288,7 @@ Scoping and lifecycle:
 
 The GitOps tab isn't the only place Argo/Flux ownership matters. Surfaces across KubeAtlas know about GitOps and route into the right detail page when they should:
 
-- **K8s resource drawer** — the header chip reads `relationships.ownership.manager` ([states](ownership.md#what-manages-an-object)): **Managed by** for `agree`, **Listed by** for `listed` and `shared`, **Tracked by** for `claimed` and `disagree` (with a warning for `disagree`), and **via <Kind>** when a controller ancestor answers. `unknown`/`none` show no chip; native Helm keeps its Helm chip. The tooltip says what names each manager; the manager's sync status shows only for `agree`. Several candidates open a menu naming each; only managers KubeAtlas found are linked, and an Application's namespace is never guessed. Older Radars without the answer keep the metadata-based chip.
+- **K8s resource drawer** — the header chip reads `relationships.ownership.manager` ([states](ownership.md#what-manages-an-object)): **Managed by** for `agree`, **Listed by** for `listed` and `shared`, **Tracked by** for `claimed` and `disagree` (with a warning for `disagree`), and **via <Kind>** when a controller ancestor answers. `unknown`/`none` show no chip; native Helm keeps its Helm chip. The tooltip says what names each manager; the manager's sync status shows only for `agree`. Several candidates open a menu naming each; only managers KubeAtlas found are linked, and an Application's namespace is never guessed. Older KubeAtlas instances without the answer keep the metadata-based chip.
 - **Related Resources in the resource drawer**:
   - **Owner** and **Children** come from owner references, the links Kubernetes' garbage collector follows. A Deployment's or Rollout's old ReplicaSets (no Pods, not the current revision) sit behind *Show N older ReplicaSets*.
   - **Managed By** names the managers whose recorded lists (`status.resources`, `status.inventory`) name the object, plus other controllers that manage it without an owner reference (a cert-manager Certificate for its Secret). **Manages** on a manager lists its members, capped at 500 (`500+`). A recorded list is what the controller compared or applied, so it can include objects it doesn't sync ([ownership](ownership.md#the-model)).
@@ -309,7 +309,7 @@ KubeAtlas's caches strip `managedFields` and the last-applied annotation, so the
 
 - whether the path is in the last client-side apply (`present` / `absent` / `no-annotation`);
 - which field managers own it, and whether one is the owner's own controller (`approximate` when a manager owns only an ancestor or part of the path, e.g. one container's image under `containers[*]`);
-- whether an ignore rule covers it: `effective` (Argo `ignoreDifferences` with `RespectIgnoreDifferences`, Flux `driftDetection.ignore`, or a reconcile opt-out annotation; Flux's `ssa: IfNotPresent` is read from the live object, which doesn't prove the source declares it, so it stays **may revert**), `comparison-only` (Argo without `RespectIgnoreDifferences`: self-heal won't react, the next sync overwrites), or `unevaluated` (a jq rule, a rule that covers only some of the entries a wildcard matches, or a Flux Kustomization's `spec.ignore`, which Flux documents as keeping a live edit but which hasn't been checked against a live controller). Argo's instance-wide ignore rules in `argocd-cm` aren't read, so a field only they cover still reads as the source setting it. `RespectIgnoreDifferences` counts only from the Application's own sync options: Argo reads it from the sync operation, never from a resource's `sync-options` annotation. Argo matches a `managedFieldsManagers` rule against the field's live owner, and the write makes KubeAtlas the owner, so a rule naming another manager doesn't count and one naming KubeAtlas's own (`radar`) is `unevaluated`. Argo rules match `group`/`kind` `"*"`; Flux targets are anchored regular expressions, as in Kustomize;
+- whether an ignore rule covers it: `effective` (Argo `ignoreDifferences` with `RespectIgnoreDifferences`, Flux `driftDetection.ignore`, or a reconcile opt-out annotation; Flux's `ssa: IfNotPresent` is read from the live object, which doesn't prove the source declares it, so it stays **may revert**), `comparison-only` (Argo without `RespectIgnoreDifferences`: self-heal won't react, the next sync overwrites), or `unevaluated` (a jq rule, a rule that covers only some of the entries a wildcard matches, or a Flux Kustomization's `spec.ignore`, which Flux documents as keeping a live edit but which hasn't been checked against a live controller). Argo's instance-wide ignore rules in `argocd-cm` aren't read, so a field only they cover still reads as the source setting it. `RespectIgnoreDifferences` counts only from the Application's own sync options: Argo reads it from the sync operation, never from a resource's `sync-options` annotation. Argo matches a `managedFieldsManagers` rule against the field's live owner, and the write makes KubeAtlas the owner, so a rule naming another manager doesn't count and one naming KubeAtlas's own (`kubeatlas`) is `unevaluated`. Argo rules match `group`/`kind` `"*"`; Flux targets are anchored regular expressions, as in Kustomize;
 - a wildcard path (`containers[*].image`) is judged per entry of the live object: the source must declare every container, or a rule cover every container, before the verdict is certain. When the source declares only some, the field is `partial` and the verdict is **may revert**; a wildcard that matches nothing (no init containers) is `empty` and adds no verdict. Set image uses the wildcard only until the dialog lists the containers; then it asks about each container by name (so the evidence can't predate the list) and judges the ones you change;
 - and the owner's sync policy (auto, self-heal, prune, suspended).
 
@@ -325,11 +325,11 @@ The response also includes `manager`, the server's answer from the live target (
 | chain KubeAtlas couldn't read | **may revert** | same |
 | `unknown` from coverage gaps, `none` | nothing | nothing |
 
-Helm annotations beside an Argo CD or Kustomization manager (an adopted install) keep **may revert** even when that manager ignores the field. The answer is the caller's: with `narrowed` it may be incomplete, and a manager they can't read may still revert a change the visible one exempts. Status writes, new child objects, operator-owned deletes and empty wildcard paths keep their own rules. Values from a newer KubeAtlas this UI doesn't know count as unconfirmed; older Radars without `manager` keep the previous classifier.
+Helm annotations beside an Argo CD or Kustomization manager (an adopted install) keep **may revert** even when that manager ignores the field. The answer is the caller's: with `narrowed` it may be incomplete, and a manager they can't read may still revert a change the visible one exempts. Status writes, new child objects, operator-owned deletes and empty wildcard paths keep their own rules. Values from a newer KubeAtlas this UI doesn't know count as unconfirmed; older KubeAtlas instances without `manager` keep the previous classifier.
 
 It never returns managedFields or last-applied content, only these facts. Bodies are capped at 16 KiB (413) and at 64 paths; unknown fields are rejected (400). Wildcards in one request expand to at most 256 live entries; a path past that carries an `error` (read as **may revert**) instead of a verdict. Kubernetes 403/404 pass through.
 
-The classification is `evaluateGitOpsWriteGuard` in k8s-ui (`utils/gitops-write-guard.ts`), shown by `GitOpsWriteWarning`; the hook is `web/src/hooks/useGitOpsWriteGuard.ts`. Ownership comes from the manager answer when present, with browser-side parent lookup retained only for older Radars. When the server hasn't built either yet, the parent can't be read, or the server reports a manager the browser can't resolve (the Diagnose run's `managedBy`), ownership is treated as unknown: **may revert**, with an acknowledgment. A KubeAtlas without the endpoint (no `gitopsWriteEvidence` capability) gets the same conservative warning, whose reason says it needs a newer KubeAtlas; the write itself still works. The copy never promises a change won't be reverted.
+The classification is `evaluateGitOpsWriteGuard` in k8s-ui (`utils/gitops-write-guard.ts`), shown by `GitOpsWriteWarning`; the hook is `web/src/hooks/useGitOpsWriteGuard.ts`. Ownership comes from the manager answer when present, with browser-side parent lookup retained only for older KubeAtlas instances. When the server hasn't built either yet, the parent can't be read, or the server reports a manager the browser can't resolve (the Diagnose run's `managedBy`), ownership is treated as unknown: **may revert**, with an acknowledgment. A KubeAtlas without the endpoint (no `gitopsWriteEvidence` capability) gets the same conservative warning, whose reason says it needs a newer KubeAtlas; the write itself still works. The copy never promises a change won't be reverted.
 
 ## MCP integration
 

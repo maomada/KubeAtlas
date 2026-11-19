@@ -1,11 +1,11 @@
 // Shared Checks identity contract + data shapes + severity vocabulary.
 //
 // k8s-ui owns these because the Checks queue presentation (ChecksView) is
-// host-agnostic: Radar Hub feeds it fleet-resolved data, and OSS Radar can feed
+// host-agnostic: KubeAtlas Hub feeds it fleet-resolved data, and OSS KubeAtlas can feed
 // a single-cluster ("fleet of one") resolve. Hosts map their wire payloads onto
 // these types; the components render against them.
 //
-// Mirrors Radar OSS's resource-key convention (radar/pkg/audit.ResourceKey).
+// Mirrors KubeAtlas OSS's resource-key convention (kubeatlas/pkg/audit.ResourceKey).
 
 /** Canonical user-facing Checks severity ladder. Live issues remain a separate
  *  operational-health axis even where the same severity word appears. */
@@ -13,7 +13,7 @@ export type CheckSeverity = 'critical' | 'high' | 'medium' | 'low';
 
 /** Raw detector values retained by existing audit transport/public-prop
  *  compatibility contracts. Checks presentation maps them before display. */
-export type RadarSeverity = 'danger' | 'warning';
+export type KubeAtlasSeverity = 'danger' | 'warning';
 
 /** Ordered worst→least, for rendering severity filters/sorts consistently. */
 export const CHECK_SEVERITIES: CheckSeverity[] = ['critical', 'high', 'medium', 'low'];
@@ -30,10 +30,10 @@ export function isCheckSeverity(s: string): s is CheckSeverity {
   return s === 'critical' || s === 'high' || s === 'medium' || s === 'low';
 }
 
-/** mapRadarSeverity maps a raw detector severity to the Checks ladder
+/** mapKubeAtlasSeverity maps a raw detector severity to the Checks ladder
  *  (danger→high, warning→medium). critical/low are only reachable via an org
  *  severity override; the detector never emits them. */
-export function mapRadarSeverity(raw: RadarSeverity | string): CheckSeverity {
+export function mapKubeAtlasSeverity(raw: KubeAtlasSeverity | string): CheckSeverity {
   switch (raw) {
     case 'danger':
       return 'high';
@@ -58,8 +58,8 @@ export interface CheckResourceRef {
   name: string;
 }
 
-/** Built-in (Radar-detected) finding source. The only V1 source. */
-export const SOURCE_KUBEATLAS_BUILTIN = 'radar_builtin';
+/** Built-in (KubeAtlas-detected) finding source. The only V1 source. */
+export const SOURCE_KUBEATLAS_BUILTIN = 'kubeatlas_builtin';
 
 // Preserve the Checks import path while sharing exact resource identity.
 export { resourceKey, resourceRefKey } from '../../utils/resource-refs';
@@ -92,11 +92,11 @@ export interface EffectiveFindingState {
 }
 
 export interface EffectiveCheckFinding {
-  source: 'radar_builtin';
+  source: 'kubeatlas_builtin';
   resource: CheckResourceRef;
   checkID: string;
   category: string;
-  originalSeverity: RadarSeverity;
+  originalSeverity: KubeAtlasSeverity;
   effectiveSeverity: CheckSeverity;
   message: string;
   state: EffectiveFindingState;
@@ -110,7 +110,7 @@ export interface EffectiveCheckFinding {
  */
 export interface Check {
   id: string;
-  source: 'radar_builtin';
+  source: 'kubeatlas_builtin';
   subject: CheckResourceRef;
   checkID: string;
   category: string;

@@ -21,7 +21,7 @@ import (
 type finalizerObservation struct {
 	Text string
 	// Controller names the catalog controller that owns the finalizer; empty
-	// when Radar could not identify it.
+	// when KubeAtlas could not identify it.
 	Controller string
 	// Candidate names a workload that only resembles the finalizer's API group
 	// by name. It is never treated as the owner.
@@ -32,7 +32,7 @@ type finalizerObservation struct {
 	// of the catalog controller: nothing matched its name, labels or image, or
 	// every match is scaled to 0 replicas (ScaledDown). A negative search is
 	// not proof the controller is gone: it may be stopped for now, installed
-	// in a way Radar doesn't recognize, or running from outside the cluster.
+	// in a way KubeAtlas doesn't recognize, or running from outside the cluster.
 	// So it keeps the issue at warning and supports only a conditional
 	// cleanup.
 	NotFound   bool
@@ -80,7 +80,7 @@ func scopeOf(namespace string) string {
 }
 
 // A controller seen missing or down in the visible namespaces may still run
-// healthy in ones Radar could not search.
+// healthy in ones KubeAtlas could not search.
 const workloadsUnsearched = ", but Deployments, StatefulSets and DaemonSets could not be searched cluster-wide"
 
 func (p *CacheProvider) FinalizerOwnerStatus(finalizer string, ref Ref, canList func(string, string, string) bool) finalizerObservation {
@@ -435,14 +435,14 @@ func enrichTerminatingProblem(pr k8s.Detection, p Provider, canList func(string,
 				cleanups = append(cleanups, finalizerCleanup{condition: observation.Controller + " was scaled to 0 on purpose and won't be restarted", removal: removal})
 			}
 		case observation.NotFound:
-			restores = append(restores, fmt.Sprintf("No recognized controller found for finalizer %q. If %s should be running, restore it so it can resume cleanup. It may also be installed under a name, labels or image Radar doesn't recognize, or run outside this cluster.", finalizer, observation.Controller))
+			restores = append(restores, fmt.Sprintf("No recognized controller found for finalizer %q. If %s should be running, restore it so it can resume cleanup. It may also be installed under a name, labels or image KubeAtlas doesn't recognize, or run outside this cluster.", finalizer, observation.Controller))
 			if removal, ok := pr.TerminatingRemovals[finalizer]; ok && observation.AllowConditionalCleanup {
 				cleanups = append(cleanups, finalizerCleanup{condition: observation.Controller + " was uninstalled on purpose", removal: removal})
 			}
 		case observation.Controller != "":
-			unconfirmed = append(unconfirmed, fmt.Sprintf("Radar can't confirm with your access to this cluster whether %s, which owns finalizer %q, is running; check it first.", observation.Controller, finalizer))
+			unconfirmed = append(unconfirmed, fmt.Sprintf("KubeAtlas can't confirm with your access to this cluster whether %s, which owns finalizer %q, is running; check it first.", observation.Controller, finalizer))
 		case observation.Candidate != "":
-			candidates = append(candidates, fmt.Sprintf("Radar couldn't confirm which controller owns finalizer %q; %s resembles its API group by name only. Check whether it handles this finalizer first.", finalizer, observation.Candidate))
+			candidates = append(candidates, fmt.Sprintf("KubeAtlas couldn't confirm which controller owns finalizer %q; %s resembles its API group by name only. Check whether it handles this finalizer first.", finalizer, observation.Candidate))
 		default:
 			unidentified = append(unidentified, strconv.Quote(finalizer))
 		}
@@ -455,8 +455,8 @@ func enrichTerminatingProblem(pr k8s.Detection, p Provider, canList func(string,
 		pr.Cause += fmt.Sprintf(" +%d more finalizer observations.", shown-3)
 	}
 	// Escalating to critical needs a controller seen down or an in-use guard.
-	// A controller Radar didn't find may be stopped on purpose, installed in a
-	// way Radar doesn't recognize, or still cleaning up from elsewhere.
+	// A controller KubeAtlas didn't find may be stopped on purpose, installed in a
+	// way KubeAtlas doesn't recognize, or still cleaning up from elsewhere.
 	if pr.Severity == "critical" && (healthy || (!running && !down && len(guards) == 0)) {
 		pr.Severity = "high"
 	}
@@ -470,7 +470,7 @@ func enrichTerminatingProblem(pr k8s.Detection, p Provider, canList func(string,
 		if len(unidentified) > 1 {
 			subject = "finalizers " + strings.Join(unidentified, ", ")
 		}
-		cautions = append(cautions, fmt.Sprintf("Radar couldn't identify which controller owns %s; the finalizer's domain usually names it. Find that controller and check it first.", subject))
+		cautions = append(cautions, fmt.Sprintf("KubeAtlas couldn't identify which controller owns %s; the finalizer's domain usually names it. Find that controller and check it first.", subject))
 	}
 	cautions = append(cautions, candidates...)
 	cautions = append(cautions, unconfirmed...)
@@ -493,9 +493,9 @@ type finalizerCleanup struct {
 	removal   issuesapi.FinalizerRemoval
 }
 
-// conditionalFinalizerCleanup offers finalizer removal for controllers Radar
+// conditionalFinalizerCleanup offers finalizer removal for controllers KubeAtlas
 // found no running copy of, conditioned on the reader knowing they were
-// removed on purpose: Radar can't tell an intentional uninstall from a
+// removed on purpose: KubeAtlas can't tell an intentional uninstall from a
 // temporary stop or an install it doesn't recognize.
 func conditionalFinalizerCleanup(cleanups []finalizerCleanup) *issuesapi.ConditionalCleanup {
 	if len(cleanups) == 0 {

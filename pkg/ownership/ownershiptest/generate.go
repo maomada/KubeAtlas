@@ -19,10 +19,10 @@ type Kind struct {
 	Version    string
 	Resource   string
 	Namespaced bool
-	// Typed: Radar holds the kind in its typed cache, whose collection is
+	// Typed: KubeAtlas holds the kind in its typed cache, whose collection is
 	// fixed when it starts; other kinds are watched on demand.
 	Typed bool
-	// HasGCVerbs: served with delete, list and watch, so Radar can collect
+	// HasGCVerbs: served with delete, list and watch, so KubeAtlas can collect
 	// it and the garbage collector acts on it.
 	HasGCVerbs bool
 }
@@ -32,7 +32,7 @@ func (k Kind) APIVersion() string {
 }
 
 // Kinds are the kinds generated Worlds use: built-ins the typed cache holds,
-// custom kinds Radar watches on demand (one named like a built-in of another
+// custom kinds KubeAtlas watches on demand (one named like a built-in of another
 // scope), one kind that can't be watched, Events, and the GitOps managers
 // whose status lists their members.
 var Kinds = []Kind{
@@ -64,7 +64,7 @@ func KindOf(gk resourceid.GroupKind) (Kind, bool) {
 }
 
 // Resources is what discovery serves for Kinds, plus a second served version
-// of Widget, so owner references can name a version Radar doesn't watch.
+// of Widget, so owner references can name a version KubeAtlas doesn't watch.
 func Resources() []ownership.ServedResource {
 	gc := []string{"create", "delete", "get", "list", "patch", "update", "watch"}
 	var out []ownership.ServedResource
@@ -336,7 +336,7 @@ func (b *builder) deleting(o Object, finalizers ...string) {
 }
 
 // world returns the World built, every kind collected in full except those
-// Radar can't watch.
+// KubeAtlas can't watch.
 func (b *builder) world() World {
 	w := World{Resources: Resources(), Objects: b.objects, Collection: map[resourceid.GroupKind]Collection{}}
 	for _, k := range Kinds {
@@ -379,5 +379,5 @@ func (b *Builder) Meta(o Object, labels, annotations map[string]string) Object {
 }
 
 // World returns the World built, every kind collected in full except those
-// Radar can't watch.
+// KubeAtlas can't watch.
 func (b *Builder) World() World { return b.b.world() }

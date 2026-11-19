@@ -185,10 +185,10 @@ export function HPADiagnosisSummary({
                   </span>
                 )}
               </div>
-              {/* Radar's reading leads, as the reason is built to; the
+              {/* KubeAtlas's reading leads, as the reason is built to; the
                   controller's own sentence follows it, quoted and attributed
                   the same way the inline variant attributes it. Unlabelled
-                  beside the condition chips, it read as Radar's words. */}
+                  beside the condition chips, it read as KubeAtlas's words. */}
               {!isHPAReasonRedundant(diagnosis, reason) && (
                 <div className="mt-1 text-xs text-theme-text-secondary">
                   {reason.message}
@@ -197,7 +197,7 @@ export function HPADiagnosisSummary({
               {reason.detail &&
                 // `detail` is the controller's own sentence only on a reason
                 // built from a condition, which is the only kind that carries
-                // a condition type. Elsewhere it is Radar's — a list of metric
+                // a condition type. Elsewhere it is KubeAtlas's — a list of metric
                 // names, a note about an unobserved generation — and quoting
                 // that as Kubernetes would put words in its mouth.
                 (reason.conditionType ? (

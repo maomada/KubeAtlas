@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 // Recently-opened resources, persisted to localStorage so the omnibar's empty
 // state can offer "jump back to what I was just looking at" across reloads.
 // Plain functions (not a stateful hook): the omnibar reads fresh each time it
@@ -10,7 +11,7 @@ export interface RecentResource {
   name: string
 }
 
-const KEY = 'radar-recent-resources'
+const KEY = 'kubeatlas-recent-resources'
 const MAX = 7
 
 // Partition by the current cluster/context: a resource is identified by
@@ -29,7 +30,7 @@ function keyOf(r: RecentResource): string {
 export function loadRecentResources(contextKey: string): RecentResource[] {
   if (!contextKey) return []
   try {
-    const raw = localStorage.getItem(storageKey(contextKey))
+    const raw = readProductStorage(localStorage, storageKey(contextKey))
     if (raw) return JSON.parse(raw)
   } catch {
     // ignore parse/storage errors — recents are best-effort

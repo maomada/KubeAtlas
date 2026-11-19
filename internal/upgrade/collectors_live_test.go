@@ -426,8 +426,8 @@ func TestAPIMetricsFailuresReachUpgradeCheck(t *testing.T) {
 		wantFailure upgradereadiness.APIMetricsFailure
 		wantText    string
 	}{
-		{"response too large", upgradereadiness.APIMetricsTooLarge, "exceeded Radar's size limit"},
-		{"required line too large", upgradereadiness.APIMetricsTooLarge, "exceeded Radar's size limit"},
+		{"response too large", upgradereadiness.APIMetricsTooLarge, "exceeded KubeAtlas's size limit"},
+		{"required line too large", upgradereadiness.APIMetricsTooLarge, "exceeded KubeAtlas's size limit"},
 		{"forbidden", upgradereadiness.APIMetricsForbidden, "Grant get"},
 		{"unauthorized", upgradereadiness.APIMetricsUnreadable, "could not read or parse"},
 		{"truncated", upgradereadiness.APIMetricsUnreadable, "could not read or parse"},

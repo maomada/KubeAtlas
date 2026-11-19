@@ -56,10 +56,10 @@ func TestConfigureHubRequiresPersistentState(t *testing.T) {
 	}
 
 	path := filepath.Join(t.TempDir(), "hub", "state.json")
-	if err := configureHub(&credentials, path, "radar:operators"); err != nil {
+	if err := configureHub(&credentials, path, "kubeatlas:operators"); err != nil {
 		t.Fatal(err)
 	}
-	if credentials.Hub == nil || credentials.Hub.Store == nil || len(credentials.Hub.Groups) != 1 || credentials.Hub.Groups[0] != "radar:operators" {
+	if credentials.Hub == nil || credentials.Hub.Store == nil || len(credentials.Hub.Groups) != 1 || credentials.Hub.Groups[0] != "kubeatlas:operators" {
 		t.Fatal("Hub state and groups were not configured")
 	}
 }
@@ -95,10 +95,10 @@ func (f testRoundTripper) RoundTrip(r *http.Request) (*http.Response, error) { r
 
 func TestHubModeWiresLiveMCP(t *testing.T) {
 	credentials := portal.Credentials{Username: "operator", Password: strings.Repeat("p", 32)}
-	if err := configureHub(&credentials, filepath.Join(t.TempDir(), "hub", "state.json"), "radar:member"); err != nil {
+	if err := configureHub(&credentials, filepath.Join(t.TempDir(), "hub", "state.json"), "kubeatlas:member"); err != nil {
 		t.Fatal(err)
 	}
-	if credentials.Hub.MCPFactory == nil || len(credentials.Hub.Groups) != 1 || credentials.Hub.Groups[0] != "radar:member" {
+	if credentials.Hub.MCPFactory == nil || len(credentials.Hub.Groups) != 1 || credentials.Hub.Groups[0] != "kubeatlas:member" {
 		t.Fatal("live MCP factory or identity groups missing")
 	}
 	store := credentials.Hub.Store

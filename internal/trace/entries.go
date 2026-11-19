@@ -574,7 +574,7 @@ func podsConfig(pods []*corev1.Pod, svc *corev1.Service) *HopConfig {
 		return nil
 	}
 	// The Pods lister returns slice order from a map-backed store, so the
-	// "first N" we sample for the IP/name pool can differ across Radar
+	// "first N" we sample for the IP/name pool can differ across KubeAtlas
 	// instances - two operators viewing the same Service would probe
 	// different replicas. Sort by Name first so the sample is stable.
 	sorted := make([]*corev1.Pod, len(pods))
@@ -2062,7 +2062,7 @@ func traceGatewayEntry(ctx context.Context, deps Deps, t *Trace) {
 			Findings: hopFindings(deps, ref),
 		}
 		// L4 routes are inventoried so the attachment list never claims
-		// HTTP-only completeness, but radar doesn't walk their backends or
+		// HTTP-only completeness, but kubeatlas doesn't walk their backends or
 		// probe them - say so instead of leaving an unexplained bare hop.
 		if ref.Kind == "TCPRoute" || ref.Kind == "TLSRoute" || ref.Kind == "UDPRoute" {
 			listener := "The Gateway listener's TCP reachability is still probed."
@@ -2072,7 +2072,7 @@ func traceGatewayEntry(ctx context.Context, deps Deps, t *Trace) {
 			hop.Findings = append(hop.Findings, Finding{
 				Code:     "gateway:l4-route-not-traced",
 				Severity: SeverityInfo,
-				Message:  fmt.Sprintf("This %s is attached to the Gateway but its backends are not traced or tested - radar doesn't walk L4 routes. %s", ref.Kind, listener),
+				Message:  fmt.Sprintf("This %s is attached to the Gateway but its backends are not traced or tested - kubeatlas doesn't walk L4 routes. %s", ref.Kind, listener),
 			})
 			sortFindingsBySeverity(hop.Findings)
 		}
@@ -2151,7 +2151,7 @@ func gatewayConfig(gw *unstructured.Unstructured) *HopConfig {
 	return c
 }
 
-// gatewayRouteKinds is the full set of Gateway API route kinds radar
+// gatewayRouteKinds is the full set of Gateway API route kinds kubeatlas
 // inventories on a Gateway trace. TCPRoute/TLSRoute/UDPRoute attachments are listed so
 // the inventory never claims HTTP-only completeness, even though their
 // backends aren't traced (see the l4-route note in traceGatewayEntry).

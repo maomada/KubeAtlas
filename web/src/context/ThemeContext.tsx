@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { createContext, useContext, useEffect, useState, ReactNode } from 'react'
 import { loadPreferences, persistPreferences } from '../api/preferences'
 
@@ -11,12 +12,12 @@ interface ThemeContextType {
 
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined)
 
-const THEME_STORAGE_KEY = 'radar-theme'
+const THEME_STORAGE_KEY = 'kubeatlas-theme'
 
 function getInitialTheme(): Theme {
   // Check localStorage first
   if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem(THEME_STORAGE_KEY)
+    const stored = readProductStorage(localStorage, THEME_STORAGE_KEY)
     if (stored === 'light' || stored === 'dark') {
       return stored
     }
@@ -68,7 +69,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
     const mediaQuery = window.matchMedia('(prefers-color-scheme: light)')
     const handleChange = (e: MediaQueryListEvent) => {
       // Only auto-switch if user hasn't explicitly set a preference
-      const stored = localStorage.getItem(THEME_STORAGE_KEY)
+      const stored = readProductStorage(localStorage, THEME_STORAGE_KEY)
       if (!stored) {
         setThemeState(e.matches ? 'light' : 'dark')
       }

@@ -6,23 +6,23 @@
 # and a SA with no bindings.
 #
 # Idempotent — safe to re-run. Cleans up by deleting the demo namespace
-# (rbac-demo) and the cluster-wide objects with the `radar-rbac-demo=true`
+# (rbac-demo) and the cluster-wide objects with the `kubeatlas-rbac-demo=true`
 # label.
 #
 # Subcommands:
 #   up      Apply the fixtures.
-#   down    Delete everything labelled radar-rbac-demo=true plus the namespace.
+#   down    Delete everything labelled kubeatlas-rbac-demo=true plus the namespace.
 #   status  Print what's there.
 #   help    Show this message.
 #
 # This script does NOT create a cluster. Point your KUBECONFIG at any cluster
 # you're OK polluting with RBAC test fixtures (kind, dev, etc.) and run.
-# Recommended pairing: `kind create cluster --name radar-rbac-demo` first.
+# Recommended pairing: `kind create cluster --name kubeatlas-rbac-demo` first.
 
 set -euo pipefail
 
 NS="${RBAC_DEMO_NS:-rbac-demo}"
-LABEL="radar-rbac-demo=true"
+LABEL="kubeatlas-rbac-demo=true"
 
 if [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; then
   C_BLUE='\033[34m'; C_GREEN='\033[32m'; C_DIM='\033[2m'; C_RED='\033[31m'; C_RESET='\033[0m'
@@ -66,7 +66,7 @@ metadata:
   name: app-sa
   namespace: ${NS}
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -74,7 +74,7 @@ metadata:
   name: app-reader
   namespace: ${NS}
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 rules:
   - apiGroups: [""]
     resources: ["pods", "configmaps"]
@@ -86,7 +86,7 @@ metadata:
   name: app-binding
   namespace: ${NS}
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -102,7 +102,7 @@ metadata:
   name: app-pod
   namespace: ${NS}
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 spec:
   serviceAccountName: app-sa
   containers:
@@ -117,14 +117,14 @@ metadata:
   name: risky-sa
   namespace: ${NS}
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: radar-rbac-demo-wild
+  name: kubeatlas-rbac-demo-wild
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 rules:
   - apiGroups: ["*"]
     resources: ["*"]
@@ -133,13 +133,13 @@ rules:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: radar-rbac-demo-wild-bind
+  name: kubeatlas-rbac-demo-wild-bind
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: radar-rbac-demo-wild
+  name: kubeatlas-rbac-demo-wild
 subjects:
   - kind: ServiceAccount
     name: risky-sa
@@ -151,7 +151,7 @@ metadata:
   name: risky-pod
   namespace: ${NS}
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 spec:
   serviceAccountName: risky-sa
   containers:
@@ -164,9 +164,9 @@ spec:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: radar-rbac-demo-too-wide
+  name: kubeatlas-rbac-demo-too-wide
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
@@ -185,7 +185,7 @@ metadata:
   name: orphan-binding
   namespace: ${NS}
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role
@@ -203,7 +203,7 @@ metadata:
   name: lonely-sa
   namespace: ${NS}
   labels:
-    radar-rbac-demo: "true"
+    kubeatlas-rbac-demo: "true"
 EOF
 
   ok "fixtures applied"
@@ -211,8 +211,8 @@ EOF
   note "SAs:           app-sa, risky-sa, lonely-sa"
   note "Pods:          app-pod, risky-pod"
   note "Role:          app-reader (ns: ${NS})"
-  note "ClusterRoles:  radar-rbac-demo-wild"
-  note "Bindings:      app-binding, orphan-binding (ns: ${NS}); radar-rbac-demo-wild-bind, radar-rbac-demo-too-wide"
+  note "ClusterRoles:  kubeatlas-rbac-demo-wild"
+  note "Bindings:      app-binding, orphan-binding (ns: ${NS}); kubeatlas-rbac-demo-wild-bind, kubeatlas-rbac-demo-too-wide"
 }
 
 remove_fixtures() {

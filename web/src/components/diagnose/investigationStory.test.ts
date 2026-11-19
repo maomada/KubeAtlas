@@ -11,7 +11,7 @@ import {
 describe("splitStory", () => {
   it("places a marker on its own line and references one inside a sentence", () => {
     const { segments } = splitStory(
-      "The pod crashes.\n\n[[radar:evidence=0]]\n\nAs [[radar:evidence=0]] shows, auth fails.\n  [[radar:evidence=2]]  \nDone.",
+      "The pod crashes.\n\n[[kubeatlas:evidence=0]]\n\nAs [[kubeatlas:evidence=0]] shows, auth fails.\n  [[kubeatlas:evidence=2]]  \nDone.",
     );
     expect(segments).toEqual([
       { kind: "prose", markdown: "The pod crashes." },
@@ -19,46 +19,46 @@ describe("splitStory", () => {
       {
         kind: "prose",
         markdown:
-          "As [[[radar:evidence=0]]](#radar-evidence-0) shows, auth fails.",
+          "As [[[kubeatlas:evidence=0]]](#kubeatlas-evidence-0) shows, auth fails.",
       },
       { kind: "placement", index: 2 },
       { kind: "prose", markdown: "Done." },
     ]);
-    expect(JSON.stringify(segments)).toContain("#radar-evidence-0)");
+    expect(JSON.stringify(segments)).toContain("#kubeatlas-evidence-0)");
   });
 
   it("treats markers inside fences, inline code and blockquotes as literal text", () => {
     const report = [
       "Quoted output:",
       "```",
-      "[[radar:evidence=1]]",
+      "[[kubeatlas:evidence=1]]",
       "```",
-      "Inline `[[radar:evidence=1]]` is code, but [[radar:evidence=3]] is not.",
-      "> [[radar:evidence=4]]",
+      "Inline `[[kubeatlas:evidence=1]]` is code, but [[kubeatlas:evidence=3]] is not.",
+      "> [[kubeatlas:evidence=4]]",
       "~~~txt",
-      "[[radar:evidence=5]]",
+      "[[kubeatlas:evidence=5]]",
       "~~~",
     ].join("\n");
     const { segments } = splitStory(report);
     expect(segments.filter((s) => s.kind === "placement")).toEqual([]);
-    expect(JSON.stringify(segments)).toContain("#radar-evidence-3)");
+    expect(JSON.stringify(segments)).toContain("#kubeatlas-evidence-3)");
     const prose = segments
       .map((s) => (s.kind === "prose" ? s.markdown : ""))
       .join("\n");
-    expect(prose).toContain("`[[radar:evidence=1]]`");
-    expect(prose).toContain("> [[radar:evidence=4]]");
-    expect(prose).toContain("[[[radar:evidence=3]]](#radar-evidence-3)");
+    expect(prose).toContain("`[[kubeatlas:evidence=1]]`");
+    expect(prose).toContain("> [[kubeatlas:evidence=4]]");
+    expect(prose).toContain("[[[kubeatlas:evidence=3]]](#kubeatlas-evidence-3)");
   });
 
   it("keeps indented-code markers and unbalanced closing fences literal", () => {
-    const indented = splitStory("Text.\n\n    [[radar:evidence=0]]");
+    const indented = splitStory("Text.\n\n    [[kubeatlas:evidence=0]]");
     expect(indented.segments.every((s) => s.kind === "prose")).toBe(true);
-    expect(JSON.stringify(indented.segments)).not.toContain("#radar-evidence");
+    expect(JSON.stringify(indented.segments)).not.toContain("#kubeatlas-evidence");
     expect(
       indented.segments.map((s) => s.kind === "prose" && s.markdown).join("\n"),
-    ).toContain("    [[radar:evidence=0]]");
+    ).toContain("    [[kubeatlas:evidence=0]]");
     const fence = splitStory(
-      "```\n````not-a-close\n[[radar:evidence=0]]\n```\n\n[[radar:evidence=1]]",
+      "```\n````not-a-close\n[[kubeatlas:evidence=0]]\n```\n\n[[kubeatlas:evidence=1]]",
     );
     expect(
       fence.segments
@@ -72,80 +72,80 @@ describe("splitStory", () => {
     const stray = "ev_" + "c".repeat(26) + "_" + "d".repeat(26);
     const resolve = (candidate: string) => (candidate === ref ? 2 : undefined);
     const { segments } = splitStory(
-      `The log shows it:\n\n[[radar:evidence-ref=${ref}]]\n\nSee [[radar:evidence-ref=${ref}|compact]] and [[radar:evidence-ref=${stray}]].`,
+      `The log shows it:\n\n[[kubeatlas:evidence-ref=${ref}]]\n\nSee [[kubeatlas:evidence-ref=${ref}|compact]] and [[kubeatlas:evidence-ref=${stray}]].`,
       resolve,
     );
     expect(segments[1]).toEqual({ kind: "placement", index: 2 });
-    expect(JSON.stringify(segments)).toContain("#radar-evidence-2)");
-    expect(JSON.stringify(segments)).toContain("#radar-evidence--1)");
+    expect(JSON.stringify(segments)).toContain("#kubeatlas-evidence-2)");
+    expect(JSON.stringify(segments)).toContain("#kubeatlas-evidence--1)");
     expect(segments[2]).toMatchObject({ kind: "prose" });
     const inline = (segments[2] as { markdown: string }).markdown;
-    expect(inline).toContain("](#radar-evidence-2)");
-    expect(inline).toContain(`](#radar-evidence-${UNRESOLVED_STORY_INDEX})`);
-    expect(storyPlainText(`x [[radar:evidence-ref=${ref}]] y`)).toBe("x  y");
+    expect(inline).toContain("](#kubeatlas-evidence-2)");
+    expect(inline).toContain(`](#kubeatlas-evidence-${UNRESOLVED_STORY_INDEX})`);
+    expect(storyPlainText(`x [[kubeatlas:evidence-ref=${ref}]] y`)).toBe("x  y");
   });
   it("keeps a marker inside a double-backtick code span literal", () => {
     const { segments } = splitStory(
-      "Write `` [[radar:evidence=0]] `` to place, then see [[radar:evidence=0]].",
+      "Write `` [[kubeatlas:evidence=0]] `` to place, then see [[kubeatlas:evidence=0]].",
     );
-    expect(JSON.stringify(segments)).toContain("#radar-evidence-0)");
+    expect(JSON.stringify(segments)).toContain("#kubeatlas-evidence-0)");
     expect((segments[0] as { markdown: string }).markdown).toContain(
-      "`` [[radar:evidence=0]] ``",
+      "`` [[kubeatlas:evidence=0]] ``",
     );
   });
 
   it("keeps a marker literal inside a code span that runs across lines", () => {
     const split = splitStory(
-      "Quoted `example\n[[radar:evidence=0]]\nend` here.\n\n[[radar:evidence=0]]",
+      "Quoted `example\n[[kubeatlas:evidence=0]]\nend` here.\n\n[[kubeatlas:evidence=0]]",
     );
     expect(split.segments.map((segment) => segment.kind)).toEqual([
       "prose",
       "placement",
     ]);
-    expect(JSON.stringify(split.segments)).not.toContain("#radar-evidence");
+    expect(JSON.stringify(split.segments)).not.toContain("#kubeatlas-evidence");
     expect((split.segments[0] as { markdown: string }).markdown).toContain(
-      "[[radar:evidence=0]]\nend`",
+      "[[kubeatlas:evidence=0]]\nend`",
     );
   });
 
   it("closes an open span at a fence, at a whitespace-only line, and keeps tab-indented lines literal", () => {
     const kinds = (report: string) =>
       splitStory(report).segments.map((segment) => segment.kind);
-    expect(kinds("Quoted `example\n~~~\nx\n~~~\n[[radar:evidence=0]]")).toEqual(
+    expect(kinds("Quoted `example\n~~~\nx\n~~~\n[[kubeatlas:evidence=0]]")).toEqual(
       ["prose", "placement"],
     );
-    expect(kinds("Quoted `example\n    \n[[radar:evidence=0]]")).toEqual([
+    expect(kinds("Quoted `example\n    \n[[kubeatlas:evidence=0]]")).toEqual([
       "prose",
       "placement",
     ]);
     // A tab-indented fence is indented code, so the marker between two of
     // them stands on its own line in prose.
-    expect(kinds("\t~~~\n[[radar:evidence=0]]\n\t~~~")).toEqual([
+    expect(kinds("\t~~~\n[[kubeatlas:evidence=0]]\n\t~~~")).toEqual([
       "prose",
       "placement",
       "prose",
     ]);
-    expect(kinds("\t[[radar:evidence=0]]")).toEqual(["prose"]);
+    expect(kinds("\t[[kubeatlas:evidence=0]]")).toEqual(["prose"]);
     expect(
-      JSON.stringify(splitStory("\t[[radar:evidence=0]]").segments),
-    ).not.toContain("#radar-evidence");
+      JSON.stringify(splitStory("\t[[kubeatlas:evidence=0]]").segments),
+    ).not.toContain("#kubeatlas-evidence");
   });
 
   it("reads the compact variant as a placement flag", () => {
     const { segments } = splitStory(
-      "A.\n[[radar:evidence=2|compact]]\nB [[radar:evidence=2|compact]].",
+      "A.\n[[kubeatlas:evidence=2|compact]]\nB [[kubeatlas:evidence=2|compact]].",
     );
     expect(segments[1]).toEqual({ kind: "placement", index: 2, compact: true });
     expect(segments[2]).toEqual({
       kind: "prose",
-      markdown: "B [[[radar:evidence=2|compact]]](#radar-evidence-2).",
+      markdown: "B [[[kubeatlas:evidence=2|compact]]](#kubeatlas-evidence-2).",
     });
   });
 
   it("keeps an unterminated fence literal to the end", () => {
-    const { segments } = splitStory("```\n[[radar:evidence=0]]\nstill code");
+    const { segments } = splitStory("```\n[[kubeatlas:evidence=0]]\nstill code");
     expect(segments).toEqual([
-      { kind: "prose", markdown: "```\n[[radar:evidence=0]]\nstill code" },
+      { kind: "prose", markdown: "```\n[[kubeatlas:evidence=0]]\nstill code" },
     ]);
   });
 
@@ -153,9 +153,9 @@ describe("splitStory", () => {
     expect(storyReferenceIndex(storyReferenceHref(7))).toBe(7);
     expect(storyReferenceIndex("#other")).toBeUndefined();
     expect(
-      storyPlainText("A.\n\n[[radar:evidence=0]]\n\nB [[radar:evidence=1]]."),
+      storyPlainText("A.\n\n[[kubeatlas:evidence=0]]\n\nB [[kubeatlas:evidence=1]]."),
     ).toBe("A.\n\nB .");
     expect(storyHasPlacements("no markers")).toBe(false);
-    expect(storyHasPlacements("x [[radar:evidence=0]]")).toBe(true);
+    expect(storyHasPlacements("x [[kubeatlas:evidence=0]]")).toBe(true);
   });
 });

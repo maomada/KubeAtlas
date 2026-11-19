@@ -91,7 +91,7 @@ func TestPartialListCoverageSurvivesEveryAgentBackend(t *testing.T) {
 			{"opencode", (&opencodeAgent{}).parseStream, func(blocks []string) string {
 				// OpenCode joins an MCP result's text blocks itself, with a
 				// blank line between them.
-				return `{"type":"tool_use","part":{"id":"list","tool":"radar_list_resources","state":{"status":"completed","input":{"kind":"services"},"output":` + jsonText(t, strings.Join(blocks, "\n\n")) + `}}}`
+				return `{"type":"tool_use","part":{"id":"list","tool":"kubeatlas_list_resources","state":{"status":"completed","input":{"kind":"services"},"output":` + jsonText(t, strings.Join(blocks, "\n\n")) + `}}}`
 			}},
 		} {
 			t.Run(tc.Name+"/"+backend.name, func(t *testing.T) {
@@ -123,8 +123,8 @@ func TestPartialListCoverageSurvivesEveryAgentBackend(t *testing.T) {
 				if step.Result != payload || step.Truncated {
 					t.Fatalf("Findings must receive the producer text unchanged:\n got %q\nwant %q", step.Result, payload)
 				}
-				if step.IsError == nil || *step.IsError || step.EvidenceRef != ref || !step.RadarEvidence {
-					t.Fatalf("the result must stay a confirmed success with Radar provenance: %+v", step)
+				if step.IsError == nil || *step.IsError || step.EvidenceRef != ref || !step.KubeAtlasEvidence {
+					t.Fatalf("the result must stay a confirmed success with KubeAtlas provenance: %+v", step)
 				}
 			})
 		}

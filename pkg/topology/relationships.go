@@ -930,7 +930,7 @@ func isStorageResourceRef(ref *ResourceRef) bool {
 	return ref != nil && ref.Group == "" && strings.EqualFold(ref.Kind, "PersistentVolumeClaim")
 }
 
-// Configuration projections preserve navigation for Radar Hub's versioned
+// Configuration projections preserve navigation for KubeAtlas Hub's versioned
 // embedded frontend; newer clients present the same refs as dependencies.
 func isConfigurationDependency(ref *ResourceRef) bool {
 	if ref == nil {

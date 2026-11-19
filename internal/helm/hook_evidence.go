@@ -45,7 +45,7 @@ func EnrichHookDiagnosticsWithClusterEvidence(ctx context.Context, detail *HelmR
 		for i := range detail.HookDiagnostics {
 			diag := &detail.HookDiagnostics[i]
 			diag.EvidenceUnavailable = true
-			diag.EvidenceUnavailableReason = "Radar could not read live hook evidence because no Kubernetes client was available for this request."
+			diag.EvidenceUnavailableReason = "KubeAtlas could not read live hook evidence because no Kubernetes client was available for this request."
 		}
 		return
 	}
@@ -90,7 +90,7 @@ func EnrichHookDiagnosticsWithClusterEvidence(ctx context.Context, detail *HelmR
 		}
 		if hasPrimaryHookEvidenceError(evidence.Errors) {
 			diag.EvidenceUnavailable = true
-			diag.EvidenceUnavailableReason = "Radar could not read live hook evidence with the current Kubernetes identity."
+			diag.EvidenceUnavailableReason = "KubeAtlas could not read live hook evidence with the current Kubernetes identity."
 			continue
 		}
 		if diag.EvidenceUnavailable {

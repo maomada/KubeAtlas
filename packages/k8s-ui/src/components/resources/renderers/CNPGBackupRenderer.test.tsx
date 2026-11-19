@@ -44,7 +44,7 @@ describe('CNPGBackupRenderer plugin destination', () => {
   it('does not assert a third-party parameter is an ObjectStore destination', () => {
     const out = html(backup({ spec: { method: 'plugin', pluginConfiguration: { name: 'other.example.com', parameters: { barmanObjectName: 'custom-store' } } } }))
     expect(out).toContain('other.example.com')
-    expect(out).toContain('Unknown: Radar does not model this plugin')
+    expect(out).toContain('Unknown: KubeAtlas does not model this plugin')
     expect(out).not.toContain('custom-store')
     expect(out).not.toContain('Object Store')
     expect(out).not.toContain('Ignored by')

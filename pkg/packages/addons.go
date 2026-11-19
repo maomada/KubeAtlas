@@ -14,11 +14,11 @@ import "strings"
 //
 // The Applications and Add-ons surfaces share this classifier rather than each
 // carrying a private allowlist. The frontend's interim KNOWN_ADDON_CHARTS
-// (radar-hub-web packagesModel.ts) mirrors this list until the hub forwards the
+// (kubeatlas-hub-web packagesModel.ts) mirrors this list until the hub forwards the
 // classification on the wire; keep the two in sync until then.
 
 // addonChartsExtra lists add-on charts not keyed by a crdGroupToChart entry.
-// Kept in lockstep with radar-hub-web's KNOWN_ADDON_CHARTS extras.
+// Kept in lockstep with kubeatlas-hub-web's KNOWN_ADDON_CHARTS extras.
 var addonChartsExtra = []string{
 	// Argo family beyond the argoproj.io→argo-cd catalog entry
 	"argocd", "argo-rollouts", "argo-workflows", "argo-events", "flux2", "capi",

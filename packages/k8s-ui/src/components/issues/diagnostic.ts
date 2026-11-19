@@ -4,7 +4,7 @@
 // can't drift on wording.
 
 // Operator-facing — describes the issue's place in the causal picture in plain
-// language, not Radar's internal role taxonomy.
+// language, not KubeAtlas's internal role taxonomy.
 export function diagnosticRoleLabel(role: string): string {
   switch (role) {
     case 'candidate':

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { renderToString } from 'react-dom/server'
 import { PolicySection } from './PolicySection'
-import { RadarUpgradeContext } from '../../ui/RadarUpgradeNote'
+import { KubeAtlasUpgradeContext } from '../../ui/KubeAtlasUpgradeNote'
 import type { PolicyResourceResponse } from '../../../types/policy'
 
 const base: PolicyResourceResponse = {
@@ -159,11 +159,11 @@ describe('when results were withheld from this caller', () => {
   })
 })
 
-// An older in-cluster Radar behind a newer frontend (Radar Hub) has no policy
+// An older in-cluster KubeAtlas behind a newer frontend (KubeAtlas Hub) has no policy
 // endpoint. That is an expected state, so it gets an upgrade prompt, not red.
-describe('PolicySection — connected Radar predates policy results', () => {
-  const unsupported = Object.assign(new Error('Policy results need Radar v1.10.0 or newer'), {
-    radarUpgrade: { feature: 'Policy results', minimumVersion: 'v1.10.0', currentVersion: 'v1.7.2' },
+describe('PolicySection — connected KubeAtlas predates policy results', () => {
+  const unsupported = Object.assign(new Error('Policy results need KubeAtlas v1.10.0 or newer'), {
+    kubeatlasUpgrade: { feature: 'Policy results', minimumVersion: 'v1.10.0', currentVersion: 'v1.7.2' },
   })
 
   it('prompts an upgrade instead of reporting a failure', () => {
@@ -176,9 +176,9 @@ describe('PolicySection — connected Radar predates policy results', () => {
 
   it('hands the upgrade to the host when it offers a flow', () => {
     const html = renderToString(
-      <RadarUpgradeContext.Provider value={{ onRequestUpgrade: () => undefined }}>
+      <KubeAtlasUpgradeContext.Provider value={{ onRequestUpgrade: () => undefined }}>
         <PolicySection data={null} error={unsupported} />
-      </RadarUpgradeContext.Provider>,
+      </KubeAtlasUpgradeContext.Provider>,
     )
     expect(html).toContain('<button')
     expect(html).toContain('升级 KubeAtlas')
@@ -186,11 +186,11 @@ describe('PolicySection — connected Radar predates policy results', () => {
 
   it('links to instructions when the host has no flow', () => {
     const html = renderToString(
-      <RadarUpgradeContext.Provider value={{ upgradeHref: 'https://radarhq.io/docs/configuration/in-cluster' }}>
+      <KubeAtlasUpgradeContext.Provider value={{ upgradeHref: 'https://github.com/maomada/KubeAtlas/blob/main/docs/in-cluster.md' }}>
         <PolicySection data={null} error={unsupported} />
-      </RadarUpgradeContext.Provider>,
+      </KubeAtlasUpgradeContext.Provider>,
     )
-    expect(html).toContain('href="https://radarhq.io/docs/configuration/in-cluster"')
+    expect(html).toContain('href="https://github.com/maomada/KubeAtlas/blob/main/docs/in-cluster.md"')
     expect(html).toContain('查看升级方法')
   })
 

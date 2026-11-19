@@ -113,7 +113,7 @@ browser-bound, one-use state transaction and the fixed configured callback.
 | `GET /api/hub/clusters` | `{clusters,serverTime}` with active organization directory entries filtered to membership scope |
 | `POST /api/hub/clusters` | Active organization owner: cluster input → one-time `{cluster,token}` |
 | `PUT /api/hub/clusters/{id}` | Active organization owner: cluster input with unchanged ID |
-| `POST /api/hub/clusters/{id}/rotate` | `{}` → one-time replacement token; revoked/transferred clusters return 409 and require fresh pairing |
+| `POST /api/hub/clusters/{id}/rotate` | `{}` → one-time replacement token; revoked clusters return 409 and require fresh pairing |
 | `POST /api/hub/clusters/{id}/revoke` | `{}` → 204 |
 | `POST /api/hub/clusters/{id}/transfer` | Platform owner: `{organizationId}` → `{cluster}` |
 | `GET /api/hub/groups` | `{groups:[...]}`; organization cluster-directory groups, not Kubernetes role groups |
@@ -133,14 +133,19 @@ always names explicit cluster IDs. New members see their organization's
 clusters; only migrated `LegacyRestricted` memberships keep old explicit scope.
 Role changes and removals revoke affected PATs and cancel applicable local
 Portal requests. Platform-user status changes are separate from membership
-role changes. The configured recovery membership is exposed with public ID
-`local` and cannot be changed or removed through organization member routes.
+role changes. The configured recovery account is excluded from organization
+member lists and counts and cannot be changed or removed through those routes.
 
 Agent rotation/revocation is persisted **before** disconnecting the old session
 and invalidating in-progress authentication. A failed persistence operation does
-neither. Rotation is available only while the cluster token is active. Revoked or
-transferred clusters cannot be restored by rotation; approve and claim a fresh
-enrollment to pair again. IDs are never deleted or reused.
+neither. Rotation is available only while the cluster token is active. Revoked
+clusters cannot be restored by rotation; approve and claim a fresh enrollment to
+pair again. Organization transfer preserves the existing Agent token and
+revocation state, then disconnects the old tunnel and cancels tracked requests.
+An active Agent automatically reconnects under the target organization's scope
+without pairing or configuration changes. Original-organization explicit scopes
+and affected MCP credentials are revoked. Already revoked clusters remain
+revoked. IDs are never deleted or reused.
 
 ## Agent enrollment and bootstrap API
 

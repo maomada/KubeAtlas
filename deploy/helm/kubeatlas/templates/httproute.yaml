@@ -5,9 +5,9 @@
 {{- if not .Values.httpRoute.parentRefs -}}
 {{- fail "httpRoute.enabled=true requires at least one httpRoute.parentRefs entry (the Gateway to attach to)." -}}
 {{- end -}}
-{{- $fullName := include "radar.fullname" . -}}
+{{- $fullName := include "kubeatlas.fullname" . -}}
 {{- $svcPort := .Values.service.port -}}
-{{- $labels := mergeOverwrite (include "radar.labels" . | fromYaml) .Values.httpRoute.labels -}}
+{{- $labels := mergeOverwrite (include "kubeatlas.labels" . | fromYaml) .Values.httpRoute.labels -}}
 apiVersion: {{ .Values.httpRoute.apiVersion }}
 kind: HTTPRoute
 metadata:

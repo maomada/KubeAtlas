@@ -155,7 +155,7 @@ func ParseArgoOperationError(msg string) ParsedFailure {
 }
 
 // WithoutLocalRemediation drops a structured remediation that acts on the
-// cluster Radar is connected to. For an Application deploying elsewhere the
+// cluster KubeAtlas is connected to. For an Application deploying elsewhere the
 // fix belongs on the destination cluster, so it returns the next step to
 // state instead.
 func WithoutLocalRemediation(p ParsedFailure) (ParsedFailure, string) {

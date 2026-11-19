@@ -166,7 +166,7 @@ func TestFlattenVeleroResultReportsTruncation(t *testing.T) {
 }
 
 // Go's default client follows redirects anywhere, including to another host.
-// Radar does not always run where the cluster runs, so a storage location's URL
+// KubeAtlas does not always run where the cluster runs, so a storage location's URL
 // is a way to point this process at a host the caller never named. Object
 // storage answers a pre-signed GET directly; a redirect is not something to
 // honour, and the scheme check alone does not stop one.
@@ -301,7 +301,7 @@ func TestVeleroRunMessagesRoutesEachFailureToItsOwnAnswer(t *testing.T) {
 	}
 
 	// The controller's half of the exchange: Velero fills status.downloadURL in
-	// on the object Radar just created, so the fake answers every get with a
+	// on the object KubeAtlas just created, so the fake answers every get with a
 	// ready one.
 	answerWith := func(t *testing.T, url string) *dynamicfake.FakeDynamicClient {
 		t.Helper()

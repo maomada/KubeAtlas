@@ -131,7 +131,7 @@ export function ConnectionProvider({ children }: { children: ReactNode }) {
   // auto-retry stands down even if errorType flips to a non-auth value.
   const serverOwnsRecoveryRef = useRef(false)
   // Whether the QueryClient already held data when this provider mounted. A host
-  // can share one client across cluster-scoped RadarApp mounts (see RadarApp's
+  // can share one client across cluster-scoped KubeAtlasApp mounts (see KubeAtlasApp's
   // `queryClient` prop); that client may carry another cluster's data under
   // identical keys, so a warm-at-mount cache must be fully refreshed on first
   // connect. A cold cache (standalone, or a per-cluster remount) takes the cheap

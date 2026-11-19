@@ -1,7 +1,7 @@
 // Slot-based injection of a resource-level "Investigate" action, and of the
 // consent card's trust copy.
 //
-// Lets an embedding host (e.g. Radar Hub) inject an "Investigate with AI" button
+// Lets an embedding host (e.g. KubeAtlas Hub) inject an "Investigate with AI" button
 // into every resource detail action bar — without forking WorkloadView or the
 // shared ResourceActionsBar. The host returns whatever node should render in
 // the action bar's right-aligned universal-actions area, given the resource

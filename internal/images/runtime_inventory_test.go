@@ -110,7 +110,7 @@ func (credKeychain) Resolve(authn.Resource) (authn.Authenticator, error) { retur
 // "rv1"), so ids read "<ns>/<secret>@rv1".
 func fakeInventory(f *fakeLookup) *RuntimeInventory {
 	return newRuntimeInventory(f.lookup, func(c credential, _ name.Reference) (authn.Keychain, string, bool) {
-		if c.secret != "" && !c.radar {
+		if c.secret != "" && !c.kubeatlas {
 			f.mu.Lock()
 			c.identity = f.versions[c.namespace+"/"+c.secret]
 			f.mu.Unlock()
@@ -313,7 +313,7 @@ func TestInventory_TriesEachSecretOnItsOwnAndPastNotFound(t *testing.T) {
 	}
 }
 
-func TestInventory_RadarCredentialsOnlyWhenAllowed(t *testing.T) {
+func TestInventory_KubeAtlasCredentialsOnlyWhenAllowed(t *testing.T) {
 	ref := refKey(t, phpDigest)
 	newLookup := func() *fakeLookup {
 		return &fakeLookup{
@@ -325,11 +325,11 @@ func TestInventory_RadarCredentialsOnlyWhenAllowed(t *testing.T) {
 
 	f := newLookup()
 	if got := fakeInventory(f).Inventory(context.Background(), src, InventoryOptions{}); got.Images[0].Status != StatusAuthRequired {
-		t.Fatalf("with auth on, Radar's own credentials stay out: %+v after %v", got.Images[0], f.seenCopy())
+		t.Fatalf("with auth on, KubeAtlas's own credentials stay out: %+v after %v", got.Images[0], f.seenCopy())
 	}
 	f = newLookup()
-	if got := fakeInventory(f).Inventory(context.Background(), src, InventoryOptions{RadarCredentials: true}); got.Images[0].Status != StatusOK {
-		t.Fatalf("locally, Radar's credentials are the user's: %+v after %v", got.Images[0], f.seenCopy())
+	if got := fakeInventory(f).Inventory(context.Background(), src, InventoryOptions{KubeAtlasCredentials: true}); got.Images[0].Status != StatusOK {
+		t.Fatalf("locally, KubeAtlas's credentials are the user's: %+v after %v", got.Images[0], f.seenCopy())
 	}
 }
 
@@ -823,7 +823,7 @@ func TestInventory_ManySecretsStillTryAnonymously(t *testing.T) {
 	for _, s := range []string{"s1", "s2", "s3", "s4", "s5"} {
 		f.errs[ref+"|shop/"+s+"@rv1"] = unauthorized()
 	}
-	got := fakeInventory(f).Inventory(context.Background(), src, InventoryOptions{RadarCredentials: true})
+	got := fakeInventory(f).Inventory(context.Background(), src, InventoryOptions{KubeAtlasCredentials: true})
 	if got.Images[0].Status != StatusOK || !strings.Contains(strings.Join(f.seenCopy(), ";"), " anonymous") {
 		t.Fatalf("a public image must still be tried anonymously: %+v after %v", got.Images[0], f.seenCopy())
 	}

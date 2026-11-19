@@ -13,8 +13,8 @@ import (
 )
 
 // claudeAgent drives Claude Code. In safeguarded mode, --tools "" disables all
-// built-in tools and --allowedTools restricts MCP usage to Radar. Full-local
-// deliberately omits those constraints and merges Radar into the user's setup.
+// built-in tools and --allowedTools restricts MCP usage to KubeAtlas. Full-local
+// deliberately omits those constraints and merges KubeAtlas into the user's setup.
 type claudeAgent struct{ bin string }
 
 func (a *claudeAgent) Name() string { return "claude" }
@@ -48,11 +48,11 @@ func (a *claudeAgent) command(ctx context.Context, s turnSpec) (*exec.Cmd, func(
 			"--allowedTools",
 		)
 		for _, t := range investigation.ReadOnlyTools {
-			args = append(args, "mcp__radar__"+t)
+			args = append(args, "mcp__kubeatlas__"+t)
 		}
 		if s.apply {
 			for _, t := range investigation.WriteTools {
-				args = append(args, "mcp__radar__"+t)
+				args = append(args, "mcp__kubeatlas__"+t)
 			}
 		}
 		args = append(args, "--permission-mode", "acceptEdits")

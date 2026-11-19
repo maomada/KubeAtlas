@@ -93,7 +93,7 @@ export function useEventSource(
     const url = `${getApiBase()}/events/stream${params.toString() ? `?${params}` : ''}`
 
     // Mirror the fetch credentials mode: 'include' sets withCredentials so
-    // cookies flow cross-origin (embedded in Radar Hub); 'omit' turns them
+    // cookies flow cross-origin (embedded in KubeAtlas Hub); 'omit' turns them
     // off (pure-bearer auth). Default same-origin standalone behaves as
     // before.
     const es = new EventSource(url, { withCredentials: getCredentialsMode() === 'include' })

@@ -38,12 +38,12 @@ tests:
           path: spec.template.spec.containers[0].env
           content:
             name: KUBEATLAS_OPERATOR_SETTINGS_FILE
-            value: /etc/radar/operator/settings.json
+            value: /etc/kubeatlas/operator/settings.json
       - contains:
           path: spec.template.spec.containers[0].volumeMounts
           content:
             name: operator-settings
-            mountPath: /etc/radar/operator
+            mountPath: /etc/kubeatlas/operator
             readOnly: true
       - isNotEmpty:
           path: spec.template.metadata.annotations["checksum/operator-settings"]

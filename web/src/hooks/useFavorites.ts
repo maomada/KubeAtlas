@@ -1,3 +1,4 @@
+import { readProductStorage } from '@maomada/k8s-ui/utils/legacy-brand'
 import { useState, useCallback, useEffect } from 'react'
 import { loadPreferences, persistPreferences } from '../api/preferences'
 
@@ -7,11 +8,11 @@ export interface PinnedKind {
   group: string      // API group, e.g. "" for core, "source.toolkit.fluxcd.io" for Flux
 }
 
-const STORAGE_KEY = 'radar-pinned-kinds'
+const STORAGE_KEY = 'kubeatlas-pinned-kinds'
 
 function loadPinned(): PinnedKind[] {
   try {
-    const raw = localStorage.getItem(STORAGE_KEY)
+    const raw = readProductStorage(localStorage, STORAGE_KEY)
     if (raw) return JSON.parse(raw)
   } catch {
     // ignore parse errors

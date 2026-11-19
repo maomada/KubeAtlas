@@ -52,7 +52,7 @@ describe("coverage already summarized by the assessment", () => {
       renderToStaticMarkup(
         <InvestigationEvidencePane
           projection={projection}
-          story={{ summary, report: "Analysis [[radar:evidence=0]]" }}
+          story={{ summary, report: "Analysis [[kubeatlas:evidence=0]]" }}
           summarizedLimits={summarizedLimits}
           collecting={false}
           animateGroupIds={new Set()}
@@ -104,7 +104,7 @@ function tool(
     summary: JSON.stringify({ namespace: "shop", name: "api" }),
     result: JSON.stringify(result),
     isError: false,
-    radarEvidence: true,
+    kubeatlasEvidence: true,
     ...patch,
   };
 }

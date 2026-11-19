@@ -1,26 +1,26 @@
-{{- if and (include "radar.userTokenMode" . | eq "true") (not .Values.cloud.enabled) }}
-{{- fail "auth.kubernetesCredentials=user-token requires cloud.enabled=true: the user's token reaches Radar only through the Radar Cloud tunnel" }}
+{{- if and (include "kubeatlas.userTokenMode" . | eq "true") (not .Values.cloud.enabled) }}
+{{- fail "auth.kubernetesCredentials=user-token requires cloud.enabled=true: the user's token reaches KubeAtlas only through the KubeAtlas Cloud tunnel" }}
 {{- end }}
-{{- if and (include "radar.userTokenMode" . | eq "true") (or .Values.cloud.insecureSkipVerify (hasPrefix "ws://" (toString .Values.cloud.url)) (and (include "radar.cloudEnrollmentMode" . | eq "true") (hasPrefix "http://" (toString .Values.cloud.hubURL)))) }}
+{{- if and (include "kubeatlas.userTokenMode" . | eq "true") (or .Values.cloud.insecureSkipVerify (hasPrefix "ws://" (toString .Values.cloud.url)) (and (include "kubeatlas.cloudEnrollmentMode" . | eq "true") (hasPrefix "http://" (toString .Values.cloud.hubURL)))) }}
 {{- fail "auth.kubernetesCredentials=user-token needs a verified tunnel: people's tokens travel over it, so cloud.insecureSkipVerify must be false, cloud.url must be wss:// and cloud.hubURL https://. Give the control plane a certificate the cluster trusts." }}
 {{- end }}
-{{- if and (include "radar.userTokenMode" . | eq "true") .Values.cloud.defaultRbac.create }}
-{{- fail "auth.kubernetesCredentials=user-token requires cloud.defaultRbac.create=false: the Hub-role bindings (radar:owner/member/viewer) would grant cluster access to any token whose IdP groups include one of those names. People's access comes from your own RBAC in this mode." }}
+{{- if and (include "kubeatlas.userTokenMode" . | eq "true") .Values.cloud.defaultRbac.create }}
+{{- fail "auth.kubernetesCredentials=user-token requires cloud.defaultRbac.create=false: the Hub-role bindings (kubeatlas:owner/member/viewer) would grant cluster access to any token whose IdP groups include one of those names. People's access comes from your own RBAC in this mode." }}
 {{- end }}
 {{- /* A pinned image older than the mode would ignore it and keep impersonating,
        while this chart drops the impersonate grant: every call would 403.
        Only release-style tags are checked; others can't be compared. */}}
 {{- $tag := toString .Values.image.tag }}
-{{- if and (include "radar.userTokenMode" . | eq "true") (regexMatch "^v?[0-9]+\\.[0-9]+\\.[0-9]+" $tag) (semverCompare "<1.18.0-0" $tag) }}
-{{- fail (printf "auth.kubernetesCredentials=user-token requires Radar 1.18.0 or later, but image.tag pins %s. Unset image.tag to use the chart's version, or pin 1.18.0 or later." $tag) }}
+{{- if and (include "kubeatlas.userTokenMode" . | eq "true") (regexMatch "^v?[0-9]+\\.[0-9]+\\.[0-9]+" $tag) (semverCompare "<1.18.0-0" $tag) }}
+{{- fail (printf "auth.kubernetesCredentials=user-token requires KubeAtlas 1.18.0 or later, but image.tag pins %s. Unset image.tag to use the chart's version, or pin 1.18.0 or later." $tag) }}
 {{- end }}
 {{- if .Values.rbac.create -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "radar.fullname" . }}
+  name: {{ include "kubeatlas.fullname" . }}
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 # Keep cache-backed resource rules aligned with ResourcePermissions in
 # internal/k8s/capabilities.go and the README's "Supported Resources" table.
 rules:
@@ -195,7 +195,7 @@ rules:
   {{- if .Values.rbac.viewNodeRuntime }}
   # Kubelet runtime evidence (opt-in): upgrade-impact checks inspect kubelet
   # metrics and effective configuration through the Node proxy. In no-auth
-  # mode this makes node-level details visible to anyone who can reach Radar.
+  # mode this makes node-level details visible to anyone who can reach KubeAtlas.
   - apiGroups: [""]
     resources:
       - nodes/proxy
@@ -210,7 +210,7 @@ rules:
     verbs: ["get"]
   {{- end }}
 
-  {{- if and .Values.rbac.podExec (include "radar.userTokenMode" . | eq "false") }}
+  {{- if and .Values.rbac.podExec (include "kubeatlas.userTokenMode" . | eq "false") }}
   # Pod exec (opt-in - enables terminal feature)
   - apiGroups: [""]
     resources:
@@ -218,7 +218,7 @@ rules:
     verbs: ["create"]
   {{- end }}
 
-  {{- if and .Values.rbac.portForward (include "radar.userTokenMode" . | eq "false") }}
+  {{- if and .Values.rbac.portForward (include "kubeatlas.userTokenMode" . | eq "false") }}
   # Port forwarding (opt-in - enables port forward feature)
   - apiGroups: [""]
     resources:
@@ -584,7 +584,7 @@ rules:
   {{- end }}
 
   {{- if or (ne .Values.auth.mode "none") .Values.cloud.enabled }}
-  {{- if include "radar.userTokenMode" . | eq "false" }}
+  {{- if include "kubeatlas.userTokenMode" . | eq "false" }}
   # Auth: Impersonation permissions for user-scoped operations.
   # Required under cloud-mode too — the binary forces --auth-mode=proxy there
   # and impersonates Cloud-injected identities to the K8s API.

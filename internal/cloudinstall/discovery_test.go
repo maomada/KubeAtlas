@@ -25,10 +25,10 @@ var (
 	fluxHelmReleaseGVR   = schema.GroupVersionResource{Group: "helm.toolkit.fluxcd.io", Version: "v2", Resource: "helmreleases"}
 )
 
-func radarDeployment(namespace, name, release string, labels, annotations map[string]string) *appsv1.Deployment {
+func kubeatlasDeployment(namespace, name, release string, labels, annotations map[string]string) *appsv1.Deployment {
 	allLabels := map[string]string{
-		"helm.sh/chart":                "radar-1.6.0",
-		"app.kubernetes.io/name":       "radar",
+		"helm.sh/chart":                "kubeatlas-1.6.0",
+		"app.kubernetes.io/name":       "kubeatlas",
 		"app.kubernetes.io/instance":   release,
 		"app.kubernetes.io/managed-by": "Helm",
 	}
@@ -73,10 +73,10 @@ func fakeControllerClient(objects ...runtime.Object) *dynamicfake.FakeDynamicCli
 	)
 }
 
-func TestDiscoverRadarTargetsNativeHelmSelectedTarget(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, map[string]string{
-		"meta.helm.sh/release-name":      "radar",
-		"meta.helm.sh/release-namespace": "radar",
+func TestDiscoverKubeAtlasTargetsNativeHelmSelectedTarget(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, map[string]string{
+		"meta.helm.sh/release-name":      "kubeatlas",
+		"meta.helm.sh/release-namespace": "kubeatlas",
 	})
 	replicas := int32(2)
 	deployment.Spec.Replicas = &replicas
@@ -88,15 +88,15 @@ func TestDiscoverRadarTargetsNativeHelmSelectedTarget(t *testing.T) {
 	deployment.Status.AvailableReplicas = 1
 	kc := kubernetesfake.NewSimpleClientset(deployment)
 
-	result, err := DiscoverRadarTargets(context.Background(), kc, nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kc, nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	if len(result.Selected) != 1 {
 		t.Fatalf("selected targets = %d, want 1: %#v", len(result.Selected), result.Selected)
 	}
 	target := result.Selected[0]
-	if target.Namespace != "radar" || target.DeploymentName != "radar" || target.ReleaseName != "radar" || target.Chart != "radar-1.6.0" {
+	if target.Namespace != "kubeatlas" || target.DeploymentName != "kubeatlas" || target.ReleaseName != "kubeatlas" || target.Chart != "kubeatlas-1.6.0" {
 		t.Fatalf("unexpected target: %#v", target)
 	}
 	if target.Runtime.DesiredReplicas != 2 || target.Runtime.TotalReplicas != 2 || target.Runtime.UpdatedReplicas != 1 || target.Runtime.ReadyReplicas != 1 || target.Runtime.AvailableReplicas != 1 || !target.Runtime.StatusObserved {
@@ -105,7 +105,7 @@ func TestDiscoverRadarTargetsNativeHelmSelectedTarget(t *testing.T) {
 	if target.Ownership.Classification != OwnershipNativeHelm {
 		t.Fatalf("ownership = %q, want %q", target.Ownership.Classification, OwnershipNativeHelm)
 	}
-	if target.Ownership.NativeHelm == nil || target.Ownership.NativeHelm.Name != "radar" || target.Ownership.NativeHelm.Namespace != "radar" {
+	if target.Ownership.NativeHelm == nil || target.Ownership.NativeHelm.Name != "kubeatlas" || target.Ownership.NativeHelm.Namespace != "kubeatlas" {
 		t.Fatalf("native Helm ref = %#v", target.Ownership.NativeHelm)
 	}
 	if !target.Ownership.NativeHelmMatchesTarget {
@@ -113,21 +113,21 @@ func TestDiscoverRadarTargetsNativeHelmSelectedTarget(t *testing.T) {
 	}
 }
 
-func TestDiscoverRadarTargetsMarksSourcedCloudModeUnresolved(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, nil)
+func TestDiscoverKubeAtlasTargetsMarksSourcedCloudModeUnresolved(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{{
-		Name: "radar",
+		Name: "kubeatlas",
 		Env: []corev1.EnvVar{{
 			Name: "KUBEATLAS_CLOUD_MODE",
 			ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{
-				LocalObjectReference: corev1.LocalObjectReference{Name: "radar-config"}, Key: "cloud-mode",
+				LocalObjectReference: corev1.LocalObjectReference{Name: "kubeatlas-config"}, Key: "cloud-mode",
 			}},
 		}},
 	}}
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	runtime := result.Selected[0].Runtime
 	if !runtime.CloudModeConfigured || !runtime.CloudModeUnresolved || !runtime.AlreadyCloud {
@@ -135,19 +135,19 @@ func TestDiscoverRadarTargetsMarksSourcedCloudModeUnresolved(t *testing.T) {
 	}
 }
 
-func TestDiscoverRadarTargetsMarksSourcedCloudIdentityUnresolved(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, nil)
+func TestDiscoverKubeAtlasTargetsMarksSourcedCloudIdentityUnresolved(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{{
-		Name: "radar",
+		Name: "kubeatlas",
 		Env: []corev1.EnvVar{
-			{Name: "KUBEATLAS_CLOUD_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "radar-cloud"}, Key: "url"}}},
-			{Name: "KUBEATLAS_CLOUD_CLUSTER_NAME", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "radar-config"}, Key: "cluster"}}},
+			{Name: "KUBEATLAS_CLOUD_URL", ValueFrom: &corev1.EnvVarSource{SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "kubeatlas-cloud"}, Key: "url"}}},
+			{Name: "KUBEATLAS_CLOUD_CLUSTER_NAME", ValueFrom: &corev1.EnvVarSource{ConfigMapKeyRef: &corev1.ConfigMapKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "kubeatlas-config"}, Key: "cluster"}}},
 		},
 	}}
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	runtime := result.Selected[0].Runtime
 	if !runtime.CloudURLConfigured || !runtime.CloudURLUnresolved || !runtime.ClusterNameConfigured || !runtime.ClusterNameUnresolved {
@@ -155,17 +155,17 @@ func TestDiscoverRadarTargetsMarksSourcedCloudIdentityUnresolved(t *testing.T) {
 	}
 }
 
-func TestDiscoverRadarTargetsNeverRetainsLiteralCloudToken(t *testing.T) {
+func TestDiscoverKubeAtlasTargetsNeverRetainsLiteralCloudToken(t *testing.T) {
 	const token = "rhc_super_secret_literal"
-	deployment := radarDeployment("radar", "radar", "radar", nil, nil)
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{{
-		Name: "radar",
+		Name: "kubeatlas",
 		Args: []string{"--cloud-token", token},
 	}}
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	runtime := result.Selected[0].Runtime
 	if !runtime.CloudTokenConfigured {
@@ -179,18 +179,18 @@ func TestDiscoverRadarTargetsNeverRetainsLiteralCloudToken(t *testing.T) {
 	}
 }
 
-func TestDiscoverRadarTargetsNoHistoryFluxWorkload(t *testing.T) {
-	deployment := radarDeployment("observability", "prod-radar", "prod", map[string]string{
-		"helm.toolkit.fluxcd.io/name":      "radar-prod",
+func TestDiscoverKubeAtlasTargetsNoHistoryFluxWorkload(t *testing.T) {
+	deployment := kubeatlasDeployment("observability", "prod-kubeatlas", "prod", map[string]string{
+		"helm.toolkit.fluxcd.io/name":      "kubeatlas-prod",
 		"helm.toolkit.fluxcd.io/namespace": "flux-system",
 	}, nil)
-	dc := fakeControllerClient(fluxHelmRelease("flux-system", "radar-prod", "prod", "observability", "flux-system"))
+	dc := fakeControllerClient(fluxHelmRelease("flux-system", "kubeatlas-prod", "prod", "observability", "flux-system"))
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{
 		Namespace: "observability", ReleaseName: "prod",
 	})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	if len(result.Selected) != 1 {
 		t.Fatalf("selected targets = %d, want 1", len(result.Selected))
@@ -207,31 +207,31 @@ func TestDiscoverRadarTargetsNoHistoryFluxWorkload(t *testing.T) {
 	}
 }
 
-func TestDiscoverRadarTargetsVerifiesFluxKustomization(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", map[string]string{
+func TestDiscoverKubeAtlasTargetsVerifiesFluxKustomization(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", map[string]string{
 		"kustomize.toolkit.fluxcd.io/name":      "platform",
 		"kustomize.toolkit.fluxcd.io/namespace": "flux-system",
 	}, nil)
 	dc := fakeControllerClient(controllerObject("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "flux-system", "platform"))
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	if got := result.Selected[0].Ownership.Classification; got != OwnershipGitOpsVerified {
 		t.Fatalf("ownership = %q, want %q", got, OwnershipGitOpsVerified)
 	}
 }
 
-func TestDiscoverRadarTargetsVerifiesNamespacedArgoApplication(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, map[string]string{
-		"argocd.argoproj.io/tracking-id": "argocd_radar-app:apps/Deployment:radar/radar",
+func TestDiscoverKubeAtlasTargetsVerifiesNamespacedArgoApplication(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, map[string]string{
+		"argocd.argoproj.io/tracking-id": "argocd_kubeatlas-app:apps/Deployment:kubeatlas/kubeatlas",
 	})
-	dc := fakeControllerClient(controllerObject("argoproj.io/v1alpha1", "Application", "argocd", "radar-app"))
+	dc := fakeControllerClient(controllerObject("argoproj.io/v1alpha1", "Application", "argocd", "kubeatlas-app"))
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	controller := result.Selected[0].Ownership.Controllers[0]
 	if result.Selected[0].Ownership.Classification != OwnershipGitOpsVerified || controller.Ref.Namespace != "argocd" {
@@ -239,15 +239,15 @@ func TestDiscoverRadarTargetsVerifiesNamespacedArgoApplication(t *testing.T) {
 	}
 }
 
-func TestDiscoverRadarTargetsResolvesLegacyArgoApplicationNamespace(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", map[string]string{
-		"argocd.argoproj.io/instance": "radar-app",
+func TestDiscoverKubeAtlasTargetsResolvesLegacyArgoApplicationNamespace(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", map[string]string{
+		"argocd.argoproj.io/instance": "kubeatlas-app",
 	}, nil)
-	dc := fakeControllerClient(controllerObject("argoproj.io/v1alpha1", "Application", "argocd", "radar-app"))
+	dc := fakeControllerClient(controllerObject("argoproj.io/v1alpha1", "Application", "argocd", "kubeatlas-app"))
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	controller := result.Selected[0].Ownership.Controllers[0]
 	if controller.Verification != ControllerVerified || controller.Ref.Namespace != "argocd" || len(controller.Matches) != 1 {
@@ -255,18 +255,18 @@ func TestDiscoverRadarTargetsResolvesLegacyArgoApplicationNamespace(t *testing.T
 	}
 }
 
-func TestDiscoverRadarTargetsAmbiguousLegacyArgoApplication(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", map[string]string{
-		"argocd.argoproj.io/instance": "radar-app",
+func TestDiscoverKubeAtlasTargetsAmbiguousLegacyArgoApplication(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", map[string]string{
+		"argocd.argoproj.io/instance": "kubeatlas-app",
 	}, nil)
 	dc := fakeControllerClient(
-		controllerObject("argoproj.io/v1alpha1", "Application", "argocd-a", "radar-app"),
-		controllerObject("argoproj.io/v1alpha1", "Application", "argocd-b", "radar-app"),
+		controllerObject("argoproj.io/v1alpha1", "Application", "argocd-a", "kubeatlas-app"),
+		controllerObject("argoproj.io/v1alpha1", "Application", "argocd-b", "kubeatlas-app"),
 	)
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	ownership := result.Selected[0].Ownership
 	if ownership.Classification != OwnershipAmbiguous || ownership.Controllers[0].Verification != ControllerAmbiguous {
@@ -274,19 +274,19 @@ func TestDiscoverRadarTargetsAmbiguousLegacyArgoApplication(t *testing.T) {
 	}
 }
 
-func TestDiscoverRadarTargetsGitOpsEvidenceStates(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", map[string]string{
-		"helm.toolkit.fluxcd.io/name":      "radar",
+func TestDiscoverKubeAtlasTargetsGitOpsEvidenceStates(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", map[string]string{
+		"helm.toolkit.fluxcd.io/name":      "kubeatlas",
 		"helm.toolkit.fluxcd.io/namespace": "flux-system",
 	}, map[string]string{
-		"meta.helm.sh/release-name":      "radar",
-		"meta.helm.sh/release-namespace": "radar",
+		"meta.helm.sh/release-name":      "kubeatlas",
+		"meta.helm.sh/release-namespace": "kubeatlas",
 	})
 
 	t.Run("suspected without dynamic client", func(t *testing.T) {
-		result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+		result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 		if err != nil {
-			t.Fatalf("DiscoverRadarTargets: %v", err)
+			t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 		}
 		ownership := result.Selected[0].Ownership
 		if ownership.Classification != OwnershipGitOpsSuspected || ownership.NativeHelm == nil {
@@ -295,9 +295,9 @@ func TestDiscoverRadarTargetsGitOpsEvidenceStates(t *testing.T) {
 	})
 
 	t.Run("stale strong marker", func(t *testing.T) {
-		result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), fakeControllerClient(), DiscoveryOptions{})
+		result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), fakeControllerClient(), DiscoveryOptions{})
 		if err != nil {
-			t.Fatalf("DiscoverRadarTargets: %v", err)
+			t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 		}
 		ownership := result.Selected[0].Ownership
 		if ownership.Classification != OwnershipGitOpsStale || ownership.NativeHelm == nil || ownership.Controllers[0].Verification != ControllerStale {
@@ -310,11 +310,11 @@ func TestDiscoverRadarTargetsGitOpsEvidenceStates(t *testing.T) {
 		dc.PrependReactor("get", "helmreleases", func(action clienttesting.Action) (bool, runtime.Object, error) {
 			return true, nil, apierrors.NewForbidden(schema.GroupResource{
 				Group: "helm.toolkit.fluxcd.io", Resource: "helmreleases",
-			}, "radar", errors.New("denied"))
+			}, "kubeatlas", errors.New("denied"))
 		})
-		result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
+		result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
 		if err != nil {
-			t.Fatalf("DiscoverRadarTargets: %v", err)
+			t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 		}
 		ownership := result.Selected[0].Ownership
 		if ownership.Classification != OwnershipGitOpsUnreadable || ownership.Controllers[0].Verification != ControllerUnreadable || ownership.Controllers[0].Error == "" {
@@ -323,37 +323,37 @@ func TestDiscoverRadarTargetsGitOpsEvidenceStates(t *testing.T) {
 	})
 }
 
-func TestDiscoverRadarTargetsMultipleGitOpsOwnersAreAmbiguous(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", map[string]string{
-		"helm.toolkit.fluxcd.io/name":           "radar-release",
+func TestDiscoverKubeAtlasTargetsMultipleGitOpsOwnersAreAmbiguous(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", map[string]string{
+		"helm.toolkit.fluxcd.io/name":           "kubeatlas-release",
 		"helm.toolkit.fluxcd.io/namespace":      "flux-system",
 		"kustomize.toolkit.fluxcd.io/name":      "platform",
 		"kustomize.toolkit.fluxcd.io/namespace": "flux-system",
 	}, nil)
 	dc := fakeControllerClient(
-		fluxHelmRelease("flux-system", "radar-release", "radar", "radar", "flux-system"),
+		fluxHelmRelease("flux-system", "kubeatlas-release", "kubeatlas", "kubeatlas", "flux-system"),
 		controllerObject("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "flux-system", "platform"),
 	)
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	if got := result.Selected[0].Ownership.Classification; got != OwnershipAmbiguous {
 		t.Fatalf("ownership = %q, want %q", got, OwnershipAmbiguous)
 	}
 }
 
-func TestDiscoverRadarTargetsRejectsUnrelatedFluxHelmRelease(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", map[string]string{
+func TestDiscoverKubeAtlasTargetsRejectsUnrelatedFluxHelmRelease(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", map[string]string{
 		"helm.toolkit.fluxcd.io/name":      "shared-name",
 		"helm.toolkit.fluxcd.io/namespace": "flux-system",
 	}, nil)
 	dc := fakeControllerClient(fluxHelmRelease("flux-system", "shared-name", "other", "other-namespace", "flux-system"))
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	controller := result.Selected[0].Ownership.Controllers[0]
 	if result.Selected[0].Ownership.Classification != OwnershipGitOpsStale || controller.Verification != ControllerStale || controller.Error == "" {
@@ -361,35 +361,35 @@ func TestDiscoverRadarTargetsRejectsUnrelatedFluxHelmRelease(t *testing.T) {
 	}
 }
 
-func TestDiscoverRadarTargetsUsesFluxDefaultReleaseName(t *testing.T) {
-	deployment := radarDeployment("observability", "observability-radar", "observability-radar-prod", map[string]string{
-		"helm.toolkit.fluxcd.io/name":      "radar-prod",
+func TestDiscoverKubeAtlasTargetsUsesFluxDefaultReleaseName(t *testing.T) {
+	deployment := kubeatlasDeployment("observability", "observability-kubeatlas", "observability-kubeatlas-prod", map[string]string{
+		"helm.toolkit.fluxcd.io/name":      "kubeatlas-prod",
 		"helm.toolkit.fluxcd.io/namespace": "flux-system",
 	}, nil)
-	hr := fluxHelmRelease("flux-system", "radar-prod", "", "observability", "")
+	hr := fluxHelmRelease("flux-system", "kubeatlas-prod", "", "observability", "")
 	dc := fakeControllerClient(hr)
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{
-		Namespace: "observability", ReleaseName: "observability-radar-prod",
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), dc, DiscoveryOptions{
+		Namespace: "observability", ReleaseName: "observability-kubeatlas-prod",
 	})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	controller := result.Selected[0].Ownership.Controllers[0]
-	if result.Selected[0].Ownership.Classification != OwnershipGitOpsVerified || controller.ReleaseName != "observability-radar-prod" || controller.StorageNamespace != "flux-system" {
+	if result.Selected[0].Ownership.Classification != OwnershipGitOpsVerified || controller.ReleaseName != "observability-kubeatlas-prod" || controller.StorageNamespace != "flux-system" {
 		t.Fatalf("ownership = %#v", result.Selected[0].Ownership)
 	}
 }
 
-func TestDiscoverRadarTargetsRequiresNativeHelmMetadataToMatchTarget(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, map[string]string{
+func TestDiscoverKubeAtlasTargetsRequiresNativeHelmMetadataToMatchTarget(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, map[string]string{
 		"meta.helm.sh/release-name":      "other",
-		"meta.helm.sh/release-namespace": "radar",
+		"meta.helm.sh/release-namespace": "kubeatlas",
 	})
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	ownership := result.Selected[0].Ownership
 	if ownership.Classification != OwnershipAmbiguous || ownership.NativeHelmMatchesTarget {
@@ -397,24 +397,24 @@ func TestDiscoverRadarTargetsRequiresNativeHelmMetadataToMatchTarget(t *testing.
 	}
 }
 
-func TestDiscoverRadarTargetsClusterWideIsBestEffortAndNeverSelects(t *testing.T) {
+func TestDiscoverKubeAtlasTargetsClusterWideIsBestEffortAndNeverSelects(t *testing.T) {
 	kc := kubernetesfake.NewSimpleClientset(
-		radarDeployment("radar", "radar", "radar", nil, nil),
-		radarDeployment("observability", "prod-radar", "prod", nil, nil),
-		radarDeployment("monitoring", "staging-radar", "staging", nil, nil),
+		kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil),
+		kubeatlasDeployment("observability", "prod-kubeatlas", "prod", nil, nil),
+		kubeatlasDeployment("monitoring", "staging-kubeatlas", "staging", nil, nil),
 		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
-			Namespace: "radar-hub", Name: "radar-hub", Labels: map[string]string{"helm.sh/chart": "radar-hub-0.1.0"},
+			Namespace: "kubeatlas-hub", Name: "kubeatlas-hub", Labels: map[string]string{"helm.sh/chart": "kubeatlas-hub-0.1.0"},
 		}},
 		&appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
 			Namespace: "other", Name: "other", Labels: map[string]string{"helm.sh/chart": "prometheus-1.0.0"},
 		}},
 	)
 
-	result, err := DiscoverRadarTargets(context.Background(), kc, nil, DiscoveryOptions{ClusterWide: true})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kc, nil, DiscoveryOptions{ClusterWide: true})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
-	if len(result.Selected) != 1 || result.Selected[0].DeploymentName != "radar" {
+	if len(result.Selected) != 1 || result.Selected[0].DeploymentName != "kubeatlas" {
 		t.Fatalf("selected = %#v", result.Selected)
 	}
 	if len(result.Namespace) != 1 {
@@ -428,8 +428,8 @@ func TestDiscoverRadarTargetsClusterWideIsBestEffortAndNeverSelects(t *testing.T
 	}
 }
 
-func TestDiscoverRadarTargetsClusterWideForbiddenKeepsSelectedInspection(t *testing.T) {
-	kc := kubernetesfake.NewSimpleClientset(radarDeployment("radar", "radar", "radar", nil, nil))
+func TestDiscoverKubeAtlasTargetsClusterWideForbiddenKeepsSelectedInspection(t *testing.T) {
+	kc := kubernetesfake.NewSimpleClientset(kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil))
 	kc.PrependReactor("list", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
 		list := action.(clienttesting.ListAction)
 		if list.GetNamespace() != metav1.NamespaceAll {
@@ -438,73 +438,73 @@ func TestDiscoverRadarTargetsClusterWideForbiddenKeepsSelectedInspection(t *test
 		return true, nil, apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "deployments"}, "", errors.New("denied"))
 	})
 
-	result, err := DiscoverRadarTargets(context.Background(), kc, nil, DiscoveryOptions{ClusterWide: true})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kc, nil, DiscoveryOptions{ClusterWide: true})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	if len(result.Selected) != 1 || result.ClusterWideError == nil || len(result.ClusterWide) != 0 {
 		t.Fatalf("result = %#v", result)
 	}
 }
 
-func TestDiscoverRadarTargetsSelectedNamespaceForbiddenIsFatal(t *testing.T) {
+func TestDiscoverKubeAtlasTargetsSelectedNamespaceForbiddenIsFatal(t *testing.T) {
 	kc := kubernetesfake.NewSimpleClientset()
 	kc.PrependReactor("list", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
-		return true, nil, apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "deployments"}, "radar", errors.New("denied"))
+		return true, nil, apierrors.NewForbidden(schema.GroupResource{Group: "apps", Resource: "deployments"}, "kubeatlas", errors.New("denied"))
 	})
 
-	_, err := DiscoverRadarTargets(context.Background(), kc, nil, DiscoveryOptions{})
+	_, err := DiscoverKubeAtlasTargets(context.Background(), kc, nil, DiscoveryOptions{})
 	if err == nil {
 		t.Fatal("expected selected namespace lookup failure")
 	}
 }
 
-func TestDiscoverRadarTargetsMissingSelectedNamespaceIsFresh(t *testing.T) {
+func TestDiscoverKubeAtlasTargetsMissingSelectedNamespaceIsFresh(t *testing.T) {
 	kc := kubernetesfake.NewSimpleClientset()
 	kc.PrependReactor("list", "deployments", func(action clienttesting.Action) (bool, runtime.Object, error) {
-		return true, nil, apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, "radar")
+		return true, nil, apierrors.NewNotFound(schema.GroupResource{Group: "apps", Resource: "deployments"}, "kubeatlas")
 	})
 
-	result, err := DiscoverRadarTargets(context.Background(), kc, nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kc, nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	if len(result.Selected) != 0 || len(result.Namespace) != 0 {
 		t.Fatalf("result = %#v", result)
 	}
 }
 
-func TestDiscoverRadarTargetsDoesNotMatchAnotherRelease(t *testing.T) {
-	kc := kubernetesfake.NewSimpleClientset(radarDeployment("radar", "other-radar", "other", nil, nil))
+func TestDiscoverKubeAtlasTargetsDoesNotMatchAnotherRelease(t *testing.T) {
+	kc := kubernetesfake.NewSimpleClientset(kubeatlasDeployment("kubeatlas", "other-kubeatlas", "other", nil, nil))
 
-	result, err := DiscoverRadarTargets(context.Background(), kc, nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kc, nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	if len(result.Selected) != 0 || len(result.Namespace) != 1 {
 		t.Fatalf("result = %#v", result)
 	}
 }
 
-func TestDiscoverRadarTargetsGenericOfficialDeployment(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, nil)
+func TestDiscoverKubeAtlasTargetsGenericOfficialDeployment(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil)
 	deployment.Labels["app.kubernetes.io/managed-by"] = "custom-controller"
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	if got := result.Selected[0].Ownership.Classification; got != OwnershipGeneric {
 		t.Fatalf("ownership = %q, want %q", got, OwnershipGeneric)
 	}
 }
 
-func TestDiscoverRadarTargetsSummarizesLiveRuntime(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, nil)
+func TestDiscoverKubeAtlasTargetsSummarizesLiveRuntime(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil)
 	deployment.Spec.Template.Spec.Containers = []corev1.Container{
 		{Name: "sidecar", Image: "example.com/sidecar:v1"},
 		{
-			Name:  "radar",
+			Name:  "kubeatlas",
 			Image: "ghcr.io/maomada/kubeatlas:1.5.8",
 			Args: []string{
 				"--auth-mode=oidc",
@@ -514,15 +514,15 @@ func TestDiscoverRadarTargetsSummarizesLiveRuntime(t *testing.T) {
 			Env: []corev1.EnvVar{
 				{Name: "KUBEATLAS_CLOUD_MODE", Value: "true"},
 				{Name: "KUBEATLAS_CLOUD_TOKEN", ValueFrom: &corev1.EnvVarSource{
-					SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "radar-cloud-config"}, Key: "token"},
+					SecretKeyRef: &corev1.SecretKeySelector{LocalObjectReference: corev1.LocalObjectReference{Name: "kubeatlas-cloud-config"}, Key: "token"},
 				}},
 			},
 		},
 	}
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	runtime := result.Selected[0].Runtime
 	if runtime.Image != "ghcr.io/maomada/kubeatlas:1.5.8" || runtime.AuthMode != "oidc" {
@@ -531,54 +531,54 @@ func TestDiscoverRadarTargetsSummarizesLiveRuntime(t *testing.T) {
 	if !runtime.CloudModeConfigured || !runtime.CloudMode || runtime.CloudURL != "wss://api.example.test/agent" || !runtime.CloudURLConfigured || runtime.ClusterName != "cluster-id" || !runtime.ClusterNameConfigured || !runtime.CloudTokenConfigured || !runtime.AlreadyCloud {
 		t.Fatalf("cloud runtime = %#v", runtime)
 	}
-	if runtime.CloudTokenSecretName != "radar-cloud-config" || runtime.CloudTokenSecretKey != "token" {
+	if runtime.CloudTokenSecretName != "kubeatlas-cloud-config" || runtime.CloudTokenSecretKey != "token" {
 		t.Fatalf("Cloud token Secret reference = %q/%q", runtime.CloudTokenSecretName, runtime.CloudTokenSecretKey)
 	}
 }
 
-func TestDiscoverRadarTargetsAcceptsUnversionedOfficialChartLabel(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, nil)
-	deployment.Labels["helm.sh/chart"] = "radar"
+func TestDiscoverKubeAtlasTargetsAcceptsUnversionedOfficialChartLabel(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil)
+	deployment.Labels["helm.sh/chart"] = "kubeatlas"
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
-	if len(result.Selected) != 1 || result.Selected[0].Chart != "radar" {
+	if len(result.Selected) != 1 || result.Selected[0].Chart != "kubeatlas" {
 		t.Fatalf("selected = %#v", result.Selected)
 	}
 }
 
-func TestOfficialRadarChartLabel(t *testing.T) {
+func TestOfficialKubeAtlasChartLabel(t *testing.T) {
 	tests := []struct {
 		label string
 		want  bool
 	}{
-		{label: "radar", want: true},
-		{label: "radar-1.8.1", want: true},
-		{label: "radar-1.9.0-rc.1", want: true},
-		{label: "radar-hub-0.1.0", want: false},
-		{label: "radar-custom", want: false},
-		{label: "radar-1.8", want: false},
-		{label: "radar-", want: false},
+		{label: "kubeatlas", want: true},
+		{label: "kubeatlas-1.8.1", want: true},
+		{label: "kubeatlas-1.9.0-rc.1", want: true},
+		{label: "kubeatlas-hub-0.1.0", want: false},
+		{label: "kubeatlas-custom", want: false},
+		{label: "kubeatlas-1.8", want: false},
+		{label: "kubeatlas-", want: false},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.label, func(t *testing.T) {
-			if got := isOfficialRadarChartLabel(tt.label); got != tt.want {
-				t.Fatalf("isOfficialRadarChartLabel(%q) = %t, want %t", tt.label, got, tt.want)
+			if got := isOfficialKubeAtlasChartLabel(tt.label); got != tt.want {
+				t.Fatalf("isOfficialKubeAtlasChartLabel(%q) = %t, want %t", tt.label, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestDiscoverRadarTargetsRuntimeDefaultsToOSS(t *testing.T) {
-	deployment := radarDeployment("radar", "radar", "radar", nil, nil)
-	deployment.Spec.Template.Spec.Containers = []corev1.Container{{Name: "radar", Image: "ghcr.io/maomada/kubeatlas:1.6.0"}}
+func TestDiscoverKubeAtlasTargetsRuntimeDefaultsToOSS(t *testing.T) {
+	deployment := kubeatlasDeployment("kubeatlas", "kubeatlas", "kubeatlas", nil, nil)
+	deployment.Spec.Template.Spec.Containers = []corev1.Container{{Name: "kubeatlas", Image: "ghcr.io/maomada/kubeatlas:1.6.0"}}
 
-	result, err := DiscoverRadarTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
+	result, err := DiscoverKubeAtlasTargets(context.Background(), kubernetesfake.NewSimpleClientset(deployment), nil, DiscoveryOptions{})
 	if err != nil {
-		t.Fatalf("DiscoverRadarTargets: %v", err)
+		t.Fatalf("DiscoverKubeAtlasTargets: %v", err)
 	}
 	runtime := result.Selected[0].Runtime
 	if runtime.AuthMode != "none" || runtime.AlreadyCloud || runtime.Image != "ghcr.io/maomada/kubeatlas:1.6.0" {

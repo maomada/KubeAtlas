@@ -19,7 +19,7 @@ import (
 
 // Argument-name repair for tool calls.
 //
-// Every radar tool is generated with `additionalProperties: false`, so an agent
+// Every kubeatlas tool is generated with `additionalProperties: false`, so an agent
 // that guesses one argument name wrong gets a hard rejection rather than a
 // partial result — and the SDK's message names the properties it did NOT expect
 // without ever saying which ones it does. Agents generally do not retry a schema
@@ -143,7 +143,7 @@ var perToolAliases = map[string]map[string]string{
 		"subject_name": "name",
 	},
 	// The tool takes pods and nothing else, and every caller-facing description
-	// of it — kubectl's `logs POD`, radar's own "pod name" — calls the argument
+	// of it — kubectl's `logs POD`, kubeatlas's own "pod name" — calls the argument
 	// a pod. Observed in the wild: get_pod_logs(pod=…, container=…) rejected
 	// mid-investigation.
 	"get_pod_logs": {
@@ -163,8 +163,8 @@ var perToolAliases = map[string]map[string]string{
 // target. The value of this repair does not justify a schema that varies by
 // cluster.
 //
-// Why this key: radar's own get_resource returns `serviceAccountName` on a pod
-// spec. A caller that reads that value and asks about it is using radar's own
+// Why this key: kubeatlas's own get_resource returns `serviceAccountName` on a pod
+// spec. A caller that reads that value and asks about it is using kubeatlas's own
 // vocabulary; rejecting it sent one investigation to a wrong conclusion after
 // it had already identified the right subject.
 var perToolKindShorthand = map[string]map[string]string{
@@ -290,7 +290,7 @@ func subjectKindOf(args map[string]json.RawMessage) string {
 
 // addTool registers a tool and records its accepted argument names.
 //
-// Use this instead of mcpsdk.AddTool for every radar tool: the registry it
+// Use this instead of mcpsdk.AddTool for every kubeatlas tool: the registry it
 // builds is what lets a failed call report what it should have been called with.
 func addTool[In, Out any](s *mcpsdk.Server, t *mcpsdk.Tool, h mcpsdk.ToolHandlerFor[In, Out]) {
 	addToolWithRegistry(defaultToolParams, s, t, h)
@@ -351,7 +351,7 @@ func structJSONFields(t reflect.Type) (accepted, required []string) {
 // toSnake and toCamel convert between the two spellings of a multi-word
 // argument name.
 //
-// radar publishes snake_case throughout (dry_run, tail_lines,
+// kubeatlas publishes snake_case throughout (dry_run, tail_lines,
 // resource_namespace), matching Anthropic's own agent tooling and kubectl's
 // flags. Most third-party MCP servers publish camelCase, and Kubernetes
 // manifests use it too, so camelCase is a very common agent guess. Repair

@@ -66,15 +66,15 @@ describe('buildGraph lanes', () => {
     }
   })
 
-  // The board must not offer a vantage the deployment cannot use: a Radar
+  // The board must not offer a vantage the deployment cannot use: a KubeAtlas
   // running as a Pod dials from that Pod, never from the operator's machine.
-  it('draws no workstation capsule when Radar runs in the cluster', () => {
-    const t = trace([pod('a', true, '10.0.0.1')], [p({ source: 'radar' })])
+  it('draws no workstation capsule when KubeAtlas runs in the cluster', () => {
+    const t = trace([pod('a', true, '10.0.0.1')], [p({ source: 'kubeatlas' })])
     t.runVantage = 'in-cluster'
     const os = originsFor(t)
-    const g = buildGraph({ trace: t, route: route(), origin: os.find((o) => o.id === 'radar-incluster')!, origins: os })
+    const g = buildGraph({ trace: t, route: route(), origin: os.find((o) => o.id === 'kubeatlas-incluster')!, origins: os })
     expect(g.nodes.find((n) => n.id === 'origin:local')).toBeUndefined()
-    expect(g.nodes.filter((n) => n.isOrigin).map((n) => n.id).sort()).toEqual(['origin:apiserver', 'origin:incluster', 'origin:radar-incluster'])
+    expect(g.nodes.filter((n) => n.isOrigin).map((n) => n.id).sort()).toEqual(['origin:apiserver', 'origin:incluster', 'origin:kubeatlas-incluster'])
   })
 
   it('drops the two-mechanism control-lane note with it', () => {

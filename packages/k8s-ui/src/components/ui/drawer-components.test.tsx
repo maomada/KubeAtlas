@@ -68,7 +68,7 @@ describe('RelatedResourcesSection ownership', () => {
     const html = renderToString(
       <RelatedResourcesSection relationships={{ children: [rs], ownership: { children: { complete: false, notChecked: [{ reason: 'read_error' }] } } }} />,
     )
-    expect(html).toMatch(/<button type="button"[^>]*aria-label="Radar&#x27;s API discovery missed some API groups/)
+    expect(html).toMatch(/<button type="button"[^>]*aria-label="KubeAtlas&#x27;s API discovery missed some API groups/)
   })
 
   it('shows management apart from ownership', () => {
@@ -84,11 +84,11 @@ describe('RelatedResourcesSection ownership', () => {
       <RelatedResourcesSection
         relationships={{
           children: [rs],
-          ownership: { children: { complete: false, notChecked: [{ group: 'apps', kind: 'ControllerRevision', namespace: 'shop', reason: 'radar_kind_not_collected' }, { group: 'discovery.k8s.io', kind: 'EndpointSlice', namespace: 'shop', reason: 'radar_kind_not_collected' }] } },
+          ownership: { children: { complete: false, notChecked: [{ group: 'apps', kind: 'ControllerRevision', namespace: 'shop', reason: 'kubeatlas_kind_not_collected' }, { group: 'discovery.k8s.io', kind: 'EndpointSlice', namespace: 'shop', reason: 'kubeatlas_kind_not_collected' }] } },
         }}
       />,
     )
-    expect(html).toContain('Radar doesn&#x27;t collect ControllerRevision or EndpointSlice objects, so none of those are listed.')
+    expect(html).toContain('KubeAtlas doesn&#x27;t collect ControllerRevision or EndpointSlice objects, so none of those are listed.')
     expect(html).not.toContain('More children than shown')
   })
 
@@ -97,7 +97,7 @@ describe('RelatedResourcesSection ownership', () => {
     expect(html).toContain('More children than shown.')
   })
 
-  it('adds nothing to a complete children list, or one from an older Radar', () => {
+  it('adds nothing to a complete children list, or one from an older KubeAtlas', () => {
     for (const relationships of [{ children: [rs], ownership: { children: { complete: true } } }, { children: [rs] }]) {
       const html = renderToString(<RelatedResourcesSection relationships={relationships} />)
       expect(html).toContain('子资源')
@@ -111,8 +111,8 @@ describe('RelatedResourcesSection ownership', () => {
       [{ primaryOwnerState: 'replaced', ownerRef: rs, children: { complete: true } }, 'ReplicaSet web-7d9f8 was deleted and recreated; this object names the earlier one.'],
       [{ primaryOwnerState: 'unknown', ownerRef: rs, children: { complete: true } }, 'Couldn&#x27;t check ReplicaSet web-7d9f8.'],
       [
-        { primaryOwnerState: 'unknown', ownerRef: { kind: 'Endpoints', namespace: 'shop', name: 'web' }, ownerReason: 'radar_kind_not_collected', children: { complete: true } },
-        'Couldn&#x27;t check Endpoints web (Radar doesn&#x27;t collect it).',
+        { primaryOwnerState: 'unknown', ownerRef: { kind: 'Endpoints', namespace: 'shop', name: 'web' }, ownerReason: 'kubeatlas_kind_not_collected', children: { complete: true } },
+        'Couldn&#x27;t check Endpoints web (KubeAtlas doesn&#x27;t collect it).',
       ],
       [{ primaryOwnerState: 'withheld', children: { complete: true } }, 'Not visible to you.'],
       [{ primaryOwnerState: 'unknown', children: { complete: true } }, 'Couldn&#x27;t check the owner it names.'],
@@ -144,7 +144,7 @@ describe('RelatedResourcesSection ownership', () => {
 
   it('says why owner and children could not be read at all', () => {
     expect(renderToString(<RelatedResourcesSection relationships={{ ownership: { unavailableReason: 'connection_changed', children: { complete: false } } }} />)).toContain(
-      'Owner and children couldn&#x27;t be read: Radar&#x27;s connection changed meanwhile.',
+      'Owner and children couldn&#x27;t be read: KubeAtlas&#x27;s connection changed meanwhile.',
     )
     expect(renderToString(<RelatedResourcesSection relationships={{ ownership: { unavailableReason: 'user_forbidden', children: { complete: false } } }} />)).toContain(
       'your access lets you open this object, but not list its kind here.',
@@ -163,26 +163,26 @@ describe('RelatedResourcesSection ownership', () => {
     expect(loading).toContain('子资源')
     expect(loading).toContain('Couldn&#x27;t check Pod (still loading).')
     const routine = renderToString(
-      <RelatedResourcesSection relationships={{ ownership: { children: { complete: false, notChecked: [{ kind: 'Lease', namespace: 'shop', reason: 'radar_kind_not_collected' }] } } }} />,
+      <RelatedResourcesSection relationships={{ ownership: { children: { complete: false, notChecked: [{ kind: 'Lease', namespace: 'shop', reason: 'kubeatlas_kind_not_collected' }] } } }} />,
     )
     expect(routine).toBe('')
     const leaf = renderToString(
-      <RelatedResourcesSection kind="configmaps" relationships={{ ownership: { children: { complete: false, notChecked: [{ kind: 'Lease', namespace: 'shop', reason: 'radar_kind_not_collected' }] } } }} />,
+      <RelatedResourcesSection kind="configmaps" relationships={{ ownership: { children: { complete: false, notChecked: [{ kind: 'Lease', namespace: 'shop', reason: 'kubeatlas_kind_not_collected' }] } } }} />,
     )
     expect(leaf).toBe('')
     const owner = renderToString(
-      <RelatedResourcesSection kind="services" relationships={{ ownership: { children: { complete: false, notChecked: [{ kind: 'EndpointSlice', namespace: 'shop', reason: 'radar_kind_not_collected' }] } } }} />,
+      <RelatedResourcesSection kind="services" relationships={{ ownership: { children: { complete: false, notChecked: [{ kind: 'EndpointSlice', namespace: 'shop', reason: 'kubeatlas_kind_not_collected' }] } } }} />,
     )
     expect(owner).toContain('子资源')
-    expect(owner).toContain('No children among the kinds Radar checked.')
+    expect(owner).toContain('No children among the kinds KubeAtlas checked.')
     const ownerComplete = renderToString(<RelatedResourcesSection kind="services" relationships={{ ownership: { children: { complete: true } } }} />)
     expect(ownerComplete).toBe('')
     const elsewhere = renderToString(
       <RelatedResourcesSection
-        relationships={{ children: [rs], ownership: { children: { complete: false, notChecked: [{ kind: 'Pod', namespace: 'other', reason: 'radar_namespace_not_collected' }] } } }}
+        relationships={{ children: [rs], ownership: { children: { complete: false, notChecked: [{ kind: 'Pod', namespace: 'other', reason: 'kubeatlas_namespace_not_collected' }] } } }}
       />,
     )
-    expect(elsewhere).toContain('Radar doesn&#x27;t collect every namespace, so children in the others aren&#x27;t listed.')
+    expect(elsewhere).toContain('KubeAtlas doesn&#x27;t collect every namespace, so children in the others aren&#x27;t listed.')
     expect(elsewhere).not.toContain('Couldn&#x27;t check')
   })
 
@@ -194,13 +194,13 @@ describe('RelatedResourcesSection ownership', () => {
     expect(unread).toContain('Couldn&#x27;t read the members its status records (still loading).')
     const noList = renderToString(<RelatedResourcesSection relationships={{ manages: [rs], ownership: { children: { complete: true }, manages: { membership: 'unreadable' } } }} />)
     expect(noList).not.toContain('Couldn&#x27;t read')
-    expect(noList).toContain('Its status has no member list Radar can read now, so these are the resources the topology links to it.')
+    expect(noList).toContain('Its status has no member list KubeAtlas can read now, so these are the resources the topology links to it.')
     const cut = renderToString(
       <RelatedResourcesSection relationships={{ manages: [rs], ownership: { children: { complete: true }, manages: { membership: 'unreadable', truncated: true } } }} />,
     )
     expect(cut).toContain('More members than shown.')
     const none = renderToString(<RelatedResourcesSection relationships={{ ownership: { children: { complete: true }, manages: { membership: 'unreadable' } } }} />)
-    expect(none).toContain('Its status has no member list Radar can read now.')
+    expect(none).toContain('Its status has no member list KubeAtlas can read now.')
     expect(none).not.toContain('these are the resources')
   })
 
@@ -208,14 +208,14 @@ describe('RelatedResourcesSection ownership', () => {
     const html = renderToString(
       <RelatedResourcesSection relationships={{ children: [rs], ownership: { children: { complete: false, notChecked: [{ reason: 'read_error' }] } } }} />,
     )
-    expect(html).toContain('Radar&#x27;s API discovery missed some API groups, so children of their kinds aren&#x27;t listed.')
+    expect(html).toContain('KubeAtlas&#x27;s API discovery missed some API groups, so children of their kinds aren&#x27;t listed.')
     expect(html).not.toContain('Couldn&#x27;t check')
   })
 
   it("says a remote manager's members aren't listed", () => {
     const html = renderToString(<RelatedResourcesSection relationships={{ ownership: { children: { complete: true }, manages: { membership: 'remote' } } }} />)
     expect(html).toContain('Manages')
-    expect(html).toContain("Its destination isn&#x27;t this cluster as far as Radar can tell, so its members aren&#x27;t listed.")
+    expect(html).toContain("Its destination isn&#x27;t this cluster as far as KubeAtlas can tell, so its members aren&#x27;t listed.")
   })
 
   describe('titles managers the way the chip does', () => {
@@ -240,7 +240,7 @@ describe('RelatedResourcesSection ownership', () => {
     it('a note without managers keeps Managed By', () => {
       expect(title({ ownership: { children: { complete: true }, manager: answer('listed', []), managers: { remote: 1 } } })).toBe('Managed By')
     })
-    it('an older Radar without an answer keeps Managed By', () => {
+    it('an older KubeAtlas without an answer keeps Managed By', () => {
       expect(title({ managers: [app] })).toBe('Managed By')
     })
   })
@@ -255,14 +255,14 @@ describe('RelatedResourcesSection ownership', () => {
       <RelatedResourcesSection relationships={{ ownership: { children: { complete: true }, managers: { remote: 1, notChecked: [{ group: 'argoproj.io', kind: 'Application', reason: 'kind_sync_pending' }] } } }} />,
     )
     expect(html).toContain('Managed By')
-    expect(html).toContain('1 manager lists it for a cluster Radar can&#x27;t confirm is this one; couldn&#x27;t check Application (still loading).')
+    expect(html).toContain('1 manager lists it for a cluster KubeAtlas can&#x27;t confirm is this one; couldn&#x27;t check Application (still loading).')
   })
 
   it("keeps it to the hint beside a listed manager", () => {
     const html = renderToString(
       <RelatedResourcesSection relationships={{ managers: [app], ownership: { children: { complete: true }, managers: { remote: 1 } } }} onNavigate={() => {}} />,
     )
-    expect(html).toMatch(/aria-label="[^"]*1 manager lists it for a cluster Radar can&#x27;t confirm is this one/)
+    expect(html).toMatch(/aria-label="[^"]*1 manager lists it for a cluster KubeAtlas can&#x27;t confirm is this one/)
     expect(html).not.toMatch(/>1 Manager lists it/)
   })
 
@@ -271,9 +271,9 @@ describe('RelatedResourcesSection ownership', () => {
     const html = renderToString(<RelatedResourcesSection relationships={{ children: [rs], ownership: { children: { complete: true }, managers: { notChecked: gaps } } }} onNavigate={() => {}} />)
     expect(html).not.toContain('Managed By')
     const listed = renderToString(<RelatedResourcesSection relationships={{ managers: [app], ownership: { children: { complete: true }, managers: { notChecked: gaps } } }} onNavigate={() => {}} />)
-    expect(listed).toContain('Radar couldn&#x27;t search Application objects, so those managers aren&#x27;t checked.')
-    expect(listed).toContain('Radar couldn&#x27;t search Kustomization objects, so those managers aren&#x27;t checked.')
-    expect(listed).not.toContain('Radar couldn&#x27;t search Application objects, so those managers aren&#x27;t checked.</div><div>Radar couldn&#x27;t search Application')
+    expect(listed).toContain('KubeAtlas couldn&#x27;t search Application objects, so those managers aren&#x27;t checked.')
+    expect(listed).toContain('KubeAtlas couldn&#x27;t search Kustomization objects, so those managers aren&#x27;t checked.')
+    expect(listed).not.toContain('KubeAtlas couldn&#x27;t search Application objects, so those managers aren&#x27;t checked.</div><div>KubeAtlas couldn&#x27;t search Application')
   })
 
   it('keeps an unreadable list to the hint, since it may name any resource', () => {

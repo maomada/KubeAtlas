@@ -24,7 +24,7 @@ const HelmReleaseSecretType corev1.SecretType = "helm.sh/release.v1"
 
 // DropManagedFields is a SharedInformer transform that reduces memory usage
 // by removing managedFields and heavy annotations from cached objects.
-// This is the union of transforms used by both Radar and skyhook-connector.
+// This is the union of transforms used by both KubeAtlas and skyhook-connector.
 //
 // It also replaces each value of a Helm release Secret (see
 // IsHelmReleaseSecret) with a digest of it. Each value is a full encoded
@@ -113,7 +113,7 @@ func WithoutHelmReleaseValues(secret *corev1.Secret) *corev1.Secret {
 	return &out
 }
 
-const helmReleaseDigestPrefix = "radar-cache-digest:sha256:"
+const helmReleaseDigestPrefix = "kubeatlas-cache-digest:sha256:"
 
 func helmReleaseValueDigest(value []byte) []byte {
 	sum := sha256.Sum256(value)
@@ -152,7 +152,7 @@ func isHelmReleaseValueDigest(value []byte) bool {
 //   - spec.versions[].schema — the OpenAPI v3 schema. On operator-heavy
 //     clusters a single CRD's schema is 50-100KB (ArgoCD, cert-manager,
 //     Istio) and 100+ CRDs easily produce a multi-MB list response.
-//     Radar doesn't render CRD schemas; a future "inspect CRD schema"
+//     KubeAtlas doesn't render CRD schemas; a future "inspect CRD schema"
 //     feature should fetch fresh from the API server.
 //   - spec.conversion — webhook config. Not rendered.
 //
@@ -190,7 +190,7 @@ func DropUnstructuredManagedFields(obj any) (any, error) {
 		}
 
 		// spec.conversion holds the webhook clientConfig (caBundle + URL)
-		// for conversion webhooks. Not rendered by Radar.
+		// for conversion webhooks. Not rendered by KubeAtlas.
 		unstructured.RemoveNestedField(u.Object, "spec", "conversion")
 	}
 

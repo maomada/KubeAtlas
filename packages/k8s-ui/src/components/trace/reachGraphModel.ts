@@ -531,7 +531,7 @@ const SHORT_MECH: Record<string, string> = {
   local: 'your machine, your network',
   apiserver: 'relayed by Kubernetes',
   incluster: 'a throwaway Pod, in-cluster',
-  'radar-incluster': 'Radar’s own Pod',
+  'kubeatlas-incluster': 'KubeAtlas’s own Pod',
   caller: 'your app’s own Pod',
   external: 'from the public internet',
 }
@@ -845,7 +845,7 @@ export function buildGraph({ trace, route, origin, origins, stale, running }: Bu
                   o.unavailable ??
                   (traceInClusterRunnable(trace)
                     ? undefined
-                    : 'No path on this resource has a request Radar can send from inside the cluster.'),
+                    : 'No path on this resource has a request KubeAtlas can send from inside the cluster.'),
               }
             : undefined,
         tone: 'info',
@@ -1426,7 +1426,7 @@ export function buildGraph({ trace, route, origin, origins, stale, running }: Bu
     return { x: x0, y: y0, w: x1 - x0, h: y1 - y0, label, help, color, dashed }
   }
   // The two-mechanism wording only holds while the workstation vantage is drawn.
-  // With Radar running as a Pod there is no dial from a machine outside, and
+  // With KubeAtlas running as a Pod there is no dial from a machine outside, and
   // contrasting it with the relay described a lane with one member as if it had
   // two.
   const laptopDrawn = nodes.some((n) => n.id === 'origin:local')

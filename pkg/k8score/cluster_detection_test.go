@@ -24,7 +24,7 @@ func TestDetectNodePlatform(t *testing.T) {
 		{name: "GKE provider", node: nodeWithProviderID("gke://project/zone/node"), want: "gke"},
 		{name: "AWS provider", node: nodeWithProviderID("aws:///zone/node"), want: "eks"},
 		{name: "Azure provider", node: nodeWithProviderID("azure:///subscriptions/node"), want: "aks"},
-		{name: "kind provider", node: nodeWithProviderID("kind://docker/radar/control-plane"), want: "kind"},
+		{name: "kind provider", node: nodeWithProviderID("kind://docker/kubeatlas/control-plane"), want: "kind"},
 		{name: "Nutanix provider", node: nodeWithProviderID("nutanix://99d71c41-e100-4474-601b-5dd604becea6"), want: "nutanix"},
 		{name: "GKE label", node: nodeWithLabels(map[string]string{"cloud.google.com/gke-nodepool": "default"}), want: "gke"},
 		{name: "EKS nodegroup label", node: nodeWithLabels(map[string]string{"eks.amazonaws.com/nodegroup": "workers"}), want: "eks"},

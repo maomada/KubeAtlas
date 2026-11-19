@@ -1,8 +1,8 @@
 import { useCallback, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import type { TrafficSourcesResponse, TrafficFlowsResponse, TrafficRecordsResponse } from '../types'
-import { fetchJSON as fetchApiJSON, useRadarFeature } from './client'
-import { shouldRetryRadarQuery } from './radarFeatures'
+import { fetchJSON as fetchApiJSON, useKubeAtlasFeature } from './client'
+import { shouldRetryKubeAtlasQuery } from './kubeatlasFeatures'
 import { apiUrl, getAuthHeaders, getCredentialsMode } from './config'
 import { readErrorBody } from './httpErrors'
 
@@ -75,7 +75,7 @@ export function useTrafficAvailable(enabled = true): boolean {
   // A workload focus needs the server to name each pod's workload, which
   // shipped with flow records. An older KubeAtlas leaves Hubble pods unnamed, so
   // the focus it opened would match nothing.
-  const resolvesWorkloads = useRadarFeature('trafficRecords').support === 'supported'
+  const resolvesWorkloads = useKubeAtlasFeature('trafficRecords').support === 'supported'
   const { data } = useQuery<TrafficSourcesResponse>({
     queryKey: ['traffic-sources', 'recent'],
     queryFn: () => fetchJSON('/traffic/sources?recent=1'),
@@ -188,7 +188,7 @@ export interface UseTrafficRecordsOptions extends TrafficScope {
 // otherwise a quiet edge on a busy cluster would show nothing.
 export function useTrafficRecords(options: UseTrafficRecordsOptions) {
   const { enabled = true } = options
-  const { guard, gatedKey, support } = useRadarFeature('trafficRecords')
+  const { guard, gatedKey, support } = useKubeAtlasFeature('trafficRecords')
   // Serialized when the selection changes (each refresh), not on every
   // render: a merged edge can carry tens of thousands of pairs.
   const match = useMemo(() => (options.match ? encodedMatch(options.match) : null), [options.match])
@@ -217,7 +217,7 @@ export function useTrafficRecords(options: UseTrafficRecordsOptions) {
     // the sidebar, which the list filters out anyway). Not across another
     // selection, window or scope: those records would show under this one.
     placeholderData: (prev, prevQuery) => (prevQuery?.meta?.view === view ? prev : undefined),
-    retry: shouldRetryRadarQuery,
+    retry: shouldRetryKubeAtlasQuery,
   })
   return { ...query, tooLarge, supported: support !== 'unsupported' }
 }

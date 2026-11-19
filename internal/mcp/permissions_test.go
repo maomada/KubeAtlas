@@ -234,7 +234,7 @@ func TestClampToNamespacePinLeavesAuthorizationToTheCaller(t *testing.T) {
 
 func TestScopedNamespacesForUserHonorsNamespacePin(t *testing.T) {
 	// Prometheus and Kubecost answer cluster-wide regardless of informer
-	// scoping, so a --namespace-pinned Radar must clamp here or cost tools
+	// scoping, so a --namespace-pinned KubeAtlas must clamp here or cost tools
 	// report spend for namespaces the operator pinned away.
 	original, originalTarget := k8s.ForceNamespaceScope, k8s.GetNamespaceScopeTarget()
 	t.Cleanup(func() {

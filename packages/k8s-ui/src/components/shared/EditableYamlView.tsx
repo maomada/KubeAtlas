@@ -1,3 +1,4 @@
+import { readProductStorage, removeProductStorage } from '../../utils/legacy-brand'
 import { useState, useCallback, useEffect, useLayoutEffect, useRef, useMemo } from 'react'
 import {
   Copy,
@@ -118,7 +119,7 @@ function formatSaveError(error: string): { summary: string; details?: string } {
 // blocked by browser security policies. Draft persistence is best-effort.
 function safeSessionGet(key: string): string | null {
   try {
-    return sessionStorage.getItem(key)
+    return readProductStorage(sessionStorage, key)
   } catch {
     return null
   }
@@ -132,7 +133,7 @@ function safeSessionSet(key: string, value: string): void {
 }
 function safeSessionRemove(key: string): void {
   try {
-    sessionStorage.removeItem(key)
+    removeProductStorage(sessionStorage, key)
   } catch {
     /* best-effort */
   }

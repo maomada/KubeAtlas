@@ -1,22 +1,22 @@
 # Minimal Prometheus scraping CNPG instances (:9187) and poolers (:9127).
 #
 # Named `prometheus-server` in `monitoring`, port 9090, labelled
-# app.kubernetes.io/name=prometheus: that is an exact entry in Radar's
+# app.kubernetes.io/name=prometheus: that is an exact entry in KubeAtlas's
 # well-known discovery list (pkg/prom/discovery.go WellKnownLocations), so
-# Radar finds it with a targeted Service GET — no cluster-wide Service list, no
+# KubeAtlas finds it with a targeted Service GET — no cluster-wide Service list, no
 # scoring heuristics — and port-forwards to it when running off-cluster.
 #
 # Pod-role service discovery, no prometheus-operator: the Cluster sets
 # enablePodMonitor: false, and a PodMonitor CR would need CRDs this demo does not
-# install. Every target keeps `namespace` and `pod`, which is what Radar's
+# install. Every target keeps `namespace` and `pod`, which is what KubeAtlas's
 # per-resource queries join on, plus `cluster` from the cnpg.io/cluster label.
 #
 # The kubelet job reaches each node's kubelet through the apiserver's node
 # proxy (/api/v1/nodes/<node>/proxy/metrics), so it needs `get nodes/proxy`
 # and no kubelet port or certificate from inside kind. It keeps only
-# kubelet_volume_stats_*, the series Radar's volume usage reads. kind's default
+# kubelet_volume_stats_*, the series KubeAtlas's volume usage reads. kind's default
 # local-path class provisions hostPath volumes, which kubelet does not measure:
-# those claims have no series, and Radar says so rather than showing 0.
+# those claims have no series, and KubeAtlas says so rather than showing 0.
 apiVersion: v1
 kind: Namespace
 metadata:

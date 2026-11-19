@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { CNPGDiskReading, CNPGMetricIsolation, Grant } from '@maomada/k8s-ui'
-import { fetchJSON, useRadarFeature } from './client'
+import { fetchJSON, useKubeAtlasFeature } from './client'
 
 export type CNPGPVCRole = 'PG_DATA' | 'PG_WAL' | 'PG_TABLESPACE'
 
@@ -102,7 +102,7 @@ export interface CNPGClusterStorageResponse {
 // /api/cnpg/clusters/{ns}/{name}/storage — the Cluster's claims, their
 // measured use and each instance's WAL, every source with its own coverage.
 export function useCNPGClusterStorage(namespace: string, name: string, enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   return useQuery<CNPGClusterStorageResponse>({
     queryKey: ['cnpg', 'storage', namespace, name, ...gatedKey],
     queryFn: ({ signal }) => guard(() => fetchJSON<CNPGClusterStorageResponse>(`/cnpg/clusters/${encodeURIComponent(namespace)}/${encodeURIComponent(name)}/storage`, signal)),
@@ -124,7 +124,7 @@ export interface CNPGFleetDiskResponse {
 // /api/cnpg/disk — the fullest measured volume of each visible Cluster. Read
 // with the same namespace set as the workspace so the two join row for row.
 export function useCNPGFleetDisk(namespaces: string[], enabled = true) {
-  const { guard, gatedKey } = useRadarFeature('cnpgWorkspace')
+  const { guard, gatedKey } = useKubeAtlasFeature('cnpgWorkspace')
   const ns = [...namespaces].sort().join(',')
   return useQuery<CNPGFleetDiskResponse>({
     queryKey: ['cnpg', 'disk', ns, ...gatedKey],

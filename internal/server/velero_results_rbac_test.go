@@ -10,7 +10,7 @@ import (
 // Per-user authorization on POST /api/velero/{kind}/{ns}/{name}/messages.
 //
 // Invisible without auth, like the other gates here: canRead returns true for
-// every tuple when there is no authenticated user, so a local Radar runs this
+// every tuple when there is no authenticated user, so a local KubeAtlas runs this
 // endpoint with authorization switched off entirely. These tests are the only
 // place the gate executes against a real user.
 //

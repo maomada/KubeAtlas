@@ -331,9 +331,9 @@ func healthProvenanceTopo() *topology.Topology {
 }
 
 // TestBuild_ControllerHealthWinsOverTopology: Argo persisted Healthy for a
-// Deployment Radar's topology sees as unhealthy. The controller's verdict is
+// Deployment KubeAtlas's topology sees as unhealthy. The controller's verdict is
 // the node's health AND its tone — the graph must not paint the node red
-// on Radar's opinion while the chip says Healthy.
+// on KubeAtlas's opinion while the chip says Healthy.
 func TestBuild_ControllerHealthWinsOverTopology(t *testing.T) {
 	app := healthProvenanceApp(map[string]any{
 		"health": map[string]any{"status": "Healthy"},
@@ -355,10 +355,10 @@ func TestBuild_ControllerHealthWinsOverTopology(t *testing.T) {
 	}
 }
 
-// TestBuild_AppTreeModeFillsTopologyKindsFromRadar: Argo 3 default — no
-// per-resource health in the CR. Topology kinds get Radar's status,
-// labelled radar; kinds Radar doesn't model stay without health.
-func TestBuild_AppTreeModeFillsTopologyKindsFromRadar(t *testing.T) {
+// TestBuild_AppTreeModeFillsTopologyKindsFromKubeAtlas: Argo 3 default — no
+// per-resource health in the CR. Topology kinds get KubeAtlas's status,
+// labelled kubeatlas; kinds KubeAtlas doesn't model stay without health.
+func TestBuild_AppTreeModeFillsTopologyKindsFromKubeAtlas(t *testing.T) {
 	app := healthProvenanceApp(map[string]any{
 		"health":               map[string]any{"status": "Degraded"},
 		"resourceHealthSource": "appTree",
@@ -376,15 +376,15 @@ func TestBuild_AppTreeModeFillsTopologyKindsFromRadar(t *testing.T) {
 		t.Errorf("HealthMode = %q, want appTree", tree.HealthMode)
 	}
 	dep := findNode(t, tree, ResourceRef{Group: "apps", Kind: "Deployment", Namespace: "prod", Name: "billing"})
-	if dep.Health != "Degraded" || dep.HealthSource != HealthSourceRadar || dep.TopologyStatus != "unhealthy" {
-		t.Errorf("Deployment = health %q source %q tone %q, want Degraded/radar/unhealthy", dep.Health, dep.HealthSource, dep.TopologyStatus)
+	if dep.Health != "Degraded" || dep.HealthSource != HealthSourceKubeAtlas || dep.TopologyStatus != "unhealthy" {
+		t.Errorf("Deployment = health %q source %q tone %q, want Degraded/kubeatlas/unhealthy", dep.Health, dep.HealthSource, dep.TopologyStatus)
 	}
 	css := findNode(t, tree, ResourceRef{Group: "external-secrets.io", Kind: "ClusterSecretStore", Name: "platform"})
 	if css.Health != "" || css.HealthSource != "" || css.TopologyStatus != "unknown" {
 		t.Errorf("ClusterSecretStore = health %q source %q tone %q, want no health (nothing fabricated)", css.Health, css.HealthSource, css.TopologyStatus)
 	}
 	if tree.Summary.Degraded != 1 {
-		t.Errorf("Summary.Degraded = %d, want 1 (the Radar-derived Deployment)", tree.Summary.Degraded)
+		t.Errorf("Summary.Degraded = %d, want 1 (the KubeAtlas-derived Deployment)", tree.Summary.Degraded)
 	}
 }
 

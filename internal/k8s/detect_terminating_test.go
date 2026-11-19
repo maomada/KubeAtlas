@@ -26,19 +26,19 @@ func TestDynamicTerminatingProblems(t *testing.T) {
 	now := time.Now().UTC().Truncate(time.Second)
 	widget := func(name, ns string, duration time.Duration) *unstructured.Unstructured {
 		obj := &unstructured.Unstructured{}
-		obj.SetAPIVersion("gaps.radar.test/v1")
+		obj.SetAPIVersion("gaps.kubeatlas.test/v1")
 		obj.SetKind("Widget")
 		obj.SetName(name)
 		obj.SetNamespace(ns)
 		obj.SetUID(types.UID(name))
 		obj.SetCreationTimestamp(metav1.NewTime(now.Add(-24 * time.Hour)))
 		obj.SetDeletionTimestamp(&metav1.Time{Time: now.Add(-duration)})
-		obj.SetFinalizers([]string{metav1.FinalizerDeleteDependents, "gaps.radar.test/cleanup", "elsewhere.test/cleanup"})
+		obj.SetFinalizers([]string{metav1.FinalizerDeleteDependents, "gaps.kubeatlas.test/cleanup", "elsewhere.test/cleanup"})
 		return obj
 	}
-	namespaced := schema.GroupVersionResource{Group: "gaps.radar.test", Version: "v1", Resource: "widgets"}
-	cluster := schema.GroupVersionResource{Group: "gaps.radar.test", Version: "v1", Resource: "clusterwidgets"}
-	cold := schema.GroupVersionResource{Group: "gaps.radar.test", Version: "v1", Resource: "coldwidgets"}
+	namespaced := schema.GroupVersionResource{Group: "gaps.kubeatlas.test", Version: "v1", Resource: "widgets"}
+	cluster := schema.GroupVersionResource{Group: "gaps.kubeatlas.test", Version: "v1", Resource: "clusterwidgets"}
+	cold := schema.GroupVersionResource{Group: "gaps.kubeatlas.test", Version: "v1", Resource: "coldwidgets"}
 	normal := widget("normal", "visible", 2*time.Hour)
 	normal.SetDeletionTimestamp(nil)
 	global := widget("global", "", 2*time.Hour)
@@ -84,8 +84,8 @@ func TestDynamicTerminatingProblems(t *testing.T) {
 		if _, ok := det.TerminatingRemovals[metav1.FinalizerDeleteDependents]; ok || len(det.TerminatingRemovals) != 2 {
 			t.Fatalf("removals=%v", det.TerminatingRemovals)
 		}
-		removal := det.TerminatingRemovals["gaps.radar.test/cleanup"]
-		if removal.Finalizer != "gaps.radar.test/cleanup" || !strings.HasPrefix(removal.Kubectl, "kubectl patch 'widgets.gaps.radar.test'") || !strings.HasSuffix(removal.Kubectl, "--dry-run=server") {
+		removal := det.TerminatingRemovals["gaps.kubeatlas.test/cleanup"]
+		if removal.Finalizer != "gaps.kubeatlas.test/cleanup" || !strings.HasPrefix(removal.Kubectl, "kubectl patch 'widgets.gaps.kubeatlas.test'") || !strings.HasSuffix(removal.Kubectl, "--dry-run=server") {
 			t.Fatalf("%+v", removal)
 		}
 		var input struct {
@@ -115,12 +115,12 @@ func TestDynamicTerminatingProblems(t *testing.T) {
 		if got := updated.GetFinalizers(); len(got) != 2 || got[0] != metav1.FinalizerDeleteDependents || got[1] != "elsewhere.test/cleanup" {
 			t.Fatalf("removed wrong finalizer: %v", got)
 		}
-		original.SetFinalizers([]string{"gaps.radar.test/cleanup", metav1.FinalizerDeleteDependents, "elsewhere.test/cleanup"})
+		original.SetFinalizers([]string{"gaps.kubeatlas.test/cleanup", metav1.FinalizerDeleteDependents, "elsewhere.test/cleanup"})
 		reordered, _ := json.Marshal(original)
 		if _, err := patch.Apply(reordered); err == nil {
 			t.Fatal("must reject reordered finalizers")
 		}
-		original.SetFinalizers([]string{metav1.FinalizerDeleteDependents, "gaps.radar.test/cleanup", "elsewhere.test/cleanup"})
+		original.SetFinalizers([]string{metav1.FinalizerDeleteDependents, "gaps.kubeatlas.test/cleanup", "elsewhere.test/cleanup"})
 		original.SetUID("replacement")
 		replaced, _ := json.Marshal(original)
 		if _, err := patch.Apply(replaced); err == nil {
@@ -218,7 +218,7 @@ func TestIsProtectionFinalizer(t *testing.T) {
 }
 
 func TestDynamicTerminationUsesEachNamespacesSync(t *testing.T) {
-	gvr := schema.GroupVersionResource{Group: "partial.radar.test", Version: "v1", Resource: "widgets"}
+	gvr := schema.GroupVersionResource{Group: "partial.kubeatlas.test", Version: "v1", Resource: "widgets"}
 	now := time.Now()
 	widget := &unstructured.Unstructured{}
 	widget.SetAPIVersion(gvr.Group + "/" + gvr.Version)
@@ -228,7 +228,7 @@ func TestDynamicTerminationUsesEachNamespacesSync(t *testing.T) {
 	widget.SetUID("partial-widget")
 	widget.SetCreationTimestamp(metav1.NewTime(now.Add(-24 * time.Hour)))
 	widget.SetDeletionTimestamp(&metav1.Time{Time: now.Add(-2 * time.Hour)})
-	widget.SetFinalizers([]string{"partial.radar.test/cleanup"})
+	widget.SetFinalizers([]string{"partial.kubeatlas.test/cleanup"})
 	client := dynamicfake.NewSimpleDynamicClientWithCustomListKinds(runtime.NewScheme(), map[schema.GroupVersionResource]string{gvr: "WidgetList"}, widget)
 	var stalledLists atomic.Int32
 	client.PrependReactor("list", "widgets", func(action k8stesting.Action) (bool, runtime.Object, error) {

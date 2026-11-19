@@ -24,7 +24,7 @@ import type { GitOpsIssue, GitOpsResourceTree, GitOpsTreeNode, GitOpsTreeRef, He
 import { displayKind } from '../../../types'
 import { healthToSeverity, SEVERITY_DOT } from '../../../utils/badge-colors'
 import { formatCompactAge } from '../../../utils/format'
-import { radarHealthNote } from '../health-provenance'
+import { kubeatlasHealthNote } from '../health-provenance'
 import { servicePortsTooltip, type ServicePortEntry } from '../../topology/K8sResourceNode'
 import { getTopologyIcon } from '../../../utils/resource-icons'
 import { Tooltip } from '../../ui/Tooltip'
@@ -549,10 +549,10 @@ const GitOpsResourceNode = memo(function GitOpsResourceNode({ data }: NodeProps<
   const KindIcon = getTopologyIcon(kind)
   const cause = nodeCause(node, data.cause)
   // Only declared resources can carry the controller's verdict, so only
-  // there does "this one is Radar's" mean anything. Generated children
-  // (ReplicaSets, Pods) are always Radar's read; marking each would be
+  // there does "this one is KubeAtlas's" mean anything. Generated children
+  // (ReplicaSets, Pods) are always KubeAtlas's read; marking each would be
   // noise.
-  const radarNote = node.role === 'declared' ? radarHealthNote(node) : ''
+  const kubeatlasNote = node.role === 'declared' ? kubeatlasHealthNote(node) : ''
   // A Service's subtitle names its first port and counts the rest, so without a
   // hover the ones behind "+1 more" can't be reached from the graph at all. Same
   // affordance the topology graph's Service node carries, same renderer. Stood
@@ -650,10 +650,10 @@ const GitOpsResourceNode = memo(function GitOpsResourceNode({ data }: NodeProps<
                   {chip.label ? `${chip.label}: ` : ''}{chip.value}
                 </span>
               ))}
-              {radarNote && (
-                <Tooltip content={radarNote} delay={200}>
+              {kubeatlasNote && (
+                <Tooltip content={kubeatlasNote} delay={200}>
                   <span className="rounded border border-theme-border bg-theme-elevated/70 px-1.5 py-0.5 text-[10px] leading-3 text-theme-text-tertiary">
-                    Found by Radar
+                    Found by KubeAtlas
                   </span>
                 </Tooltip>
               )}

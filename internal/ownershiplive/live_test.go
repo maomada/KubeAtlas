@@ -27,7 +27,7 @@ import (
 	"github.com/maomada/KubeAtlas/pkg/resourceid"
 )
 
-// typedKinds are the kinds Radar's typed cache holds.
+// typedKinds are the kinds KubeAtlas's typed cache holds.
 var typedKinds = func() map[resourceid.GroupKind]resourceid.Builtin {
 	out := map[resourceid.GroupKind]resourceid.Builtin{}
 	for _, kl := range k8score.AllKindListers() {
@@ -118,7 +118,7 @@ func TestLiveParity(t *testing.T) {
 		}
 		gvr := schema.GroupVersionResource{Group: r.Group, Version: r.Version, Resource: r.Name}
 		// A kind the API can't list, such as one whose conversion webhook is
-		// down, would never load; leave it out, as Radar can't collect it.
+		// down, would never load; leave it out, as KubeAtlas can't collect it.
 		if _, err := dyn.Resource(gvr).List(context.Background(), metav1.ListOptions{Limit: 1}); err != nil {
 			t.Logf("not watching %v: listing it fails: %v", gvr, err)
 			continue
@@ -218,7 +218,7 @@ func TestLiveParity(t *testing.T) {
 			}
 		}
 		for _, k := range kinds {
-			absent := resourceid.Ref{Group: k.gk.Group, Kind: k.gk.Kind, Name: "radar-parity-certainly-absent"}
+			absent := resourceid.Ref{Group: k.gk.Group, Kind: k.gk.Kind, Name: "kubeatlas-parity-certainly-absent"}
 			if served[k.gvr.GroupResource()].Namespaced {
 				absent.Namespace = "default"
 			}

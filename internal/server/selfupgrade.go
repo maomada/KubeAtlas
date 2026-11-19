@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/maomada/KubeAtlas/pkg/compat"
 	"log"
 	"net/http"
 	"os"
@@ -24,7 +25,7 @@ import (
 	"github.com/maomada/KubeAtlas/internal/logsafe"
 )
 
-var radarImageTagPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
+var kubeatlasImageTagPattern = regexp.MustCompile(`^[A-Za-z0-9_][A-Za-z0-9_.-]{0,63}$`)
 
 // selfUpgradePatchOptions returns the PatchOptions used by the self-upgrade
 // endpoint. The patch is Server-Side Apply using Helm's field manager and the
@@ -41,12 +42,12 @@ func selfUpgradePatchOptions() metav1.PatchOptions {
 	return metav1.PatchOptions{FieldManager: "helm", Force: &force}
 }
 
-// handleSelfUpgrade patches this Radar Deployment's container image so the
-// pod restarts on a new version. Called by Radar Cloud's upgrade-agent endpoint
+// handleSelfUpgrade patches this KubeAtlas Deployment's container image so the
+// pod restarts on a new version. Called by KubeAtlas Cloud's upgrade-agent endpoint
 // over the yamux tunnel — no user terminal or cloud credentials needed.
 //
 // Security: Cloud callers must be explicitly attributed organization owners,
-// and Hub's requested target must be an allowlisted Radar tag. The live Radar
+// and Hub's requested target must be an allowlisted KubeAtlas tag. The live KubeAtlas
 // container's repository is preserved so private mirrors are never silently
 // replaced with GHCR. The apply body is the Helm release's rendered Deployment
 // with only that image swapped, so the SA must also be able to read Helm release
@@ -62,7 +63,7 @@ func (s *Server) handleSelfUpgrade(w http.ResponseWriter, r *http.Request) {
 	if role != auth.RoleOwner {
 		log.Printf("[self-upgrade] Cloud role %q denied agent upgrade: %q", role, r.URL.Path)
 		s.writeErrorCode(w, http.StatusForbidden, auth.ErrCodeCloudRoleInsufficient,
-			"Your Radar Cloud role ("+role.String()+") cannot upgrade the Radar agent. Requires owner.")
+			"Your KubeAtlas Cloud role ("+role.String()+") cannot upgrade the KubeAtlas agent. Requires owner.")
 		return
 	}
 
@@ -95,7 +96,7 @@ func (s *Server) handleSelfUpgrade(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	tag := strings.TrimPrefix(req.Image, allowedRepo)
-	if !isValidRadarImageTag(tag) {
+	if !isValidKubeAtlasImageTag(tag) {
 		s.writeError(w, http.StatusBadRequest, "invalid image tag")
 		return
 	}
@@ -129,8 +130,8 @@ func (s *Server) handleSelfUpgrade(w http.ResponseWriter, r *http.Request) {
 	}
 	targetImage, err := selfUpgradeImage(deploy.Spec.Template.Spec.Containers, tag)
 	if err != nil {
-		log.Printf("[self-upgrade] resolve current Radar image failed: ns=%s deploy=%s tag=%s err=%v", ns, deployment, logsafe.Sanitize(tag), err)
-		s.writeError(w, http.StatusServiceUnavailable, "current Radar image is not available")
+		log.Printf("[self-upgrade] resolve current KubeAtlas image failed: ns=%s deploy=%s tag=%s err=%v", ns, deployment, logsafe.Sanitize(tag), err)
+		s.writeError(w, http.StatusServiceUnavailable, "current KubeAtlas image is not available")
 		return
 	}
 
@@ -173,26 +174,26 @@ func (s *Server) handleSelfUpgrade(w http.ResponseWriter, r *http.Request) {
 	s.writeJSON(w, map[string]string{"status": "upgrade initiated", "image": targetImage})
 }
 
-func isValidRadarImageTag(tag string) bool {
-	return radarImageTagPattern.MatchString(tag)
+func isValidKubeAtlasImageTag(tag string) bool {
+	return kubeatlasImageTagPattern.MatchString(tag)
 }
 
-// selfUpgradeImage keeps the repository already configured on the live Radar
-// container and changes only its tag. Hub still supplies an allowlisted Radar
+// selfUpgradeImage keeps the repository already configured on the live KubeAtlas
+// container and changes only its tag. Hub still supplies an allowlisted KubeAtlas
 // tag, but installations using a private mirror must not be silently switched
 // back to GHCR by the convenience action.
 func selfUpgradeImage(containers []corev1.Container, tag string) (string, error) {
 	for _, container := range containers {
-		if container.Name != "radar" {
+		if container.Name != "kubeatlas" && container.Name != compat.LegacyContainerName {
 			continue
 		}
 		repository := imageutil.Repository(container.Image)
 		if repository == "" {
-			return "", errors.New("Radar container image repository is empty")
+			return "", errors.New("KubeAtlas container image repository is empty")
 		}
 		return repository + ":" + tag, nil
 	}
-	return "", errors.New("Radar container not found")
+	return "", errors.New("KubeAtlas container not found")
 }
 
 func selfUpgradeApplyPatch(namespace, releaseName, deployment, image string) ([]byte, error) {
@@ -227,8 +228,10 @@ func buildSelfUpgradeApplyPatch(manifest, namespace, releaseName, deployment, im
 			continue
 		}
 
-		if err := setContainerImage(obj, "radar", image); err != nil {
-			return nil, err
+		if err := setContainerImage(obj, "kubeatlas", image); err != nil {
+			if legacyErr := setContainerImage(obj, compat.LegacyContainerName, image); legacyErr != nil {
+				return nil, err
+			}
 		}
 
 		metadata["namespace"] = namespace

@@ -10,8 +10,8 @@ import { treeNodeFilterRole, treeNodeHealth } from './tree/tree-helpers'
 // GitOpsGraphFilterRail — the left-side filter sidebar that pairs with
 // <GitOpsTreeGraph> in the Topology tab of the GitOps detail page.
 //
-// Originally inline in OSS radar/web/src/components/gitops/GitOpsView.tsx;
-// extracted here so Radar Hub's fleet detail page can mount the same rail
+// Originally inline in OSS kubeatlas/web/src/components/gitops/GitOpsView.tsx;
+// extracted here so KubeAtlas Hub's fleet detail page can mount the same rail
 // next to the same graph. Stateless — caller owns preset/search/filter
 // state and passes it down; click handlers thread back through callbacks.
 //

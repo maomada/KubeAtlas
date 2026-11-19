@@ -28,7 +28,7 @@ func changeManager(t *testing.T, s *countingSession, w ownershiptest.World, mana
 	s.now = later
 }
 
-// A caller who may read no manager of a kind learns nothing of how Radar
+// A caller who may read no manager of a kind learns nothing of how KubeAtlas
 // collects it.
 func TestRecordingManagersHideGapsOfKindsTheCallerCantRead(t *testing.T) {
 	w := ownershiptest.Fixture()
@@ -70,7 +70,7 @@ func TestRecordingManagersAnswerSearched(t *testing.T) {
 		{"no gaps", ownership.RecordingManagersRead{}, true},
 		{"its namespace loading", ownership.RecordingManagersRead{Gaps: []ownership.Gap{gap("alpha", readreason.KindSyncPending)}}, false},
 		{"another namespace loading", ownership.RecordingManagersRead{Gaps: []ownership.Gap{gap("beta", readreason.KindSyncPending)}}, true},
-		{"the namespaces Radar doesn't collect", ownership.RecordingManagersRead{Gaps: []ownership.Gap{gap("", readreason.RadarNamespaceNotCollected)}}, true},
+		{"the namespaces KubeAtlas doesn't collect", ownership.RecordingManagersRead{Gaps: []ownership.Gap{gap("", readreason.KubeAtlasNamespaceNotCollected)}}, true},
 		{"the whole kind loading", ownership.RecordingManagersRead{Gaps: []ownership.Gap{gap("", readreason.KindSyncPending)}}, false},
 		{"another kind loading", ownership.RecordingManagersRead{Gaps: []ownership.Gap{{Kind: ownership.FluxKustomization, Reason: readreason.KindSyncPending}}}, true},
 	} {

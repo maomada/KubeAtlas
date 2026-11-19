@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import { RadarApp } from './RadarApp'
+import { KubeAtlasApp } from './KubeAtlasApp'
 import { openExternal } from './utils/navigation'
 import { installWailsClipboardShim } from './utils/wails-clipboard'
 import './index.css'
@@ -41,13 +41,13 @@ window.addEventListener('mouseup', (e: MouseEvent) => {
 
 // Standalone KubeAtlas binary: same-origin API, router at root. It owns the whole
 // tab, so it opts into per-view document.title. Library consumers (e.g.
-// radar-hub-web) render <RadarApp apiBase="..." basename="..." /> WITHOUT this
+// kubeatlas-hub-web) render <KubeAtlasApp apiBase="..." basename="..." /> WITHOUT this
 // flag, keeping their own tab title.
 const runtimeConfig = window.__KUBEATLAS_RUNTIME_CONFIG__
 
-ReactDOM.createRoot(document.getElementById('radar')!).render(
+ReactDOM.createRoot(document.getElementById('kubeatlas')!).render(
   <React.StrictMode>
-    <RadarApp
+    <KubeAtlasApp
       apiBase={runtimeConfig?.apiBase}
       basename={runtimeConfig?.basePath}
       manageDocumentTitle

@@ -76,12 +76,12 @@ func (f *Filter) Match(activation map[string]any) (bool, error) {
 // a new env per request would dominate evaluation cost on repeat
 // queries.
 //
-// MIRROR: radar-hub/internal/server/celcheck.go declares the same
+// MIRROR: kubeatlas-hub/internal/server/celcheck.go declares the same
 // bindings (celObjectEnv) for fail-fast pre-validation at the hub.
 // If you change the binding list, update both places in lockstep —
 // there's no shared package and no compile-time check that catches
 // drift. Hub's TestCelEnv_ObjectDeclarations exercises the bindings
-// from its side; radar's filter_test.go does the same here.
+// from its side; kubeatlas's filter_test.go does the same here.
 var envObject = mustNewEnv(
 	cel.Variable("object", cel.DynType),
 	cel.Variable("kind", cel.StringType),

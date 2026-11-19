@@ -425,7 +425,7 @@ func TestRuntimeOutageIsLoggedWithTheDatabaseAndItsRecovery(t *testing.T) {
 		}
 	}
 	waitForLog(t, out, "[timeline] lost the connection to PostgreSQL (host=127.0.0.1 port=")
-	for _, want := range []string{"database=radar user=radar", "Checking again in 100ms", "connection refused"} {
+	for _, want := range []string{"database=kubeatlas user=kubeatlas", "Checking again in 100ms", "connection refused"} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("outage line lacks %q:\n%s", want, out.String())
 		}
@@ -534,11 +534,11 @@ func TestStartupOutageLogNamesTheDatabaseAndTheNextAttempt(t *testing.T) {
 	ResetStore()
 	t.Cleanup(ResetStore)
 	out := captureLog(t)
-	if err := InitStore(StoreConfig{Type: StoreTypePostgres, DSN: "postgres://radar:s3cret-pw@127.0.0.1:1/radar?connect_timeout=2"}); err != nil {
+	if err := InitStore(StoreConfig{Type: StoreTypePostgres, DSN: "postgres://kubeatlas:s3cret-pw@127.0.0.1:1/kubeatlas?connect_timeout=2"}); err != nil {
 		t.Fatalf("InitStore: %v", err)
 	}
 	line := out.String()
-	for _, want := range []string{"[timeline] can't connect to PostgreSQL (host=127.0.0.1 port=1 database=radar user=radar)", "Retrying in 5s", "connect"} {
+	for _, want := range []string{"[timeline] can't connect to PostgreSQL (host=127.0.0.1 port=1 database=kubeatlas user=kubeatlas)", "Retrying in 5s", "connect"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("startup log lacks %q:\n%s", want, line)
 		}

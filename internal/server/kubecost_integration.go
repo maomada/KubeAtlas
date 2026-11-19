@@ -36,7 +36,7 @@ func (s *Server) handleApplyCostSource(w http.ResponseWriter, r *http.Request) {
 	if !s.requireConfigEditable(w, r) {
 		return
 	}
-	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify Radar configuration") {
+	if !s.requireCloudRole(w, r, auth.RoleOwner, "modify KubeAtlas configuration") {
 		return
 	}
 	if s.localConnections != nil && s.configManagement() == "local" {

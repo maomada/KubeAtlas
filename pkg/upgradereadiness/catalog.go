@@ -12,7 +12,7 @@ var (
 		URL:   "https://kubernetes.io/docs/reference/using-api/deprecation-guide/",
 	}}
 	cloudMetricsPermissionReference = Reference{
-		Title: "Radar Cloud metrics permission",
+		Title: "KubeAtlas Cloud metrics permission",
 		URL:   "https://github.com/maomada/KubeAtlas/blob/main/docs/authentication.md#cloud-mode-helm-bindings",
 	}
 	gitRepoReferences = []Reference{

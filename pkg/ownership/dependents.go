@@ -44,7 +44,7 @@ type DependentCandidatesRead struct {
 	// empty namespace the scope named (namespace_required), which is never
 	// taken to mean all namespaces. One with no Namespace on a namespaced kind
 	// is that kind everywhere the search looked, or, with
-	// radar_namespace_not_collected, the namespaces of that kind Radar doesn't
+	// kubeatlas_namespace_not_collected, the namespaces of that kind KubeAtlas doesn't
 	// collect.
 	Gaps []Gap
 }

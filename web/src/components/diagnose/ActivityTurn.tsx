@@ -149,7 +149,7 @@ export type TimelineItem =
       summary?: string;
       result?: string;
       evidenceRef?: string;
-      radarEvidence?: boolean;
+      kubeatlasEvidence?: boolean;
       truncated?: boolean;
       // Tri-state by design: false = producer confirmed success, true = producer
       // confirmed failure, undefined = this replay cannot establish the outcome.
@@ -476,7 +476,7 @@ export function Timeline({
   const failedServers = (startup?.mcpServers ?? []).filter(
     (server) => server.status !== "connected",
   );
-  const radarServer = failedServers.find((server) => server.name === "radar");
+  const kubeatlasServer = failedServers.find((server) => server.name === "kubeatlas");
   const allDefiniteFailures = failedServers.every((server) =>
     mcpStatusIsFailure(server.status),
   );
@@ -504,8 +504,8 @@ export function Timeline({
                 {mcpStatusPhrase(server.status)}
               </span>
             ))}
-            {radarServer
-              ? mcpStatusIsFailure(radarServer.status)
+            {kubeatlasServer
+              ? mcpStatusIsFailure(kubeatlasServer.status)
                 ? ` at startup. ${agentLabel} had no KubeAtlas tools this turn, so it could not use KubeAtlas's cluster evidence.`
                 : ` at startup. KubeAtlas's tools may not have been available to ${agentLabel} this turn.`
               : allDefiniteFailures

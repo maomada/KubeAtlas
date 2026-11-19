@@ -123,7 +123,7 @@ charts are not identity-checked.
 
 See [integration settings when switching clusters](configuration.md#integration-settings-when-switching-clusters).
 In-cluster KubeAtlas has no context switcher; provision its backend and credentials for
-that installation. This guide does not certify every legacy upstream Radar Cloud transport or
+that installation. This guide does not certify every legacy upstream cloud transport or
 managed-service authentication path.
 
 ## Which workloads benefit?
@@ -329,7 +329,7 @@ Helm installations can provision the assertion with
 and optionally `traffic.beylaJobSelector`. Defaults do not assert trust. Use a
 chart and KubeAtlas image version containing this feature together; adding these
 arguments to an older image is not supported. In-cluster KubeAtlas users and
-legacy upstream Radar Cloud viewers should ask their installation's operator to update Helm/GitOps settings,
+legacy upstream cloud viewers should ask their installation's operator to update Helm/GitOps settings,
 not try to configure a private scope for their own charts.
 
 Desktop supports automatic matching, but its separate flag parser and Settings
@@ -526,7 +526,7 @@ Kubernetes authorization gate.
 
 ## Live-tested coverage
 
-This section preserves inherited upstream Radar evidence for provenance; it is not acceptance of this KubeAtlas revision.
+This section preserves inherited upstream project evidence for provenance; it is not acceptance of this KubeAtlas revision.
 
 Validation on 2026-09-13–14 exercised the following combinations. A successful
 query endpoint does not imply that every chart has the necessary metrics.
@@ -561,7 +561,7 @@ Non-HTTP workers and Redis correctly retain resource panels when available,
 without an empty HTTP chart grid. A network-only VictoriaMetrics store correctly
 has no workload observations. Authenticated Mimir rejects missing/wrong
 credentials and a missing required tenant in gateway-level checks, not browser
-tests of Radar's auth error state. A separate unhealthy Mimir store
+tests of KubeAtlas's auth error state. A separate unhealthy Mimir store
 failed real queries despite having Ready Pods; readiness is not query health.
 
 ### Configuration and remaining gaps
@@ -587,13 +587,13 @@ failed real queries despite having Ready Pods; readiness is not query health.
   DaemonSet. Large workloads, HA duplicate populations and adversarial cross-cluster name
   collisions are not live-certified by this matrix. Separate query tests
   cover several identity/duplicate cases; that is not equivalent to a fleet test.
-- These runs used local Radar with Kubernetes port-forward access. They do not
-  certify Radar Cloud transport, managed-service authentication or every in-cluster
+- These runs used local KubeAtlas with Kubernetes port-forward access. They do not
+  certify KubeAtlas Cloud transport, managed-service authentication or every in-cluster
   deployment path. A full browser sweep was not repeated for each backend.
 
 The [repeatable workload demo](../scripts/workload-metrics-demo/README.md) adds
 an isolated kind baseline with Prometheus, Beyla, cAdvisor/KSM, Istio sidecars,
-finite error-producing traffic and assertions on actual Radar chart responses.
+finite error-producing traffic and assertions on actual KubeAtlas chart responses.
 Its checks distinguish resource/HTTP families and include a DaemonSet. The
 unlabeled official Istio sample row records an earlier baseline, not a retroactive
 success; the fresh kind and VM rows exercise the current histogram guard.
@@ -610,5 +610,5 @@ treating backend compatibility as automatic chart availability.
 The [workload metrics demo](../scripts/workload-metrics-demo/README.md) documents
 the isolated fixtures, numerical tests and commands used to check these
 configurations. Screenshots in this guide replay one recorded demo response
-through Radar's UI; they are illustrations, not an additional live-backend test.
-This screenshot provenance is inherited upstream Radar evidence, retained for history; it is not new screenshots or acceptance of this KubeAtlas revision.
+through KubeAtlas's UI; they are illustrations, not an additional live-backend test.
+This screenshot provenance is inherited upstream project evidence, retained for history; it is not new screenshots or acceptance of this KubeAtlas revision.

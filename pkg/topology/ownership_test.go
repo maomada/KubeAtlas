@@ -242,8 +242,8 @@ func TestApplyOwnershipTakesGitOpsLabelMembersWhateverTheirControllers(t *testin
 	}
 }
 
-// An owner reference Radar couldn't resolve, because discovery didn't answer
-// for its group, is named as the object names it, without a namespace Radar
+// An owner reference KubeAtlas couldn't resolve, because discovery didn't answer
+// for its group, is named as the object names it, without a namespace KubeAtlas
 // can't know.
 func TestApplyOwnershipNamesAnOwnerItCouldNotResolve(t *testing.T) {
 	b := ownershiptest.NewBuilder()
@@ -268,8 +268,8 @@ func TestApplyOwnershipSaysWhyAMemberListCouldNotBeRead(t *testing.T) {
 	w.Collection[app.GroupKind()] = ownershiptest.Collection{State: ownershiptest.NotCollected}
 	rel := &Relationships{}
 	ApplyOwnership(rel, ownershipView(t, w, ownership.Unrestricted()), fetched(t, w, app))
-	if m := rel.Ownership.Manages; m == nil || m.Membership != "unreadable" || m.UnavailableReason != string(readreason.RadarKindNotCollected) {
-		t.Errorf("manages coverage = %+v; want unreadable for %s", m, readreason.RadarKindNotCollected)
+	if m := rel.Ownership.Manages; m == nil || m.Membership != "unreadable" || m.UnavailableReason != string(readreason.KubeAtlasKindNotCollected) {
+		t.Errorf("manages coverage = %+v; want unreadable for %s", m, readreason.KubeAtlasKindNotCollected)
 	}
 }
 
@@ -324,9 +324,9 @@ func TestApplyOwnershipWithoutAnAnswer(t *testing.T) {
 	}
 }
 
-// Radar fetches objects of kinds it doesn't collect, such as EndpointSlices,
+// KubeAtlas fetches objects of kinds it doesn't collect, such as EndpointSlices,
 // straight from the API; the fetched object answers for itself.
-func TestApplyOwnershipForAKindRadarDoesNotCollect(t *testing.T) {
+func TestApplyOwnershipForAKindKubeAtlasDoesNotCollect(t *testing.T) {
 	w := ownershiptest.Fixture()
 	w.Collection[resourceid.GroupKind{Kind: "ConfigMap"}] = ownershiptest.Collection{State: ownershiptest.NotCollected}
 	cm := idRef("", "ConfigMap", "alpha", "versioned")
@@ -475,7 +475,7 @@ func TestApplyOwnershipNamesOnlyManagersTheCallerReads(t *testing.T) {
 
 // Managed By says when the search couldn't settle every manager the caller
 // may read: an unreadable list may name the resource, and a remote list names
-// its coordinates in a cluster Radar can't confirm is this one. A manager the
+// its coordinates in a cluster KubeAtlas can't confirm is this one. A manager the
 // caller may not read isn't counted, and a settled search says nothing.
 func TestApplyOwnershipSaysWhichManagersItCouldNotSettle(t *testing.T) {
 	b := ownershiptest.NewBuilder()
@@ -594,7 +594,7 @@ func (n namespacesOnly) CanRead(_ resourceid.GroupKind, namespace string) owners
 func (n namespacesOnly) Namespaces() ([]string, bool) { return n, false }
 
 // A cluster-scoped owner's children are searched in each of the caller's
-// namespaces; a kind Radar doesn't collect is listed once, not once per
+// namespaces; a kind KubeAtlas doesn't collect is listed once, not once per
 // namespace, and so it is for a namespaced owner.
 func TestApplyOwnershipListsAnUnreadKindOnce(t *testing.T) {
 	b := ownershiptest.NewBuilder()
@@ -616,12 +616,12 @@ func TestApplyOwnershipListsAnUnreadKindOnce(t *testing.T) {
 			unread = append(unread, g)
 		}
 	}
-	if len(unread) != 1 || unread[0].Namespace != "" || unread[0].Reason != string(readreason.RadarKindNotCollected) {
+	if len(unread) != 1 || unread[0].Namespace != "" || unread[0].Reason != string(readreason.KubeAtlasKindNotCollected) {
 		t.Fatalf("Widget gaps on the Node = %+v; want one, across the caller's namespaces", unread)
 	}
 	rel = &Relationships{}
 	ApplyOwnership(rel, ownershipView(t, w, namespaces), ownership.Observation{Ref: rs.Ref, UID: rs.UID})
-	if !slices.Contains(rel.Ownership.Children.NotChecked, OwnershipGap{Group: widgets.Group, Kind: widgets.Kind, Reason: string(readreason.RadarKindNotCollected)}) {
+	if !slices.Contains(rel.Ownership.Children.NotChecked, OwnershipGap{Group: widgets.Group, Kind: widgets.Kind, Reason: string(readreason.KubeAtlasKindNotCollected)}) {
 		t.Fatalf("a namespaced owner's gaps = %+v; want Widget, wherever the search looked", rel.Ownership.Children.NotChecked)
 	}
 
@@ -678,7 +678,7 @@ func TestApplyOwnershipTakesGitOpsManagersFromTheirLists(t *testing.T) {
 	}
 }
 
-// A gap for the namespaces Radar doesn't collect doesn't let a graph edge
+// A gap for the namespaces KubeAtlas doesn't collect doesn't let a graph edge
 // overrule the list of a manager in a namespace it does collect: the search
 // read that list.
 func TestApplyOwnershipKeepsAReadListOverAGapElsewhere(t *testing.T) {

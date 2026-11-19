@@ -106,7 +106,7 @@ CR_PODS="kubeatlas-rbac-$RUN_ID-pods-only"
 CR_NODES="kubeatlas-rbac-$RUN_ID-nodes-only"
 CRB_CAROL="kubeatlas-rbac-$RUN_ID-carol"
 CRB_ERIN="kubeatlas-rbac-$RUN_ID-erin"
-CRD_NAME="radartests.test.skyhook.io"
+CRD_NAME="kubeatlastests.test.skyhook.io"
 RUN_DIR=""
 LEDGER=""
 FROZEN_KUBECONFIG=""
@@ -118,7 +118,6 @@ G='\033[0;32m'; R='\033[0;31m'; Y='\033[1;33m'; B='\033[1;34m'; N='\033[0m'
 ok()   { echo -e "${G}✓${N} $1"; }
 fail() { echo -e "${R}✗${N} $1"; FAILS=$((FAILS+1)); }
 info() { echo -e "${B}→${N} $1"; }
-warn() { echo -e "${Y}⚠${N} $1"; }
 
 echo
 echo -e "${Y}This will create disposable RBAC fixtures in context: ${B}${CTX}${N}"
@@ -152,10 +151,12 @@ LEDGER="$RUN_DIR/ledger.jsonl"
 : > "$LEDGER"
 chmod 600 "$LEDGER"
 FROZEN_KUBECONFIG="$RUN_DIR/kubeconfig"
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 remove_private_kubeconfig() {
   [[ -z "$FROZEN_KUBECONFIG" ]] || rm -f -- "$FROZEN_KUBECONFIG"
 }
-trap remove_private_kubeconfig EXIT
+trap 'remove_private_kubeconfig' EXIT
 
 if ! kubectl --context "$CTX" config view --raw --flatten --minify > "$FROZEN_KUBECONFIG" 2>/dev/null; then
   echo "Unable to snapshot the selected kubeconfig; no cluster resources were changed." >&2
@@ -191,6 +192,8 @@ fi
   exit 1
 }
 
+# Invoked by the EXIT trap.
+# shellcheck disable=SC2329
 cleanup() {
   local original_status=$?
   local cleanup_status=0
@@ -217,7 +220,7 @@ cleanup() {
   echo "RBAC evidence directory retained: $RUN_DIR"
   exit "$original_status"
 }
-trap cleanup EXIT
+trap 'cleanup' EXIT
 
 create_owned() {
   python3 "$SCRIPT_DIR/engineering_rbac.py" create \
@@ -288,13 +291,13 @@ create_owned <<'EOF'
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
-  name: radartests.test.skyhook.io
+  name: kubeatlastests.test.skyhook.io
 spec:
   group: test.skyhook.io
   names:
-    kind: RadarTest
-    plural: radartests
-    singular: radartest
+    kind: KubeAtlasTest
+    plural: kubeatlastests
+    singular: kubeatlastest
   scope: Cluster
   versions:
   - name: v1
@@ -311,13 +314,13 @@ EOF
 kubectl_safe wait --for=condition=Established "crd/$CRD_NAME" --timeout=10s >/dev/null
 create_owned <<'EOF'
 apiVersion: test.skyhook.io/v1
-kind: RadarTest
+kind: KubeAtlasTest
 metadata:
   name: rbac-test-cluster-scoped-1
 EOF
 create_owned <<'EOF'
 apiVersion: test.skyhook.io/v1
-kind: RadarTest
+kind: KubeAtlasTest
 metadata:
   name: rbac-test-cluster-scoped-2
 EOF
@@ -375,7 +378,7 @@ create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: radar-test-alice
+  name: kubeatlas-test-alice
   namespace: $NS_ALICE
 subjects:
 - kind: User
@@ -389,7 +392,7 @@ create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: radar-test-bob
+  name: kubeatlas-test-bob
   namespace: $NS_BOB
 subjects:
 - kind: User
@@ -403,7 +406,7 @@ create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: radar-test-dave-a
+  name: kubeatlas-test-dave-a
   namespace: $NS_ALICE
 subjects:
 - kind: User
@@ -417,7 +420,7 @@ create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: radar-test-dave-b
+  name: kubeatlas-test-dave-b
   namespace: $NS_BOB
 subjects:
 - kind: User
@@ -431,7 +434,7 @@ create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
-  name: radar-rbac-test-secret-reader
+  name: kubeatlas-rbac-test-secret-reader
   namespace: $NS_ALICE
 rules:
 - apiGroups: [""]
@@ -442,21 +445,21 @@ create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: radar-test-frank
+  name: kubeatlas-test-frank
   namespace: $NS_ALICE
 subjects:
 - kind: User
   name: frank
 roleRef:
   kind: Role
-  name: radar-rbac-test-secret-reader
+  name: kubeatlas-rbac-test-secret-reader
   apiGroup: rbac.authorization.k8s.io
 EOF
 create_owned <<EOF
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
-  name: radar-test-frank-view
+  name: kubeatlas-test-frank-view
   namespace: $NS_ALICE
 subjects:
 - kind: User
@@ -575,17 +578,6 @@ expect_mcp_code() {
   else
     fail "$desc — expected error_code $want, got: $text"
   fi
-}
-
-# expect_zero <description> <count> — passes when count is "0", fails on
-# anything else (including "ERR" from arr_len). Use for "no leak" tests.
-expect_zero() {
-  local desc=$1 actual=$2
-  case "$actual" in
-    0)   ok "$desc" ;;
-    ERR) fail "$desc — invalid response (transport/parse error)" ;;
-    *)   fail "$desc — expected 0, got $actual" ;;
-  esac
 }
 
 # expect_at_least_one <description> <count> — passes when count is a
@@ -810,21 +802,21 @@ as_user dave POST /api/cluster/namespace '{"namespaces":[]}' >/dev/null
 
 echo
 echo -e "${B}=== Cluster-scoped CRDs not in the static map are gated via discovery (carol, dave) ===${N}"
-# RadarTest is a cluster-scoped CRD that's NOT in the static IsClusterOnlyKind
+# KubeAtlasTest is a cluster-scoped CRD that's NOT in the static IsClusterOnlyKind
 # list. The discovery-based gate must catch it: only cluster-admin or
 # explicitly-permitted users should see it.
 
-# carol has cluster-wide pods+namespaces but NOT RadarTest read.
-expect_rest_forbidden "REST carol cannot list radartests" carol /api/resources/radartests
+# carol has cluster-wide pods+namespaces but NOT KubeAtlasTest read.
+expect_rest_forbidden "REST carol cannot list kubeatlastests" carol /api/resources/kubeatlastests
 
 # Same via the grouped-path:
-expect_rest_forbidden "REST carol cannot list grouped radartests" carol "/api/resources/radartests?group=test.skyhook.io"
+expect_rest_forbidden "REST carol cannot list grouped kubeatlastests" carol "/api/resources/kubeatlastests?group=test.skyhook.io"
 
 # MCP path:
-expect_mcp_denied "MCP carol cannot list radartests" carol list_resources '{"kind":"radartests"}'
+expect_mcp_denied "MCP carol cannot list kubeatlastests" carol list_resources '{"kind":"kubeatlastests"}'
 
 # dave (multi-namespace user) also can't see cluster-scoped CRDs without explicit RBAC.
-expect_rest_forbidden "REST dave cannot list radartests" dave /api/resources/radartests
+expect_rest_forbidden "REST dave cannot list kubeatlastests" dave /api/resources/kubeatlastests
 
 echo
 echo -e "${B}=== Cluster-scoped reads aren't blocked by the noNamespaceAccess short-circuit (erin) ===${N}"
@@ -855,21 +847,21 @@ fi
 
 echo
 echo -e "${B}=== Dashboard CRD counts are filtered per-user ===${N}"
-# carol can see her cluster-wide pods+namespaces, but not radartests. Her
-# dashboard/crds endpoint should NOT include radartests.
+# carol can see her cluster-wide pods+namespaces, but not kubeatlastests. Her
+# dashboard/crds endpoint should NOT include kubeatlastests.
 CAROL_DASH_CRDS=$(as_user carol GET /api/dashboard/crds | jq '[.topCRDs[]?.kind] | join(",")' 2>/dev/null || echo "")
-if [[ "$CAROL_DASH_CRDS" != *"RadarTest"* ]]; then
-  ok "carol's /api/dashboard/crds does not include cluster-scoped RadarTest"
+if [[ "$CAROL_DASH_CRDS" != *"KubeAtlasTest"* ]]; then
+  ok "carol's /api/dashboard/crds does not include cluster-scoped KubeAtlasTest"
 else
-  fail "carol's /api/dashboard/crds leaked RadarTest: $CAROL_DASH_CRDS"
+  fail "carol's /api/dashboard/crds leaked KubeAtlasTest: $CAROL_DASH_CRDS"
 fi
 
 # dave (multi-namespace) — same: shouldn't include cluster-scoped CRDs.
 DAVE_DASH_CRDS=$(as_user dave GET /api/dashboard/crds | jq '[.topCRDs[]?.kind] | join(",")' 2>/dev/null || echo "")
-if [[ "$DAVE_DASH_CRDS" != *"RadarTest"* ]]; then
-  ok "dave's /api/dashboard/crds does not include cluster-scoped RadarTest"
+if [[ "$DAVE_DASH_CRDS" != *"KubeAtlasTest"* ]]; then
+  ok "dave's /api/dashboard/crds does not include cluster-scoped KubeAtlasTest"
 else
-  fail "dave's /api/dashboard/crds leaked RadarTest: $DAVE_DASH_CRDS"
+  fail "dave's /api/dashboard/crds leaked KubeAtlasTest: $DAVE_DASH_CRDS"
 fi
 
 echo

@@ -111,7 +111,7 @@ func scanRemovedFeatureGates(input *Input) Check {
 	inspectedNodes := 0
 	if input.Nodes == nil {
 		check.Status = CheckUnknown
-		check.Summary = "Node evidence was unavailable; Radar could not inspect effective kubelet feature gates."
+		check.Summary = "Node evidence was unavailable; KubeAtlas could not inspect effective kubelet feature gates."
 		check.Caveat = appendCaveat(check.Caveat, "Node evidence was unavailable, so kubelet feature gates could not be inspected.")
 	} else {
 		for _, node := range input.Nodes {
@@ -158,14 +158,14 @@ func scanRemovedFeatureGates(input *Input) Check {
 	foundControlPlaneComponents := map[string]bool{}
 	if !kubeSystemCovered(input, "pods") {
 		if controlPlaneManaged {
-			check.EvidenceNote = appendCaveat(check.EvidenceNote, "The provider manages the control plane, so component feature gates are not exposed to Radar.")
+			check.EvidenceNote = appendCaveat(check.EvidenceNote, "The provider manages the control plane, so component feature gates are not exposed to KubeAtlas.")
 		} else {
 			controlPlaneEvidenceUnavailable = true
 			check.Caveat = appendCaveat(check.Caveat, "kube-system is outside the readable Pod scope, so control-plane feature gates could not be inspected.")
 		}
 	} else if input.Pods == nil {
 		if controlPlaneManaged {
-			check.EvidenceNote = appendCaveat(check.EvidenceNote, "The provider manages the control plane, so component feature gates are not exposed to Radar.")
+			check.EvidenceNote = appendCaveat(check.EvidenceNote, "The provider manages the control plane, so component feature gates are not exposed to KubeAtlas.")
 		} else {
 			controlPlaneEvidenceUnavailable = true
 			check.Caveat = appendCaveat(check.Caveat, "Pods were unavailable, so control-plane feature gates could not be inspected.")
@@ -197,7 +197,7 @@ func scanRemovedFeatureGates(input *Input) Check {
 		}
 		if len(foundControlPlaneComponents) == 0 {
 			if controlPlaneManaged {
-				check.EvidenceNote = appendCaveat(check.EvidenceNote, "No control-plane mirror Pod was readable; the provider manages the control plane, so component feature gates are not exposed to Radar.")
+				check.EvidenceNote = appendCaveat(check.EvidenceNote, "No control-plane mirror Pod was readable; the provider manages the control plane, so component feature gates are not exposed to KubeAtlas.")
 			} else {
 				controlPlaneEvidenceUnavailable = true
 				check.Caveat = appendCaveat(check.Caveat, "No control-plane mirror Pod was readable, so self-managed control-plane feature gates could not be inspected.")
@@ -289,7 +289,7 @@ func scanRemovedComponentFlags(input *Input) Check {
 	controlPlaneManaged := managedControlPlane(input)
 	if !kubeSystemCovered(input, "pods") {
 		if controlPlaneManaged {
-			check.Status, check.Summary = CheckNotApplicable, "The provider manages the control plane, so component startup options are not exposed to Radar."
+			check.Status, check.Summary = CheckNotApplicable, "The provider manages the control plane, so component startup options are not exposed to KubeAtlas."
 			return check
 		}
 		check.Status, check.Summary = CheckUnknown, "kube-system is outside the readable Pod scope, so control-plane component options could not be inspected."
@@ -297,7 +297,7 @@ func scanRemovedComponentFlags(input *Input) Check {
 	}
 	if input.Pods == nil {
 		if controlPlaneManaged {
-			check.Status, check.Summary = CheckNotApplicable, "The provider manages the control plane, so component startup options are not exposed to Radar."
+			check.Status, check.Summary = CheckNotApplicable, "The provider manages the control plane, so component startup options are not exposed to KubeAtlas."
 			return check
 		}
 		check.Status, check.Summary = CheckUnknown, "Pods were unavailable, so control-plane component options could not be inspected."
@@ -334,7 +334,7 @@ func scanRemovedComponentFlags(input *Input) Check {
 		}
 	}
 	if !foundControllerManager && !foundAPIServer && controlPlaneManaged {
-		check.Status, check.Summary = CheckNotApplicable, "The provider manages the control plane, so component startup options are not exposed to Radar."
+		check.Status, check.Summary = CheckNotApplicable, "The provider manages the control plane, so component startup options are not exposed to KubeAtlas."
 		return check
 	}
 	missingComponents := []string{}
@@ -501,7 +501,7 @@ func scanKubeadmConfig(input *Input) Check {
 	check.Inspected = 1
 	check.Status = CheckPassed
 	check.Summary = "The kubeadm cluster configuration does not use kubeadm.k8s.io/v1beta3."
-	check.EvidenceNote = "Only the stored kubeadm-config ConfigMap was inspected; kubeadm configuration files passed with --config on control-plane hosts are not visible to Radar."
+	check.EvidenceNote = "Only the stored kubeadm-config ConfigMap was inspected; kubeadm configuration files passed with --config on control-plane hosts are not visible to KubeAtlas."
 	parsed := 0
 	parseErrors := 0
 	for key, value := range configMap.Data {
@@ -537,7 +537,7 @@ func scanKubeadmConfig(input *Input) Check {
 		}
 	}
 	if parseErrors > 0 || parsed == 0 {
-		check.Caveat = appendCaveat(check.Caveat, "The kubeadm ConfigMap contained configuration data that Radar could not fully parse.")
+		check.Caveat = appendCaveat(check.Caveat, "The kubeadm ConfigMap contained configuration data that KubeAtlas could not fully parse.")
 		if len(check.Findings) == 0 {
 			check.Status, check.Summary = CheckUnknown, "The kubeadm ConfigMap was present but its configuration API could not be determined."
 		}
@@ -796,7 +796,7 @@ func kubeProxyModeFinding(check Check, resource *ResourceRef, evidencePath, deta
 func scanRemovedControlPlaneMetrics(input *Input) Check {
 	check := Check{ID: "removed-control-plane-metrics", Category: "Observability", Title: "Kubernetes metric changes in Kubernetes 1.37", Status: CheckPassed, Summary: "No inspected PrometheusRule references a metric renamed or removed in Kubernetes 1.37.", Scope: "Prometheus Operator rule expressions", AppliesFrom: "1.37", References: append([]Reference(nil), changelog137References...)}
 	if !input.PrometheusRulesDiscoveryAvailable {
-		check.Status, check.Summary = CheckUnknown, "API discovery is unavailable; Radar could not determine whether PrometheusRule is installed."
+		check.Status, check.Summary = CheckUnknown, "API discovery is unavailable; KubeAtlas could not determine whether PrometheusRule is installed."
 		return check
 	}
 	if !input.PrometheusRulesInstalled {
@@ -804,7 +804,7 @@ func scanRemovedControlPlaneMetrics(input *Input) Check {
 		return check
 	}
 	if input.PrometheusRules == nil {
-		check.Status, check.Summary = CheckUnknown, "PrometheusRule is installed but unavailable to Radar."
+		check.Status, check.Summary = CheckUnknown, "PrometheusRule is installed but unavailable to KubeAtlas."
 		return check
 	}
 	type metricChange struct {
@@ -885,7 +885,7 @@ func scanSELinuxMountTransition(input *Input, targetAllowsOptOut bool) Check {
 	}
 	structuralConflictFound := len(check.Findings) > runtimeFindingCount
 	if structuralConflictFound {
-		check.Caveat = appendCaveat(check.Caveat, "Radar could not confirm whether the affected nodes enforce SELinux; structural findings do not apply where SELinux is disabled.")
+		check.Caveat = appendCaveat(check.Caveat, "KubeAtlas could not confirm whether the affected nodes enforce SELinux; structural findings do not apply where SELinux is disabled.")
 	}
 
 	if input.Events == nil {

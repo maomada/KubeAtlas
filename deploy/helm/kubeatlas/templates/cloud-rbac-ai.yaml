@@ -1,11 +1,11 @@
 {{- /*
-Read-only access for automatic (alert-triggered) Radar Cloud Diagnose runs.
+Read-only access for automatic (alert-triggered) KubeAtlas Cloud Diagnose runs.
 
-Automatic runs use username radar:ai:<org> and group radar:ai:reader only.
+Automatic runs use username kubeatlas:ai:<org> and group kubeatlas:ai:reader only.
 Manual turns read as the person who started them, with that person's identity
-and groups forwarded by Radar Cloud; radar:ai:reader is not involved. Keep
-radar:ai:reader permanently read-only; a future write-capable AI identity needs
-a separate opt-in group (e.g. radar:ai:operator).
+and groups forwarded by KubeAtlas Cloud; kubeatlas:ai:reader is not involved. Keep
+kubeatlas:ai:reader permanently read-only; a future write-capable AI identity needs
+a separate opt-in group (e.g. kubeatlas:ai:operator).
 
 The default grant is view plus the cluster-read and integration-read add-ons.
 With the standard view role it grants no Kubernetes Secret permission; it
@@ -15,18 +15,18 @@ sensitive data.
 
 cloud.aiRbac controls only this chart's default grant, independently of
 cloud.defaultRbac. False or absent creates none and leaves customer bindings
-untouched. Radar Cloud controls whether Diagnose runs.
+untouched. KubeAtlas Cloud controls whether Diagnose runs.
 
 A chart-owned role lets its rules change later without replacing the binding,
 whose roleRef is immutable. Aggregation keeps it equal to view with no curation.
 */}}
-{{- if and (include "radar.cloudAiRbac" . | eq "true") .Values.rbac.create -}}
+{{- if and (include "kubeatlas.cloudAiRbac" . | eq "true") .Values.rbac.create -}}
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-ai-read
+  name: {{ include "kubeatlas.fullname" . }}-cloud-ai-read
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 aggregationRule:
   clusterRoleSelectors:
     - matchLabels:
@@ -36,15 +36,18 @@ aggregationRule:
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: {{ include "radar.fullname" . }}-cloud-ai-read
+  name: {{ include "kubeatlas.fullname" . }}-cloud-ai-read
   labels:
-    {{- include "radar.labels" . | nindent 4 }}
+    {{- include "kubeatlas.labels" . | nindent 4 }}
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
-  name: {{ include "radar.fullname" . }}-cloud-ai-read
+  name: {{ include "kubeatlas.fullname" . }}-cloud-ai-read
 subjects:
   - kind: Group
-    name: radar:ai:reader
+    name: kubeatlas:ai:reader
+    apiGroup: rbac.authorization.k8s.io
+  - kind: Group
+    name: {{ include "kubeatlas.legacyCloudGroup" "ai:reader" | quote }}
     apiGroup: rbac.authorization.k8s.io
 {{- end -}}

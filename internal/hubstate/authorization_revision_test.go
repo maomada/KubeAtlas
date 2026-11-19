@@ -52,7 +52,7 @@ func TestAuthorizationRevisionTracksFrozenClockABAsAndPersists(t *testing.T) {
 	update(MemberInput{Role: "member", Status: "active", ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{}})
 	update(MemberInput{Role: "member", Status: "active", ClusterIDs: []string{"beta"}, KubernetesGroups: []string{}})
 	update(MemberInput{Role: "member", Status: "active", ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{}})
-	update(MemberInput{Role: "member", Status: "active", ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{"radar:reader"}})
+	update(MemberInput{Role: "member", Status: "active", ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{"kubeatlas:idp:reader"}})
 	update(MemberInput{Role: "member", Status: "active", ClusterIDs: []string{"alpha"}, KubernetesGroups: []string{}})
 	mutateRevisionMembership(t, store, id, func(membership *Membership) { membership.LegacyRestricted = false })
 	expectAdvance()

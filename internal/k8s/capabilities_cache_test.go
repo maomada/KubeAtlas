@@ -22,7 +22,7 @@ func TestInvalidateCapabilitiesCacheClearsUserCaches(t *testing.T) {
 }
 
 func TestUserNamespaceCapabilitiesCacheKeyIncludesGroups(t *testing.T) {
-	withGroup := userNamespaceCapabilitiesCacheKey("alice", []string{"radar:idp:payments"}, "payments")
+	withGroup := userNamespaceCapabilitiesCacheKey("alice", []string{"kubeatlas:idp:payments"}, "payments")
 	withoutGroup := userNamespaceCapabilitiesCacheKey("alice", nil, "payments")
 	if withGroup == withoutGroup {
 		t.Fatal("a user who lost a group must not reuse the verdict cached for the old group set")

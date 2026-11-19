@@ -49,7 +49,7 @@ func readErrorf(code readreason.Code, format string, args ...any) error {
 
 // readErrorResult renders a readError as an MCP tool error. The body goes in
 // both structuredContent and the text block: clients that read only text —
-// including Radar Hub, which records the text as investigation evidence —
+// including KubeAtlas Hub, which records the text as investigation evidence —
 // must get the same code and coverage. It reports false for any other error,
 // which keeps the SDK's text-only form.
 func readErrorResult(err error) (*mcp.CallToolResult, bool) {
@@ -93,7 +93,7 @@ type mcpReadError struct {
 // handle was replaced while it ran: its rows may mix two clusters, and a retry
 // may reach a different one.
 func errConnectionChanged() error {
-	return readErrorf(readreason.ConnectionChanged, "Radar's cluster connection changed during this read (a context switch or reconnect), so the result was discarded.")
+	return readErrorf(readreason.ConnectionChanged, "KubeAtlas's cluster connection changed during this read (a context switch or reconnect), so the result was discarded.")
 }
 
 // listEnvelope is every list_resources result, sent as the only text block.
@@ -136,7 +136,7 @@ func listResult(ctx context.Context, resource string, items []any, coverage reso
 }
 
 // readTarget is what a namespaced read is about: the namespace the request
-// named, or what remained of "every namespace" after Radar's --namespace-scope
+// named, or what remained of "every namespace" after KubeAtlas's --namespace-scope
 // pin and the caller's access narrowed it. A named namespace stays the target
 // even when it can't be read, so what's missing is a gap; implicit narrowing
 // is declared instead, and "complete" then means complete within it.
@@ -168,10 +168,10 @@ func resolveReadTargetFrom(ctx context.Context, cache *k8s.ResourceCache, reques
 		return target, errConnectionChanged()
 	}
 	if code == readreason.UserPermissionCheckFailed {
-		return target, readErrorf(code, "Radar couldn't check which namespaces you can access, so it read nothing.")
+		return target, readErrorf(code, "KubeAtlas couldn't check which namespaces you can access, so it read nothing.")
 	}
 	if code == readreason.UserNoNamespaceAccess {
-		return target, readErrorf(code, "You can't access any namespace in this request's scope, so Radar read nothing. %s %s", withCloudRole(ctx, "A cluster admin can grant access"), namespaceAccessRule)
+		return target, readErrorf(code, "You can't access any namespace in this request's scope, so KubeAtlas read nothing. %s %s", withCloudRole(ctx, "A cluster admin can grant access"), namespaceAccessRule)
 	}
 	if len(selection.Gaps) > 0 {
 		gap := selection.Gaps[0]
@@ -183,13 +183,13 @@ func resolveReadTargetFrom(ctx context.Context, cache *k8s.ResourceCache, reques
 			}
 			return target, &readError{code: gap.Code, err: fmt.Errorf("%s, so there is nothing to read there.", scope), next: "Call list_namespaces to see the namespaces that exist."}
 		case readreason.OutsideNamespacePin:
-			return target, readErrorf(gap.Code, "Radar is limited to other namespaces by its --namespace-scope setting, so it can't read namespace %q. Whoever runs Radar sets --namespace-scope.", namespaceForError(gap.Namespaces))
+			return target, readErrorf(gap.Code, "KubeAtlas is limited to other namespaces by its --namespace-scope setting, so it can't read namespace %q. Whoever runs KubeAtlas sets --namespace-scope.", namespaceForError(gap.Namespaces))
 		case readreason.UserNamespaceNotVisible:
 			scope := fmt.Sprintf("Namespace %q doesn't exist or you can't access it", gap.Namespaces[0])
 			if len(gap.Namespaces) > 1 {
 				scope = fmt.Sprintf("Namespaces %q don't exist or you can't access them", namespaceForError(gap.Namespaces))
 			}
-			err := &readError{code: gap.Code, err: fmt.Errorf("%s, so Radar can't say what's in it. If the name is right, %s %s", scope, withCloudRole(ctx, "a cluster admin can grant access"), namespaceAccessRule)}
+			err := &readError{code: gap.Code, err: fmt.Errorf("%s, so KubeAtlas can't say what's in it. If the name is right, %s %s", scope, withCloudRole(ctx, "a cluster admin can grant access"), namespaceAccessRule)}
 			if cache := k8s.GetResourceCache(); cache != nil && cache.Namespaces() != nil {
 				err.next = "Call list_namespaces to see the namespaces you can access."
 			}
@@ -202,7 +202,7 @@ func resolveReadTargetFrom(ctx context.Context, cache *k8s.ResourceCache, reques
 
 // narrowedToCollection is t narrowed to what plan's kind is collected in. A
 // finite target keeps the namespaces read elsewhere withheld (such as Secrets
-// the caller can't list); only the ones Radar doesn't collect leave it.
+// the caller can't list); only the ones KubeAtlas doesn't collect leave it.
 func (t readTarget) narrowedToCollection(plan *typedRead) readTarget {
 	return t.narrowedByNamespaceCollection(plan.collected, plan.uncovered)
 }
@@ -234,9 +234,9 @@ func namespaceForError(namespaces []string) string {
 	return strings.Join(namespaces, ",")
 }
 
-// namespaceAccessRule says how Radar decides which namespaces a caller can
+// namespaceAccessRule says how KubeAtlas decides which namespaces a caller can
 // access, for errors whose fix is that access.
-const namespaceAccessRule = "(Radar counts a namespace as yours when you can list pods or deployments in it, and re-checks about every 2 minutes)."
+const namespaceAccessRule = "(KubeAtlas counts a namespace as yours when you can list pods or deployments in it, and re-checks about every 2 minutes)."
 
 // qualifiedResource names a resource as kubectl does: the plural, then its API
 // group when it has one.
@@ -262,9 +262,9 @@ func resourcePermissionErrorNext(ctx context.Context, checked bool, verb, group,
 	}
 	name := qualifiedResource(group, resource)
 	if !checked {
-		return readErrorf(readreason.UserPermissionCheckFailed, "Radar couldn't check whether you can %s %s %s, so it read nothing.", verb, name, scope)
+		return readErrorf(readreason.UserPermissionCheckFailed, "KubeAtlas couldn't check whether you can %s %s %s, so it read nothing.", verb, name, scope)
 	}
-	return &readError{code: readreason.UserForbidden, err: fmt.Errorf("Your Kubernetes access doesn't allow you to %s %s %s, so Radar can't say what exists there. %s.", verb, name, scope, withCloudRole(ctx, "A cluster admin can grant that permission")), next: next}
+	return &readError{code: readreason.UserForbidden, err: fmt.Errorf("Your Kubernetes access doesn't allow you to %s %s %s, so KubeAtlas can't say what exists there. %s.", verb, name, scope, withCloudRole(ctx, "A cluster admin can grant that permission")), next: next}
 }
 
 // gapSet collects the namespaces a read could not serve, by code. A code
@@ -375,7 +375,7 @@ func (g *gapSet) failure() error {
 	if errors.As(g.firstErr[code], &re) {
 		return &readError{code: re.code, err: re.err, unread: g}
 	}
-	return &readError{code: code, err: errors.New("Radar couldn't read any part of the requested scope, so it can't say what exists there."), unread: g}
+	return &readError{code: code, err: errors.New("KubeAtlas couldn't read any part of the requested scope, so it can't say what exists there."), unread: g}
 }
 
 // listScope is the scope a list's coverage reports for target.
@@ -390,7 +390,7 @@ func listScope(target readTarget, clusterScoped bool) resourceapi.Scope {
 	}
 }
 
-// listCoverageFor assembles a successful list's coverage. read is what Radar
+// listCoverageFor assembles a successful list's coverage. read is what KubeAtlas
 // read; readAll means the whole scope.
 func listCoverageFor(clusterScoped bool, target readTarget, read []string, readAll bool, gaps []resourceapi.Gap) resourceapi.Coverage {
 	cov := resourceapi.Coverage{
@@ -436,7 +436,7 @@ func withListCoverage(ctx context.Context, err error, resource string, target re
 	}
 	s := []string{re.err.Error()}
 	if len(cov.Gaps) > 1 {
-		s = []string{fmt.Sprintf("Radar couldn't read any %s, so it can't say what exists.", resource)}
+		s = []string{fmt.Sprintf("KubeAtlas couldn't read any %s, so it can't say what exists.", resource)}
 		for _, gap := range cov.Gaps {
 			s = append(s, gapSentence(ctx, resource, gap))
 		}
@@ -480,7 +480,7 @@ type typedRead struct {
 	// kind still loading elsewhere is read from its namespaces' own stores.
 	wholeKindReady bool
 	gaps           gapSet
-	// collected, when non-nil, is the part of an implicit target Radar
+	// collected, when non-nil, is the part of an implicit target KubeAtlas
 	// collects: the read was narrowed to it. uncovered is what it left out of
 	// a finite target.
 	collected, uncovered []string
@@ -489,13 +489,13 @@ type typedRead struct {
 // planResourceInventory returns the cache to read kind from and, for a typed kind,
 // what of namespaces (nil: every namespace) it can serve now and why the rest
 // is unread. It fails only when nothing can be read; a failure within the
-// namespaces Radar collects still returns its plan, so the error can say that
+// namespaces KubeAtlas collects still returns its plan, so the error can say that
 // scope. Dynamic kinds learn their coverage by reading, so they get no plan.
 //
-// Namespaces Radar doesn't collect are a gap when the request named them
+// Namespaces KubeAtlas doesn't collect are a gap when the request named them
 // (explicit); otherwise they narrow the read, like the --namespace-scope pin,
 // and collected is set to what remains. A namespace whose credentials
-// Kubernetes rejected when the cache was built is a gap either way: Radar
+// Kubernetes rejected when the cache was built is a gap either way: KubeAtlas
 // meant to collect it.
 func planResourceInventory(ctx context.Context, kind, group string, namespaces []string, explicit bool) (*k8s.ResourceCache, *typedRead, error) {
 	gvr, builtin := k8s.BuiltinGVRAnyGroup(kind)
@@ -531,7 +531,7 @@ func planResourceInventory(ctx context.Context, kind, group string, namespaces [
 		}
 		var err error
 		switch part.Verdict.Code {
-		case readreason.RadarCredentialsRejected:
+		case readreason.KubeAtlasCredentialsRejected:
 			rejected := result.CredentialRejectedNamespaces(gvr.Resource, namespaces)
 			var cause error
 			if len(rejected) > 0 {
@@ -543,14 +543,14 @@ func planResourceInventory(ctx context.Context, kind, group string, namespaces [
 				rejected = part.Namespaces
 			}
 			err = errRecordedCredentialsRejected(gvr.Resource, rejected, cause)
-		case readreason.RadarForbidden:
+		case readreason.KubeAtlasForbidden:
 			where := " in the namespaces you need"
 			if clusterScoped {
 				where = ""
 			}
 			name := qualifiedResource(gvr.Group, gvr.Resource)
-			err = readErrorf(part.Verdict.Code, "Kubernetes doesn't allow %s to list/watch %s, so Radar has none to show and can't say which exist. %s.%s", collectorName(), name, upperFirst(identityRemedy(name, where, "list/watch")), notYourAccess(ctx))
-		case readreason.RadarKindNotCollected:
+			err = readErrorf(part.Verdict.Code, "Kubernetes doesn't allow %s to list/watch %s, so KubeAtlas has none to show and can't say which exist. %s.%s", collectorName(), name, upperFirst(identityRemedy(name, where, "list/watch")), notYourAccess(ctx))
+		case readreason.KubeAtlasKindNotCollected:
 			err = errKindNotCollected(qualifiedResource(gvr.Group, gvr.Resource))
 		case readreason.KindSyncTimedOut:
 			err = errKindLoadFailed(gvr.Resource)
@@ -563,7 +563,7 @@ func planResourceInventory(ctx context.Context, kind, group string, namespaces [
 		plan.gaps.add(part.Verdict.Code, err, part.Namespaces...)
 	}
 	if inventory.Collection != nil && len(plan.collected) == 0 {
-		plan.gaps.add(readreason.RadarNamespaceNotCollected, coverageError(ctx, target, plan.uncovered, cache.KindNamespaces(gvr.Resource), nil))
+		plan.gaps.add(readreason.KubeAtlasNamespaceNotCollected, coverageError(ctx, target, plan.uncovered, cache.KindNamespaces(gvr.Resource), nil))
 	}
 	if !inventory.CanReadTarget {
 		if len(facts.Partitions) == 1 && facts.Partitions[0].Extent != readplan.NamespaceSet {
@@ -574,7 +574,7 @@ func planResourceInventory(ctx context.Context, kind, group string, namespaces [
 	return cache, plan, nil
 }
 
-// collectorTarget is what Radar's collector reads for a kind: the resource,
+// collectorTarget is what KubeAtlas's collector reads for a kind: the resource,
 // its API group, and the action it performs (list/watch for a cache, or the
 // verb of a direct read).
 type collectorTarget struct {
@@ -602,22 +602,22 @@ func directRead(gvr schema.GroupVersionResource, verb string) bool {
 }
 
 func errKindLoading(resource string) error {
-	return readErrorf(readreason.KindSyncPending, "Radar is still loading %s, so it can't answer yet.", resource)
+	return readErrorf(readreason.KindSyncPending, "KubeAtlas is still loading %s, so it can't answer yet.", resource)
 }
 
 func errKindLoadFailed(resource string) error {
-	return readErrorf(readreason.KindSyncTimedOut, "Radar's load of %s didn't finish in time, so it can't answer yet. It keeps trying; if this persists, whoever runs Radar should check its cluster connection and list/watch permissions.", resource)
+	return readErrorf(readreason.KindSyncTimedOut, "KubeAtlas's load of %s didn't finish in time, so it can't answer yet. It keeps trying; if this persists, whoever runs KubeAtlas should check its cluster connection and list/watch permissions.", resource)
 }
 
 func errKindNotCollected(resource string) error {
-	return readErrorf(readreason.RadarKindNotCollected, "Radar isn't collecting %s, so it can't list them or say which exist. Whoever runs Radar must check that its identity can list/watch %s and that Radar is set to collect them.", resource, resource)
+	return readErrorf(readreason.KubeAtlasKindNotCollected, "KubeAtlas isn't collecting %s, so it can't list them or say which exist. Whoever runs KubeAtlas must check that its identity can list/watch %s and that KubeAtlas is set to collect them.", resource, resource)
 }
 
-// coverageError reports requested namespaces Radar's collector could not
-// serve. With a refusal — Radar read them for this request and the API server
-// denied its identity — the code is radar_forbidden; without one they lie
-// outside the coverage the collector established, Radar did not read them,
-// and the code is radar_namespace_not_collected. No uncovered namespaces means the
+// coverageError reports requested namespaces KubeAtlas's collector could not
+// serve. With a refusal — KubeAtlas read them for this request and the API server
+// denied its identity — the code is kubeatlas_forbidden; without one they lie
+// outside the coverage the collector established, KubeAtlas did not read them,
+// and the code is kubeatlas_namespace_not_collected. No uncovered namespaces means the
 // collector covers only some namespaces of an all-namespaces read. Only
 // namespaces the caller may read are named, and coverage in namespaces the
 // caller cannot read never changes the wording, so the error discloses
@@ -652,16 +652,16 @@ func coverageError(ctx context.Context, target collectorTarget, uncovered, cover
 		if at == "" {
 			at, there = "across the cluster", ""
 		}
-		return &readError{code: readreason.RadarForbidden, err: &collectorError{
-			msg:   fmt.Sprintf("Kubernetes refused %s when Radar tried to %s %s %s, so Radar can't say what exists there.%s %s.%s", collectorName(), target.action, name, at, coverage, upperFirst(identityRemedy(name, there, target.action)), notYourAccess(ctx)),
+		return &readError{code: readreason.KubeAtlasForbidden, err: &collectorError{
+			msg:   fmt.Sprintf("Kubernetes refused %s when KubeAtlas tried to %s %s %s, so KubeAtlas can't say what exists there.%s %s.%s", collectorName(), target.action, name, at, coverage, upperFirst(identityRemedy(name, there, target.action)), notYourAccess(ctx)),
 			cause: refusal,
 		}}
 	}
 	remedy := upperFirst(collectionRemedy(target.resource)) + "." + notYourAccess(ctx)
 	if where == "" {
-		return readErrorf(readreason.RadarNamespaceNotCollected, "Radar collects %s only in some namespaces, so it can't answer for the whole cluster.%s %s", target.resource, coverage, remedy)
+		return readErrorf(readreason.KubeAtlasNamespaceNotCollected, "KubeAtlas collects %s only in some namespaces, so it can't answer for the whole cluster.%s %s", target.resource, coverage, remedy)
 	}
-	return readErrorf(readreason.RadarNamespaceNotCollected, "Radar doesn't collect %s %s, so it can't say what exists there.%s %s", target.resource, where, coverage, remedy)
+	return readErrorf(readreason.KubeAtlasNamespaceNotCollected, "KubeAtlas doesn't collect %s %s, so it can't say what exists there.%s %s", target.resource, where, coverage, remedy)
 }
 
 // namespacesForError names namespaces in an error sentence, abbreviated as
@@ -673,9 +673,9 @@ func namespacesForError(namespaces []string) string {
 	return fmt.Sprintf("namespaces %q", namespaceForError(namespaces))
 }
 
-// collectorError is a caller-facing error about a read Radar made with its own
+// collectorError is a caller-facing error about a read KubeAtlas made with its own
 // identity. Its message never includes the API server's response, which names
-// that identity (for a service account, the namespace Radar runs in) and the
+// that identity (for a service account, the namespace KubeAtlas runs in) and the
 // scope it was refused in. The response stays reachable through Unwrap, for
 // classification and for collectorCause to log.
 type collectorError struct {
@@ -701,19 +701,19 @@ func collectorCause(err error) error {
 
 func collectorName() string {
 	if k8s.IsInCluster() {
-		return "Radar's service account"
+		return "KubeAtlas's service account"
 	}
-	return "Radar's kubeconfig identity"
+	return "KubeAtlas's kubeconfig identity"
 }
 
 // collectorAuthError is the caller-facing error for the API server refusing a
-// read Radar made with its own identity, or nil when err is not a refusal.
+// read KubeAtlas made with its own identity, or nil when err is not a refusal.
 func collectorAuthError(ctx context.Context, err error, target collectorTarget, namespace string) error {
 	code, _ := readplan.CollectorErrorCode(err)
 	switch code {
-	case readreason.RadarCredentialsRejected:
+	case readreason.KubeAtlasCredentialsRejected:
 		return collectorUnauthorizedError(target.resource, err)
-	case readreason.RadarForbidden:
+	case readreason.KubeAtlasForbidden:
 		var uncovered []string
 		if namespace != "" {
 			uncovered = []string{namespace}
@@ -791,12 +791,12 @@ func checkDynamicResourceReadFrom(ctx context.Context, kind, group, namespace, v
 						continue
 					}
 					return false, dynamicPlanError(ctx, kind, group, namespace, verb, part.Verdict.Code)
-				case readreason.KindNotWatchable, readreason.ConnectionChanged, readreason.RadarCredentialsRejected:
+				case readreason.KindNotWatchable, readreason.ConnectionChanged, readreason.KubeAtlasCredentialsRejected:
 					return false, dynamicPlanError(ctx, kind, group, namespace, verb, part.Verdict.Code)
 				}
 			}
 		}
-		return false, readErrorf(readreason.ReadError, "Radar failed to %s %s, so it can't say what exists (%w).", verb, kind, readErr)
+		return false, readErrorf(readreason.ReadError, "KubeAtlas failed to %s %s, so it can't say what exists (%w).", verb, kind, readErr)
 	}
 	if !ok || dynamicCache == nil || direct {
 		return false, readErr
@@ -832,17 +832,17 @@ func dynamicPlanError(ctx context.Context, kind, group, namespace, verb string, 
 	case readreason.KindSyncTimedOut:
 		return errKindLoadFailed(kind)
 	case readreason.KindNotWatchable:
-		return readErrorf(code, "Radar can't collect %s: its API doesn't support both list and watch, which Radar needs. Retrying won't help; read it directly from the Kubernetes API instead.", kind)
-	case readreason.RadarNamespaceNotCollected:
-		return readErrorf(code, "Radar doesn't collect %s in namespace %q, so it can't say what exists there. %s.%s", kind, namespace, upperFirst(collectionRemedy(kind)), notYourAccess(ctx))
-	case readreason.RadarForbidden:
-		return readErrorf(code, "Radar's collector cannot read %s in the requested scope.", kind)
-	case readreason.RadarCredentialsRejected:
+		return readErrorf(code, "KubeAtlas can't collect %s: its API doesn't support both list and watch, which KubeAtlas needs. Retrying won't help; read it directly from the Kubernetes API instead.", kind)
+	case readreason.KubeAtlasNamespaceNotCollected:
+		return readErrorf(code, "KubeAtlas doesn't collect %s in namespace %q, so it can't say what exists there. %s.%s", kind, namespace, upperFirst(collectionRemedy(kind)), notYourAccess(ctx))
+	case readreason.KubeAtlasForbidden:
+		return readErrorf(code, "KubeAtlas's collector cannot read %s in the requested scope.", kind)
+	case readreason.KubeAtlasCredentialsRejected:
 		return collectorUnauthorizedError(kind, nil)
-	case readreason.RadarKindNotCollected:
+	case readreason.KubeAtlasKindNotCollected:
 		return errKindNotCollected(kind)
 	default:
-		return readErrorf(code, "Radar failed to %s %s, so it can't say what exists.", verb, kind)
+		return readErrorf(code, "KubeAtlas failed to %s %s, so it can't say what exists.", verb, kind)
 	}
 }
 
@@ -885,26 +885,26 @@ func errKindUnknown(kind, group string, cause error) error {
 	}
 	if d := k8s.GetResourceDiscovery(); d != nil && d.ResourceDiscovery != nil {
 		if group != "" && d.GroupHadPartialDiscovery(group) {
-			return readErrorf(readreason.ReadError, "Kubernetes didn't answer discovery for API group %q, so Radar can't resolve %q in it and read nothing%s.", group, kind, why)
+			return readErrorf(readreason.ReadError, "Kubernetes didn't answer discovery for API group %q, so KubeAtlas can't resolve %q in it and read nothing%s.", group, kind, why)
 		}
 		if d.LastRefreshFailed() {
-			return readErrorf(readreason.ReadError, "Radar's last discovery refresh failed, so it can't tell whether a resource kind named %q exists here and read nothing%s.", kind, why)
+			return readErrorf(readreason.ReadError, "KubeAtlas's last discovery refresh failed, so it can't tell whether a resource kind named %q exists here and read nothing%s.", kind, why)
 		}
 		if group == "" && d.HasPartialDiscovery() {
-			return readErrorf(readreason.KindUnknown, "Radar doesn't know a resource kind named %q in this cluster, so it read nothing%s. Discovery of some API groups failed, so it may exist behind an API that isn't answering.", kind, why)
+			return readErrorf(readreason.KindUnknown, "KubeAtlas doesn't know a resource kind named %q in this cluster, so it read nothing%s. Discovery of some API groups failed, so it may exist behind an API that isn't answering.", kind, why)
 		}
 	}
-	return readErrorf(readreason.KindUnknown, "Radar doesn't know a resource kind named %q in this cluster, so it read nothing%s.", kind, why)
+	return readErrorf(readreason.KindUnknown, "KubeAtlas doesn't know a resource kind named %q in this cluster, so it read nothing%s.", kind, why)
 }
 
 // errDynamicUnavailable reports a read that needs API discovery or the
-// dynamic cache while Radar has neither: still connecting, or they failed to
+// dynamic cache while KubeAtlas has neither: still connecting, or they failed to
 // start.
 func errDynamicUnavailable(kind string, cause error) error {
 	if k8s.GetConnectionStatus().State == k8s.StateConnecting {
-		return readErrorf(readreason.KindSyncPending, "Radar is still connecting to the cluster, so it can't read %s yet (%w).", kind, cause)
+		return readErrorf(readreason.KindSyncPending, "KubeAtlas is still connecting to the cluster, so it can't read %s yet (%w).", kind, cause)
 	}
-	return readErrorf(readreason.ReadError, "Radar's support for this cluster's API resources didn't start, so it can't read %s (%w).", kind, cause)
+	return readErrorf(readreason.ReadError, "KubeAtlas's support for this cluster's API resources didn't start, so it can't read %s (%w).", kind, cause)
 }
 
 func dynamicReadGVR(kind, group string) (schema.GroupVersionResource, bool) {
@@ -1044,7 +1044,7 @@ func resourceGetError(ctx context.Context, err error, kind, namespace, name stri
 		}
 		return &readError{code: readreason.ObjectNotFound, err: errors.New(msg), next: notFoundNext(ctx, kind, namespace, name)}
 	}
-	return readErrorf(readreason.ReadError, "Radar failed to get %s %s/%s, so it can't say whether it exists (%w).", kind, namespace, name, err)
+	return readErrorf(readreason.ReadError, "KubeAtlas failed to get %s %s/%s, so it can't say whether it exists (%w).", kind, namespace, name, err)
 }
 
 func fetchMCPDynamicResource(ctx context.Context, cache *k8s.ResourceCache, kind, group, namespace, name string) (*unstructured.Unstructured, error) {
@@ -1078,7 +1078,7 @@ func fetchMCPDynamicResource(ctx context.Context, cache *k8s.ResourceCache, kind
 	return obj, err
 }
 
-// errRecordedCredentialsRejected reports a 401 Radar recorded when it built
+// errRecordedCredentialsRejected reports a 401 KubeAtlas recorded when it built
 // its cache, in namespaces (nil: for the kind as a whole). The cache keeps
 // that result until it is rebuilt, as a reconnect does, so retrying the
 // request alone changes nothing.
@@ -1087,17 +1087,17 @@ func errRecordedCredentialsRejected(kind string, namespaces []string, err error)
 	if len(namespaces) > 0 {
 		where = " in " + namespacePhrase(resourceapi.Names(namespaces, resourceapi.MCPSetLimit))
 	}
-	return &readError{code: readreason.RadarCredentialsRejected, err: &collectorError{
-		msg:   fmt.Sprintf("Kubernetes rejected Radar's own %s when Radar connected and checked its access to %s%s, so Radar doesn't collect them. %s", radarCredentials(), kind, where, reconnectRemedy),
+	return &readError{code: readreason.KubeAtlasCredentialsRejected, err: &collectorError{
+		msg:   fmt.Sprintf("Kubernetes rejected KubeAtlas's own %s when KubeAtlas connected and checked its access to %s%s, so KubeAtlas doesn't collect them. %s", kubeatlasCredentials(), kind, where, reconnectRemedy),
 		cause: err,
 	}}
 }
 
-// reconnectRemedy is the remedy for a credential rejection Radar recorded when
+// reconnectRemedy is the remedy for a credential rejection KubeAtlas recorded when
 // it built its cache: a retry of the request reads the same recorded result.
-const reconnectRemedy = "Whoever runs Radar must check those credentials, then reconnect Radar (POST /api/connection/retry); retrying the request alone won't help."
+const reconnectRemedy = "Whoever runs KubeAtlas must check those credentials, then reconnect KubeAtlas (POST /api/connection/retry); retrying the request alone won't help."
 
-func radarCredentials() string {
+func kubeatlasCredentials() string {
 	if k8s.IsInCluster() {
 		return "service-account credentials"
 	}
@@ -1105,8 +1105,8 @@ func radarCredentials() string {
 }
 
 func collectorUnauthorizedError(kind string, err error) error {
-	return &readError{code: readreason.RadarCredentialsRejected, err: &collectorError{
-		msg:   fmt.Sprintf("Kubernetes rejected Radar's own %s while it read %s, so Radar read nothing. Whoever runs Radar must refresh them, then retry.", radarCredentials(), kind),
+	return &readError{code: readreason.KubeAtlasCredentialsRejected, err: &collectorError{
+		msg:   fmt.Sprintf("Kubernetes rejected KubeAtlas's own %s while it read %s, so KubeAtlas read nothing. Whoever runs KubeAtlas must refresh them, then retry.", kubeatlasCredentials(), kind),
 		cause: err,
 	}}
 }

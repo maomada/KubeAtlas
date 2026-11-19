@@ -55,11 +55,11 @@ func floatPointer(value float64) *float64 { return &value }
 func TestComputeKubecostSummaryFallsBackFromNullHourAndNormalizesActualDuration(t *testing.T) {
 	transport := &fakeKubecostTransport{responses: []string{
 		`{"code":200,"data":[null]}`,
-		`{"code":200,"data":[{"__idle__/__idle__":{"properties":{"cluster":"__idle__","namespace":"__idle__"},"start":"2026-08-25T00:00:00Z","end":"2026-08-26T00:00:00Z","cpuCost":12,"ramCost":12,"totalCost":24},"radar-kubecost-e2e/__unallocated__":{"properties":{"cluster":"radar-kubecost-e2e"},"totalCost":100},"radar-kubecost-e2e/demo":{"properties":{"cluster":"radar-kubecost-e2e","namespace":"demo"},"start":"2026-08-25T00:00:00Z","end":"2026-08-26T00:00:00Z","cpuCoreRequestAverage":2,"cpuCoreUsageAverage":1,"cpuCost":24,"ramByteRequestAverage":4,"ramByteUsageAverage":1,"ramCost":24,"pvCost":12,"networkCost":6,"totalCost":66}}]}`,
+		`{"code":200,"data":[{"__idle__/__idle__":{"properties":{"cluster":"__idle__","namespace":"__idle__"},"start":"2026-08-25T00:00:00Z","end":"2026-08-26T00:00:00Z","cpuCost":12,"ramCost":12,"totalCost":24},"kubeatlas-kubecost-e2e/__unallocated__":{"properties":{"cluster":"kubeatlas-kubecost-e2e"},"totalCost":100},"kubeatlas-kubecost-e2e/demo":{"properties":{"cluster":"kubeatlas-kubecost-e2e","namespace":"demo"},"start":"2026-08-25T00:00:00Z","end":"2026-08-26T00:00:00Z","cpuCoreRequestAverage":2,"cpuCoreUsageAverage":1,"cpuCost":24,"ramByteRequestAverage":4,"ramByteUsageAverage":1,"ramCost":24,"pvCost":12,"networkCost":6,"totalCost":66}}]}`,
 	}}
 	resp, err := ComputeKubecostSummary(context.Background(), NewKubecostClient(transport), KubecostCurrentOptions{
 		Currency:  "EUR",
-		ClusterID: "radar-kubecost-e2e",
+		ClusterID: "kubeatlas-kubecost-e2e",
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -91,7 +91,7 @@ func TestComputeKubecostSummaryFallsBackFromNullHourAndNormalizesActualDuration(
 	if len(transport.requests) != 2 || transport.requests[0].params.Get("window") != "1h" || transport.requests[1].params.Get("window") != "24h" {
 		t.Fatalf("requests = %#v, want 1h then rolling 24h", transport.requests)
 	}
-	if got := transport.requests[1].params.Get("filter"); got != `cluster:"radar-kubecost-e2e"` {
+	if got := transport.requests[1].params.Get("filter"); got != `cluster:"kubeatlas-kubecost-e2e"` {
 		t.Fatalf("filter = %q", got)
 	}
 }

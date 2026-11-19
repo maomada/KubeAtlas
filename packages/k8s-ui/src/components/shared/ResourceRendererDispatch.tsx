@@ -476,7 +476,7 @@ const KNOWN_KINDS = new Set([
   'servicemonitors', 'prometheusrules', 'podmonitors',
   'policyreports', 'clusterpolicyreports', 'kyvernopolicies', 'clusterpolicies',
   // The API serves the legacy namespaced kind as `policies`. `kyvernopolicies`
-  // is Radar's internal alias for it and is NOT a servable plural, so a URL
+  // is KubeAtlas's internal alias for it and is NOT a servable plural, so a URL
   // built from it 400s — the drawer has to know the real one.
   'policies',
   // Kyverno modern CEL family (policies.kyverno.io) + its namespaced twins.

@@ -5,12 +5,12 @@ const noop = () => {}
 const POD = 'checkout-api-7d9f8c6b5-x2kqp'
 
 const diagnoseTool = {
-  kind: 'tool' as const, id: 'diag-1', tool: 'diagnose', status: 'done', ms: 1840, isError: false, radarEvidence: true,
+  kind: 'tool' as const, id: 'diag-1', tool: 'diagnose', status: 'done', ms: 1840, isError: false, kubeatlasEvidence: true,
   summary: JSON.stringify({ kind: 'deployment', namespace: 'payments', name: 'checkout-api' }),
   result: JSON.stringify({ pods: 3, crashCause: [{ container: 'checkout-api', reason: 'OOMKilled', exitCode: 137 }] }),
 }
 const logsTool = {
-  kind: 'tool' as const, id: 'logs-1', tool: 'get_pod_logs', status: 'done', ms: 420, isError: false, radarEvidence: true,
+  kind: 'tool' as const, id: 'logs-1', tool: 'get_pod_logs', status: 'done', ms: 420, isError: false, kubeatlasEvidence: true,
   summary: JSON.stringify({ namespace: 'payments', name: POD, container: 'checkout-api', previous: true, tail_lines: 100 }),
   result: '2026-09-28T09:41:09Z WARN  c.a.checkout.cache.ProductCache - heap usage 238Mi / 256Mi during warm-up',
 }
@@ -91,7 +91,7 @@ export function ApplyTurn() {
           status: 'done', error: null, apply: true, applyOutcome: 'confirmed',
           question: 'Apply the recommended fix',
           timeline: [{
-            kind: 'tool', id: 'patch-1', tool: 'patch_resource', status: 'done', ms: 380, isError: false, radarEvidence: true,
+            kind: 'tool', id: 'patch-1', tool: 'patch_resource', status: 'done', ms: 380, isError: false, kubeatlasEvidence: true,
             summary: JSON.stringify({ kind: 'deployment', namespace: 'payments', name: 'checkout-api', patch: { spec: { template: { spec: { containers: [{ name: 'checkout-api', resources: { limits: { memory: '512Mi' } } }] } } } } }),
             result: 'deployment.apps/checkout-api patched',
           }],
