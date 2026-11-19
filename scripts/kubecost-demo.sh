@@ -138,7 +138,7 @@ start_forward() {
   FORWARD_PID=$!
 
   local attempt
-  for attempt in $(seq 1 30); do
+  for ((attempt = 1; attempt <= 30; attempt++)); do
     assert_forward_alive
     if grep -q "^Forwarding from 127[.]0[.]0[.]1:${local_port} " "${FORWARD_LOG}" &&
       curl "${CURL_OPTS[@]}" "${ready_url}" >/dev/null 2>&1; then

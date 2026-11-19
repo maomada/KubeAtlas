@@ -260,27 +260,27 @@ cmd_install_kubeatlas() {
   require_cmd helm "https://helm.sh/docs/intro/install/"
   require_cmd go "https://go.dev/dl/"
 
-  local repo_root arch tmp
+  local repo_root arch
   repo_root="$(cd "$(dirname "$0")/.." && pwd)"
   case "$(uname -m)" in
     arm64|aarch64) arch=arm64 ;;
     *) arch=amd64 ;;
   esac
-  tmp="$(mktemp -d)"
-  # Expand now: the trap fires at script exit, after this local is gone.
-  trap "rm -rf '${tmp}'" EXIT
+  # The EXIT trap needs the path after this function returns.
+  install_tmp="$(mktemp -d)"
+  trap 'rm -rf -- "${install_tmp}"' EXIT
 
   step "Building kubeatlas for linux/${arch} from the current tree"
-  (cd "${repo_root}" && GOOS=linux GOARCH="${arch}" CGO_ENABLED=0 go build -o "${tmp}/kubeatlas" ./cmd/explorer)
+  (cd "${repo_root}" && GOOS=linux GOARCH="${arch}" CGO_ENABLED=0 go build -o "${install_tmp}/kubeatlas" ./cmd/explorer)
 
   step "Building and loading image kubeatlas-cilium-demo:dev"
-  cat > "${tmp}/Dockerfile" <<'EOF'
+  cat > "${install_tmp}/Dockerfile" <<'EOF'
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
 COPY kubeatlas /kubeatlas
 ENTRYPOINT ["/kubeatlas"]
 EOF
-  docker build -q -t kubeatlas-cilium-demo:dev "${tmp}" >/dev/null
+  docker build -q -t kubeatlas-cilium-demo:dev "${install_tmp}" >/dev/null
   kind load docker-image kubeatlas-cilium-demo:dev --name "${CLUSTER_NAME}" >/dev/null
   ok "Image loaded"
 
