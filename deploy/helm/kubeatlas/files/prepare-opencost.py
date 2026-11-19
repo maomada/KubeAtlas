@@ -6,6 +6,7 @@ import gzip
 import hashlib
 import http.client
 import io
+import ipaddress
 import json
 import pathlib
 import re
@@ -135,10 +136,23 @@ def is_dns_name(value):
 
 
 def valid_registry(authority):
+    if authority.startswith("["):
+        host, bracket, suffix = authority[1:].partition("]")
+        try:
+            address = ipaddress.IPv6Address(host)
+        except ValueError:
+            return False
+        return bool(bracket) and address.scope_id is None and (
+            not suffix or (suffix.startswith(":") and valid_registry_port(suffix[1:]))
+        )
     host, separator, port = authority.partition(":")
     return is_dns_name(host) and ("." in host or bool(separator)) and (
-        not separator or (re.fullmatch(r"[0-9]{1,5}", port) and 1 <= int(port) <= 65535)
+        not separator or valid_registry_port(port)
     )
+
+
+def valid_registry_port(port):
+    return bool(re.fullmatch(r"[0-9]{1,5}", port)) and 1 <= int(port) <= 65535
 
 
 def selector_terms(selector):

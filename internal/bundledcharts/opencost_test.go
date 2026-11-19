@@ -14,6 +14,19 @@ import (
 
 const testRegistry = "registry.example.test:5443"
 
+func TestOpenCostImageRegistryIPv6(t *testing.T) {
+	for _, registry := range []string{"[2001:db8::10]", "[2001:db8::10]:8443"} {
+		if !validImageRegistry(registry) {
+			t.Errorf("valid registry %q was rejected", registry)
+		}
+	}
+	for _, registry := range []string{"[192.0.2.1]", "2001:db8::10", "[fe80::1%eth0]", "[2001:db8::10]:+8080", "[2001:db8::10]:65536"} {
+		if validImageRegistry(registry) {
+			t.Errorf("invalid registry %q was accepted", registry)
+		}
+	}
+}
+
 func stageOpenCost(t *testing.T, image string, dependency bool) {
 	t.Helper()
 	template := []byte("apiVersion: v1\nkind: Pod\nmetadata:\n  name: opencost\nspec:\n  containers:\n    - name: opencost\n      image: " + image + "\n")

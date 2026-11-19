@@ -334,7 +334,7 @@ export FAKE_CLAIM_INSTALLER_SHA256
 expect_failure 'installer checksum mismatch' 'installer checksum mismatch'
 
 use_http_origin() {
-  export FAKE_ORIGIN=http://10.0.100.220:8080 KUBEATLAS_ORIGIN=http://10.0.100.220:8080 FAKE_CLAIM_ORIGIN=http://10.0.100.220:8080
+  export FAKE_ORIGIN=http://192.0.2.220:8080 KUBEATLAS_ORIGIN=http://192.0.2.220:8080 FAKE_CLAIM_ORIGIN=http://192.0.2.220:8080
 }
 
 expect_bootstrap_success() {
@@ -357,16 +357,16 @@ grep -Fq -- '--host unix:///var/run/docker.sock info' "$FAKE_DOCKER_LOG"
 
 reset_case
 use_http_origin
-export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"10.0.100.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"192.0.2.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
 export DOCKER_HOST=ssh://unrelated-daemon DOCKER_CONTEXT=unrelated-context
 expect_bootstrap_success 'exact HTTP registry with remote client overrides'
 
 reset_case
 use_http_origin
-export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{},"InsecureRegistryCIDRs":["10.0.100.0/24"]}'
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{},"InsecureRegistryCIDRs":["192.0.2.0/24"]}'
 expect_bootstrap_success 'HTTP registry allowed by CIDR'
 
-for wrong_authority in 10.0.100.220:5000 10.0.100.220:8081; do
+for wrong_authority in 192.0.2.220:5000 192.0.2.220:8081; do
   reset_case
   use_http_origin
   export FAKE_DOCKER_REGISTRY="{\"IndexConfigs\":{\"$wrong_authority\":{\"Secure\":false}},\"InsecureRegistryCIDRs\":[\"127.0.0.0/8\"]}"

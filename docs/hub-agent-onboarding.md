@@ -33,7 +33,7 @@ To offer OpenCost on new clusters, prepare the catalog with `--opencost-chart`, 
 
 Follow the [OpenCost offline preparation guide](opencost-offline.md) to build and verify the operator-managed inputs.
 
-For a Hub catalog change, pass `--hub-previous-artifacts-dir` and `--hub-previous-artifacts-version` to retain digest-addressed Agent and OpenCost pulls from the preceding verified catalog. New enrollments use the current version.
+For a Hub catalog change, pass `--hub-previous-artifacts-dir` and `--hub-previous-artifacts-version` to retain digest-addressed Agent and OpenCost pulls from the preceding verified catalog. In the Portal Helm chart, configure `hubArtifacts.previous.existingClaim` and `hubArtifacts.previous.version` to mount the previous catalog read-only. New enrollments use the current version.
 
 The Hub exposes only versioned installer/chart/checksum/bootstrap files and the catalog-reachable image manifest and blobs. OCI content is anonymous, immutable, same-origin, and GET/HEAD-only. Tags, upload/delete routes, arbitrary file paths, external redirects, and registry credentials are not supported. Consequently the selected Hub origin must be reachable by the bootstrap client and by every target node that pulls the Agent image.
 

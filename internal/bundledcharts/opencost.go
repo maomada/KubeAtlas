@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -143,15 +144,34 @@ func embeddedDependencies(loaded *chart.Chart) bool {
 }
 
 func validImageRegistry(registry string) bool {
+	if address, ok := strings.CutPrefix(registry, "["); ok {
+		host, suffix, found := strings.Cut(address, "]")
+		ip, err := netip.ParseAddr(host)
+		if !found || err != nil || !ip.Is6() || ip.Zone() != "" {
+			return false
+		}
+		if suffix == "" {
+			return true
+		}
+		port, ok := strings.CutPrefix(suffix, ":")
+		return ok && validImageRegistryPort(port)
+	}
 	matches := registryPattern.FindStringSubmatch(registry)
 	if len(matches) == 0 || len(matches[1]) > 253 || !strings.ContainsAny(registry, ".:") {
 		return false
 	}
 	if matches[2] != "" {
-		port, err := strconv.Atoi(matches[2])
-		return err == nil && port > 0 && port <= 65535
+		return validImageRegistryPort(matches[2])
 	}
 	return true
+}
+
+func validImageRegistryPort(value string) bool {
+	if len(value) == 0 || len(value) > 5 || strings.ContainsAny(value, "+-") {
+		return false
+	}
+	port, err := strconv.Atoi(value)
+	return err == nil && port > 0 && port <= 65535
 }
 
 func ValidateOpenCostManifests(data []byte, registry string) error {

@@ -143,13 +143,13 @@ if grep -Eq -- 'curl.*(--location|(^|[[:space:]])-L([[:space:]]|$))' "$script"; 
 fi
 
 printf '  %s  \n' "$(printf 't%.0s' {1..40})" >"$token"
-common[1]=http://10.0.100.220:8080
+common[1]=http://192.0.2.220:8080
 expect_failure 'HTTP registry preflight blocked' --yes
-export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"10.0.100.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
+export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"192.0.2.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
 export FAKE_HELM_INSTALL_FAIL=1
 : >"$FAKE_MUTATIONS"
 if output="$(bash "$script" "${common[@]}" --yes 2>&1)"; then printf 'Helm failure unexpectedly passed\n' >&2; exit 1; fi
-[[ "$output" == *'Installation recovery:'* && "$output" == *'namespace=kubeatlas'* && "$output" == *'context=test-context'* && "$output" == *'Resources may already exist'* && "$output" == *'10.0.100.220:8080'* ]] || { printf 'Helm failure lacked target/recovery guidance: %s\n' "$output" >&2; exit 1; }
+[[ "$output" == *'Installation recovery:'* && "$output" == *'namespace=kubeatlas'* && "$output" == *'context=test-context'* && "$output" == *'Resources may already exist'* && "$output" == *'192.0.2.220:8080'* ]] || { printf 'Helm failure lacked target/recovery guidance: %s\n' "$output" >&2; exit 1; }
 [[ "$(wc -l <"$FAKE_MUTATIONS")" -eq 3 ]] || { printf 'unexpected post-failure mutations\n' >&2; exit 1; }
 if grep -Eq '(delete|uninstall|upgrade|patch|apply|replace)' "$FAKE_MUTATIONS"; then printf 'failed install cleaned up or adopted resources\n' >&2; exit 1; fi
 [[ "$output" != *"$(printf 't%.0s' {1..40})"* ]] || { printf 'Helm failure leaked token\n' >&2; exit 1; }

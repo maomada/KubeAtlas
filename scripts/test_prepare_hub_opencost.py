@@ -179,6 +179,11 @@ class ChartTests(unittest.TestCase):
         self.assertFalse(prepare.valid_registry("hub.example:99999"))
         self.assertTrue(prepare.valid_registry("hub.example"))
         self.assertTrue(prepare.valid_registry("192.0.2.10:8080"))
+        self.assertTrue(prepare.valid_registry("[2001:db8::10]"))
+        self.assertTrue(prepare.valid_registry("[2001:db8::10]:8443"))
+        self.assertFalse(prepare.valid_registry("2001:db8::10"))
+        self.assertFalse(prepare.valid_registry("[fe80::1%eth0]"))
+        self.assertFalse(prepare.valid_registry("[2001:db8::10]:+8080"))
 
 
 if __name__ == "__main__":
