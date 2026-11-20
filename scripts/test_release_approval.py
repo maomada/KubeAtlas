@@ -290,6 +290,23 @@ class ReleaseApprovalTests(unittest.TestCase):
         with self.assertRaisesRegex(approval.ApprovalError, "artifact set mismatch"):
             self._verify(manifest_path, artifact_root, channel="binaries", signature=signature, run=run)
 
+    def test_binaries_with_hub_approval_binds_bundle_installer_and_checksums(self):
+        channel = "binaries-with-hub"
+        manifest_path, artifact_root = self._create(channel)
+        signature = self._sign(manifest_path)
+        run = self._build_run(channel)
+        approved = self._verify(manifest_path, artifact_root, channel=channel, signature=signature, run=run)
+        names = [f"kubeatlas-hub-agent-bundle_{VERSION}.tar.gz", "install-hub.py", "hub-checksums.txt"]
+        self.assertTrue(set(names).issubset(approved["targets"]))
+        for name in names:
+            with self.subTest(name=name):
+                artifact = artifact_root / "hub" / name
+                original = artifact.read_bytes()
+                artifact.write_bytes(original + b"modified")
+                with self.assertRaisesRegex(approval.ApprovalError, "artifact.*inventory|checksum|mismatch"):
+                    self._verify(manifest_path, artifact_root, channel=channel, signature=signature, run=run)
+                artifact.write_bytes(original)
+
     def test_artifact_root_and_nested_directory_symlinks_are_rejected(self):
         manifest_path, artifact_root = self._create()
         signature = self._sign(manifest_path)

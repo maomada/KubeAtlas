@@ -133,6 +133,11 @@ PY
 }
 validate_origin "$KUBEATLAS_ORIGIN" || fail 'origin must be HTTPS DNS/IP or HTTP literal IP/loopback'
 origin="${KUBEATLAS_ORIGIN%/}"
+ca_file="${KUBEATLAS_AGENT_HUB_CA_FILE:-}"
+if [[ -n "$ca_file" ]]; then
+  [[ -f "$ca_file" && ! -L "$ca_file" && -r "$ca_file" ]] ||
+    fail 'KUBEATLAS_AGENT_HUB_CA_FILE must be a readable regular file, not a symlink'
+fi
 for tool in curl kubectl helm sha256sum jq mktemp chmod grep awk sleep python3; do
   command -v "$tool" >/dev/null 2>&1 || fail "required tool is missing: $tool"
 done
@@ -144,7 +149,7 @@ bootstrap_cleanup() {
   trap - EXIT
   if (( status != 0 )) && [[ "$claim_state" != not-started ]]; then
     printf 'Registration recovery: claim state=%s; cluster=%q; context=%q; namespace=%q; release=%q; kube-system UID=%q.\n' "$claim_state" "${cluster_id:-unknown}" "${context:-unknown}" "${namespace:-unknown}" "${release:-unknown}" "${system_uid:-unknown}" >&2
-    printf '%s\n' 'The Hub may already have a cluster record and the one-time claim cannot be replayed. Inspect that record and the displayed target before retrying. Any created resources are retained; do not adopt or delete an existing namespace automatically. Resolve the existing installation or explicitly approve a fresh pairing. Temporary credentials are not printed.' >&2
+    printf 'Check %s/clusters and the displayed Kubernetes target before retrying. The Hub may already have a cluster record and the one-time claim cannot be replayed. Repair the existing release or resolve retained resources before approving a new pairing.\n' "$origin" >&2
   elif (( status != 0 )) && [[ -n "$id" ]]; then
     printf 'Enrollment %s was not claimed; this bootstrap made no Kubernetes changes. Pending approval expires after about ten minutes.\n' "$id" >&2
   fi
@@ -173,9 +178,11 @@ fi
 http_registry_preflight "$origin" "$context" || fail 'HTTP registry trust is missing; enrollment was not started and no Kubernetes changes were made'
 fingerprint="$(printf '%s' "$system_uid" | sha256sum | awk '{print $1}')"
 printf '%s\n' "$(jq -cn --arg profile "$KUBEATLAS_PROFILE" --arg contextName "$context" --arg clusterFingerprint "$fingerprint" '{profile:$profile,contextName:$contextName,clusterFingerprint:$clusterFingerprint}')" >"$work/request.json"
-curl_args=(--silent --show-error --proto '=https,http' --max-redirs 0 --write-out '%{http_code}')
-status="$(curl "${curl_args[@]}" --header 'Content-Type: application/json' --data-binary "@$work/request.json" --output "$work/response.json" "$origin/api/hub/enrollments")" || fail 'enrollment request failed'
-[[ "$status" == 201 ]] || fail 'Hub did not accept enrollment request'
+curl_args=(--disable --silent --show-error --proto '=https,http' --connect-timeout 10 --max-time 30 --max-redirs 0 --write-out '%{http_code}')
+if [[ -n "$ca_file" ]]; then curl_args+=(--cacert "$ca_file"); fi
+status="$(curl "${curl_args[@]}" --header 'Content-Type: application/json' --data-binary "@$work/request.json" --output "$work/response.json" "$origin/api/hub/enrollments")" || fail 'could not reach the Hub to create an enrollment; check the connection profile and certificate'
+[[ "$status" == 201 ]] || fail "Hub did not accept enrollment request (HTTP $status); check the selected connection profile and Agent catalog"
+claim_deadline=$((SECONDS + 600))
 id="$(jq -er '.id | select(test("^[0-9a-f]{32}$"))' "$work/response.json")" || fail 'enrollment ID is invalid'
 device="$(jq -er '.deviceSecret | select(test("^ka_device_[0-9a-f]{64}$"))' "$work/response.json")" || fail 'device secret is invalid'
 code="$(jq -er '.userCode | select(test("^[A-Z2-9]{4}-[A-Z2-9]{4}$"))' "$work/response.json")" || fail 'approval code is invalid'
@@ -211,14 +218,27 @@ printf 'header = "Authorization: Bearer %s"\n' "$device" >"$work/device.curl"
 chmod 600 "$work/device.curl"
 unset device
 claim_url="$origin/api/hub/enrollments/$id/claim"
+printf 'Waiting for approval in the Hub.\n' >&2
 while :; do
+  (( SECONDS < claim_deadline )) || fail 'the Hub approval window elapsed'
   claim_state=attempted
-  status="$(curl "${curl_args[@]}" --config "$work/device.curl" --request POST --output "$work/response.json" "$claim_url")" || fail 'claim poll failed'
-  if [[ "$status" == 200 ]] && [[ "$(jq -r '.status // empty' "$work/response.json")" == approved ]]; then break; fi
-  [[ "$status" == 200 && "$(jq -r '.status // empty' "$work/response.json")" == pending ]] || fail 'request expired, denied, or failed'
+  status="$(curl "${curl_args[@]}" --config "$work/device.curl" --request POST --output "$work/response.json" "$claim_url")" || fail 'lost contact with the Hub during claim; check the Hub before trying again'
+  case "$status" in
+    200)
+      claim_status="$(jq -er '.status' "$work/response.json")" || fail 'invalid response while claiming enrollment'
+      [[ "$claim_status" == approved ]] && break
+      [[ "$claim_status" == pending ]] || fail 'unexpected status while claiming enrollment'
+      claim_state=not-started
+      ;;
+    401|409) fail "Hub enrollment is expired, denied, or unavailable (HTTP $status)";;
+    429) fail 'Hub enrollment rate limit reached (HTTP 429)';;
+    503) fail 'Hub could not complete enrollment (HTTP 503); check catalog and connection profile availability';;
+    *) fail "Hub enrollment claim failed (HTTP $status)";;
+  esac
   sleep 5
 done
 claim_state=claimed
+printf 'Hub approval received. Downloading the pinned Agent installer.\n' >&2
 cluster_id="$(jq -er '.clusterId | select(test("^[a-z0-9][a-z0-9-]{0,62}$"))' "$work/response.json")" || fail 'cluster ID is invalid'
 owner="$(jq -er '.ownerUserId | select(test("^kubeatlas:portal:[0-9a-f]{64}$"))' "$work/response.json")" || fail 'Hub owner identity is invalid'
 version="$(jq -er '.version | select(type == "string")' "$work/response.json")" || fail 'claim version is invalid'
@@ -243,6 +263,7 @@ installer_args=(
   --version "$version" --image-digest "$image" --chart-sha256 "$chart"
   --owner-user-id "$owner" --token-file "$work/token" --namespace "$namespace" --release "$release"
 )
+if [[ -n "$ca_file" ]]; then installer_args+=(--ca-file "$ca_file"); fi
 if jq -e 'has("openCostChartSHA256") or has("openCostImageDigest")' "$work/response.json" >/dev/null; then
   cost_chart="$(jq -er '.openCostChartSHA256 | select(test("^[0-9a-f]{64}$"))' "$work/response.json")" || fail 'OpenCost chart checksum is invalid'
   cost_image="$(jq -er '.openCostImageDigest | select(test("^sha256:[0-9a-f]{64}$"))' "$work/response.json")" || fail 'OpenCost image digest is invalid'

@@ -19,6 +19,9 @@ type PrepareOptions struct {
 	InstallerPath  string
 	BootstrapPath  string
 	OutputDir      string
+	ArchivePath    string
+	LicensePath    string
+	NoticePath     string
 	Version        string
 	ChartVersion   string
 	Revision       string
@@ -73,6 +76,14 @@ func Prepare(options PrepareOptions) error {
 		bootstrapInfo, err := os.Lstat(options.BootstrapPath)
 		if err != nil || !bootstrapInfo.Mode().IsRegular() || bootstrapInfo.Mode()&os.ModeSymlink != 0 {
 			return errors.New("bootstrap source is unavailable")
+		}
+	}
+	if options.ArchivePath != "" {
+		if options.BootstrapPath == "" || options.LicensePath == "" || options.NoticePath == "" {
+			return errors.New("Hub Agent bundle archive requires the bootstrap, LICENSE, and NOTICE")
+		}
+		if _, err := newBundleDestination(options.ArchivePath); err != nil {
+			return err
 		}
 	}
 	output, err := filepath.Abs(options.OutputDir)
@@ -179,11 +190,25 @@ func Prepare(options PrepareOptions) error {
 	if err := os.WriteFile(filepath.Join(stage, "manifest.json"), data, 0o444); err != nil {
 		return err
 	}
+	if options.ArchivePath != "" {
+		if err := copyRegular(options.LicensePath, filepath.Join(stage, "LICENSE"), 0o444); err != nil {
+			return err
+		}
+		if err := copyRegular(options.NoticePath, filepath.Join(stage, "NOTICE"), 0o444); err != nil {
+			return err
+		}
+	}
 	catalog, err := Open(stage, options.Version)
 	if err != nil {
 		return err
 	}
+	if options.ArchivePath != "" {
+		err = catalog.writeBundleArchive(options.ArchivePath)
+	}
 	_ = catalog.Close()
+	if err != nil {
+		return err
+	}
 	if err := makeReadOnly(stage); err != nil {
 		return err
 	}

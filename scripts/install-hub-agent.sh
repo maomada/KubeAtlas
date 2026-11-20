@@ -171,21 +171,66 @@ fi
 [[ "$release" =~ ^[a-z0-9]([-a-z0-9]*[a-z0-9])?$ && ${#release} -le 53 ]] || fail 'release name is invalid'
 if [[ "$release" != *kubeatlas* && ${#release} -gt 43 ]]; then fail 'release name is too long for the exact owner binding'; fi
 
-for tool in curl helm kubectl sha256sum grep awk mktemp stat wc od tr cat python3; do
+for tool in curl helm kubectl sha256sum grep awk mktemp stat wc od tr cat tail python3; do
   command -v "$tool" >/dev/null 2>&1 || fail "required tool is missing: $tool"
 done
 work="$(mktemp -d)" || fail 'cannot create private temporary directory'
 chmod 700 "$work"
-mutation_started=false
+install_stage=''
+print_command() {
+  printf ' ' >&2
+  printf ' %q' "$@" >&2
+  printf '\n' >&2
+}
+show_helm_diagnostics() {
+  local pod_summary event_summary
+  local -a inspect=(kubectl --context "$context" --request-timeout=8s --namespace "$namespace")
+  local selector="app.kubernetes.io/instance=$release"
+  local pod_columns='custom-columns=POD:.metadata.name,NODE:.spec.nodeName,PHASE:.status.phase,INIT-WAITING:.status.initContainerStatuses[*].state.waiting.reason,WAITING:.status.containerStatuses[*].state.waiting.reason,TERMINATED:.status.containerStatuses[*].state.terminated.reason'
+  if pod_summary="$("${inspect[@]}" get pods --selector "$selector" --chunk-size=0 -o "$pod_columns" 2>/dev/null)"; then
+    if [[ -n "$pod_summary" ]]; then
+      printf 'Agent Pod status (up to 10 rows):\n' >&2
+      printf '%s\n' "${pod_summary//"$token_value"/[redacted]}" | LC_ALL=C awk 'NR <= 11 {gsub(/[[:cntrl:]]/, "?"); print substr($0, 1, 512)}' >&2
+    else
+      printf '%s\n' 'The Kubernetes API has no Pods for this release yet.' >&2
+    fi
+    case "$pod_summary" in
+      *ErrImagePull*|*ImagePullBackOff*)
+        printf 'Image pull failed. Check registry %s, the image architecture, and registry trust on the node shown above. Access from this shell does not establish node access.\n' "${hub_origin#*://}" >&2
+        ;;
+      *CrashLoopBackOff*)
+        printf '%s\n' 'The Agent is restarting. Inspect the previous container logs with the original kubeconfig:' >&2
+        print_command kubectl --context "$context" --namespace "$namespace" logs "deployment/$fullname" --previous --tail=50
+        ;;
+    esac
+  else
+    printf '%s\n' 'Could not read the Agent Pods. Check the kubeconfig and permission to list Pods in the installation namespace.' >&2
+  fi
+  local event_columns='custom-columns=OBJECT:.involvedObject.name,REASON:.reason,COUNT:.count'
+  if event_summary="$("${inspect[@]}" get events --field-selector type=Warning --sort-by='.lastTimestamp' --no-headers --chunk-size=0 -o "$event_columns" 2>/dev/null)"; then
+    if [[ -n "$event_summary" ]]; then
+      printf 'Recent warning reasons in the installation namespace (object, reason, count):\n' >&2
+      printf '%s\n' "${event_summary//"$token_value"/[redacted]}" | tail -n 10 | LC_ALL=C awk '{gsub(/[[:cntrl:]]/, "?"); print substr($0, 1, 512)}' >&2
+      if [[ "$event_summary" == *FailedScheduling* ]]; then
+        printf '%s\n' 'Kubernetes reports FailedScheduling. Check the warning Events for resource, architecture, or scheduling constraints.' >&2
+      fi
+    fi
+  else
+    printf '%s\n' 'Could not read warning Events. Check permission to list Events in the installation namespace.' >&2
+  fi
+}
 installer_cleanup() {
   local status=$?
   trap - EXIT
-  if (( status != 0 )) && [[ "$mutation_started" == true ]]; then
-    printf 'Installation recovery: cluster=%q; context=%q; namespace=%q; release=%q; kube-system UID=%q.\n' "$cluster_id" "$context" "$namespace" "$release" "${system_uid:-unknown}" >&2
-    printf '%s\n' 'Installation did not complete. Resources may already exist and are retained for reconciliation; this installer does not adopt or delete them. Verify the displayed cluster identity, then inspect Pod status and warning Events in this namespace. Do not rerun a fresh install into an existing namespace.' >&2
-    if [[ "$hub_origin" == http://* ]]; then
-      printf 'For ImagePullBackOff or ErrImagePull, verify that every eligible node explicitly trusts HTTP registry %s; successful curl downloads do not prove container-runtime trust.\n' "${hub_origin#http://}" >&2
-    fi
+  if (( status != 0 )) && [[ -n "$install_stage" ]]; then
+    printf 'Installation recovery: stage=%s; cluster=%q; context=%q; namespace=%q; release=%q; kube-system UID=%q.\n' "$install_stage" "$cluster_id" "$context" "$namespace" "$release" "$system_uid" >&2
+    if [[ "$install_stage" == 'Helm rollout' ]]; then show_helm_diagnostics || true; fi
+    printf '%s\n' 'Resources may already exist and are retained for reconciliation. Use the original kubeconfig and first compare the kube-system UID with the UID above.' >&2
+    print_command kubectl --context "$context" get namespace kube-system -o 'jsonpath={.metadata.uid}'
+    print_command helm status "$release" --kube-context "$context" --namespace "$namespace"
+    print_command kubectl --context "$context" --namespace "$namespace" get pods --selector "app.kubernetes.io/instance=$release" -o wide
+    print_command kubectl --context "$context" --namespace "$namespace" get events --field-selector type=Warning --sort-by='.lastTimestamp'
+    printf 'Check cluster %s in %s/clusters. Repair an existing release in place, or resolve retained resources before approving a new pairing.\n' "$cluster_id" "$hub_origin" >&2
   fi
   if ! rm -rf -- "$work"; then
     printf 'Private working directory cleanup failed: %q.\n' "$work" >&2
@@ -261,12 +306,12 @@ for kind_name in \
   fi
 done
 
-curl_args=(--silent --show-error --proto '=http,https' --tlsv1.2 --write-out '%{http_code}')
+curl_args=(--disable --silent --show-error --proto '=http,https' --tlsv1.2 --connect-timeout 10 --max-time 60 --max-redirs 0 --write-out '%{http_code}')
 if [[ -n "$ca_file" ]]; then curl_args+=(--cacert "$ca_file"); fi
 download() {
   local url="$1" destination="$2" status
-  status="$(curl "${curl_args[@]}" --output "$destination" "$url")" || fail 'same-origin artifact download failed'
-  [[ "$status" == 200 ]] || fail 'artifact endpoint returned a non-200 response; redirects are not followed'
+  status="$(curl "${curl_args[@]}" --output "$destination" "$url")" || fail "same-origin artifact download failed: ${url##*/}"
+  [[ "$status" == 200 ]] || fail "artifact ${url##*/} returned a non-200 response (HTTP $status); redirects are not followed"
 }
 
 download "$hub_origin/downloads/agent/$version/checksums.txt" "$work/checksums.txt"
@@ -353,11 +398,16 @@ if [[ "$assume_yes" != true ]]; then
   [[ "$answer" == y || "$answer" == Y || "$answer" == yes || "$answer" == YES ]] || fail 'installation was not confirmed'
 fi
 
-mutation_started=true
+install_stage='namespace creation'
 kubectl --context "$context" create namespace "$namespace" || fail 'namespace creation failed; no broad cleanup was attempted'
+install_stage='token Secret creation'
 kubectl --context "$context" create secret generic "$token_secret" --namespace "$namespace" --from-file="token=$token_file" || fail 'token Secret creation failed; owned namespace remains for reconciliation'
 if [[ -n "$ca_secret" ]]; then
+  install_stage='CA Secret creation'
   kubectl --context "$context" create secret generic "$ca_secret" --namespace "$namespace" --from-file="ca.crt=$ca_file" || fail 'CA Secret creation failed; owned resources remain for reconciliation'
 fi
+install_stage='Helm rollout'
+printf 'Installing Agent release %s in namespace %s. Waiting for Kubernetes readiness.\n' "$release" "$namespace" >&2
 helm install "$release" "$work/chart.tgz" --kube-context "$context" --namespace "$namespace" --wait --timeout 5m "${values[@]}" || fail 'Helm install failed; created resources remain for reconciliation'
-printf 'Helm release deployed. This is not proof of an authenticated Hub connection; confirm Connected in the Hub directory.\n'
+printf 'Helm rollout complete. To confirm the Agent tunnel, sign in to %s/clusters and check that %s shows Connected.\n' "$hub_origin" "$cluster_id"
+printf 'If the cluster remains disconnected, check Pod status, Agent logs, and WebSocket access to %s/agent from the Agent namespace.\n' "$hub_origin"

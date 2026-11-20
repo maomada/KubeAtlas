@@ -7,6 +7,7 @@ bash -n "$script"
 bash "$script" --help >/dev/null
 
 export FAKE_MUTATIONS="$tmp/mutations"
+export FAKE_DIAGNOSTIC_READS="$tmp/diagnostic-reads"
 FAKE_CHART_SHA="$(printf 'chart fixture' | sha256sum | awk '{print $1}')"
 export FAKE_CHART_SHA
 export FAKE_IMAGE_BODY='{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}'
@@ -29,15 +30,13 @@ docker() {
 
 curl() {
   local output='' headers='' url=''
+  [[ "$1" == --disable ]] || return 82
   while (($#)); do
     case "$1" in
       --output) output="$2"; shift 2;;
       --dump-header) headers="$2"; shift 2;;
-      --cacert|--write-out) shift 2;;
-      --silent|--show-error|--proto|--tlsv1.2|--fail)
-        shift
-        if (($#)) && [[ "$1" == "=http,https" ]]; then shift; fi
-        ;;
+      --cacert|--write-out|--proto|--connect-timeout|--max-time|--max-redirs) shift 2;;
+      --disable|--silent|--show-error|--tlsv1.2) shift;;
       *) url="$1"; shift;;
     esac
   done
@@ -53,6 +52,18 @@ curl() {
 kubectl() {
   if [[ "$1" == --context ]]; then shift 2; fi
   if [[ "${1:-}" == --request-timeout=* ]]; then shift; fi
+  if [[ "${1:-}" == --namespace ]]; then
+    printf '%s\n' "$*" >>"$FAKE_DIAGNOSTIC_READS"
+    [[ "$2" == kubeatlas ]] || return 83
+    shift 2
+    case "$*" in
+      'get pods --selector app.kubernetes.io/instance=kubeatlas '*)
+        printf 'POD NODE PHASE WAITING\nagent-pod target-node Pending ImagePullBackOff\n'; return 0;;
+      'get events --field-selector type=Warning '*)
+        printf 'agent-pod Failed 3 %s\n' "$(printf 't%.0s' {1..40})"; return 0;;
+      *) return 84;;
+    esac
+  fi
   if [[ "$1" == config ]]; then
     case "$2" in
       get-contexts) printf '%s\n' "$FAKE_CONTEXTS";;
@@ -148,9 +159,18 @@ expect_failure 'HTTP registry preflight blocked' --yes
 export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{"192.0.2.220:8080":{"Secure":false}},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
 export FAKE_HELM_INSTALL_FAIL=1
 : >"$FAKE_MUTATIONS"
+: >"$FAKE_DIAGNOSTIC_READS"
 if output="$(bash "$script" "${common[@]}" --yes 2>&1)"; then printf 'Helm failure unexpectedly passed\n' >&2; exit 1; fi
-[[ "$output" == *'Installation recovery:'* && "$output" == *'namespace=kubeatlas'* && "$output" == *'context=test-context'* && "$output" == *'Resources may already exist'* && "$output" == *'192.0.2.220:8080'* ]] || { printf 'Helm failure lacked target/recovery guidance: %s\n' "$output" >&2; exit 1; }
+for expected in 'Installation recovery: stage=Helm rollout' 'namespace=kubeatlas' 'context=test-context' 'test-kube-system-uid' 'Resources may already exist' '192.0.2.220:8080' 'agent-pod target-node Pending ImagePullBackOff' 'Image pull failed.' 'agent-pod Failed 3 [redacted]' 'helm status kubeatlas --kube-context test-context --namespace kubeatlas'; do
+  [[ "$output" == *"$expected"* ]] || { printf 'Helm failure lacked %q: %s\n' "$expected" "$output" >&2; exit 1; }
+done
+[[ "$(wc -l <"$FAKE_DIAGNOSTIC_READS")" -eq 2 ]] || { printf 'failed install queried unexpected diagnostics\n' >&2; exit 1; }
 [[ "$(wc -l <"$FAKE_MUTATIONS")" -eq 3 ]] || { printf 'unexpected post-failure mutations\n' >&2; exit 1; }
 if grep -Eq '(delete|uninstall|upgrade|patch|apply|replace)' "$FAKE_MUTATIONS"; then printf 'failed install cleaned up or adopted resources\n' >&2; exit 1; fi
 [[ "$output" != *"$(printf 't%.0s' {1..40})"* ]] || { printf 'Helm failure leaked token\n' >&2; exit 1; }
+export FAKE_HELM_INSTALL_FAIL=0
+common[1]=https://hub.example.test
+: >"$FAKE_DIAGNOSTIC_READS"
+output="$(bash "$script" "${common[@]}" --yes 2>&1)"
+[[ "$output" == *'Helm rollout complete.'* && "$output" == *'sign in to https://hub.example.test/clusters and check that test-cluster shows Connected'* && ! -s "$FAKE_DIAGNOSTIC_READS" ]] || { printf 'unexpected successful rollout status: %s\n' "$output" >&2; exit 1; }
 printf 'Hub Agent installer shell tests passed (preflight failures, local Docker registry, collisions, confirmation, dry-run, token validation, failed-install recovery).\n'

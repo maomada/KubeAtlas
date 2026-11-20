@@ -29,6 +29,9 @@ func main() {
 	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
 	hubStateFile := flag.String("hub-state-file", os.Getenv("KUBEATLAS_PORTAL_HUB_STATE_FILE"), "Required persistent state file for the self-hosted Cloud Hub")
 	hubArtifactsDir := flag.String("hub-artifacts-dir", os.Getenv("KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR"), "Optional read-only directory containing the version-matched Hub Agent artifact bundle")
+	checkHubArtifacts := flag.Bool("check-hub-artifacts", false, "Validate the supplied Hub artifact directory against this Portal build and exit")
+	importHubArtifacts := flag.String("import-hub-artifacts", "", "Import a verified Hub Agent bundle archive into a new --hub-artifacts-dir and exit")
+	hubArtifactsSHA256 := flag.String("hub-artifacts-sha256", "", "Expected SHA-256 checksum of the archive to import")
 	previousArtifactsDir := flag.String("hub-previous-artifacts-dir", "", "Optional read-only previous Hub artifact bundle, retained for digest-only image pulls")
 	previousArtifactsVersion := flag.String("hub-previous-artifacts-version", "", "Exact build version of the previous Hub Agent artifact bundle")
 	hubGroups := flag.String("hub-groups", os.Getenv("KUBEATLAS_PORTAL_HUB_GROUPS"), "Comma-separated Kubernetes identity groups for the local Cloud Hub owner; grants still require cluster RBAC")
@@ -42,6 +45,13 @@ func main() {
 	flag.Parse()
 	if *showVersion {
 		fmt.Printf("kubeatlas-portal %s\n", version)
+		return
+	}
+	if *checkHubArtifacts || *importHubArtifacts != "" || *hubArtifactsSHA256 != "" {
+		if err := manageHubArtifacts(*hubArtifactsDir, *importHubArtifacts, *hubArtifactsSHA256, *checkHubArtifacts); err != nil {
+			log.Fatalf("portal Hub artifact validation failed: %v", err)
+		}
+		fmt.Printf("Verified Hub Agent artifact catalog for %s\n", version)
 		return
 	}
 	if strings.TrimSpace(*hubStateFile) == "" {
@@ -143,6 +153,26 @@ func configureArtifacts(credentials *portal.Credentials, directory, buildVersion
 	}
 	credentials.Hub.Artifacts = catalog
 	return nil
+}
+
+func manageHubArtifacts(directory, archive, checksum string, check bool) error {
+	if directory == "" {
+		return errors.New("--hub-artifacts-dir is required")
+	}
+	if check {
+		if archive != "" || checksum != "" {
+			return errors.New("--check-hub-artifacts cannot be combined with import options")
+		}
+		catalog, err := hubartifacts.Open(directory, version)
+		if err != nil {
+			return err
+		}
+		return catalog.Close()
+	}
+	if archive == "" {
+		return errors.New("--import-hub-artifacts and --hub-artifacts-sha256 are required together")
+	}
+	return hubartifacts.ImportArchive(archive, checksum, directory, version)
 }
 
 func loadCredentials() portal.Credentials {

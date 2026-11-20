@@ -9,13 +9,17 @@ The full GoReleaser build validates artifacts for two components.
 
 The hosted GitHub Release uses the `local-linux` profile. It contains eight
 Linux DEB and RPM packages, four for each component, with a manifest and
-checksums. Build archives are diagnostic artifacts. Future releases end Windows
-support.
+checksums. Releases built with the Hub catalog workflow also contain the
+versioned Agent bundle, the Hub installer, and `hub-checksums.txt`. The bundle
+uses the binaries from the Linux packages. Build archives are diagnostic
+artifacts. Future releases end Windows support.
 
 Packages also install `LICENSE`, `NOTICE`, `README.md`, and this document
 under `/usr/share/doc/<component>`. Installation does not create users,
 configure kubeconfig files, install services, or start processes. Uninstalling
 removes only files owned by the package. Packages never auto-start a service.
+The separate [Hub installer](deploy-with-ai.md#install-from-the-release-bundle)
+configures a managed systemd deployment using verified local artifacts.
 
 ## Install and uninstall
 

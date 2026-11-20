@@ -41,8 +41,8 @@ The [latest stable release](https://github.com/maomada/KubeAtlas/releases/latest
 Download the matching `kubeatlas` package and `checksums.txt` from the release. Verify the downloaded file, install it, and open `http://127.0.0.1:9280`. KubeAtlas uses your kubeconfig.
 
 ```sh
-# Debian or Ubuntu on amd64, using v0.1.1 as an example
-package=kubeatlas_0.1.1_linux_amd64.deb
+# Debian or Ubuntu on amd64, using v0.1.2 as an example
+package=kubeatlas_0.1.2_linux_amd64.deb
 awk -v name="$package" '$2 == name' checksums.txt | sha256sum --check - &&
   sudo apt install "./$package" &&
   kubeatlas --listen-address 127.0.0.1 --port 9280 --no-browser
@@ -52,10 +52,11 @@ On an RPM-based distribution, install the verified RPM with `sudo rpm -i ./<pack
 
 ### Deploy the Hub
 
-1. Install the matching `kubeatlas-portal` package. Configure owner credentials, a persistent state file, and an HTTPS endpoint. [Hub setup](docs/deploy-with-ai.md#3-run-a-shared-hub)
-2. Prepare a version-matched Agent bundle, then select **Connect cluster** in Hub. Run the generated command for the intended Kubernetes context and approve the pairing. [Agent onboarding](docs/hub-agent-onboarding.md)
+1. Starting with `v0.1.2`, download the matching `kubeatlas-portal` DEB or RPM, `install-hub.py`, `hub-checksums.txt`, and the version-matched Agent bundle from [GitHub Releases](https://github.com/maomada/KubeAtlas/releases/latest).
+2. Set up the HTTPS endpoint and owner credentials, then run the installer. It configures the systemd service and imports the offline Agent bundle. [Hub installation steps](docs/deploy-with-ai.md#install-from-the-release-bundle)
+3. Select **Connect cluster** in Hub. Run the generated command for the intended Kubernetes context and approve the pairing. [Agent onboarding](docs/hub-agent-onboarding.md)
 
-The stable package release and the [OCI Helm charts](https://github.com/maomada?tab=packages) have separate release schedules. Use the [Helm guide](deploy/helm/kubeatlas-portal/README.md) for an available chart version.
+For existing custom deployments, see [manual Hub setup](docs/deploy-with-ai.md#manual-hub-setup). For an available OCI chart version, see the [Hub Helm guide](deploy/helm/kubeatlas-portal/README.md).
 
 To hand the setup to an AI agent, share the [deployment runbook](docs/deploy-with-ai.md) or its [raw Markdown](https://raw.githubusercontent.com/maomada/KubeAtlas/main/docs/deploy-with-ai.md).
 

@@ -19,6 +19,9 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Printf("Prepared private Hub artifact catalog at %s\n", options.OutputDir)
+	if options.ArchivePath != "" {
+		fmt.Printf("Prepared portable Hub Agent bundle at %s\n", options.ArchivePath)
+	}
 }
 
 func parseOptions(args []string) (hubartifacts.PrepareOptions, error) {
@@ -28,6 +31,9 @@ func parseOptions(args []string) (hubartifacts.PrepareOptions, error) {
 	installer := set.String("installer", "scripts/install-hub-agent.sh", "Hub Agent installer script")
 	bootstrap := set.String("bootstrap", "scripts/bootstrap-hub-agent.sh", "Optional same-origin Hub Agent bootstrap script")
 	output := set.String("output", "", "New private output directory (must not exist)")
+	archive := set.String("archive", "", "Also produce a portable Hub Agent bundle (.tar.gz)")
+	license := set.String("license", "LICENSE", "License to include when packaging a portable bundle")
+	notice := set.String("notice", "NOTICE", "Notice to include when packaging a portable bundle")
 	version := set.String("version", "", "Exact Portal and Agent image build version")
 	chartVersion := set.String("chart-version", "", "Helm chart SemVer (defaults to 0.0.0-dev.<revision12>)")
 	revision := set.String("revision", "", "40-character source revision encoded in Agent image labels")
@@ -44,6 +50,7 @@ func parseOptions(args []string) (hubartifacts.PrepareOptions, error) {
 	}
 	return hubartifacts.PrepareOptions{
 		ChartDir: *chart, LayoutDir: *layout, InstallerPath: *installer, BootstrapPath: *bootstrap, OutputDir: *output,
+		ArchivePath: *archive, LicensePath: *license, NoticePath: *notice,
 		Version: *version, ChartVersion: *chartVersion, Revision: *revision, ImageDigest: *digest, HelmBinary: *helm,
 		OpenCostChart: *openCostChart, OpenCostLayout: *openCostLayout, OpenCostDigest: *openCostDigest,
 	}, nil

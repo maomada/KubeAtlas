@@ -43,7 +43,7 @@ In Organization settings, only the platform owner can save a LAN origin and a pu
 
 The shared `局域网` / `公网` selector controls onboarding and MCP/OpenCode configuration; the browser origin is never a fallback. The browser stores only the selected profile name, not tokens or other credentials.
 
-Origins must be HTTPS root origins, except loopback development and explicitly configured HTTP literal-IP origins. HTTP DNS names are rejected; HTTPS DNS names require a publicly valid certificate. Userinfo, path prefixes, queries, fragments, wildcards, control characters, backslashes, and shell metacharacters are rejected. Both configured authorities are added to an immutable per-request exact-host policy snapshot; existing same-origin, Fetch Metadata, and trusted tunnel-origin checks remain in force.
+Origins must be HTTPS root origins, except loopback development and explicitly configured HTTP literal-IP origins. HTTP DNS names are rejected. HTTPS certificates must be trusted by the installer, Agent, and node runtimes. Userinfo, path prefixes, queries, fragments, wildcards, control characters, backslashes, and shell metacharacters are rejected. Both configured authorities are added to an immutable per-request exact-host policy snapshot; existing same-origin, Fetch Metadata, and trusted tunnel-origin checks remain in force.
 
 Use a certificate whose SAN matches the configured DNS name or IP address. The Agent's optional CA file configures only its connection to the Hub. It does not configure the target node's container runtime; nodes must separately trust the Hub certificate to pull the image. HTTP exposes passwords, enrollment credentials, bearer tokens, and artifact downloads to interception. Use HTTP only on a trusted network, and configure each target node's container runtime separately if an HTTP registry requires an insecure-registry exception; the installer never changes node runtime settings. A TLS-terminating reverse proxy must preserve the selected Host authority and route `/api/`, `/agent`, `/mcp`, `/downloads/agent/`, and `/v2/` to the Portal without path rewriting or redirects; in particular, node image pulls must receive OCI manifest/blob bytes from this same origin.
 
@@ -53,8 +53,21 @@ Run the generated bootstrap with Bash. Bootstrap requires `curl`, `kubectl`,
 `helm`, `sha256sum`, `jq`, `python3`, `mktemp`, `chmod`, `grep`, `awk`, and
 `sleep` on `PATH`. The installer also runs with Bash and requires `curl`,
 `helm`, `kubectl`, `sha256sum`, `grep`, `awk`, `mktemp`, `stat`, `wc`, `od`,
-`tr`, `cat`, and `python3`. The installer uses `stat -c`, so it requires GNU
+`tr`, `cat`, `tail`, and `python3`. The installer uses `stat -c`, so it requires GNU
 `stat`.
+
+For a Hub using a private CA, export both variables in the shell before running
+the generated command:
+
+```bash
+export KUBEATLAS_AGENT_HUB_CA_FILE=/absolute/path/to/hub-ca.pem
+export CURL_CA_BUNDLE="$KUBEATLAS_AGENT_HUB_CA_FILE"
+```
+
+`CURL_CA_BUNDLE` supplies trust for the initial bootstrap download.
+`KUBEATLAS_AGENT_HUB_CA_FILE` supplies the same PEM CA for enrollment, artifact
+downloads and the Agent tunnel. Configure registry certificate trust on each
+eligible node's container runtime separately.
 
 An owner selects the LAN or public profile and approves the CLI's short-lived human code. The generated command downloads the same-origin bootstrap without following redirects, verifies its SHA-256 before execution, and starts enrollment. Bootstrap reads the current kube context and freezes it in a private mode-0600 kubeconfig; it displays the context, API server, and `kube-system` UID, checks tools, identity, required privileges, and resource collisions before cluster mutation, and never adopts or cleans up existing resources. The installer repeats preflight, downloads the pinned installer/chart/image from the same origin without redirects, verifies hashes, and passes the Agent token only by protected file path. Helm success means deployed, not Connected; verify the Agent's actual Connected status in the Portal.
 
@@ -86,15 +99,18 @@ policy with `docker info`, then run the platform-generated command again.
 The scripts only print this guidance; they do not edit daemon settings or send
 signals. HTTPS still requires each node to trust the registry certificate.
 
-If a failure occurs after claiming enrollment, the one-time claim may already
-have created a Hub cluster record. Recovery output identifies the cluster,
-context, namespace and release without displaying credentials. Inspect that
-record and verify the displayed cluster identity before working on any retained
-resources. A Helm failure preserves partial resources for reconciliation; a
-fresh installer refuses to adopt their namespace. Resolve the existing install
-or explicitly approve a fresh pairing. The bootstrap deletes its temporary
-credential files and does not replay an approved claim or automatically delete
-existing resources.
+If a claim response is lost, check the Hub's cluster directory before starting
+another registration. The one-time claim may already have created a cluster
+record. Bootstrap exits and removes its temporary credential files.
+
+If installation fails after creating resources, keep the context, `kube-system`
+UID, namespace and Helm release from the recovery output. Verify that identity
+with your original kubeconfig and run the printed read-only commands. After a
+failed Helm rollout, the installer reports Agent Pod status and recent warning
+reasons when the Kubernetes API permits those reads. For an image pull failure,
+check the reported node's registry trust, connectivity and architecture.
+Repair the existing release after correcting the cause. If a new pairing is
+necessary, reconcile the retained installation before approving it.
 
 Hub mode binds `cluster-admin` only to the exact local Hub owner `User` identity returned by the Hub. It also binds the organization groups `kubeatlas:hub:owner`, `kubeatlas:hub:member`, and `kubeatlas:hub:viewer` to Kubernetes `admin`, `edit`, and `view`, respectively, plus a limited infrastructure-read role for get/list/watch on nodes, namespaces, storage classes, PVs, and PVCs—not Secrets or `nodes/proxy`. Those groups do not receive `cluster-admin`. Existing Agent deployments require an operator-controlled chart/Helm rollout to apply the new role bindings; the Hub does not change remote RBAC or Agent token Secrets. The Agent ServiceAccount also has Kubernetes impersonation permissions; possession of its token is highly privileged because Kubernetes cannot scope impersonation to a safe username/group set. Review the chart's RBAC and node image-pull trust before installation.
 
