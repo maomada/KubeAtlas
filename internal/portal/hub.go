@@ -292,7 +292,7 @@ func (h *Handler) serveHub(w http.ResponseWriter, r *http.Request) bool {
 		if !requireActiveMember(w, member) {
 			return true
 		}
-		p.manageClusters(w, r, member, organizationID)
+		p.manageClusters(w, r, ownerID, member, organizationID)
 	case r.URL.Path == "/api/hub/groups" || strings.HasPrefix(r.URL.Path, "/api/hub/groups/"):
 		if !requireActiveMember(w, member) {
 			return true

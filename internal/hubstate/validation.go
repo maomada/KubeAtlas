@@ -489,16 +489,9 @@ func validFile(file storeFile) bool {
 	families := map[string]storedCredential{}
 	active := map[string]bool{}
 	for id, credential := range file.Credentials {
-		var ids []string
-		var err error
-		if credential.RevokedAt == nil {
-			ids, err = scopeOrganization(credential.ClusterIDs, credential.OrganizationID, file.Clusters, false)
-		} else {
-			ids, err = scope(credential.ClusterIDs, file.Clusters, false)
-		}
 		if id != credential.ID || !validHex(id) || !validHex(credential.FamilyID) || !validOwner(credential.OwnerID) ||
-			!validOrg(credential.OrganizationID, file.Organizations) || !validText(credential.Label, 128, false) || err != nil ||
-			!slices.Equal(ids, credential.ClusterIDs) || !validHex(credential.Digest) || digests[credential.Digest] ||
+			!validOrg(credential.OrganizationID, file.Organizations) || !validText(credential.Label, 128, false) ||
+			!validCredentialClusterScope(credential, file.Clusters) || !validHex(credential.Digest) || digests[credential.Digest] ||
 			!validTTL(credential.TTLSeconds) || !validTTL(credential.OriginalTTLSeconds) {
 			return false
 		}
@@ -534,6 +527,23 @@ func validFile(file storeFile) bool {
 			active[credential.FamilyID] = true
 		}
 		digests[credential.Digest] = true
+	}
+	return true
+}
+
+func validCredentialClusterScope(credential storedCredential, clusters map[string]storedCluster) bool {
+	ids := credential.ClusterIDs
+	if credential.RevokedAt == nil {
+		normalized, err := scopeOrganization(ids, credential.OrganizationID, clusters, false)
+		return err == nil && slices.Equal(normalized, ids)
+	}
+	if len(ids) == 0 || len(ids) > maxClusters {
+		return false
+	}
+	for index, id := range ids {
+		if !idPattern.MatchString(id) || index > 0 && id <= ids[index-1] {
+			return false
+		}
 	}
 	return true
 }

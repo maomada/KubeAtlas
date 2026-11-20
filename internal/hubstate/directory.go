@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"slices"
 	"strings"
+	"time"
 )
 
 const agentPrefix = "ka_agent_"
@@ -56,8 +57,8 @@ func (s *Store) CreateClusterForEnrollment(organizationID, ownerID, localOwnerID
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.activeEnrollmentOwnerLocked(organizationID, ownerID, localOwnerID) ||
-		!s.enrollmentClusterScopeAllowsLocked(organizationID, ownerID, localOwnerID, input.ID, true) {
+	if !s.activeOrganizationOwnerLocked(organizationID, ownerID, localOwnerID) ||
+		!s.legacyClusterScopeAllowsLocked(organizationID, ownerID, localOwnerID, input.ID, true) {
 		return IssuedAgent{}, failure("permission_denied")
 	}
 	return s.createClusterForOrganizationLocked(organizationID, input)
@@ -87,7 +88,7 @@ func (s *Store) createClusterForOrganizationLocked(organizationID string, input 
 	return IssuedAgent{Cluster: cloneCluster(c), Token: token}, nil
 }
 
-func (s *Store) activeEnrollmentOwnerLocked(organizationID, ownerID, localOwnerID string) bool {
+func (s *Store) activeOrganizationOwnerLocked(organizationID, ownerID, localOwnerID string) bool {
 	account, ok := s.data.Accounts[ownerID]
 	if !ok || account.Status != "active" {
 		return false
@@ -99,7 +100,7 @@ func (s *Store) activeEnrollmentOwnerLocked(organizationID, ownerID, localOwnerI
 	return ok && membership.Role == "owner"
 }
 
-func (s *Store) enrollmentClusterScopeAllowsLocked(organizationID, ownerID, localOwnerID, clusterID string, creating bool) bool {
+func (s *Store) legacyClusterScopeAllowsLocked(organizationID, ownerID, localOwnerID, clusterID string, creating bool) bool {
 	account := s.data.Accounts[ownerID]
 	if ownerID == localOwnerID && account.Local && account.PlatformOwner {
 		return true
@@ -193,6 +194,34 @@ func (s *Store) RevokeAgentTokenForOrganization(organizationID, id string) error
 	return s.commit(next)
 }
 
+func (s *Store) DeleteRevokedCluster(organizationID, ownerID, localOwnerID, id string) ([]Credential, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if !s.activeOrganizationOwnerLocked(organizationID, ownerID, localOwnerID) ||
+		!s.legacyClusterScopeAllowsLocked(organizationID, ownerID, localOwnerID, id, false) {
+		return nil, failure("permission_denied")
+	}
+	cluster, exists := s.data.Clusters[id]
+	if !exists || cluster.OrganizationID != organizationID {
+		return nil, failure("cluster_not_found")
+	}
+	if cluster.RevokedAt == nil {
+		return nil, failure("conflict")
+	}
+	now := s.now().UTC()
+	if now.Before(cluster.UpdatedAt) {
+		return nil, failure("store_unavailable")
+	}
+	next := s.next(now)
+	delete(next.Clusters, id)
+	removeClusterReferences(next, organizationID, id, now)
+	revoked := revokeClusterCredentials(next, organizationID, id, now)
+	if err := s.commit(next); err != nil {
+		return nil, err
+	}
+	return revoked, nil
+}
+
 func (s *Store) AuthenticateAgent(token, claimedID string) (Cluster, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -260,33 +289,47 @@ func (s *Store) TransferCluster(id, organizationID string) (Cluster, error) {
 	next := s.next(now)
 	cluster.OrganizationID, cluster.UpdatedAt = organizationID, now
 	next.Clusters[id] = cluster
+	for _, accountID := range removeClusterReferences(next, oldOrganizationID, id, now) {
+		revokeCredentials(next, oldOrganizationID, accountID, now)
+	}
+	revokeClusterCredentials(next, oldOrganizationID, id, now)
+	if err := s.commit(next); err != nil {
+		return Cluster{}, err
+	}
+	return cloneCluster(cluster.Cluster), nil
+}
+
+func removeClusterReferences(next storeFile, organizationID, id string, now time.Time) []string {
 	for groupID, group := range next.Groups {
-		if group.OrganizationID != oldOrganizationID {
+		if group.OrganizationID != organizationID || !slices.Contains(group.ClusterIDs, id) {
 			continue
 		}
 		group.ClusterIDs = slices.DeleteFunc(group.ClusterIDs, func(clusterID string) bool { return clusterID == id })
 		group.UpdatedAt = now
 		next.Groups[groupID] = group
 	}
-	for accountID, membership := range next.Memberships[oldOrganizationID] {
+	var affectedMembers []string
+	for accountID, membership := range next.Memberships[organizationID] {
 		updated := slices.DeleteFunc(membership.ClusterIDs, func(clusterID string) bool { return clusterID == id })
 		if len(updated) != len(membership.ClusterIDs) {
 			membership.ClusterIDs, membership.UpdatedAt = updated, now
-			next.Memberships[oldOrganizationID][accountID] = membership
-			revokeCredentials(next, oldOrganizationID, accountID, now)
+			next.Memberships[organizationID][accountID] = membership
+			affectedMembers = append(affectedMembers, accountID)
 		}
 	}
+	return affectedMembers
+}
+
+func revokeClusterCredentials(next storeFile, organizationID, id string, now time.Time) []Credential {
+	var revoked []Credential
 	for credentialID, credential := range next.Credentials {
-		if credential.OrganizationID == oldOrganizationID && slices.Contains(credential.ClusterIDs, id) && credential.RevokedAt == nil {
+		if credential.OrganizationID == organizationID && slices.Contains(credential.ClusterIDs, id) && credential.RevokedAt == nil {
 			credential.RevokedAt = &now
 			next.Credentials[credentialID] = credential
+			revoked = append(revoked, cloneCredential(credential.Credential))
 		}
 	}
-	syncAliasesFromPrimary(&next)
-	if err := s.commit(next); err != nil {
-		return Cluster{}, err
-	}
-	return cloneCluster(cluster.Cluster), nil
+	return revoked
 }
 
 func (s *Store) ReenrollCluster(organizationID, id string, input ClusterInput) (IssuedAgent, error) {
@@ -304,8 +347,8 @@ func (s *Store) ReenrollClusterForEnrollment(organizationID, ownerID, localOwner
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if !s.activeEnrollmentOwnerLocked(organizationID, ownerID, localOwnerID) ||
-		!s.enrollmentClusterScopeAllowsLocked(organizationID, ownerID, localOwnerID, id, false) {
+	if !s.activeOrganizationOwnerLocked(organizationID, ownerID, localOwnerID) ||
+		!s.legacyClusterScopeAllowsLocked(organizationID, ownerID, localOwnerID, id, false) {
 		return IssuedAgent{}, failure("permission_denied")
 	}
 	return s.reenrollClusterLocked(organizationID, id, input)

@@ -1,20 +1,21 @@
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { Tooltip } from '@maomada/k8s-ui'
-import { ArrowDownUp, Pencil, Plus, Search, Server, ShieldOff } from 'lucide-react'
+import { ArrowDownUp, Pencil, Plus, Search, Server, ShieldOff, Trash2 } from 'lucide-react'
 import { cloudRequest, clusterPage, type HubCluster } from './cloudApi'
 import { CloudDialog, CloudError, CloudLink, ClusterStatus, CopyButton, relativeTime, UnencryptedHttpWarning } from './CloudShared'
 import { ConnectionProfileSelector, useConnectionProfiles } from './ConnectionProfiles'
 import { useCloudLocation } from './cloudNavigation'
 import type { HubContext } from './CloudOrganization'
 
-type Action = { kind: 'edit' | 'revoke'; cluster: HubCluster }
+type Action = { kind: 'edit' | 'revoke' | 'delete'; cluster: HubCluster }
 
 export function CloudClusters({ clusters, canManage }: { clusters: HubCluster[]; canManage: boolean }) {
   const [filter, setFilter] = useState('')
   const [sort, setSort] = useState<'name' | 'state' | 'version' | 'connectedAt'>('name')
   const [reverse, setReverse] = useState(false)
   const [action, setAction] = useState<Action>()
+  const heading = useRef<HTMLHeadingElement>(null)
   const rows = useMemo(() => clusters.filter(cluster => [cluster.name, cluster.id, cluster.environment, cluster.region].some(value => value.toLowerCase().includes(filter.toLowerCase())))
     .sort((a, b) => {
       const value = (cluster: HubCluster) => sort === 'version' ? cluster.agent?.version ?? '' : sort === 'connectedAt' ? cluster.agent?.connectedAt ?? '' : cluster[sort]
@@ -22,19 +23,27 @@ export function CloudClusters({ clusters, canManage }: { clusters: HubCluster[];
     }), [clusters, filter, sort, reverse])
   function order(key: typeof sort) { if (sort === key) setReverse(!reverse); else { setSort(key); setReverse(false) } }
   return <div className="cloud-page">
-    <div className="cloud-page-heading"><div><h1>集群</h1><p>{clusters.length} 个集群 <span className="cloud-connected">{clusters.filter(cluster => cluster.state === 'connected').length} 个已连接</span></p></div>{canManage && <CloudLink className="cloud-button cloud-primary" href="/install"><Plus size={16} />连接集群</CloudLink>}</div>
+    <div className="cloud-page-heading"><div><h1 ref={heading} tabIndex={-1}>集群</h1><p>{clusters.length} 个集群 <span className="cloud-connected">{clusters.filter(cluster => cluster.state === 'connected').length} 个已连接</span></p></div>{canManage && <CloudLink className="cloud-button cloud-primary" href="/install"><Plus size={16} />连接集群</CloudLink>}</div>
     {!clusters.length ? <div className="cloud-empty"><Server size={32} /><h2>{canManage ? '暂无集群' : '尚未分配集群'}</h2><p>{canManage ? '通过出站 Agent 隧道连接集群；集群当前状态由实时目录提供。' : '请联系组织 Owner 或平台 Owner 授予组织访问权限。'}</p>{canManage && <CloudLink href="/install" className="cloud-button cloud-primary"><Plus size={16} />连接首个集群</CloudLink>}</div> : <section className="cloud-table-panel">
       <div className="cloud-table-filter"><label className="cloud-search"><Search size={16} /><input type="search" value={filter} onChange={event => setFilter(event.target.value)} placeholder="按名称、ID 或标签筛选，例如 prod" aria-label="筛选集群" /></label><span>{rows.length} 个集群</span></div>
       <div className="cloud-table-scroll"><table className="cloud-table"><thead><tr>{(['name', 'state', 'version', 'connectedAt'] as const).map((key, index) => <th key={key} aria-sort={sort === key ? reverse ? 'descending' : 'ascending' : 'none'}><button onClick={() => order(key)}>{['名称', '状态', '版本', '连接时间'][index]}<ArrowDownUp size={12} /></button></th>)}<th><span className="sr-only">操作</span></th></tr></thead><tbody>
-        {rows.map(cluster => <tr key={cluster.id} data-connected={cluster.state === 'connected'}><td><CloudLink className="cloud-cluster-name" href={clusterPage(cluster.id)}>{cluster.name}</CloudLink><div className="cloud-muted">{cluster.id}{cluster.environment && ' · ' + cluster.environment}</div></td><td><ClusterStatus cluster={cluster} /></td><td className="portal-mono">{cluster.agent?.version ?? '未知'}</td><td><Tooltip content={cluster.agent?.connectedAt ?? '连接时间不可用'}><span>{relativeTime(cluster.agent?.connectedAt)}</span></Tooltip></td><td>{canManage && <div className="cloud-row-actions">{(cluster.revokedAt || cluster.state === 'revoked') && <CloudLink href={'/install?clusterId=' + encodeURIComponent(cluster.id)} className="cloud-text-button">重新配对</CloudLink>}<button onClick={() => setAction({ kind: 'edit', cluster })}><Pencil size={14} />编辑</button>{!cluster.revokedAt && cluster.state !== 'revoked' && <button onClick={() => setAction({ kind: 'revoke', cluster })}><ShieldOff size={14} />撤销访问</button>}</div>}</td></tr>)}
+        {rows.map(cluster => {
+          const revoked = !!cluster.revokedAt || cluster.state === 'revoked'
+          return <tr key={cluster.id} data-connected={cluster.state === 'connected'}><td><CloudLink className="cloud-cluster-name" href={clusterPage(cluster.id)}>{cluster.name}</CloudLink><div className="cloud-muted">{cluster.id}{cluster.environment && ' · ' + cluster.environment}</div></td><td><ClusterStatus cluster={cluster} /></td><td className="portal-mono">{cluster.agent?.version ?? '未知'}</td><td><Tooltip content={cluster.agent?.connectedAt ?? '连接时间不可用'}><span>{relativeTime(cluster.agent?.connectedAt)}</span></Tooltip></td><td>{canManage && <div className="cloud-row-actions">
+            {revoked && <CloudLink href={'/install?clusterId=' + encodeURIComponent(cluster.id)} className="cloud-text-button">重新配对</CloudLink>}
+            <button onClick={() => setAction({ kind: 'edit', cluster })}><Pencil size={14} />编辑</button>
+            {revoked ? <button type="button" aria-label={`删除集群：${cluster.name}`} onClick={() => setAction({ kind: 'delete', cluster })}><Trash2 size={14} aria-hidden="true" />删除</button> :
+              <button onClick={() => setAction({ kind: 'revoke', cluster })}><ShieldOff size={14} />撤销访问</button>}
+          </div>}</td></tr>
+        })}
         {!rows.length && <tr><td colSpan={5} className="cloud-muted">没有符合筛选条件的集群。</td></tr>}
       </tbody></table></div>
     </section>}
-    {canManage && action && <ClusterAction key={action.kind + ':' + action.cluster.id} action={action} onClose={() => setAction(undefined)} />}
+    {canManage && action && <ClusterAction key={action.kind + ':' + action.cluster.id} action={action} onClose={() => setAction(undefined)} onDeleted={() => heading.current?.focus({ preventScroll: true })} />}
   </div>
 }
 
-function ClusterAction({ action, onClose }: { action: Action; onClose: () => void }) {
+function ClusterAction({ action, onClose, onDeleted }: { action: Action; onClose: () => void; onDeleted: () => void }) {
   const queryClient = useQueryClient()
   const [name, setName] = useState(action.cluster.name)
   const [environment, setEnvironment] = useState(action.cluster.environment)
@@ -43,22 +52,35 @@ function ClusterAction({ action, onClose }: { action: Action; onClose: () => voi
   const [confirmation, setConfirmation] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<unknown>()
+  const deleting = action.kind === 'delete'
+  const editing = action.kind === 'edit'
+  const confirmed = editing || confirmation === action.cluster.name
+
   async function submit(event: FormEvent) {
     event.preventDefault()
-    if (busy) return
+    if (busy || !confirmed) return
     setBusy(true); setError(undefined)
     try {
       const base = '/hub/clusters/' + encodeURIComponent(action.cluster.id)
-      if (action.kind === 'edit') await cloudRequest(base, { method: 'PUT', body: { id: action.cluster.id, name, environment, region, description } })
+      if (editing) await cloudRequest(base, { method: 'PUT', body: { id: action.cluster.id, name, environment, region, description } })
+      else if (deleting) await cloudRequest(base, { method: 'DELETE' })
       else await cloudRequest(base + '/revoke', { method: 'POST', body: {} })
-      await queryClient.invalidateQueries({ queryKey: ['portal', '/api', '/hub/clusters'] })
+      const directoryKey = ['portal', '/api', '/hub/clusters']
+      if (deleting) {
+        queryClient.setQueryData<{ clusters: HubCluster[] }>(directoryKey, previous => previous && {
+          ...previous, clusters: previous.clusters.filter(cluster => cluster.id !== action.cluster.id),
+        })
+        void queryClient.invalidateQueries({ queryKey: ['portal', '/api', '/hub/platform/clusters'] })
+      }
+      await queryClient.invalidateQueries({ queryKey: directoryKey })
       onClose()
+      if (deleting) onDeleted()
     } catch (failure) { setError(failure) } finally { setBusy(false) }
   }
-  return <CloudDialog title={action.kind === 'edit' ? '编辑集群' : '撤销集群访问'} onClose={onClose} busy={busy}><form onSubmit={submit} className="cloud-form">
+  return <CloudDialog title={editing ? '编辑集群' : deleting ? '删除集群记录' : '撤销集群访问'} onClose={onClose} busy={busy}><form onSubmit={submit} className="cloud-form">
     {error !== undefined && <CloudError error={error} />}
-    {action.kind === 'edit' ? <><label>集群名称<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} /></label><label>标签<input maxLength={128} placeholder="例如 production" value={environment} onChange={event => setEnvironment(event.target.value)} /></label><label>区域<input maxLength={128} value={region} onChange={event => setRegion(event.target.value)} /></label><label>描述<textarea maxLength={1024} value={description} onChange={event => setDescription(event.target.value)} /></label></> : <><p>此操作会撤销 Agent 访问，但保留集群记录和工作负载，不会卸载任何组件。重新连接需要重新注册并明确审批。</p><label>输入 {action.cluster.name} 以确认<input autoComplete="off" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label></>}
-    <footer><button type="button" className="cloud-button" disabled={busy} onClick={onClose}>取消</button><button className="cloud-button cloud-primary" disabled={busy || action.kind === 'revoke' && confirmation !== action.cluster.name}>{busy ? '正在保存…' : action.kind === 'edit' ? '保存更改' : '撤销访问'}</button></footer>
+    {editing ? <><label>集群名称<input required maxLength={128} value={name} onChange={event => setName(event.target.value)} /></label><label>标签<input maxLength={128} placeholder="例如 production" value={environment} onChange={event => setEnvironment(event.target.value)} /></label><label>区域<input maxLength={128} value={region} onChange={event => setRegion(event.target.value)} /></label><label>描述<textarea maxLength={1024} value={description} onChange={event => setDescription(event.target.value)} /></label></> : <><p>{deleting ? '永久移除 Hub 中的集群记录，保留远端工作负载和 Agent。再次连接时需注册为新集群。' : '此操作会撤销 Agent 访问，但保留集群记录和工作负载，不会卸载任何组件。重新连接需要重新注册并明确审批。'}</p><label>输入 {action.cluster.name} 以确认<input autoComplete="off" value={confirmation} onChange={event => setConfirmation(event.target.value)} /></label></>}
+    <footer><button type="button" className="cloud-button" autoFocus={deleting} disabled={busy} onClick={onClose}>取消</button><button type="submit" className="cloud-button cloud-primary" disabled={busy || !confirmed}>{busy ? (deleting ? '正在删除…' : '正在保存…') : editing ? '保存更改' : deleting ? '删除记录' : '撤销访问'}</button></footer>
   </form></CloudDialog>
 }
 

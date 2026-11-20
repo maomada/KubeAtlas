@@ -34,7 +34,7 @@ func (p *portalHub) directory(organizationID string) []hubDirectoryEntry {
 	return entries
 }
 
-func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, member hubstate.Member, organizationID string) {
+func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, ownerID string, member hubstate.Member, organizationID string) {
 	const base = "/api/hub/clusters"
 	if r.URL.Path == base {
 		if r.Method == http.MethodGet {
@@ -66,7 +66,9 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 		if !hubMethod(w, r, http.MethodPost) || !hubDecode(w, r, &input, "id", "name", "description", "environment", "region") {
 			return
 		}
+		p.enrollmentMu.Lock()
 		issued, err := p.store.CreateClusterForOrganization(organizationID, input)
+		p.enrollmentMu.Unlock()
 		if err != nil {
 			hubStoreError(w, err)
 			return
@@ -89,6 +91,8 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 		if !hubMethod(w, r, http.MethodPost) || !hubDecode(w, r, &input, "organizationId") {
 			return
 		}
+		p.enrollmentMu.Lock()
+		defer p.enrollmentMu.Unlock()
 		cluster, err := p.store.TransferCluster(parts[0], input.OrganizationID)
 		if err != nil {
 			hubStoreError(w, err)
@@ -100,12 +104,21 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 		return
 	}
 	if len(parts) == 1 && parts[0] != "" {
+		if r.Method == http.MethodDelete {
+			p.deleteCluster(w, organizationID, ownerID, parts[0])
+			return
+		}
+		if r.Method != http.MethodPut {
+			w.Header().Set("Allow", "PUT, DELETE")
+			hubHTTPError(w, http.StatusMethodNotAllowed, "method_not_allowed", "Method not allowed")
+			return
+		}
 		if !legacyClusterAllowed(p, member, organizationID, parts[0]) {
 			hubHTTPError(w, http.StatusForbidden, "permission_denied", "Cluster is outside the member's permitted scope")
 			return
 		}
 		var input hubstate.ClusterInput
-		if !hubMethod(w, r, http.MethodPut) || !hubDecode(w, r, &input, "id", "name", "description", "environment", "region") {
+		if !hubDecode(w, r, &input, "id", "name", "description", "environment", "region") {
 			return
 		}
 		cluster, err := p.store.UpdateClusterForOrganization(organizationID, parts[0], input)
@@ -127,6 +140,8 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 		hubHTTPError(w, http.StatusForbidden, "permission_denied", "Cluster is outside the member's permitted scope")
 		return
 	}
+	p.enrollmentMu.Lock()
+	defer p.enrollmentMu.Unlock()
 	if parts[1] == "rotate" {
 		issued, err := p.store.RotateAgentTokenForOrganization(organizationID, parts[0])
 		if err != nil {
@@ -142,6 +157,26 @@ func (p *portalHub) manageClusters(w http.ResponseWriter, r *http.Request, membe
 		return
 	}
 	p.transport.Disconnect(parts[0])
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (p *portalHub) deleteCluster(w http.ResponseWriter, organizationID, ownerID, id string) {
+	p.enrollmentMu.Lock()
+	defer p.enrollmentMu.Unlock()
+	revoked, err := p.store.DeleteRevokedCluster(organizationID, ownerID, p.ownerID, id)
+	if err != nil {
+		hubStoreError(w, err)
+		return
+	}
+	for _, enrollment := range p.enrollments {
+		if enrollment.status == "approved" && enrollment.clusterID == id {
+			enrollment.status = "denied"
+		}
+	}
+	p.transport.Disconnect(id)
+	for _, credential := range revoked {
+		p.cancelCredentialRequests(credential.OwnerID, organizationID, credential.ID)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
