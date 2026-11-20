@@ -1,12 +1,19 @@
 KubeAtlas (maomada/KubeAtlas)
 
-Licensed under the Apache License, Version 2.0. See LICENSE.
-Modifications maintained by maomada.
+This independently maintained project is derived from Skyhook Radar:
+https://github.com/skyhook-io/radar
 
-Bundled Apache-2.0 Helm charts
+Original project attribution: Radar was built and maintained by Skyhook.
+Original authors' copyright and attribution notices remain applicable.
+This distribution includes modifications maintained by maomada and is not an
+official Skyhook distribution. Source attribution is retained here; this
+repository has independent Git history.
 
-- Caretta 0.0.16 (groundcover-com/helm-charts)
-- Grafana 6.48.0 (grafana/helm-charts). Copyright The Helm Authors.
-- VictoriaMetrics Single 0.8.48 (VictoriaMetrics/helm-charts)
+Distributed under the Apache License, Version 2.0; see LICENSE.
 
-Chart licenses and attribution are in internal/bundledcharts.
+This distribution embeds the unmodified Caretta Helm chart 0.0.16 from
+groundcover-com/helm-charts, including the Grafana chart 6.48.0 and
+VictoriaMetrics Single chart 0.8.48. These chart sources are Apache-2.0 licensed.
+Original attribution and license copies are in internal/bundledcharts.
+Container images are not included or relicensed by this notice.
+Third-party code retains its respective license and attribution notices.
