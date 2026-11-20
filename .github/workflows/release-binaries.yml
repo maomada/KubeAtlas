@@ -175,6 +175,81 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  hub-catalog:
+    name: Assemble the offline Hub Agent bundle
+    needs: [validate, build]
+    if: ${{ inputs.publish != true }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.sha }}
+          path: trusted
+          sparse-checkout: scripts
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.validate.outputs.source_sha }}
+          path: source
+          persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-binary-publication
+          path: packages
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: source/go.mod
+          cache-dependency-path: source/go.sum
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.19.0
+      - uses: docker/setup-buildx-action@v4
+      - name: Reuse package binaries and validate the versioned bundle
+        working-directory: source
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          stage="$(mktemp -d)"
+          hub="$GITHUB_WORKSPACE/hub"
+          packages="$GITHUB_WORKSPACE/packages"
+          archive="kubeatlas-hub-agent-bundle_${VERSION}.tar.gz"
+          mkdir -p "$stage/context" "$stage/layout" "$hub"
+          cp Dockerfile "$stage/context/"
+          for arch in amd64 arm64; do
+            dpkg-deb -x "$packages/kubeatlas_${VERSION}_linux_${arch}.deb" "$stage/$arch"
+            install -m 0755 "$stage/$arch/usr/bin/kubeatlas" "$stage/context/kubeatlas-$arch"
+          done
+          docker buildx build --target release --platform linux/amd64,linux/arm64 \
+            --provenance=false --sbom=false \
+            --build-arg "VERSION=$VERSION" --build-arg "SOURCE_REVISION=$SOURCE_SHA" \
+            --output "type=oci,dest=$stage/agent.oci.tar" "$stage/context"
+          python3 ../trusted/scripts/validate_oci_archive.py validate --archive "$stage/agent.oci.tar"
+          tar -xf "$stage/agent.oci.tar" -C "$stage/layout"
+          digest="$(jq -er '.manifests | select(length == 1) | .[0].digest' "$stage/layout/index.json")"
+          go run ./cmd/prepare-hub-artifacts --layout "$stage/layout" --image-digest "$digest" \
+            --version "$VERSION" --chart-version "$VERSION" --revision "$SOURCE_SHA" \
+            --output "$stage/catalog" --archive "$hub/$archive"
+
+          dpkg-deb -x "$packages/kubeatlas-portal_${VERSION}_linux_amd64.deb" "$stage/portal"
+          portal="$stage/portal/usr/bin/kubeatlas-portal"
+          archive_hash="$(sha256sum "$hub/$archive" | cut -d ' ' -f 1)"
+          "$portal" --import-hub-artifacts "$hub/$archive" --hub-artifacts-sha256 "$archive_hash" \
+            --hub-artifacts-dir "$stage/imported"
+          "$portal" --check-hub-artifacts --hub-artifacts-dir "$stage/imported"
+          cp scripts/install-hub.py "$hub/install-hub.py"
+          cp "$packages/checksums.txt" "$hub/hub-checksums.txt"
+          (cd "$hub" && sha256sum "$archive" install-hub.py >> hub-checksums.txt)
+      - uses: actions/upload-artifact@v7
+        with:
+          name: kubeatlas-hub-publication
+          path: hub
+          if-no-files-found: error
+          retention-days: 14
+
   linux-smoke:
     name: Native Linux package smoke (${{ matrix.architecture }})
     needs: [validate, build]
@@ -222,7 +297,7 @@ jobs:
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
 
   dry-run:
-    needs: [validate, build, linux-smoke]
+    needs: [validate, build, linux-smoke, hub-catalog]
     if: ${{ inputs.publish != true }}
     runs-on: ubuntu-latest
     permissions:
@@ -235,7 +310,11 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: kubeatlas-binary-publication
-          path: release
+          path: release/packages
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-hub-publication
+          path: release/hub
       - uses: actions/checkout@v7
         with:
           ref: ${{ github.sha }}
@@ -256,7 +335,7 @@ jobs:
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
-          python3 trusted/scripts/release_artifacts.py validate --profile local-linux --directory release \
+          python3 trusted/scripts/release_artifacts.py validate --profile local-linux --directory release/packages \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
@@ -271,7 +350,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 trusted/scripts/release_approval.py create \
-            --channel binaries --artifact-root release \
+            --channel binaries-with-hub --artifact-root release \
             --source-sha "$SOURCE_SHA" --version "$VERSION" \
             --ci-url "$CI_URL" --security-url "$SECURITY_URL" \
             --output "$RUNNER_TEMP/release-approval.json"
@@ -334,7 +413,14 @@ jobs:
       - uses: actions/download-artifact@v8
         with:
           name: kubeatlas-binary-publication
-          path: release
+          path: release/packages
+          run-id: ${{ inputs.build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-hub-publication
+          path: release/hub
           run-id: ${{ inputs.build_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: maomada/KubeAtlas
@@ -357,7 +443,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 trusted/scripts/release_approval.py verify \
-            --channel binaries --manifest approval/release-approval.json \
+            --channel binaries-with-hub --manifest approval/release-approval.json \
             --artifact-root release --source-sha "$SOURCE_SHA" \
             --version "$VERSION" --build-run-id "$BUILD_RUN_ID" \
             --signature-output "$RUNNER_TEMP/release-approval.sig"
@@ -382,7 +468,7 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
-          python3 trusted/scripts/release_artifacts.py validate --profile local-linux --directory release \
+          python3 trusted/scripts/release_artifacts.py validate --profile local-linux --directory release/packages \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
@@ -405,7 +491,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 trusted/scripts/release_approval.py verify \
-            --channel binaries --manifest approval/release-approval.json \
+            --channel binaries-with-hub --manifest approval/release-approval.json \
             --artifact-root release --source-sha "$SOURCE_SHA" \
             --version "$VERSION" --build-run-id "$BUILD_RUN_ID"
       - name: Atomically create tag ref at selected source
@@ -425,7 +511,7 @@ jobs:
           gh release create "v$VERSION" --repo maomada/KubeAtlas \
             --verify-tag --draft --target "$SOURCE_SHA" \
             --title "KubeAtlas $VERSION" \
-            --notes "Binary artifacts for source $SOURCE_SHA."
+            --notes "Linux packages and offline Hub Agent deployment artifacts for source $SOURCE_SHA."
       - name: Upload validated artifacts
         id: upload
         env:
@@ -436,7 +522,7 @@ jobs:
           import sys
           from release_approval import expected_artifact_paths
 
-          for name in expected_artifact_paths("binaries", sys.argv[1]):
+          for name in expected_artifact_paths("binaries-with-hub", sys.argv[1]):
               print(f"release/{name}")
           PY
           )"
@@ -448,10 +534,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          prerelease=()
-          [[ "$VERSION" == *-* ]] && prerelease=(--prerelease)
+          if [[ "$VERSION" == *-* ]]; then
+            release_flags=(--prerelease --latest=false)
+          else
+            release_flags=(--latest)
+          fi
           gh release edit "v$VERSION" --repo maomada/KubeAtlas \
-            --draft=false --latest=false "${prerelease[@]}"
+            --draft=false "${release_flags[@]}"
       - name: Write nonsecret provenance status
         if: always()
         env:

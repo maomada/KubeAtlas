@@ -41,8 +41,8 @@ flowchart TB
 从发布页下载对应架构的 `kubeatlas` 安装包和 `checksums.txt`。校验并安装后，打开 `http://127.0.0.1:9280`。控制台使用你的 kubeconfig 连接集群。
 
 ```sh
-# 以 Debian 或 Ubuntu 上的 amd64 版 v0.1.1 为例
-package=kubeatlas_0.1.1_linux_amd64.deb
+# 以 Debian 或 Ubuntu 上的 amd64 版 v0.1.2 为例
+package=kubeatlas_0.1.2_linux_amd64.deb
 awk -v name="$package" '$2 == name' checksums.txt | sha256sum --check - &&
   sudo apt install "./$package" &&
   kubeatlas --listen-address 127.0.0.1 --port 9280 --no-browser
@@ -52,10 +52,11 @@ awk -v name="$package" '$2 == name' checksums.txt | sha256sum --check - &&
 
 ### 部署 Hub
 
-1. 安装对应架构的 `kubeatlas-portal` 安装包，配置管理员凭据、持久化状态文件和 HTTPS 地址。[Hub 部署步骤](docs/deploy-with-ai.md#3-run-a-shared-hub)
-2. 准备与 Hub 同版本的 Agent 安装产物，在 Hub 中选择 **连接集群**。针对目标 Kubernetes 上下文运行生成的命令，再在 Hub 中批准配对。[Agent 注册指南](docs/hub-agent-onboarding.md)
+1. 从 `v0.1.2` 开始，在 [GitHub 发布页](https://github.com/maomada/KubeAtlas/releases/latest) 下载对应架构的 `kubeatlas-portal` DEB 或 RPM、`install-hub.py`、`hub-checksums.txt` 和同版本的 Agent 离线包。
+2. 准备 HTTPS 地址和管理员凭据，再运行安装命令。安装器会配置 systemd 服务并导入 Agent 离线包。[Hub 安装步骤](docs/deploy-with-ai.md#install-from-the-release-bundle)
+3. 在 Hub 中选择 **连接集群**。针对目标 Kubernetes 上下文运行生成的命令，再回到 Hub 批准配对。[Agent 注册指南](docs/hub-agent-onboarding.md)
 
-安装包与 [OCI Helm Chart](https://github.com/maomada?tab=packages) 独立发布。使用 Helm 部署时，请选择已发布的 Chart 版本。[Helm 部署指南](deploy/helm/kubeatlas-portal/README.md)
+已有自定义部署可参考[手动配置 Hub](docs/deploy-with-ai.md#manual-hub-setup)。使用 Helm 时，请选择已发布的 OCI Chart 版本。[Hub Helm 指南](deploy/helm/kubeatlas-portal/README.md)
 
 如需让 AI 协助部署，可把 [AI 部署手册（英文）](docs/deploy-with-ai.md) 或 [原始 Markdown](https://raw.githubusercontent.com/maomada/KubeAtlas/main/docs/deploy-with-ai.md) 交给它。
 

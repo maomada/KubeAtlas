@@ -300,20 +300,27 @@ source, have read-only permissions, and never log in to a registry.
 The hosted workflow validates the full GoReleaser build, then stages the
 `local-linux` publication profile with eight Linux DEB and RPM packages, a
 schema-2 manifest, and checksums. The Linux amd64 and arm64 runners smoke-test
-the exact staged packages before the workflow creates an approval manifest.
+the exact staged packages. In parallel, the workflow assembles a multi-platform
+OCI image from those same Agent DEB payloads using the prebuilt Dockerfile
+target, prepares a version-matched catalog, and validates import with the
+staged Portal executable. It creates the approval manifest after both checks.
 The full `kubeatlas-binary-release` artifact holds diagnostic evidence. Use a
-source revision with the current package matrix when dispatching a dry run.
+source revision with the current package matrix and Hub bundle tools when
+dispatching a dry run.
 
 With `publish=true`, the publisher downloads the signed approval and
-`kubeatlas-binary-publication` from the specified dry-run run, never the
-diagnostic artifact. It verifies the signature, run provenance, and inventory
+`kubeatlas-binary-publication` and `kubeatlas-hub-publication` from the
+specified dry run. The `binaries-with-hub` approval binds both inventories,
+including the Hub installer, Agent bundle, and their checksum file. The
+publisher verifies the signature, run provenance, and inventory
 before setup, then reruns source policy and local-profile validation. After
 tag/release collision checks it verifies approval again immediately before
 creating the tag. The `ghcr-publish` environment is retained as
 defense in depth, not as the approval mechanism. The publisher fails closed
 unless both versioned tag and GitHub Release endpoints return verified HTTP 404
 responses. It creates a draft release targeting the exact source SHA and
-publishes only after every upload succeeds. It never overwrites, deletes,
+publishes only after every upload succeeds, then marks a stable release as
+GitHub's latest release. It never overwrites, deletes,
 retries, or creates a mutable `latest` tag. Partial state remains for
 reconciliation and requires a fresh version.
 

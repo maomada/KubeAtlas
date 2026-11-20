@@ -3,7 +3,7 @@
 To enable one-click OpenCost installation, the Hub operator adds the OpenCost
 chart and exporter image to a version-matched, read-only Agent catalog. If you
 are starting from the DEB or RPM release, follow the
-[Agent artifact setup](deploy-with-ai.md#4-prepare-agent-artifacts-and-connect-a-cluster).
+[Agent artifact setup](deploy-with-ai.md#4-prepare-agent-artifacts-manually).
 Enrollment prepares a cluster-specific package. OpenCost deploys once an
 authorized user confirms **Install OpenCost** on the cluster's Cost page.
 

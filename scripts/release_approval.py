@@ -28,6 +28,7 @@ PUBLIC_KEY = ".github/release-signing-public.pem"
 WORKFLOWS = {
     "ghcr": ".github/workflows/release.yml",
     "binaries": ".github/workflows/release-binaries.yml",
+    "binaries-with-hub": ".github/workflows/release-binaries.yml",
 }
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_VALIDITY = timedelta(days=7)
@@ -122,6 +123,14 @@ def expected_artifact_paths(channel: str, version: str) -> list[str]:
         return sorted(paths)
     if channel == "binaries":
         return release_artifacts.local_publication_names(version, profile="local-linux")
+    if channel == "binaries-with-hub":
+        packages = expected_artifact_paths("binaries", version)
+        return sorted([
+            *(f"packages/{name}" for name in packages),
+            "hub/hub-checksums.txt",
+            "hub/install-hub.py",
+            f"hub/kubeatlas-hub-agent-bundle_{version}.tar.gz",
+        ])
     raise ApprovalError("unsupported release channel")
 
 
@@ -133,8 +142,9 @@ def expected_targets(channel: str, version: str) -> list[str]:
             f"ghcr.io/maomada/charts/kubeatlas:{version}",
             f"ghcr.io/maomada/charts/kubeatlas-portal:{version}",
         ]
-    if channel == "binaries":
-        return [f"github-release:v{version}", *expected_artifact_paths(channel, version)]
+    if channel in ("binaries", "binaries-with-hub"):
+        names = sorted(PurePosixPath(path).name for path in expected_artifact_paths(channel, version))
+        return [f"github-release:v{version}", *names]
     raise ApprovalError("unsupported release channel")
 
 

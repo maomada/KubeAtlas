@@ -74,12 +74,17 @@ func TestPreparePackagesValidReleaseChartVersion(t *testing.T) {
 	openCostChart := writeOpenCostFixture(t, fixture, "opencost")
 	output := privateOutputPath(t, "prepared-release")
 	cleanupReadOnlyBundle(t, output)
+	bundle := filepath.Join(filepath.Dir(output), "bundle.tar.gz")
 	const chartVersion = "1.2.3+build.7"
 	err = Prepare(PrepareOptions{
 		ChartDir:       filepath.Join("..", "..", "deploy", "helm", "kubeatlas"),
 		LayoutDir:      filepath.Join(fixture, "oci"),
 		InstallerPath:  filepath.Join("..", "..", "scripts", "install-hub-agent.sh"),
+		BootstrapPath:  filepath.Join("..", "..", "scripts", "bootstrap-hub-agent.sh"),
 		OutputDir:      output,
+		ArchivePath:    bundle,
+		LicensePath:    filepath.Join("..", "..", "LICENSE"),
+		NoticePath:     filepath.Join("..", "..", "NOTICE"),
 		Version:        "1.2.3",
 		ChartVersion:   chartVersion,
 		Revision:       testRevision,
@@ -92,7 +97,16 @@ func TestPreparePackagesValidReleaseChartVersion(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	catalog, err := Open(output, "1.2.3")
+	checksum, err := hashPath(bundle)
+	if err != nil {
+		t.Fatal(err)
+	}
+	imported := filepath.Join(filepath.Dir(output), "imported")
+	cleanupReadOnlyBundle(t, imported)
+	if err := ImportArchive(bundle, checksum, imported, "1.2.3"); err != nil {
+		t.Fatal(err)
+	}
+	catalog, err := Open(imported, "1.2.3")
 	if err != nil {
 		t.Fatal(err)
 	}

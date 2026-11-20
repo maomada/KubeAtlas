@@ -72,16 +72,19 @@ curl() {
     printf ' %q' "$@"
     printf '\n'
   } >>"$FAKE_ARGV_LOG"
-  local output='' config='' url='' status=200
+  local output='' config='' cacert='' url='' status=200
+  [[ "$1" == --disable ]] || return 90
   while (($#)); do
     case "$1" in
       --output) output="$2"; shift 2;;
       --config) config="$2"; shift 2;;
-      --silent|--show-error) shift;;
-      --proto|--max-redirs|--write-out|--header|--data-binary|--request) shift 2;;
+      --cacert) cacert="$2"; shift 2;;
+      --disable|--silent|--show-error) shift;;
+      --proto|--connect-timeout|--max-time|--max-redirs|--write-out|--header|--data-binary|--request) shift 2;;
       *) url="$1"; shift;;
     esac
   done
+  [[ "$cacert" == "${KUBEATLAS_AGENT_HUB_CA_FILE:-}" ]] || { printf 'unexpected CA selection\n' >&2; return 89; }
   printf '%s\n' "$url" >>"$FAKE_CURL_URL_LOG"
   [[ "$url" == "$FAKE_ORIGIN/"* ]] || { printf 'unexpected external URL: %s\n' "$url" >&2; return 91; }
   case "$url" in
@@ -91,6 +94,7 @@ curl() {
       status="$FAKE_CREATE_STATUS"
       ;;
     "$FAKE_ORIGIN/api/hub/enrollments/$FAKE_ENROLLMENT_ID/claim")
+      [[ "${FAKE_LOST_CLAIM_RESPONSE:-0}" != 1 ]] || return 7
       [[ -n "$config" && "$(stat -c %a "$config")" == 600 ]] || { printf 'device config is not protected\n' >&2; return 92; }
       grep -Fq -- "$FAKE_DEVICE_SECRET" "$config" || { printf 'device config does not contain expected claim credential\n' >&2; return 93; }
       printf '%s\n' "$(stat -c %a "$config")" >>"$FAKE_DEVICE_MODES"
@@ -195,6 +199,7 @@ reset_case() {
   export FAKE_NAMESPACE_COLLISION=0 FAKE_RELEASE_COLLISION=0
   export FAKE_COLLISION_KIND='' FAKE_COLLISION_NAME=''
   export FAKE_CREATE_STATUS=201 FAKE_CLAIM_STATUS=200 FAKE_INSTALLER_STATUS=200
+  export FAKE_LOST_CLAIM_RESPONSE=0
   export FAKE_CLAIM_VERSION=1.2.3 FAKE_CLAIM_ORIGIN="$FAKE_ORIGIN"
   export FAKE_CLAIM_NAMESPACE="$FAKE_NAMESPACE" FAKE_CLAIM_RELEASE="$FAKE_NAMESPACE"
   export FAKE_CLAIM_INSTALLER_SHA256="$FAKE_INSTALLER_SHA256"
@@ -204,7 +209,7 @@ reset_case() {
   export FAKE_NODE_BOOT_ID="$FAKE_LOCAL_BOOT_ID" FAKE_NODE_RUNTIME=docker://24.0.9
   export FAKE_DOCKER_NAME=fixture-node FAKE_DOCKER_KERNEL=fixture-kernel
   export FAKE_DOCKER_REGISTRY='{"IndexConfigs":{},"InsecureRegistryCIDRs":["127.0.0.0/8"]}'
-  unset DOCKER_HOST DOCKER_CONTEXT
+  unset DOCKER_HOST DOCKER_CONTEXT KUBEATLAS_AGENT_HUB_CA_FILE
   export KUBEATLAS_PROFILE=lan KUBEATLAS_ORIGIN="$FAKE_ORIGIN" KUBEATLAS_VERSION=1.2.3
   KUBEATLAS_BOOTSTRAP_SHA256="$(printf 'b%.0s' {1..64})"
   export KUBEATLAS_BOOTSTRAP_SHA256
@@ -282,6 +287,22 @@ assert_no_external_downloads
 assert_no_cluster_mutation success
 
 reset_case
+export KUBEATLAS_AGENT_HUB_CA_FILE="$tmp/Hub private CA.pem"
+printf 'fixture CA\n' >"$KUBEATLAS_AGENT_HUB_CA_FILE"
+if ! output="$(printf 'yes\n' | env -u KUBECONFIG bash "$script" 2>&1)"; then
+  printf 'bootstrap custom CA case failed: %s\n' "$output" >&2; exit 1
+fi
+grep -Fxq -- '--ca-file' "$FAKE_INSTALLER_ARGV_LOG"
+grep -Fxq -- "$KUBEATLAS_AGENT_HUB_CA_FILE" "$FAKE_INSTALLER_ARGV_LOG"
+assert_safe_argv
+assert_no_external_downloads
+
+reset_case
+export KUBEATLAS_AGENT_HUB_CA_FILE="$tmp/missing-hub-ca.pem"
+expect_failure 'missing custom CA' 'KUBEATLAS_AGENT_HUB_CA_FILE must be a readable regular file'
+[[ ! -s "$FAKE_CURL_URL_LOG" ]] || { printf 'invalid CA reached the Hub\n' >&2; exit 1; }
+
+reset_case
 opencost_chart="$(printf 'c%.0s' {1..64})"
 opencost_image="sha256:$(printf 'e%.0s' {1..64})"
 export FAKE_OPENCOST_FIELDS=",\"openCostChartSHA256\":\"$opencost_chart\",\"openCostImageDigest\":\"$opencost_image\""
@@ -331,6 +352,19 @@ if grep -Fq "/claim" "$FAKE_CURL_URL_LOG"; then
   printf 'bootstrap claimed enrollment despite the rendered resource collision\n' >&2
   exit 1
 fi
+
+reset_case
+export FAKE_CREATE_STATUS=503
+expect_failure 'enrollment creation unavailable' 'Hub did not accept enrollment request (HTTP 503)'
+
+reset_case
+export FAKE_CLAIM_STATUS=429
+expect_failure 'claim rate limited' 'Hub enrollment rate limit reached (HTTP 429)'
+
+reset_case
+export FAKE_LOST_CLAIM_RESPONSE=1
+expect_failure 'claim transport failure' 'lost contact with the Hub during claim'
+[[ "$(grep -c '/claim$' "$FAKE_CURL_URL_LOG")" -eq 1 ]] || { printf 'ambiguous claim was retried\n' >&2; exit 1; }
 
 reset_case
 export FAKE_CLAIM_ORIGIN=https://other.example.test

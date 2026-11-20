@@ -97,7 +97,8 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
     def test_binary_linux_publication_profile_and_native_smoke_gate_approval(self):
         workflow = (ROOT / ".github/workflows/release-binaries.yml").read_text()
-        build = workflow.split("\n  build:\n", 1)[1].split("\n  linux-smoke:\n", 1)[0]
+        build = workflow.split("\n  build:\n", 1)[1].split("\n  hub-catalog:\n", 1)[0]
+        catalog = workflow.split("\n  hub-catalog:\n", 1)[1].split("\n  linux-smoke:\n", 1)[0]
         smoke = workflow.split("\n  linux-smoke:\n", 1)[1].split("\n  dry-run:\n", 1)[0]
         dry_run = workflow.split("\n  dry-run:\n", 1)[1].split("\n  publish:\n", 1)[0]
         publish = workflow.split("\n  publish:\n", 1)[1]
@@ -112,15 +113,23 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("runs-on: ${{ matrix.runner }}", smoke)
         self.assertIn("name: kubeatlas-binary-publication", smoke)
         self.assertIn("release_linux_smoke.py", smoke)
-        self.assertIn("needs: [validate, build, linux-smoke]", dry_run)
-        self.assertIn("validate --profile local-linux", dry_run)
-        self.assertIn("--channel binaries", dry_run)
+        self.assertIn("name: kubeatlas-binary-publication", catalog)
+        self.assertIn('dpkg-deb -x "$packages/kubeatlas_', catalog)
+        self.assertIn("docker buildx build --target release", catalog)
+        self.assertIn("--import-hub-artifacts", catalog)
+        self.assertIn("needs: [validate, build, linux-smoke, hub-catalog]", dry_run)
+        self.assertIn("validate --profile local-linux --directory release/packages", dry_run)
+        self.assertIn("name: kubeatlas-hub-publication", dry_run)
+        self.assertIn("--channel binaries-with-hub", dry_run)
         self.assertIn("kubeatlas-binary-publication", publish)
         self.assertIn("release-approval", publish)
         self.assertNotIn("name: kubeatlas-binary-release\n", publish)
-        self.assertIn("validate --profile local-linux", publish)
-        self.assertIn('expected_artifact_paths("binaries", sys.argv[1])', publish)
+        self.assertIn("validate --profile local-linux --directory release/packages", publish)
+        self.assertIn("name: kubeatlas-hub-publication", publish)
+        self.assertIn('expected_artifact_paths("binaries-with-hub", sys.argv[1])', publish)
         self.assertIn('gh release upload "v$VERSION" "${assets[@]}"', publish)
+        self.assertIn("release_flags=(--prerelease --latest=false)", publish)
+        self.assertIn("release_flags=(--latest)", publish)
         self.assertNotIn("release/*", publish)
 
     def test_release_is_manual_and_write_permission_is_publish_only(self):
