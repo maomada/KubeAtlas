@@ -1,5 +1,7 @@
 # KubeAtlas
 
+**English** · [简体中文](README.zh-CN.md)
+
 **A self-hosted operations console for Kubernetes.** Connect your clusters to one Hub to find failing workloads, trace dependencies, and see what changed.
 
 [Download](https://github.com/maomada/KubeAtlas/releases/latest) · [Try one cluster](#try-one-cluster) · [Deploy the Hub](#deploy-the-hub) · [Deploy with an AI agent](docs/deploy-with-ai.md)
