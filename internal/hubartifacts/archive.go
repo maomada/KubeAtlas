@@ -246,8 +246,9 @@ func unpackBundle(input io.Reader, directory string) (map[string]bool, error) {
 		}
 		files[name] = true
 	}
-	// Read through the gzip footer and reject bytes outside the tar archive.
-	if n, err := io.Copy(io.Discard, expanded); n != 0 || err != nil || expanded.N == 0 {
+	// Check the gzip footer without expanding any extra tar payload.
+	var trailing [1]byte
+	if _, err := io.ReadFull(expanded, trailing[:]); !errors.Is(err, io.EOF) || expanded.N == 0 {
 		return nil, errors.New("Hub Agent bundle has an invalid or oversized archive payload")
 	}
 	if _, err := buffer.Peek(1); !errors.Is(err, io.EOF) {

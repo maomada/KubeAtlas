@@ -92,9 +92,11 @@ func TestHubAgentBundleRoundTrip(t *testing.T) {
 
 func TestHubAgentBundleRejectsUnsafeArchiveMembers(t *testing.T) {
 	tests := []struct {
-		name    string
-		headers []*tar.Header
-		suffix  []byte
+		name           string
+		headers        []*tar.Header
+		suffix         []byte
+		expandedSuffix []byte
+		corruptFooter  bool
 	}{
 		{name: "path traversal", headers: []*tar.Header{{Name: bundleRoot + "/../escape", Typeflag: tar.TypeReg}}},
 		{name: "symbolic link", headers: []*tar.Header{{Name: bundleRoot + "/manifest.json", Typeflag: tar.TypeSymlink, Linkname: "../escape"}}},
@@ -105,6 +107,8 @@ func TestHubAgentBundleRejectsUnsafeArchiveMembers(t *testing.T) {
 			{Name: bundleRoot + "/manifest.json", Typeflag: tar.TypeReg},
 		}},
 		{name: "trailing data", suffix: []byte("trailing bytes")},
+		{name: "trailing expanded data", expandedSuffix: []byte("trailing bytes")},
+		{name: "corrupt gzip footer", corruptFooter: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -122,8 +126,14 @@ func TestHubAgentBundleRejectsUnsafeArchiveMembers(t *testing.T) {
 			if err := archive.Close(); err != nil {
 				t.Fatal(err)
 			}
+			if _, err := compressed.Write(tt.expandedSuffix); err != nil {
+				t.Fatal(err)
+			}
 			if err := compressed.Close(); err != nil {
 				t.Fatal(err)
+			}
+			if tt.corruptFooter {
+				payload.Bytes()[payload.Len()-8] ^= 0xff
 			}
 			payload.Write(tt.suffix)
 			stage := t.TempDir()

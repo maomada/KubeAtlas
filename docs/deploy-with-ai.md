@@ -57,7 +57,7 @@ Open `http://127.0.0.1:9280` on that host. For a remote host, run `ssh -N -L 127
 
 ### Install from the release bundle
 
-For releases that provide the Hub deployment assets, download the matching `kubeatlas-portal` DEB or RPM, `kubeatlas-hub-agent-bundle_<version>.tar.gz`, `install-hub.py`, and `hub-checksums.txt` into one directory. The bundle contains the Agent images for Linux amd64 and arm64, Helm Chart, and enrollment scripts. The Hub host needs Python 3, systemd, and its native package tools. It can install from these local files.
+For releases that provide the Hub deployment assets, download the matching `kubeatlas-portal` DEB or RPM, `kubeatlas-hub-agent-bundle_<version>.tar.gz`, `install-hub.py`, and `hub-checksums.txt` into one directory. The bundle contains the Agent images for Linux amd64 and arm64, Helm Chart, and enrollment scripts. The Hub host needs Python 3, systemd, `useradd`, and `nologin`. Use `dpkg` and `dpkg-deb` for DEB, or `rpm`, `rpm2cpio`, and `cpio` for RPM. The installer works with these local files.
 
 Configure a trusted HTTPS reverse proxy for the Hub root origin and the listener `127.0.0.1:9290` before running the installer. For a separate proxy host, pass a private listener with `--listen` and restrict it to the proxy. Follow the proxy routing requirements below. Put the local owner username and password into a root-owned JSON file with mode `0600` and the keys `username` and `password`. The password needs at least 16 bytes. Supply the file on the Hub host.
 
