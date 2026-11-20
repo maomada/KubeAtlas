@@ -120,8 +120,9 @@ existing credentials Secret and persistent storage.
 
 ## Deployment and security
 
-Build the container from `Dockerfile.portal` or install a published chart
-version through the documented release process. The chart persists the
+Install the Linux DEB or RPM using the [deployment runbook](deploy-with-ai.md#3-run-a-shared-hub),
+build the container from `Dockerfile.portal`, or install an available OCI
+chart version. The chart persists the
 required state file, runs one Hub replica, and mounts an existing Secret for
 the local owner credentials. Optional Secret keys configure Hub groups, OIDC,
 and trusted MCP host authorities.

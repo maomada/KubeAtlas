@@ -2,7 +2,7 @@
 
 **A self-hosted operations console for Kubernetes.** Connect your clusters to one Hub to find failing workloads, trace dependencies, and see what changed.
 
-[Deploy the Hub](deploy/helm/kubeatlas-portal/README.md) · [Connect a cluster](docs/hub-agent-onboarding.md) · [Try one cluster](#try-one-cluster)
+[Download](https://github.com/maomada/KubeAtlas/releases/latest) · [Try one cluster](#try-one-cluster) · [Deploy the Hub](#deploy-the-hub) · [Deploy with an AI agent](docs/deploy-with-ai.md)
 
 ```mermaid
 flowchart TB
@@ -32,26 +32,30 @@ flowchart TB
 
 ## Get started
 
-The **`0.1.0-rc.1` prerelease** is available as public container images and OCI Helm charts. [Packages](https://github.com/maomada?tab=packages) · [Publication record](https://github.com/maomada/KubeAtlas/actions/runs/44544344800)
-
-Hub and Agent images run on Linux (`amd64` and `arm64`). Windows support ends for future releases.
-
-### Connect your clusters
-
-1. Deploy Hub with persistent storage and an HTTPS endpoint. [Hub Helm guide](deploy/helm/kubeatlas-portal/README.md)
-2. Prepare the Agent bundle for the same version. Select **Connect cluster** in Hub, run the generated command against the target cluster, and approve its enrollment in Hub. [Agent onboarding guide](docs/hub-agent-onboarding.md)
+The [latest stable release](https://github.com/maomada/KubeAtlas/releases/latest) provides Linux DEB and RPM packages for `amd64` and `arm64`. Choose `kubeatlas` for a local console or `kubeatlas-portal` for a shared Hub.
 
 ### Try one cluster
 
-Install the standalone console in your current Kubernetes context with Helm, then open `http://localhost:9280`.
+Download the matching `kubeatlas` package and `checksums.txt` from the release. Verify the downloaded file, install it, and open `http://127.0.0.1:9280`. KubeAtlas uses your kubeconfig.
 
-```bash
-helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas \
-  --version 0.1.0-rc.1 --namespace kubeatlas --create-namespace
-kubectl --namespace kubeatlas port-forward svc/kubeatlas 9280:9280
+```sh
+# Debian or Ubuntu on amd64, using v0.1.1 as an example
+package=kubeatlas_0.1.1_linux_amd64.deb
+awk -v name="$package" '$2 == name' checksums.txt | sha256sum --check - &&
+  sudo apt install "./$package" &&
+  kubeatlas --listen-address 127.0.0.1 --port 9280 --no-browser
 ```
 
-[In-cluster deployment](docs/in-cluster.md) · [Run from source](DEVELOPMENT.md#quick-start)
+On an RPM-based distribution, install the verified RPM with `sudo rpm -i ./<package>.rpm`. See [package installation](docs/packaging.md) or [run from source](DEVELOPMENT.md#quick-start).
+
+### Deploy the Hub
+
+1. Install the matching `kubeatlas-portal` package. Configure owner credentials, a persistent state file, and an HTTPS endpoint. [Hub setup](docs/deploy-with-ai.md#3-run-a-shared-hub)
+2. Prepare a version-matched Agent bundle, then select **Connect cluster** in Hub. Run the generated command for the intended Kubernetes context and approve the pairing. [Agent onboarding](docs/hub-agent-onboarding.md)
+
+The stable package release and the [OCI Helm charts](https://github.com/maomada?tab=packages) have separate release schedules. Use the [Helm guide](deploy/helm/kubeatlas-portal/README.md) for an available chart version.
+
+To hand the setup to an AI agent, share the [deployment runbook](docs/deploy-with-ai.md) or its [raw Markdown](https://raw.githubusercontent.com/maomada/KubeAtlas/main/docs/deploy-with-ai.md).
 
 ## Contribute
 
