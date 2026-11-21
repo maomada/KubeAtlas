@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 
+from release_approval import expected_targets
 from release_policy import REPOSITORY, validate_inputs
 
 
@@ -13,14 +14,9 @@ class RegistryPreflightError(RuntimeError):
     pass
 
 
-def release_targets(version):
+def release_targets(version, hub_only=False):
     validate_inputs(REPOSITORY, "refs/heads/main", "0" * 40, version)
-    return (
-        f"ghcr.io/maomada/kubeatlas:{version}",
-        f"ghcr.io/maomada/kubeatlas-portal:{version}",
-        f"ghcr.io/maomada/charts/kubeatlas:{version}",
-        f"ghcr.io/maomada/charts/kubeatlas-portal:{version}",
-    )
+    return tuple(expected_targets("ghcr-hub" if hub_only else "ghcr", version))
 
 
 def classify_inspection(returncode, stdout="", stderr=""):
@@ -58,11 +54,11 @@ def classify_inspection(returncode, stdout="", stderr=""):
     raise RegistryPreflightError("Registry inspection failed; absence was not established")
 
 
-def inspect_targets(version, authfile, runner=subprocess.run):
+def inspect_targets(version, authfile, runner=subprocess.run, hub_only=False):
     results = []
     collisions = []
     failures = []
-    for ref in release_targets(version):
+    for ref in release_targets(version, hub_only=hub_only):
         try:
             result = runner(
                 [
@@ -101,9 +97,10 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--version", required=True)
     parser.add_argument("--authfile", required=True)
+    parser.add_argument("--hub-only", action="store_true")
     args = parser.parse_args()
     try:
-        results = inspect_targets(args.version, args.authfile)
+        results = inspect_targets(args.version, args.authfile, hub_only=args.hub_only)
     except RegistryPreflightError as error:
         print(f"Release blocked: {error}", file=sys.stderr)
         return 1

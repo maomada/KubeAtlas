@@ -17,7 +17,11 @@ on:
         default: false
         type: boolean
       build_run_id:
-        description: Successful dry-run workflow run ID for publication
+        description: Successful Release GHCR dry-run ID for publication
+        required: false
+        type: string
+      hub_build_run_id:
+        description: Successful same-version Release Binaries dry-run ID for the GHCR dry run
         required: false
         type: string
       approval_signature:
@@ -44,6 +48,7 @@ jobs:
           GH_REF: ${{ github.ref }}
           PUBLISH: ${{ inputs.publish }}
           BUILD_RUN_ID: ${{ inputs.build_run_id }}
+          HUB_BUILD_RUN_ID: ${{ inputs.hub_build_run_id }}
           APPROVAL_SIGNATURE: ${{ inputs.approval_signature }}
         run: |
           if [[ "$GH_REPOSITORY" != "maomada/KubeAtlas" || "$GH_REF" != "refs/heads/main" ]]; then
@@ -55,8 +60,15 @@ jobs:
               echo "Publishing requires a dry-run ID and offline approval signature." >&2
               exit 1
             fi
+            if [[ -n "$HUB_BUILD_RUN_ID" ]]; then
+              echo "Publishing reuses the approved GHCR dry run; omit the Release Binaries run ID." >&2
+              exit 1
+            fi
           elif [[ -n "$BUILD_RUN_ID" || -n "$APPROVAL_SIGNATURE" ]]; then
             echo "Dry runs must not include a build run ID or approval signature." >&2
+            exit 1
+          elif [[ ! "$HUB_BUILD_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]; then
+            echo "A GHCR dry run requires the same-version Release Binaries dry-run ID." >&2
             exit 1
           fi
 
@@ -128,18 +140,10 @@ jobs:
           PY
 
   build-images:
-    name: Build ${{ matrix.component }} OCI archive
+    name: Build the Hub OCI archive with the Agent catalog
     needs: validate
     if: ${{ inputs.publish != true }}
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - component: kubeatlas
-            dockerfile: Dockerfile
-          - component: kubeatlas-portal
-            dockerfile: Dockerfile.portal
     steps:
       - name: Check out trusted archive validator
         uses: actions/checkout@v7
@@ -154,29 +158,127 @@ jobs:
           path: source
           fetch-depth: 0
           persist-credentials: false
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-binary-publication
+          path: ${{ runner.temp }}/hub-inputs/packages
+          run-id: ${{ inputs.hub_build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-hub-publication
+          path: ${{ runner.temp }}/hub-inputs/hub
+          run-id: ${{ inputs.hub_build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
+      - uses: actions/download-artifact@v8
+        with:
+          name: release-approval
+          path: ${{ runner.temp }}/hub-inputs-approval
+          run-id: ${{ inputs.hub_build_run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: maomada/KubeAtlas
+      - name: Verify and stage the Hub binaries and shared Agent catalog
+        id: stage
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          HUB_BUILD_RUN_ID: ${{ inputs.hub_build_run_id }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          WORKFLOW_SHA: ${{ github.workflow_sha }}
+        run: |
+          inputs="$RUNNER_TEMP/hub-inputs"
+          python3 trusted/scripts/release_approval.py verify-hub-build-inputs \
+            --manifest "$RUNNER_TEMP/hub-inputs-approval/release-approval.json" \
+            --artifact-root "$inputs" --source-sha "$SOURCE_SHA" \
+            --version "$RELEASE_VERSION" --build-run-id "$HUB_BUILD_RUN_ID"
+          stage="$(mktemp -d "$RUNNER_TEMP/hub-image.XXXXXX")"
+          mkdir -p "$stage/runtime/state"
+          touch "$stage/runtime/state/.keep"
+          for arch in amd64 arm64; do
+            dpkg-deb -x "$inputs/packages/kubeatlas-portal_${RELEASE_VERSION}_linux_${arch}.deb" "$stage/$arch"
+            install -m 0755 "$stage/$arch/usr/bin/kubeatlas-portal" "$stage/runtime/kubeatlas-portal-$arch"
+          done
+          archive="$inputs/hub/kubeatlas-hub-agent-bundle_${RELEASE_VERSION}.tar.gz"
+          checksum="$(sha256sum "$archive" | cut -d ' ' -f 1)"
+          "$stage/runtime/kubeatlas-portal-amd64" --import-hub-artifacts "$archive" \
+            --hub-artifacts-sha256 "$checksum" --hub-artifacts-dir "$stage/catalog"
+          printf 'runtime_dir=%s\n' "$stage/runtime" >> "$GITHUB_OUTPUT"
+          printf 'catalog_dir=%s\n' "$stage/catalog" >> "$GITHUB_OUTPUT"
       - uses: docker/setup-buildx-action@v4
-      - name: Build multi-platform OCI archive
+      - name: Build the multi-platform Hub archive
         id: build
         uses: docker/build-push-action@v7
         with:
           context: source
-          file: source/${{ matrix.dockerfile }}
-          target: full
+          file: source/Dockerfile.portal
+          target: release
+          build-contexts: |
+            hub-agent-catalog=${{ steps.stage.outputs.catalog_dir }}
+            hub-release-runtime=${{ steps.stage.outputs.runtime_dir }}
           platforms: linux/amd64,linux/arm64
           push: false
-          outputs: type=oci,dest=${{ runner.temp }}/${{ matrix.component }}.oci.tar
+          outputs: type=oci,dest=${{ runner.temp }}/kubeatlas-portal.oci.tar
           provenance: false
+          sbom: false
           build-args: |
             VERSION=${{ needs.validate.outputs.version }}
             SOURCE_REVISION=${{ needs.validate.outputs.source_sha }}
       - name: Validate archive platforms and image configs
         env:
-          ARCHIVE: ${{ runner.temp }}/${{ matrix.component }}.oci.tar
+          ARCHIVE: ${{ runner.temp }}/kubeatlas-portal.oci.tar
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          python3 trusted/scripts/validate_oci_archive.py validate --archive "$ARCHIVE"
+          python3 trusted/scripts/validate_oci_archive.py validate --archive "$ARCHIVE" \
+            --expected-source "https://github.com/maomada/KubeAtlas" \
+            --expected-revision "$SOURCE_SHA" --expected-version "$RELEASE_VERSION"
+      - name: Verify the staged Hub image and a fresh persistent volume
+        env:
+          ARCHIVE: ${{ runner.temp }}/kubeatlas-portal.oci.tar
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y skopeo
+          image=kubeatlas-hub-smoke:local
+          docker volume create kubeatlas-hub-smoke
+          trap 'docker rm -f kubeatlas-hub-smoke >/dev/null 2>&1 || true; docker volume rm kubeatlas-hub-smoke >/dev/null' EXIT
+          skopeo --override-os linux --override-arch amd64 copy "oci-archive:$ARCHIVE" "docker-daemon:$image"
+          test "$(docker run --rm --network none --read-only "$image" --version)" = "kubeatlas-portal $RELEASE_VERSION"
+          docker run --rm --network none --read-only "$image" --check-hub-artifacts
+          docker run --detach --read-only --name kubeatlas-hub-smoke \
+            --mount type=volume,source=kubeatlas-hub-smoke,target=/var/lib/kubeatlas-portal \
+            --publish 127.0.0.1::9290 \
+            --env KUBEATLAS_PORTAL_USERNAME=release-smoke-owner \
+            --env KUBEATLAS_PORTAL_PASSWORD=release-smoke-password \
+            --env KUBEATLAS_PORTAL_HUB_STATE_FILE=/var/lib/kubeatlas-portal/hub/state.json \
+            --env KUBEATLAS_PORTAL_HUB_ORIGIN=https://hub.example.test \
+            "$image" --listen=0.0.0.0:9290
+          endpoint="$(docker port kubeatlas-hub-smoke 9290/tcp)"
+          if ! curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 1 --max-time 5 "http://$endpoint/healthz"; then
+            docker logs kubeatlas-hub-smoke
+            exit 1
+          fi
+          proxy=(-H "Host: hub.example.test" -H "Origin: https://hub.example.test")
+          headers="$(curl --fail --silent --show-error "${proxy[@]}" --dump-header - --output /dev/null \
+            --header "Content-Type: application/json" \
+            --data '{"username":"release-smoke-owner","password":"release-smoke-password"}' \
+            "http://$endpoint/api/auth/login")"
+          session="$(awk -F '[; ]' 'tolower($1) == "set-cookie:" {print $2}' <<< "$headers")"
+          [[ "$session" == __Host-kubeatlas_portal_session=* ]]
+          curl --fail --silent --show-error "${proxy[@]}" --header "Cookie: $session" \
+            "http://$endpoint/api/hub/connections" \
+            | jq -e --arg version "$RELEASE_VERSION" '.publicURL == "https://hub.example.test" and
+                .catalogAvailable and .catalog.bootstrapAvailable and .catalog.version == $version' >/dev/null
+          curl --fail --silent --show-error "${proxy[@]}" --header "Cookie: $session" \
+            --header "Content-Type: application/json" --data '{"profile":"public"}' \
+            "http://$endpoint/api/hub/enrollments/command" \
+            | jq -e '.origin == "https://hub.example.test" and (.command | contains("/bootstrap.sh"))' >/dev/null
       - name: Record archive checksum and build metadata
         env:
-          COMPONENT: ${{ matrix.component }}
+          COMPONENT: kubeatlas-portal
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
           BUILD_DIGEST: ${{ steps.build.outputs.digest }}
@@ -195,19 +297,19 @@ jobs:
           path = Path(os.environ["RUNNER_TEMP"]) / f"{metadata['component']}.metadata.json"
           path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n")
           PY
-      - name: Upload component release archive
+      - name: Upload Hub release archive
         uses: actions/upload-artifact@v7
         with:
-          name: release-image-${{ matrix.component }}
+          name: release-image-kubeatlas-portal
           path: |
-            ${{ runner.temp }}/${{ matrix.component }}.oci.tar
-            ${{ runner.temp }}/${{ matrix.component }}.oci.tar.sha256
-            ${{ runner.temp }}/${{ matrix.component }}.metadata.json
+            ${{ runner.temp }}/kubeatlas-portal.oci.tar
+            ${{ runner.temp }}/kubeatlas-portal.oci.tar.sha256
+            ${{ runner.temp }}/kubeatlas-portal.metadata.json
           if-no-files-found: error
           retention-days: 14
 
   charts:
-    name: Package version-aligned Helm charts
+    name: Package the version-aligned Hub Helm chart
     needs: validate
     if: ${{ inputs.publish != true }}
     runs-on: ubuntu-latest
@@ -226,7 +328,7 @@ jobs:
       - uses: azure/setup-helm@v5
         with:
           version: v3.19.0
-      - name: Stage and package both charts
+      - name: Stage and package the Hub chart
         env:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
@@ -235,7 +337,7 @@ jobs:
             --source-dir source \
             --output-dir "$RUNNER_TEMP/charts" \
             --version "$RELEASE_VERSION" \
-            --sha "$SOURCE_SHA"
+            --sha "$SOURCE_SHA" --hub-only
       - name: Upload packaged charts and checksums
         uses: actions/upload-artifact@v7
         with:
@@ -259,9 +361,8 @@ jobs:
           persist-credentials: false
       - uses: actions/download-artifact@v8
         with:
-          pattern: release-image-*
-          path: ${{ runner.temp }}/release-artifacts/images
-          merge-multiple: false
+          name: release-image-kubeatlas-portal
+          path: ${{ runner.temp }}/release-artifacts/images/release-image-kubeatlas-portal
       - uses: actions/download-artifact@v8
         with:
           name: release-charts
@@ -296,7 +397,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 trusted/scripts/release_approval.py create \
-            --channel ghcr --artifact-root "$ARTIFACT_ROOT" \
+            --channel ghcr-hub --artifact-root "$ARTIFACT_ROOT" \
             --source-sha "$SOURCE_SHA" --version "$RELEASE_VERSION" \
             --ci-url "$CI_URL" --security-url "$SECURITY_URL" \
             --output "$MANIFEST"
@@ -346,7 +447,7 @@ jobs:
           retention-days: 90
 
   publish:
-    name: Publish owned GHCR images and charts
+    name: Publish the Hub image and chart to GHCR
     needs: validate
     if: ${{ inputs.publish == true }}
     runs-on: ubuntu-latest
@@ -372,9 +473,8 @@ jobs:
         run: git -C source fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
       - uses: actions/download-artifact@v8
         with:
-          pattern: release-image-*
-          path: ${{ runner.temp }}/release-artifacts/images
-          merge-multiple: false
+          name: release-image-kubeatlas-portal
+          path: ${{ runner.temp }}/release-artifacts/images/release-image-kubeatlas-portal
           run-id: ${{ inputs.build_run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
           repository: maomada/KubeAtlas
@@ -407,7 +507,7 @@ jobs:
           SIGNATURE_EVIDENCE: ${{ runner.temp }}/release-approval.sig
         run: |
           python3 trusted/scripts/release_approval.py verify \
-            --channel ghcr --manifest "$APPROVAL_MANIFEST" \
+            --channel ghcr-hub --manifest "$APPROVAL_MANIFEST" \
             --artifact-root "$ARTIFACT_ROOT" --source-sha "$SOURCE_SHA" \
             --version "$RELEASE_VERSION" --build-run-id "$BUILD_RUN_ID" \
             --signature-output "$SIGNATURE_EVIDENCE"
@@ -470,13 +570,13 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-      - name: Check all four target refs before any push
+      - name: Check both Hub target refs before any push
         id: preflight
         env:
           RELEASE_VERSION: ${{ needs.validate.outputs.version }}
         run: |
           if ! python3 trusted/scripts/release_registry.py \
-            --authfile "$HOME/.docker/config.json" --version "$RELEASE_VERSION"; then
+            --authfile "$HOME/.docker/config.json" --version "$RELEASE_VERSION" --hub-only; then
             python3 trusted/scripts/release_manifest.py preflight \
               --manifest "$RUNNER_TEMP/release-manifest.json" --status blocked
             exit 1
@@ -497,26 +597,10 @@ jobs:
           APPROVAL_MANIFEST: ${{ runner.temp }}/approval/release-approval.json
         run: |
           python3 trusted/scripts/release_approval.py verify \
-            --channel ghcr --manifest "$APPROVAL_MANIFEST" \
+            --channel ghcr-hub --manifest "$APPROVAL_MANIFEST" \
             --artifact-root "$ARTIFACT_ROOT" --source-sha "$SOURCE_SHA" \
             --version "$RELEASE_VERSION" --build-run-id "$BUILD_RUN_ID"
-      - name: Copy KubeAtlas image archive to GHCR
-        id: push-kubeatlas
-        env:
-          TARGET_REF: ghcr.io/maomada/kubeatlas:${{ needs.validate.outputs.version }}
-          ARCHIVE: ${{ runner.temp }}/release-artifacts/images/release-image-kubeatlas/kubeatlas.oci.tar
-          MANIFEST: ${{ runner.temp }}/release-manifest.json
-        run: |
-          python3 trusted/scripts/release_manifest.py target --manifest "$MANIFEST" --kind image --name kubeatlas --status attempted
-          if ! skopeo copy --all --preserve-digests \
-            --authfile "$HOME/.docker/config.json" \
-            "oci-archive:$ARCHIVE" "docker://$TARGET_REF"; then
-            python3 trusted/scripts/release_manifest.py target --manifest "$MANIFEST" --kind image --name kubeatlas --status push-failed-or-unknown
-            exit 1
-          fi
-          DIGEST="$(skopeo inspect --format '{{.Digest}}' --authfile "$HOME/.docker/config.json" "docker://$TARGET_REF")"
-          python3 trusted/scripts/release_manifest.py target --manifest "$MANIFEST" --kind image --name kubeatlas --status published --digest "$DIGEST"
-      - name: Copy KubeAtlas Portal image archive to GHCR
+      - name: Copy the Hub image archive to GHCR
         id: push-kubeatlas-portal
         env:
           TARGET_REF: ghcr.io/maomada/kubeatlas-portal:${{ needs.validate.outputs.version }}
@@ -536,23 +620,7 @@ jobs:
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: printf '%s' "$GHCR_TOKEN" | helm registry login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
-      - name: Push KubeAtlas chart
-        id: push-kubeatlas-chart
-        env:
-          TARGET_REF: ghcr.io/maomada/charts/kubeatlas:${{ needs.validate.outputs.version }}
-          ARCHIVE: ${{ runner.temp }}/release-artifacts/charts/kubeatlas-${{ needs.validate.outputs.version }}.tgz
-          MANIFEST: ${{ runner.temp }}/release-manifest.json
-        run: |
-          python3 trusted/scripts/release_manifest.py target --manifest "$MANIFEST" --kind chart --name kubeatlas --status attempted
-          if ! PUSH_RESULT="$(helm push "$ARCHIVE" oci://ghcr.io/maomada/charts 2>&1)"; then
-            printf '%s\n' "$PUSH_RESULT"
-            python3 trusted/scripts/release_manifest.py target --manifest "$MANIFEST" --kind chart --name kubeatlas --status push-failed-or-unknown
-            exit 1
-          fi
-          printf '%s\n' "$PUSH_RESULT"
-          DIGEST="$(printf '%s\n' "$PUSH_RESULT" | awk '/^Digest: / { print $2 }' | tail -n 1)"
-          python3 trusted/scripts/release_manifest.py target --manifest "$MANIFEST" --kind chart --name kubeatlas --status published --digest "$DIGEST"
-      - name: Push KubeAtlas Portal chart
+      - name: Push the Hub chart
         id: push-kubeatlas-portal-chart
         env:
           TARGET_REF: ghcr.io/maomada/charts/kubeatlas-portal:${{ needs.validate.outputs.version }}

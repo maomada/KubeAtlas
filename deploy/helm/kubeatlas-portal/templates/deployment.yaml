@@ -18,9 +18,6 @@
 {{- $previousVersion := $previous.version | default "" }}
 {{- $retainPrevious := or $previousClaim $previousVersion }}
 {{- if $retainPrevious }}
-{{- if not .Values.hubArtifacts.enabled }}
-{{- fail "hubArtifacts.previous requires hubArtifacts.enabled=true" }}
-{{- end }}
 {{- if or (empty $previousClaim) (empty $previousVersion) }}
 {{- fail "hubArtifacts.previous.existingClaim and hubArtifacts.previous.version are required together" }}
 {{- end }}
@@ -76,6 +73,9 @@ spec:
           args:
             - --listen=0.0.0.0:9290
             - --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json
+            {{- with .Values.hubOrigin }}
+            - {{ printf "--hub-origin=%s" . | quote }}
+            {{- end }}
             {{- if .Values.hubArtifacts.enabled }}
             - --hub-artifacts-dir=/var/lib/kubeatlas-portal/artifacts
             {{- end }}

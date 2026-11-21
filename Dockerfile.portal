@@ -32,20 +32,33 @@ ARG VERSION=dev
 ARG SOURCE_REVISION=unknown
 
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /kubeatlas-portal ./cmd/kubeatlas-portal
+RUN mkdir -p /var/lib/kubeatlas-portal && touch /var/lib/kubeatlas-portal/.keep
 
-FROM gcr.io/distroless/static-debian12:nonroot AS full
+FROM gcr.io/distroless/static-debian12:nonroot AS hub
 
 ARG SOURCE_REVISION=unknown
 ARG VERSION=dev
-LABEL org.opencontainers.image.title="KubeAtlas Portal"
-LABEL org.opencontainers.image.description="Independent, self-hosted directory for registered KubeAtlas clusters"
+LABEL org.opencontainers.image.title="KubeAtlas Hub"
+LABEL org.opencontainers.image.description="Self-hosted KubeAtlas Hub for Kubernetes clusters connected through KubeAtlas Agent"
 LABEL org.opencontainers.image.source="https://github.com/maomada/KubeAtlas"
 LABEL org.opencontainers.image.vendor="maomada"
 LABEL org.opencontainers.image.revision=$SOURCE_REVISION
 LABEL org.opencontainers.image.version=$VERSION
 
-COPY --from=backend-builder /kubeatlas-portal /kubeatlas-portal
+COPY LICENSE NOTICE /usr/share/licenses/kubeatlas/
 
 EXPOSE 9290
 USER nonroot:nonroot
 ENTRYPOINT ["/kubeatlas-portal"]
+
+# The release build supplies the verified package binaries and Agent catalog.
+FROM hub AS release
+ARG TARGETARCH
+COPY --from=hub-release-runtime /kubeatlas-portal-${TARGETARCH} /kubeatlas-portal
+COPY --from=hub-release-runtime --chown=65532:65532 /state/ /var/lib/kubeatlas-portal/
+COPY --from=hub-agent-catalog / /opt/kubeatlas/agent-catalog/
+ENV KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR=/opt/kubeatlas/agent-catalog
+
+FROM hub AS full
+COPY --from=backend-builder /kubeatlas-portal /kubeatlas-portal
+COPY --from=backend-builder --chown=65532:65532 /var/lib/kubeatlas-portal/ /var/lib/kubeatlas-portal/

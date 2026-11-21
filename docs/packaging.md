@@ -1,106 +1,24 @@
-# KubeAtlas binary packages
+# KubeAtlas Hub Linux packages
 
-The full GoReleaser build validates artifacts for two components.
+KubeAtlas Hub is packaged as `kubeatlas-portal` for Linux `amd64` and `arm64`. The [release page](https://github.com/maomada/KubeAtlas/releases/latest) supplies DEB and RPM packages, `install-hub.py`, `hub-checksums.txt`, and the matching `kubeatlas-hub-agent-bundle_<version>.tar.gz`.
 
-- `kubeatlas` builds Linux and macOS archives and Linux DEB and RPM packages
-  for amd64 and arm64.
-- `kubeatlas-portal` builds Linux archives and DEB and RPM packages for amd64
-  and arm64.
+The [Hub installer](deploy-with-ai.md#install-from-the-release-bundle) checks the package and bundle, configures a systemd service, and serves the bundled Agent artifacts from Hub. The [Hub registration command](hub-agent-onboarding.md#bootstrap-a-new-cluster) installs Agent in the selected Kubernetes cluster.
 
-The hosted GitHub Release uses the `local-linux` profile. It contains eight
-Linux DEB and RPM packages, four for each component, with a manifest and
-checksums. Releases built with the Hub catalog workflow also contain the
-versioned Agent bundle, the Hub installer, and `hub-checksums.txt`. The bundle
-uses the binaries from the Linux packages. Build archives are diagnostic
-artifacts. Future releases end Windows support.
+## Install and upgrade
 
-Packages also install `LICENSE`, `NOTICE`, `README.md`, and this document
-under `/usr/share/doc/<component>`. Installation does not create users,
-configure kubeconfig files, install services, or start processes. Uninstalling
-removes only files owned by the package. Packages never auto-start a service.
-The separate [Hub installer](deploy-with-ai.md#install-from-the-release-bundle)
-configures a managed systemd deployment using verified local artifacts.
+Follow the [systemd installation steps](deploy-with-ai.md#install-from-the-release-bundle). Confirm the installed version and service health.
 
-## Install and uninstall
-
-Install local DEB packages:
-
-```sh
-sudo apt install ./kubeatlas_VERSION_linux_amd64.deb
-sudo apt install ./kubeatlas-portal_VERSION_linux_amd64.deb
+```bash
+kubeatlas-portal --version
+systemctl is-active kubeatlas-portal
 ```
 
-Install local RPM packages:
+For a managed Hub, select the same DEB or RPM format for upgrades and use the new release's installer and artifacts. The installer backs up state and retains the previous Agent catalog. Keep older catalogs available until the Agents using their image digests have been migrated. [Hub state and recovery](hub-state.md)
 
-```sh
-sudo rpm -i ./kubeatlas_VERSION_linux_amd64.rpm
-sudo rpm -i ./kubeatlas-portal_VERSION_linux_amd64.rpm
-```
+For an existing custom service, keep the current state path and credentials, and use the [manual Hub settings](portal.md#deployment-and-security). The DEB and RPM alone install the binary and documentation. The managed systemd deployment is configured by the installer.
 
-For a locally built archive that is not part of the GitHub Release selection,
-unpack it and install the requested binary manually:
+## Release verification
 
-```sh
-tar -xzf kubeatlas_vVERSION_linux_amd64.tar.gz
-sudo install -m 0755 kubeatlas /usr/local/bin/kubeatlas
+Use `hub-checksums.txt` to verify the installer, Hub package and Agent bundle before installation. `binary-manifest.json` records each published binary package's component, platform, architecture, version, SHA-256, and source commit. Release publication verifies the package contents, native Linux runtime tests, and offline approval. [Release process](ci-cd.md)
 
-tar -xzf kubeatlas-portal_vVERSION_linux_amd64.tar.gz
-sudo install -m 0755 kubeatlas-portal /usr/local/bin/kubeatlas-portal
-```
-
-Use the matching architecture and version in each filename. Package removal:
-
-```sh
-sudo apt remove kubeatlas kubeatlas-portal
-# or
-sudo rpm -e kubeatlas kubeatlas-portal
-```
-
-For manually installed archives, remove only the copied binary when uninstalling.
-Run binaries directly; no service is installed or started. `kubeatlas --version` and
-`kubeatlas-portal --version` report the exact selected release version. Every
-release includes `binary-manifest.json`, which binds each filename and SHA-256
-checksum to its component, platform, architecture, version, source commit, and
-build evidence URLs.
-
-GitHub Release binaries are a separate distribution channel from KubeAtlas
-GHCR images and charts. The manually dispatched `Release Binaries` workflow
-requires successful main CI and Semgrep CE for the selected source SHA, a
-successful dry run with native smoke tests of the Linux amd64 and arm64
-DEB and RPM binaries, and a valid offline
-Ed25519 signature over the exact `release-approval.json` bytes. The approval
-binds the workflow revision, source/version, dry-run run, selected targets, and
-artifact hashes and expires within seven days. The workflow revalidates policy,
-artifacts, and tag/release collisions before writes. The `ghcr-publish`
-environment remains defense in depth; its name alone does not enforce review.
-
-Only the trusted workflow checkout's `.github/release-signing-public.pem` is
-used for verification. The private key stays outside GitHub and this
-repository. Until the authorized production public key is provisioned, the
-workflow blocks approval creation and publication. No release or package is
-published by the implementation change.
-
-### Local build and acceptance bundle
-
-The separate local path is documented in [CI/CD](ci-cd.md#separate-local-release-path).
-For the scoped 0.1.0 local release, the fixed `local-linux-amd64` profile builds
-and validates the full binary matrix once as diagnostic evidence, then selects
-only four Linux amd64 DEB/RPM packages (KubeAtlas and Portal),
-`binary-manifest.json`, and `checksums.txt` (six binary-publication files).
-The local bundle also contains both linux/amd64-only images and both Helm
-charts staged with Linux amd64 node selectors.
-
-During staging, each generated unsigned RPM is copied before correcting its
-`LONGARCHIVESIZE` field only when it matches installed `SIZE` but differs from
-the bounded measured gzip/CPIO payload size. This handles the known rpmpack
-metadata issue ([upstream issue #60](https://github.com/google/rpmpack/issues/60));
-the raw GoReleaser `dist` RPMs remain unchanged. RPM digests are checked before
-and after correction, and the corrected copy must still pass native
-`rpm2cpio`/`cpio`, metadata, file-list, and ELF validation. This is content
-validation only: native package install, version, uninstall, and no-autostart
-acceptance remain required.
-
-The local profile requires its own offline approval bound to a clean `main`
-source and tooling commit. Its acceptance evidence includes a real-cluster test
-and isolated native amd64 install, version, uninstall, and no-autostart checks
-for all four packages. The operator attests to those results before signing.
+[Helm installation](../deploy/helm/kubeatlas-portal/README.md) · [Docker Compose installation](../deploy/compose/README.md)

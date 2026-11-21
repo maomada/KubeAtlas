@@ -1,4 +1,11 @@
-# KubeAtlas Helm Chart
+# KubeAtlas Agent chart
+
+KubeAtlas Hub bundles this chart and installs it with the command from
+**Connect cluster**. Start with the [Hub deployment guide](../../../docs/deploy-with-ai.md)
+and the [Agent onboarding guide](../../../docs/hub-agent-onboarding.md).
+
+The standalone examples below are reference material for historical releases.
+New releases distribute this chart inside the Hub's Agent catalog.
 
 Images and charts for this repository are published only by the manual
 workflow documented in [`docs/ci-cd.md`](../../../docs/ci-cd.md); this source

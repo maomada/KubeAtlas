@@ -7,9 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 	"unicode/utf8"
+
+	"github.com/maomada/KubeAtlas/internal/cloud"
 )
 
 const (
@@ -72,12 +75,26 @@ type Store struct {
 }
 
 func OpenStore(path string) (*Store, error) {
+	return OpenStoreWithInitialOrigin(path, "")
+}
+
+// OpenStoreWithInitialOrigin seeds the public HTTPS address for a new Hub.
+// Existing stores can manage their addresses independently of deployment configuration.
+func OpenStoreWithInitialOrigin(path, origin string) (*Store, error) {
 	if path == "" {
 		return nil, failure("invalid_parameters")
+	}
+	if origin != "" {
+		normalized, err := cloud.NormalizeHubOrigin(origin)
+		if err != nil || !strings.HasPrefix(normalized, "https://") {
+			return nil, errors.New("initial Hub origin must be an HTTPS root origin")
+		}
+		origin = normalized
 	}
 	s := &Store{path: path, now: time.Now, data: newStoreFile()}
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
+		s.data.Connections.PublicURL = origin
 		return s, nil
 	}
 	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm() != 0o600 {

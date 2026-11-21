@@ -164,8 +164,8 @@ class ReleaseApprovalTests(unittest.TestCase):
         manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
         return self._sign(manifest_path)
 
-    def test_real_openssl_signatures_succeed_for_both_channels(self):
-        for channel in ("ghcr", "binaries"):
+    def test_real_openssl_signatures_succeed_for_all_channels(self):
+        for channel in approval.WORKFLOWS:
             with self.subTest(channel=channel):
                 manifest_path, artifact_root = self._create(channel)
                 signature = self._sign(manifest_path)
@@ -178,6 +178,35 @@ class ReleaseApprovalTests(unittest.TestCase):
                 )
                 self.assertEqual(result["channel"], channel)
                 self.assertEqual(result["sourceSha"], SOURCE_SHA)
+
+    def test_hub_build_inputs_require_matching_binary_dry_run_and_inventory(self):
+        manifest_path, artifact_root = self._create("hub-binaries")
+        env = self._environment("ghcr-hub")
+        binary_run = self._build_run("hub-binaries")
+
+        def verify(source_sha=SOURCE_SHA, version=VERSION, environment=env):
+            approval.verify_hub_build_inputs(
+                manifest_path, artifact_root, source_sha, version, RUN_ID, environment, NOW,
+            )
+
+        with patch.object(approval, "query_build_run", return_value=binary_run) as query:
+            verify()
+            query.assert_called_once_with(RUN_ID, env)
+            with self.assertRaisesRegex(approval.ApprovalError, "source SHA mismatch"):
+                verify(source_sha="c" * 40)
+            with self.assertRaisesRegex(approval.ApprovalError, "version mismatch"):
+                verify(version="1.2.4")
+            with self.assertRaisesRegex(approval.ApprovalError, "trusted main workflow"):
+                verify(environment=self._environment("hub-binaries"))
+            bundle = artifact_root / "hub" / f"kubeatlas-hub-agent-bundle_{VERSION}.tar.gz"
+            bundle.write_bytes(b"modified")
+            with self.assertRaisesRegex(approval.ApprovalError, "input inventory does not match"):
+                verify()
+
+        wrong_workflow = self._build_run("ghcr-hub")
+        with patch.object(approval, "query_build_run", return_value=wrong_workflow):
+            with self.assertRaisesRegex(approval.ApprovalError, "workflow path"):
+                verify()
 
     def test_altered_bytes_and_wrong_signing_key_are_rejected(self):
         manifest_path, artifact_root = self._create()
@@ -289,6 +318,33 @@ class ReleaseApprovalTests(unittest.TestCase):
         (artifact_root / f"kubeatlas_v{VERSION}_windows_amd64.zip").write_bytes(b"extra")
         with self.assertRaisesRegex(approval.ApprovalError, "artifact set mismatch"):
             self._verify(manifest_path, artifact_root, channel="binaries", signature=signature, run=run)
+
+    def test_hub_only_channels_approve_exact_hub_artifacts(self):
+        bundle = f"kubeatlas-hub-agent-bundle_{VERSION}.tar.gz"
+        expected_binaries = [
+            "hub/hub-checksums.txt",
+            "hub/install-hub.py",
+            f"hub/{bundle}",
+            "packages/binary-manifest.json",
+            "packages/checksums.txt",
+            *(f"packages/kubeatlas-portal_{VERSION}_linux_{arch}.{suffix}"
+              for arch in ("amd64", "arm64") for suffix in ("deb", "rpm")),
+        ]
+        self.assertEqual(approval.expected_artifact_paths("hub-binaries", VERSION), sorted(expected_binaries))
+        self.assertEqual(
+            approval.expected_targets("hub-binaries", VERSION),
+            [f"github-release:v{VERSION}", *sorted(Path(name).name for name in expected_binaries)],
+        )
+        image = "images/release-image-kubeatlas-portal/kubeatlas-portal"
+        self.assertEqual(
+            approval.expected_artifact_paths("ghcr-hub", VERSION),
+            [f"charts/SHA256SUMS", f"charts/kubeatlas-portal-{VERSION}.tgz",
+             f"{image}.metadata.json", f"{image}.oci.tar", f"{image}.oci.tar.sha256"],
+        )
+        self.assertEqual(
+            approval.expected_targets("ghcr-hub", VERSION),
+            [f"ghcr.io/maomada/kubeatlas-portal:{VERSION}", f"ghcr.io/maomada/charts/kubeatlas-portal:{VERSION}"],
+        )
 
     def test_binaries_with_hub_approval_binds_bundle_installer_and_checksums(self):
         channel = "binaries-with-hub"

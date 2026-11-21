@@ -186,12 +186,12 @@ The in-cluster test runs a short-lived Job whose container executes `kubeatlas p
 1. **Explicit override** - `--reachability-image` flag / `reachabilityImage` config. Always wins.
 2. **Self-read** - KubeAtlas's own running pod image, read from `MY_POD_NAME` / `MY_POD_NAMESPACE` (downward API) using KubeAtlas's service account. The honest default: the probe runs the *same* image as KubeAtlas, so it's automatically correct for private registries, mirrors, and digest-pinned deploys.
 3. **`KUBEATLAS_IMAGE` env** - the Helm chart sets this to KubeAtlas's deployed image; a no-RBAC fallback for when self-read can't run.
-4. **Version-matched owned image** - `ghcr.io/maomada/kubeatlas:<version>` when that version has been published, where `<version>` is KubeAtlas's own build version.
+4. **Historical version-matched image** - `ghcr.io/maomada/kubeatlas:<version>` for releases that published a separate image.
 
 The image used by the Job must ship `/kubeatlas`; the Job executes `["/kubeatlas","probe",...]`. Any explicit `--reachability-image` must contain that executable and its `probe` subcommand.
 
 By deploy shape:
-- **Standalone (Helm chart):** self-read or the chart's `KUBEATLAS_IMAGE` resolves KubeAtlas's deployed image. Nothing to configure.
+- **KubeAtlas Agent:** self-read or the chart's `KUBEATLAS_IMAGE` resolves the digest-pinned image served by the Hub.
 - **Upstream Cloud mode:** unavailable in KubeAtlas; this legacy upstream deployment mode is not supported.
 - **Embedded in another app:** embedding only the *frontend* library in a generic host application is unaffected - its backend must still be a real KubeAtlas image. If the KubeAtlas backend is wrapped inside a non-KubeAtlas image, self-read returns that host image, which works only if it ships `/kubeatlas` with the `probe` subcommand; otherwise set `--reachability-image` / `KUBEATLAS_IMAGE` to a compatible probe image. If neither is valid the probe pod fails honestly (a clear "couldn't start" status + a copyable command), never a wrong result.
 

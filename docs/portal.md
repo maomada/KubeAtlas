@@ -120,12 +120,13 @@ existing credentials Secret and persistent storage.
 
 ## Deployment and security
 
-Install the Linux DEB or RPM using the [deployment runbook](deploy-with-ai.md#3-run-a-shared-hub),
-build the container from `Dockerfile.portal`, or install an available OCI
-chart version. The chart persists the
-required state file, runs one Hub replica, and mounts an existing Secret for
-the local owner credentials. Optional Secret keys configure Hub groups, OIDC,
-and trusted MCP host authorities.
+Deploy Hub using the [systemd installer](deploy-with-ai.md#install-from-the-release-bundle),
+the [Helm chart](../deploy/helm/kubeatlas-portal/README.md), or
+[Docker Compose](../deploy/compose/README.md). Use a release that publishes the
+required artifacts for the selected method. The chart persists the required
+state file, runs one Hub replica, and mounts an existing Secret for the local
+owner credentials. Optional Secret keys configure Hub groups, OIDC, and trusted
+MCP host authorities.
 
 Use TLS at a trusted reverse proxy before exposing the login page, callback,
 Hub API, Agent transport, or MCP endpoint. Cookies are secure by default;
@@ -143,8 +144,10 @@ headers do not change the decision, and this option does not allow an HTTP OIDC
 provider. If a saved HTTPS profile uses the same external authority, HTTPS wins
 and cookies remain Secure; do not multiplex HTTP and HTTPS on one authority
 behind a proxy. Connection-profile writes are platform-owner-only; active
-members may read them. If a trusted proxy
-uses a public hostname, configure exact allowed host authorities with
+members may read them. Set `--hub-origin` or
+`KUBEATLAS_PORTAL_HUB_ORIGIN` to seed the public HTTPS address for new Hub
+state. The Helm value is `hubOrigin`. If a trusted proxy uses a public
+hostname, configure exact allowed host authorities with
 `--mcp-allowed-hosts` or `KUBEATLAS_PORTAL_MCP_ALLOWED_HOSTS`; wildcards are
 not accepted. The Hub also validates browser origin and same-origin requests.
 
@@ -152,14 +155,30 @@ The Hub container does not need a Kubernetes ServiceAccount token. Agents
 connect outbound and retain the native KubeAtlas Agent's live read, write,
 audit, and MCP behavior under the current user's Kubernetes RBAC.
 
-Hub-hosted onboarding artifacts are optional and operator-staged. Configure
-`--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR` with a validated
-private bundle; see [Hub-hosted Agent onboarding](hub-agent-onboarding.md).
-The Portal serves version-pinned downloads and read-only OCI GET/HEAD content
-from that local directory only.
+Hub serves version-pinned Agent downloads and read-only OCI GET/HEAD content
+from its verified catalog. The systemd installer imports the matching release
+bundle. Official Hub images with a built-in catalog serve it from
+`/opt/kubeatlas/agent-catalog`. Custom deployments can use
+`--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR` to supply a
+[private catalog](hub-agent-onboarding.md#prepare-a-private-bundle).
 
 The TLS reverse proxy must preserve the selected Host authority and route
 `/api/`, `/agent`, `/mcp`, `/downloads/agent/`, and `/v2/` to the Portal without
 path rewriting or redirects. Nodes pulling the Agent image must reach this same
 origin and trust its certificate; the Agent's optional CA file does not
 configure node container-runtime trust.
+
+### Maintain a custom Hub service
+
+On an existing self-managed Linux service, verify and install the matching
+`kubeatlas-portal` package and keep the existing service account, state path,
+and login configuration. Run Hub as a dedicated unprivileged service user.
+Provide `KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD` through a
+root-owned systemd environment file with mode `0600`. Put the catalog at a
+versioned directory readable by that user and keep it operator-owned.
+
+For example, start the Hub behind a same-host TLS proxy with
+`/usr/bin/kubeatlas-portal --listen=127.0.0.1:9290 --hub-state-file=/var/lib/kubeatlas-portal/state.json --hub-artifacts-dir=/srv/kubeatlas/catalogs/VERSION`.
+Replace the state and catalog paths with the actual paths. After updating the
+unit, run `systemctl daemon-reload` and restart the Hub service. Verify the
+service, HTTPS login, and Agent downloads. [Hub state and recovery](hub-state.md)

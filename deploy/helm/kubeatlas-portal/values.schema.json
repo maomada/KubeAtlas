@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "KubeAtlas Self-Hosted Cloud Hub Helm chart values",
+  "title": "KubeAtlas Hub Helm chart values",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -15,6 +15,7 @@
       }
     },
     "existingSecret": { "type": "string", "minLength": 1 },
+    "hubOrigin": { "type": "string", "pattern": "^(?:$|https://[^/?#\\s]+/?)$" },
     "httpIPOrigin": { "type": "string" },
     "hubArtifacts": {
       "type": "object",

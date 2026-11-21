@@ -173,6 +173,27 @@ class ReleaseArtifactsTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "artifact set"):
             artifacts.validate_staged(output, profile="local-linux")
 
+    def test_hub_linux_profile_stages_four_hub_packages_and_rejects_standalone(self):
+        version, source_sha = "1.2.3", "a" * 40
+        full = self._create_full_release(version, source_sha)
+        output = Path(self.temporary.name) / "hub-linux"
+        profile = artifacts.HUB_LINUX_PROFILE
+        manifest = artifacts.create_local_staged(full, output, source_sha, version, profile=profile)
+        expected = {
+            f"kubeatlas-portal_{version}_linux_{architecture}.{suffix}"
+            for architecture in ("amd64", "arm64")
+            for suffix in ("deb", "rpm")
+        }
+
+        self.assertEqual({item["filename"] for item in manifest["artifacts"]}, expected)
+        self.assertEqual({path.name for path in output.iterdir()}, expected | {"binary-manifest.json", "checksums.txt"})
+        artifacts.validate_staged(output, profile=profile)
+        with self.assertRaisesRegex(ValueError, "publication profile"):
+            artifacts.validate_staged(output, profile="local-linux")
+        (output / f"kubeatlas_{version}_linux_amd64.deb").write_bytes(b"retired standalone package")
+        with self.assertRaisesRegex(ValueError, "artifact set"):
+            artifacts.validate_staged(output, profile=profile)
+
     def test_local_amd64_profile_excludes_deferred_platforms(self):
         version, source_sha = "1.2.3", "a" * 40
         full = self._create_full_release(version, source_sha)

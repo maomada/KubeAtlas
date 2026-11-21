@@ -1,102 +1,50 @@
-# KubeAtlas Self-Hosted Cloud Hub Helm Chart
+# Deploy KubeAtlas Hub with Helm
 
-This chart deploys the self-hosted Cloud Hub used by KubeAtlas Portal and
-Agents. The `kubeatlas-portal` name is retained for the binary and chart; this
-deployment has no centralized Fleet registry, snapshot ingestion, or token map.
-For the full identity, API, and security model, see
-[`docs/portal.md`](../../../docs/portal.md).
-
-## Prerequisites
-
-- Kubernetes and Helm 3
-- A PersistentVolume provisioner
-- An externally managed Secret containing `username` and `password`
-- A version actually published through the manual Release GHCR workflow
-
-Optional Secret keys configure `hub-groups`, `oidc-issuer`, `oidc-client-id`,
-`oidc-redirect-url`, `oidc-client-secret`, and `mcp-allowed-hosts`. OIDC values
-must be configured together. Use an independent self-hosted identity provider;
-directory synchronization and backchannel logout are not provided.
-
-Create and rotate credentials through your approved secret manager or GitOps
-Secret mechanism. Do not put credentials in Helm values, chart files, commands
-retained in shell history, or the Helm release state.
-
-## Build an image
-
-Build locally for testing:
-
-```bash
-docker build -f Dockerfile.portal --target full -t kubeatlas-portal:local .
-```
-
-The local test image is not a published release.
+Install Hub in a Kubernetes cluster with Helm 3, persistent storage, and either an HTTPS Ingress or a trusted reverse proxy. Choose a version that publishes the Hub OCI chart and same-version Linux `amd64` and `arm64` image with the built-in Agent catalog. [Deployment overview](../../../docs/deploy-with-ai.md)
 
 ## Install
 
-```bash
-helm upgrade --install kubeatlas-portal oci://ghcr.io/maomada/charts/kubeatlas-portal \
-  --namespace kubeatlas-portal --create-namespace \
-  --version "$VERSION" \
-  --set existingSecret=kubeatlas-portal-auth
-```
+1. Select the Kubernetes context where Hub should run. Create the `kubeatlas-portal` namespace if needed, then provision a Secret called `kubeatlas-portal-auth` with the keys `username` and `password`. Use an administrator password at least 16 bytes long. Provision your credentials through a secret manager or protected local files.
 
-The chart creates a single-replica `Recreate` Deployment and a PVC for the
-required Hub state file at `/var/lib/kubeatlas-portal/hub/state.json`. The Pod
-does not mount a Kubernetes ServiceAccount token and runs with a read-only root
-filesystem. The Hub relies on connected Agents to proxy Kubernetes requests;
-it does not read cluster credentials or call the Kubernetes API directly.
-
-The Service is cluster-internal by default. If exposing it with an Ingress,
-configure TLS termination at the ingress or another trusted reverse proxy.
-The UI and API are root-hosted on a dedicated hostname; subpath hosting is not
-supported. Do not expose login or bearer traffic over untrusted plaintext
-networks.
-The proxy must preserve the selected Host authority and route `/api/`,
-`/agent`, `/mcp`, `/downloads/agent/`, and `/v2/` to the Portal without path
-rewriting or redirects. Nodes pulling Hub-hosted Agent images must be able to
-reach the same origin and independently trust its certificate.
-
-For a fresh install on a trusted private network that must use HTTP at a literal
-IP before any LAN connection profile exists, set the non-secret `httpIPOrigin`
-value to the exact root origin, for example:
-
-```bash
-helm upgrade --install kubeatlas-portal oci://ghcr.io/maomada/charts/kubeatlas-portal \
-  --namespace kubeatlas-portal --create-namespace --version "$VERSION" \
-  --set existingSecret=kubeatlas-portal-auth \
-  --set-string httpIPOrigin=http://192.0.2.10:9290
-```
-
-The application accepts only HTTP literal IPv4 or bracketed IPv6 authorities.
-It permits non-Secure, host-scoped cookies only for that exact authority;
-forwarded headers are ignored, and a saved HTTPS profile for the same authority
-wins. This does not create a LAN profile, permit HTTP OIDC, or make plaintext
-traffic safe on an untrusted network. `--insecure-cookie` remains loopback-only.
-
-Local owner login remains available. OIDC can be enabled with the optional
-Secret keys above. Sessions use `HttpOnly`, `Secure`, `SameSite=Strict` cookies
-and expire after eight hours or a Hub restart. OIDC directory synchronization
-and backchannel logout are unavailable; disabling an IdP account alone does
-not revoke an already-issued session.
-
-Cloud Hub MCP is exposed at `/mcp` and requires an independently issued
-bearer credential scoped to current active membership and clusters. Native
-Agent MCP endpoints `/mcp` and `/mcp-readonly` are separate services and
-remain unchanged. Preserve the PVC when upgrading: it contains the required
-Hub identity and credential state. Back it up using the storage platform's
-supported process.
-
-## Hub-hosted Agent artifacts
-
-See [Hub-hosted Agent onboarding](../../../docs/hub-agent-onboarding.md) for bundle preparation and trust requirements. The optional bundle is mounted from an operator-managed PVC and mounted read-only by the Portal:
+2. Configure a dedicated HTTPS address for Hub. With an existing Ingress controller, save a values file such as `hub-ingress.yaml` and reference the TLS Secret in the same namespace.
 
 ```yaml
-hubArtifacts:
+ingress:
   enabled: true
-  existingClaim: kubeatlas-agent-artifacts
+  className: nginx
+  hosts:
+    - host: hub.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts: [hub.example.com]
+      secretName: kubeatlas-portal-tls
 ```
 
-The PVC must contain the immutable catalog produced by `cmd/prepare-hub-artifacts` and match the Portal build version. Keep the source bundle operator-owned and unchanged while the Portal is serving it. An absent bundle disables install artifacts without disabling Hub/MCP; a configured but invalid catalog prevents the Portal from starting. Artifact bytes are not fetched or published at runtime.
+3. Install the selected Hub version. If you terminate TLS on a separate reverse proxy, omit `--values` and configure that proxy to reach the Hub Service instead.
 
-During an upgrade, the Portal can continue serving image digests from one previous catalog. With `hubArtifacts.enabled` set to `true`, point `hubArtifacts.previous.existingClaim` at that catalog's PVC and set `hubArtifacts.previous.version` to its exact build version. The Portal mounts the previous PVC read-only and serves verified Agent and OpenCost image digests from it. New enrollments use the current catalog.
+```bash
+VERSION='<version>'
+helm upgrade --install kubeatlas-portal oci://ghcr.io/maomada/charts/kubeatlas-portal \
+  --namespace kubeatlas-portal --version "$VERSION" \
+  --set existingSecret=kubeatlas-portal-auth \
+  --set-string hubOrigin=https://hub.example.com \
+  --values hub-ingress.yaml --wait
+```
+
+4. Confirm `curl --fail https://hub.example.com/healthz` succeeds and sign in to Hub. Use the Hub-generated command to [connect a cluster](../../../docs/deploy-with-ai.md#2-connect-a-cluster).
+
+The chart runs one Hub replica and persists its state in a PVC. The Service defaults to `ClusterIP`. The proxy or Ingress must serve Hub at the domain root, preserve the external `Host`, support WebSocket upgrades and streaming, and forward Registry and API requests unchanged. Target nodes need to trust the Hub HTTPS certificate. [Proxy and trust requirements](../../../docs/deploy-with-ai.md#1-choose-how-to-deploy-hub)
+
+## Upgrade
+
+Keep the existing namespace, release name, Secret, and Hub PVC. Back up state before upgrading. Repeat the install command with the new published version and the original configuration. Verify the Hub endpoint and the existing Agent connections afterward. [Hub state and recovery](../../../docs/hub-state.md)
+
+When existing Agents still reference a previous image digest, retain their catalog during the upgrade. Point `hubArtifacts.previous.existingClaim` at the PVC containing the previous catalog and set `hubArtifacts.previous.version` to its exact version. [Retain a previous catalog](../../../docs/hub-agent-onboarding.md#retain-a-previous-catalog)
+
+## Custom configuration
+
+To supply a private catalog for the installed version, fill a PVC with the verified catalog, set `hubArtifacts.enabled=true`, and pass its name in `hubArtifacts.existingClaim`. Hub mounts it read-only. Use `image.repository` and `image.tag` for a compatible mirrored image. [Prepare a private catalog](../../../docs/hub-agent-onboarding.md#prepare-a-private-bundle)
+
+The credentials Secret can also hold `mcp-allowed-hosts`, `hub-groups`, and OIDC settings. Set `mcp-allowed-hosts` to the external authority if you will use Hub MCP. For optional identity, proxy, and trusted LAN settings, see [Hub configuration](../../../docs/portal.md#deployment-and-security).

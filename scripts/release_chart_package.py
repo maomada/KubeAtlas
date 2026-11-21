@@ -89,7 +89,7 @@ def platform_node_selector(platform):
 def prepare_chart(source_chart, destination, version, source_sha, repository, platform=None):
     shutil.copytree(source_chart, destination)
     metadata_path = destination / "Chart.yaml"
-    metadata = metadata_path.read_text()
+    metadata = metadata_path.read_text(encoding="utf-8")
     metadata = _replace_top_level_scalar(metadata, "version", version)
     metadata = _replace_top_level_scalar(metadata, "appVersion", version)
     metadata = _replace_annotation(
@@ -98,29 +98,35 @@ def prepare_chart(source_chart, destination, version, source_sha, repository, pl
     metadata = _replace_annotation(
         metadata, "org.opencontainers.image.revision", source_sha
     )
-    metadata_path.write_text(metadata)
+    metadata_path.write_text(metadata, encoding="utf-8", newline="\n")
 
     values_path = destination / "values.yaml"
-    values = _replace_image_values(values_path.read_text(), repository, version)
+    values = _replace_image_values(values_path.read_text(encoding="utf-8"), repository, version)
     if platform is not None:
         selector = json.dumps(platform_node_selector(platform))
         values, count = re.subn(
-            r"(?m)^nodeSelector: *\{\} *$", lambda _: f"nodeSelector: {selector}", values
+            r"(?m)^nodeSelector:(?: *\{\} *| *\n  kubernetes\.io/os: linux *)$",
+            lambda _: f"nodeSelector: {selector}",
+            values,
         )
         if count != 1:
-            raise ValueError("Expected one empty chart nodeSelector before platform staging")
-    values_path.write_text(values)
+            raise ValueError("Expected the default chart nodeSelector before platform staging")
+    values_path.write_text(values, encoding="utf-8", newline="\n")
 
 
-def package_charts(source_dir, output_dir, version, source_sha, helm="helm", runner=subprocess.run, platform=None):
+def package_charts(
+    source_dir, output_dir, version, source_sha, helm="helm", runner=subprocess.run,
+    platform=None, hub_only=False,
+):
     validate_inputs(REPOSITORY, "refs/heads/main", source_sha, version)
     source_root = Path(source_dir)
     output_root = Path(output_dir)
     output_root.mkdir(parents=True, exist_ok=True)
     archives = []
+    charts = {"kubeatlas-portal": CHARTS["kubeatlas-portal"]} if hub_only else CHARTS
     with tempfile.TemporaryDirectory(prefix=".kubeatlas-chart-stage-", dir=output_root.parent) as temporary:
         staging_root = Path(temporary)
-        for name, repository in CHARTS.items():
+        for name, repository in charts.items():
             staged_chart = staging_root / name
             prepare_chart(
                 source_root / "deploy" / "helm" / name,
@@ -140,7 +146,7 @@ def package_charts(source_dir, output_dir, version, source_sha, helm="helm", run
     for archive in archives:
         digest = hashlib.sha256(archive.read_bytes()).hexdigest()
         checksums.append(f"{digest}  {archive.name}")
-    (output_root / "SHA256SUMS").write_text("\n".join(checksums) + "\n")
+    (output_root / "SHA256SUMS").write_text("\n".join(checksums) + "\n", encoding="utf-8", newline="\n")
     return archives
 
 
@@ -152,10 +158,12 @@ def main():
     parser.add_argument("--sha", required=True)
     parser.add_argument("--helm", default="helm")
     parser.add_argument("--platform", choices=("linux/amd64",))
+    parser.add_argument("--hub-only", action="store_true")
     args = parser.parse_args()
     try:
         archives = package_charts(
-            args.source_dir, args.output_dir, args.version, args.sha, helm=args.helm, platform=args.platform
+            args.source_dir, args.output_dir, args.version, args.sha, helm=args.helm,
+            platform=args.platform, hub_only=args.hub_only,
         )
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         print(f"Chart packaging failed: {error}", file=sys.stderr)

@@ -1,6 +1,6 @@
 # Hub-hosted Agent onboarding
 
-The Portal can host one version-matched Agent installer, Helm chart, bootstrap script, and OCI image bundle from a local artifact directory. It never downloads or publishes bundle content at request time. The optional bundle is validated before the Hub starts; a missing bundle leaves Hub and MCP available but disables onboarding, while a configured invalid bundle prevents startup.
+KubeAtlas Hub supplies the version-matched Agent installer, Helm chart, bootstrap script, and images. After [deploying Hub](deploy-with-ai.md), use **Clusters → Connect cluster** to generate the Agent installation command. Hub validates the local catalog at startup and serves the pinned files and image digests from it.
 
 ## Prepare a private bundle
 
@@ -27,19 +27,25 @@ go run ./cmd/prepare-hub-artifacts \
 
 Use a clean, committed checkout and build the Portal with the same build version (for example, `make portal VERSION="$version"`). The approved local OCI layout must already contain an image built from that exact source revision, with matching version/revision labels; the helper does not build, pull, tag, or publish it. `--chart-version` is Helm SemVer and defaults to `0.0.0-dev.<revision12>` when omitted; it is independent of the catalog/Agent build version. Helm packages the unchanged source chart with this SemVer and the build version as `appVersion`. A selected single Linux amd64 or arm64 image is valid; an index may contain either or both supported Linux architectures. The helper validates all reachable descriptors and blob hashes. Keep the bundle outside Git, treat it as immutable after preparation, and mount it read-only into the Portal. The artifact manifest must match the running Portal build version.
 
-Configure the Portal with `--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR`. The `kubeatlas-portal` chart supports an existing PVC through `hubArtifacts.enabled=true` and `hubArtifacts.existingClaim`; the mount is read-only. No artifacts are embedded in the Portal image.
+The Hub systemd installer imports the release bundle. Official Hub images with a built-in catalog use `/opt/kubeatlas/agent-catalog`. To supply a private catalog or configure one for an older custom Hub, use `--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR`. The Hub chart supports a private catalog on an existing read-only PVC through `hubArtifacts.enabled=true` and `hubArtifacts.existingClaim`.
 
 To offer OpenCost on new clusters, prepare the catalog with `--opencost-chart`, `--opencost-layout`, and `--opencost-digest` together. Supply an operator-reviewed offline archive with JSON-compatible `opencost/values.yaml` and an embedded exporter chart, plus a local OCI image layout and its pinned image digest. Match the OpenCost layout to all supported Agent platforms. The chart and exporter are served by the Hub from the same origin as the Agent. Nodes already able to pull the Agent from that registry can pull the OpenCost exporter using the same runtime configuration.
 
 Follow the [OpenCost offline preparation guide](opencost-offline.md) to build and verify the operator-managed inputs.
 
+## Retain a previous catalog
+
 For a Hub catalog change, pass `--hub-previous-artifacts-dir` and `--hub-previous-artifacts-version` to retain digest-addressed Agent and OpenCost pulls from the preceding verified catalog. In the Portal Helm chart, configure `hubArtifacts.previous.existingClaim` and `hubArtifacts.previous.version` to mount the previous catalog read-only. New enrollments use the current version.
+
+Before upgrading, save the current catalog if Agents still use its image digest. For a container deployment, copy `/opt/kubeatlas/agent-catalog` from the current Hub image to private storage and mount it read-only when deploying the next version. For an installer-managed systemd deployment, the installer retains the previous catalog automatically.
 
 The Hub exposes only versioned installer/chart/checksum/bootstrap files and the catalog-reachable image manifest and blobs. OCI content is anonymous, immutable, same-origin, and GET/HEAD-only. Tags, upload/delete routes, arbitrary file paths, external redirects, and registry credentials are not supported. Consequently the selected Hub origin must be reachable by the bootstrap client and by every target node that pulls the Agent image.
 
 ## Configure LAN and public addresses
 
-In Organization settings, only the platform owner can save a LAN origin and a public origin; active members can read these settings. A fresh deployment served over HTTP can use the explicit startup option `--http-ip-origin=http://192.0.2.10:9290` (or `KUBEATLAS_PORTAL_HTTP_IP_ORIGIN`) before a LAN profile is configured. The Portal Helm chart exposes this as `httpIPOrigin`. It accepts only a root HTTP origin with a literal IPv4 or bracketed IPv6 authority and enables non-Secure cookies only for that exact authority; it does not set a connection profile. `--insecure-cookie` remains loopback-only. Never use this option on an untrusted network or to enable an HTTP identity provider. Forwarded headers are ignored; an HTTPS profile for the same authority keeps cookies Secure.
+In Organization settings, the platform owner can save a LAN origin and a public origin, and active members can read them. For a new Hub, Helm `hubOrigin` and the container option `--hub-origin` or `KUBEATLAS_PORTAL_HUB_ORIGIN` set the initial public HTTPS address. The systemd installer records the address passed to `--origin`.
+
+A fresh deployment served over HTTP can use the explicit startup option `--http-ip-origin=http://192.0.2.10:9290` (or `KUBEATLAS_PORTAL_HTTP_IP_ORIGIN`) before a LAN profile is configured. The Portal Helm chart exposes this as `httpIPOrigin`. It accepts only a root HTTP origin with a literal IPv4 or bracketed IPv6 authority and enables non-Secure cookies only for that exact authority; it does not set a connection profile. `--insecure-cookie` remains loopback-only. Never use this option on an untrusted network or to enable an HTTP identity provider. Forwarded headers are ignored; an HTTPS profile for the same authority keeps cookies Secure.
 
 The shared `局域网` / `公网` selector controls onboarding and MCP/OpenCode configuration; the browser origin is never a fallback. The browser stores only the selected profile name, not tokens or other credentials.
 

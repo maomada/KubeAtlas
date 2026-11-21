@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "engine": "1.180.0",
-  "sourceSha": "84cbe0c26ee008431e4f7da26de72f5573c28ff7",
-  "sourceTreeSha256": "43dd7cbbc36d4fc8a657fa49a84f2d16e30018db7daea88f1cf82e1c29893719",
+  "sourceSha": "b2e716cfaf9aebc61b6bdd87b5f24458d889ad9f",
+  "sourceTreeSha256": "ccdd69ed2998cbb9709518e9152c3bbf3aec706750fd4247c77b91171e80f853",
   "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
-  "rawFindingsSha256": "1884e3cc2741670f5a22abe0d86486946fc9f7578dcd3a8d4782e642e3feed57",
+  "rawFindingsSha256": "a7e64f00e67fd2e3f921e3e4a5931be11bea5f015253611c2f1d4edceb8e88c0",
   "entries": [
     {
       "id": "SAST-001",
@@ -4105,6 +4105,21 @@
       "newFindings": 0,
       "removedFindings": 0,
       "evidence": "Pinned scan covered all 1995 production targets with no scanner errors. 111 findings and their source files are unchanged. SAST-116 moved from line 102 to 113; its matched Helm call, trust boundary, and false-positive approval are unchanged. Details in docs/security-revalidation-pr28.md."
+    },
+    {
+      "previousBinding": {
+        "sourceSha": "84cbe0c26ee008431e4f7da26de72f5573c28ff7",
+        "sourceTreeSha256": "43dd7cbbc36d4fc8a657fa49a84f2d16e30018db7daea88f1cf82e1c29893719",
+        "rawFindingsSha256": "1884e3cc2741670f5a22abe0d86486946fc9f7578dcd3a8d4782e642e3feed57"
+      },
+      "sourceSha": "b2e716cfaf9aebc61b6bdd87b5f24458d889ad9f",
+      "reviewer": "Codex with independent scan review",
+      "scanSourceSha": "b2e716cfaf9aebc61b6bdd87b5f24458d889ad9f",
+      "scanRunUrl": null,
+      "findingCount": 112,
+      "newFindings": 0,
+      "removedFindings": 0,
+      "evidence": "Pinned local Semgrep CE scan of a temporary Git snapshot based on 8f7a6a366e8d8fb3644adeb7d367c09edcd8212c. The scan source SHA identifies the isolated snapshot and has no GitHub Actions run. The scanned production files match the workspace Git object IDs. All 1995 production targets were covered with no scanner errors. All 112 previously reviewed findings have identical location, byte offsets and source files. Earlier evidence and approval scopes are unchanged."
     }
   ],
   "integratedBranchReviews": [

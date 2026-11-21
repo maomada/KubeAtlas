@@ -47,13 +47,13 @@ function storedProfile(): ConnectionProfile {
 }
 
 export function ConnectionProfilesProvider({ children }: { children: ReactNode }) {
-  const [profile, setProfile] = useState<ConnectionProfile>(storedProfile)
+  const [preferredProfile, setPreferredProfile] = useState<ConnectionProfile>(storedProfile)
   const [profileRevision, setProfileRevision] = useState(0)
   const [connections, setConnections] = useState<HubConnections>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const refreshSequence = useRef(0)
-  const profileRef = useRef(profile)
+  const profileRef = useRef(preferredProfile)
   const refresh = useCallback(async () => {
     const sequence = ++refreshSequence.current
     setLoading(true)
@@ -78,7 +78,7 @@ export function ConnectionProfilesProvider({ children }: { children: ReactNode }
   const selectProfile = useCallback((next: ConnectionProfile) => {
     if (profileRef.current !== next) setProfileRevision(revision => revision + 1)
     profileRef.current = next
-    setProfile(next)
+    setPreferredProfile(next)
     try { window.localStorage.setItem(preferenceKey, next) } catch { /* the current page still keeps the selection */ }
   }, [])
   const save = useCallback(async (lanURL: string, publicURL: string) => {
@@ -87,7 +87,10 @@ export function ConnectionProfilesProvider({ children }: { children: ReactNode }
     setConnections(response)
     setError('')
   }, [])
-  const origin = profile === 'lan' ? connections?.lanURL ?? '' : connections?.publicURL ?? ''
+  const lanURL = connections?.lanURL ?? ''
+  const publicURL = connections?.publicURL ?? ''
+  const profile = lanURL && !publicURL ? 'lan' : publicURL && !lanURL ? 'public' : preferredProfile
+  const origin = profile === 'lan' ? lanURL : publicURL
   const value = useMemo<ConnectionContextValue>(() => ({
     profileRevision,
     profile, selectProfile, connections, origin, mcpURL: origin ? `${origin}/mcp` : '',
@@ -104,7 +107,8 @@ export function useConnectionProfiles() {
 }
 
 export function ConnectionProfileSelector() {
-  const { profile, selectProfile } = useConnectionProfiles()
+  const { connections, profile, selectProfile } = useConnectionProfiles()
+  if (!connections?.lanURL || !connections.publicURL) return null
   return <fieldset className="cloud-connection-selector" aria-label="连接配置">
     <legend>连接配置</legend>
     <button className="cloud-button" type="button" aria-pressed={profile === 'lan'} onClick={() => selectProfile('lan')}>局域网</button>

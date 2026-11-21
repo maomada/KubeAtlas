@@ -84,7 +84,7 @@ function ClusterAction({ action, onClose, onDeleted }: { action: Action; onClose
   </form></CloudDialog>
 }
 
-interface EnrollmentCommand { command: string; origin: string; profile: 'lan' | 'public'; profileRevision: number }
+interface EnrollmentCommand { command: string; origin: string; connection: string }
 
 function expiryIsValid(value: EnrollmentLookup) {
   const expiry = Date.parse(value.expiresAt)
@@ -111,10 +111,11 @@ export function CloudInstall({ hub, clusters, canManage, directoryError, onRefre
   const location = useCloudLocation()
   const commandRequest = useRef<AbortController | null>(null)
   const commandGeneration = useRef(0)
-  const profileStateRef = useRef({ profile: profile.profile, revision: profile.profileRevision })
+  const connection = JSON.stringify([profile.profile, profile.origin, profile.profileRevision, profile.connections?.catalog.version])
+  const connectionRef = useRef(connection)
   const [command, setCommand] = useState<EnrollmentCommand>()
-  const [commandRequestState, setCommandRequestState] = useState<{ profileRevision: number; busy: boolean }>()
-  const [commandErrorState, setCommandErrorState] = useState<{ profileRevision: number; error: unknown }>()
+  const [commandRequestState, setCommandRequestState] = useState<{ connection: string; generation: number }>()
+  const [commandErrorState, setCommandErrorState] = useState<{ connection: string; error: unknown }>()
   const [userCode, setUserCode] = useState('')
   const lookupGeneration = useRef(0)
   const [lookup, setLookup] = useState<EnrollmentLookup>()
@@ -130,12 +131,12 @@ export function CloudInstall({ hub, clusters, canManage, directoryError, onRefre
   const [expirySnapshot, setExpirySnapshot] = useState<{ id: string; now: number }>()
 
   useEffect(() => {
-    profileStateRef.current = { profile: profile.profile, revision: profile.profileRevision }
+    connectionRef.current = connection
     commandRequest.current?.abort()
     commandRequest.current = null
     commandGeneration.current++
     return () => commandRequest.current?.abort()
-  }, [profile.profile, profile.profileRevision])
+  }, [connection])
 
   const lookupId = lookup?.id
   useEffect(() => {
@@ -149,35 +150,33 @@ export function CloudInstall({ hub, clusters, canManage, directoryError, onRefre
   const activeOrganization = hub.organizations.find(organization => organization.id === hub.activeOrganizationId)
   const reEnrollmentClusters = clusters.filter(cluster => cluster.organizationId === hub.activeOrganizationId && (cluster.state === 'revoked' || !!cluster.revokedAt))
   const selectedReEnrollment = reEnrollmentClusters.find(cluster => cluster.id === selectedClusterId)
-  const commandBusy = commandRequestState?.profileRevision === profile.profileRevision && commandRequestState.busy
-  const commandError = commandErrorState?.profileRevision === profile.profileRevision ? commandErrorState.error : undefined
-  const commandVisible = command?.profileRevision === profile.profileRevision ? command : undefined
+  const commandBusy = commandRequestState?.connection === connection
+  const commandError = commandErrorState?.connection === connection ? commandErrorState.error : undefined
+  const commandVisible = profile.installAvailable && command?.connection === connection ? command : undefined
 
   async function generateCommand() {
     if (!canManage || !hub.activeOrganizationId || !profile.installAvailable || commandBusy) return
     const requestedProfile = profile.profile
-    const requestedRevision = profile.profileRevision
     const generation = ++commandGeneration.current
     const controller = new AbortController()
     commandRequest.current?.abort()
     commandRequest.current = controller
-    setCommandRequestState({ profileRevision: requestedRevision, busy: true })
+    setCommandRequestState({ connection, generation })
     setCommandErrorState(undefined)
     setCommand(undefined)
     try {
       const result = await cloudRequest<{ command: string; origin: string }>('/hub/enrollments/command', { method: 'POST', body: { profile: requestedProfile }, signal: controller.signal })
-      const currentProfile = profileStateRef.current
-      if (generation !== commandGeneration.current || currentProfile.profile !== requestedProfile || currentProfile.revision !== requestedRevision) return
+      if (generation !== commandGeneration.current || connectionRef.current !== connection) return
       if (typeof result.command !== 'string' || !result.command.trim() || typeof result.origin !== 'string' || !result.origin.trim()) throw new Error('Hub 返回的注册命令不完整。')
       if (/--(?:token|(?:agent|device|bootstrap|mcp)-token)(?:=|\s)|\b(?:TOKEN|(?:AGENT|DEVICE|BOOTSTRAP|MCP)_TOKEN)\s*=/i.test(result.command)) throw new Error('服务器返回的命令包含疑似凭据参数，未予显示。')
       const selectedOrigin = new URL(profile.origin)
       const resultOrigin = new URL(result.origin)
       if (resultOrigin.username || resultOrigin.password || resultOrigin.search || resultOrigin.hash || resultOrigin.pathname !== '/' || !['http:', 'https:'].includes(resultOrigin.protocol) || resultOrigin.origin !== selectedOrigin.origin) throw new Error('命令地址与当前选定的连接配置不匹配。')
-      setCommand({ command: result.command, origin: result.origin, profile: requestedProfile, profileRevision: requestedRevision })
+      setCommand({ command: result.command, origin: result.origin, connection })
     } catch (failure) {
-      if (!controller.signal.aborted && generation === commandGeneration.current) setCommandErrorState({ profileRevision: requestedRevision, error: failure })
+      if (!controller.signal.aborted && generation === commandGeneration.current) setCommandErrorState({ connection, error: failure })
     } finally {
-      if (generation === commandGeneration.current) setCommandRequestState({ profileRevision: requestedRevision, busy: false })
+      setCommandRequestState(current => current?.generation === generation ? undefined : current)
     }
   }
 

@@ -28,6 +28,7 @@ func main() {
 	showVersion := flag.Bool("version", false, "Print version and exit")
 	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
 	hubStateFile := flag.String("hub-state-file", os.Getenv("KUBEATLAS_PORTAL_HUB_STATE_FILE"), "Required persistent state file for the self-hosted Cloud Hub")
+	hubOrigin := flag.String("hub-origin", os.Getenv("KUBEATLAS_PORTAL_HUB_ORIGIN"), "Initial HTTPS root address for new Hub state")
 	hubArtifactsDir := flag.String("hub-artifacts-dir", os.Getenv("KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR"), "Optional read-only directory containing the version-matched Hub Agent artifact bundle")
 	checkHubArtifacts := flag.Bool("check-hub-artifacts", false, "Validate the supplied Hub artifact directory against this Portal build and exit")
 	importHubArtifacts := flag.String("import-hub-artifacts", "", "Import a verified Hub Agent bundle archive into a new --hub-artifacts-dir and exit")
@@ -63,7 +64,7 @@ func main() {
 	}
 
 	credentials := loadCredentials()
-	if err := configureHub(&credentials, *hubStateFile, *hubGroups); err != nil {
+	if err := configureHub(&credentials, *hubStateFile, *hubGroups, *hubOrigin); err != nil {
 		log.Fatalf("portal Hub configuration is invalid: %v", err)
 	}
 	if err := configureArtifacts(&credentials, *hubArtifactsDir, version); err != nil {
@@ -182,11 +183,11 @@ func loadCredentials() portal.Credentials {
 	}
 }
 
-func configureHub(credentials *portal.Credentials, stateFile, groups string) error {
+func configureHub(credentials *portal.Credentials, stateFile, groups, origin string) error {
 	if strings.TrimSpace(stateFile) == "" {
 		return errors.New("--hub-state-file is required")
 	}
-	store, err := hubstate.OpenStore(stateFile)
+	store, err := hubstate.OpenStoreWithInitialOrigin(stateFile, origin)
 	if err != nil {
 		return err
 	}

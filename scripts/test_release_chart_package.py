@@ -47,7 +47,8 @@ class ReleaseChartPackageTests(unittest.TestCase):
                 self.assertIn(f'org.opencontainers.image.revision: "{SHA}"', metadata)
                 self.assertIn(f'repository: "{repository}"', values)
                 self.assertIn('tag: "0.1.0-test.1"', values)
-                self.assertIn("nodeSelector: {}", values)
+                selector = "nodeSelector:\n  kubernetes.io/os: linux" if name == "kubeatlas-portal" else "nodeSelector: {}"
+                self.assertIn(selector, values)
             self.assertEqual(len((output / "SHA256SUMS").read_text().splitlines()), 2)
             self.assertEqual(
                 {path.name for path in output.iterdir()},
@@ -79,6 +80,20 @@ class ReleaseChartPackageTests(unittest.TestCase):
             }
             self.assertEqual(actual, expected)
             self.assertFalse((output / ".staged").exists())
+
+    def test_hub_packager_excludes_the_internal_agent_chart(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "charts"
+            version = "0.2.0"
+
+            def helm_package(command, **_):
+                chart = Path(command[2])
+                with tarfile.open(Path(command[4]) / f"{chart.name}-{version}.tgz", "w:gz") as archive:
+                    archive.add(chart, arcname=chart.name)
+
+            archives = package.package_charts(ROOT, output, version, SHA, runner=helm_package, hub_only=True)
+            self.assertEqual([archive.name for archive in archives], ["kubeatlas-portal-0.2.0.tgz"])
+            self.assertEqual({path.name for path in output.iterdir()}, {"kubeatlas-portal-0.2.0.tgz", "SHA256SUMS"})
 
     def test_local_chart_requires_platform_selector_without_mutating_source(self):
         with tempfile.TemporaryDirectory() as temporary:
