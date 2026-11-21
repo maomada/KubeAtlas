@@ -30,6 +30,19 @@ class ReleaseRegistryTests(unittest.TestCase):
             registry.inspect_targets("1.2.3", "/auth", runner=run)
         self.assertEqual(len(calls), 4)
 
+    def test_hub_release_inspects_only_the_hub_image_and_chart(self):
+        def run(command, **_):
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="manifest unknown")
+
+        result = registry.inspect_targets("1.2.3", "/auth", runner=run, hub_only=True)
+        self.assertEqual(
+            [item["ref"] for item in result],
+            [
+                "ghcr.io/maomada/kubeatlas-portal:1.2.3",
+                "ghcr.io/maomada/charts/kubeatlas-portal:1.2.3",
+            ],
+        )
+
     def test_explicit_manifest_unknown_allows_absence(self):
         result = registry.classify_inspection(1, stderr="MANIFEST_UNKNOWN: manifest unknown")
         self.assertEqual(result, "absent")

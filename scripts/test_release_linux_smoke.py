@@ -55,6 +55,26 @@ class ReleaseLinuxSmokeTests(unittest.TestCase):
         self.assertEqual([call.args[0][1] for call in run.call_args_list], ["--version", "--help"] * 4)
         self.assertTrue(all(call.kwargs["check"] and call.kwargs["timeout"] for call in run.call_args_list))
 
+    @patch("release_linux_smoke.platform.machine", return_value="aarch64")
+    @patch("release_linux_smoke.platform.system", return_value="Linux")
+    def test_smokes_hub_packages_with_hub_publication_profile(self, _system, _machine):
+        packages = [item for item in self.artifacts if item["component"] == "kubeatlas-portal"]
+        with (
+            patch.object(smoke, "validate_local_staged", return_value={"artifacts": packages}) as validate,
+            patch.object(smoke, "extract_package", side_effect=self.extract) as extract,
+            patch.object(smoke.subprocess, "run", side_effect=self.run_binary),
+        ):
+            smoke.smoke_packages(self.directory, self.source_sha, self.version, "arm64", self.evidence, "hub-linux")
+
+        validate.assert_called_once_with(
+            self.directory, expected_source_sha=self.source_sha, expected_version=self.version,
+            evidence_urls=self.evidence, profile="hub-linux",
+        )
+        self.assertEqual(
+            [call.args[0].name for call in extract.call_args_list],
+            [f"kubeatlas-portal_{self.version}_linux_arm64.{suffix}" for suffix in ("deb", "rpm")],
+        )
+
     @patch("release_linux_smoke.platform.machine", return_value="x86_64")
     @patch("release_linux_smoke.platform.system", return_value="Linux")
     def test_requires_native_architecture(self, _system, _machine):

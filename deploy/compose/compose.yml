@@ -1,0 +1,20 @@
+services:
+  hub:
+    image: ghcr.io/maomada/kubeatlas-portal:${KUBEATLAS_HUB_VERSION:?Set KUBEATLAS_HUB_VERSION to a published Hub image tag}
+    env_file:
+      - ${KUBEATLAS_HUB_ENV_FILE:?Set KUBEATLAS_HUB_ENV_FILE to the private Hub environment file}
+    command:
+      - --listen=0.0.0.0:9290
+      - --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json
+    volumes:
+      - hub-state:/var/lib/kubeatlas-portal
+    ports:
+      - "127.0.0.1:9290:9290"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    restart: unless-stopped
+
+volumes:
+  hub-state:

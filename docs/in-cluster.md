@@ -1,4 +1,8 @@
-# In-Cluster Deployment
+# In-cluster deployment for historical standalone releases
+
+For a new Kubernetes deployment, [install KubeAtlas Hub with Helm](../deploy/helm/kubeatlas-portal/README.md),
+then add the cluster using the [Hub-generated Agent command](hub-agent-onboarding.md).
+This page describes the history of the separate console and its existing installations.
 
 This repository's OCI images and charts are available only for versions
 actually published by the manual workflow documented in [`ci-cd.md`](ci-cd.md).

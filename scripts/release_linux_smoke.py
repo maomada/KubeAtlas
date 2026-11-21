@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from release_artifacts import validate_local_staged
+from release_artifacts import HUB_LINUX_PROFILE, validate_local_staged
 
 
 def extract_package(package: Path, destination: Path) -> None:
@@ -28,13 +28,20 @@ def extract_package(package: Path, destination: Path) -> None:
     )
 
 
-def smoke_packages(directory: Path, source_sha: str, version: str, architecture: str, evidence_urls: list[str]) -> None:
+def smoke_packages(
+    directory: Path,
+    source_sha: str,
+    version: str,
+    architecture: str,
+    evidence_urls: list[str],
+    profile: str = "local-linux",
+) -> None:
     native = {"x86_64": "amd64", "aarch64": "arm64"}.get(platform.machine())
     if platform.system() != "Linux" or native != architecture:
         raise ValueError(f"a native Linux {architecture} runner is required")
     manifest = validate_local_staged(
         directory, expected_source_sha=source_sha, expected_version=version,
-        evidence_urls=evidence_urls, profile="local-linux",
+        evidence_urls=evidence_urls, profile=profile,
     )
     for artifact in manifest["artifacts"]:
         if artifact["architecture"] != architecture:
@@ -69,9 +76,10 @@ def main() -> int:
     parser.add_argument("--version", required=True)
     parser.add_argument("--architecture", choices=("amd64", "arm64"), required=True)
     parser.add_argument("--evidence-url", action="append", required=True)
+    parser.add_argument("--profile", choices=("local-linux", HUB_LINUX_PROFILE), default="local-linux")
     args = parser.parse_args()
     try:
-        smoke_packages(args.directory, args.source_sha, args.version, args.architecture, args.evidence_url)
+        smoke_packages(args.directory, args.source_sha, args.version, args.architecture, args.evidence_url, args.profile)
     except (OSError, ValueError, subprocess.SubprocessError) as error:
         parser.error(str(error))
     return 0

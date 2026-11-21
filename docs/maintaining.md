@@ -22,15 +22,13 @@
 
 | Distribution | Contents | How to build and publish |
 | --- | --- | --- |
-| GHCR | Versioned KubeAtlas (standalone or Agent) and Hub container images, plus the two OCI Helm charts | Run `Release GHCR` |
-| GitHub Releases | Linux amd64 and arm64 DEB and RPM packages for both binaries, with the release manifest and checksums | Run `Release Binaries` when these install targets are ready |
-| Hub enrollment bundle | Version-matched Agent bootstrap, installer, chart, and OCI image | Prepare for your Hub deployment using the [onboarding guide](hub-agent-onboarding.md) |
+| GHCR | Versioned Hub container image with the Agent catalog, and the Hub OCI Helm chart | Run `Release GHCR` using the catalog from the binary dry run |
+| GitHub Releases | Linux amd64 and arm64 Hub DEB and RPM packages, systemd installer, Agent bundle, manifest, and checksums | Run `Release Binaries` |
+| Hub enrollments | Version-matched Agent bootstrap, installer, chart, and OCI image served by the Hub | Use the [onboarding guide](hub-agent-onboarding.md) |
 
-For the first prerelease, prioritize the GHCR images and charts. Check their
-matching versions and exercise Hub startup and Agent enrollment in a clean test
-environment. Treat optional offline integrations as separately validated
-distribution inputs. When planning binary releases, let `Release Binaries`
-create the version tag and GitHub Release, which must both be free when it starts.
+Exercise Hub startup and Agent enrollment in a clean test environment.
+Optional offline integrations have their own validated inputs. `Release Binaries`
+creates the version tag and GitHub Release. Both must be free when publishing starts.
 
 ## Cut a release
 
@@ -38,9 +36,10 @@ create the version tag and GitHub Release, which must both be free when it start
    deployment changes into `main` through review before selecting the source.
    Record the same-SHA main-push CI, security, and package results.
 2. Choose an unused SemVer version without a `v` prefix or build metadata.
-   Dispatch the relevant release workflow with `publish=false`. Inspect the
-   exact artifact inventory, SHA-256 hashes, and installation and upgrade
-   results for the targets you plan to support.
+   Run `Release Binaries` with `publish=false`, then pass that run's ID as
+   `hub_build_run_id` to the `Release GHCR` dry run for the same SHA and version.
+   Inspect the artifact inventories, SHA-256 hashes, and installation and
+   upgrade results.
 3. Sign the exact dry-run approval file with the maintainer's offline Ed25519 key,
    then publish using the signed approval. Follow the [release policy](ci-cd.md)
    for approval inputs and recovery from partial publication. Keep the private

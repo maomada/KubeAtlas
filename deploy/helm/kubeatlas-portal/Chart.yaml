@@ -1,6 +1,6 @@
 apiVersion: v2
 name: kubeatlas-portal
-description: Self-hosted KubeAtlas Cloud Hub with identity and live Agent connections
+description: KubeAtlas Hub for Kubernetes clusters connected through KubeAtlas Agent
 type: application
 version: 0.0.0-unreleased
 appVersion: "0.0.0-unreleased"

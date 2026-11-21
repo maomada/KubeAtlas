@@ -2,9 +2,9 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-**A self-hosted operations console for Kubernetes.** Connect your clusters to one Hub to find failing workloads, trace dependencies, and see what changed.
+**A self-hosted operations console for Kubernetes.** Deploy KubeAtlas Hub and connect your clusters with KubeAtlas Agent to find failing workloads, trace dependencies, and see what changed.
 
-[Download](https://github.com/maomada/KubeAtlas/releases/latest) · [Try one cluster](#try-one-cluster) · [Deploy the Hub](#deploy-the-hub) · [Deploy with an AI agent](docs/deploy-with-ai.md)
+[Releases](https://github.com/maomada/KubeAtlas/releases/latest) · [Deploy Hub](#deploy-hub) · [Connect a cluster](#connect-a-cluster) · [Deploy with AI](docs/deploy-with-ai.md)
 
 ```mermaid
 flowchart TB
@@ -32,31 +32,21 @@ flowchart TB
 - **Review capacity and cost** with scheduling requests, node capacity, and cost allocation. If the cluster has a compatible Prometheus and the Hub has an offline bundle, you can install OpenCost from the Cost page. [Capacity](docs/capacity.md) · [Offline OpenCost](docs/opencost-offline.md)
 - **Connect an AI client** over MCP using an expiring credential scoped to selected clusters and your permissions. [Hub MCP](docs/hub-live-mcp.md)
 
-## Get started
+## Deploy Hub
 
-The [latest stable release](https://github.com/maomada/KubeAtlas/releases/latest) provides Linux DEB and RPM packages for `amd64` and `arm64`. Choose `kubeatlas` for a local console or `kubeatlas-portal` for a shared Hub.
+Choose a release that provides the deployment artifacts for your environment. Hub runs on Linux `amd64` or `arm64`. Give it an HTTPS address reachable by the clusters you want to connect.
 
-### Try one cluster
+| Where you run Hub | Deployment guide |
+| --- | --- |
+| A Kubernetes cluster | [Helm](deploy/helm/kubeatlas-portal/README.md) |
+| A Linux systemd host | [DEB or RPM](docs/deploy-with-ai.md#install-from-the-release-bundle) |
+| A Linux container host | [Docker Compose](deploy/compose/README.md) |
 
-Download the matching `kubeatlas` package and `checksums.txt` from the release. Verify the downloaded file, install it, and open `http://127.0.0.1:9280`. KubeAtlas uses your kubeconfig.
+## Connect a cluster
 
-```sh
-# Debian or Ubuntu on amd64, using v0.1.2 as an example
-package=kubeatlas_0.1.2_linux_amd64.deb
-awk -v name="$package" '$2 == name' checksums.txt | sha256sum --check - &&
-  sudo apt install "./$package" &&
-  kubeatlas --listen-address 127.0.0.1 --port 9280 --no-browser
-```
-
-On an RPM-based distribution, install the verified RPM with `sudo rpm -i ./<package>.rpm`. See [package installation](docs/packaging.md) or [run from source](DEVELOPMENT.md#quick-start).
-
-### Deploy the Hub
-
-1. Starting with `v0.1.2`, download the matching `kubeatlas-portal` DEB or RPM, `install-hub.py`, `hub-checksums.txt`, and the version-matched Agent bundle from [GitHub Releases](https://github.com/maomada/KubeAtlas/releases/latest).
-2. Set up the HTTPS endpoint and owner credentials, then run the installer. It configures the systemd service and imports the offline Agent bundle. [Hub installation steps](docs/deploy-with-ai.md#install-from-the-release-bundle)
-3. Select **Connect cluster** in Hub. Run the generated command for the intended Kubernetes context and approve the pairing. [Agent onboarding](docs/hub-agent-onboarding.md)
-
-For existing custom deployments, see [manual Hub setup](docs/deploy-with-ai.md#manual-hub-setup). For an available OCI chart version, see the [Hub Helm guide](deploy/helm/kubeatlas-portal/README.md).
+1. Sign in to Hub and select **Clusters → Connect cluster**.
+2. Run the generated command in a shell with access to the intended Kubernetes context. Hub supplies the Agent installer, Helm chart, and image.
+3. Approve the matching code in Hub and check that the cluster is **Connected**. [Agent onboarding](docs/hub-agent-onboarding.md#bootstrap-a-new-cluster)
 
 To hand the setup to an AI agent, share the [deployment runbook](docs/deploy-with-ai.md) or its [raw Markdown](https://raw.githubusercontent.com/maomada/KubeAtlas/main/docs/deploy-with-ai.md).
 

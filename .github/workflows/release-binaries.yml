@@ -150,7 +150,7 @@ jobs:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           RELEASE_EVIDENCE_URLS: ${{ needs.validate.outputs.ci_url }} ${{ needs.validate.outputs.security_url }}
         run: make release-binaries-dry RELEASE_ARTIFACT_TOOL=../trusted/scripts/release_artifacts.py
-      - name: Stage the Linux publication profile
+      - name: Stage the Hub Linux publication profile
         working-directory: source
         env:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
@@ -159,13 +159,25 @@ jobs:
           SECURITY_URL: ${{ needs.validate.outputs.security_url }}
         run: |
           python3 ../trusted/scripts/release_artifacts.py stage-local \
-            --profile local-linux --dist dist/release --output dist/publication \
+            --profile hub-linux --dist dist/release --output dist/publication \
             --source-sha "$SOURCE_SHA" --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
-      - uses: actions/upload-artifact@v4
+      - name: Extract the Agent binaries from the validated build
+        working-directory: source
+        env:
+          VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          mkdir -p dist/agent-binaries
+          for arch in amd64 arm64; do
+            archive="dist/release/kubeatlas_v${VERSION}_linux_${arch}.tar.gz"
+            binary="dist/agent-binaries/kubeatlas-$arch"
+            tar --extract --to-stdout --file "$archive" -- kubeatlas > "$binary"
+            test -s "$binary"
+          done
+      - uses: actions/upload-artifact@v7
         with:
-          name: kubeatlas-binary-release
-          path: source/dist/release
+          name: kubeatlas-agent-binaries
+          path: source/dist/agent-binaries
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@v7
@@ -199,6 +211,10 @@ jobs:
         with:
           name: kubeatlas-binary-publication
           path: packages
+      - uses: actions/download-artifact@v8
+        with:
+          name: kubeatlas-agent-binaries
+          path: agent-binaries
       - uses: actions/setup-go@v7
         with:
           go-version-file: source/go.mod
@@ -207,7 +223,7 @@ jobs:
         with:
           version: v3.19.0
       - uses: docker/setup-buildx-action@v4
-      - name: Reuse package binaries and validate the versioned bundle
+      - name: Build the versioned bundle from the validated Agent binaries
         working-directory: source
         env:
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
@@ -216,12 +232,12 @@ jobs:
           stage="$(mktemp -d)"
           hub="$GITHUB_WORKSPACE/hub"
           packages="$GITHUB_WORKSPACE/packages"
+          agent_binaries="$GITHUB_WORKSPACE/agent-binaries"
           archive="kubeatlas-hub-agent-bundle_${VERSION}.tar.gz"
           mkdir -p "$stage/context" "$stage/layout" "$hub"
           cp Dockerfile "$stage/context/"
           for arch in amd64 arm64; do
-            dpkg-deb -x "$packages/kubeatlas_${VERSION}_linux_${arch}.deb" "$stage/$arch"
-            install -m 0755 "$stage/$arch/usr/bin/kubeatlas" "$stage/context/kubeatlas-$arch"
+            install -m 0755 "$agent_binaries/kubeatlas-$arch" "$stage/context/kubeatlas-$arch"
           done
           docker buildx build --target release --platform linux/amd64,linux/arm64 \
             --provenance=false --sbom=false \
@@ -293,7 +309,8 @@ jobs:
           ARCHITECTURE: ${{ matrix.architecture }}
         run: |
           python3 trusted/scripts/release_linux_smoke.py --directory release \
-            --architecture "$ARCHITECTURE" --source-sha "$SOURCE_SHA" --version "$VERSION" \
+            --profile hub-linux --architecture "$ARCHITECTURE" \
+            --source-sha "$SOURCE_SHA" --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
 
   dry-run:
@@ -303,10 +320,6 @@ jobs:
     permissions:
       contents: read
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: kubeatlas-binary-release
-          path: release-full
       - uses: actions/download-artifact@v8
         with:
           name: kubeatlas-binary-publication
@@ -331,11 +344,7 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
-          python3 trusted/scripts/release_artifacts.py validate --directory release-full \
-            --source-sha "$SOURCE_SHA" \
-            --version "$VERSION" \
-            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
-          python3 trusted/scripts/release_artifacts.py validate --profile local-linux --directory release/packages \
+          python3 trusted/scripts/release_artifacts.py validate --profile hub-linux --directory release/packages \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
@@ -350,7 +359,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 trusted/scripts/release_approval.py create \
-            --channel binaries-with-hub --artifact-root release \
+            --channel hub-binaries --artifact-root release \
             --source-sha "$SOURCE_SHA" --version "$VERSION" \
             --ci-url "$CI_URL" --security-url "$SECURITY_URL" \
             --output "$RUNNER_TEMP/release-approval.json"
@@ -443,7 +452,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 trusted/scripts/release_approval.py verify \
-            --channel binaries-with-hub --manifest approval/release-approval.json \
+            --channel hub-binaries --manifest approval/release-approval.json \
             --artifact-root release --source-sha "$SOURCE_SHA" \
             --version "$VERSION" --build-run-id "$BUILD_RUN_ID" \
             --signature-output "$RUNNER_TEMP/release-approval.sig"
@@ -468,7 +477,7 @@ jobs:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
           sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
-          python3 trusted/scripts/release_artifacts.py validate --profile local-linux --directory release/packages \
+          python3 trusted/scripts/release_artifacts.py validate --profile hub-linux --directory release/packages \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
@@ -491,7 +500,7 @@ jobs:
           WORKFLOW_SHA: ${{ github.workflow_sha }}
         run: |
           python3 trusted/scripts/release_approval.py verify \
-            --channel binaries-with-hub --manifest approval/release-approval.json \
+            --channel hub-binaries --manifest approval/release-approval.json \
             --artifact-root release --source-sha "$SOURCE_SHA" \
             --version "$VERSION" --build-run-id "$BUILD_RUN_ID"
       - name: Atomically create tag ref at selected source
@@ -522,7 +531,7 @@ jobs:
           import sys
           from release_approval import expected_artifact_paths
 
-          for name in expected_artifact_paths("binaries-with-hub", sys.argv[1]):
+          for name in expected_artifact_paths("hub-binaries", sys.argv[1]):
               print(f"release/{name}")
           PY
           )"

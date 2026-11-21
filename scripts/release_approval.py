@@ -27,8 +27,14 @@ TRUSTED_ROOT = Path(__file__).resolve().parents[1]
 PUBLIC_KEY = ".github/release-signing-public.pem"
 WORKFLOWS = {
     "ghcr": ".github/workflows/release.yml",
+    "ghcr-hub": ".github/workflows/release.yml",
     "binaries": ".github/workflows/release-binaries.yml",
     "binaries-with-hub": ".github/workflows/release-binaries.yml",
+    "hub-binaries": ".github/workflows/release-binaries.yml",
+}
+GHCR_COMPONENTS = {
+    "ghcr": ("kubeatlas", "kubeatlas-portal"),
+    "ghcr-hub": ("kubeatlas-portal",),
 }
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_VALIDITY = timedelta(days=7)
@@ -102,29 +108,25 @@ def _safe_path(value: str) -> None:
 
 
 def expected_artifact_paths(channel: str, version: str) -> list[str]:
-    if channel == "ghcr":
+    if channel in GHCR_COMPONENTS:
         paths = []
-        for component in ("kubeatlas", "kubeatlas-portal"):
+        for component in GHCR_COMPONENTS[channel]:
             directory = f"images/release-image-{component}"
             paths.extend(
                 (
                     f"{directory}/{component}.oci.tar",
                     f"{directory}/{component}.oci.tar.sha256",
                     f"{directory}/{component}.metadata.json",
+                    f"charts/{component}-{version}.tgz",
                 )
             )
-        paths.extend(
-            (
-                f"charts/kubeatlas-{version}.tgz",
-                f"charts/kubeatlas-portal-{version}.tgz",
-                "charts/SHA256SUMS",
-            )
-        )
+        paths.append("charts/SHA256SUMS")
         return sorted(paths)
     if channel == "binaries":
         return release_artifacts.local_publication_names(version, profile="local-linux")
-    if channel == "binaries-with-hub":
-        packages = expected_artifact_paths("binaries", version)
+    if channel in ("binaries-with-hub", "hub-binaries"):
+        profile = release_artifacts.HUB_LINUX_PROFILE if channel == "hub-binaries" else "local-linux"
+        packages = release_artifacts.local_publication_names(version, profile=profile)
         return sorted([
             *(f"packages/{name}" for name in packages),
             "hub/hub-checksums.txt",
@@ -135,14 +137,13 @@ def expected_artifact_paths(channel: str, version: str) -> list[str]:
 
 
 def expected_targets(channel: str, version: str) -> list[str]:
-    if channel == "ghcr":
+    if channel in GHCR_COMPONENTS:
+        components = GHCR_COMPONENTS[channel]
         return [
-            f"ghcr.io/maomada/kubeatlas:{version}",
-            f"ghcr.io/maomada/kubeatlas-portal:{version}",
-            f"ghcr.io/maomada/charts/kubeatlas:{version}",
-            f"ghcr.io/maomada/charts/kubeatlas-portal:{version}",
+            *(f"ghcr.io/maomada/{component}:{version}" for component in components),
+            *(f"ghcr.io/maomada/charts/{component}:{version}" for component in components),
         ]
-    if channel in ("binaries", "binaries-with-hub"):
+    if channel in ("binaries", "binaries-with-hub", "hub-binaries"):
         names = sorted(PurePosixPath(path).name for path in expected_artifact_paths(channel, version))
         return [f"github-release:v{version}", *names]
     raise ApprovalError("unsupported release channel")
@@ -526,7 +527,7 @@ def _validate_current_context(channel: str, workflow_sha: str, environment: dict
 def query_build_run(run_id: str, environment: dict[str, str] | None = None) -> dict:
     environment = os.environ if environment is None else environment
     if not (environment.get("GH_TOKEN") or environment.get("GITHUB_TOKEN")):
-        raise ApprovalError("GH_TOKEN is required to verify the signed build run")
+        raise ApprovalError("GH_TOKEN is required to verify the build run")
     try:
         result = subprocess.run(
             ["gh", "api", f"repos/{REPOSITORY}/actions/runs/{run_id}"],
@@ -562,16 +563,58 @@ def _validate_build_run(run: dict, manifest: dict) -> None:
         if type(value) is int and type(actual) is not int:
             raise ApprovalError(f"build-run API evidence has invalid {key}")
         if actual != value:
-            raise ApprovalError(f"build-run API evidence does not match signed {key}")
+            raise ApprovalError(f"build-run API evidence does not match approval {key}")
     if run.get("path") not in {
         manifest["workflow"],
         f"{manifest['workflow']}@refs/heads/main",
     }:
-        raise ApprovalError("build-run API evidence does not match signed workflow path")
+        raise ApprovalError("build-run API evidence does not match approval workflow path")
     for key in ("repository", "head_repository"):
         repository = run.get(key)
         if not isinstance(repository, dict) or repository.get("full_name") != REPOSITORY:
             raise ApprovalError(f"build-run API evidence has invalid {key}")
+
+
+def _read_approval_manifest(manifest_path: Path, artifact_root: Path) -> bytes:
+    if manifest_path.is_symlink() or not manifest_path.is_file():
+        raise ApprovalError("approval manifest is missing or unsafe")
+    if _is_within(manifest_path, artifact_root):
+        raise ApprovalError("approval manifest must be outside the artifact directory")
+    try:
+        descriptor, _ = _open_regular(manifest_path)
+        with os.fdopen(descriptor, "rb") as source:
+            manifest_bytes = source.read(MAX_MANIFEST_BYTES + 1)
+    except ApprovalError:
+        raise
+    except OSError as error:
+        raise ApprovalError("approval manifest cannot be read") from error
+    if len(manifest_bytes) > MAX_MANIFEST_BYTES:
+        raise ApprovalError("approval manifest exceeds 64 KiB")
+    return manifest_bytes
+
+
+def verify_hub_build_inputs(
+    manifest_path: Path,
+    artifact_root: Path,
+    source_sha: str,
+    version: str,
+    build_run_id: str,
+    environment: dict[str, str] | None = None,
+    now: datetime | None = None,
+) -> None:
+    """Verify build-only inputs from a canonical Release Binaries dry run."""
+    environment = dict(os.environ if environment is None else environment)
+    _workflow_binding("ghcr-hub", environment)
+    channel = "hub-binaries"
+    manifest = _load_json(_read_approval_manifest(manifest_path, artifact_root))
+    _, _, fingerprint = _trusted_key(TRUSTED_ROOT)
+    _validate_manifest(
+        manifest, channel, source_sha, version, build_run_id, fingerprint,
+        now or datetime.now(timezone.utc),
+    )
+    _validate_build_run(query_build_run(build_run_id, environment), manifest)
+    if _inventory(artifact_root, channel, version) != manifest["artifacts"]:
+        raise ApprovalError("Hub build input inventory does not match the binary dry run")
 
 
 def verify_approval(
@@ -589,22 +632,8 @@ def verify_approval(
     trusted_root: Path | None = None,
 ) -> dict:
     environment = dict(os.environ if environment is None else environment)
-    manifest_path = Path(manifest_path)
     artifact_root = Path(artifact_root)
-    if manifest_path.is_symlink() or not manifest_path.is_file():
-        raise ApprovalError("signed approval manifest is missing or unsafe")
-    if _is_within(manifest_path, artifact_root):
-        raise ApprovalError("signed approval manifest must be outside the artifact directory")
-    try:
-        descriptor, _ = _open_regular(manifest_path)
-        with os.fdopen(descriptor, "rb") as source:
-            manifest_bytes = source.read(MAX_MANIFEST_BYTES + 1)
-    except ApprovalError:
-        raise
-    except OSError as error:
-        raise ApprovalError("signed approval manifest cannot be read") from error
-    if len(manifest_bytes) > MAX_MANIFEST_BYTES:
-        raise ApprovalError("approval manifest exceeds 64 KiB")
+    manifest_bytes = _read_approval_manifest(Path(manifest_path), artifact_root)
     manifest = _load_json(manifest_bytes)
     signature = _decode_signature(signature_base64)
     if signature_output is not None:
@@ -669,6 +698,12 @@ def main() -> int:
     verify.add_argument("--version", required=True)
     verify.add_argument("--signature-output", type=Path)
     verify.add_argument("--build-run-id", default=os.environ.get("BUILD_RUN_ID"))
+    hub_inputs = subparsers.add_parser("verify-hub-build-inputs")
+    hub_inputs.add_argument("--manifest", type=Path, required=True)
+    hub_inputs.add_argument("--artifact-root", type=Path, required=True)
+    hub_inputs.add_argument("--source-sha", required=True)
+    hub_inputs.add_argument("--version", required=True)
+    hub_inputs.add_argument("--build-run-id", required=True)
     args = parser.parse_args()
     try:
         if args.command == "create":
@@ -682,7 +717,7 @@ def main() -> int:
                 args.security_url,
             )
             print(f"Created {args.output.name} for {args.channel} dry run")
-        else:
+        elif args.command == "verify":
             signature = os.environ.get("APPROVAL_SIGNATURE", "")
             if not args.build_run_id:
                 raise ApprovalError("BUILD_RUN_ID is required")
@@ -697,6 +732,11 @@ def main() -> int:
                 signature_output=args.signature_output,
             )
             print(f"Verified offline approval for {args.channel} publication")
+        else:
+            verify_hub_build_inputs(
+                args.manifest, args.artifact_root, args.source_sha, args.version, args.build_run_id,
+            )
+            print(f"Verified Hub build inputs from Release Binaries dry run {args.build_run_id}")
     except (ApprovalError, OSError, ValueError, KeyError, TypeError) as error:
         print(f"Release approval blocked: {error}", file=sys.stderr)
         return 1

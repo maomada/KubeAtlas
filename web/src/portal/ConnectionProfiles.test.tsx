@@ -50,6 +50,15 @@ it('keeps empty profiles unavailable rather than falling back to the browser ori
   expect(host.textContent).not.toContain(window.location.origin)
 })
 
+it('selects a sole configured HTTPS address even with a stored LAN preference', async () => {
+  window.localStorage.setItem('kubeatlas.hub.connection-profile', 'lan')
+  vi.stubGlobal('fetch', vi.fn(() => Promise.resolve(response(data('', 'https://hub.example.test')))))
+  await act(async () => root.render(<ConnectionProfilesProvider><ConnectionProfileSelector /><Probe /></ConnectionProfilesProvider>))
+  expect(JSON.parse(host.querySelector('output')!.textContent!)).toMatchObject({ profile: 'public', origin: 'https://hub.example.test', installAvailable: true })
+  expect(host.querySelector('fieldset')).toBeNull()
+  expect(window.localStorage.getItem('kubeatlas.hub.connection-profile')).toBe('lan')
+})
+
 it('blocks enrollment when bootstrap is explicitly unavailable', async () => {
   const fetch = vi.fn(() => Promise.resolve(response({
     lanURL: 'https://lan.example.test', publicURL: '', ownerUserID: 'owner',

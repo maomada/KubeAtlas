@@ -7,10 +7,14 @@ image:
 
 existingSecret: ""
 
+# Initial HTTPS root address for Agent onboarding on a fresh Hub.
+hubOrigin: ""
+
 # Explicit trusted-network HTTP origin for a literal IPv4 or bracketed IPv6 authority.
 httpIPOrigin: ""
 
 hubArtifacts:
+  # Override the catalog bundled in the release image with an existing PVC.
   enabled: false
   existingClaim: ""
   previous:
@@ -55,6 +59,7 @@ containerSecurityContext:
       - ALL
 
 resources: {}
-nodeSelector: {}
+nodeSelector:
+  kubernetes.io/os: linux
 tolerations: []
 affinity: {}

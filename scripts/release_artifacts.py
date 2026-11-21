@@ -22,7 +22,8 @@ from release_policy import validate_inputs
 
 REPOSITORY = "maomada/KubeAtlas"
 COMPONENTS = ("kubeatlas", "kubeatlas-portal")
-LOCAL_PROFILES = ("local-linux", "local-linux-amd64")
+HUB_LINUX_PROFILE = "hub-linux"
+LOCAL_PROFILES = ("local-linux", "local-linux-amd64", HUB_LINUX_PROFILE)
 ARCHIVES = (
     ("kubeatlas", "linux", "amd64", ".tar.gz"),
     ("kubeatlas", "linux", "arm64", ".tar.gz"),
@@ -66,6 +67,7 @@ def local_asset_names(version: str, profile: str = "local-linux") -> list[str]:
         f"{component}_{version}_linux_{architecture}{suffix}"
         for component, _, architecture, suffix in PACKAGES
         if profile != "local-linux-amd64" or architecture == "amd64"
+        if profile != HUB_LINUX_PROFILE or component == "kubeatlas-portal"
     }
     return sorted(names)
 

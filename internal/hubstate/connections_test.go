@@ -7,6 +7,39 @@ import (
 	"testing"
 )
 
+func TestInitialHubOriginOnlyAppliesToNewState(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "hub", "state.json")
+	for _, invalid := range []string{"http://10.2.0.2", "https://hub.example.test/subpath"} {
+		if _, err := OpenStoreWithInitialOrigin(path, invalid); err == nil {
+			t.Errorf("accepted invalid initial origin %q", invalid)
+		}
+	}
+	store, err := OpenStoreWithInitialOrigin(path, "https://Hub.Example.Test:443/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := store.Connections().PublicURL; got != "https://hub.example.test" {
+		t.Fatalf("initial public origin = %q", got)
+	}
+
+	for _, settings := range []ConnectionSettings{
+		{LANURL: "https://internal.example.test", PublicURL: "https://saved.example.test"},
+		{},
+	} {
+		if _, err := store.UpdateConnections(settings); err != nil {
+			t.Fatal(err)
+		}
+		reopened, err := OpenStoreWithInitialOrigin(path, "https://other.example.test")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := reopened.Connections(); got != settings {
+			t.Fatalf("changed stored connections: got %+v, want %+v", got, settings)
+		}
+		store = reopened
+	}
+}
+
 func TestConnectionSettingsPersistAndMigrate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "hub", "state.json")
 	store, err := OpenStore(path)

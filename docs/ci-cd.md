@@ -3,8 +3,12 @@
 Main and pull-request CI build and test only. Published images and charts
 are listed in [GitHub Packages](https://github.com/maomada?tab=packages).
 A maintainer may dispatch
-**Release GHCR** from `maomada/KubeAtlas` on `main` with a full lowercase 40-digit
+the Hub release workflows from `maomada/KubeAtlas` on `main` with a full lowercase 40-digit
 source SHA and a strict SemVer version (no `v` prefix or build metadata).
+Run **Release Binaries** with `publish=false` first. Pass its successful run ID
+in `hub_build_run_id` when starting the **Release GHCR** dry run for the same
+source and version. This lets the Hub container use the same Agent catalog as
+the systemd packages.
 The policy requires that SHA to be an ancestor of `main` and that the latest
 main-push CI and Semgrep CE runs for that exact SHA both succeeded.
 
@@ -22,7 +26,7 @@ then emits `release-approval.json`; it does not publish. Review the release
 manifest, exact artifact inventory, checksums, build metadata, and CI/Semgrep CE
 evidence before signing. Binary approval also requires native smoke tests on
 Linux amd64 and arm64. Each runner validates the staged package checksums and
-runs `--version` and `--help` from the DEB and RPM packages for both components.
+runs `--version` and `--help` from the Hub DEB and RPM packages.
 Cluster acceptance is a separate check.
 
 The approval binds the repository, action, channel, selected source and version,
@@ -228,40 +232,21 @@ first publication uses `GITHUB_TOKEN`. Existing packages must grant this
 repository Actions access. Review package visibility and access policy before
 any authorized publication; no registry publication is part of this change.
 
-Images:
+Published Hub image and Helm chart:
 
-- `ghcr.io/maomada/kubeatlas:<version>`
 - `ghcr.io/maomada/kubeatlas-portal:<version>`
-
-Helm OCI charts:
-
-- `oci://ghcr.io/maomada/charts/kubeatlas --version <version>`
 - `oci://ghcr.io/maomada/charts/kubeatlas-portal --version <version>`
 
-For example, after a version is actually published:
-
-```sh
-helm upgrade --install kubeatlas oci://ghcr.io/maomada/charts/kubeatlas \
-  --version "$VERSION" --namespace kubeatlas --create-namespace
-helm upgrade --install kubeatlas-portal oci://ghcr.io/maomada/charts/kubeatlas-portal \
-  --version "$VERSION" --namespace kubeatlas-portal --create-namespace \
-  --set existingSecret=portal-auth
-```
-
-Use a secret manager or existing Kubernetes Secret for credentials. Do not put
-registry credentials in chart values, runtime configuration, command arguments,
-or this repository. The KubeAtlas chart supports an `imagePullSecrets` value. The
-Portal chart does not; its Deployment uses the namespace default ServiceAccount.
-For private GHCR images used by Portal, have the cluster operator provision that
-ServiceAccount's `imagePullSecrets` before installation. Do not assume packages
-are public.
+See [KubeAtlas Hub deployment](deploy-with-ai.md) for the Helm and container
+procedures. For a private registry, provision `imagePullSecrets` on the Hub
+namespace's default ServiceAccount.
 
 The signature and exact artifact inventory are verified before registry login.
 After source-policy, artifact, and registry-collision checks, the signature,
 dry-run provenance, and inventory are verified again immediately before the
-first push. The workflow inspects all four versioned refs and blocks if one
-exists or if absence cannot be established. Images are copied from the exact
-archives built earlier; charts are pushed only after both image copies succeed.
+first push. The workflow inspects both versioned refs and blocks if one
+exists or if absence cannot be established. The Hub image is copied from its
+verified archive, then the chart is pushed.
 The release manifest records source SHA, version, CI/Semgrep CE evidence, actor,
 workflow run, archive checksums, build digests, and final registry digests where
 known. OCI/chart dry-run artifacts are retained for 14 days; approval and
@@ -298,19 +283,16 @@ Builds use trusted release tooling checked out separately from the selected
 source, have read-only permissions, and never log in to a registry.
 
 The hosted workflow validates the full GoReleaser build, then stages the
-`local-linux` publication profile with eight Linux DEB and RPM packages, a
-schema-2 manifest, and checksums. The Linux amd64 and arm64 runners smoke-test
-the exact staged packages. In parallel, the workflow assembles a multi-platform
-OCI image from those same Agent DEB payloads using the prebuilt Dockerfile
-target, prepares a version-matched catalog, and validates import with the
-staged Portal executable. It creates the approval manifest after both checks.
-The full `kubeatlas-binary-release` artifact holds diagnostic evidence. Use a
-source revision with the current package matrix and Hub bundle tools when
-dispatching a dry run.
+`hub-linux` publication profile with four Hub DEB and RPM packages, a
+manifest, and checksums. The Linux amd64 and arm64 runners smoke-test the
+exact staged packages. In parallel, the workflow assembles a multi-platform
+OCI image from the two validated Agent binaries, prepares the versioned
+catalog, and verifies import with the staged Hub executable. It creates the
+approval manifest after both checks.
 
 With `publish=true`, the publisher downloads the signed approval and
 `kubeatlas-binary-publication` and `kubeatlas-hub-publication` from the
-specified dry run. The `binaries-with-hub` approval binds both inventories,
+specified dry run. The `hub-binaries` approval binds both inventories,
 including the Hub installer, Agent bundle, and their checksum file. The
 publisher verifies the signature, run provenance, and inventory
 before setup, then reruns source policy and local-profile validation. After
