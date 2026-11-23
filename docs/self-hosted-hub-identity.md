@@ -1,9 +1,9 @@
 # Self-hosted Hub identity
 
 The self-hosted Hub supports multiple organizations with separate memberships
-and request scopes. The configured local recovery identity is the single
-platform owner; this is a self-hosted service, not a hosted multi-tenant
-service.
+and request scopes. The platform owner is the administrator created during
+first-run setup or migrated from an existing installation. Its account ID and
+Kubernetes identity survive administrator credential resets. [Platform administrator](portal.md#platform-administrator)
 
 ## OIDC configuration
 

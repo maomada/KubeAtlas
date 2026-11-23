@@ -5,15 +5,18 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"net"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf8"
 
 	"github.com/maomada/KubeAtlas/internal/hubartifacts"
 	"github.com/maomada/KubeAtlas/internal/hubmcp"
@@ -26,7 +29,12 @@ var version = "dev"
 
 func main() {
 	showVersion := flag.Bool("version", false, "Print version and exit")
-	listen := flag.String("listen", "127.0.0.1:9290", "HTTP listen address")
+	listen := flag.String("listen", "127.0.0.1:1333", "HTTP listen address")
+	port := flag.Int("port", 1333, "Override the port in --listen")
+	adminUsername := flag.String("admin-username", "", "Local Hub administrator username for initialization or reset")
+	adminPasswordFile := flag.String("admin-password-file", "", "File containing the local Hub administrator password")
+	resetAdmin := flag.Bool("reset-admin", false, "Explicitly replace the local Hub administrator credentials")
+	showSetupCode := flag.Bool("show-setup-code", false, "Print the Hub's first-time setup code locally and exit")
 	hubStateFile := flag.String("hub-state-file", os.Getenv("KUBEATLAS_PORTAL_HUB_STATE_FILE"), "Required persistent state file for the self-hosted Cloud Hub")
 	hubOrigin := flag.String("hub-origin", os.Getenv("KUBEATLAS_PORTAL_HUB_ORIGIN"), "Initial HTTPS root address for new Hub state")
 	hubArtifactsDir := flag.String("hub-artifacts-dir", os.Getenv("KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR"), "Optional read-only directory containing the version-matched Hub Agent artifact bundle")
@@ -58,12 +66,33 @@ func main() {
 	if strings.TrimSpace(*hubStateFile) == "" {
 		log.Fatal("--hub-state-file is required; set KUBEATLAS_PORTAL_HUB_STATE_FILE or pass --hub-state-file")
 	}
-	if host, _, err := net.SplitHostPort(*listen); err == nil &&
+	if *showSetupCode {
+		code, err := portal.ReadSetupCode(*hubStateFile)
+		if err != nil {
+			log.Fatalf("Hub setup code is unavailable: %v", err)
+		}
+		fmt.Println(code)
+		return
+	}
+	var portOverride bool
+	flag.Visit(func(f *flag.Flag) {
+		if f.Name == "port" {
+			portOverride = true
+		}
+	})
+	address, err := resolveListenAddress(*listen, *port, portOverride)
+	if err != nil {
+		log.Fatalf("portal listen address is invalid: %v", err)
+	}
+	if host, _, err := net.SplitHostPort(address); err == nil &&
 		host != "localhost" && !net.ParseIP(host).IsLoopback() {
 		log.Printf("WARNING: self-hosted Cloud Hub is listening beyond loopback; put it behind a trusted TLS-terminating proxy before exposing it")
 	}
 
 	credentials := loadCredentials()
+	if err := configureAdmin(&credentials, *adminUsername, *adminPasswordFile, *resetAdmin); err != nil {
+		log.Fatalf("portal administrator configuration is invalid: %v", err)
+	}
 	if err := configureHub(&credentials, *hubStateFile, *hubGroups, *hubOrigin); err != nil {
 		log.Fatalf("portal Hub configuration is invalid: %v", err)
 	}
@@ -92,7 +121,7 @@ func main() {
 		}
 	}
 	if *insecureCookie {
-		host, _, err := net.SplitHostPort(*listen)
+		host, _, err := net.SplitHostPort(address)
 		if err != nil || (host != "localhost" && !net.ParseIP(host).IsLoopback()) {
 			log.Fatal("--insecure-cookie requires a loopback listen address")
 		}
@@ -101,24 +130,25 @@ func main() {
 	if err != nil {
 		log.Fatalf("portal web assets are unavailable; build the portal frontend and embed it")
 	}
-	handler, err := portal.NewHandler(credentials, static)
+	listener, err := net.Listen("tcp", address)
+	if err != nil {
+		log.Fatalf("portal listen failed: %v", err)
+	}
+	defer listener.Close()
+	handler, err := portal.NewStartupHandler(credentials, static, *hubStateFile, *resetAdmin)
 	if err != nil {
 		log.Fatalf("portal configuration is invalid: %v", err)
 	}
 	defer handler.Close()
 
 	server := &http.Server{
-		Addr:              *listen,
+		Addr:              address,
 		Handler:           handler,
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       2 * time.Minute,
 		WriteTimeout:      11 * time.Minute,
 		IdleTimeout:       60 * time.Second,
 		MaxHeaderBytes:    10 << 10,
-	}
-	listener, err := net.Listen("tcp", *listen)
-	if err != nil {
-		log.Fatalf("portal listen failed: %v", err)
 	}
 	log.Printf("KubeAtlas self-hosted Cloud Hub listening on %s", listener.Addr())
 
@@ -138,6 +168,51 @@ func main() {
 			log.Fatalf("portal server failed: %v", err)
 		}
 	}
+}
+
+func resolveListenAddress(listen string, port int, override bool) (string, error) {
+	host, _, err := net.SplitHostPort(listen)
+	if err != nil {
+		return "", err
+	}
+	if !override {
+		return listen, nil
+	}
+	if port < 1 || port > 65535 {
+		return "", errors.New("--port must be between 1 and 65535")
+	}
+	return net.JoinHostPort(host, strconv.Itoa(port)), nil
+}
+
+func configureAdmin(credentials *portal.Credentials, username, passwordPath string, reset bool) error {
+	if username == "" && passwordPath == "" && !reset {
+		return nil
+	}
+	if username == "" || passwordPath == "" {
+		return errors.New("--admin-username and --admin-password-file must be provided together, including for --reset-admin")
+	}
+	info, err := os.Stat(passwordPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return errors.New("administrator password file must be a readable regular file")
+	}
+	file, err := os.Open(passwordPath)
+	if err != nil {
+		return errors.New("could not open administrator password file")
+	}
+	defer file.Close()
+	data, err := io.ReadAll(io.LimitReader(file, 4099))
+	if err != nil || len(data) > 4098 {
+		return errors.New("could not read administrator password file or file is too large")
+	}
+	password := string(data)
+	if strings.HasSuffix(password, "\n") {
+		password = strings.TrimSuffix(strings.TrimSuffix(password, "\n"), "\r")
+	}
+	if !utf8.ValidString(password) || len(password) < 16 || len(password) > 4096 {
+		return errors.New("administrator password must contain 16-4096 UTF-8 bytes")
+	}
+	credentials.Username, credentials.Password = username, password
+	return nil
 }
 
 func registerHTTPIPOriginFlag(flags *flag.FlagSet, getenv func(string) string) *string {

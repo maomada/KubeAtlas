@@ -78,8 +78,10 @@ func newPortalHub(credentials Credentials) (*portalHub, error) {
 	}
 	slices.Sort(p.groups)
 	p.groups = slices.Compact(p.groups)
-	if err := p.store.EnsurePlatformOwner(p.ownerID, p.userID, p.displayName); err != nil {
-		return nil, err
+	if !credentials.managedOwner {
+		if err := p.store.EnsurePlatformOwner(p.ownerID, p.userID, p.displayName); err != nil {
+			return nil, err
+		}
 	}
 	var err error
 	p.policy, err = newHubRequestPolicy(credentials.MCPAllowedHosts)

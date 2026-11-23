@@ -41,6 +41,7 @@ PACKAGE = re.compile(rf"{COMPONENT}_({VERSION})_linux_(amd64|arm64)\.(deb|rpm)")
 SHA256 = re.compile(r"[0-9a-f]{64}")
 AUTHORITY = re.compile(r"(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:]+\])(?::[0-9]+)?")
 MAX_HTTP_BODY = 16 * 1024 * 1024
+MANAGED_PACKAGE_ENV = ("env", "KUBEATLAS_NATIVE_INSTALL_MANAGED=1")
 
 
 class InstallError(RuntimeError):
@@ -172,6 +173,7 @@ class Deployment:
     listen: str
     origin: str
     previous_version: str | None
+    unit_format: int = 1
 
     def unit(self):
         allowed_hosts = urlsplit(self.origin).netloc
@@ -184,8 +186,12 @@ class Deployment:
         if self.previous_version:
             command += (f" --hub-previous-artifacts-dir={CATALOGS / self.previous_version}"
                         f" --hub-previous-artifacts-version={self.previous_version}")
+        env_file = str(ENV_FILE)
+        if self.unit_format == 2:
+            command += f" --hub-origin={self.origin}"
+            env_file = f"-{env_file}"
         return ("[Unit]\nDescription=KubeAtlas Hub\nAfter=network-online.target\nWants=network-online.target\n\n"
-                f"[Service]\nUser={COMPONENT}\nGroup={COMPONENT}\nEnvironmentFile={ENV_FILE}\n"
+                f"[Service]\nUser={COMPONENT}\nGroup={COMPONENT}\nEnvironmentFile={env_file}\n"
                 f"UMask=0077\nExecStart={command}\nRestart=on-failure\n\n"
                 "[Install]\nWantedBy=multi-user.target\n").encode()
 
@@ -225,10 +231,10 @@ def extract_binary(package, kind, stage, version):
 
 def install_package(package, kind, rollback=False):
     if kind == "deb":
-        run("dpkg", "--install", package)
+        run(*MANAGED_PACKAGE_ENV, "dpkg", "--install", package)
     else:
         arguments = ["--oldpackage", "--replacepkgs"] if rollback else []
-        run("rpm", "--upgrade", *arguments, package)
+        run(*MANAGED_PACKAGE_ENV, "rpm", "--upgrade", *arguments, package)
 
 
 def installed_package(kind):
@@ -302,6 +308,21 @@ def wait_payload(opener, origin, path, expected, timeout):
         time.sleep(1)
 
 
+def wait_setup(opener, origin, timeout):
+    path = "/api/setup"
+    until = time.monotonic() + timeout
+    while True:
+        try:
+            body, _ = request(opener, origin, path)
+            required = json.loads(body).get("required")
+            require(isinstance(required, bool), "Invalid Hub setup status")
+            return required
+        except (OSError, URLError, InstallError, ValueError, AttributeError) as error:
+            if time.monotonic() >= until:
+                raise InstallError(f"Hub readiness failed at {origin}{path}: {error}") from error
+        time.sleep(1)
+
+
 def configure_origin(opener, local, origin, owner):
     _, headers = request(opener, local, "/api/auth/login", owner, method="POST", expected_status=204)
     cookies = SimpleCookie()
@@ -334,9 +355,18 @@ def verify_running(options, deployment, catalog, manifest, owner):
     local = "http://" + deployment.listen
     path = "/downloads/agent/" + deployment.version + "/manifest.json"
     expected = digest(catalog / "manifest.json")
+    if deployment.unit_format == 2:
+        local_requires_setup = wait_setup(transport, local, options.timeout)
+        external_requires_setup = wait_setup(transport, deployment.origin, options.timeout)
+        if local_requires_setup and external_requires_setup:
+            _, headers = request(transport, deployment.origin, "/setup")
+            require(headers.get_content_type() == "text/html", "HTTPS Hub setup page is unavailable")
+            run("systemctl", "is-active", "--quiet", SERVICE)
+            return
     wait_payload(transport, local, path, expected, options.timeout)
     run("systemctl", "is-active", "--quiet", SERVICE)
-    configure_origin(transport, local, deployment.origin, owner)
+    if deployment.unit_format == 1:
+        configure_origin(transport, local, deployment.origin, owner)
     wait_payload(transport, deployment.origin, path, expected, options.timeout)
     _, headers = request(transport, deployment.origin, "/login")
     require(headers.get_content_type() == "text/html", "HTTPS Hub login page is unavailable")
@@ -395,7 +425,8 @@ def load_deployment():
     data = json.loads(read_private(DEPLOYMENT))
     deployment = Deployment(**data)
     package = PACKAGE.fullmatch(deployment.package)
-    require(package and package[1] == deployment.version and SHA256.fullmatch(deployment.package_sha256)
+    require(deployment.unit_format in (1, 2)
+            and package and package[1] == deployment.version and SHA256.fullmatch(deployment.package_sha256)
             and (not deployment.previous_version or re.fullmatch(VERSION, deployment.previous_version))
             and deployment.origin == normalize_origin(deployment.origin)
             and deployment.listen == normalize_listen(deployment.listen), "Invalid managed Hub deployment metadata")
@@ -440,21 +471,26 @@ def stop_service():
     require(service_property("MainPID") in ("", "0"), "The Hub service still has a running process")
 
 
-def state_backup(path):
-    if STATE.exists():
-        require(stat.S_ISREG(STATE.lstat().st_mode), "Hub state is not a regular file")
-        atomic_bytes(path, STATE.read_bytes())
+def state_files():
+    return (STATE, STATE.with_name("setup-code"))
+
+
+def state_backup(source, destination):
+    if os.path.lexists(source):
+        require(stat.S_ISREG(source.lstat().st_mode), f"{source} is not a regular file")
+        atomic_bytes(destination, source.read_bytes())
 
 
 def rollback(kind, old, backup, owner, active):
     if old or service_property("LoadState") != "not-found":
         stop_service()
-    state_backup(backup / "failed-state.json")
-    previous_state = backup / "state.json"
-    if previous_state.exists():
-        atomic_bytes(STATE, previous_state.read_bytes(), owner=owner)
-    else:
-        STATE.unlink(missing_ok=True)
+    for path in state_files():
+        state_backup(path, backup / f"failed-{path.name}")
+        previous = backup / path.name
+        if previous.exists():
+            atomic_bytes(path, previous.read_bytes(), owner=owner)
+        else:
+            path.unlink(missing_ok=True)
     if old:
         install_package(MANAGEMENT / old.package, kind, rollback=True)
         atomic_bytes(UNIT, (backup / SERVICE).read_bytes(), mode=0o644)
@@ -465,16 +501,17 @@ def rollback(kind, old, backup, owner, active):
         ENV_FILE.unlink(missing_ok=True)
         if installed_package(kind):
             if kind == "deb":
-                run("dpkg", "--remove", COMPONENT)
+                run(*MANAGED_PACKAGE_ENV, "dpkg", "--remove", COMPONENT)
             else:
-                run("rpm", "--erase", COMPONENT)
+                run(*MANAGED_PACKAGE_ENV, "rpm", "--erase", COMPONENT)
     run("systemctl", "daemon-reload")
     if old and active:
         run("systemctl", "start", SERVICE)
         catalog = CATALOGS / old.version / "manifest.json"
         local = "http://" + old.listen
-        wait_payload(build_opener(ProxyHandler({}), NoRedirect()), local,
-                     f"/downloads/agent/{old.version}/manifest.json", digest(catalog), 60)
+        transport = build_opener(ProxyHandler({}), NoRedirect())
+        if old.unit_format == 1 or not wait_setup(transport, local, 60):
+            wait_payload(transport, local, f"/downloads/agent/{old.version}/manifest.json", digest(catalog), 60)
 
 
 def install_or_upgrade(args, stage):
@@ -486,7 +523,7 @@ def install_or_upgrade(args, stage):
         require((not args.origin or args.origin == old.origin) and (not args.listen or args.listen == old.listen),
                 "Upgrade preserves the configured Hub origin and listener")
         require(package.suffix == Path(old.package).suffix, "Upgrade uses the installed package format")
-        owner = read_env(ENV_FILE)
+        owner = read_env(ENV_FILE) if old.unit_format == 1 else None
         previous_package = MANAGEMENT / old.package
         require(previous_package.is_file() and digest(previous_package) == old.package_sha256,
                 "Cached rollback package is missing or has changed")
@@ -505,17 +542,17 @@ def install_or_upgrade(args, stage):
         if kind == "deb":
             run("dpkg", "--compare-versions", version.replace("-", "~", 1), "gt", old.version.replace("-", "~", 1))
     else:
-        require(args.credentials and args.origin, "Fresh installation requires --credentials and --origin")
-        require(not any(os.path.lexists(path) for path in (UNIT, STATE, ENV_FILE, DEPLOYMENT, BINARY))
+        require(args.origin, "Fresh installation requires --origin")
+        require(not any(os.path.lexists(path) for path in (UNIT, *state_files(), ENV_FILE, DEPLOYMENT, BINARY))
                 and service_property("LoadState") == "not-found" and not installed_package(kind),
                 "A KubeAtlas Hub already exists. Use upgrade for a managed installation")
-        owner = credentials(json.loads(read_private(args.credentials)))
+        owner = credentials(json.loads(read_private(args.credentials))) if args.credentials else None
 
     if kind == "rpm":
         run("rpm", "--upgrade", "--test", package)
 
-    deployment = Deployment(version, package.name, package_hash, old.listen if old else args.listen or "127.0.0.1:9290",
-                            old.origin if old else args.origin, old.version if old else None)
+    deployment = Deployment(version, package.name, package_hash, old.listen if old else args.listen or "127.0.0.1:1333",
+                            old.origin if old else args.origin, old.version if old else None, unit_format=2)
     identity = service_account()
     ensure_directory(MANAGEMENT, 0o700)
     ensure_directory(STATE_DIR, 0o700, identity)
@@ -531,9 +568,10 @@ def install_or_upgrade(args, stage):
     try:
         if old:
             stop_service()
-            state_backup(backup / "state.json")
+            for path in state_files():
+                state_backup(path, backup / path.name)
         updated = True
-        if not old:
+        if not old and owner is not None:
             atomic_bytes(ENV_FILE, encode_env(owner).encode())
         install_package(package, kind)
         atomic_bytes(UNIT, deployment.unit(), mode=0o644)
@@ -568,14 +606,19 @@ def options(argv=None):
     catalog.add_argument("--catalog-archive", type=Path, help="Release Agent bundle listed in the checksum file")
     catalog.add_argument("--catalog", type=Path, help="Prepared Agent catalog directory")
     parser.add_argument("--origin", type=normalize_origin, help="HTTPS origin of the configured reverse proxy")
-    parser.add_argument("--listen", type=normalize_listen, help="Hub listener IP and port (default 127.0.0.1:9290)")
-    parser.add_argument("--credentials", type=Path, help="Root-owned 0600 JSON file with username and password")
+    parser.add_argument("--listen", type=normalize_listen, help="Hub listener IP and port (default 127.0.0.1:1333)")
+    parser.add_argument("--port", type=int, help="Override the Hub listener port for a new installation")
+    parser.add_argument("--credentials", type=Path, help="Optional root-owned 0600 JSON file for unattended setup")
     parser.add_argument("--ca-file", type=Path, help="Additional CA file for verifying the HTTPS probe")
     parser.add_argument("--timeout", type=int, default=60, help="Readiness wait per origin in seconds (default 60)")
     parser.add_argument("--retire-previous-catalog", dest="retire_previous", action="store_true",
                         help="Replace an older served catalog after migrating its remaining Agents")
     result = parser.parse_args(argv)
     require(result.timeout > 0, "The readiness timeout must be positive")
+    if result.port is not None:
+        require(0 < result.port < 65536, "--port must be between 1 and 65535")
+        address = result.listen.rsplit(":", 1)[0] if result.listen else "127.0.0.1"
+        result.listen = normalize_listen(f"{address}:{result.port}")
     return result
 
 
@@ -598,6 +641,16 @@ def main():
             with tempfile.TemporaryDirectory(prefix="kubeatlas-hub-", dir="/var/tmp") as temporary:
                 deployment = install_or_upgrade(args, Path(temporary))
         print(f"KubeAtlas Hub {deployment.version} is ready at {deployment.origin}")
+        if deployment.unit_format == 2 and not STATE.exists() and STATE.with_name("setup-code").is_file():
+            print(f"Complete administrator setup at {deployment.origin}/setup")
+            command = (BINARY, f"--hub-state-file={STATE}", "--show-setup-code")
+            if sys.stdout.isatty():
+                try:
+                    print(f"One-time setup code: {run(*command)}")
+                except (InstallError, OSError, subprocess.SubprocessError):
+                    print("To read the setup code, run:", *command)
+            else:
+                print("To read the setup code, run:", *command)
         return 0
     except (InstallError, OSError, ValueError, TypeError, KeyError, KeyboardInterrupt, subprocess.SubprocessError) as error:
         print(f"KubeAtlas Hub installer: {error}", file=sys.stderr)

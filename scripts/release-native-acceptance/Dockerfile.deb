@@ -1,0 +1,7 @@
+FROM ubuntu:24.04
+ENV DEBIAN_FRONTEND=noninteractive container=docker
+RUN apt-get update \
+    && apt-get install --no-install-recommends -y systemd systemd-sysv init-system-helpers passwd util-linux curl \
+    && apt-get clean \
+    && rm -f /usr/sbin/policy-rc.d
+STOPSIGNAL SIGRTMIN+3

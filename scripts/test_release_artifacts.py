@@ -30,6 +30,45 @@ class ReleaseArtifactsTests(unittest.TestCase):
         self.assertEqual(artifacts._package_version("1.2.3"), "1.2.3")
         self.assertEqual(artifacts._package_version("1.2.3-rc.1"), "1.2.3~rc.1")
 
+    def test_native_hub_package_has_the_matching_catalog(self):
+        import io
+        import tarfile
+
+        version, source_sha = "1.2.3", "a" * 40
+        files = {
+            "manifest.json": json.dumps({"version": version, "sourceRevision": source_sha}).encode(),
+            "install-hub-agent.sh": b"installer",
+            "bootstrap-hub-agent.sh": b"bootstrap",
+        }
+        bundle = self.dist / "catalog.tar.gz"
+        with tarfile.open(bundle, "w:gz") as archive:
+            for name, data in files.items():
+                member = tarfile.TarInfo(f"hub-agent-bundle/{name}")
+                member.size = len(data)
+                archive.addfile(member, io.BytesIO(data))
+        catalog = artifacts._bundle_inventory(bundle, version, source_sha)
+        with self.assertRaisesRegex(ValueError, "version and source"):
+            artifacts._bundle_inventory(bundle, version, "b" * 40)
+
+        paths = {"usr/bin/kubeatlas-portal"} | {
+            f"usr/share/doc/kubeatlas-portal/{name}"
+            for name in ("LICENSE", "NOTICE", "README.md", "packaging.md")
+        }
+        with self.assertRaisesRegex(ValueError, "native Hub payload missing"):
+            artifacts._package_layout(paths, "kubeatlas-portal", "fixture.deb", catalog)
+        paths |= {artifacts.HUB_SERVICE, artifacts.HUB_ENV}
+        paths |= {f"{artifacts.HUB_CATALOG}/{name}" for name in files}
+        self.assertTrue(artifacts._package_layout(paths, "kubeatlas-portal", "fixture.deb", catalog))
+
+        embedded = self.dist / artifacts.HUB_CATALOG
+        embedded.mkdir(parents=True)
+        for name, data in files.items():
+            (embedded / name).write_bytes(data)
+        artifacts._validate_catalog(self.dist, version, "fixture.deb", catalog)
+        (embedded / "bootstrap-hub-agent.sh").write_bytes(b"unmatched bootstrap")
+        with self.assertRaisesRegex(ValueError, "differs from the release bundle"):
+            artifacts._validate_catalog(self.dist, version, "fixture.deb", catalog)
+
     def test_full_matrix_preserves_linux_and_darwin_without_windows(self):
         version = "1.2.3"
         expected = {

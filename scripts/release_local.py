@@ -1884,6 +1884,7 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
         "build": {
             "go": "go1.26.",
             "goreleaser": "2.13.3",
+            "nfpm": "2.44.1",
             "node": "v24.",
             "npm": "",
             "make": "",
@@ -1891,6 +1892,7 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
             "rpm": "",
             "cpio": "",
             "docker": "",
+            "jq": "",
             "skopeo": "",
             "helm": "v4.2.3",
         },
@@ -1906,7 +1908,9 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
     argument_map = {
         "go": ["version"],
         "goreleaser": ["--version"],
+        "nfpm": ["--version"],
         "docker": ["--version"],
+        "jq": ["--version"],
         "skopeo": ["--version"],
         "helm": ["version", "--short"],
         "helm3": ["version", "--short"],

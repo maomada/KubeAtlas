@@ -1,0 +1,64 @@
+name: kubeatlas-portal
+arch: ${KUBEATLAS_HUB_ARCH}
+platform: linux
+version: ${KUBEATLAS_RELEASE_VERSION}
+maintainer: KubeAtlas maintainers
+description: KubeAtlas Hub with the same-version offline Agent catalog
+homepage: https://github.com/maomada/KubeAtlas
+license: Apache-2.0
+section: admin
+priority: optional
+umask: 022
+
+overrides:
+  deb:
+    depends:
+      - systemd
+      - init-system-helpers
+      - passwd
+  rpm:
+    depends:
+      - systemd
+      - shadow-utils
+      - util-linux
+
+deb:
+  compression: gzip
+  predepends:
+    - util-linux
+rpm:
+  compression: gzip
+
+contents:
+  - src: ${KUBEATLAS_HUB_BINARY}
+    dst: /usr/bin/kubeatlas-portal
+    expand: true
+    file_info:
+      mode: 0755
+  - src: ${KUBEATLAS_HUB_CATALOG}/
+    dst: /usr/share/kubeatlas-portal/agent-catalog
+    expand: true
+    type: tree
+  - src: deploy/linux/kubeatlas-portal/kubeatlas-portal.service
+    dst: /usr/lib/systemd/system/kubeatlas-portal.service
+    file_info:
+      mode: 0644
+  - src: deploy/linux/kubeatlas-portal/hub.env
+    dst: /etc/kubeatlas-portal/hub.env
+    type: config|noreplace
+    file_info:
+      mode: 0600
+  - src: LICENSE
+    dst: /usr/share/doc/kubeatlas-portal/LICENSE
+  - src: NOTICE
+    dst: /usr/share/doc/kubeatlas-portal/NOTICE
+  - src: README.md
+    dst: /usr/share/doc/kubeatlas-portal/README.md
+  - src: docs/packaging.md
+    dst: /usr/share/doc/kubeatlas-portal/packaging.md
+
+scripts:
+  preinstall: deploy/linux/kubeatlas-portal/preinstall.sh
+  postinstall: deploy/linux/kubeatlas-portal/postinstall.sh
+  preremove: deploy/linux/kubeatlas-portal/preremove.sh
+  postremove: deploy/linux/kubeatlas-portal/postremove.sh

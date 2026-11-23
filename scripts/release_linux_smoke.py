@@ -7,7 +7,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
-from release_artifacts import HUB_LINUX_PROFILE, validate_local_staged
+from release_artifacts import HUB_CATALOG, HUB_LINUX_PROFILE, validate_local_staged
 
 
 def extract_package(package: Path, destination: Path) -> None:
@@ -66,6 +66,11 @@ def smoke_packages(
             )
             if not (help_result.stdout.strip() or help_result.stderr.strip()):
                 raise ValueError(f"empty help output: {package.name}")
+            if profile == HUB_LINUX_PROFILE:
+                subprocess.run(
+                    [str(binary), "--check-hub-artifacts", "--hub-artifacts-dir", str(destination / HUB_CATALOG)],
+                    cwd=destination, check=True, capture_output=True, timeout=60,
+                )
         print(f"Verified native package binary: {package.name}")
 
 

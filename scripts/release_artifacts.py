@@ -23,6 +23,9 @@ from release_policy import validate_inputs
 REPOSITORY = "maomada/KubeAtlas"
 COMPONENTS = ("kubeatlas", "kubeatlas-portal")
 HUB_LINUX_PROFILE = "hub-linux"
+HUB_CATALOG = "usr/share/kubeatlas-portal/agent-catalog"
+HUB_SERVICE = "usr/lib/systemd/system/kubeatlas-portal.service"
+HUB_ENV = "etc/kubeatlas-portal/hub.env"
 LOCAL_PROFILES = ("local-linux", "local-linux-amd64", HUB_LINUX_PROFILE)
 ARCHIVES = (
     ("kubeatlas", "linux", "amd64", ".tar.gz"),
@@ -153,42 +156,114 @@ def _run(command: list[str]) -> str:
     return result.stdout
 
 
-def _validate_deb(path: Path, component: str, architecture: str, version: str) -> None:
-    fields = [
-        _run(["dpkg-deb", "--field", str(path), key]).strip()
-        for key in ("Package", "Version", "Architecture")
-    ]
-    if fields != [component, _package_version(version), architecture]:
-        raise ValueError(f"DEB metadata mismatch: {path.name}")
-    paths = {}
-    for line in _run(["dpkg-deb", "--contents", str(path)]).splitlines():
-        fields = line.split()
-        if not fields:
-            continue
-        mode, name = fields[0], fields[-1].removeprefix("./")
-        if mode.startswith("d"):
-            continue
-        if not mode.startswith("-"):
-            raise ValueError(f"unsupported DEB file type: {path.name}")
-        paths[name] = mode
-    expected_paths = {
+def _bundle_inventory(bundle: Path | None, version: str, source_sha: str) -> dict[str, str] | None:
+    if bundle is None:
+        return None
+    files = {}
+    with tarfile.open(bundle, "r:gz") as archive:
+        for member in archive:
+            if member.isdir() and member.name == "hub-agent-bundle":
+                continue
+            name = member.name.removeprefix("hub-agent-bundle/")
+            _safe_name(name)
+            if not member.isfile() or name == member.name or name != PurePosixPath(name).as_posix() or name in files:
+                raise ValueError("invalid Agent bundle member")
+            stream = archive.extractfile(member)
+            if stream is None:
+                raise ValueError("unreadable Agent bundle member")
+            with stream:
+                digest = hashlib.sha256()
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    digest.update(chunk)
+            files[name] = digest.hexdigest()
+        manifest_stream = archive.extractfile("hub-agent-bundle/manifest.json")
+        if manifest_stream is None:
+            raise ValueError("Agent bundle manifest is missing")
+        with manifest_stream:
+            manifest = json.load(manifest_stream)
+    if not isinstance(manifest, dict) or manifest.get("version") != version or manifest.get("sourceRevision") != source_sha:
+        raise ValueError("Agent bundle does not match package version and source")
+    return files
+
+
+def _package_layout(paths: set[str], component: str, name: str, catalog: dict[str, str] | None) -> bool:
+    expected = {
         f"usr/bin/{component}",
         f"usr/share/doc/{component}/LICENSE",
         f"usr/share/doc/{component}/NOTICE",
         f"usr/share/doc/{component}/README.md",
         f"usr/share/doc/{component}/packaging.md",
     }
-    if set(paths) != expected_paths:
-        raise ValueError(f"DEB contents mismatch: {path.name}")
+    if paths == expected:
+        if component == "kubeatlas-portal" and catalog is not None:
+            raise ValueError(f"native Hub payload missing: {name}")
+        return False
+    prefix = HUB_CATALOG + "/"
+    present = {path.removeprefix(prefix) for path in paths if path.startswith(prefix)}
+    expected |= {HUB_SERVICE, HUB_ENV}
+    required_catalog = {"manifest.json", "bootstrap-hub-agent.sh", "install-hub-agent.sh"}
+    if (component != "kubeatlas-portal" or paths != expected | {prefix + path for path in present}
+            or not required_catalog <= present or catalog is not None and present != set(catalog)):
+        raise ValueError(f"package contents mismatch: {name}")
+    return True
+
+
+def _validate_catalog(root: Path, version: str, name: str, catalog: dict[str, str] | None) -> None:
+    directory = root / HUB_CATALOG
+    manifest = json.loads((directory / "manifest.json").read_bytes())
+    if not isinstance(manifest, dict) or manifest.get("version") != version:
+        raise ValueError(f"embedded Agent catalog version mismatch: {name}")
+    if catalog is not None and any(sha256(directory / file) != digest for file, digest in catalog.items()):
+        raise ValueError(f"embedded Agent catalog differs from the release bundle: {name}")
+
+
+def _validate_deb(
+    path: Path, component: str, architecture: str, version: str, catalog: dict[str, str] | None = None,
+) -> None:
+    fields = [
+        _run(["dpkg-deb", "--field", str(path), key]).strip()
+        for key in ("Package", "Version", "Architecture")
+    ]
+    if fields != [component, _package_version(version), architecture]:
+        raise ValueError(f"DEB metadata mismatch: {path.name}")
+    paths = set()
+    for line in _run(["dpkg-deb", "--contents", str(path)]).splitlines():
+        fields = line.split()
+        if not fields:
+            continue
+        mode, name = fields[0], fields[-1].removeprefix("./")
+        if not name and mode.startswith("d"):
+            continue
+        _safe_name(name.rstrip("/"))
+        if mode.startswith("d"):
+            continue
+        if not mode.startswith("-"):
+            raise ValueError(f"unsupported DEB file type: {path.name}")
+        if name in paths:
+            raise ValueError(f"duplicate DEB contents: {path.name}")
+        paths.add(name)
+    native = _package_layout(paths, component, path.name, catalog)
     with tempfile.TemporaryDirectory() as tmp:
         _run(["dpkg-deb", "--control", str(path), tmp])
-        if {entry.name for entry in Path(tmp).iterdir()} - {"control", "md5sums"}:
+        controls = {entry.name for entry in Path(tmp).iterdir()}
+        base_controls = {"control", "md5sums"}
+        if native:
+            native_controls = {"conffiles", "preinst", "postinst", "prerm", "postrm"}
+            if controls - base_controls != native_controls:
+                raise ValueError(f"unexpected DEB maintainer scripts: {path.name}")
+            if (Path(tmp) / "conffiles").read_text().split() != ["/" + HUB_ENV]:
+                raise ValueError(f"unexpected DEB configuration files: {path.name}")
+        elif controls - base_controls:
             raise ValueError(f"DEB maintainer scripts are not permitted: {path.name}")
         _run(["dpkg-deb", "--extract", str(path), tmp])
         _validate_elf_file(Path(tmp) / "usr/bin" / component, architecture, path.name)
+        if native:
+            _validate_catalog(Path(tmp), version, path.name, catalog)
 
 
-def _validate_rpm(path: Path, component: str, architecture: str, version: str) -> None:
+def _validate_rpm(
+    path: Path, component: str, architecture: str, version: str, catalog: dict[str, str] | None = None,
+) -> None:
     _run(["rpm", "--checksig", "--nosignature", str(path)])
     fields = _run(
         ["rpm", "-qp", "--queryformat", "%{NAME}\\n%{VERSION}\\n%{RELEASE}\\n%{ARCH}\\n", str(path)]
@@ -196,18 +271,27 @@ def _validate_rpm(path: Path, component: str, architecture: str, version: str) -
     expected_arch = {"amd64": "x86_64", "arm64": "aarch64"}[architecture]
     if fields != [component, _package_version(version), "1", expected_arch]:
         raise ValueError(f"RPM metadata mismatch: {path.name}")
-    paths = set(_run(["rpm", "-qp", "--list", str(path)]).splitlines())
-    expected_paths = {
-        f"/usr/bin/{component}",
-        f"/usr/share/doc/{component}/LICENSE",
-        f"/usr/share/doc/{component}/NOTICE",
-        f"/usr/share/doc/{component}/README.md",
-        f"/usr/share/doc/{component}/packaging.md",
-    }
-    if paths != expected_paths:
-        raise ValueError(f"RPM contents mismatch: {path.name}")
+    listing = "%{NAME}\n[%{FILEMODES:perms}\t%{FILENAMES}\n]"
+    for_file = _run(["rpm", "-qp", "--queryformat", listing, str(path)]).splitlines()[1:]
+    paths = set()
+    for line in for_file:
+        mode, name = line.split("\t")
+        name = name.removeprefix("/")
+        _safe_name(name)
+        if mode.startswith("d"):
+            continue
+        if not mode.startswith("-") or name in paths:
+            raise ValueError(f"unsupported or duplicate RPM file type: {path.name}")
+        paths.add(name)
+    native = _package_layout(paths, component, path.name, catalog)
     scripts = _run(["rpm", "-qp", "--scripts", str(path)]).strip()
-    if scripts and scripts != "(none)":
+    if native:
+        phases = re.findall(r"(?m)^(\S+) scriptlet \(using [^)]+\):$", scripts)
+        if sorted(phases) != ["postinstall", "postuninstall", "preinstall", "preuninstall"]:
+            raise ValueError(f"unexpected RPM maintainer scripts: {path.name}")
+        if _run(["rpm", "-qpc", str(path)]).split() != ["/" + HUB_ENV]:
+            raise ValueError(f"unexpected RPM configuration files: {path.name}")
+    elif scripts and scripts != "(none)":
         raise ValueError(f"RPM maintainer scripts are not permitted: {path.name}")
     with tempfile.TemporaryDirectory() as tmp:
         rpm2cpio = shutil.which("rpm2cpio")
@@ -229,6 +313,8 @@ def _validate_rpm(path: Path, component: str, architecture: str, version: str) -
             capture_output=True,
         )
         _validate_elf_file(Path(tmp) / "usr/bin" / component, architecture, path.name)
+        if native:
+            _validate_catalog(Path(tmp), version, path.name, catalog)
 
 
 def _rpm_header(stream):
@@ -339,6 +425,7 @@ def validate_staged(
     expected_version: str | None = None,
     evidence_urls: list[str] | None = None,
     profile: str = "full",
+    native_hub_bundle: Path | None = None,
 ) -> dict:
     if profile in LOCAL_PROFILES:
         return validate_local_staged(
@@ -348,6 +435,7 @@ def validate_staged(
             expected_version=expected_version,
             evidence_urls=evidence_urls,
             profile=profile,
+            native_hub_bundle=native_hub_bundle,
         )
     if profile != "full":
         raise ValueError(f"unsupported binary publication profile: {profile}")
@@ -374,6 +462,7 @@ def validate_staged(
         raise ValueError("manifest source SHA does not match the selected source")
     if expected_version is not None and version != expected_version:
         raise ValueError("manifest version does not match the selected version")
+    catalog = _bundle_inventory(native_hub_bundle, version, source_sha)
     expected = expected_names(version)
     entries = list(directory.iterdir())
     if any(path.is_symlink() or not path.is_file() for path in entries):
@@ -427,9 +516,9 @@ def validate_staged(
             if item["platform"] == "linux":
                 _validate_linux_archive_arch(directory / name, item["component"], item["architecture"])
         elif name.endswith(".deb"):
-            _validate_deb(directory / name, item["component"], item["architecture"], version)
+            _validate_deb(directory / name, item["component"], item["architecture"], version, catalog)
         elif name.endswith(".rpm"):
-            _validate_rpm(directory / name, item["component"], item["architecture"], version)
+            _validate_rpm(directory / name, item["component"], item["architecture"], version, catalog)
     if checksums["binary-manifest.json"] != sha256(manifest_path):
         raise ValueError("binary-manifest.json checksum mismatch")
     return manifest
@@ -442,6 +531,7 @@ def validate_local_staged(
     expected_version: str | None = None,
     evidence_urls: list[str] | None = None,
     profile: str = "local-linux",
+    native_hub_bundle: Path | None = None,
 ) -> dict:
     if directory.is_symlink() or not directory.is_dir():
         raise ValueError("local publication directory must be a real directory")
@@ -475,6 +565,7 @@ def validate_local_staged(
         raise ValueError("manifest source SHA does not match the selected source")
     if expected_version is not None and version != expected_version:
         raise ValueError("manifest version does not match the selected version")
+    catalog = _bundle_inventory(native_hub_bundle, version, source_sha)
     expected = set(local_asset_names(version, profile))
     entries = list(directory.iterdir())
     if any(path.is_symlink() or not path.is_file() for path in entries):
@@ -524,9 +615,9 @@ def validate_local_staged(
         if name.endswith(".zip"):
             _validate_archive(directory / name, item["component"], ".zip")
         elif name.endswith(".deb"):
-            _validate_deb(directory / name, item["component"], item["architecture"], version)
+            _validate_deb(directory / name, item["component"], item["architecture"], version, catalog)
         elif name.endswith(".rpm"):
-            _validate_rpm(directory / name, item["component"], item["architecture"], version)
+            _validate_rpm(directory / name, item["component"], item["architecture"], version, catalog)
         else:
             raise ValueError(f"unsupported local publication artifact: {name}")
     if checksums["binary-manifest.json"] != sha256(manifest_path):
@@ -540,6 +631,7 @@ def create_staged(
     source_sha: str,
     version: str,
     evidence_urls: list[str] | None = None,
+    native_hub_bundle: Path | None = None,
 ) -> dict:
     validate_inputs(REPOSITORY, "refs/heads/main", source_sha, version)
     names = sorted(expected_names(version))
@@ -572,7 +664,7 @@ def create_staged(
     (output / "checksums.txt").write_text(
         _checksum_lines(output, names + ["binary-manifest.json"]), encoding="utf-8"
     )
-    validate_staged(output, manifest_path, evidence_urls=evidence_urls)
+    validate_staged(output, manifest_path, evidence_urls=evidence_urls, native_hub_bundle=native_hub_bundle)
     return manifest
 
 
@@ -583,6 +675,7 @@ def create_local_staged(
     version: str,
     evidence_urls: list[str] | None = None,
     profile: str = "local-linux",
+    native_hub_bundle: Path | None = None,
 ) -> dict:
     names = local_asset_names(version, profile)
     validate_staged(
@@ -591,6 +684,7 @@ def create_local_staged(
         expected_version=version,
         evidence_urls=evidence_urls,
         profile="full",
+        native_hub_bundle=native_hub_bundle,
     )
     dist_resolved = dist.resolve()
     output_resolved = output.resolve()
@@ -634,6 +728,7 @@ def create_local_staged(
         expected_version=version,
         evidence_urls=evidence_urls,
         profile=profile,
+        native_hub_bundle=native_hub_bundle,
     )
     return manifest
 
@@ -647,6 +742,7 @@ def main() -> int:
     create.add_argument("--source-sha", required=True)
     create.add_argument("--version", required=True)
     create.add_argument("--evidence-url", action="append", default=[])
+    create.add_argument("--native-hub-bundle", type=Path)
     stage_local = subparsers.add_parser("stage-local")
     stage_local.add_argument("--dist", type=Path, required=True)
     stage_local.add_argument("--output", type=Path, required=True)
@@ -654,18 +750,23 @@ def main() -> int:
     stage_local.add_argument("--version", required=True)
     stage_local.add_argument("--evidence-url", action="append", default=[])
     stage_local.add_argument("--profile", choices=LOCAL_PROFILES, default="local-linux")
+    stage_local.add_argument("--native-hub-bundle", type=Path)
     validate = subparsers.add_parser("validate")
     validate.add_argument("--directory", type=Path, required=True)
     validate.add_argument("--source-sha")
     validate.add_argument("--version")
     validate.add_argument("--evidence-url", action="append")
     validate.add_argument("--profile", choices=("full", *LOCAL_PROFILES), default="full")
+    validate.add_argument("--native-hub-bundle", type=Path)
     args = parser.parse_args()
     try:
         if args.command == "create":
-            create_staged(args.dist, args.output, args.source_sha, args.version, args.evidence_url)
+            create_staged(args.dist, args.output, args.source_sha, args.version, args.evidence_url, args.native_hub_bundle)
         elif args.command == "stage-local":
-            create_local_staged(args.dist, args.output, args.source_sha, args.version, args.evidence_url, args.profile)
+            create_local_staged(
+                args.dist, args.output, args.source_sha, args.version, args.evidence_url,
+                args.profile, args.native_hub_bundle,
+            )
         else:
             validate_staged(
                 args.directory,
@@ -673,6 +774,7 @@ def main() -> int:
                 expected_version=args.version,
                 evidence_urls=args.evidence_url,
                 profile=args.profile,
+                native_hub_bundle=args.native_hub_bundle,
             )
     except (OSError, ValueError, KeyError, json.JSONDecodeError) as error:
         parser.error(str(error))

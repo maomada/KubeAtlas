@@ -97,8 +97,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
 
     def test_binary_linux_publication_profile_and_native_smoke_gate_approval(self):
         workflow = (ROOT / ".github/workflows/release-binaries.yml").read_text()
-        build = workflow.split("\n  build:\n", 1)[1].split("\n  hub-catalog:\n", 1)[0]
-        catalog = workflow.split("\n  hub-catalog:\n", 1)[1].split("\n  linux-smoke:\n", 1)[0]
+        build = workflow.split("\n  build:\n", 1)[1].split("\n  linux-smoke:\n", 1)[0]
+        makefile = (ROOT / "Makefile").read_text()
+        catalog = (ROOT / "scripts/release_hub_packages.sh").read_text()
         smoke = workflow.split("\n  linux-smoke:\n", 1)[1].split("\n  dry-run:\n", 1)[0]
         dry_run = workflow.split("\n  dry-run:\n", 1)[1].split("\n  publish:\n", 1)[0]
         publish = workflow.split("\n  publish:\n", 1)[1]
@@ -106,10 +107,9 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("release_artifacts.py stage-local", build)
         self.assertIn("--profile hub-linux", build)
         self.assertNotIn("name: kubeatlas-binary-release\n", build)
-        self.assertIn("name: kubeatlas-agent-binaries", build)
-        self.assertIn('dist/release/kubeatlas_v${VERSION}_linux_${arch}.tar.gz', build)
-        self.assertIn('tar --extract --to-stdout --file "$archive" -- kubeatlas', build)
         self.assertIn("name: kubeatlas-binary-publication", build)
+        self.assertIn("name: kubeatlas-hub-publication", build)
+        self.assertIn("--native-hub-bundle", build)
         self.assertNotIn("windows-latest", workflow)
         self.assertIn("architecture: amd64\n            runner: ubuntu-24.04", smoke)
         self.assertIn("architecture: arm64\n            runner: ubuntu-24.04-arm", smoke)
@@ -117,14 +117,22 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertIn("name: kubeatlas-binary-publication", smoke)
         self.assertIn("release_linux_smoke.py", smoke)
         self.assertIn("--profile hub-linux", smoke)
-        self.assertIn("name: kubeatlas-binary-publication", catalog)
-        self.assertIn("name: kubeatlas-agent-binaries", catalog)
-        self.assertNotIn('dpkg-deb -x "$packages/kubeatlas_', catalog)
-        self.assertIn('dpkg-deb -x "$packages/kubeatlas-portal_', catalog)
+        native = smoke.split("name: Install both ARM64 packages", 1)[1]
+        self.assertIn("if: matrix.architecture == 'arm64'", native)
+        self.assertIn('--native-hub-bundle "$bundle"', native)
+        self.assertIn('release-native-acceptance/run.sh release "$bundle" "$VERSION" "$SOURCE_SHA"', native)
+        self.assertIn("name: kubeatlas-native-arm64-acceptance", native)
+        target = makefile.split("release-binaries-dry:\n", 1)[1]
+        self.assertLess(target.index("goreleaser release"), target.index("release_hub_packages.sh"))
+        self.assertLess(target.index("release_hub_packages.sh"), target.index('" create'))
+        self.assertIn('tar --extract --to-stdout --file "$dist/kubeatlas_v${version}_linux_${arch}.tar.gz"', catalog)
         self.assertIn("docker buildx build --target release", catalog)
         self.assertIn("--import-hub-artifacts", catalog)
-        self.assertIn("needs: [validate, build, linux-smoke, hub-catalog]", dry_run)
+        self.assertLess(catalog.index("--import-hub-artifacts"), catalog.index("nfpm package"))
+        self.assertIn('KUBEATLAS_HUB_CATALOG="$stage/imported"', catalog)
+        self.assertIn("needs: [validate, build, linux-smoke]", dry_run)
         self.assertIn("validate --profile hub-linux --directory release/packages", dry_run)
+        self.assertIn("--native-hub-bundle", dry_run)
         self.assertIn("name: kubeatlas-hub-publication", dry_run)
         self.assertIn("--channel hub-binaries", dry_run)
         self.assertIn("kubeatlas-binary-publication", publish)
@@ -132,12 +140,29 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("name: kubeatlas-binary-release\n", publish)
         self.assertNotIn("kubeatlas-agent-binaries", publish)
         self.assertIn("validate --profile hub-linux --directory release/packages", publish)
+        self.assertIn("--native-hub-bundle", publish)
         self.assertIn("name: kubeatlas-hub-publication", publish)
         self.assertIn('expected_artifact_paths("hub-binaries", sys.argv[1])', publish)
         self.assertIn('gh release upload "v$VERSION" "${assets[@]}"', publish)
         self.assertIn("release_flags=(--prerelease --latest=false)", publish)
         self.assertIn("release_flags=(--latest)", publish)
         self.assertNotIn("release/*", publish)
+
+    def test_arm64_native_acceptance_uses_package_managers_and_disposable_kind(self):
+        fixture = ROOT / "scripts/release-native-acceptance"
+        runner = (fixture / "run.sh").read_text()
+        accept = (fixture / "accept.py").read_text()
+        self.assertIn('= Linux:aarch64 ]]', runner)
+        self.assertIn('kind create cluster --name "$name"', runner)
+        self.assertIn('docker exec "$container" unshare --net apt install -y', runner)
+        self.assertIn("unshare --net dnf --disablerepo='*' install -y", runner)
+        self.assertIn('systemctl is-active kubeatlas-portal', runner)
+        self.assertIn('containerd/certs.d/$authority', runner)
+        self.assertNotIn("install-hub.py", runner)
+        self.assertIn('hub.request("/api/setup",', accept)
+        self.assertIn('hub.request("/api/hub/enrollments/command",', accept)
+        self.assertIn('hub.request(f"/c/{cluster_id}/api/namespaces")', accept)
+        self.assertIn('"packageSha256": checksum', accept)
 
     def test_release_is_manual_and_write_permission_is_publish_only(self):
         workflow = (ROOT / ".github/workflows/release.yml").read_text()

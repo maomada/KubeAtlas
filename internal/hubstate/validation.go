@@ -572,7 +572,7 @@ func validAccount(account Account) bool {
 	if account.PasswordHash != "" && !validPasswordHash(account.PasswordHash) {
 		return false
 	}
-	return account.PlatformOwner == account.Local && (!account.Local || account.Status == "active" && account.Email == "" && account.PasswordHash == "")
+	return account.PlatformOwner == account.Local && (!account.Local || account.Status == "active" && account.Email == "")
 }
 
 func validPasswordHash(value string) bool {

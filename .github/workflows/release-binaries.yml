@@ -142,14 +142,22 @@ jobs:
           df -h /
       - name: Install pinned GoReleaser
         run: go install github.com/goreleaser/goreleaser/v2@v2.13.3
+      - name: Install pinned nFPM
+        run: go install github.com/goreleaser/nfpm/v2/cmd/nfpm@v2.44.1
       - run: echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+      - uses: azure/setup-helm@v5
+        with:
+          version: v3.19.0
+      - uses: docker/setup-buildx-action@v4
       - name: Build and validate package set without publishing
         working-directory: source
         env:
           KUBEATLAS_RELEASE_VERSION: ${{ needs.validate.outputs.version }}
           SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
           RELEASE_EVIDENCE_URLS: ${{ needs.validate.outputs.ci_url }} ${{ needs.validate.outputs.security_url }}
-        run: make release-binaries-dry RELEASE_ARTIFACT_TOOL=../trusted/scripts/release_artifacts.py
+        run: |
+          make release-binaries-dry RELEASE_ARTIFACT_TOOL=../trusted/scripts/release_artifacts.py \
+            RELEASE_OCI_TOOL=../trusted/scripts/validate_oci_archive.py
       - name: Stage the Hub Linux publication profile
         working-directory: source
         env:
@@ -161,108 +169,26 @@ jobs:
           python3 ../trusted/scripts/release_artifacts.py stage-local \
             --profile hub-linux --dist dist/release --output dist/publication \
             --source-sha "$SOURCE_SHA" --version "$VERSION" \
+            --native-hub-bundle "dist/hub/kubeatlas-hub-agent-bundle_${VERSION}.tar.gz" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
-      - name: Extract the Agent binaries from the validated build
+      - name: Stage the matching portable Agent bundle
         working-directory: source
         env:
           VERSION: ${{ needs.validate.outputs.version }}
         run: |
-          mkdir -p dist/agent-binaries
-          for arch in amd64 arm64; do
-            archive="dist/release/kubeatlas_v${VERSION}_linux_${arch}.tar.gz"
-            binary="dist/agent-binaries/kubeatlas-$arch"
-            tar --extract --to-stdout --file "$archive" -- kubeatlas > "$binary"
-            test -s "$binary"
-          done
-      - uses: actions/upload-artifact@v7
-        with:
-          name: kubeatlas-agent-binaries
-          path: source/dist/agent-binaries
-          if-no-files-found: error
-          retention-days: 14
+          cp scripts/install-hub.py dist/hub/install-hub.py
+          cp dist/publication/checksums.txt dist/hub/hub-checksums.txt
+          (cd dist/hub && sha256sum "kubeatlas-hub-agent-bundle_${VERSION}.tar.gz" install-hub.py >> hub-checksums.txt)
       - uses: actions/upload-artifact@v7
         with:
           name: kubeatlas-binary-publication
           path: source/dist/publication
           if-no-files-found: error
           retention-days: 14
-
-  hub-catalog:
-    name: Assemble the offline Hub Agent bundle
-    needs: [validate, build]
-    if: ${{ inputs.publish != true }}
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      actions: read
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ github.sha }}
-          path: trusted
-          sparse-checkout: scripts
-          persist-credentials: false
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.validate.outputs.source_sha }}
-          path: source
-          persist-credentials: false
-      - uses: actions/download-artifact@v8
-        with:
-          name: kubeatlas-binary-publication
-          path: packages
-      - uses: actions/download-artifact@v8
-        with:
-          name: kubeatlas-agent-binaries
-          path: agent-binaries
-      - uses: actions/setup-go@v7
-        with:
-          go-version-file: source/go.mod
-          cache-dependency-path: source/go.sum
-      - uses: azure/setup-helm@v5
-        with:
-          version: v3.19.0
-      - uses: docker/setup-buildx-action@v4
-      - name: Build the versioned bundle from the validated Agent binaries
-        working-directory: source
-        env:
-          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
-          VERSION: ${{ needs.validate.outputs.version }}
-        run: |
-          stage="$(mktemp -d)"
-          hub="$GITHUB_WORKSPACE/hub"
-          packages="$GITHUB_WORKSPACE/packages"
-          agent_binaries="$GITHUB_WORKSPACE/agent-binaries"
-          archive="kubeatlas-hub-agent-bundle_${VERSION}.tar.gz"
-          mkdir -p "$stage/context" "$stage/layout" "$hub"
-          cp Dockerfile "$stage/context/"
-          for arch in amd64 arm64; do
-            install -m 0755 "$agent_binaries/kubeatlas-$arch" "$stage/context/kubeatlas-$arch"
-          done
-          docker buildx build --target release --platform linux/amd64,linux/arm64 \
-            --provenance=false --sbom=false \
-            --build-arg "VERSION=$VERSION" --build-arg "SOURCE_REVISION=$SOURCE_SHA" \
-            --output "type=oci,dest=$stage/agent.oci.tar" "$stage/context"
-          python3 ../trusted/scripts/validate_oci_archive.py validate --archive "$stage/agent.oci.tar"
-          tar -xf "$stage/agent.oci.tar" -C "$stage/layout"
-          digest="$(jq -er '.manifests | select(length == 1) | .[0].digest' "$stage/layout/index.json")"
-          go run ./cmd/prepare-hub-artifacts --layout "$stage/layout" --image-digest "$digest" \
-            --version "$VERSION" --chart-version "$VERSION" --revision "$SOURCE_SHA" \
-            --output "$stage/catalog" --archive "$hub/$archive"
-
-          dpkg-deb -x "$packages/kubeatlas-portal_${VERSION}_linux_amd64.deb" "$stage/portal"
-          portal="$stage/portal/usr/bin/kubeatlas-portal"
-          archive_hash="$(sha256sum "$hub/$archive" | cut -d ' ' -f 1)"
-          "$portal" --import-hub-artifacts "$hub/$archive" --hub-artifacts-sha256 "$archive_hash" \
-            --hub-artifacts-dir "$stage/imported"
-          "$portal" --check-hub-artifacts --hub-artifacts-dir "$stage/imported"
-          cp scripts/install-hub.py "$hub/install-hub.py"
-          cp "$packages/checksums.txt" "$hub/hub-checksums.txt"
-          (cd "$hub" && sha256sum "$archive" install-hub.py >> hub-checksums.txt)
       - uses: actions/upload-artifact@v7
         with:
           name: kubeatlas-hub-publication
-          path: hub
+          path: source/dist/hub
           if-no-files-found: error
           retention-days: 14
 
@@ -279,7 +205,7 @@ jobs:
           - architecture: arm64
             runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 15
+    timeout-minutes: ${{ matrix.architecture == 'arm64' && 25 || 15 }}
     permissions:
       contents: read
       actions: read
@@ -295,6 +221,11 @@ jobs:
         with:
           name: kubeatlas-binary-publication
           path: release
+      - uses: actions/download-artifact@v8
+        if: matrix.architecture == 'arm64'
+        with:
+          name: kubeatlas-hub-publication
+          path: release-hub
       - uses: actions/setup-python@v6
         with:
           python-version: '3.12'
@@ -312,9 +243,39 @@ jobs:
             --profile hub-linux --architecture "$ARCHITECTURE" \
             --source-sha "$SOURCE_SHA" --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
+      - uses: actions/setup-go@v7
+        if: matrix.architecture == 'arm64'
+        with:
+          go-version: '1.26'
+          cache: false
+      - uses: azure/setup-helm@v5
+        if: matrix.architecture == 'arm64'
+        with:
+          version: v3.19.0
+      - name: Install both ARM64 packages and enroll Agents through the bundled catalog
+        if: matrix.architecture == 'arm64'
+        env:
+          SOURCE_SHA: ${{ needs.validate.outputs.source_sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
+          CI_URL: ${{ needs.validate.outputs.ci_url }}
+          SECURITY_URL: ${{ needs.validate.outputs.security_url }}
+        run: |
+          bundle="release-hub/kubeatlas-hub-agent-bundle_${VERSION}.tar.gz"
+          python3 trusted/scripts/release_artifacts.py validate --profile hub-linux --directory release \
+            --source-sha "$SOURCE_SHA" --version "$VERSION" --native-hub-bundle "$bundle" \
+            --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
+          bash trusted/scripts/release-native-acceptance/run.sh release "$bundle" "$VERSION" "$SOURCE_SHA" \
+            "$RUNNER_TEMP/native-arm64-acceptance"
+      - uses: actions/upload-artifact@v7
+        if: matrix.architecture == 'arm64'
+        with:
+          name: kubeatlas-native-arm64-acceptance
+          path: ${{ runner.temp }}/native-arm64-acceptance/*.json
+          if-no-files-found: error
+          retention-days: 90
 
   dry-run:
-    needs: [validate, build, linux-smoke, hub-catalog]
+    needs: [validate, build, linux-smoke]
     if: ${{ inputs.publish != true }}
     runs-on: ubuntu-latest
     permissions:
@@ -345,6 +306,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
           python3 trusted/scripts/release_artifacts.py validate --profile hub-linux --directory release/packages \
+            --native-hub-bundle "release/hub/kubeatlas-hub-agent-bundle_${VERSION}.tar.gz" \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"
@@ -478,6 +440,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
           python3 trusted/scripts/release_artifacts.py validate --profile hub-linux --directory release/packages \
+            --native-hub-bundle "release/hub/kubeatlas-hub-agent-bundle_${VERSION}.tar.gz" \
             --source-sha "$SOURCE_SHA" \
             --version "$VERSION" \
             --evidence-url "$CI_URL" --evidence-url "$SECURITY_URL"

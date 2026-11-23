@@ -4,6 +4,15 @@ The Cloud-only Portal requires a valid `HubConfig`; construction without Hub
 state fails. This document describes the self-hosted Hub API and live MCP
 transport.
 
+## First-run setup
+
+`GET /api/setup` returns `{"required":true}` until the platform administrator
+exists, then `{"required":false}`. During first-run setup, browser navigation
+to Hub redirects to `/setup` and the regular API responds with `setup_required`.
+`POST /api/setup` accepts a same-origin JSON request with `code`, `username`
+and `password`. It returns `204 No Content` after persisting the administrator.
+The setup code is read locally by the operator. [Platform administrator setup](portal.md#platform-administrator)
+
 ## Identity and request boundaries
 
 The configured recovery login is a persisted local account and organization
@@ -52,7 +61,8 @@ HTTP request, independent of MCP session IDs. Revocation does not undo an alread
 dispatched operation. Credentials are removed from request headers before the
 MCP factory receives the authenticated principal.
 
-The local credential owner remains `portal:<SHA-256 of configured username>`.
+The local credential owner ID has the form `portal:<SHA-256 of initial username>`
+and remains fixed when the administrator credentials change.
 OIDC credential owners use the opaque `oidc:<SHA-256>` member ID. `/api/hub`
 reports the current public member and server-derived groups. Hub roles do not
 create Kubernetes RBAC by themselves; the operator must apply the Agent chart's

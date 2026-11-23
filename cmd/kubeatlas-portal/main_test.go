@@ -49,6 +49,43 @@ func TestLoadCredentialsUsesLocalOwnerEnvironment(t *testing.T) {
 	}
 }
 
+func TestListenPortOverride(t *testing.T) {
+	address, err := resolveListenAddress("0.0.0.0:8080", 1333, false)
+	if err != nil || address != "0.0.0.0:8080" {
+		t.Fatalf("existing listen address: %q, %v", address, err)
+	}
+	address, err = resolveListenAddress("[::1]:1333", 1443, true)
+	if err != nil || address != "[::1]:1443" {
+		t.Fatalf("IPv6 listen override: %q, %v", address, err)
+	}
+	if _, err := resolveListenAddress("127.0.0.1:1333", 65536, true); err == nil {
+		t.Fatal("accepted an invalid override port")
+	}
+}
+
+func TestConfigureAdminReadsPasswordFileAndRequiresPair(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "password")
+	if err := os.WriteFile(path, []byte("new configuration password\r\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	credentials := portal.Credentials{Username: "legacy", Password: "legacy password text"}
+	if err := configureAdmin(&credentials, "", "", true); err == nil {
+		t.Fatal("reset allowed without explicit credentials")
+	}
+	if err := configureAdmin(&credentials, "operator", "", false); err == nil {
+		t.Fatal("accepted an incomplete administrator configuration")
+	}
+	if err := configureAdmin(&credentials, "operator", path, false); err != nil || credentials.Username != "operator" || credentials.Password != "new configuration password" {
+		t.Fatalf("administrator password file was not loaded: %v", err)
+	}
+	if err := os.WriteFile(path, []byte("invalid UTF-8 password\xff"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := configureAdmin(&credentials, "operator", path, false); err == nil {
+		t.Fatal("accepted a password file with invalid UTF-8")
+	}
+}
+
 func TestConfigureHubRequiresPersistentState(t *testing.T) {
 	credentials := portal.Credentials{}
 	if err := configureHub(&credentials, "  ", "", ""); err == nil || !strings.Contains(err.Error(), "--hub-state-file is required") {

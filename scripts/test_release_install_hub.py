@@ -1,4 +1,6 @@
 import hashlib
+from dataclasses import replace
+from email.message import Message
 from importlib.util import module_from_spec, spec_from_file_location
 from io import BytesIO
 import json
@@ -109,7 +111,9 @@ class HubDeploymentTests(unittest.TestCase):
         old = installer.Deployment("1.2.3", old_package.name, installer.digest(old_package),
                                    "127.0.0.1:9290", self.origin, previous_version)
         installer.UNIT.write_bytes(old.unit())
-        installer.DEPLOYMENT.write_text(json.dumps(installer.asdict(old)), encoding="utf-8")
+        old_metadata = installer.asdict(old)
+        del old_metadata["unit_format"]
+        installer.DEPLOYMENT.write_text(json.dumps(old_metadata), encoding="utf-8")
         installer.ENV_FILE.write_text(installer.encode_env(self.owner), encoding="utf-8")
         installer.STATE.write_bytes(b"old cluster state")
         self.installed = "1.2.3"
@@ -127,6 +131,32 @@ class HubDeploymentTests(unittest.TestCase):
         self.assertEqual(installer.read_env(installer.ENV_FILE), self.owner)
         self.assertEqual((installer.MANAGEMENT / self.package.name).read_bytes(), self.package.read_bytes())
 
+    def test_fresh_install_without_credentials_delegates_to_first_run_setup(self):
+        self.mock("verify_running")
+        options = self.options("install")
+        options.credentials = None
+        deployed = installer.install_or_upgrade(options, self.stage)
+        self.assertFalse(installer.ENV_FILE.exists())
+        self.assertEqual(deployed.listen, "127.0.0.1:1333")
+        self.assertIn(b"--hub-origin=https://hub.example.net", deployed.unit())
+        self.assertIn(f"EnvironmentFile=-{installer.ENV_FILE}".encode(), deployed.unit())
+
+    def test_pending_setup_verifies_https_page_without_requesting_gated_artifacts(self):
+        deployment = installer.Deployment("1.2.4", self.package.name, installer.digest(self.package),
+                                          "127.0.0.1:1333", self.origin, None, unit_format=2)
+        headers = Message()
+        headers.add_header("Content-Type", "text/html; charset=utf-8")
+        requests = self.mock("request", side_effect=[(b'{"required":true}', None),
+                                                    (b'{"required":true}', None), (b"", headers)])
+        configure = self.mock("configure_origin")
+        options = SimpleNamespace(ca_file=None, timeout=1)
+        installer.verify_running(options, deployment, self.catalog, self.manifest, None)
+        self.assertEqual([call.args[1:] for call in requests.call_args_list], [
+            ("http://127.0.0.1:1333", "/api/setup"), (self.origin, "/api/setup"), (self.origin, "/setup"),
+        ])
+        configure.assert_not_called()
+        installer.wait_payload.assert_not_called()
+
     def test_fresh_failure_before_unit_creation_can_retry(self):
         with patch.object(installer, "install_package", side_effect=installer.InstallError("package rejected")):
             with self.assertRaisesRegex(installer.InstallError, "Rolled back the new installation"):
@@ -141,6 +171,8 @@ class HubDeploymentTests(unittest.TestCase):
         self.mock("verify_running")
         deployed = installer.install_or_upgrade(self.options("upgrade"), self.stage)
         self.assertEqual(deployed.previous_version, old.version)
+        self.assertEqual(deployed.listen, old.listen)
+        self.assertEqual(deployed.origin, old.origin)
         self.assertIn(b"--hub-previous-artifacts-version=1.2.3", installer.UNIT.read_bytes())
         self.assertEqual(installer.STATE.read_bytes(), b"old cluster state")
         self.assertTrue((installer.CATALOGS / "1.2.3" / "manifest.json").is_file())
@@ -150,6 +182,7 @@ class HubDeploymentTests(unittest.TestCase):
         old = self.provision_previous_install()
         def fail_readiness(*args):
             installer.STATE.write_bytes(b"state written by candidate")
+            installer.STATE.with_name("setup-code").write_bytes(b"candidate setup code")
             raise installer.InstallError("HTTPS not ready")
         self.mock("verify_running", side_effect=fail_readiness)
         with self.assertRaisesRegex(installer.InstallError, "Restored the previous deployment"):
@@ -159,9 +192,34 @@ class HubDeploymentTests(unittest.TestCase):
         self.assertEqual(installer.UNIT.read_bytes(), old.unit())
         self.assertEqual(installer.load_deployment(), old)
         self.assertEqual(installer.STATE.read_bytes(), b"old cluster state")
+        self.assertFalse(installer.STATE.with_name("setup-code").exists())
         self.assertEqual(next(installer.MANAGEMENT.glob("backup-*/failed-state.json")).read_bytes(),
                          b"state written by candidate")
         self.assertFalse((installer.CATALOGS / "1.2.4").exists())
+
+    def test_failed_upgrade_preserves_pending_setup(self):
+        old = replace(self.provision_previous_install(), unit_format=2)
+        installer.UNIT.write_bytes(old.unit())
+        installer.DEPLOYMENT.write_text(json.dumps(installer.asdict(old)), encoding="utf-8")
+        installer.ENV_FILE.unlink()
+        installer.STATE.unlink()
+        setup_code = installer.STATE.with_name("setup-code")
+        setup_code.write_bytes(b"previous setup code")
+
+        def fail_readiness(*args):
+            setup_code.write_bytes(b"candidate setup code")
+            raise installer.InstallError("HTTPS not ready")
+
+        self.mock("verify_running", side_effect=fail_readiness)
+        self.mock("wait_setup", return_value=True)
+        with self.assertRaisesRegex(installer.InstallError, "Restored the previous deployment"):
+            installer.install_or_upgrade(self.options("upgrade"), self.stage)
+        self.assertEqual(installer.load_deployment(), old)
+        self.assertTrue(self.active)
+        self.assertFalse(installer.STATE.exists())
+        self.assertFalse(installer.ENV_FILE.exists())
+        self.assertEqual(setup_code.read_bytes(), b"previous setup code")
+        installer.wait_payload.assert_not_called()
 
     def test_upgrade_does_not_silently_retire_an_older_catalog(self):
         self.provision_previous_install(previous_version="1.2.2")
@@ -197,6 +255,12 @@ class HubDeploymentTests(unittest.TestCase):
         deployment = installer.Deployment("1.2.4", self.package.name, installer.digest(self.package),
                                           "192.0.2.100:9290", self.origin, None)
         self.assertIn(b"--mcp-allowed-hosts=hub.example.net,192.0.2.100:9290", deployment.unit())
+
+    def test_port_overrides_port_on_explicit_listener(self):
+        options = installer.options(["install", "--package", str(self.package), "--checksums", "checksums",
+                                     "--catalog", str(self.catalog), "--listen", "[2001:db8::1]:9290",
+                                     "--port", "1444"])
+        self.assertEqual(options.listen, "[2001:db8::1]:1444")
 
     def test_login_uses_the_portal_no_content_response(self):
         def open_request(request, timeout):

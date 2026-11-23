@@ -40,9 +40,9 @@ upload context snapshots.
 
 ## Required Hub state
 
-The Hub cannot start without a persistent state file. Pass
-`--hub-state-file=/path/to/hub-state.json` or set
-`KUBEATLAS_PORTAL_HUB_STATE_FILE`. There is no default path or legacy mode.
+The packaged Hub service uses `/var/lib/kubeatlas-portal/state.json`.
+When running the binary directly, pass `--hub-state-file=/path/to/hub-state.json`
+or set `KUBEATLAS_PORTAL_HUB_STATE_FILE`.
 The state file holds the self-hosted organization, memberships, cluster
 assignments, and MCP credential records; protect and back it up as sensitive
 identity data. Back up the state file before the first start of a version-2
@@ -52,15 +52,37 @@ fails closed and is not reset. Migration preserves directory entries,
 credential hashes, scopes, groups, and legacy Kubernetes restrictions;
 unrelated older Portal data is not imported or removed.
 
-The local owner account is configured with
-`KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD`. The username must
-be 1–256 bytes without a colon or control characters, and the password must be
-16–4096 bytes; these existing recovery-login limits are unchanged. Public
-registration has a separate rule: passwords must contain at least 6 Unicode
-scalar values, be valid UTF-8, and contain at most 72 UTF-8 bytes because
-passwords are hashed with bcrypt. The owner can configure the organization,
-manage members and cluster assignments, and issue or revoke scoped MCP
-credentials.
+## Platform administrator
+
+Open the Hub address after a fresh install to create the platform administrator.
+Read the one-time setup code on the Hub host or inside the Hub container using
+`kubeatlas-portal --hub-state-file=<state-path> --show-setup-code`. The login
+page and platform features become available after setup. The state file stores
+the administrator's password hash.
+
+For unattended setup, pass `--admin-username=<username>` and
+`--admin-password-file=<path>` at startup. Use a private file containing the
+password and readable by the Hub service account. The administrator username
+must be 1–256 bytes without a colon or control characters, and the password
+must be 16–4096 UTF-8 bytes.
+
+Keep `KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD` available
+for the first startup of an upgrade from an older Hub so it can migrate
+the existing administrator. Use the original username to preserve the
+administrator identity. After migration, the state file supplies the
+administrator on restart. To return to v0.1.3 or earlier, stop Hub and restore
+the pre-upgrade state file and administrator credentials before starting the
+older version. [Hub state and recovery](hub-state.md)
+
+To change the administrator username or password, restart the Hub once with
+`--reset-admin`, `--admin-username=<username>`, and
+`--admin-password-file=<path>` using the existing state file. Remove the
+reset flag from the service configuration after verifying the new login. The
+administrator identity and existing Agent registrations are preserved.
+
+Public registration requires at least 6 Unicode scalar values and allows up
+to 72 UTF-8 bytes. A platform administrator can manage organizations and
+cluster assignments, approve users, and issue scoped MCP credentials.
 
 ## Optional OIDC
 
@@ -114,26 +136,31 @@ the backend retains the revoked metadata for its normal retention period.
 See [Hub state](hub-state.md) for persistence and validation,
 [self-hosted identity](self-hosted-hub-identity.md) for login and membership,
 [live Hub MCP](hub-live-mcp.md) for transport and authorization, and
-[Hub API](hub-portal-api.md) for route and payload contracts. The separate
-[Hub Helm chart](../deploy/helm/kubeatlas-portal/README.md) requires an
-existing credentials Secret and persistent storage.
+[Hub API](hub-portal-api.md) for route and payload contracts. The
+[Hub Helm chart](../deploy/helm/kubeatlas-portal/README.md) requires persistent
+storage and supports an optional credentials Secret.
 
 ## Deployment and security
 
-Deploy Hub using the [systemd installer](deploy-with-ai.md#install-from-the-release-bundle),
+Deploy Hub using a [DEB or RPM package](packaging.md#install),
 the [Helm chart](../deploy/helm/kubeatlas-portal/README.md), or
 [Docker Compose](../deploy/compose/README.md). Use a release that publishes the
-required artifacts for the selected method. The chart persists the required
-state file, runs one Hub replica, and mounts an existing Secret for the local
-owner credentials. Optional Secret keys configure Hub groups, OIDC, and trusted
-MCP host authorities.
+required artifacts for the selected method. The chart persists the state file
+and runs one Hub replica. Optional Secret keys configure Hub groups, OIDC, and
+trusted MCP host authorities.
+
+The Hub listener defaults to port `1333`. Pass `--port` to select a different
+port. Use `--listen` to control the listen address. For a packaged service,
+set these flags with `KUBEATLAS_PORTAL_OPTIONS` in
+`/etc/kubeatlas-portal/hub.env`. Keep the existing port on upgrades unless
+you also update the proxy that forwards traffic to the Hub.
 
 Use TLS at a trusted reverse proxy before exposing the login page, callback,
 Hub API, Agent transport, or MCP endpoint. Cookies are secure by default;
 `--insecure-cookie` remains restricted to loopback development. A fresh install
 served on a trusted private network over HTTP at a literal IP can explicitly set
-`--http-ip-origin=http://192.0.2.10:9290` or
-`KUBEATLAS_PORTAL_HTTP_IP_ORIGIN=http://192.0.2.10:9290` (the Portal chart uses
+`--http-ip-origin=http://192.0.2.10:1333` or
+`KUBEATLAS_PORTAL_HTTP_IP_ORIGIN=http://192.0.2.10:1333` (the Portal chart uses
 `httpIPOrigin`). This exact root origin enables login with host-scoped,
 HttpOnly, SameSite cookies without `Secure` before any LAN profile exists; it
 does not create or overwrite a connection profile. Only literal IPv4 or
@@ -156,8 +183,9 @@ connect outbound and retain the native KubeAtlas Agent's live read, write,
 audit, and MCP behavior under the current user's Kubernetes RBAC.
 
 Hub serves version-pinned Agent downloads and read-only OCI GET/HEAD content
-from its verified catalog. The systemd installer imports the matching release
-bundle. Official Hub images with a built-in catalog serve it from
+from its verified catalog. Complete DEB and RPM packages install a
+version-matched catalog at `/usr/share/kubeatlas-portal/agent-catalog`.
+Official Hub images serve the built-in catalog from
 `/opt/kubeatlas/agent-catalog`. Custom deployments can use
 `--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR` to supply a
 [private catalog](hub-agent-onboarding.md#prepare-a-private-bundle).
@@ -170,15 +198,14 @@ configure node container-runtime trust.
 
 ### Maintain a custom Hub service
 
-On an existing self-managed Linux service, verify and install the matching
-`kubeatlas-portal` package and keep the existing service account, state path,
-and login configuration. Run Hub as a dedicated unprivileged service user.
-Provide `KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD` through a
-root-owned systemd environment file with mode `0600`. Put the catalog at a
-versioned directory readable by that user and keep it operator-owned.
+For an existing self-managed Linux service, plan the upgrade around the
+existing service account, state path, and login configuration.
+Run Hub as a dedicated unprivileged service user.
+Put the catalog at a versioned directory readable by that user and keep it
+operator-owned.
 
 For example, start the Hub behind a same-host TLS proxy with
-`/usr/bin/kubeatlas-portal --listen=127.0.0.1:9290 --hub-state-file=/var/lib/kubeatlas-portal/state.json --hub-artifacts-dir=/srv/kubeatlas/catalogs/VERSION`.
+`/usr/bin/kubeatlas-portal --listen=127.0.0.1:1333 --hub-origin=https://hub.example.com --hub-state-file=/var/lib/kubeatlas-portal/state.json --hub-artifacts-dir=/srv/kubeatlas/catalogs/VERSION`.
 Replace the state and catalog paths with the actual paths. After updating the
 unit, run `systemctl daemon-reload` and restart the Hub service. Verify the
 service, HTTPS login, and Agent downloads. [Hub state and recovery](hub-state.md)

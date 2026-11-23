@@ -58,6 +58,13 @@ Plaintext passwords and tokens are not persisted.
 Version-1-only `organization` and `members` aliases are migration input, not
 version-2 root fields.
 
+Hub persists the platform administrator's login hash on first setup or during
+an upgrade from an environment-configured administrator. An administrator
+credential reset keeps the existing account ID and Kubernetes identity.
+KubeAtlas v0.1.3 and earlier require the state file and administrator
+configuration from before that migration. Restore the corresponding backup
+with Hub stopped before starting an older version.
+
 Legacy version-2 accounts without `authorizationRevision` load as revision
 zero. New writes persist the field, including zero for unchanged legacy
 accounts; older binaries reject it as an unknown field. Downgrade from a
