@@ -36,9 +36,10 @@ catalog=/usr/share/kubeatlas-portal/agent-catalog
 binary=/usr/bin/kubeatlas-portal
 version_line=$("$binary" --version)
 version=${version_line#kubeatlas-portal }
-[ "$version" != "$version_line" ] &&
-    printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$' ||
+if [ "$version" = "$version_line" ] ||
+    ! printf '%s\n' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$'; then
     fail "Cannot identify the installed Hub release."
+fi
 
 # Debian exposes both versions on upgrade. A reinstall can reuse its catalog.
 if [ "${1-}" = upgrade ] && [ -n "${2-}" ] && [ "${2-}" = "${3-}" ]; then
@@ -54,10 +55,11 @@ fi
 [ -d "$retained" ] && [ ! -L "$retained" ] && [ "$(stat -c '%u:%g:%a' "$retained")" = 0:0:755 ] ||
     fail "The Hub catalog retention directory must be root-owned with mode 0755."
 if [ -e "$previous" ] || [ -L "$previous" ]; then
-    [ -d "$previous" ] && [ ! -L "$previous" ] &&
-        [ -f "$previous/catalog.env" ] && [ ! -L "$previous/catalog.env" ] &&
-        grep -Fxq "KUBEATLAS_HUB_PREVIOUS_VERSION=$version" "$previous/catalog.env" ||
+    if [ ! -d "$previous" ] || [ -L "$previous" ] ||
+        [ ! -f "$previous/catalog.env" ] || [ -L "$previous/catalog.env" ] ||
+        ! grep -Fxq "KUBEATLAS_HUB_PREVIOUS_VERSION=$version" "$previous/catalog.env"; then
         fail "A previous Agent catalog is retained at $previous. Retire it after migrating its Agents before upgrading again."
+    fi
     "$binary" --check-hub-artifacts "--hub-artifacts-dir=$previous/catalog"
     exit 0
 fi
