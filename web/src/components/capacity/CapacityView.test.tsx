@@ -5,6 +5,7 @@ import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { MemoryRouter } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { LocaleProvider, type Locale } from "@maomada/k8s-ui/hooks/useLocale";
 import type {
   CapacityActivityEpisode,
   CapacityActivityResponse,
@@ -616,21 +617,47 @@ function activityResponse(): CapacityActivityResponse {
 function renderCapacity(
   path: string,
   seed: (client: QueryClient) => void,
+  locale?: Locale,
 ): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, retryOnMount: false } },
   });
   seed(client);
-  return renderToString(
+  const view = (
     <MemoryRouter initialEntries={[path]}>
       <QueryClientProvider client={client}>
         <CapacityView onOpenResource={() => {}} />
       </QueryClientProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+  if (!locale) return renderToString(view);
+  const languageKey = "kubeatlas-portal-language";
+  const previousLocale = localStorage.getItem(languageKey);
+  localStorage.setItem(languageKey, locale);
+  try {
+    return renderToString(<LocaleProvider>{view}</LocaleProvider>);
+  } finally {
+    if (previousLocale === null) localStorage.removeItem(languageKey);
+    else localStorage.setItem(languageKey, previousLocale);
+  }
 }
 
 describe("CapacityView overview", () => {
+  it.each([
+    ["zh-CN", "容量概览", "容量管理器", "待调度 Pod", "节点组"],
+    ["en", "Capacity overview", "Capacity managers", "Pending pods", "Node groups"],
+  ] as const)("uses the selected %s language for overview headings", (locale, heading, managers, pending, groups) => {
+    const html = renderCapacity(
+      "/capacity",
+      (client) => client.setQueryData(["capacity", "overview"], overview()),
+      locale,
+    );
+    expect(html).toContain(heading);
+    expect(html).toContain(managers);
+    expect(html).toContain(pending);
+    expect(html).toContain(groups);
+  });
+
   it("renders KPI tiles, the node-groups inventory, and the Karpenter chip", () => {
     const html = renderCapacity("/capacity", (client) =>
       client.setQueryData(["capacity", "overview"], overview()),

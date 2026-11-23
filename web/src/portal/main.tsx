@@ -1,5 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+import { LocaleProvider } from '@maomada/k8s-ui/hooks/useLocale'
 import { PortalEntry } from './CloudPortal'
 import './portal.css'
 
@@ -8,5 +9,5 @@ window.addEventListener('pageshow', event => {
 })
 
 ReactDOM.createRoot(document.getElementById('portal')!).render(
-  <React.StrictMode><PortalEntry /></React.StrictMode>,
+  <React.StrictMode><LocaleProvider><PortalEntry /></LocaleProvider></React.StrictMode>,
 )

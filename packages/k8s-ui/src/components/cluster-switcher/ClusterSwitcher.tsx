@@ -12,6 +12,7 @@ import { ClusterName } from '../ui/ClusterName'
 import { Input } from '../ui/Input'
 import { MiddleEllipsis } from '../ui/MiddleEllipsis'
 import { StatusDot, type StatusTone } from '../ui/status-tone'
+import { useLocale } from '../../hooks/useLocale'
 import { useKeepInViewport } from '../../hooks/useKeepInViewport'
 import { resolveNavigationUrl } from '../../utils/navigation-url'
 
@@ -96,7 +97,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
   showCurrentBullet = true,
   loading = false,
   disabled = false,
-  emptyText = '暂无集群',
+  emptyText,
   footerSlot,
   errorSlot,
   className = '',
@@ -104,6 +105,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
   variant = 'chip',
   label,
 }, ref) => {
+  const { t } = useLocale()
   const [isOpen, setIsOpen] = useState(false)
   const [navigationError, setNavigationError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
@@ -190,7 +192,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
     if (item.href) {
       const target = resolveNavigationUrl(item.href, window.location.href)
       if (!target) {
-        setNavigationError('集群链接无效，仅支持 HTTP(S) 地址')
+        setNavigationError(t('集群链接无效，仅支持 HTTP(S) 地址', 'Invalid cluster link. Only HTTP(S) URLs are supported.'))
         return
       }
       setIsOpen(false)
@@ -244,7 +246,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
         {loading ? (
           <>
             <Loader2 className="w-3.5 h-3.5 animate-spin" />
-            <span className={`${TRIGGER_NAME_MAX_WIDTH} block truncate`}>正在切换…</span>
+            <span className={`${TRIGGER_NAME_MAX_WIDTH} block truncate`}>{t('正在切换…', 'Switching…')}</span>
           </>
         ) : (
           // ClusterName parses the context (provider badge for GKE/EKS/AKS,
@@ -283,8 +285,8 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
               // open the dropdown for the full label.
               <span
                 className="shrink-0 inline-flex items-center text-theme-text-tertiary opacity-80"
-                title={`来自 kubeconfig：${currentSourceLabel}`}
-                aria-label={`来自 kubeconfig：${currentSourceLabel}`}
+                title={t(`来自 kubeconfig：${currentSourceLabel}`, `From kubeconfig: ${currentSourceLabel}`)}
+                aria-label={t(`来自 kubeconfig：${currentSourceLabel}`, `From kubeconfig: ${currentSourceLabel}`)}
               >
                 <FolderOpen className="w-3 h-3" />
               </span>
@@ -308,7 +310,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   onKeyDown={onSearchKeyDown}
-                  placeholder="搜索集群…"
+                  placeholder={t('搜索集群…', 'Search clusters…')}
                   className="w-full bg-theme-base text-theme-text-primary text-xs rounded px-2 py-1.5 pl-7 pr-7 border border-theme-border-light focus:outline-none focus:ring-1 focus:ring-[var(--color-brand)] placeholder:text-theme-text-tertiary"
                 />
                 {search && (
@@ -327,7 +329,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
           <div className="max-h-[400px] overflow-y-auto">
             {flat.length === 0 ? (
               <div className="px-3 py-6 text-center text-xs text-theme-text-tertiary">
-                {search ? `没有符合“${search}”的集群` : emptyText}
+                {search ? t(`没有符合“${search}”的集群`, `No clusters match “${search}”.`) : emptyText ?? t('暂无集群', 'No clusters')}
               </div>
             ) : (
               groups.map((group, gi) => (
@@ -413,7 +415,7 @@ export const ClusterSwitcher = forwardRef<ClusterSwitcherHandle, ClusterSwitcher
                             // both to truncate.
                             <div
                               className="flex items-center gap-0.5 text-[10px] text-theme-text-tertiary opacity-80 mt-0.5"
-                              title={`来自 kubeconfig：${item.sourceLabel}`}
+                              title={t(`来自 kubeconfig：${item.sourceLabel}`, `From kubeconfig: ${item.sourceLabel}`)}
                             >
                               <FolderOpen className="w-2.5 h-2.5 shrink-0" />
                               <MiddleEllipsis text={item.sourceLabel} className="font-mono" />

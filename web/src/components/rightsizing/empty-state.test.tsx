@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from 'react-dom/server'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { LocaleProvider } from '@maomada/k8s-ui/hooks/useLocale'
 import { ScanEmptyState } from './RightsizingScanView'
 
 const props = {
@@ -14,6 +16,20 @@ const props = {
 }
 
 describe('rightsizing empty journeys', () => {
+  it.each([
+    ['zh-CN', '未发现需要调整的请求', '查看已评估的容器'],
+    ['en', 'No actionable changes', 'View evaluated containers'],
+  ])('uses the selected %s language in Hub', (locale, heading, action) => {
+    const preference = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(locale)
+    try {
+      const html = renderToStaticMarkup(<LocaleProvider><ScanEmptyState {...props} /></LocaleProvider>)
+      expect(html).toContain(heading)
+      expect(html).toContain(action)
+    } finally {
+      preference.mockRestore()
+    }
+  })
+
   it('affirms no actionable changes only for evaluated evidence, with an inspection action', () => {
     const html = renderToStaticMarkup(<ScanEmptyState {...props} />)
     expect(html).toContain('No actionable changes')

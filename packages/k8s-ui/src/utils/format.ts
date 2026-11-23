@@ -309,8 +309,12 @@ export function msToNextBucket(elapsedMs: number): number {
 
 // Freshness phrasing for "Updated X" indicators. An exact day count is noise
 // for an auto-refresh signal, so anything past 24h collapses to "超过一天".
-export function formatUpdatedAgo(elapsedMs: number): string {
+export function formatUpdatedAgo(elapsedMs: number, locale: 'zh-CN' | 'en' = 'zh-CN'): string {
   const bucket = formatLastUpdatedBucket(elapsedMs)
+  if (locale === 'en') {
+    if (bucket === 'just now') return bucket
+    return bucket.endsWith('d') ? 'over a day ago' : `${bucket} ago`
+  }
   if (bucket === 'just now') return '刚刚'
   if (bucket.endsWith('d')) return '超过一天'
   return `${bucket.slice(0, -1)}${bucket.endsWith('m') ? '分钟' : '小时'}前`

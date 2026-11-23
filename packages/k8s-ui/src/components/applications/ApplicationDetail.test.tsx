@@ -1,6 +1,8 @@
+// @vitest-environment jsdom
 import { describe, expect, it, vi } from 'vitest'
 import { renderToString } from 'react-dom/server'
 import { ApplicationDetail, type ApplicationDetailProps } from './ApplicationDetail'
+import { LocaleProvider } from '../../hooks/useLocale'
 import { WorkloadView } from '../workload/WorkloadView'
 import type { AppHistory, AppRow, AppSourceRef } from '../../utils/applications'
 import { workloadKey } from '../../utils/topology-neighborhood'
@@ -65,7 +67,7 @@ const app: AppRow = {
   ],
 };
 
-function renderDetail(props: Partial<ApplicationDetailProps> = {}) {
+function renderDetail(props: Partial<ApplicationDetailProps> = {}, withLocale = false) {
   const componentProps = {
     app,
     onBack: () => {},
@@ -73,10 +75,54 @@ function renderDetail(props: Partial<ApplicationDetailProps> = {}) {
     renderOverviewIssues: () => null,
     ...props,
   } as ApplicationDetailProps;
-  return renderToString(<ApplicationDetail {...componentProps} />);
+  const view = <ApplicationDetail {...componentProps} />;
+  return renderToString(withLocale ? <LocaleProvider>{view}</LocaleProvider> : view);
 }
 
 describe("ApplicationDetail shell", () => {
+  it.each([
+    [undefined, "运行中 · 2"],
+    ["zh-CN", "运行中 · 2"],
+    ["en", "Running · 2"],
+  ])("uses the expected running-job status across the drawer for %s", (locale, label) => {
+    const job = {
+      ...app.workloads[0],
+      name: "invoice-reconciler",
+      kind: "CronJob",
+      workload_class: "job" as const,
+      batch: {
+        activeRuns: 2,
+        latestRunPhase: "Running",
+        latestRunName: "invoice-reconciler-run",
+        retainedRuns: 1,
+        succeededRuns: 1,
+        schedule: "0 3 * * *",
+      },
+    };
+    const preference = vi.spyOn(Storage.prototype, "getItem").mockReturnValue(locale ?? null);
+    try {
+      for (const workloadClass of ["job", "mixed"] as const) {
+        const sibling = workloadClass === "job"
+          ? { ...job, name: "invoice-cleanup", batch: { activeRuns: 0, latestRunPhase: "Succeeded" } }
+          : app.workloads[1];
+        const html = renderDetail({
+          app: { ...app, workload_class: workloadClass, workloads: [job, sibling] },
+        }, Boolean(locale));
+        expect(html).toContain("invoice-reconciler");
+        expect(html.split(label).length - 1).toBeGreaterThanOrEqual(2);
+        expect(html).toContain(locale === "en" ? "2 active runs" : "2 个活动运行");
+        expect(html).toContain(locale === "en" ? "1 succeeded / 0 failed" : "1 次成功 / 0 次失败");
+        if (workloadClass === "mixed") {
+          expect(html).toContain("invoice-reconciler-run");
+          expect(html).toContain("0 3 * * *");
+        }
+        if (locale === "en") expect(html).not.toContain("运行中 · 2");
+      }
+    } finally {
+      preference.mockRestore();
+    }
+  });
+
   it("shows rollout activity in the application summary and workload matrix", () => {
     const rolling: AppRow = {
       ...app,

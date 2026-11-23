@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
+import { LocaleProvider } from '@maomada/k8s-ui/hooks/useLocale'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { Register } from './Registration'
 
@@ -96,6 +97,79 @@ it('keeps submission available and focuses an invalid password without posting',
   expect(host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled).toBe(false)
   expect(password.getAttribute('aria-invalid')).toBe('false')
   expect(fetch.mock.calls.some(([url]) => String(url) === '/api/auth/register')).toBe(false)
+})
+
+it('retranslates visible validation and submission errors without editing or refetching registration options', async () => {
+  const fetch = vi.fn<typeof globalThis.fetch>(async input => {
+    if (String(input) === '/api/auth/providers') return response({ registrationEnabled: true })
+    if (String(input) === '/api/auth/register') return response({ error_code: 'registration_closed' }, 503)
+    throw new Error('Unexpected request: ' + String(input))
+  })
+  vi.stubGlobal('fetch', fetch)
+  const storageKey = 'kubeatlas-portal-language'
+  const previousLocale = localStorage.getItem(storageKey)
+  const previousLang = document.documentElement.lang
+  localStorage.setItem(storageKey, 'zh-CN')
+  try {
+    await act(async () => root.render(<LocaleProvider><Register /></LocaleProvider>))
+    await act(async () => vi.waitFor(() => expect(host.querySelector('form')).not.toBeNull()))
+    const form = host.querySelector('form')!
+    const email = form.querySelector<HTMLInputElement>('input[type="email"]')!
+    const password = form.querySelector<HTMLInputElement>('input[type="password"]')!
+    const language = host.querySelector<HTMLSelectElement>('header select')!
+    const announcement = form.querySelector('[aria-live="polite"]')!
+    await act(async () => {
+      email.focus()
+      setValue(email, 'invalid')
+      password.focus()
+      setValue(password, 'abcde')
+      password.blur()
+    })
+    expect(email.validationMessage).toBe('请输入有效的邮箱地址。')
+    expect(password.validationMessage).toBe('密码至少需要 6 个字符。')
+    expect(announcement.textContent).toBe('密码至少需要 6 个字符。')
+    const emailErrorId = email.getAttribute('aria-describedby')!
+    const passwordErrorId = password.getAttribute('aria-describedby')!.split(' ')[1]
+
+    await act(async () => {
+      language.value = 'en'
+      language.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(email.value).toBe('invalid')
+    expect(password.value).toBe('abcde')
+    expect(email.validationMessage).toBe('Enter a valid email address.')
+    expect(password.validationMessage).toBe('Use at least 6 characters.')
+    expect(document.getElementById(emailErrorId)?.textContent).toBe(email.validationMessage)
+    expect(document.getElementById(passwordErrorId)?.textContent).toBe(password.validationMessage)
+    expect(announcement.textContent).toBe('Use at least 6 characters.')
+    expect(email.getAttribute('aria-invalid')).toBe('true')
+    expect(password.getAttribute('aria-invalid')).toBe('true')
+    expect(fetch).toHaveBeenCalledTimes(1)
+
+    await act(async () => {
+      setValue(email, 'person@example.test')
+      setValue(password, 'abc123')
+    })
+    expect(email.validationMessage).toBe('')
+    expect(password.validationMessage).toBe('')
+    expect(announcement.textContent).toBe('')
+    expect(document.getElementById(emailErrorId)).toBeNull()
+    expect(document.getElementById(passwordErrorId)).toBeNull()
+    await act(async () => form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
+    expect(form.querySelector('[role="alert"]')?.textContent).toBe('Registration is closed. Contact your administrator.')
+
+    await act(async () => {
+      language.value = 'zh-CN'
+      language.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(form.querySelector('[role="alert"]')?.textContent).toBe('暂未开放注册，请联系管理员。')
+    expect(email.value).toBe('person@example.test')
+    expect(fetch.mock.calls.map(([url]) => String(url))).toEqual(['/api/auth/providers', '/api/auth/register'])
+  } finally {
+    if (previousLocale === null) localStorage.removeItem(storageKey)
+    else localStorage.setItem(storageKey, previousLocale)
+    document.documentElement.lang = previousLang
+  }
 })
 
 it('clears a failed registration password and gives a concise recovery message', async () => {

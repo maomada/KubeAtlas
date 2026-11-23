@@ -1,18 +1,27 @@
+import type { Translate } from '@maomada/k8s-ui/hooks/useLocale'
 import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
+
+const defaultTranslate: Translate = chinese => chinese
 
 export interface AuthProviders {
   registrationEnabled: boolean
   oidcEnabled: boolean
 }
 
-export async function probePortalSession(signal?: AbortSignal): Promise<'authenticated' | 'unauthenticated'> {
+export async function probePortalSession(signal?: AbortSignal, t: Translate = defaultTranslate): Promise<'authenticated' | 'unauthenticated'> {
   const response = await fetch(apiUrl('/auth/session', '/api'), {
     headers: getAuthHeaders(), credentials: getCredentialsMode(), cache: 'no-store', redirect: 'error',
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
   })
   if (response.status === 401) return 'unauthenticated'
-  if (!response.ok) throw new Error(`会话检查失败（HTTP ${response.status}）`)
+  if (!response.ok) throw new Error(t(`会话检查失败（HTTP ${response.status}）`, `Session check failed (HTTP ${response.status}).`))
   return 'authenticated'
+}
+
+export class AuthProvidersError extends Error {
+  constructor(readonly reason: 'unavailable' | 'invalid-response') {
+    super(reason)
+  }
 }
 
 export async function fetchAuthProviders(signal?: AbortSignal): Promise<AuthProviders> {
@@ -21,9 +30,9 @@ export async function fetchAuthProviders(signal?: AbortSignal): Promise<AuthProv
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
   })
   if (response.status === 404) return { registrationEnabled: false, oidcEnabled: false }
-  if (!response.ok) throw new Error('认证选项不可用。')
+  if (!response.ok) throw new AuthProvidersError('unavailable')
   const value: unknown = await response.json()
-  if (!value || typeof value !== 'object') throw new Error('认证选项无效。')
+  if (!value || typeof value !== 'object') throw new AuthProvidersError('invalid-response')
   const providers = value as Record<string, unknown>
   const oidc = providers.oidc && typeof providers.oidc === 'object' ? providers.oidc as Record<string, unknown> : undefined
   return { registrationEnabled: providers.registrationEnabled === true, oidcEnabled: oidc?.enabled === true }

@@ -1,3 +1,4 @@
+import { useLocale } from '@maomada/k8s-ui/hooks/useLocale'
 import { useState, useMemo, useRef, useEffect, useCallback, forwardRef, useImperativeHandle, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Search, CornerDownLeft, Loader2, AlertTriangle, Info } from 'lucide-react'
@@ -192,12 +193,13 @@ export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
     recordRecent,
     onViewAllResults,
     launcherShowsViews = true,
-    placeholder = '搜索资源和命令…',
+    placeholder,
     size = 'default',
     autoFocus = false,
   },
   ref,
 ) {
+  const { t } = useLocale()
   const [text, setText] = useState('')
   const [pills, setPills] = useState<SearchModifier[]>([])
   const [open, setOpen] = useState(false)
@@ -495,7 +497,7 @@ export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
           <div ref={listRef} className="max-h-[60vh] overflow-y-auto py-1">
             {recentRows.length > 0 && (
               <div>
-                <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-theme-text-tertiary">最近查看</div>
+                <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-theme-text-tertiary">{t('最近查看', 'Recently viewed')}</div>
                 {recentRows.map((row) => row.kind === 'resource' && (
                   <ResourceRow key={row.id} hit={row.hit} selected={row.id === selectedId} onSelect={() => selectRow(row.id)} onActivate={() => execute(row)} />
                 ))}
@@ -504,7 +506,7 @@ export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
 
             {leadingKinds.length > 0 && (
               <div>
-                <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-theme-text-tertiary">资源类型</div>
+                <div className="px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-theme-text-tertiary">{t('资源类型', 'Resource kinds')}</div>
                 {leadingKinds.map((item) => {
                   const id = `cmd:${item.id}`
                   return <CommandRow key={id} item={item} tokens={queryTokens} selected={id === selectedId} onSelect={() => selectRow(id)} onActivate={() => execute(toCmdRow(item))} />
@@ -515,9 +517,9 @@ export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
             {searchActive && (
               <>
                 <div className="flex items-center justify-between px-3 py-1 text-[10px] font-semibold uppercase tracking-wider text-theme-text-tertiary">
-                  <span>资源</span>
+                  <span>{t('资源', 'Resources')}</span>
                   {isFetching && <Loader2 className="w-3 h-3 animate-spin" />}
-                  {!isFetching && !isError && totalMatched > total && <span className="normal-case font-normal">显示 {total} 项，共 {totalMatched} 项</span>}
+                  {!isFetching && !isError && totalMatched > total && <span className="normal-case font-normal">{t(`显示 ${total} 项，共 ${totalMatched} 项`, `Showing ${total} of ${totalMatched}`)}</span>}
                 </div>
                 {/* Above the rows: with a full page of hits a note below them
                     would sit under the fold. */}
@@ -527,14 +529,14 @@ export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
                 }} />}
                 {isError ? (
                   <div className="flex items-center gap-2 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
-                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> 搜索暂时不可用。
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" /> {t('搜索暂时不可用。', 'Search is temporarily unavailable.')}
                   </div>
                 ) : resourceRows.length === 0 && (!isFetching || currentData) ? (
                   <div className="px-3 py-2 text-xs text-theme-text-tertiary">
-                    {shownNote ? 'KubeAtlas 已搜索范围内没有匹配项。' : <>没有资源匹配{freeText ? <>“{freeText}”</> : ''}。</>}
+                    {shownNote ? t('KubeAtlas 已搜索范围内没有匹配项。', 'No matches in the scope KubeAtlas searched.') : t(`没有资源匹配${freeText ? `“${freeText}”` : ''}。`, `No resources match${freeText ? ` “${freeText}”` : ''}.`)}
                     {hasNsPill && (
                       <button onMouseDown={(e) => { e.preventDefault(); clearNsPills() }} className="ml-1.5 text-[var(--color-brand)] hover:underline">
-                        移除命名空间筛选
+                        {t('移除命名空间筛选', 'Remove namespace filter')}
                       </button>
                     )}
                   </div>
@@ -553,7 +555,7 @@ export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
 
             {commandGroups.map((group) => (
               <div key={group.category}>
-                <div className="px-3 py-1 mt-1 text-[10px] font-semibold uppercase tracking-wider text-theme-text-tertiary">{COMMAND_CATEGORY_LABELS[group.category] ?? group.category}</div>
+                <div className="px-3 py-1 mt-1 text-[10px] font-semibold uppercase tracking-wider text-theme-text-tertiary">{t(COMMAND_CATEGORY_LABELS[group.category] ?? group.category, group.category)}</div>
                 {group.items.map((item) => {
                   const id = `cmd:${item.id}`
                   return <CommandRow key={id} item={item} tokens={queryTokens} selected={id === selectedId} onSelect={() => selectRow(id)} onActivate={() => execute({ id, kind: 'command', command: item })} />
@@ -570,18 +572,18 @@ export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
                 className={clsx('w-full flex items-center gap-2.5 px-3 py-1.5 mt-1 text-left border-t border-theme-border transition-colors', viewAllRow.id === selectedId ? 'selection' : 'hover:bg-theme-elevated/40')}
               >
                 <Search className="w-4 h-4 shrink-0 text-theme-text-tertiary" />
-                <span className="text-sm text-[var(--color-brand)]">查看全部 {viewAllRow.count} 项结果</span>
+                <span className="text-sm text-[var(--color-brand)]">{t(`查看全部 ${viewAllRow.count} 项结果`, `View all ${viewAllRow.count} results`)}</span>
                 <CornerDownLeft className="w-3 h-3 ml-auto shrink-0 text-theme-text-tertiary" />
               </button>
             )}
           </div>
           <div className="flex items-center gap-3 px-3 py-1.5 border-t border-theme-border text-[11px] text-theme-text-tertiary">
             <span className="flex items-center gap-1">
-              <CornerDownLeft className="w-3 h-3" /> {submitToSearch && searchActive && selectedIndex < 0 ? '搜索全部' : '打开'}
+              <CornerDownLeft className="w-3 h-3" /> {submitToSearch && searchActive && selectedIndex < 0 ? t('搜索全部', 'Search all') : t('打开', 'Open')}
             </span>
-            <span>↑↓ 导航</span>
-            <span>⇞⇟ 翻页</span>
-            <span>Esc 关闭</span>
+            <span>{t('↑↓ 导航', '↑↓ Navigate')}</span>
+            <span>{t('⇞⇟ 翻页', '⇞⇟ Page')}</span>
+            <span>{t('Esc 关闭', 'Esc Close')}</span>
           </div>
     </>
   )
@@ -610,8 +612,8 @@ export const Omnibar = forwardRef<OmnibarHandle, OmnibarProps>(function Omnibar(
         onFocus={() => { if (skipFocusOpen.current) { skipFocusOpen.current = false; return } setOpen(true) }}
         onSuggestingChange={setSuggesting}
         modifierOptions={modifierOptions}
-        placeholder={placeholder}
-        aria-label="搜索资源和命令"
+        placeholder={placeholder ?? t('搜索资源和命令…', 'Search resources and commands…')}
+        aria-label={t('搜索资源和命令', 'Search resources and commands')}
         inputRef={inputRef}
         leftSlot={<Search className={hero ? 'w-5 h-5 shrink-0 text-theme-text-tertiary' : 'w-3.5 h-3.5 shrink-0 text-theme-text-tertiary'} />}
         rightSlot={
@@ -693,6 +695,7 @@ function OmnibarNoteRow({ note, onAction }: { note: OmnibarNote; onAction: (acti
 }
 
 function ResourceRow({ hit, selected, stale, onSelect, onActivate }: { hit: SearchHit; selected: boolean; stale?: boolean; onSelect: () => void; onActivate: () => void }) {
+  const { t } = useLocale()
   const Icon = getResourceIcon(hit.kind)
   const dot = healthDot(hit.summaryContext?.health)
   const issues = hit.summaryContext?.issueCount ?? 0
@@ -713,7 +716,7 @@ function ResourceRow({ hit, selected, stale, onSelect, onActivate }: { hit: Sear
         {hit.clusterName ? <> · <span className="text-theme-text-secondary">{hit.clusterName}</span></> : ''}
       </span>
       {contentLabel && <span className="shrink-0 text-[10px] text-theme-text-tertiary italic">{contentLabel}</span>}
-      {issues > 0 && <span className="ml-auto shrink-0 text-[10px] font-medium text-amber-600 dark:text-amber-400">{issues} 个问题</span>}
+      {issues > 0 && <span className="ml-auto shrink-0 text-[10px] font-medium text-amber-600 dark:text-amber-400">{t(`${issues} 个问题`, issues === 1 ? '1 issue' : `${issues} issues`)}</span>}
     </button>
   )
 }

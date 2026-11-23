@@ -7,6 +7,7 @@ import { PortalEntry } from './CloudPortal'
 import { navigateCloud } from './cloudNavigation'
 import { logoutPortal, type HubContext } from './CloudOrganization'
 import { HUB_YAML_DRAFT_AUTHORITY_MARKER, yamlDraftStorageKey } from '@maomada/k8s-ui'
+import { LocaleProvider, useLocale } from '@maomada/k8s-ui/hooks/useLocale'
 import { LEGACY_YAML_DRAFT_CHANNEL } from '@maomada/k8s-ui/utils/legacy-brand'
 
 const portalNavigation = vi.hoisted(() => ({
@@ -73,6 +74,107 @@ async function waitForPortal(assertion: () => void, options?: Parameters<typeof 
   }, options)
 }
 
+it('switches the portal language from preferences and restores it after a reload', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  const languageKey = 'kubeatlas-portal-language'
+  const previousLanguage = localStorage.getItem(languageKey)
+  const previousDocumentLanguage = document.documentElement.lang
+  const browserLanguages = vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(['zh-Hant', 'en-GB'])
+  localStorage.removeItem(languageKey)
+  window.history.replaceState({}, '', '/settings')
+  vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(async input => {
+    const path = String(input)
+    if (path === '/api/auth/session') return new Response(null, { status: 204 })
+    if (path === '/api/hub') return Response.json(portalHub)
+    if (path === '/api/hub/connections') return Response.json(connections)
+    if (path === '/api/hub/clusters') return Response.json({ clusters: [] })
+    throw new Error('Unexpected request: ' + path)
+  }))
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  let root = createRoot(host)
+  const languageSelect = () => host.querySelector<HTMLSelectElement>('.cloud-preference select')!
+  async function render() {
+    await act(async () => root.render(<LocaleProvider><PortalEntry /></LocaleProvider>))
+    await waitForPortal(() => expect(languageSelect()).not.toBeNull())
+  }
+  async function selectLanguage(value: string) {
+    await act(async () => {
+      languageSelect().value = value
+      languageSelect().dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
+  try {
+    await render()
+    expect(languageSelect().value).toBe('zh-CN')
+    expect(languageSelect().labels?.[0].textContent).toBe('语言')
+
+    await selectLanguage('en')
+    expect(languageSelect().labels?.[0].textContent).toBe('Language')
+    expect(host.querySelector('.cloud-page-heading h1')?.textContent).toBe('Preferences')
+    expect(host.querySelector('.cloud-sidebar nav a[href="/issues"]')?.textContent).toBe('Issues')
+    expect(host.querySelector('a[href="/settings/organization/agent-access"]')?.textContent).toBe('MCP')
+    expect(document.documentElement.lang).toBe('en')
+    expect(localStorage.getItem(languageKey)).toBe('en')
+
+    act(() => root.unmount())
+    root = createRoot(host)
+    await render()
+    expect(languageSelect().value).toBe('en')
+
+    await selectLanguage('zh-CN')
+    expect(host.querySelector('.cloud-page-heading h1')?.textContent).toBe('偏好设置')
+    expect(document.documentElement.lang).toBe('zh-CN')
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    browserLanguages.mockRestore()
+    document.documentElement.lang = previousDocumentLanguage
+    if (previousLanguage === null) localStorage.removeItem(languageKey)
+    else localStorage.setItem(languageKey, previousLanguage)
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
+it.each([
+  { label: 'the first supported preference', languages: ['fr-FR', 'en-GB', 'zh-CN'], language: 'fr-FR', stored: null, expected: 'en' },
+  { label: 'a stored override', languages: ['en-US'], language: 'en-US', stored: 'zh-CN', expected: 'zh-CN' },
+  { label: 'the single-language fallback', languages: [], language: 'en-AU', stored: null, expected: 'en' },
+  { label: 'Chinese when no preference is supported', languages: ['fr-FR', 'ja-JP'], language: 'fr-FR', stored: 'invalid', expected: 'zh-CN' },
+  { label: 'browser preference when storage is blocked', languages: ['EN-us'], language: 'EN-us', stored: null, expected: 'en', blocked: true },
+])('uses $label on initial portal render', async ({ languages, language, stored, expected, blocked }) => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  const languageKey = 'kubeatlas-portal-language'
+  const storage = window.localStorage
+  const previousLanguage = storage.getItem(languageKey)
+  const previousDocumentLanguage = document.documentElement.lang
+  if (stored === null) storage.removeItem(languageKey)
+  else storage.setItem(languageKey, stored)
+  const browserLanguages = vi.spyOn(window.navigator, 'languages', 'get').mockReturnValue(languages)
+  const browserLanguage = vi.spyOn(window.navigator, 'language', 'get').mockReturnValue(language)
+  const browserStorage = blocked ? vi.spyOn(window, 'localStorage', 'get').mockImplementation(() => { throw new DOMException('Storage is blocked', 'SecurityError') }) : undefined
+  const host = document.createElement('div')
+  const root = createRoot(host)
+  function LocaleProbe() {
+    return <output>{useLocale().locale}</output>
+  }
+  try {
+    await act(async () => root.render(<LocaleProvider><LocaleProbe /></LocaleProvider>))
+    expect(host.querySelector('output')?.textContent).toBe(expected)
+    expect(document.documentElement.lang).toBe(expected)
+    expect(storage.getItem(languageKey)).toBe(stored)
+  } finally {
+    act(() => root.unmount())
+    browserLanguages.mockRestore()
+    browserLanguage.mockRestore()
+    browserStorage?.mockRestore()
+    if (previousLanguage === null) storage.removeItem(languageKey)
+    else storage.setItem(languageKey, previousLanguage)
+    document.documentElement.lang = previousDocumentLanguage
+  }
+})
+
 beforeEach(() => {
   sessionStorage.clear()
   portalNavigation.replace.mockClear()
@@ -83,8 +185,53 @@ beforeEach(() => {
   portalNavigation.nativeUnmounts = 0
 })
 
+it('translates an existing sign-in error without retrying the request', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  const languageKey = 'kubeatlas-portal-language'
+  const previousLanguage = localStorage.getItem(languageKey)
+  const previousDocumentLanguage = document.documentElement.lang
+  localStorage.setItem(languageKey, 'zh-CN')
+  window.history.replaceState({}, '', '/login')
+  const post = vi.fn(() => new Response(null, { status: 401 }))
+  vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(async input => {
+    if (String(input) === '/api/auth/providers') return Response.json({ registrationEnabled: false })
+    if (String(input) === '/api/auth/login') return post()
+    throw new Error(`Unexpected request: ${input}`)
+  }))
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<LocaleProvider><PortalEntry /></LocaleProvider>))
+    const form = host.querySelector('form')!
+    const languageSelect = host.querySelector<HTMLSelectElement>('header select')!
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(form.querySelector('[role="alert"]')?.textContent).toBe('账号或密码不正确，请重新输入。')
+    await act(async () => {
+      languageSelect.value = 'en'
+      languageSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(form.querySelector('[role="alert"]')?.textContent).toBe('Incorrect username or password. Try again.')
+    expect(post).toHaveBeenCalledTimes(1)
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    if (previousLanguage === null) localStorage.removeItem(languageKey)
+    else localStorage.setItem(languageKey, previousLanguage)
+    document.documentElement.lang = previousDocumentLanguage
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
 it('validates and submits the first-run form before opening the login page', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  const languageKey = 'kubeatlas-portal-language'
+  const previousLanguage = localStorage.getItem(languageKey)
+  const previousDocumentLanguage = document.documentElement.lang
+  localStorage.setItem(languageKey, 'zh-CN')
   window.history.replaceState({}, '', '/setup')
   const fetch = vi.fn<typeof globalThis.fetch>(async (input, options) => {
     if (String(input) !== '/api/setup') throw new Error(`Unexpected request: ${input}`)
@@ -98,7 +245,7 @@ it('validates and submits the first-run form before opening the login page', asy
   document.body.appendChild(host)
   const root = createRoot(host)
   try {
-    await act(async () => root.render(<PortalEntry />))
+    await act(async () => root.render(<LocaleProvider><PortalEntry /></LocaleProvider>))
     await waitForPortal(() => expect(host.querySelector('form')).not.toBeNull())
     const form = host.querySelector('form')!
     const code = form.querySelector<HTMLInputElement>('[name="code"]')!
@@ -117,14 +264,31 @@ it('validates and submits the first-run form before opening the login page', asy
       expect(fetch.mock.calls).toHaveLength(1)
     }
 
+    const languageSelect = host.querySelector<HTMLSelectElement>('header select')!
+    await act(async () => {
+      languageSelect.value = 'en'
+      languageSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(password.validationMessage).toBe('')
+    await act(async () => form.requestSubmit())
+    expect(password.validationMessage).toBe('At least 8 characters, including an uppercase English letter and a symbol.')
+    expect(fetch.mock.calls).toHaveLength(1)
+
     const validPassword = '管理员测试用A！'
     password.value = validPassword
     await act(async () => {
       password.dispatchEvent(new Event('input', { bubbles: true }))
       form.requestSubmit()
     })
-    expect(host.querySelector('[role="alert"]')?.textContent).toContain('请核对初始化码')
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('Check the setup code')
     expect(portalNavigation.replace).not.toHaveBeenCalled()
+    const attempts = fetch.mock.calls.length
+    await act(async () => {
+      languageSelect.value = 'zh-CN'
+      languageSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('请核对初始化码')
+    expect(fetch.mock.calls).toHaveLength(attempts)
 
     code.value = 'valid-code'
     await act(async () => form.requestSubmit())
@@ -135,6 +299,9 @@ it('validates and submits the first-run form before opening the login page', asy
   } finally {
     act(() => root.unmount())
     host.remove()
+    if (previousLanguage === null) localStorage.removeItem(languageKey)
+    else localStorage.setItem(languageKey, previousLanguage)
+    document.documentElement.lang = previousDocumentLanguage
     window.history.replaceState({}, '', '/')
     vi.unstubAllGlobals()
   }

@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "engine": "1.180.0",
-  "sourceSha": "cbcb0248785a0fb6adf99f932950f19d3e0e212c",
-  "sourceTreeSha256": "835faeb3fc4ffbdb934c2b480a429f9b97f5b9e5602ee91e65542cf31330bcf1",
+  "sourceSha": "92bda70eb8671b5ee72f2e1c6e5d50e527be28f9",
+  "sourceTreeSha256": "ca161c15d3f895b3e1d2af71508fb7a38e8e1078939739d1aa6d88e0197f1c5d",
   "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
-  "rawFindingsSha256": "99bc42f75ff877558f6d6540f9b3ec2886f05c58cdead9d2d9c230190306c61d",
+  "rawFindingsSha256": "72b02c0631dbc2894567646115ff1e4c2ba69436521a7d5de581afe899326c63",
   "entries": [
     {
       "id": "SAST-001",
@@ -1953,14 +1953,14 @@
         "check_id": "rules.javascript.browser.security.js-open-redirect-from-function",
         "path": "packages/k8s-ui/src/components/cluster-switcher/ClusterSwitcher.tsx",
         "start": {
-          "line": 197,
+          "line": 199,
           "col": 30,
-          "offset": 6997
+          "offset": 7119
         },
         "end": {
-          "line": 197,
+          "line": 199,
           "col": 36,
-          "offset": 7003
+          "offset": 7125
         }
       },
       "disposition": "mitigated",
@@ -1974,8 +1974,27 @@
         "scope": "Per-finding technical review under delegated authority; not merge or publication approval."
       },
       "reviewedSourceSha": "7c2a68f379f94a31351d8ad932ddc4b9704dfc8b",
-      "revalidatedSourceSha": "84cbe0c26ee008431e4f7da26de72f5573c28ff7",
-      "revalidationReference": "docs/security-revalidation-pr28.md"
+      "revalidatedSourceSha": "92bda70eb8671b5ee72f2e1c6e5d50e527be28f9",
+      "revalidationReference": "docs/security-revalidation-pr28.md",
+      "positionHistory": [
+        {
+          "sourceSha": "cbcb0248785a0fb6adf99f932950f19d3e0e212c",
+          "finding": {
+            "check_id": "rules.javascript.browser.security.js-open-redirect-from-function",
+            "path": "packages/k8s-ui/src/components/cluster-switcher/ClusterSwitcher.tsx",
+            "start": {
+              "line": 197,
+              "col": 30,
+              "offset": 6997
+            },
+            "end": {
+              "line": 197,
+              "col": 36,
+              "offset": 7003
+            }
+          }
+        }
+      ]
     },
     {
       "id": "SAST-062",
@@ -2595,14 +2614,14 @@
         "check_id": "rules.javascript.lang.security.audit.detect-redos",
         "path": "packages/k8s-ui/src/utils/applications.ts",
         "start": {
-          "line": 464,
+          "line": 465,
           "col": 8,
-          "offset": 16834
+          "offset": 16886
         },
         "end": {
-          "line": 464,
+          "line": 465,
           "col": 31,
-          "offset": 16857
+          "offset": 16909
         }
       },
       "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
@@ -2616,7 +2635,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "84cbe0c26ee008431e4f7da26de72f5573c28ff7",
+      "revalidatedSourceSha": "92bda70eb8671b5ee72f2e1c6e5d50e527be28f9",
       "revalidationReference": "docs/security-revalidation-pr28.md",
       "positionHistory": [
         {
@@ -2631,6 +2650,23 @@
             "end": {
               "line": 461,
               "col": 31
+            }
+          }
+        },
+        {
+          "sourceSha": "cbcb0248785a0fb6adf99f932950f19d3e0e212c",
+          "finding": {
+            "check_id": "rules.javascript.lang.security.audit.detect-redos",
+            "path": "packages/k8s-ui/src/utils/applications.ts",
+            "start": {
+              "line": 464,
+              "col": 8,
+              "offset": 16834
+            },
+            "end": {
+              "line": 464,
+              "col": 31,
+              "offset": 16857
             }
           }
         }
@@ -3393,11 +3429,11 @@
         "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
         "path": "web/src/components/ui/Omnibar.tsx",
         "start": {
-          "line": 73,
+          "line": 74,
           "col": 14
         },
         "end": {
-          "line": 73,
+          "line": 74,
           "col": 67
         }
       },
@@ -3412,8 +3448,25 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "84cbe0c26ee008431e4f7da26de72f5573c28ff7",
-      "revalidationReference": "docs/security-revalidation-pr28.md"
+      "revalidatedSourceSha": "92bda70eb8671b5ee72f2e1c6e5d50e527be28f9",
+      "revalidationReference": "docs/security-revalidation-pr28.md",
+      "positionHistory": [
+        {
+          "sourceSha": "cbcb0248785a0fb6adf99f932950f19d3e0e212c",
+          "finding": {
+            "check_id": "rules.javascript.lang.security.audit.detect-non-literal-regexp",
+            "path": "web/src/components/ui/Omnibar.tsx",
+            "start": {
+              "line": 73,
+              "col": 14
+            },
+            "end": {
+              "line": 73,
+              "col": 67
+            }
+          }
+        }
+      ]
     },
     {
       "id": "SAST-109",
@@ -4167,6 +4220,21 @@
       "newFindings": 0,
       "removedFindings": 0,
       "evidence": "The pinned local Linux scan of PR #32 after review fixes and main baseline run 45128630733 both covered all 1998 production files without scanner errors. All 112 raw findings match exactly. SAST-037 is the only finding in a modified source file. Its matched bytes, position, path prefix checks and embedded filesystem boundary are unchanged. All approved classifications and risk acceptance scopes are preserved."
+    },
+    {
+      "previousBinding": {
+        "sourceSha": "cbcb0248785a0fb6adf99f932950f19d3e0e212c",
+        "sourceTreeSha256": "835faeb3fc4ffbdb934c2b480a429f9b97f5b9e5602ee91e65542cf31330bcf1",
+        "rawFindingsSha256": "99bc42f75ff877558f6d6540f9b3ec2886f05c58cdead9d2d9c230190306c61d"
+      },
+      "sourceSha": "92bda70eb8671b5ee72f2e1c6e5d50e527be28f9",
+      "reviewer": "Codex",
+      "scanSourceSha": "92bda70eb8671b5ee72f2e1c6e5d50e527be28f9",
+      "scanRunUrl": null,
+      "findingCount": 112,
+      "newFindings": 0,
+      "removedFindings": 0,
+      "evidence": "Pinned local Linux Semgrep CE scan of PR #33. Compared exact findings against hosted main run 45147245446 and previous PR run 45174439961. Covered all 2000 production files with no scanner errors. SAST-061, SAST-079, and SAST-108 relocated with the locale edits. Matched code bytes are unchanged. The URL scheme allowlist and credential checks, fixed version regex, and escaped highlight pattern retain their previous bounds. All other findings and finding files match exactly. Existing classifications, approvals, and risk acceptance scopes are preserved."
     }
   ],
   "integratedBranchReviews": [

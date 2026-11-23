@@ -12,6 +12,7 @@ import {
   useDisclosure,
 } from '@maomada/k8s-ui'
 import { Badge } from '@maomada/k8s-ui/components/ui/Badge'
+import { useLocale, type Translate } from '@maomada/k8s-ui/hooks/useLocale'
 import {
   useAutoPromConnect,
   useClusterInfo,
@@ -108,6 +109,7 @@ const ACTION_META: Record<
 }
 
 export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
+  const { t, locale } = useLocale('en')
   useAutoPromConnect()
   const settingsAvailable = !useNavCustomization().embedded
   const navigate = useNavigate()
@@ -206,20 +208,22 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
     )
   }
 
+  const metricsRequired = t('资源优化需要兼容 PromQL 的指标后端提供 7 天 Kubernetes 工作负载历史数据，可使用 Prometheus、VictoriaMetrics、Thanos 或 Mimir。\n成本概览仍可使用。', RIGHTSIZING_METRICS_REQUIRED_BODY)
+
   return (
     <div className="flex-1 min-h-0 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[1920px] flex-col gap-4 px-6 py-6">
         <PageHeader
           icon={Coins}
-          title="Cost Insights"
-          description="Understand current allocation and find CPU and memory requests worth tuning."
+          title={t('成本分析', 'Cost Insights')}
+          description={t('查看当前成本分配和 CPU、内存资源优化建议。', 'Understand current allocation and find CPU and memory requests worth tuning.')}
         />
         <CostViewTabs />
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-base font-semibold text-theme-text-primary">Rightsizing</h2>
+            <h2 className="text-base font-semibold text-theme-text-primary">{t('资源请求优化', 'Rightsizing')}</h2>
             <p className="mt-0.5 text-sm text-theme-text-secondary">
-              {RIGHTSIZING_SCAN_DESCRIPTION}
+              {t('查找建议提高、降低或复核的 CPU 和内存请求。KubeAtlas 仅生成建议。', RIGHTSIZING_SCAN_DESCRIPTION)}
             </p>
           </div>
           <div className="flex items-center gap-3">
@@ -229,11 +233,11 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
               rel="noreferrer"
               className="inline-flex items-center gap-1 text-xs text-accent-text hover:underline"
             >
-              Methodology <ExternalLink className="h-3 w-3" />
+              {t('计算方法', 'Methodology')} <ExternalLink className="h-3 w-3" />
             </a>
             {result?.scannedAt && (
               <span className="text-xs text-theme-text-tertiary">
-                Scanned {formatScanTime(result.scannedAt)}
+                {t('扫描时间', 'Scanned')} {formatScanTime(result.scannedAt, locale)}
               </span>
             )}
             {result && (
@@ -244,7 +248,7 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
                 className="btn-brand inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium"
               >
                 <RefreshCw className={`h-3.5 w-3.5 ${scan.isPending ? 'animate-spin' : ''}`} />
-                {scan.isStarting ? 'Starting…' : scan.isStopping ? 'Stopping…' : scan.isPending ? 'Stop scan' : 'Run again'}
+                {scan.isStarting ? t('正在启动…', 'Starting…') : scan.isStopping ? t('正在停止…', 'Stopping…') : scan.isPending ? t('停止扫描', 'Stop scan') : t('再次扫描', 'Run again')}
               </button>
             )}
           </div>
@@ -253,15 +257,15 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
         {surfaceState === 'discovering' ? (
           <CenteredState
             loading
-            title="Looking for Prometheus…"
-            body="KubeAtlas is checking the current cluster for workload metrics."
+            title={t('正在查找 Prometheus…', 'Looking for Prometheus…')}
+            body={t('正在检测当前集群的工作负载指标。', 'KubeAtlas is checking the current cluster for workload metrics.')}
           />
         ) : surfaceState === 'prometheus_required' ? (
           <CenteredState
-            title={RIGHTSIZING_METRICS_REQUIRED_TITLE}
+            title={t('需要历史指标', RIGHTSIZING_METRICS_REQUIRED_TITLE)}
             body={settingsAvailable
-              ? `${RIGHTSIZING_METRICS_REQUIRED_BODY}${previousNote ? `\n${previousNote}` : ''}`
-              : RIGHTSIZING_EMBEDDED_METRICS_REQUIRED_BODY}
+              ? `${metricsRequired}${previousNote ? `\n${previousNote}` : ''}`
+              : `${metricsRequired}\n${t('请在宿主应用或 KubeAtlas 部署中配置此集群的指标。', 'Configure metrics for this cluster in the host application or KubeAtlas deployment.')}`}
             action={
               <div className="flex flex-wrap items-center justify-center gap-3">
                 {settingsAvailable && (
@@ -274,7 +278,7 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
                     }
                     className="btn-brand px-4 py-2 text-sm font-medium"
                   >
-                    Configure metrics
+                    {t('配置指标', 'Configure metrics')}
                   </button>
                 )}
                 <button
@@ -282,46 +286,46 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
                   onClick={() => retryPrometheus()}
                   className="rounded-lg border border-theme-border px-4 py-2 text-sm font-medium text-theme-text-secondary transition-colors hover:bg-theme-hover hover:text-theme-text-primary"
                 >
-                  Check again
+                  {t('重新检测', 'Check again')}
                 </button>
               </div>
             }
           />
         ) : surfaceState === 'loading_scan' ? (
-          <CenteredState loading title="Loading scan…" body="Checking for an existing scan in this cluster and namespace scope." />
+          <CenteredState loading title={t('正在加载扫描结果…', 'Loading scan…')} body={t('正在查找当前集群及命名空间范围的历史扫描。', 'Checking for an existing scan in this cluster and namespace scope.')} />
         ) : surfaceState === 'first_run' ? (
           <FirstRunState namespaces={namespaces} onRun={runScan} />
         ) : surfaceState === 'scanning' ? (
           <CenteredState
             loading
-            title="Analyzing CPU and memory requests…"
-            body="Comparing 7 days of CPU and memory usage with configured requests. Results appear as batches finish; scans run for up to three minutes."
+            title={t('正在分析 CPU 和内存请求…', 'Analyzing CPU and memory requests…')}
+            body={t('正在比较最近 7 天的 CPU 和内存用量与已配置的请求。结果分批显示，扫描最长需要 3 分钟。', 'Comparing 7 days of CPU and memory usage with configured requests. Results appear as batches finish; scans run for up to three minutes.')}
           />
         ) : surfaceState === 'fatal_error' ? (
           <CenteredState
-            title={scan.statusError ? "Could not retrieve scan status" : "Rightsizing scan failed"}
-            body={errorMessage(scan.error)}
+            title={scan.statusError ? t('无法读取扫描状态', 'Could not retrieve scan status') : t('资源优化扫描失败', 'Rightsizing scan failed')}
+            body={errorMessage(scan.error, t)}
             action={
               <button
                 type="button"
                 onClick={scan.statusError ? () => void scan.retryStatus() : runScan}
                 className="btn-brand px-3 py-1.5 text-xs font-medium"
               >
-                {scan.statusError ? 'Retry status' : 'Try again'}
+                {scan.statusError ? t('重试状态检查', 'Retry status') : t('重试', 'Try again')}
               </button>
             }
           />
         ) : surfaceState === 'unavailable' && result ? (
           <CenteredState
-            title="Rightsizing is unavailable"
-            body={unavailableMessage(result.reason)}
+            title={t('资源优化暂不可用', 'Rightsizing is unavailable')}
+            body={unavailableMessage(result.reason, t)}
             action={
               <button
                 type="button"
                 onClick={runScan}
                 className="btn-brand px-3 py-1.5 text-xs font-medium"
               >
-                Try again
+                {t('重试', 'Try again')}
               </button>
             }
           />
@@ -331,12 +335,12 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
           >
             {scan.error && (
               <div className="flex items-center gap-3">
-                <Notice tone="warning" text={`${scan.statusError ? 'Could not retrieve scan status. The scan may still be running.' : 'Could not start or stop the scan.'} ${errorMessage(scan.error)}`} />
-                <button type="button" className="btn-brand-muted shrink-0 px-3 py-1.5 text-xs" onClick={() => void scan.retryStatus()}>Retry status</button>
+                <Notice tone="warning" text={`${scan.statusError ? t('无法读取扫描状态，扫描可能仍在进行。', 'Could not retrieve scan status. The scan may still be running.') : t('无法启动或停止扫描。', 'Could not start or stop the scan.')} ${errorMessage(scan.error, t)}`} />
+                <button type="button" className="btn-brand-muted shrink-0 px-3 py-1.5 text-xs" onClick={() => void scan.retryStatus()}>{t('重试状态检查', 'Retry status')}</button>
               </div>
             )}
             {scan.isPending && (
-              <Notice loading text={`${scan.progress?.coverage.workloadsDiscovered ? `Scanning — ${scan.progress.coverage.workloadsEvaluated} of ${scan.progress.coverage.workloadsDiscovered} workloads attempted.` : 'Preparing scan…'} Results and rankings update as batches finish. You can leave this page and return.${scan.showingPrevious ? ' Showing previous results until the first batch is ready.' : ''}`} />
+              <Notice loading text={`${scan.progress?.coverage.workloadsDiscovered ? t(`正在扫描，已尝试评估 ${scan.progress.coverage.workloadsEvaluated}/${scan.progress.coverage.workloadsDiscovered} 个工作负载。`, `Scanning — ${scan.progress.coverage.workloadsEvaluated} of ${scan.progress.coverage.workloadsDiscovered} workloads attempted.`) : t('正在准备扫描…', 'Preparing scan…')} ${t('结果和排名随批次更新。你可以离开此页，稍后返回。', 'Results and rankings update as batches finish. You can leave this page and return.')}${scan.showingPrevious ? t(' 首批结果就绪前显示上一次的结果。', ' Showing previous results until the first batch is ready.') : ''}`} />
             )}
             <ScanSummary
               namespaces={namespaces}
@@ -347,18 +351,18 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
             />
             {!scan.isPending && <ScanNotices key={result.scannedAt} result={result} />}
             {scan.isPending && rows.length === 0 ? (
-              <CenteredState loading title="Preparing recommendations…" body="The scan is running. Recommendations appear after each batch finishes." />
+              <CenteredState loading title={t('正在生成建议…', 'Preparing recommendations…')} body={t('扫描正在进行，建议将在每个批次完成后显示。', 'The scan is running. Recommendations appear after each batch finishes.')} />
             ) : result.reason === 'only_daemonsets_without_nodes' ? (
               <EmptyState
                 variant="card"
-                headline="Only DaemonSets with no nodes in this scope"
-                body="Every workload here is a DaemonSet that runs on no node right now, so none was scanned. Open one from Resources to see recommendations from its retained history."
+                headline={t('当前范围内只有未调度到节点的 DaemonSet', 'Only DaemonSets with no nodes in this scope')}
+                body={t('当前没有可扫描的工作负载。可从资源页面打开 DaemonSet，查看基于其历史数据的建议。', 'Every workload here is a DaemonSet that runs on no node right now, so none was scanned. Open one from Resources to see recommendations from its retained history.')}
               />
             ) : result.coverage.workloadsDiscovered === 0 || rows.length === 0 ? (
               <EmptyState
                 variant="card"
-                headline="No supported workloads in this scope"
-                body="No Deployment, StatefulSet, or DaemonSet containers are visible in the selected namespaces."
+                headline={t('当前范围内没有支持的工作负载', 'No supported workloads in this scope')}
+                body={t('在所选命名空间内，没有可见的 Deployment、StatefulSet 或 DaemonSet 容器。', 'No Deployment, StatefulSet, or DaemonSet containers are visible in the selected namespaces.')}
               />
             ) : (
               <section className="overflow-visible rounded-xl border border-theme-border bg-theme-surface shadow-theme-sm">
@@ -380,7 +384,7 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
                   active={activeFilters}
                 />
                 {filteredRows.length === 0 && scan.isPending ? (
-                  <EmptyState variant="card" headline="No matching results yet" body="The scan is still running. More workloads may match these filters as batches finish." />
+                  <EmptyState variant="card" headline={t('暂时没有匹配结果', 'No matching results yet')} body={t('扫描仍在进行，后续批次可能包含符合条件的工作负载。', 'The scan is still running. More workloads may match these filters as batches finish.')} />
                 ) : filteredRows.length === 0 ? (
                   <ScanEmptyState
                     counts={counts}
@@ -397,10 +401,10 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
                 ) : (
                   <div>
                     <div className="grid grid-cols-[minmax(230px,1.15fr)_minmax(190px,1fr)_minmax(200px,1fr)_minmax(220px,.9fr)_28px] gap-3 border-b border-theme-border px-4 py-2 text-[11px] font-medium uppercase tracking-wide text-theme-text-tertiary">
-                      <span>Workload / container</span>
-                      <span>CPU request</span>
-                      <span>Memory request</span>
-                      <span>Total request change</span>
+                      <span>{t('工作负载 / 容器', 'Workload / container')}</span>
+                      <span>{t('CPU 请求', 'CPU request')}</span>
+                      <span>{t('内存请求', 'Memory request')}</span>
+                      <span>{t('请求总量变化', 'Total request change')}</span>
                       <span />
                     </div>
                     <div className="table-divide-subtle">
@@ -420,8 +424,7 @@ export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
                             onClick={() => setVisibleLimit((value) => value + ROW_PAGE_SIZE)}
                             className="text-xs font-medium text-accent-text hover:underline"
                           >
-                            Show {Math.min(ROW_PAGE_SIZE, filteredRows.length - visibleRows.length)}{' '}
-                            more
+                            {t(`再显示 ${Math.min(ROW_PAGE_SIZE, filteredRows.length - visibleRows.length)} 条`, `Show ${Math.min(ROW_PAGE_SIZE, filteredRows.length - visibleRows.length)} more`)}
                           </button>
                         </div>
                       )}
@@ -456,15 +459,15 @@ export function ScanEmptyState({
   onClear: () => void
   onIncludeSystem: () => void
 }) {
-  let headline = 'No results match the current filters'
-  let body = 'Choose another result type or clear a filter.'
-  let actionLabel = 'Clear filters'
+  const { t } = useLocale('en')
+  let headline = t('当前筛选条件下没有匹配结果', 'No results match the current filters')
+  let body = t('请选择其他结果类型或清除筛选条件。', 'Choose another result type or clear a filter.')
+  let actionLabel = t('清除筛选条件', 'Clear filters')
   let onAction = onClear
   if (onlySystemRowsAreHidden) {
-    headline = 'System workloads are hidden'
-    body =
-      'This scope contains only Kubernetes system workloads. Include them to review platform requests.'
-    actionLabel = 'Include system workloads'
+    headline = t('系统工作负载已隐藏', 'System workloads are hidden')
+    body = t('此范围只包含 Kubernetes 系统工作负载。显示这些工作负载即可查看平台请求。', 'This scope contains only Kubernetes system workloads. Include them to review platform requests.')
+    actionLabel = t('显示系统工作负载', 'Include system workloads')
     onAction = onIncludeSystem
   } else if (
     classFilter === 'actions' &&
@@ -474,20 +477,20 @@ export function ScanEmptyState({
     if (counts.need_data > 0) {
       headline =
         counts.in_range > 0
-          ? 'No actionable changes in available evidence'
-          : 'Not enough evidence for recommendations'
+          ? t('现有数据中未发现需要调整的请求', 'No actionable changes in available evidence')
+          : t('数据不足，暂无法给出建议', 'Not enough evidence for recommendations')
       body =
         counts.in_range > 0
-          ? `${pluralize(counts.in_range, 'container')} had no meaningful request changes; ${pluralize(counts.need_data, 'container')} still ${counts.need_data === 1 ? 'needs' : 'need'} evidence. This is not a complete assessment.`
+          ? t(`${counts.in_range} 个容器无需明显调整请求，还有 ${counts.need_data} 个容器缺少评估所需数据。评估尚未覆盖全部容器。`, `${pluralize(counts.in_range, 'container')} had no meaningful request changes; ${pluralize(counts.need_data, 'container')} still ${counts.need_data === 1 ? 'needs' : 'need'} evidence. This is not a complete assessment.`)
           : hasQueryErrors
-            ? 'Some metrics queries failed. Inspect affected containers, then retry the scan or select fewer namespaces in the top bar.'
-            : 'There is not enough usable CPU and memory history to recommend changes yet. Inspect the containers to see which resource needs more history.'
-      actionLabel = 'View containers needing evidence'
+            ? t('部分指标查询失败。检查受影响的容器后重试，或在顶栏缩小命名空间范围。', 'Some metrics queries failed. Inspect affected containers, then retry the scan or select fewer namespaces in the top bar.')
+            : t('可用的 CPU 和内存历史数据不足。查看容器以确认哪些资源需要更多数据。', 'There is not enough usable CPU and memory history to recommend changes yet. Inspect the containers to see which resource needs more history.')
+      actionLabel = t('查看数据不足的容器', 'View containers needing evidence')
       onAction = () => onSelect('need_data')
     } else {
-      headline = 'No actionable changes'
-      body = `No meaningful request changes were found among the ${pluralize(counts.in_range, 'evaluated container')}. This does not assess workloads outside the scan coverage.`
-      actionLabel = 'View evaluated containers'
+      headline = t('未发现需要调整的请求', 'No actionable changes')
+      body = t(`在已评估的 ${counts.in_range} 个容器中未发现需要明显调整的请求。结论适用于本次扫描范围。`, `No meaningful request changes were found among the ${pluralize(counts.in_range, 'evaluated container')}. This does not assess workloads outside the scan coverage.`)
+      actionLabel = t('查看已评估的容器', 'View evaluated containers')
       onAction = () => onSelect('in_range')
     }
   }
@@ -509,29 +512,29 @@ export function ScanEmptyState({
 }
 
 function FirstRunState({ namespaces, onRun }: { namespaces: string[]; onRun: () => void }) {
+  const { t } = useLocale('en')
   const scope =
     namespaces.length === 0
-      ? 'all visible namespaces'
+      ? t('所有可见命名空间', 'all visible namespaces')
       : namespaces.length === 1
         ? namespaces[0]
-        : `${namespaces.length} selected namespaces`
+        : t(`所选的 ${namespaces.length} 个命名空间`, `${namespaces.length} selected namespaces`)
   return (
     <div className="rounded-xl border border-theme-border bg-theme-surface p-8 text-center shadow-theme-sm">
       <Gauge className="mx-auto h-9 w-9 text-theme-text-tertiary" />
       <h2 className="mt-3 text-base font-semibold text-theme-text-primary">
-        Review CPU and memory requests
+        {t('审查 CPU 和内存请求', 'Review CPU and memory requests')}
       </h2>
       <p className="mx-auto mt-1 max-w-xl text-sm text-theme-text-secondary">
-        Scan {scope} to find CPU and memory requests to increase, reduce, or review alongside
-        autoscaling.
+        {t(`扫描${scope}，找出建议提高、降低或需结合自动扩缩容复核的 CPU 和内存请求。`, `Scan ${scope} to find CPU and memory requests to increase, reduce, or review alongside autoscaling.`)}
       </p>
-      <p className="mt-3 text-xs text-theme-text-tertiary">{RIGHTSIZING_SCAN_METHODOLOGY}</p>
+      <p className="mt-3 text-xs text-theme-text-tertiary">{t('依据最近 7 天的 CPU P95 和内存峰值，预留 15% 余量。降低内存请求前需核实重启记录。', RIGHTSIZING_SCAN_METHODOLOGY)}</p>
       <button
         type="button"
         onClick={onRun}
         className="btn-brand mt-5 px-4 py-2 text-sm font-medium"
       >
-        Scan visible workloads
+        {t('扫描可见工作负载', 'Scan visible workloads')}
       </button>
     </div>
   )
@@ -1088,25 +1091,25 @@ function signalLabel(signal: ResourceSignal): string {
   }[signal]
 }
 
-function errorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : 'An unexpected error occurred.'
+function errorMessage(error: unknown, t: Translate): string {
+  return error instanceof Error ? error.message : t('发生意外错误。', 'An unexpected error occurred.')
 }
 
-function unavailableMessage(reason?: string): string {
+function unavailableMessage(reason: string | undefined, t: Translate): string {
   if (reason === 'workload_kinds_unavailable')
-    return 'No supported workload kinds are available with your current Kubernetes access.'
+    return t('当前 Kubernetes 权限范围内没有支持的工作负载类型。', 'No supported workload kinds are available with your current Kubernetes access.')
   if (reason === 'owner_metrics_missing')
-    return 'kube-state-metrics ownership metrics were not found. Rightsizing needs kube_pod_owner to map samples to workloads.'
+    return t('未检测到 kube-state-metrics 的归属指标。资源优化需要 kube_pod_owner 将采样数据关联到工作负载。', 'kube-state-metrics ownership metrics were not found. Rightsizing needs kube_pod_owner to map samples to workloads.')
   if (reason === 'deployment_owner_metrics_missing')
-    return 'Deployment history cannot be mapped because kube_replicaset_owner is unavailable from kube-state-metrics.'
+    return t('kube-state-metrics 未提供 kube_replicaset_owner，无法关联 Deployment 的历史数据。', 'Deployment history cannot be mapped because kube_replicaset_owner is unavailable from kube-state-metrics.')
   if (reason === 'owner_metrics_query_failed')
-    return 'KubeAtlas found Prometheus, but could not query kube-state-metrics ownership data.'
-  if (reason === 'scan_capacity_exceeded') return 'This scope is too large for one scan. Select fewer namespaces in the top bar and run again.'
-  if (reason === 'scan_cancelled') return 'The scan was stopped before any workloads were evaluated. Run again to start a new scan.'
-  if (reason === 'scan_deadline_exceeded') return 'The scan reached its three-minute time limit. Select fewer namespaces in the top bar and run again.'
+    return t('已找到 Prometheus，但无法查询 kube-state-metrics 的归属数据。', 'KubeAtlas found Prometheus, but could not query kube-state-metrics ownership data.')
+  if (reason === 'scan_capacity_exceeded') return t('当前范围过大，请在顶栏减少命名空间后重新扫描。', 'This scope is too large for one scan. Select fewer namespaces in the top bar and run again.')
+  if (reason === 'scan_cancelled') return t('扫描已停止，尚未评估任何工作负载。可以重新扫描。', 'The scan was stopped before any workloads were evaluated. Run again to start a new scan.')
+  if (reason === 'scan_deadline_exceeded') return t('扫描已达到 3 分钟的时限，请在顶栏减少命名空间后重新扫描。', 'The scan reached its three-minute time limit. Select fewer namespaces in the top bar and run again.')
   if (reason === 'scan_incomplete')
-    return 'The scan could not evaluate any workloads in the current scope.'
-  return 'Prometheus or kube-state-metrics does not expose the metrics required for this scan.'
+    return t('无法评估当前范围内的工作负载。', 'The scan could not evaluate any workloads in the current scope.')
+  return t('Prometheus 或 kube-state-metrics 未提供扫描所需的指标。', 'Prometheus or kube-state-metrics does not expose the metrics required for this scan.')
 }
 
 function warningMessage(code: string): string {
@@ -1121,9 +1124,9 @@ function warningMessage(code: string): string {
   return 'Some rightsizing data was unavailable.'
 }
 
-function formatScanTime(value: string): string {
+function formatScanTime(value: string, locale?: string): string {
   const timestamp = new Date(value)
   return Number.isNaN(timestamp.getTime())
     ? value
-    : timestamp.toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })
+    : timestamp.toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' })
 }

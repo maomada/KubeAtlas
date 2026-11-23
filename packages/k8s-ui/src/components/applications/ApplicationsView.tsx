@@ -15,6 +15,7 @@ import { Facet, type FacetTone } from '../ui/Facet'
 import { SortableTh, TH_CLASS } from '../ui/SortableTh'
 import { DistributionBar } from '../ui/DistributionBar'
 import { useRegisterShortcuts } from '../../hooks/useKeyboardShortcuts'
+import { useLocale, type Translate } from '../../hooks/useLocale'
 import { pluralize } from '../../utils/pluralize'
 import {
   type AppEntry,
@@ -47,7 +48,23 @@ import { ReadyBar } from './ReadyBar'
 import { ProvenanceBadge, ClassBadge, CategoryChip, VersionInfo, BatchSignalChip } from './AppChips'
 import { AppIdentityTooltip, EnvHint, RolloutSummaryTooltip } from './AppTooltips'
 
+const ENGLISH_HEALTH: Record<AppHealth, string> = {
+  unhealthy: 'Unhealthy', degraded: 'Degraded', healthy: 'Healthy', neutral: 'Idle', unknown: 'Unknown',
+}
+const ENGLISH_CLASS: Record<AppWorkloadClass, string> = {
+  service: 'Service', worker: 'Worker', job: 'Job', mixed: 'Mixed', unknown: 'Unknown',
+}
+const ENGLISH_CATEGORY: Record<AppCategory, { label: string; tooltip: string }> = {
+  app: { label: 'Application', tooltip: 'Software you deploy and run, such as services, workers, and jobs.' },
+  addon: { label: 'Add-on', tooltip: 'Supporting software that provides shared cluster capabilities.' },
+  mixed: { label: 'Mixed', tooltip: 'A group containing both applications and add-ons.' },
+}
+const ENGLISH_SOURCE: Record<AppSource, string> = {
+  argocd: 'Argo CD', flux: 'Flux', helm: 'Helm', label: 'Label', ungrouped: 'Ungrouped',
+}
+
 function ApplicationRuntimeCell({ apps, workloadClass, ready, desired }: { apps: AppRow[]; workloadClass: AppWorkloadClass; ready: number; desired: number }) {
+  const { t } = useLocale()
   if (workloadClass !== 'job') {
     const rollout = rolloutSummaryForApps(apps)
     if (!rollout) return <ReadyBar ready={ready} desired={desired} />
@@ -63,11 +80,11 @@ function ApplicationRuntimeCell({ apps, workloadClass, ready, desired }: { apps:
       </span>
     )
   }
-  const runtimes = apps.map(batchRuntimeForApp)
+  const runtimes = apps.map(app => batchRuntimeForApp(app, t))
   const worst = runtimes.reduce((current, runtime) => (HEALTH_RANK[runtime.health] ?? 0) > (HEALTH_RANK[current.health] ?? 0) ? runtime : current, runtimes[0])
-  if (!worst) return <span className="text-xs text-theme-text-tertiary">未运行</span>
+  if (!worst) return <span className="text-xs text-theme-text-tertiary">{t('未运行', 'Idle')}</span>
   const same = runtimes.every((runtime) => runtime.label === worst.label)
-  const label = same ? worst.label : `${runtimes.length} 个状态`
+  const label = same ? worst.label : t(`${runtimes.length} 个状态`, `${runtimes.length} states`)
   return (
     <Tooltip content={runtimes.map((runtime, index) => `${apps[index]?.name ?? 'app'}: ${runtime.label} — ${runtime.detail}`).join('\n')} delay={150}>
       <span className="inline-flex items-center gap-1.5 text-xs text-theme-text-secondary"><StatusDot tone={mapHealthToTone(worst.health)} />{label}</span>
@@ -75,10 +92,10 @@ function ApplicationRuntimeCell({ apps, workloadClass, ready, desired }: { apps:
   )
 }
 
-function applicationRuntimeLabel(apps: AppRow[], workloadClass: AppWorkloadClass, health: AppHealth): string {
-  if (workloadClass !== 'job') return rolloutSummaryForApps(apps)?.detail || HEALTH_META[health].label
-  const labels = Array.from(new Set(apps.map((app) => batchRuntimeForApp(app).label)))
-  return labels.length === 1 ? labels[0] : '多个批处理状态'
+function applicationRuntimeLabel(apps: AppRow[], workloadClass: AppWorkloadClass, health: AppHealth, t: Translate): string {
+  if (workloadClass !== 'job') return rolloutSummaryForApps(apps)?.detail || t(HEALTH_META[health].label, ENGLISH_HEALTH[health])
+  const labels = Array.from(new Set(apps.map(app => batchRuntimeForApp(app, t).label)))
+  return labels.length === 1 ? labels[0] : t('多个批处理状态', 'Multiple batch states')
 }
 
 // ApplicationsView — the shared, variant-agnostic core behind the Applications
@@ -159,7 +176,8 @@ const APPS_FILTER_SCHEMA = defineFilterSchema({
   system: { param: 'system', type: 'boolean' },
 })
 
-export function ApplicationsView({ entries: allEntries, variant, onSelect, title = '应用', description, emptySlot, headerActions, loading }: ApplicationsViewProps) {
+export function ApplicationsView({ entries: allEntries, variant, onSelect, title, description, emptySlot, headerActions, loading }: ApplicationsViewProps) {
+  const { t } = useLocale()
   // Facets + search + show-system live in the URL (shareable, bookmarkable) via
   // the shared filter-state contract. Sort stays local: it's a compound
   // {key, dir} view-preference, not a result-narrowing filter, so it isn't
@@ -267,14 +285,14 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
   const moveHighlight = (delta: number) =>
     setHighlightedIndex((i) => Math.min(Math.max(i + delta, 0), rowsRef.current.length - 1))
   useRegisterShortcuts([
-    { id: 'applications-nav-down', keys: 'j', description: '下一行', category: 'Table', scope: 'applications', handler: () => moveHighlight(1) },
-    { id: 'applications-nav-down-arrow', keys: 'ArrowDown', description: '下一行', category: 'Table', scope: 'applications', handler: () => moveHighlight(1) },
-    { id: 'applications-nav-up', keys: 'k', description: '上一行', category: 'Table', scope: 'applications', handler: () => moveHighlight(-1) },
-    { id: 'applications-nav-up-arrow', keys: 'ArrowUp', description: '上一行', category: 'Table', scope: 'applications', handler: () => moveHighlight(-1) },
-    { id: 'applications-nav-top', keys: 'g g', description: '跳到首行', category: 'Table', scope: 'applications', handler: () => setHighlightedIndex(rowsRef.current.length > 0 ? 0 : -1) },
-    { id: 'applications-nav-bottom', keys: 'G', description: '跳到末行', category: 'Table', scope: 'applications', handler: () => setHighlightedIndex(rowsRef.current.length - 1) },
+    { id: 'applications-nav-down', keys: 'j', description: t('下一行', 'Next row'), category: 'Table', scope: 'applications', handler: () => moveHighlight(1) },
+    { id: 'applications-nav-down-arrow', keys: 'ArrowDown', description: t('下一行', 'Next row'), category: 'Table', scope: 'applications', handler: () => moveHighlight(1) },
+    { id: 'applications-nav-up', keys: 'k', description: t('上一行', 'Previous row'), category: 'Table', scope: 'applications', handler: () => moveHighlight(-1) },
+    { id: 'applications-nav-up-arrow', keys: 'ArrowUp', description: t('上一行', 'Previous row'), category: 'Table', scope: 'applications', handler: () => moveHighlight(-1) },
+    { id: 'applications-nav-top', keys: 'g g', description: t('跳到首行', 'First row'), category: 'Table', scope: 'applications', handler: () => setHighlightedIndex(rowsRef.current.length > 0 ? 0 : -1) },
+    { id: 'applications-nav-bottom', keys: 'G', description: t('跳到末行', 'Last row'), category: 'Table', scope: 'applications', handler: () => setHighlightedIndex(rowsRef.current.length - 1) },
     {
-      id: 'applications-open', keys: 'Enter', description: '打开应用', category: 'Table', scope: 'applications',
+      id: 'applications-open', keys: 'Enter', description: t('打开应用', 'Open application'), category: 'Table', scope: 'applications',
       handler: () => {
         const r = rowsRef.current[highlightedIndex]
         if (!r) return
@@ -285,7 +303,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
       enabled: highlightedIndex >= 0,
     },
     {
-      id: 'applications-escape', keys: 'Escape', description: '清除行高亮', category: 'Table', scope: 'applications',
+      id: 'applications-escape', keys: 'Escape', description: t('清除行高亮', 'Clear row highlight'), category: 'Table', scope: 'applications',
       handler: () => setHighlightedIndex(-1),
       enabled: highlightedIndex >= 0,
     },
@@ -319,7 +337,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
   const total = all.length
   const envOptions = Object.entries(counts.env)
     .sort((a, b) => (envRank(b[0] === 'none' ? undefined : b[0]) ?? -1) - (envRank(a[0] === 'none' ? undefined : a[0]) ?? -1))
-    .map(([env, count]) => ({ value: env, label: env === 'none' ? '未标注' : env, count }))
+    .map(([env, count]) => ({ value: env, label: env === 'none' ? t('未标注', 'Unlabeled') : env, count }))
 
   // First fetch, nothing to show yet: drive the shape-stable skeleton. The
   // loaded state hides zero-count health tiles, so without this the header
@@ -329,9 +347,9 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
   // Clickable status tile wired to the health facet — tap to filter to that tier.
   const healthTile = (h: AppHealth, tone: SummaryTone) =>
     initialLoading && (h === 'healthy' || h === 'degraded' || h === 'unhealthy') ? (
-      <SummaryTile key={h} label={HEALTH_META[h].label} value={0} tone={tone} loading />
+      <SummaryTile key={h} label={t(HEALTH_META[h].label, ENGLISH_HEALTH[h])} value={0} tone={tone} loading />
     ) : counts.health[h] ? (
-      <SummaryTile key={h} label={HEALTH_META[h].label} value={counts.health[h]} tone={tone} active={fHealth.has(h)} onClick={() => filters.toggle('health', h)} />
+      <SummaryTile key={h} label={t(HEALTH_META[h].label, ENGLISH_HEALTH[h])} value={counts.health[h]} tone={tone} active={fHealth.has(h)} onClick={() => filters.toggle('health', h)} />
     ) : null
 
   // showSystem lives in the Filters rail, so Clear resets it too (and its
@@ -350,12 +368,12 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
       <div className="shrink-0 border-b border-theme-border px-4 py-4">
         <PageHeader
           icon={Boxes}
-          title={title}
+          title={title ?? t('应用', 'Applications')}
           description={description}
           actions={
             <>
               {headerActions}
-              <SummaryTile label="应用" value={total} loading={initialLoading} />
+              <SummaryTile label={t('应用', 'Applications')} value={total} loading={initialLoading} />
               {healthTile('unhealthy', 'error')}
               {healthTile('degraded', 'warning')}
               {healthTile('healthy', 'success')}
@@ -369,7 +387,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
         ) : (
           <DistributionBar
             className="mt-3"
-            ariaLabel="健康状态分布"
+            ariaLabel={t('健康状态分布', 'Health distribution')}
             segments={HEALTH_ORDER.map((h) => ({ key: h, count: counts.health[h] ?? 0, fillClass: HEALTH_META[h].bar }))}
           />
         )}
@@ -382,33 +400,33 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
             the consuming app's Tailwind breakpoint config (Hub uses defaults). */}
         <aside className="flex w-52 shrink-0 flex-col overflow-hidden border-r border-theme-border bg-theme-surface/90 max-[899px]:max-h-72 max-[899px]:w-full max-[899px]:border-b max-[899px]:border-r-0">
           <div className="flex items-center justify-between border-b border-theme-border px-3 py-2">
-            <span className="text-sm font-medium text-theme-text-secondary">筛选</span>
+            <span className="text-sm font-medium text-theme-text-secondary">{t('筛选', 'Filters')}</span>
             {anyFilterActive && (
-              <button type="button" onClick={clearAllFilters} className="text-[10px] font-medium text-blue-500 hover:text-blue-400">清除</button>
+              <button type="button" onClick={clearAllFilters} className="text-[10px] font-medium text-blue-500 hover:text-blue-400">{t('清除', 'Clear')}</button>
             )}
           </div>
           <div className="flex-1 overflow-y-auto">
             {initialLoading ? (
               <BoardRailSkeleton
                 sections={[
-                  ['状态', 5],
-                  ['类别', 3],
-                  ['类型', 4],
-                  ['环境', 3],
-                  ['来源', 3],
+                  [t('状态', 'Status'), 5],
+                  [t('类别', 'Class'), 3],
+                  [t('类型', 'Type'), 4],
+                  [t('环境', 'Environment'), 3],
+                  [t('来源', 'Source'), 3],
                 ]}
               />
             ) : (
               <>
-            <Facet icon={HeartPulse} title="状态" options={HEALTH_ORDER.map((h) => ({ value: h, label: HEALTH_META[h].label, count: counts.health[h] ?? 0, tone: HEALTH_TONE[h] }))} selected={fHealth} onToggle={(v) => filters.toggle('health', v)} />
-            <Facet icon={Layers} title="类别" options={CLASS_ORDER.map((c) => ({ value: c, label: CLASS_META[c].label, count: counts.workloadClass[c] ?? 0 }))} selected={fClass} onToggle={(v) => filters.toggle('class', v)} />
-            <Facet icon={Shapes} title="类型" options={CATEGORY_ORDER.map((c) => ({ value: c, label: CATEGORY_META[c].label, count: counts.category[c] ?? 0, tooltip: CATEGORY_META[c].tooltip }))} selected={fType} onToggle={(v) => filters.toggle('type', v)} />
-            <Facet icon={Globe} title="环境" info={<EnvHint />} options={envOptions} selected={fEnv} onToggle={(v) => filters.toggle('env', v)} />
-            <Facet icon={Tag} title="来源" options={SOURCE_ORDER.map((s) => ({ value: s, label: SOURCE_META[s].label, count: counts.source[s] ?? 0 }))} selected={fSource} onToggle={(v) => filters.toggle('source', v)} />
+            <Facet icon={HeartPulse} title={t('状态', 'Status')} options={HEALTH_ORDER.map((h) => ({ value: h, label: t(HEALTH_META[h].label, ENGLISH_HEALTH[h]), count: counts.health[h] ?? 0, tone: HEALTH_TONE[h] }))} selected={fHealth} onToggle={(v) => filters.toggle('health', v)} />
+            <Facet icon={Layers} title={t('类别', 'Class')} options={CLASS_ORDER.map((c) => ({ value: c, label: t(CLASS_META[c].label, ENGLISH_CLASS[c]), count: counts.workloadClass[c] ?? 0 }))} selected={fClass} onToggle={(v) => filters.toggle('class', v)} />
+            <Facet icon={Shapes} title={t('类型', 'Type')} options={CATEGORY_ORDER.map((c) => ({ value: c, label: t(CATEGORY_META[c].label, ENGLISH_CATEGORY[c].label), count: counts.category[c] ?? 0, tooltip: t(CATEGORY_META[c].tooltip, ENGLISH_CATEGORY[c].tooltip) }))} selected={fType} onToggle={(v) => filters.toggle('type', v)} />
+            <Facet icon={Globe} title={t('环境', 'Environment')} info={<EnvHint />} options={envOptions} selected={fEnv} onToggle={(v) => filters.toggle('env', v)} />
+            <Facet icon={Tag} title={t('来源', 'Source')} options={SOURCE_ORDER.map((s) => ({ value: s, label: t(SOURCE_META[s].label, ENGLISH_SOURCE[s]), count: counts.source[s] ?? 0 }))} selected={fSource} onToggle={(v) => filters.toggle('source', v)} />
             {systemCount > 0 && (
               <label className="flex cursor-pointer items-center gap-2 border-b border-theme-border px-3 py-2 text-[11px] text-theme-text-secondary hover:bg-theme-hover">
                 <input type="checkbox" checked={showSystem} onChange={(e) => filters.setBoolean('system', e.target.checked)} className="accent-kubeatlas-500" />
-                <span>显示系统命名空间</span>
+                <span>{t('显示系统命名空间', 'Show system namespaces')}</span>
                 <span className="ml-auto tabular-nums text-theme-text-tertiary">{systemCount}</span>
               </label>
             )}
@@ -425,6 +443,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
               onChange={(v) => filters.setString('q', v)}
               scope="applications"
               shortcutId="applications-search"
+              placeholder={t('搜索…（按 /）', 'Search… (press /)')}
               className="max-w-md flex-1"
               onEnter={() => {
                 const key = highlightedIndex >= 0 && rowsRef.current[highlightedIndex]?.kind === 'instance'
@@ -451,8 +470,8 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                 <EmptyState
                   tone="filtered"
                   variant="card"
-                  headline={total === 0 ? '尚未发现应用' : '没有符合筛选条件的应用'}
-                  body={total === 0 ? '在此集群中部署服务、工作进程或任务后，即可按应用分组查看。' : '清除上方筛选条件以查看结果。'}
+                  headline={total === 0 ? t('尚未发现应用', 'No applications found') : t('没有符合筛选条件的应用', 'No applications match these filters')}
+                  body={total === 0 ? t('在此集群中部署服务、工作进程或任务后，即可按应用分组查看。', 'Deploy services, workers, or jobs to see them grouped by application here.') : t('清除上方筛选条件以查看结果。', 'Clear filters to see the results.')}
                 />
               </div>
             )
@@ -460,22 +479,22 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
               <table className="w-full text-left text-sm">
                 <thead className="sticky top-0 z-10 bg-theme-base">
                   <tr>
-                    <SortableTh label="应用" sortKey="name" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
+                    <SortableTh label={t('应用', 'Application')} sortKey="name" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
                     {variant === 'single' ? (
                       <>
-                        <th className={TH_CLASS}>命名空间</th>
-                        <th className={TH_CLASS}>环境</th>
+                        <th className={TH_CLASS}>{t('命名空间', 'Namespace')}</th>
+                        <th className={TH_CLASS}>{t('环境', 'Environment')}</th>
                       </>
                     ) : (
                       <>
-                        <th className={TH_CLASS}>集群</th>
-                        <th className={TH_CLASS}>环境</th>
+                        <th className={TH_CLASS}>{t('集群', 'Cluster')}</th>
+                        <th className={TH_CLASS}>{t('环境', 'Environment')}</th>
                       </>
                     )}
-                    <th className={TH_CLASS}>类别</th>
-                    <SortableTh label="运行状态" sortKey="ready" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
-                    <SortableTh label="版本" sortKey="version" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
-                    <th className={TH_CLASS}>工作负载</th>
+                    <th className={TH_CLASS}>{t('类别', 'Class')}</th>
+                    <SortableTh label={t('运行状态', 'Runtime status')} sortKey="ready" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
+                    <SortableTh label={t('版本', 'Version')} sortKey="version" activeKey={sort?.key ?? null} direction={sort?.dir ?? 'asc'} onSort={onSort} />
+                    <th className={TH_CLASS}>{t('工作负载', 'Workloads')}</th>
                     <th className={clsx(TH_CLASS, 'w-8')} />
                   </tr>
                 </thead>
@@ -495,24 +514,24 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                         <span className="flex items-center gap-2">
                           {/* Left status stripe (worst-child health) — the row status
                               gutter shared with the GitOps table. */}
-                          <Tooltip content={applicationRuntimeLabel(r.members.map((member) => member.row), r.workloadClass, r.health)} delay={150}>
+                          <Tooltip content={applicationRuntimeLabel(r.members.map((member) => member.row), r.workloadClass, r.health, t)} delay={150}>
                             <span className={clsx('h-8 w-1 shrink-0 rounded-full', HEALTH_META[r.health].bar)} />
                           </Tooltip>
                           <CollapseChevron open={r.expanded} className="h-3.5 w-3.5" />
                           <span className="truncate font-semibold text-theme-text-primary">{r.label}</span>
-                          {r.workloadClass !== 'job' && <BatchSignalChip signal={firstBatchSignal(r.members.map((m) => m.row))} />}
+                          {r.workloadClass !== 'job' && <BatchSignalChip signal={firstBatchSignal(r.members.map((m) => m.row), t)} />}
                           <Tooltip
                             content={<AppIdentityTooltip identityKey={r.label} source={r.members[0]?.row.identity?.source} portable={r.members[0]?.row.identity?.portable} fleet={variant === 'fleet'} members={r.members.map((m) => ({ name: m.row.name, env: m.row.identity!.env, confidence: m.row.identity!.confidence, evidence: m.row.identity!.evidence }))} />}
                             delay={150}
                           >
                             <span className={`${CHIP} ${r.confidence === 'high' ? CHIP_TONE.emerald : CHIP_TONE.neutral}`}>
-                              <Layers className="mr-1 h-3 w-3" aria-hidden />{r.cells.length} 个环境
+                              <Layers className="mr-1 h-3 w-3" aria-hidden />{t(`${r.cells.length} 个环境`, pluralize(r.cells.length, 'environment'))}
                             </span>
                           </Tooltip>
                         </span>
                       </td>
                       <td className="px-2 py-2.5">
-                        <span className="text-xs text-theme-text-tertiary">{r.members.length} 个实例</span>
+                        <span className="text-xs text-theme-text-tertiary">{t(`${r.members.length} 个实例`, pluralize(r.members.length, 'instance'))}</span>
                       </td>
                       <td className="px-2 py-2.5">
                         {/* The ladder: env-ordered cells; click drills into that env's instance. */}
@@ -520,7 +539,9 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                           {/* Ladder cells scale-capped: a handful inline, the
                               rest behind "+N" (expand shows every instance). */}
                           {r.cells.slice(0, 4).map((c) => (
-                            <Tooltip key={c.env} content={`${c.env}${c.version ? ` · ${c.version}` : ''}${c.count > 1 ? ` · ${c.count} 个实例，展开选择` : ' · 点击打开'}`} delay={150}>
+                            <Tooltip key={c.env} content={`${c.env}${c.version ? ` · ${c.version}` : ''}${c.count > 1
+                              ? t(` · ${c.count} 个实例，展开选择`, ` · ${c.count} instances, expand to choose`)
+                              : t(' · 点击打开', ' · Click to open')}`} delay={150}>
                               <button
                                 type="button"
                                 onClick={(ev) => {
@@ -535,7 +556,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                             </Tooltip>
                           ))}
                           {r.cells.length > 4 && (
-                            <Tooltip content={`${r.cells.length - 4} 个环境，展开查看全部实例`} delay={150}>
+                            <Tooltip content={t(`${r.cells.length - 4} 个环境，展开查看全部实例`, `${pluralize(r.cells.length - 4, 'environment')}. Expand to see all instances.`)} delay={150}>
                               <button
                                 type="button"
                                 onClick={(ev) => { ev.stopPropagation(); toggleGroup(r.key) }}
@@ -551,7 +572,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                       <td className="px-2 py-2.5"><ApplicationRuntimeCell apps={r.members.map((member) => member.row)} workloadClass={r.workloadClass} ready={r.ready} desired={r.desired} /></td>
                       <td className="px-2 py-2.5">
                         {r.lag ? (
-                          <Tooltip content={`晋级延迟：${r.lag}（${r.cells.filter((c) => c.version).map((c) => `${c.env}=${c.version}`).join(', ')}）`} delay={150}>
+                          <Tooltip content={`${t('晋级延迟：', 'Promotion lag: ')}${r.lag}${t('（', ' (')}${r.cells.filter((c) => c.version).map((c) => `${c.env}=${c.version}`).join(', ')}${t('）', ')')}`} delay={150}>
                             <span className={`${CHIP} ${CHIP_TONE.amber}`}>{r.lag}</span>
                           </Tooltip>
                         ) : (
@@ -575,11 +596,11 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                     >
                       <td className={clsx('py-2.5 pr-2', r.child ? 'pl-10' : 'pl-3')}>
                         <span className="flex items-center gap-2">
-                          <Tooltip content={applicationRuntimeLabel([e.row], e.workloadClass, e.health)} delay={150}>
+                          <Tooltip content={applicationRuntimeLabel([e.row], e.workloadClass, e.health, t)} delay={150}>
                             <span className={clsx('h-8 w-1 shrink-0 rounded-full', HEALTH_META[e.health].bar)} />
                           </Tooltip>
                           <span className="truncate font-medium text-theme-text-primary">{e.row.name}</span>
-                          {e.workloadClass !== 'job' && <BatchSignalChip signal={batchSignalForApp(e.row)} />}
+                          {e.workloadClass !== 'job' && <BatchSignalChip signal={batchSignalForApp(e.row, t)} />}
                           <ProvenanceBadge tier={e.row.tier} appKey={e.row.key} confidence={e.row.confidence} />
                           <CategoryChip category={e.category} addonReason={e.row.addonReason} />
                         </span>
@@ -600,7 +621,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                           <td className="px-2 py-2.5">
                             {e.env ? (
                               e.envInferred ? (
-                                <Tooltip content={`根据命名空间“${e.namespace || e.env}”推断，请通过环境标签确认。`} delay={150}>
+                                <Tooltip content={t(`根据命名空间“${e.namespace || e.env}”推断，请通过环境标签确认。`, `Inferred from namespace “${e.namespace || e.env}”. Confirm with an environment label.`)} delay={150}>
                                   <span className={`${CHIP} italic ${CHIP_TONE.muted}`}>~{e.env}</span>
                                 </Tooltip>
                               ) : (
@@ -620,7 +641,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                               <span className="truncate text-xs text-theme-text-secondary">{e.clusters[0].name}</span>
                             ) : e.clusters.length > 1 ? (
                               <Tooltip content={e.clusters.map((c) => c.name).join(', ')} delay={150}>
-                                <span className="text-xs text-theme-text-secondary">{e.clusters.length} 个集群</span>
+                                <span className="text-xs text-theme-text-secondary">{t(`${e.clusters.length} 个集群`, pluralize(e.clusters.length, 'cluster'))}</span>
                               </Tooltip>
                             ) : (
                               <span className="text-theme-text-tertiary">—</span>
@@ -631,11 +652,11 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                               <span className="flex flex-wrap items-center gap-1">
                                 {e.envs.map((s) =>
                                   s.inferred ? (
-                                    <Tooltip key={s.env || 'none'} content={`${s.env || '未标注'}——根据命名空间推断，请通过环境标签确认。`} delay={150}>
+                                    <Tooltip key={s.env || 'none'} content={`${s.env || t('未标注', 'Unlabeled')}${t('——根据命名空间推断，请通过环境标签确认。', ' · Inferred from namespace. Confirm with an environment label.')}`} delay={150}>
                                       <span className={`${CHIP} italic ${CHIP_TONE.muted} gap-1`}><StatusDot tone={mapHealthToTone(s.health)} />~{s.env}</span>
                                     </Tooltip>
                                   ) : (
-                                    <span key={s.env || 'none'} className={`${CHIP} ${CHIP_TONE.neutral} gap-1`}><StatusDot tone={mapHealthToTone(s.health)} />{s.env || '未标注'}</span>
+                                    <span key={s.env || 'none'} className={`${CHIP} ${CHIP_TONE.neutral} gap-1`}><StatusDot tone={mapHealthToTone(s.health)} />{s.env || t('未标注', 'Unlabeled')}</span>
                                   ),
                                 )}
                               </span>
@@ -650,14 +671,14 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                       <td className="px-2 py-2.5">
                         {e.variant === 'fleet' ? (
                           e.versionSkew ? (
-                            <Tooltip content={`集群间版本不一致：${e.versions.join('、')}`} delay={150}>
-                              <span className={`${CHIP} ${CHIP_TONE.amber}`}>版本不一致</span>
+                            <Tooltip content={t(`集群间版本不一致：${e.versions.join('、')}`, `Versions differ across clusters: ${e.versions.join(', ')}`)} delay={150}>
+                              <span className={`${CHIP} ${CHIP_TONE.amber}`}>{t('版本不一致', 'Version mismatch')}</span>
                             </Tooltip>
                           ) : e.versions.length === 1 ? (
                             <span className="font-mono text-xs text-theme-text-secondary">{e.versions[0]}</span>
                           ) : e.versions.length > 1 ? (
                             <Tooltip content={e.versions.join(', ')} delay={150}>
-                              <span className={`${CHIP} ${CHIP_TONE.neutral}`}>{e.versions.length} 个版本</span>
+                              <span className={`${CHIP} ${CHIP_TONE.neutral}`}>{t(`${e.versions.length} 个版本`, pluralize(e.versions.length, 'version'))}</span>
                             </Tooltip>
                           ) : (
                             <span className="text-theme-text-tertiary">—</span>
@@ -686,7 +707,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
   )
 }
 
-function firstBatchSignal(rows: AppRow[]) {
+function firstBatchSignal(rows: AppRow[], t: Translate) {
   let best = null as ReturnType<typeof batchSignalForApp>
   const rank = (tone: string | undefined) => {
     switch (tone) {
@@ -703,7 +724,7 @@ function firstBatchSignal(rows: AppRow[]) {
     }
   }
   for (const row of rows) {
-    const signal = batchSignalForApp(row)
+    const signal = batchSignalForApp(row, t)
     if (signal && rank(signal.tone) > rank(best?.tone)) best = signal
   }
   return best

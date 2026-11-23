@@ -28,6 +28,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .portal-auth-header > a { display: inline-flex; align-items: center; gap: 10px; color: var(--text-primary); font-weight: 650; }
 .portal-auth-header > a svg { color: var(--color-brand); }
 .portal-auth-header > a span { border-left: 1px solid var(--border-default); padding-left: 10px; color: var(--text-secondary); font-size: 13px; font-weight: 400; }
+@media (max-width: 440px) {
+  .portal-auth-actions .portal-control { padding-inline: 10px; }
+}
 .portal-auth-main { width: min(1120px, 100%); flex: 1; align-self: center; display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr); align-items: center; gap: 44px; padding: 48px 24px; }
 .portal-auth-main h1 { max-width: 680px; margin-top: 12px; font-size: clamp(28px, 4vw, 42px); font-weight: 650; line-height: 1.15; }
 .portal-auth-form-layout { max-width: 760px; grid-template-columns: minmax(0, 1fr); }
@@ -258,7 +261,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   .cloud-topbar-left { flex: 1; }
   .cloud-topbar-search { order: 3; flex: 0 0 100%; max-width: none; padding-bottom: 3px; }
   .cloud-topbar-actions { flex: 0 0 auto; gap: 3px; }
-  .cloud-topbar-actions > a:first-of-type, .cloud-topbar-actions > button[aria-label="Help"] { display: none; }
   .cloud-page { padding: 20px 14px; }
   .cloud-page-heading { gap: 12px; align-items: flex-start; }
   .cloud-shell h1 { font-size: 21px; }

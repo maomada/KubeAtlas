@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ApplicationsView } from './ApplicationsView'
+import { LocaleProvider } from '../../hooks/useLocale'
 import { SearchBox } from '../ui/SearchBox'
 import {
   buildSingleAppEntry,
@@ -333,6 +334,42 @@ describe('foldAppGroups over single entries', () => {
 })
 
 describe('ApplicationsView copy', () => {
+  it.each([
+    [undefined, '运行中 · 2'],
+    ['zh-CN', '运行中 · 2'],
+    ['en', 'Running · 2'],
+  ])('shows the running-job count with the expected language for %s', (locale, running) => {
+    const job = wl({
+      kind: 'CronJob',
+      workload_class: 'job',
+      batch: { activeRuns: 2, latestRunPhase: 'Running' },
+    })
+    const batchEntry = buildSingleAppEntry(app({
+      name: 'invoice-reconciler',
+      key: 'default/invoice-reconciler',
+      workload_class: 'job',
+      workloads: [job],
+    }))
+    const mixedEntry = buildSingleAppEntry(app({
+      name: 'checkout',
+      key: 'default/checkout',
+      workload_class: 'mixed',
+      workloads: [wl(), job],
+    }))
+    const view = <ApplicationsView entries={[batchEntry, mixedEntry]} variant="single" onSelect={() => undefined} />
+    const preference = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(locale ?? null)
+    try {
+      const html = renderToStaticMarkup(locale ? <LocaleProvider>{view}</LocaleProvider> : view)
+      expect(html.split(running).length - 1).toBeGreaterThanOrEqual(2)
+      expect(html).toContain('invoice-reconciler')
+      expect(html).toContain('checkout')
+      expect(batchEntry.workloadClass).toBe('job')
+      if (locale === 'en') expect(html).not.toContain('运行中 · 2')
+    } finally {
+      preference.mockRestore()
+    }
+  })
+
   const identity = { key: 'registry-credential', env: 'prod', confidence: 'high', evidence: 'declared source path' }
   const siblings = ['registry-credential-a', 'registry-credential-b'].map((name) =>
     buildSingleAppEntry(app({

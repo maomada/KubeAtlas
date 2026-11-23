@@ -252,23 +252,31 @@ type SchedulingScope = "cluster" | "karpenter";
 
 const SCOPE_COPY: Record<
   SchedulingScope,
-  { title: string; subtitle: string; inFlightLegend: string; empty: string }
+  Record<"title" | "subtitle" | "inFlightLegend" | "empty", readonly [string, string]>
 > = {
   cluster: {
-    title: "Cluster scheduling capacity",
-    subtitle:
+    title: ["集群调度容量", "Cluster scheduling capacity"],
+    subtitle: [
+      "比较所有已观测节点的可分配资源与已调度请求",
       "scheduled requests vs node allocatable, all observed nodes · not usage, not a health score",
-    inFlightLegend: "in flight (Karpenter, beyond the edge)",
-    empty:
+    ],
+    inFlightLegend: ["供给中（Karpenter，在右侧单独显示）", "in flight (Karpenter, beyond the edge)"],
+    empty: [
+      "暂未观察到调度容量。节点尚未报告可分配资源，当前也没有待调度需求。",
       "No scheduling capacity observed yet — no node reports allocatable, and nothing is pending. Bars appear as soon as either side of the ledger exists.",
+    ],
   },
   karpenter: {
-    title: "Karpenter scheduling capacity",
-    subtitle:
+    title: ["Karpenter 调度容量", "Karpenter scheduling capacity"],
+    subtitle: [
+      "比较 Karpenter 节点池中的可分配资源与已调度请求",
       "scheduled requests vs node allocatable, Karpenter-pooled nodes only · not usage, not a health score",
-    inFlightLegend: "in flight (beyond the edge)",
-    empty:
+    ],
+    inFlightLegend: ["供给中（在右侧单独显示）", "in flight (beyond the edge)"],
+    empty: [
+      "暂未观察到 Karpenter 容量。当前没有节点池节点、供给中的 NodeClaim 或待调度需求。",
       "No Karpenter-provisioned capacity yet — the fleet has no pooled nodes or in-flight claims, and no pending demand. Bars appear as soon as either side of the ledger exists.",
+    ],
   },
 };
 
@@ -283,6 +291,7 @@ export function ClusterSchedulingCard({
   onExplain: () => void;
   scope?: SchedulingScope;
 }) {
+  const { t } = useLocale("en");
   const rows = useMemo(
     () => deriveSchedulingRows(scheduling, pending),
     [scheduling, pending],
@@ -302,21 +311,21 @@ export function ClusterSchedulingCard({
   if (rows.length === 0) {
     return (
       <SectionCard
-        title={copy.title}
-        subtitle={copy.subtitle}
-        actions={<LinkButton onClick={onExplain}>How to read →</LinkButton>}
+        title={t(...copy.title)}
+        subtitle={t(...copy.subtitle)}
+        actions={<LinkButton onClick={onExplain}>{t("如何解读 →", "How to read →")}</LinkButton>}
         bodyClassName="px-4 py-3"
       >
-        <p className="text-xs text-theme-text-tertiary">{copy.empty}</p>
+        <p className="text-xs text-theme-text-tertiary">{t(...copy.empty)}</p>
       </SectionCard>
     );
   }
 
   return (
     <SectionCard
-      title={copy.title}
-      subtitle={copy.subtitle}
-      actions={<LinkButton onClick={onExplain}>How to read →</LinkButton>}
+      title={t(...copy.title)}
+      subtitle={t(...copy.subtitle)}
+      actions={<LinkButton onClick={onExplain}>{t("如何解读 →", "How to read →")}</LinkButton>}
       bodyClassName="flex flex-col gap-3 px-4 py-3"
     >
       {visible.map((row) => (
@@ -324,16 +333,16 @@ export function ClusterSchedulingCard({
       ))}
       {hidden > 0 && (
         <LinkButton onClick={() => setExpanded(true)}>
-          +{hidden} more {hidden === 1 ? "resource" : "resources"} ▾
+          {t(`另有 ${hidden} 项资源 ▾`, `+${hidden} more ${hidden === 1 ? "resource" : "resources"} ▾`)}
         </LinkButton>
       )}
       {expanded && rows.length > VISIBLE_ROW_LIMIT && (
-        <LinkButton onClick={() => setExpanded(false)}>Show less ▴</LinkButton>
+        <LinkButton onClick={() => setExpanded(false)}>{t("收起 ▴", "Show less ▴")}</LinkButton>
       )}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 border-t border-theme-border-subtle pt-2 text-[11px] text-theme-text-tertiary">
         <span className="flex items-center gap-1.5">
           <span aria-hidden className="h-2 w-4 rounded-sm bg-blue-500/70" />
-          scheduled requests
+          {t("已调度请求", "scheduled requests")}
         </span>
         <span className="flex items-center gap-1.5">
           <span
@@ -341,14 +350,14 @@ export function ClusterSchedulingCard({
             className="h-2 w-4 rounded-sm border border-theme-border"
             style={HATCH_STYLE}
           />
-          {copy.inFlightLegend}
+          {t(...copy.inFlightLegend)}
         </span>
         <span className="flex items-center gap-1.5">
           <span
             aria-hidden
             className="h-2 w-4 rounded-sm border border-dashed border-orange-400"
           />
-          pending demand — count, not to scale
+          {t("待调度需求（按数量显示）", "pending demand — count, not to scale")}
         </span>
         {hasNegativePriorityBand && (
           <span className="flex items-center gap-1.5">
@@ -357,7 +366,7 @@ export function ClusterSchedulingCard({
               className="h-2 w-4 rounded-sm bg-blue-500/70 text-theme-text-primary"
               style={NEGATIVE_PRIORITY_HATCH_STYLE}
             />
-            negative-priority (potential preemption victims)
+            {t("负优先级（可能被抢占）", "negative-priority (potential preemption victims)")}
           </span>
         )}
       </div>
@@ -592,3 +601,4 @@ function NumberPart({
     </span>
   );
 }
+import { useLocale } from "@maomada/k8s-ui/hooks/useLocale";

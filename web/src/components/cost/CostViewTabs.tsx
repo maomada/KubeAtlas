@@ -1,20 +1,22 @@
 import { Link, useLocation, type To } from 'react-router-dom'
 import { clsx } from 'clsx'
+import { useLocale } from '@maomada/k8s-ui/hooks/useLocale'
 
 export function CostViewTabs() {
+  const { t } = useLocale('en')
   const { pathname, search } = useLocation()
   const rightsizing = pathname.startsWith('/cost/rightsizing')
   return (
     <div
       className="flex items-center gap-1 border-b border-theme-border"
       role="tablist"
-      aria-label="Cost views"
+      aria-label={t('成本视图', 'Cost views')}
     >
       <CostTab to={{ pathname: '/cost', search }} active={!rightsizing}>
-        Overview
+        {t('概览', 'Overview')}
       </CostTab>
       <CostTab to={{ pathname: '/cost/rightsizing', search }} active={rightsizing}>
-        Rightsizing
+        {t('资源优化', 'Rightsizing')}
       </CostTab>
     </div>
   )

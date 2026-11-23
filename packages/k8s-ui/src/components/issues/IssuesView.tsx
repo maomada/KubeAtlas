@@ -1,3 +1,4 @@
+import { useLocale, type Translate } from '../../hooks/useLocale';
 import { summarizeSchedulerMessage } from '../resources/resource-utils'
 import { useMemo, useState, type ComponentType, type ReactNode } from 'react';
 import { AlertOctagon, AlertTriangle, ArrowRight, CircleCheck, Clock, Eraser, ExternalLink, Layers, Terminal, Workflow } from 'lucide-react';
@@ -74,6 +75,7 @@ export interface IssuesViewProps {
 // the hub, a thin wrapper in OSS) — this renders the rows + the healthy /
 // no-data terminal states only.
 export function IssuesView({ issues, anyData, resourceHref, onResourceClick, clusterLabel, emptyAction, renderActions }: IssuesViewProps) {
+  const { t } = useLocale();
   // Single-open accordion: opening a row collapses the previous one, so the
   // queue stays scannable and you never lose your place to a wall of expansions.
   const [openId, setOpenId] = useState<string | null>(null);
@@ -88,11 +90,11 @@ export function IssuesView({ issues, anyData, resourceHref, onResourceClick, clu
         tone="healthy"
         variant="card"
         icon={CircleCheck}
-        headline="当前没有问题"
-        body="所选范围内没有活动问题。"
+        headline={t('当前没有问题', 'No current issues')}
+        body={t('所选范围内没有活动问题。', 'There are no active issues in the selected scope.')}
       />
     ) : (
-      <EmptyState headline="暂无问题数据" body="连接集群后即可填充问题队列。" action={emptyAction} />
+      <EmptyState headline={t('暂无问题数据', 'No issue data')} body={t('连接集群后即可填充问题队列。', 'Connect a cluster to populate the issue queue.')} action={emptyAction} />
     );
   }
 
@@ -209,6 +211,7 @@ export function IssueRow({
   renderDetailSection,
   ResourceLinkIcon = ExternalLink,
 }: IssueRowProps) {
+  const { t } = useLocale();
   const cluster = clusterLabel?.(issue);
   const affected = affectedSummary(issue.affected);
   const { headline } = issueMessageParts(issue);
@@ -220,7 +223,7 @@ export function IssueRow({
   const slotCtx = { issue, open };
   const partialUnknown = issue.onset_coverage?.unknown ?? 0;
   const partialOnset = Boolean(issue.first_seen && partialUnknown > 0);
-  const timing = issueTimingForDisplay(issue);
+  const timing = issueTimingForDisplay(issue, t);
 
   // Severity pill + age + timing chip. Rendered in two positions the container
   // query toggles: inline at the row's right edge on a wide container, and on a
@@ -230,10 +233,10 @@ export function IssueRow({
   const metaChips = (wrapperClass: string) => (
     <div className={`items-center gap-3 ${wrapperClass}`}>
       <span className={`badge-sm shrink-0 px-2.5 py-0.5 text-xs font-semibold ${open ? ISSUE_SEVERITY_SOLID_CLASS[severity] : ISSUE_SEVERITY_BADGE_CLASS[severity]}`}>
-        {ISSUE_SEVERITY_LABEL[severity]}
+        {t(ISSUE_SEVERITY_LABEL[severity], severity === 'critical' ? 'Critical' : 'Warning')}
       </span>
       {issue.first_seen ? (
-        <Tooltip content={ageTitle(issue)} delay={200} wrapperClassName="shrink-0">
+        <Tooltip content={ageTitle(issue, t)} delay={200} wrapperClassName="shrink-0">
           <time
             dateTime={issue.first_seen}
             className="flex items-center gap-1 text-xs tabular-nums text-theme-text-tertiary"
@@ -245,7 +248,7 @@ export function IssueRow({
       ) : null}
       {nodeCorroboration ? (
         <Tooltip content={nodeCorroboration.message} delay={200}>
-          <span className="badge-sm inline-flex items-center gap-1 border border-theme-border text-[10px] text-theme-text-secondary"><Workflow className="h-3 w-3 shrink-0" aria-hidden />同节点证据</span>
+          <span className="badge-sm inline-flex items-center gap-1 border border-theme-border text-[10px] text-theme-text-secondary"><Workflow className="h-3 w-3 shrink-0" aria-hidden />{t('同节点证据', 'Same-node evidence')}</span>
         </Tooltip>
       ) : null}
       {timing ? (
@@ -297,8 +300,8 @@ export function IssueRow({
             (the right cluster below wraps under the text). */}
         <div className="flex min-w-0 flex-1 flex-col gap-1 phone:basis-[calc(100%-30px)]">
           <div className="flex min-w-0 items-baseline gap-2 phone:flex-wrap phone:gap-y-1">
-            <span className="min-w-0 truncate text-sm font-medium text-theme-text-primary phone:basis-full">{issueTitle(issue)}</span>
-            <span className={`shrink-0 self-center ${groupBadgeClass(issue.category_group)}`}>{groupLabel(issue.category_group)}</span>
+            <span className="min-w-0 truncate text-sm font-medium text-theme-text-primary phone:basis-full">{issueTitle(issue, t)}</span>
+            <span className={`shrink-0 self-center ${groupBadgeClass(issue.category_group)}`}>{groupLabel(issue.category_group, t)}</span>
             {renderBadges?.(slotCtx)}
             {/* The detector reason rides the title row while COLLAPSED so the
                 key triage signal shows without expanding. When open, the full
@@ -341,9 +344,9 @@ export function IssueRow({
                 <span aria-hidden>·</span>
                 {/* Non-interactive signal (the header is the toggle — a nested
                     button would be invalid); the clickable link lives in the body. */}
-                <Tooltip content={confidenceTitle(issue.incident_parent.confidence ?? '')} delay={200} wrapperClassName="min-w-0">
+                <Tooltip content={confidenceTitle(issue.incident_parent.confidence ?? '', t)} delay={200} wrapperClassName="min-w-0">
                   <span className="truncate text-theme-text-tertiary">
-                    ↳ {incidentParentLabel(issue.incident_parent.fact_type, issue.incident_parent.confidence)}{' '}
+                    ↳ {incidentParentLabel(issue.incident_parent.fact_type, issue.incident_parent.confidence, t)}{' '}
                     <span className="font-medium text-theme-text-secondary">{issue.incident_parent.ref.kind} / {issue.incident_parent.ref.name}</span>
                   </span>
                 </Tooltip>
@@ -379,11 +382,11 @@ export function IssueRow({
             {issue.incident_parent ? (
               <section className="flex flex-col gap-1">
                 <h4 className="text-[11px] font-semibold uppercase tracking-wide text-theme-text-tertiary">
-                  {incidentParentLabel(issue.incident_parent.fact_type, issue.incident_parent.confidence)}
+                  {incidentParentLabel(issue.incident_parent.fact_type, issue.incident_parent.confidence, t)}
                   {issue.incident_parent.confidence ? (
-                    <Tooltip content={confidenceTitle(issue.incident_parent.confidence)} delay={200}>
+                    <Tooltip content={confidenceTitle(issue.incident_parent.confidence, t)} delay={200}>
                       <span className="ml-2 badge-sm text-[10px] font-normal text-theme-text-tertiary">
-                        {issue.incident_parent.confidence} 置信度
+                        {issue.incident_parent.confidence} {t("置信度", "confidence")}
                       </span>
                     </Tooltip>
                   ) : null}
@@ -411,27 +414,28 @@ export function IssueRow({
 // IssueDiagnosisSource). It is a swap of WORDS ONLY: the meta line, the raw
 // error, the reason-code eyebrow and the tones are computed here either way, so
 // an overridden card loses none of the facts an un-overridden one shows.
-function formatIssueAge(value: string): string {
+function formatIssueAge(value: string, t: Translate): string {
   const age = formatRelativeAgeTime(value)
-  if (age === 'just now') return '刚刚'
+  if (age === 'just now') return t('刚刚', 'just now')
   const match = /^(\d+)(s|m|h|d) ago$/.exec(age)
   if (!match) return age
   const unit: Record<string, string> = { s: '秒', m: '分钟', h: '小时', d: '天' }
-  return `${match[1]} ${unit[match[2]]}前`
+  return t(`${match[1]} ${unit[match[2]]}前`, age)
 }
 
 function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSource }) {
+  const { t } = useLocale();
   const crash =
     issue.restart_count || issue.last_terminated_reason
       ? [
-          issue.restart_count ? `重启 ${issue.restart_count} 次` : null,
-          issue.last_terminated_reason ? `上次退出原因：${issue.last_terminated_reason}` : null,
+          issue.restart_count ? t(`重启 ${issue.restart_count} 次`, `Restarts: ${issue.restart_count}`) : null,
+          issue.last_terminated_reason ? t(`上次退出原因：${issue.last_terminated_reason}`, `Last termination reason: ${issue.last_terminated_reason}`) : null,
           issue.restart_loop?.workload_pods && issue.restart_loop.workload_pods > 1
-            ? `${issue.restart_loop.workload_pods} 个 Pod 中有 ${issue.restart_loop.looping_pods} 个处于重启循环`
+            ? t(`${issue.restart_loop.workload_pods} 个 Pod 中有 ${issue.restart_loop.looping_pods} 个处于重启循环`, `${issue.restart_loop.looping_pods} of ${issue.restart_loop.workload_pods} Pods are in a restart loop`)
             : null,
-          issue.restart_loop?.startup_probe_failure ? '检测到启动探针失败' : null,
-          issue.restart_loop?.liveness_probe_failure ? '检测到存活探针失败' : null,
-          issue.restart_loop?.readiness_probe_failure ? '检测到就绪探针失败' : null,
+          issue.restart_loop?.startup_probe_failure ? t('检测到启动探针失败', 'Startup probe failure detected') : null,
+          issue.restart_loop?.liveness_probe_failure ? t('检测到存活探针失败', 'Liveness probe failure detected') : null,
+          issue.restart_loop?.readiness_probe_failure ? t('检测到就绪探针失败', 'Readiness probe failure detected') : null,
         ]
           .filter(Boolean)
           .join(' · ')
@@ -448,7 +452,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
   const shownText = issue.cause ?? visibleMessage;
   const partialUnknown = issue.onset_coverage?.unknown ?? 0;
   const partialOnset = Boolean(issue.first_seen && partialUnknown > 0);
-  const timing = issueTimingForDisplay(issue);
+  const timing = issueTimingForDisplay(issue, t);
   // A message KubeAtlas wrote itself is not raw output, so it never lands in the
   // terminal block; its cause carries the same facts.
   const messageIsRaw = issue.message_source !== 'kubeatlas';
@@ -464,31 +468,31 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
   // yet-stuck operation leads with "Retrying"; once it's declared stuck, "Stuck"
   // takes over.
   const meta: string[] = [];
-  if (issue.stuck) meta.push('已停滞');
-  else if (issue.operation_retry_count) meta.push('正在重试');
-  if (issue.operation_retry_count) meta.push(`已重试 ${issue.operation_retry_count} 次`);
+  if (issue.stuck) meta.push(t('已停滞', 'Stuck'));
+  else if (issue.operation_retry_count) meta.push(t('正在重试', 'Retrying'));
+  if (issue.operation_retry_count) meta.push(t(`已重试 ${issue.operation_retry_count} 次`, `Retries: ${issue.operation_retry_count}`));
   if (crash) meta.push(crash);
   if (timing) {
     if (partialOnset && issue.first_seen) {
-      meta.push(`部分信号至少从 ${formatIssueAge(issue.first_seen)}起持续至今`);
+      meta.push(t(`部分信号至少从 ${formatIssueAge(issue.first_seen, t)}起持续至今`, `Some signals have been active since at least ${formatIssueAge(issue.first_seen, t)}`));
     }
     meta.push(timing.meta);
     if (!partialOnset && timing.kind === 'regression' && issue.first_seen) {
-      meta.push(`至少从 ${formatIssueAge(issue.first_seen)}起持续至今`);
+      meta.push(t(`至少从 ${formatIssueAge(issue.first_seen, t)}起持续至今`, `Active since at least ${formatIssueAge(issue.first_seen, t)}`));
     }
   } else if (partialOnset && issue.first_seen) {
     const total = (issue.onset_coverage?.known ?? 0) + partialUnknown;
-    meta.push(`部分信号至少从 ${formatIssueAge(issue.first_seen)}起持续至今；其中 ${partialUnknown}/${total} 个信号的时间未知`);
+    meta.push(t(`部分信号至少从 ${formatIssueAge(issue.first_seen, t)}起持续至今；其中 ${partialUnknown}/${total} 个信号的时间未知`, `Some signals have been active since at least ${formatIssueAge(issue.first_seen, t)}. Onset is unknown for ${partialUnknown}/${total} signals.`));
   } else if (issue.first_seen) {
-    meta.push(`至少从 ${formatIssueAge(issue.first_seen)}起持续至今`);
+    meta.push(t(`至少从 ${formatIssueAge(issue.first_seen, t)}起持续至今`, `Active since at least ${formatIssueAge(issue.first_seen, t)}`));
   }
   if (issue.onset_unknown && !timing && !partialOnset) {
-    meta.push('确切开始时间未知');
+    meta.push(t('确切开始时间未知', 'Exact onset is unknown'));
   }
   if (issue.first_seen) {
-    if (issue.last_seen && (timing?.kind !== 'creation' || partialOnset)) meta.push(`最近出现于 ${formatIssueAge(issue.last_seen)}`);
+    if (issue.last_seen && (timing?.kind !== 'creation' || partialOnset)) meta.push(t(`最近出现于 ${formatIssueAge(issue.last_seen, t)}`, `Last seen ${formatIssueAge(issue.last_seen, t)}`));
   }
-  if (issue.change_context) meta.push(changeContextText(issue.change_context));
+  if (issue.change_context) meta.push(changeContextText(issue.change_context, t));
 
   // A host's prose, when it has better. Each section falls back independently:
   // supplying a cause and no next step leaves the detector's own action standing,
@@ -529,7 +533,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
           open. The non-cause branch already leads with it in the prose. */}
       <CardSection
         icon={sourceCause && SourceIcon ? SourceIcon : AlertTriangle}
-        label="问题描述"
+        label={t('问题描述', 'Description')}
         tone="warn"
         labelExtra={causeLabelExtra}
       >
@@ -552,7 +556,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
       {hasNextStep ? (
         <CardSection
           icon={sourceNextStep && SourceIcon ? SourceIcon : ArrowRight}
-          label="下一步"
+          label={t('下一步', 'Next step')}
           tone="fix"
           labelExtra={nextStepAttribution ?? undefined}
         >
@@ -561,7 +565,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
               apply path, not advice competing with the host's. */}
           {issue.remediation_kind === 'create-namespace' && issue.remediation_target ? (
             <p className="text-xs text-theme-text-tertiary">
-              建议的修复方式：创建命名空间 <code className="inline-code">{issue.remediation_target}</code>，并从 GitOps 详情页应用。
+              {t('建议的修复方式：创建命名空间 ', 'Suggested fix: Create namespace ')}<code className="inline-code">{issue.remediation_target}</code>{t('，并从 GitOps 详情页应用。', ' and apply it from the GitOps details page.')}
             </p>
           ) : null}
         </CardSection>
@@ -570,7 +574,7 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
       {issue.conditional_cleanup ? <ConditionalCleanup cleanup={issue.conditional_cleanup} /> : null}
 
       {rawError ? (
-        <CardSection icon={Terminal} label="原始错误">
+        <CardSection icon={Terminal} label={t('原始错误', 'Raw error')}>
           <TerminalBlock>{rawError}</TerminalBlock>
         </CardSection>
       ) : null}
@@ -582,8 +586,9 @@ function Diagnosis({ issue, source }: { issue: Issue; source?: IssueDiagnosisSou
 // condition so the row's next step remains the default path, and it is not
 // toned as a fix.
 function ConditionalCleanup({ cleanup }: { cleanup: IssueConditionalCleanup }) {
+  const { t } = useLocale();
   return (
-    <CardSection icon={Eraser} label="条件式清理">
+    <CardSection icon={Eraser} label={t('条件式清理', 'Conditional cleanup')}>
       <Disclosure
         summary={<span className="text-sm leading-relaxed">{cleanup.condition}</span>}
         summaryClassName="items-baseline text-theme-text-primary hover:text-theme-text-secondary"
@@ -595,8 +600,8 @@ function ConditionalCleanup({ cleanup }: { cleanup: IssueConditionalCleanup }) {
               <p className="text-xs text-theme-text-tertiary">
                 Finalizer <code className="inline-code">{removal.finalizer}</code>
               </p>
-              <TerminalBlock label="patch_resource · 模拟执行">{JSON.stringify(removal.patch_resource)}</TerminalBlock>
-              <TerminalBlock label="kubectl · 服务器端模拟执行">{removal.kubectl}</TerminalBlock>
+              <TerminalBlock label={t('patch_resource · 模拟执行', 'patch_resource · dry run')}>{JSON.stringify(removal.patch_resource)}</TerminalBlock>
+              <TerminalBlock label={t('kubectl · 服务器端模拟执行', 'kubectl · server dry run')}>{removal.kubectl}</TerminalBlock>
             </div>
           ))}
         </div>
@@ -605,8 +610,8 @@ function ConditionalCleanup({ cleanup }: { cleanup: IssueConditionalCleanup }) {
   );
 }
 
-function changeContextText(change: NonNullable<Issue['change_context']>): string {
-  const parts = [change.when ? `${change.when} 前发生变更` : '已变更', change.what ? change.what.replace(/_/g, ' ') : null, change.evidence].filter(Boolean);
+function changeContextText(change: NonNullable<Issue['change_context']>, t: Translate): string {
+  const parts = [change.when ? t(`${change.when} 前发生变更`, `Changed ${change.when} ago`) : t('已变更', 'Changed'), change.what ? change.what.replace(/_/g, ' ') : null, change.evidence].filter(Boolean);
   return parts.join(' · ');
 }
 
@@ -621,6 +626,7 @@ function DiagnosticContext({
   onResourceClick?: (ref: IssueResourceRef) => void;
   ResourceLinkIcon: ComponentType<{ className?: string }>;
 }) {
+  const { t } = useLocale();
   const ctx = issue.diagnostic_context;
   const facts = ctx?.facts?.filter((fact) => fact.message || fact.refs?.length || fact.related_issues?.length) ?? [];
   if (!ctx || facts.length === 0) return null;
@@ -628,18 +634,18 @@ function DiagnosticContext({
   return (
     <CardSection
       icon={Workflow}
-      label="上下文"
-      labelExtra={ctx.role ? diagnosticRoleLabel(ctx.role) : undefined}
+      label={t('上下文', 'Context')}
+      labelExtra={ctx.role ? diagnosticRoleLabel(ctx.role, t) : undefined}
     >
       <ul className="flex flex-col gap-2">
         {facts.map((fact, idx) => (
           <li key={`${fact.type}-${idx}`} className="flex flex-col gap-1.5 rounded-md border border-theme-border/70 px-2.5 py-2">
             <div className="flex min-w-0 items-baseline gap-2">
-              <span className="shrink-0 text-xs font-medium text-theme-text-secondary">{diagnosticFactLabel(fact.type)}</span>
+              <span className="shrink-0 text-xs font-medium text-theme-text-secondary">{diagnosticFactLabel(fact.type, t)}</span>
               {fact.confidence ? (
-                <Tooltip content={confidenceTitle(fact.confidence)} delay={200}>
+                <Tooltip content={confidenceTitle(fact.confidence, t)} delay={200}>
                   <span className="shrink-0 badge-sm text-[10px] text-theme-text-tertiary">
-                    {fact.confidence} 置信度
+                    {fact.confidence} {t("置信度", "confidence")}
                   </span>
                 </Tooltip>
               ) : null}
@@ -650,7 +656,7 @@ function DiagnosticContext({
                 {fact.related_issues.map((related, relIdx) => (
                   <ResourceLine
                     key={`${related.ref.group ?? ''}/${related.ref.kind}/${related.ref.namespace ?? ''}/${related.ref.name}#${relIdx}`}
-                    label="相关"
+                    label={t('相关', 'Related')}
                     refForLink={memberRef(issue, related.ref)}
                     count={related.count}
                     resourceHref={resourceHref}
@@ -682,16 +688,16 @@ function DiagnosticContext({
 
 // Native-tooltip detail for the collapsed-row age chip: absolute first-seen + last-seen
 // freshness, the two facts the compact "2h" hides.
-function ageTitle(issue: Issue): string {
+function ageTitle(issue: Issue, t: Translate): string {
   const parts: string[] = [];
-  const timing = issueTimingForDisplay(issue);
+  const timing = issueTimingForDisplay(issue, t);
   const partialUnknown = issue.onset_coverage?.unknown ?? 0;
   if (timing && partialUnknown === 0) parts.push(timing.tooltip);
-  const firstSeenTitle = issueFirstSeenTitle(issue);
+  const firstSeenTitle = issueFirstSeenTitle(issue, t);
   if (firstSeenTitle) parts.push(firstSeenTitle);
-  const resourceContext = issueResourceCreatedTitle(issue);
+  const resourceContext = issueResourceCreatedTitle(issue, t);
   if (resourceContext) parts.push(resourceContext);
-  if (issue.last_seen) parts.push(`最近出现于 ${formatIssueAge(issue.last_seen)}`);
+  if (issue.last_seen) parts.push(t(`最近出现于 ${formatIssueAge(issue.last_seen, t)}`, `Last seen ${formatIssueAge(issue.last_seen, t)}`));
   return parts.join('\n');
 }
 
@@ -708,6 +714,7 @@ function AffectedResources({
   onResourceClick?: (ref: IssueResourceRef) => void;
   ResourceLinkIcon: ComponentType<{ className?: string }>;
 }) {
+  const { t } = useLocale();
   const members = issue.members ?? [];
   // count is the backend fan-out size (members, subject excluded — see
   // grouping.go); fall back to the inline member count, not +1.
@@ -722,11 +729,11 @@ function AffectedResources({
           an <li>, so it needs a list parent of its own. */}
       {!hideSubject && (
         <ul className="flex flex-col gap-px">
-          <ResourceLine label="对象" compact refForLink={subjectRef(issue)} resourceHref={resourceHref} onResourceClick={onResourceClick} ResourceLinkIcon={ResourceLinkIcon} />
+          <ResourceLine label={t('对象', 'Object')} compact refForLink={subjectRef(issue)} resourceHref={resourceHref} onResourceClick={onResourceClick} ResourceLinkIcon={ResourceLinkIcon} />
         </ul>
       )}
       {members.length > 0 && (
-        <CardSection icon={Layers} label="受影响的资源" labelExtra={`· ${total}`}>
+        <CardSection icon={Layers} label={t('受影响的资源', 'Affected resources')} labelExtra={`· ${total}`}>
           <ul className="flex flex-col gap-px">
             {members.map((m, i) => (
               <ResourceLine
@@ -740,7 +747,7 @@ function AffectedResources({
           </ul>
           {issue.members_truncated && (
             <p className="text-xs text-theme-text-tertiary">
-              已显示 {members.length} / {total} 个受影响资源；展开对象可查看其余资源。
+              {t(`已显示 ${members.length} / ${total} 个受影响资源；展开对象可查看其余资源。`, `Showing ${members.length} of ${total} affected resources. Open the object to see the rest.`)}
             </p>
           )}
         </CardSection>
@@ -769,6 +776,7 @@ function ResourceLine({
   // list below it.
   compact?: boolean;
 }) {
+  const { t } = useLocale();
   const r = refForLink;
   const linkable = !!(onResourceClick || resourceHref);
   const body = (
@@ -785,8 +793,8 @@ function ResourceLine({
         {r.name}
       </span>
       {count && count > 1 ? (
-        <Tooltip content={`共 ${count} 个受影响资源归入此问题`} delay={200}>
-          <span className="shrink-0 text-[10px] text-theme-text-tertiary tabular-nums">{count} 个受影响资源</span>
+        <Tooltip content={t(`共 ${t(`${count} 个受影响资源`, count === 1 ? '1 affected resource' : `${count} affected resources`)}归入此问题`, `This issue groups ${count} affected resources`)} delay={200}>
+          <span className="shrink-0 text-[10px] text-theme-text-tertiary tabular-nums">{t(`${count} 个受影响资源`, count === 1 ? '1 affected resource' : `${count} affected resources`)}</span>
         </Tooltip>
       ) : null}
       {linkable && <ResourceLinkIcon className="h-3 w-3 shrink-0 text-theme-text-tertiary opacity-0 transition-opacity group-hover/r:opacity-100" />}
