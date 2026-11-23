@@ -68,10 +68,11 @@ type legacyStoreFile struct {
 }
 
 type Store struct {
-	mu   sync.Mutex
-	path string
-	data storeFile
-	now  func() time.Time
+	mu                  sync.Mutex
+	path                string
+	data                storeFile
+	now                 func() time.Time
+	loadedExistingState bool
 }
 
 func OpenStore(path string) (*Store, error) {
@@ -144,8 +145,12 @@ func OpenStoreWithInitialOrigin(path, origin string) (*Store, error) {
 	} else {
 		return nil, failure("store_unavailable")
 	}
+	s.loadedExistingState = true
 	return s, nil
 }
+
+// LoadedExistingState reports whether this store opened a valid existing state file.
+func (s *Store) LoadedExistingState() bool { return s.loadedExistingState }
 
 func newStoreFile() storeFile {
 	organization := Organization{ID: "self-hosted", Name: "KubeAtlas"}

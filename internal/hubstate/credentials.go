@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	maxNonExpiringCredentials                = 1024
+	maxNonExpiringCredentialsPerOrganization = 64
+)
+
 func newCredentialID() (string, error) {
 	var id [32]byte
 	if _, err := rand.Read(id[:]); err != nil {
@@ -85,8 +90,8 @@ func (s *Store) IssueForMemberInOrganization(organizationID, ownerID string, inp
 func (s *Store) issueLocked(ownerID, organizationID string, input IssueInput, ids []string, ttl int) (IssuedCredential, error) {
 	now := s.now().UTC()
 	next := s.next(now)
-	if len(next.Credentials) >= maxCredentials {
-		return IssuedCredential{}, failure("capacity_exceeded")
+	if err := makeCredentialRoom(next.Credentials, organizationID, input.NeverExpires); err != nil {
+		return IssuedCredential{}, err
 	}
 	id, err := newCredentialID()
 	if err != nil {
@@ -115,6 +120,44 @@ func (s *Store) issueLocked(ownerID, organizationID string, input IssueInput, id
 		return IssuedCredential{}, err
 	}
 	return IssuedCredential{Credential: cloneCredential(c.Credential), Token: token}, nil
+}
+
+// Non-expiring records have a separate budget so they cannot fill the shared
+// store. At capacity, reclaim a revoked record from the requesting organization
+// rather than blocking replacement until normal retention pruning runs.
+func makeCredentialRoom(records map[string]storedCredential, organizationID string, neverExpires bool) error {
+	if !neverExpires {
+		if len(records) >= maxCredentials {
+			return failure("capacity_exceeded")
+		}
+		return nil
+	}
+	var total, inOrganization int
+	var oldestID string
+	var oldestRevocation time.Time
+	for id, record := range records {
+		if !record.NeverExpires {
+			continue
+		}
+		total++
+		if record.OrganizationID != organizationID {
+			continue
+		}
+		inOrganization++
+		if record.RevokedAt != nil && (oldestID == "" || record.RevokedAt.Before(oldestRevocation) ||
+			(record.RevokedAt.Equal(oldestRevocation) && id < oldestID)) {
+			oldestID, oldestRevocation = id, *record.RevokedAt
+		}
+	}
+	if len(records) < maxCredentials && total < maxNonExpiringCredentials &&
+		inOrganization < maxNonExpiringCredentialsPerOrganization {
+		return nil
+	}
+	if oldestID == "" {
+		return failure("capacity_exceeded")
+	}
+	delete(records, oldestID)
+	return nil
 }
 
 func (s *Store) matchCredential(token, ownerID string) (storedCredential, error) {
@@ -355,8 +398,13 @@ func (s *Store) renewWithScope(old storedCredential, requestedTTL int, clusterID
 		return IssuedCredential{}, failure("permission_denied")
 	}
 	next := s.next(now)
-	if len(next.Credentials) >= maxCredentials {
-		return IssuedCredential{}, failure("capacity_exceeded")
+	// Include the old record as a revocation on the pending transaction so a
+	// non-expiring credential can rotate even when its organization is full.
+	retired := old
+	retired.RevokedAt = &now
+	next.Credentials[retired.ID] = retired
+	if err := makeCredentialRoom(next.Credentials, old.OrganizationID, old.NeverExpires); err != nil {
+		return IssuedCredential{}, err
 	}
 	id, err := newCredentialID()
 	if err != nil {
@@ -382,8 +430,7 @@ func (s *Store) renewWithScope(old storedCredential, requestedTTL int, clusterID
 			c.ExpiresAt = c.RefreshUntil
 		}
 	}
-	old.RevokedAt = &now
-	next.Credentials[old.ID], next.Credentials[id] = old, c
+	next.Credentials[id] = c
 	if err := s.commit(next); err != nil {
 		return IssuedCredential{}, err
 	}

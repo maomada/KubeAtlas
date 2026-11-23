@@ -48,10 +48,15 @@ func NewStartupHandler(credentials Credentials, static fs.FS, stateFile string, 
 	if reset && !provided {
 		return nil, errors.New("--reset-admin requires administrator credentials")
 	}
-	if existing && account.PasswordHash == "" && !reset && !validLocalCredentials(credentials.Username, credentials.Password) {
-		return nil, errors.New("existing Hub requires its original administrator credentials or an explicit reset")
-	}
-	if provided && (!existing || reset) {
+	reuseOwner := existing && account.PasswordHash != "" && (!reset ||
+		account.DisplayName == credentials.Username && bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), localPasswordInput(credentials.Password)) == nil)
+	// An older Hub can lack a persisted owner even after its v1 state has been migrated.
+	switch {
+	case !reuseOwner && !reset && (existing || store.LoadedExistingState()):
+		if !validLocalCredentials(credentials.Username, credentials.Password) {
+			return nil, errors.New("existing Hub requires its original administrator credentials or an explicit reset")
+		}
+	case !reuseOwner && provided:
 		if err := validateAdminPassword(credentials.Password); err != nil {
 			return nil, err
 		}
@@ -66,8 +71,7 @@ func NewStartupHandler(credentials Credentials, static fs.FS, stateFile string, 
 	}
 	h := &StartupHandler{handler: handler}
 	switch {
-	case existing && account.PasswordHash != "" && (!reset ||
-		account.DisplayName == credentials.Username && bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), localPasswordInput(credentials.Password)) == nil):
+	case reuseOwner:
 		h.activate(account)
 	case provided:
 		if err := h.setOwner(credentials.Username, credentials.Password, reset); err != nil {

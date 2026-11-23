@@ -135,15 +135,24 @@ func TestStartupMigratesAndExplicitlyResetsAdministrator(t *testing.T) {
 	previous := map[string]string{"username": legacy.Username, "password": legacy.Password}
 	setupRequest(t, migrated, "POST", "/api/auth/login", previous, 204)
 
-	if _, err := NewStartupHandler(legacy, nil, statePath, true); err == nil {
-		t.Fatal("explicit reset accepted a legacy password")
+	legacyReset := legacy
+	legacyReset.Password = "different legacy password"
+	if h, err := NewStartupHandler(legacyReset, nil, statePath, true); err == nil {
+		h.Close()
+		t.Fatal("reset accepted a different password that fails the new policy")
 	}
-	existing, err := NewStartupHandler(legacy, nil, statePath, false)
-	if err != nil {
-		t.Fatal(err)
+	persisted, _ := store.LocalPlatformOwner()
+	for _, reset := range []bool{false, true} {
+		existing, err := NewStartupHandler(legacy, nil, statePath, reset)
+		if err != nil {
+			t.Fatalf("could not reuse persisted credentials with reset=%t: %v", reset, err)
+		}
+		t.Cleanup(existing.Close)
+		setupRequest(t, existing, "POST", "/api/auth/login", previous, 204)
 	}
-	t.Cleanup(existing.Close)
-	setupRequest(t, existing, "POST", "/api/auth/login", previous, 204)
+	if current, _ := store.LocalPlatformOwner(); current.PasswordHash != persisted.PasswordHash || !current.UpdatedAt.Equal(persisted.UpdatedAt) {
+		t.Fatal("reusing persisted credentials changed the administrator")
+	}
 
 	updated := Credentials{Username: "new-operator", Password: "ResetOk!", Hub: &HubConfig{Store: setupStore(t, statePath)}}
 	newLogin := map[string]string{"username": updated.Username, "password": updated.Password}
@@ -174,6 +183,71 @@ func TestStartupMigratesAndExplicitlyResetsAdministrator(t *testing.T) {
 	t.Cleanup(direct.Close)
 	setupRequest(t, direct, "POST", "/api/auth/login", previous, 401)
 	setupRequest(t, direct, "POST", "/api/auth/login", newLogin, 204)
+}
+
+func TestStartupMigratesOwnerlessV1Administrator(t *testing.T) {
+	for _, scenario := range []struct {
+		name  string
+		retry bool
+	}{
+		{name: "initial startup"},
+		{name: "retry after migration", retry: true},
+	} {
+		t.Run(scenario.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "hub")
+			if err := os.Mkdir(dir, 0o700); err != nil {
+				t.Fatal(err)
+			}
+			statePath := filepath.Join(dir, "state.json")
+			const legacyState = `{"version":1,"clusters":{},"groups":{},"credentials":{},"organization":{"id":"self-hosted","name":"Legacy Hub"},"members":{}}`
+			if err := os.WriteFile(statePath, []byte(legacyState), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			store := setupStore(t, statePath)
+			if _, ok := store.LocalPlatformOwner(); ok {
+				t.Fatal("legacy state unexpectedly has a persisted owner")
+			}
+			legacy := Credentials{Username: "legacy", Password: "legacy password text", Hub: &HubConfig{Store: store}}
+			if scenario.retry {
+				for _, invalid := range []Credentials{
+					{Hub: legacy.Hub},
+					{Username: legacy.Username, Password: "NewPass!", Hub: legacy.Hub},
+				} {
+					h, err := NewStartupHandler(invalid, nil, statePath, false)
+					if err == nil {
+						h.Close()
+						t.Fatal("started migrated Hub without a password meeting the original bounds")
+					}
+					if !strings.Contains(err.Error(), "requires its original administrator credentials") {
+						t.Fatalf("unexpected startup error: %v", err)
+					}
+				}
+				data, err := os.ReadFile(statePath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var state struct {
+					Version int `json:"version"`
+				}
+				if err := json.Unmarshal(data, &state); err != nil || state.Version != 2 {
+					t.Fatalf("expected migration to persist v2 before startup retry: version=%d, error=%v", state.Version, err)
+				}
+				legacy.Hub.Store = setupStore(t, statePath)
+			}
+
+			h, err := NewStartupHandler(legacy, nil, statePath, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(h.Close)
+			setupRequest(t, h, "GET", "/setup", nil, 303)
+			setupRequest(t, h, "POST", "/api/auth/login", map[string]string{"username": legacy.Username, "password": legacy.Password}, 204)
+			if org := legacy.Hub.Store.Organization(); org.Name != "Legacy Hub" {
+				t.Fatalf("migration changed the existing organization: %q", org.Name)
+			}
+		})
+	}
 }
 
 func TestStartupValidatesNewAdministratorPassword(t *testing.T) {

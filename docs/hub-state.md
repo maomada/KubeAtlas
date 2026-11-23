@@ -194,15 +194,19 @@ callers must still use `Authenticate(token, expectedOwner)` to authenticate.
   expired and revoked metadata for status reporting.
 - At most 16,384 credential records (including expired/revoked predecessors) and
   16 MiB total serialized state are permitted. Mutations opportunistically prune
-  records only when `now > max(ExpiresAt, RevokedAt) + 30 days`. Revoked credentials
-  without automatic expiry are retained for 30 days from revocation. No live grants
-  are evicted to make space; capacity errors leave all existing state intact.
+  records after `now > max(ExpiresAt, RevokedAt) + 30 days`. Revoked credentials
+  without automatic expiry normally follow the same 30-day retention rule.
+  Non-expiring records are capped at 64 per organization and 1,024 per Hub.
+  At capacity, issuing or rotating a non-expiring credential can reclaim the
+  oldest revoked non-expiring record in the same organization. An active
+  credential's slot can be reused when it is rotated. Capacity errors leave
+  all existing state intact.
   Authentication and listing do not write or trigger pruning. Families can
   outlive their earliest retained metadata record after retention cleanup.
 
 To roll back to a Hub version that predates non-expiring credentials, restore a
 compatible state backup if the current state still contains any of those
-records. Revocation keeps their records on disk until retention cleanup.
+records. Revocation normally keeps the records on disk for the retention period.
 
 Errors are `*hubstate.Error` with a generic `Code`: `invalid_parameters`,
 `invalid_scope`, `conflict`, `cluster_not_found`, `credential_invalid`,

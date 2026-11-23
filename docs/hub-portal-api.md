@@ -197,6 +197,8 @@ store default. Explicit TTLs range from 15 minutes to seven days. For a credenti
 without automatic expiry, send `neverExpires: true` with `ttlSeconds` omitted or
 zero. Its metadata includes `neverExpires: true` and omits `expiresAt` and
 `refreshUntil`.
+Non-expiring credentials have a separate capacity limit and can return
+`409 capacity_exceeded`. See [Hub state](hub-state.md#lifetime-replacement-and-retention).
 
 Refresh and rotation retain scope and read-only mode and revoke the previous
 token. Expiring credentials retain their original 30-day refresh window.
