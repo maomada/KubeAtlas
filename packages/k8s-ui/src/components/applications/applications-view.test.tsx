@@ -339,22 +339,32 @@ describe('ApplicationsView copy', () => {
     ['zh-CN', '运行中 · 2'],
     ['en', 'Running · 2'],
   ])('shows the running-job count with the expected language for %s', (locale, running) => {
-    const entry = buildSingleAppEntry(app({
-      name: 'invoice-reconciler',
+    const job = wl({
+      kind: 'CronJob',
       workload_class: 'job',
-      workloads: [wl({
-        kind: 'CronJob',
-        workload_class: 'job',
-        batch: { activeRuns: 2, latestRunPhase: 'Running' },
-      })],
+      batch: { activeRuns: 2, latestRunPhase: 'Running' },
+    })
+    const batchEntry = buildSingleAppEntry(app({
+      name: 'invoice-reconciler',
+      key: 'default/invoice-reconciler',
+      workload_class: 'job',
+      workloads: [job],
     }))
-    const view = <ApplicationsView entries={[entry]} variant="single" onSelect={() => undefined} />
+    const mixedEntry = buildSingleAppEntry(app({
+      name: 'checkout',
+      key: 'default/checkout',
+      workload_class: 'mixed',
+      workloads: [wl(), job],
+    }))
+    const view = <ApplicationsView entries={[batchEntry, mixedEntry]} variant="single" onSelect={() => undefined} />
     const preference = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(locale ?? null)
     try {
       const html = renderToStaticMarkup(locale ? <LocaleProvider>{view}</LocaleProvider> : view)
-      expect(html).toContain(running)
+      expect(html.split(running).length - 1).toBeGreaterThanOrEqual(2)
       expect(html).toContain('invoice-reconciler')
-      expect(entry.workloadClass).toBe('job')
+      expect(html).toContain('checkout')
+      expect(batchEntry.workloadClass).toBe('job')
+      if (locale === 'en') expect(html).not.toContain('运行中 · 2')
     } finally {
       preference.mockRestore()
     }

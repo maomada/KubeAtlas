@@ -28,6 +28,7 @@ import fluxLogo from "../../assets/gitops/flux.svg";
 import { StatusDot, mapHealthToTone } from "../ui/status-tone";
 import { Tooltip } from "../ui/Tooltip";
 import { useAnimatedUnmount } from "../../hooks/useAnimatedUnmount";
+import { useLocale, type Translate } from "../../hooks/useLocale";
 import {
   TRANSITION_MENU,
   overlayExitMs,
@@ -74,6 +75,7 @@ import {
   classCompositionOf,
   batchSignalForApp,
   batchActivityForApp,
+  batchRunningLabel,
   batchRuntimeForApp,
   rolloutSummaryForApps,
   rolloutDisplayHealth,
@@ -360,6 +362,7 @@ export function ApplicationDetail({
   selectedView,
   onSelectView,
 }: ApplicationDetailProps) {
+  const { t } = useLocale();
   // Stable order regardless of API ordering: rail rows and the per-workload
   // color assignment both follow this array, so an order flap between
   // refetches must not reshuffle rows or reassign a workload's hue.
@@ -374,7 +377,7 @@ export function ApplicationDetail({
     [app.workloads],
   );
   const workloadClass = workloadClassOf(app.workload_class);
-  const batchRuntime = batchRuntimeForApp(app);
+  const batchRuntime = batchRuntimeForApp(app, t);
   const rolloutSummary = useMemo(
     () => rolloutSummaryForApps([{ ...app, workloads }]),
     [app, workloads],
@@ -391,7 +394,7 @@ export function ApplicationDetail({
   );
   const { ready, desired } = servingReadiness(workloads);
   const restartSignal = restartWarning(workloads);
-  const batchSignal = workloadClass === "job" ? null : batchSignalForApp(app);
+  const batchSignal = workloadClass === "job" ? null : batchSignalForApp(app, t);
   // Resolve namespace the same way the list does (the workloads' shared
   // namespace) so env/namespace match across list and detail. Multi-namespace
   // apps get the count, never an arbitrary pick.
@@ -727,7 +730,7 @@ export function ApplicationDetail({
           </ContextFact>
         ) : null}
         {workloadClass === "job" ? (
-          <ContextFact label="运行时">{batchRuntime.label}</ContextFact>
+          <ContextFact label={t("运行时", "Runtime")}>{batchRuntime.label}</ContextFact>
         ) : desired > 0 ? (
           <ContextFact label="就绪"><ReadyBar ready={ready} desired={desired} width="w-16" /></ContextFact>
         ) : null}
@@ -1080,6 +1083,7 @@ function ApplicationOverview({
   renderOverviewIssues?: () => ReactNode;
   hasOverviewIssues?: boolean;
 }) {
+  const { t } = useLocale();
   const rel = app.relationships;
   const hasEntrypoints = Boolean(
     rel &&
@@ -1105,8 +1109,8 @@ function ApplicationOverview({
   const currentIssuesPresent = renderOverviewIssues
     ? (hasOverviewIssues ?? issues.length > 0)
     : issues.length > 0;
-  const batchActivity = useMemo(() => batchActivityForApp(app), [app]);
-  const batchStats = batchOverviewStats(batchActivity);
+  const batchActivity = useMemo(() => batchActivityForApp(app, t), [app, t]);
+  const batchStats = batchOverviewStats(batchActivity, t);
   const pureBatch = workloadClassOf(app.workload_class) === "job";
   const workloadComposition = workloadKindComposition(workloads);
   const latestChange =
@@ -1157,10 +1161,10 @@ function ApplicationOverview({
           />
           <div className={clsx("grid gap-3 md:grid-cols-2", factGrid)}>
             <ApplicationFact
-              label="运行时"
+              label={pureBatch ? t("运行时", "Runtime") : "运行时"}
               value={
                 pureBatch
-                  ? batchRuntimeForApp(app).label
+                  ? batchRuntimeForApp(app, t).label
                   : rolloutSummary
                     ? runtimeHealth === 'healthy' || runtimeHealth === 'neutral'
                       ? rolloutSummary.label
@@ -1189,19 +1193,19 @@ function ApplicationOverview({
             {pureBatch ? (
               <>
                 <ApplicationFact
-                  label="批处理资源"
+                  label={t("批处理资源", "Batch resources")}
                   value={String(workloads.length)}
-                  detail={workloadComposition || "没有工作负载"}
+                  detail={workloadComposition || t("没有工作负载", "No workloads")}
                 />
                 <ApplicationFact
-                  label="活动运行"
+                  label={t("活动运行", "Active runs")}
                   value={batchStats.activeValue}
                   detail={batchStats.activeDetail}
                 />
                 <ApplicationFact
-                  label="保留的运行"
+                  label={t("保留的运行", "Retained runs")}
                   value={batchStats.retainedValue}
-                  detail="Kubernetes 保留的历史记录"
+                  detail={t("Kubernetes 保留的历史记录", "History retained by Kubernetes")}
                 />
               </>
             ) : (
@@ -1755,35 +1759,36 @@ function ApplicationBatchOverview({
 }: {
   activity: AppBatchActivity[];
 }) {
+  const { t } = useLocale();
   if (activity.length === 0) return null;
 
-  const stats = batchOverviewStats(activity);
+  const stats = batchOverviewStats(activity, t);
 
   return (
-    <ApplicationPanel title="批处理活动">
+    <ApplicationPanel title={t("批处理活动", "Batch activity")}>
       <div className="grid gap-4">
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <ApplicationFact
             variant="bare"
-            label="最近运行"
+            label={t("最近运行", "Latest run")}
             value={stats.latestValue}
             detail={stats.latestDetail}
           />
           <ApplicationFact
             variant="bare"
-            label="保留的运行"
+            label={t("保留的运行", "Retained runs")}
             value={stats.retainedValue}
-            detail="Kubernetes 保留的历史记录"
+            detail={t("Kubernetes 保留的历史记录", "History retained by Kubernetes")}
           />
           <ApplicationFact
             variant="bare"
-            label="活动任务"
+            label={t("活动任务", "Active jobs")}
             value={stats.activeValue}
             detail={stats.activeDetail}
           />
           <ApplicationFact
             variant="bare"
-            label="计划"
+            label={t("计划", "Schedule")}
             value={stats.scheduleValue}
             detail={stats.scheduleDetail}
             monoValue={stats.scheduleMono}
@@ -1818,8 +1823,9 @@ function latestRunTime(item: AppBatchActivity): number {
   return Number.isNaN(t) ? 0 : t;
 }
 
-function batchOverviewStats(activity: AppBatchActivity[]) {
+function batchOverviewStats(activity: AppBatchActivity[], t: Translate) {
   const latest = latestBatchRuns(activity)[0];
+  const latestTime = latest ? latestRunTimestamp(latest) : undefined;
   const schedules = Array.from(
     new Set(
       activity
@@ -1836,35 +1842,36 @@ function batchOverviewStats(activity: AppBatchActivity[]) {
   const active = activity.reduce((n, item) => n + item.activeRuns, 0);
 
   return {
-    latestValue: latest?.latestRunPhase || latest?.label || "无",
+    latestValue: latest?.latestRunPhase || latest?.label || t("无", "None"),
     latestDetail: latest
-      ? `${latest.latestRunName || latest.workload.name}${latestRunTimestamp(latest) ? ` · ${applicationRelativeAgeTime(latestRunTimestamp(latest)!)} ` : ""}`.trim()
-      : "没有保留的运行",
+      ? `${latest.latestRunName || latest.workload.name}${latestTime ? ` · ${applicationRelativeAgeTime(latestTime, t)} ` : ""}`.trim()
+      : t("没有保留的运行", "No retained runs"),
     retainedValue:
-      retained > 0 ? `${succeeded} 次成功 / ${failed} 次失败` : "保留运行数：0",
-    activeValue: active > 0 ? `运行中 · ${active}` : "无",
+      retained > 0 ? t(`${succeeded} 次成功 / ${failed} 次失败`, `${succeeded} succeeded / ${failed} failed`) : t("保留运行数：0", "Retained runs: 0"),
+    activeValue: active > 0 ? batchRunningLabel(active, t) : t("无", "None"),
     activeDetail:
-      active > 0 ? activeWorkloadNames(activity) : "当前没有活动批处理任务",
+      active > 0 ? activeWorkloadNames(activity, t) : t("当前没有活动批处理任务", "No active batch jobs"),
     scheduleValue:
       schedules.length === 0
-        ? "无"
+        ? t("无", "None")
         : schedules.length === 1
           ? schedules[0]
-          : `${schedules.length} 个计划`,
+          : t(`${schedules.length} 个计划`, `${schedules.length} schedules`),
     scheduleDetail:
       schedules.length === 1 && latest?.lastSuccessfulAt
-        ? `最近成功：${applicationRelativeAgeTime(latest.lastSuccessfulAt)}`
+        ? `${t("最近成功：", "Last success: ")}${applicationRelativeAgeTime(latest.lastSuccessfulAt, t)}`
         : undefined,
     scheduleMono: schedules.length === 1,
   };
 }
 
-function activeWorkloadNames(activity: AppBatchActivity[]): string {
+function activeWorkloadNames(activity: AppBatchActivity[], t: Translate): string {
   const active = activity
     .filter((item) => item.activeRuns > 0)
     .map((item) => item.workload.name);
   if (active.length <= 2) return active.join(", ");
-  return `${active.slice(0, 2).join(", ")} 等 ${active.length} 个工作负载`;
+  const firstNames = active.slice(0, 2).join(", ");
+  return t(`${firstNames} 等 ${active.length} 个工作负载`, `${firstNames} and ${active.length - 2} more`);
 }
 
 
@@ -1989,6 +1996,7 @@ function WorkloadsMatrix({
   workloads: AppWorkload[];
   onSelectWorkload: (workload: AppWorkload) => void;
 }) {
+  const { t } = useLocale();
   if (workloads.length === 0) {
     return <EmptyState variant="inline" headline="没有可检查的工作负载。" />;
   }
@@ -2045,7 +2053,7 @@ function WorkloadsMatrix({
                   </span>
                 </td>
                 <td className="px-2 py-2 text-xs text-theme-text-secondary">
-                  {workloadRuntimeDetail(w)}
+                  {workloadRuntimeDetail(w, t)}
                 </td>
                 <td className="truncate px-2 py-2 font-mono text-xs text-theme-text-secondary">
                   {w.version || w.appVersion || "-"}
@@ -2084,18 +2092,19 @@ function workloadRuntimeStatus(workload: AppWorkload): {
   return { label: "Idle", health: "neutral" };
 }
 
-function workloadRuntimeDetail(workload: AppWorkload): string {
+function workloadRuntimeDetail(workload: AppWorkload, t: Translate): string {
   if (workload.rollout && (workload.rollout.active || workload.rollout.phase === 'stalled')) return workload.rollout.detail || `${workload.ready}/${workload.desired} 就绪`
   const batch = workload.batch;
   if (!batch) return `${workload.ready}/${workload.desired} 就绪`;
-  if ((batch.activeRuns ?? 0) > 0)
-    return `${batch.activeRuns ?? 0} 个活动运行`;
+  const activeRuns = batch.activeRuns ?? 0;
+  if (activeRuns > 0)
+    return t(`${activeRuns} 个活动运行`, pluralize(activeRuns, "active run"));
   const at =
     batch.latestStartedAt || batch.latestFinishedAt || batch.lastScheduledAt;
   if (batch.latestRunName)
-    return `${midTruncate(batch.latestRunName, 28)}${at ? ` · ${applicationRelativeAgeTime(at)}` : ""}`;
-  if (batch.schedule) return `计划 ${batch.schedule}`;
-  return "没有保留的运行";
+    return `${midTruncate(batch.latestRunName, 28)}${at ? ` · ${applicationRelativeAgeTime(at, t)}` : ""}`;
+  if (batch.schedule) return t(`计划 ${batch.schedule}`, `Schedule ${batch.schedule}`);
+  return t("没有保留的运行", "No retained runs");
 }
 
 function ApplicationTopology({
@@ -2729,9 +2738,9 @@ function sourceLinkLabel(source: AppSourceRef): string {
   return `查看 ${sourceObjectLabel(source)}`;
 }
 
-function applicationRelativeAgeTime(value?: string): string {
+function applicationRelativeAgeTime(value?: string, t: Translate = zh => zh): string {
   const formatted = formatRelativeAgeTime(value);
-  if (formatted === "just now") return "刚刚";
+  if (formatted === "just now") return t("刚刚", formatted);
   const match = /^(\d+)([smhd]) ago$/.exec(formatted);
   if (!match) return formatted;
   const units: Record<string, string> = {
@@ -2740,7 +2749,7 @@ function applicationRelativeAgeTime(value?: string): string {
     h: "小时",
     d: "天",
   };
-  return `${match[1]}${units[match[2]]}前`;
+  return t(`${match[1]}${units[match[2]]}前`, formatted);
 }
 
 function sourceObjectLabel(source: AppSourceRef): string {

@@ -1274,9 +1274,9 @@ export interface AppBatchActivity {
   lastSuccessfulAt?: string;
 }
 
-export function batchActivityForApp(app: AppRow): AppBatchActivity[] {
+export function batchActivityForApp(app: AppRow, t: Translate = zh => zh): AppBatchActivity[] {
   return (app.workloads || [])
-    .map(batchActivityForWorkload)
+    .map(workload => batchActivityForWorkload(workload, t))
     .filter((activity): activity is AppBatchActivity => Boolean(activity))
     .sort(
       (a, b) =>
@@ -1284,17 +1284,17 @@ export function batchActivityForApp(app: AppRow): AppBatchActivity[] {
     );
 }
 
-export function batchSignalForApp(app: AppRow): BatchSignal | null {
+export function batchSignalForApp(app: AppRow, t: Translate = zh => zh): BatchSignal | null {
   let best: BatchSignal | null = null;
   for (const workload of app.workloads || []) {
-    const signal = batchSignalForWorkload(workload);
+    const signal = batchSignalForWorkload(workload, t);
     if (!signal) continue;
     if (!best || batchSignalRank(signal) > batchSignalRank(best)) best = signal;
   }
   return best;
 }
 
-function batchSignalForWorkload(workload: AppWorkload): BatchSignal | null {
+function batchSignalForWorkload(workload: AppWorkload, t: Translate): BatchSignal | null {
   const batch = workload.batch;
   if (!batch) return null;
   const latestPhase = batch.latestRunPhase || "";
@@ -1302,26 +1302,28 @@ function batchSignalForWorkload(workload: AppWorkload): BatchSignal | null {
   if (latestPhase === "Failed" || latestPhase === "Error") {
     return {
       tone: "rose",
-      label: "批处理失败",
+      label: t("批处理失败", "Batch job failed"),
       detail:
         batch.message ||
-        `${name} 的最近运行${batch.latestRunName ? `（${batch.latestRunName}）` : ""}以状态 ${latestPhase} 结束。`,
+        t(`${name} 的最近运行${batch.latestRunName ? `（${batch.latestRunName}）` : ""}以状态 ${latestPhase} 结束。`,
+          `The latest run${batch.latestRunName ? ` (${batch.latestRunName})` : ""} of ${name} ended with status ${latestPhase}.`),
       workload,
     };
   }
   if (batch.suspended) {
     return {
       tone: "sky",
-      label: "计划已暂停",
-      detail: `${name} 已暂停，恢复后才会创建新的运行实例。`,
+      label: t("计划已暂停", "Schedule suspended"),
+      detail: t(`${name} 已暂停，恢复后才会创建新的运行实例。`, `${name} will create new runs once it resumes.`),
       workload,
     };
   }
-  if ((batch.activeRuns ?? 0) > 0) {
+  const activeRuns = batch.activeRuns ?? 0;
+  if (activeRuns > 0) {
     return {
       tone: "sky",
-      label: `运行中 · ${batch.activeRuns}`,
-      detail: `${name} 当前有 ${batch.activeRuns} 个活动运行实例。`,
+      label: batchRunningLabel(activeRuns, t),
+      detail: t(`${name} 当前有 ${activeRuns} 个活动运行实例。`, `${name} has ${activeRuns} active ${activeRuns === 1 ? "run" : "runs"}.`),
       workload,
     };
   }
@@ -1334,6 +1336,10 @@ export interface AppBatchRuntime {
   detail: string;
 }
 
+export function batchRunningLabel(activeRuns: number, t: Translate): string {
+  return t(`运行中 · ${activeRuns}`, `Running · ${activeRuns}`);
+}
+
 export function batchRuntimeForApp(app: AppRow, t: Translate = zh => zh): AppBatchRuntime {
   const activity = batchActivityForApp(app);
   if (
@@ -1343,7 +1349,7 @@ export function batchRuntimeForApp(app: AppRow, t: Translate = zh => zh): AppBat
   ) {
     const active = activity.reduce((sum, item) => sum + item.activeRuns, 0);
     return {
-      label: active > 0 ? t(`运行中 · ${active}`, `Running · ${active}`) : "Running",
+      label: active > 0 ? batchRunningLabel(active, t) : "Running",
       health: "neutral",
       detail: t("批处理任务当前正在运行。", "The batch job is running."),
     };
@@ -1356,8 +1362,9 @@ export function batchRuntimeForApp(app: AppRow, t: Translate = zh => zh): AppBat
     const item = failed[0];
     const detail =
       failed.length === 1
-        ? `${item.workload.kind}/${item.workload.name} 最近保留的运行${item.latestRunName ? `（${item.latestRunName}）` : ""}已失败。`
-        : `${failed.length} 个批处理工作负载的最近运行已失败。`;
+        ? t(`${item.workload.kind}/${item.workload.name} 最近保留的运行${item.latestRunName ? `（${item.latestRunName}）` : ""}已失败。`,
+            `The latest retained run${item.latestRunName ? ` (${item.latestRunName})` : ""} of ${item.workload.kind}/${item.workload.name} failed.`)
+        : t(`${failed.length} 个批处理工作负载的最近运行已失败。`, `The latest runs of ${failed.length} batch workloads failed.`);
     return { label: "Failed", health: "unhealthy", detail };
   }
   const latest = [...activity].sort(
@@ -1368,8 +1375,8 @@ export function batchRuntimeForApp(app: AppRow, t: Translate = zh => zh): AppBat
       label: "Succeeded",
       health: "healthy",
       detail: latest.latestRunName
-        ? `最近保留的运行：${latest.latestRunName}`
-        : "最近保留的运行已成功。",
+        ? t(`最近保留的运行：${latest.latestRunName}`, `Latest retained run: ${latest.latestRunName}`)
+        : t("最近保留的运行已成功。", "The latest retained run succeeded."),
     };
   }
   if (
@@ -1379,20 +1386,20 @@ export function batchRuntimeForApp(app: AppRow, t: Translate = zh => zh): AppBat
     return {
       label: "Suspended",
       health: "neutral",
-      detail: "所有批处理启动器均已暂停。",
+      detail: t("所有批处理启动器均已暂停。", "All batch schedules are suspended."),
     };
   }
   if (activity.some((item) => item.retainedRuns > 0)) {
     return {
       label: latest?.latestRunPhase || "Idle",
       health: "neutral",
-      detail: "当前没有正在运行的批处理任务。",
+      detail: t("当前没有正在运行的批处理任务。", "No batch jobs are running."),
     };
   }
   return {
     label: "Idle",
     health: "neutral",
-    detail: "Kubernetes 中没有保留的运行记录。",
+    detail: t("Kubernetes 中没有保留的运行记录。", "Kubernetes has no retained runs."),
   };
 }
 
@@ -1500,6 +1507,7 @@ export function servingReadiness(workloads: AppWorkload[]): {
 
 function batchActivityForWorkload(
   workload: AppWorkload,
+  t: Translate,
 ): AppBatchActivity | null {
   const batch = workload.batch;
   if (!batch) return null;
@@ -1513,10 +1521,11 @@ function batchActivityForWorkload(
       workload,
       tone: "rose",
       rank: 50,
-      label: "最近运行失败",
+      label: t("最近运行失败", "Latest run failed"),
       detail:
         batch.message ||
-        `${name} 的最近运行${batch.latestRunName ? `（${batch.latestRunName}）` : ""}以状态 ${latestPhase} 结束。`,
+        t(`${name} 的最近运行${batch.latestRunName ? `（${batch.latestRunName}）` : ""}以状态 ${latestPhase} 结束。`,
+          `The latest run${batch.latestRunName ? ` (${batch.latestRunName})` : ""} of ${name} ended with status ${latestPhase}.`),
       latestRunName: batch.latestRunName,
       latestRunPhase: latestPhase,
       latestStartedAt: batch.latestStartedAt,
@@ -1534,8 +1543,8 @@ function batchActivityForWorkload(
       workload,
       tone: "amber",
       rank: 40,
-      label: `已保留 ${failedRuns} 次失败运行`,
-      detail: `${name} 在 Kubernetes 中有已保留的失败运行记录。`,
+      label: t(`已保留 ${failedRuns} 次失败运行`, `${failedRuns} retained ${failedRuns === 1 ? "failure" : "failures"}`),
+      detail: t(`${name} 在 Kubernetes 中有已保留的失败运行记录。`, `Kubernetes has retained failed runs for ${name}.`),
       latestRunName: batch.latestRunName,
       latestRunPhase: latestPhase,
       latestStartedAt: batch.latestStartedAt,
@@ -1553,8 +1562,8 @@ function batchActivityForWorkload(
       workload,
       tone: "sky",
       rank: 35,
-      label: `${activeRuns} 个活动运行`,
-      detail: `${name} 正在执行。`,
+      label: t(`${activeRuns} 个活动运行`, `${activeRuns} active ${activeRuns === 1 ? "run" : "runs"}`),
+      detail: t(`${name} 正在执行。`, `${name} is running.`),
       latestRunName: batch.latestRunName,
       latestRunPhase: latestPhase,
       latestStartedAt: batch.latestStartedAt,
@@ -1572,8 +1581,8 @@ function batchActivityForWorkload(
       workload,
       tone: "sky",
       rank: 30,
-      label: "计划已暂停",
-      detail: `${name} 已暂停，恢复后才会创建新的运行实例。`,
+      label: t("计划已暂停", "Schedule suspended"),
+      detail: t(`${name} 已暂停，恢复后才会创建新的运行实例。`, `${name} will create new runs once it resumes.`),
       latestRunName: batch.latestRunName,
       latestRunPhase: latestPhase,
       latestStartedAt: batch.latestStartedAt,
@@ -1591,8 +1600,8 @@ function batchActivityForWorkload(
     tone: "muted",
     rank: latestPhase === "Succeeded" ? 20 : 10,
     label:
-      latestPhase === "Succeeded" ? "最近运行成功" : "没有活动运行",
-    detail: `${name} 有 ${retainedRuns} 条保留的运行记录。`,
+      latestPhase === "Succeeded" ? t("最近运行成功", "Latest run succeeded") : t("没有活动运行", "No active runs"),
+    detail: t(`${name} 有 ${retainedRuns} 条保留的运行记录。`, `${name} has ${retainedRuns} retained ${retainedRuns === 1 ? "run" : "runs"}.`),
     latestRunName: batch.latestRunName,
     latestRunPhase: latestPhase,
     latestStartedAt: batch.latestStartedAt,

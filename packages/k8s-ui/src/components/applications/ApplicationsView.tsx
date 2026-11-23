@@ -519,7 +519,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                           </Tooltip>
                           <CollapseChevron open={r.expanded} className="h-3.5 w-3.5" />
                           <span className="truncate font-semibold text-theme-text-primary">{r.label}</span>
-                          {r.workloadClass !== 'job' && <BatchSignalChip signal={firstBatchSignal(r.members.map((m) => m.row))} />}
+                          {r.workloadClass !== 'job' && <BatchSignalChip signal={firstBatchSignal(r.members.map((m) => m.row), t)} />}
                           <Tooltip
                             content={<AppIdentityTooltip identityKey={r.label} source={r.members[0]?.row.identity?.source} portable={r.members[0]?.row.identity?.portable} fleet={variant === 'fleet'} members={r.members.map((m) => ({ name: m.row.name, env: m.row.identity!.env, confidence: m.row.identity!.confidence, evidence: m.row.identity!.evidence }))} />}
                             delay={150}
@@ -600,7 +600,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
                             <span className={clsx('h-8 w-1 shrink-0 rounded-full', HEALTH_META[e.health].bar)} />
                           </Tooltip>
                           <span className="truncate font-medium text-theme-text-primary">{e.row.name}</span>
-                          {e.workloadClass !== 'job' && <BatchSignalChip signal={batchSignalForApp(e.row)} />}
+                          {e.workloadClass !== 'job' && <BatchSignalChip signal={batchSignalForApp(e.row, t)} />}
                           <ProvenanceBadge tier={e.row.tier} appKey={e.row.key} confidence={e.row.confidence} />
                           <CategoryChip category={e.category} addonReason={e.row.addonReason} />
                         </span>
@@ -707,7 +707,7 @@ export function ApplicationsView({ entries: allEntries, variant, onSelect, title
   )
 }
 
-function firstBatchSignal(rows: AppRow[]) {
+function firstBatchSignal(rows: AppRow[], t: Translate) {
   let best = null as ReturnType<typeof batchSignalForApp>
   const rank = (tone: string | undefined) => {
     switch (tone) {
@@ -724,7 +724,7 @@ function firstBatchSignal(rows: AppRow[]) {
     }
   }
   for (const row of rows) {
-    const signal = batchSignalForApp(row)
+    const signal = batchSignalForApp(row, t)
     if (signal && rank(signal.tone) > rank(best?.tone)) best = signal
   }
   return best
