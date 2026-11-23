@@ -175,15 +175,17 @@ callers must still use `Authenticate(token, expectedOwner)` to authenticate.
 
 ## Lifetime, replacement, and retention
 
-- Issue TTL `0` means 8 hours; explicit TTL is 15 minutes through 7 days,
+- For expiring credentials, issue TTL `0` means 8 hours. Explicit TTL is 15 minutes through 7 days,
   inclusive. Integer bounds are checked before duration conversion.
-- Authentication expires exactly at `ExpiresAt`, without an inclusive grace
-  period. A refresh requires a currently valid matching-owner bearer; owner
-  rotation by credential ID also requires an active, unexpired credential.
-- Refresh/rotation TTL `0` inherits the **first-issued TTL**, even if an earlier
-  renewal explicitly chose another TTL. Both retain the original 30-day family
-  refresh deadline and cap new expiry at that deadline. Fewer than 15 minutes
-  remaining rejects renewal; exactly 15 minutes is allowed.
+- With `neverExpires: true`, the issue request uses an omitted or zero TTL.
+  The record has no expiry or refresh deadline. Refresh and rotation with an
+  omitted or zero TTL retain that policy.
+- A credential with an expiry stops authenticating at `ExpiresAt`. Refresh and
+  owner rotation require a currently active credential.
+- For expiring credentials, refresh/rotation TTL `0` inherits the **first-issued
+  TTL**, even if an earlier renewal explicitly chose another TTL. Both retain the
+  original 30-day family refresh deadline and cap new expiry at that deadline.
+  Renewal requires at least 15 minutes remaining.
 - Refresh/rotation creates a new ID and random token and revokes the predecessor
   in one persistent mutation. Scope, label, owner, and `ReadOnly` cannot change.
   Concurrent refresh attempts on one bearer produce at most one success.
@@ -192,10 +194,15 @@ callers must still use `Authenticate(token, expectedOwner)` to authenticate.
   expired and revoked metadata for status reporting.
 - At most 16,384 credential records (including expired/revoked predecessors) and
   16 MiB total serialized state are permitted. Mutations opportunistically prune
-  records only when `now > max(ExpiresAt, RevokedAt) + 30 days`. No live grants
+  records only when `now > max(ExpiresAt, RevokedAt) + 30 days`. Revoked credentials
+  without automatic expiry are retained for 30 days from revocation. No live grants
   are evicted to make space; capacity errors leave all existing state intact.
   Authentication and listing do not write or trigger pruning. Families can
   outlive their earliest retained metadata record after retention cleanup.
+
+To roll back to a Hub version that predates non-expiring credentials, restore a
+compatible state backup if the current state still contains any of those
+records. Revocation keeps their records on disk until retention cleanup.
 
 Errors are `*hubstate.Error` with a generic `Code`: `invalid_parameters`,
 `invalid_scope`, `conflict`, `cluster_not_found`, `credential_invalid`,

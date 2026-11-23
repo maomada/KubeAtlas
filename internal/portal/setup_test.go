@@ -76,11 +76,16 @@ func TestFirstRunSetupAndPersistedLogin(t *testing.T) {
 	if err != nil || !strings.Contains(status.Body.String(), `"required":true`) || strings.Contains(status.Body.String(), code) {
 		t.Fatal("private setup code unavailable locally or exposed in the setup status")
 	}
-	login := map[string]string{"username": "local-operator", "password": strings.Repeat("界", 40)}
+	login := map[string]string{"username": "local-operator", "password": "A甲乙丙丁戊己！"}
 	setupRequest(t, h, "POST", "/api/auth/login", login, 503)
 	form := map[string]string{"code": "incorrect", "username": login["username"], "password": login["password"]}
 	setupRequest(t, h, "POST", "/api/setup", form, 403)
 	form["code"] = code
+	for _, invalid := range []string{"A甲乙丙丁戊！", "abcdefg!", "Abcdefgh", "Abcdefg "} {
+		form["password"] = invalid
+		setupRequest(t, h, "POST", "/api/setup", form, 400)
+	}
+	form["password"] = login["password"]
 	setupRequest(t, h, "POST", "/api/setup", form, 204)
 	setupRequest(t, h, "POST", "/api/setup", form, 409)
 	if _, err := os.Stat(filepath.Join(filepath.Dir(statePath), setupCodeFile)); !os.IsNotExist(err) {
@@ -130,7 +135,17 @@ func TestStartupMigratesAndExplicitlyResetsAdministrator(t *testing.T) {
 	previous := map[string]string{"username": legacy.Username, "password": legacy.Password}
 	setupRequest(t, migrated, "POST", "/api/auth/login", previous, 204)
 
-	updated := Credentials{Username: "new-operator", Password: "new password text", Hub: &HubConfig{Store: setupStore(t, statePath)}}
+	if _, err := NewStartupHandler(legacy, nil, statePath, true); err == nil {
+		t.Fatal("explicit reset accepted a legacy password")
+	}
+	existing, err := NewStartupHandler(legacy, nil, statePath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(existing.Close)
+	setupRequest(t, existing, "POST", "/api/auth/login", previous, 204)
+
+	updated := Credentials{Username: "new-operator", Password: "ResetOk!", Hub: &HubConfig{Store: setupStore(t, statePath)}}
 	newLogin := map[string]string{"username": updated.Username, "password": updated.Password}
 	unchanged, err := NewStartupHandler(updated, nil, statePath, false)
 	if err != nil {
@@ -159,4 +174,23 @@ func TestStartupMigratesAndExplicitlyResetsAdministrator(t *testing.T) {
 	t.Cleanup(direct.Close)
 	setupRequest(t, direct, "POST", "/api/auth/login", previous, 401)
 	setupRequest(t, direct, "POST", "/api/auth/login", newLogin, 204)
+}
+
+func TestStartupValidatesNewAdministratorPassword(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "hub", "state.json")
+	credentials := Credentials{Username: "operator", Hub: &HubConfig{Store: setupStore(t, statePath)}}
+	for _, invalid := range []string{"Short!7", "nochange!", "NoSymbol", "With\nBreak!", "TooLong!" + strings.Repeat("x", 4096)} {
+		credentials.Password = invalid
+		if h, err := NewStartupHandler(credentials, nil, statePath, false); err == nil {
+			h.Close()
+			t.Fatal("startup accepted a password that failed the new administrator policy")
+		}
+	}
+	credentials.Password = "LongPass!" + strings.Repeat("界", 40)
+	h, err := NewStartupHandler(credentials, nil, statePath, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(h.Close)
+	setupRequest(t, h, "POST", "/api/auth/login", map[string]string{"username": credentials.Username, "password": credentials.Password}, 204)
 }

@@ -211,8 +211,8 @@ func configureAdmin(credentials *portal.Credentials, username, passwordPath stri
 	if strings.ContainsAny(password, "\r\n") {
 		return errors.New("administrator password file must contain a single line")
 	}
-	if !utf8.ValidString(password) || len(password) < 16 || len(password) > 4096 {
-		return errors.New("administrator password must contain 16-4096 UTF-8 bytes")
+	if !utf8.ValidString(password) || len(password) == 0 || len(password) > 4096 {
+		return errors.New("administrator password file must contain 1-4096 UTF-8 bytes")
 	}
 	credentials.Username, credentials.Password = username, password
 	return nil

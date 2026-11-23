@@ -116,16 +116,18 @@ type Credential struct {
 	ClusterIDs     []string   `json:"clusterIds"`
 	ReadOnly       bool       `json:"readOnly"`
 	CreatedAt      time.Time  `json:"createdAt"`
-	ExpiresAt      time.Time  `json:"expiresAt"`
-	RefreshUntil   time.Time  `json:"refreshUntil"`
+	ExpiresAt      time.Time  `json:"expiresAt,omitzero"`
+	RefreshUntil   time.Time  `json:"refreshUntil,omitzero"`
+	NeverExpires   bool       `json:"neverExpires,omitempty"`
 	RevokedAt      *time.Time `json:"revokedAt,omitempty"`
 }
 
 type IssueInput struct {
-	Label      string   `json:"label"`
-	ClusterIDs []string `json:"clusterIds"`
-	ReadOnly   bool     `json:"readOnly"`
-	TTLSeconds int      `json:"ttlSeconds"`
+	Label        string   `json:"label"`
+	ClusterIDs   []string `json:"clusterIds"`
+	ReadOnly     bool     `json:"readOnly"`
+	TTLSeconds   int      `json:"ttlSeconds"`
+	NeverExpires bool     `json:"neverExpires,omitempty"`
 }
 
 type IssuedCredential struct {

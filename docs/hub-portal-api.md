@@ -184,7 +184,7 @@ explicit revoked cluster in the same organization.
 | Authentication | Method and path | Body / result |
 | --- | --- | --- |
 | Portal cookie | `GET /api/mcp/credentials` | `{credentials, serverTime}`, metadata only |
-| Portal cookie | `POST /api/mcp/credentials` | `{label, clusterIds, readOnly, ttlSeconds}` → one-time `{credential, token}` |
+| Portal cookie | `POST /api/mcp/credentials` | `{label, clusterIds, readOnly, ttlSeconds?, neverExpires?}` → one-time `{credential, token}` |
 | Portal cookie | `POST /api/mcp/credentials/{id}/rotate` | `{ttlSeconds}` → replacement credential/token |
 | Portal cookie | `POST /api/mcp/credentials/{id}/revoke` | `{}` → 204 |
 | MCP bearer | `GET /api/mcp/credentials/current` | `{credential, status: "active", serverTime}` |
@@ -193,9 +193,15 @@ explicit revoked cluster in the same organization.
 
 Issuance requires an explicit boolean `readOnly`, a nonempty explicit cluster
 scope, and known cluster IDs. Wildcards are rejected. An omitted/zero TTL uses the
-store default; explicit TTLs range from 15 minutes to seven days. Refresh/rotation
-retain scope and read-only mode, revoke the previous token, and cannot extend the
-original refresh family beyond 30 days. See [Hub state](hub-state.md).
+store default. Explicit TTLs range from 15 minutes to seven days. For a credential
+without automatic expiry, send `neverExpires: true` with `ttlSeconds` omitted or
+zero. Its metadata includes `neverExpires: true` and omits `expiresAt` and
+`refreshUntil`.
+
+Refresh and rotation retain scope and read-only mode and revoke the previous
+token. Expiring credentials retain their original 30-day refresh window.
+For a non-expiring credential, omit `ttlSeconds` or set it to zero when
+refreshing or rotating. See [Hub state](hub-state.md).
 
 Body-bearing operations require `application/json`, at most 32 KiB, one object,
 exact supported field names and no duplicate fields. Responses are `no-store` and

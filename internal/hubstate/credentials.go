@@ -21,11 +21,21 @@ func (s *Store) Issue(ownerID string, input IssueInput) (IssuedCredential, error
 	return s.IssueForOrganization("self-hosted", ownerID, input)
 }
 
+func (input IssueInput) lifetimeSeconds() (int, error) {
+	if input.NeverExpires {
+		if input.TTLSeconds != 0 {
+			return 0, failure("invalid_parameters")
+		}
+		return 0, nil
+	}
+	return ttlSeconds(input.TTLSeconds, defaultTTL)
+}
+
 func (s *Store) IssueForOrganization(organizationID, ownerID string, input IssueInput) (IssuedCredential, error) {
 	if !validOwner(ownerID) || !validText(input.Label, 128, false) {
 		return IssuedCredential{}, failure("invalid_parameters")
 	}
-	ttl, err := ttlSeconds(input.TTLSeconds, defaultTTL)
+	ttl, err := input.lifetimeSeconds()
 	if err != nil {
 		return IssuedCredential{}, err
 	}
@@ -49,7 +59,7 @@ func (s *Store) IssueForMemberInOrganization(organizationID, ownerID string, inp
 	if !validOwner(ownerID) || !validText(input.Label, 128, false) {
 		return IssuedCredential{}, failure("invalid_parameters")
 	}
-	ttl, err := ttlSeconds(input.TTLSeconds, defaultTTL)
+	ttl, err := input.lifetimeSeconds()
 	if err != nil {
 		return IssuedCredential{}, err
 	}
@@ -89,7 +99,17 @@ func (s *Store) issueLocked(ownerID, organizationID string, input IssueInput, id
 	if err != nil {
 		return IssuedCredential{}, err
 	}
-	c := storedCredential{Credential: Credential{ID: id, OwnerID: ownerID, OrganizationID: organizationID, Label: input.Label, ClusterIDs: ids, ReadOnly: input.ReadOnly, CreatedAt: now, ExpiresAt: now.Add(time.Duration(ttl) * time.Second), RefreshUntil: now.Add(familyLifetime)}, Digest: hash, FamilyID: id, FamilyCreatedAt: now, OriginalTTLSeconds: ttl, TTLSeconds: ttl}
+	c := storedCredential{
+		Credential: Credential{
+			ID: id, OwnerID: ownerID, OrganizationID: organizationID, Label: input.Label,
+			ClusterIDs: ids, ReadOnly: input.ReadOnly, CreatedAt: now, NeverExpires: input.NeverExpires,
+		},
+		Digest: hash, FamilyID: id, FamilyCreatedAt: now, OriginalTTLSeconds: ttl, TTLSeconds: ttl,
+	}
+	if !c.NeverExpires {
+		c.ExpiresAt = now.Add(time.Duration(ttl) * time.Second)
+		c.RefreshUntil = now.Add(familyLifetime)
+	}
 	next.Credentials[id] = c
 	if err := s.commit(next); err != nil {
 		return IssuedCredential{}, err
@@ -184,7 +204,7 @@ func credentialStatus(c storedCredential, now time.Time) error {
 	if c.RevokedAt != nil {
 		return failure("credential_revoked")
 	}
-	if !now.Before(c.ExpiresAt) {
+	if !c.NeverExpires && !now.Before(c.ExpiresAt) {
 		return failure("credential_expired")
 	}
 	return nil
@@ -315,12 +335,20 @@ func (s *Store) renewWithScope(old storedCredential, requestedTTL int, clusterID
 	if err := credentialStatus(old, now); err != nil {
 		return IssuedCredential{}, err
 	}
-	ttl, err := ttlSeconds(requestedTTL, old.OriginalTTLSeconds)
-	if err != nil {
-		return IssuedCredential{}, err
-	}
-	if old.RefreshUntil.Sub(now) < time.Duration(minTTL)*time.Second {
-		return IssuedCredential{}, failure("credential_refresh_expired")
+	var ttl int
+	if old.NeverExpires {
+		if requestedTTL != 0 {
+			return IssuedCredential{}, failure("invalid_parameters")
+		}
+	} else {
+		var err error
+		ttl, err = ttlSeconds(requestedTTL, old.OriginalTTLSeconds)
+		if err != nil {
+			return IssuedCredential{}, err
+		}
+		if old.RefreshUntil.Sub(now) < time.Duration(minTTL)*time.Second {
+			return IssuedCredential{}, failure("credential_refresh_expired")
+		}
 	}
 	ids, err := scopeOrganization(clusterIDs, old.OrganizationID, s.data.Clusters, false)
 	if err != nil || !slices.Equal(ids, clusterIDs) {
@@ -348,9 +376,11 @@ func (s *Store) renewWithScope(old storedCredential, requestedTTL int, clusterID
 	if old.ReadOnly {
 		c.ReadOnly = true
 	}
-	c.ExpiresAt = now.Add(time.Duration(ttl) * time.Second)
-	if c.ExpiresAt.After(c.RefreshUntil) {
-		c.ExpiresAt = c.RefreshUntil
+	if !c.NeverExpires {
+		c.ExpiresAt = now.Add(time.Duration(ttl) * time.Second)
+		if c.ExpiresAt.After(c.RefreshUntil) {
+			c.ExpiresAt = c.RefreshUntil
+		}
 	}
 	old.RevokedAt = &now
 	next.Credentials[old.ID], next.Credentials[id] = old, c

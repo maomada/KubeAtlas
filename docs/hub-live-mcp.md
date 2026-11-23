@@ -36,10 +36,11 @@ MCP handler and supplies a principal bound to the current membership.
 
 Pending and disabled members cannot access live clusters. Viewer members are
 forced read-only even if a credential requests writes. Member status, cluster
-scope, revocation, and expiration are checked on every request, independent of
-MCP session IDs. Credential refresh rotates the token without extending its
-absolute refresh-family lifetime; member changes revoke the member's
-credentials and sessions.
+scope and revocation are checked on every request, independent of MCP session
+IDs. Credentials with an expiry also enforce it on every request. The Agent
+page offers an explicit non-expiring option. Refresh rotates the token and
+retains the lifetime policy. Member changes revoke the member's credentials
+and sessions.
 
 ## Agent endpoints
 

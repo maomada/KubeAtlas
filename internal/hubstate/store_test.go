@@ -313,6 +313,49 @@ func TestTTLAndRefreshWindow(t *testing.T) {
 	}
 }
 
+func TestNonExpiringCredentialSurvivesReopenAndPruning(t *testing.T) {
+	s, now := testStore(t)
+	cluster(t, s, "alpha")
+	input := IssueInput{Label: "automation", ClusterIDs: []string{"alpha"}, ReadOnly: true, NeverExpires: true, TTLSeconds: minTTL}
+	_, err := s.Issue("owner", input)
+	errorCode(t, err, "invalid_parameters")
+	input.TTLSeconds = 0
+	issued, err := s.Issue("owner", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(familyLifetime + retention + time.Hour)
+	reopened, err := OpenStore(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.now = s.now
+	issue(t, reopened, minTTL)
+	credential, err := reopened.Authenticate(issued.Token, "owner")
+	if err != nil || !credential.NeverExpires || !credential.ExpiresAt.IsZero() || !credential.RefreshUntil.IsZero() {
+		t.Fatalf("non-expiring credential did not survive reopen and pruning: %v", err)
+	}
+	_, err = reopened.Rotate("owner", credential.ID, minTTL)
+	errorCode(t, err, "invalid_parameters")
+	rotated, err := reopened.Rotate("owner", credential.ID, 0)
+	if err != nil || !rotated.Credential.NeverExpires || !rotated.Credential.ReadOnly || !slices.Equal(rotated.Credential.ClusterIDs, credential.ClusterIDs) {
+		t.Fatalf("rotation did not preserve credential lifetime and grants: %v", err)
+	}
+	_, err = reopened.Authenticate(issued.Token, "owner")
+	errorCode(t, err, "credential_revoked")
+	if err := reopened.Revoke("owner", rotated.Credential.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = reopened.Authenticate(rotated.Token, "owner")
+	errorCode(t, err, "credential_revoked")
+	*now = now.Add(retention + time.Duration(minTTL)*time.Second + time.Nanosecond)
+	finite := issue(t, reopened, minTTL)
+	listed := reopened.Credentials("owner")
+	if len(listed) != 1 || listed[0].ID != finite.Credential.ID {
+		t.Fatal("revoked non-expiring credentials should be pruned after retention")
+	}
+}
+
 func TestConcurrentRefreshExactlyOneSuccess(t *testing.T) {
 	s, _ := testStore(t)
 	cluster(t, s, "alpha")

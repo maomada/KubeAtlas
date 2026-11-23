@@ -60,11 +60,14 @@ Read the one-time setup code on the Hub host or inside the Hub container using
 page and platform features become available after setup. The state file stores
 the administrator's password hash.
 
+New administrator passwords need at least 8 characters, including an uppercase
+English letter and a special character (punctuation or a symbol). The maximum is
+4096 UTF-8 bytes. The same rule applies when resetting the administrator password.
+
 For unattended setup, pass `--admin-username=<username>` and
 `--admin-password-file=<path>` at startup. Use a private file containing the
 password and readable by the Hub service account. The administrator username
-must be 1–256 bytes without a colon or control characters, and the password
-must be 16–4096 UTF-8 bytes.
+must be 1–256 bytes without a colon or control characters.
 
 Keep `KUBEATLAS_PORTAL_USERNAME` and `KUBEATLAS_PORTAL_PASSWORD` available
 for the first startup of an upgrade from an older Hub so it can migrate
@@ -122,8 +125,9 @@ Local owner login remains available.
   Hub's `/mcp`; they are served by the Agent process, not aliases or fallback
   routes on the Hub.
 
-Hub bearer credentials are never taken from browser cookies. They expire and
-can be revoked or refreshed through the authenticated Hub API. The live path
+Hub bearer credentials use a selected lifetime and can be revoked or refreshed
+through the authenticated Hub API. The Agent page offers an explicit
+non-expiring option. The live path
 uses the member's principal and tunneled Kubernetes identity; it does not
 fall back to cached snapshots or direct Fleet tools.
 

@@ -30,14 +30,18 @@ it('rejects unsafe endpoints and ambiguous bearer values before copying connecti
   }
 })
 
-it('distinguishes expiry, revocation and unknown server time', () => {
-  const credential: MCPCredential = {
+it('distinguishes expiry, perpetual validity, revocation and unknown expiry', () => {
+  const credential = {
     id: 'fixture', organizationId: 'org-1', label: 'Client', clusterIds: ['east'], readOnly: true,
     createdAt: '2026-01-01T00:00:00Z', expiresAt: '2026-01-01T08:00:00Z', refreshUntil: '2026-01-31T00:00:00Z',
-  }
+  } satisfies MCPCredential
   expect(credentialStatus(credential, Date.parse(credential.createdAt))).toBe('active')
   expect(credentialStatus(credential, Date.parse(credential.expiresAt))).toBe('expired')
   expect(credentialStatus({ ...credential, revokedAt: credential.createdAt }, 0)).toBe('revoked')
   expect(credentialStatus({ ...credential, expiresAt: 'invalid' }, 0)).toBe('unknown')
   expect(credentialStatus(credential, NaN)).toBe('unknown')
+  const noDates = { ...credential, expiresAt: undefined, refreshUntil: undefined }
+  expect(credentialStatus(noDates, Date.parse(credential.createdAt))).toBe('unknown')
+  expect(credentialStatus({ ...noDates, neverExpires: true }, NaN)).toBe('active')
+  expect(credentialStatus({ ...noDates, neverExpires: true, revokedAt: credential.createdAt }, NaN)).toBe('revoked')
 })

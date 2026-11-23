@@ -17,19 +17,23 @@ func (p *portalHub) manageCredentials(w http.ResponseWriter, r *http.Request, ow
 			return
 		}
 		var input struct {
-			Label      string   `json:"label"`
-			ClusterIDs []string `json:"clusterIds"`
-			ReadOnly   *bool    `json:"readOnly"`
-			TTLSeconds int      `json:"ttlSeconds"`
+			Label        string   `json:"label"`
+			ClusterIDs   []string `json:"clusterIds"`
+			ReadOnly     *bool    `json:"readOnly"`
+			TTLSeconds   int      `json:"ttlSeconds"`
+			NeverExpires bool     `json:"neverExpires"`
 		}
-		if !hubMethod(w, r, http.MethodPost) || !hubDecode(w, r, &input, "label", "clusterIds", "readOnly", "ttlSeconds") {
+		if !hubMethod(w, r, http.MethodPost) || !hubDecode(w, r, &input, "label", "clusterIds", "readOnly", "ttlSeconds", "neverExpires") {
 			return
 		}
 		if input.ReadOnly == nil {
 			hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "readOnly must be an explicit boolean")
 			return
 		}
-		issue := hubstate.IssueInput{Label: input.Label, ClusterIDs: input.ClusterIDs, ReadOnly: *input.ReadOnly, TTLSeconds: input.TTLSeconds}
+		issue := hubstate.IssueInput{
+			Label: input.Label, ClusterIDs: input.ClusterIDs, ReadOnly: *input.ReadOnly,
+			TTLSeconds: input.TTLSeconds, NeverExpires: input.NeverExpires,
+		}
 		var issued hubstate.IssuedCredential
 		var err error
 		if p.store.IsPlatformOwner(ownerID) {

@@ -297,7 +297,7 @@ func (s *Store) next(now time.Time) storeFile {
 		if c.RevokedAt != nil && c.RevokedAt.After(last) {
 			last = *c.RevokedAt
 		}
-		if now.After(last.Add(retention)) {
+		if !last.IsZero() && now.After(last.Add(retention)) {
 			continue
 		}
 		c.Credential = cloneCredential(c.Credential)
