@@ -25,6 +25,7 @@
 {{- fail "hubArtifacts.previous.version must be a valid Hub artifact version" }}
 {{- end }}
 {{- end }}
+{{- $listenPort := 1333 }}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -68,7 +69,7 @@ spec:
           image: {{ include "kubeatlas-portal.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - {{ printf "--listen=0.0.0.0:%d" (int .Values.service.port) | quote }}
+            - {{ printf "--listen=0.0.0.0:%d" $listenPort | quote }}
             - --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json
             {{- with .Values.hubOrigin }}
             - {{ printf "--hub-origin=%s" . | quote }}
@@ -82,7 +83,7 @@ spec:
             {{- end }}
           ports:
             - name: http
-              containerPort: {{ .Values.service.port }}
+              containerPort: {{ $listenPort }}
               protocol: TCP
           {{- if or .Values.httpIPOrigin .Values.existingSecret }}
           env:

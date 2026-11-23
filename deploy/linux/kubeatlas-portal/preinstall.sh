@@ -41,8 +41,13 @@ if [ "$version" = "$version_line" ] ||
     fail "Cannot identify the installed Hub release."
 fi
 
-# Debian exposes both versions on upgrade. A reinstall can reuse its catalog.
-if [ "${1-}" = upgrade ] && [ -n "${2-}" ] && [ "${2-}" = "${3-}" ]; then
+# RPM supplies only the package count, so its incoming version is set when built.
+case "$1" in
+    upgrade) installed_version="${2-}"; incoming_version="${3-}" ;;
+    [1-9]*) installed_version="$version"; incoming_version='@KUBEATLAS_RELEASE_VERSION@' ;;
+    *) installed_version=; incoming_version= ;;
+esac
+if [ -n "$incoming_version" ] && [ "$installed_version" = "$incoming_version" ]; then
     "$binary" --check-hub-artifacts "--hub-artifacts-dir=$catalog"
     exit 0
 fi

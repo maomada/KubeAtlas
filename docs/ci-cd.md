@@ -281,7 +281,9 @@ compatibility boundaries. The independent Portal is not the upstream Cloud.
 
 The separate `Release Binaries` workflow is manual-only. It accepts the
 full `source_sha`, strict SemVer `version`, and `publish=false` dry-run inputs.
-It checks main ancestry and exact-SHA CI and Semgrep CE evidence before building.
+Choose a commit that builds the complete Hub DEB/RPM packages and offline Agent
+bundle. Source validation rejects earlier packaging layouts before building
+and requires main ancestry and exact-SHA CI and Semgrep CE evidence.
 Builds use trusted release tooling checked out separately from the selected
 source, have read-only permissions, and never log in to a registry.
 

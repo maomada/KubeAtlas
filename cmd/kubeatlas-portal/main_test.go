@@ -86,6 +86,30 @@ func TestConfigureAdminReadsPasswordFileAndRequiresPair(t *testing.T) {
 	}
 }
 
+func TestConfigureAdminRejectsMultilinePasswordFile(t *testing.T) {
+	for name, password := range map[string]string{
+		"embedded LF":       "configuration\npassword",
+		"embedded CR":       "configuration\rpassword",
+		"embedded CRLF":     "configuration\r\npassword\r\n",
+		"extra trailing LF": "configuration password\n\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "password")
+			if err := os.WriteFile(path, []byte(password), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			credentials := portal.Credentials{Username: "legacy", Password: "legacy password text"}
+			err := configureAdmin(&credentials, "operator", path, true)
+			if err == nil || !strings.Contains(err.Error(), "single line") {
+				t.Fatalf("expected a single-line password error, got %v", err)
+			}
+			if credentials.Username != "legacy" || credentials.Password != "legacy password text" {
+				t.Fatal("invalid password file changed existing credentials")
+			}
+		})
+	}
+}
+
 func TestConfigureHubRequiresPersistentState(t *testing.T) {
 	credentials := portal.Credentials{}
 	if err := configureHub(&credentials, "  ", "", ""); err == nil || !strings.Contains(err.Error(), "--hub-state-file is required") {

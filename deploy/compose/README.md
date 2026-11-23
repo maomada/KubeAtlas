@@ -29,6 +29,8 @@ docker compose exec hub /kubeatlas-portal \
 
 Back up the `hub-state` volume before changing versions. Keep the same Compose project and environment file so the replacement uses the same state and can migrate credentials from earlier versions. Set `KUBEATLAS_HUB_VERSION` to the new tag, pull the image, and run `docker compose up -d`. Set `KUBEATLAS_HUB_PORT=9290` if your current reverse proxy still forwards to that port. Verify the HTTPS endpoint and existing Agent connections after the change.
 
+If your existing `retain-previous.yml` still uses `--listen=0.0.0.0:9290`, set `KUBEATLAS_HUB_CONTAINER_PORT=9290` in your shell or Compose `.env` file before upgrading. This keeps Docker's target port aligned with the old override. You can also change that override's listener to `1333` and use the default container port. In either case, keep the same host port for your reverse proxy.
+
 To roll back to v0.1.3 or earlier, stop Hub and restore the pre-upgrade state volume and environment file before starting the old image.
 
 While an Agent still uses an older image digest, retain its prepared catalog using a Compose override. Replace the host path and previous version in this example and pass both files with `docker compose -f compose.yml -f retain-previous.yml up -d`.

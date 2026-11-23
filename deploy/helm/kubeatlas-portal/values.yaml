@@ -24,6 +24,7 @@ hubArtifacts:
 
 service:
   type: ClusterIP
+  # Published Service port. The non-root Hub container listens on 1333.
   port: 1333
 
 ingress:

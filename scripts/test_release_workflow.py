@@ -257,6 +257,7 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertNotIn("--clobber", workflow)
         self.assertNotIn(":latest", workflow)
         self.assertEqual(workflow.count("trusted/scripts/release_policy.py"), 2)
+        self.assertEqual(workflow.count("--require-native-hub-packaging"), 2)
         self.assertIn("RELEASE_ARTIFACT_TOOL=../trusted/scripts/release_artifacts.py", workflow)
         self.assertIn("steps.upload.outcome", workflow)
         self.assertIn("--prerelease", workflow)

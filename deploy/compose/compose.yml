@@ -5,12 +5,12 @@ services:
       - path: ${KUBEATLAS_HUB_ENV_FILE:-./hub.env}
         required: false
     command:
-      - --listen=0.0.0.0:1333
+      - "--listen=0.0.0.0:${KUBEATLAS_HUB_CONTAINER_PORT:-1333}"
       - --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json
     volumes:
       - hub-state:/var/lib/kubeatlas-portal
     ports:
-      - "127.0.0.1:${KUBEATLAS_HUB_PORT:-1333}:1333"
+      - "127.0.0.1:${KUBEATLAS_HUB_PORT:-1333}:${KUBEATLAS_HUB_CONTAINER_PORT:-1333}"
     read_only: true
     cap_drop: [ALL]
     security_opt:
