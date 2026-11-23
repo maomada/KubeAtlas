@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "engine": "1.180.0",
-  "sourceSha": "b1dbd654c0c10e06005a231d31f52487ae6b7a27",
-  "sourceTreeSha256": "ce9aecfb592e4b5513266bd1db369857b6e445cfded7b907977e7bf6bd79c577",
+  "sourceSha": "cbcb0248785a0fb6adf99f932950f19d3e0e212c",
+  "sourceTreeSha256": "835faeb3fc4ffbdb934c2b480a429f9b97f5b9e5602ee91e65542cf31330bcf1",
   "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
-  "rawFindingsSha256": "c634b2d4c49c2447eb81e056e1ccc310b1fe182c473e33a1320028e75ab9cdf1",
+  "rawFindingsSha256": "99bc42f75ff877558f6d6540f9b3ec2886f05c58cdead9d2d9c230190306c61d",
   "entries": [
     {
       "id": "SAST-001",
@@ -4152,6 +4152,21 @@
       "newFindings": 0,
       "removedFindings": 0,
       "evidence": "Pinned local Semgrep CE scan of a temporary Git snapshot based on 30eed7b2645adc959215dde6158170568575f4ac. The scan source SHA identifies the isolated snapshot and has no GitHub Actions run. The scanned production files match the workspace Git object IDs. All 1998 production targets were covered with no scanner errors. SAST-037 moved with the Hub startup changes. Its matched expression, prefix checks and embedded filesystem boundary are unchanged. SAST-038 and SAST-123 retain their matched code, positions and cookie-security checks. All other reviewed finding source files are unchanged. Original evidence, classifications and approval scopes are preserved."
+    },
+    {
+      "previousBinding": {
+        "sourceSha": "b1dbd654c0c10e06005a231d31f52487ae6b7a27",
+        "sourceTreeSha256": "ce9aecfb592e4b5513266bd1db369857b6e445cfded7b907977e7bf6bd79c577",
+        "rawFindingsSha256": "c634b2d4c49c2447eb81e056e1ccc310b1fe182c473e33a1320028e75ab9cdf1"
+      },
+      "sourceSha": "cbcb0248785a0fb6adf99f932950f19d3e0e212c",
+      "reviewer": "Codex",
+      "scanSourceSha": "cbcb0248785a0fb6adf99f932950f19d3e0e212c",
+      "scanRunUrl": null,
+      "findingCount": 112,
+      "newFindings": 0,
+      "removedFindings": 0,
+      "evidence": "The pinned local Linux scan of PR #32 after review fixes and main baseline run 45128630733 both covered all 1998 production files without scanner errors. All 112 raw findings match exactly. SAST-037 is the only finding in a modified source file. Its matched bytes, position, path prefix checks and embedded filesystem boundary are unchanged. All approved classifications and risk acceptance scopes are preserved."
     }
   ],
   "integratedBranchReviews": [
