@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { act } from 'react'
 import { createRoot } from 'react-dom/client'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { ApplicationsView } from './ApplicationsView'
+import { LocaleProvider } from '../../hooks/useLocale'
 import { SearchBox } from '../ui/SearchBox'
 import {
   buildSingleAppEntry,
@@ -333,6 +334,32 @@ describe('foldAppGroups over single entries', () => {
 })
 
 describe('ApplicationsView copy', () => {
+  it.each([
+    [undefined, '运行中 · 2'],
+    ['zh-CN', '运行中 · 2'],
+    ['en', 'Running · 2'],
+  ])('shows the running-job count with the expected language for %s', (locale, running) => {
+    const entry = buildSingleAppEntry(app({
+      name: 'invoice-reconciler',
+      workload_class: 'job',
+      workloads: [wl({
+        kind: 'CronJob',
+        workload_class: 'job',
+        batch: { activeRuns: 2, latestRunPhase: 'Running' },
+      })],
+    }))
+    const view = <ApplicationsView entries={[entry]} variant="single" onSelect={() => undefined} />
+    const preference = vi.spyOn(Storage.prototype, 'getItem').mockReturnValue(locale ?? null)
+    try {
+      const html = renderToStaticMarkup(locale ? <LocaleProvider>{view}</LocaleProvider> : view)
+      expect(html).toContain(running)
+      expect(html).toContain('invoice-reconciler')
+      expect(entry.workloadClass).toBe('job')
+    } finally {
+      preference.mockRestore()
+    }
+  })
+
   const identity = { key: 'registry-credential', env: 'prod', confidence: 'high', evidence: 'declared source path' }
   const siblings = ['registry-credential-a', 'registry-credential-b'].map((name) =>
     buildSingleAppEntry(app({

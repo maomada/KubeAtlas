@@ -617,25 +617,25 @@ function activityResponse(): CapacityActivityResponse {
 function renderCapacity(
   path: string,
   seed: (client: QueryClient) => void,
-  locale: Locale = "en",
+  locale?: Locale,
 ): string {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, retryOnMount: false } },
   });
   seed(client);
+  const view = (
+    <MemoryRouter initialEntries={[path]}>
+      <QueryClientProvider client={client}>
+        <CapacityView onOpenResource={() => {}} />
+      </QueryClientProvider>
+    </MemoryRouter>
+  );
+  if (!locale) return renderToString(view);
   const languageKey = "kubeatlas-portal-language";
   const previousLocale = localStorage.getItem(languageKey);
   localStorage.setItem(languageKey, locale);
   try {
-    return renderToString(
-      <LocaleProvider>
-        <MemoryRouter initialEntries={[path]}>
-          <QueryClientProvider client={client}>
-            <CapacityView onOpenResource={() => {}} />
-          </QueryClientProvider>
-        </MemoryRouter>
-      </LocaleProvider>,
-    );
+    return renderToString(<LocaleProvider>{view}</LocaleProvider>);
   } finally {
     if (previousLocale === null) localStorage.removeItem(languageKey);
     else localStorage.setItem(languageKey, previousLocale);
@@ -643,16 +643,19 @@ function renderCapacity(
 }
 
 describe("CapacityView overview", () => {
-  it("uses the selected Chinese language for overview headings", () => {
+  it.each([
+    ["zh-CN", "容量概览", "容量管理器", "待调度 Pod", "节点组"],
+    ["en", "Capacity overview", "Capacity managers", "Pending pods", "Node groups"],
+  ] as const)("uses the selected %s language for overview headings", (locale, heading, managers, pending, groups) => {
     const html = renderCapacity(
       "/capacity",
       (client) => client.setQueryData(["capacity", "overview"], overview()),
-      "zh-CN",
+      locale,
     );
-    expect(html).toContain("容量概览");
-    expect(html).toContain("容量管理器");
-    expect(html).toContain("待调度 Pod");
-    expect(html).toContain("节点组");
+    expect(html).toContain(heading);
+    expect(html).toContain(managers);
+    expect(html).toContain(pending);
+    expect(html).toContain(groups);
   });
 
   it("renders KPI tiles, the node-groups inventory, and the Karpenter chip", () => {

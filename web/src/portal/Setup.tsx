@@ -18,9 +18,14 @@ export function Setup() {
   const required = setup.data?.required
   const [showPassword, setShowPassword] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [errorStatus, setErrorStatus] = useState<number>()
   const passwordInput = useRef<HTMLInputElement>(null)
   const errorMessage = useRef<HTMLParagraphElement>(null)
+  const errorMessages: Record<number, string> = {
+    400: t('请检查管理员账号和密码后重试。', 'Check the administrator username and password, then try again.'),
+    403: t('请核对初始化码，并通过 Hub 的访问地址重试。', 'Check the setup code and try again from the Hub address.'),
+    429: t('尝试过于频繁，请稍后重试。', 'Too many attempts. Try again later.'),
+  }
 
   useEffect(() => {
     if (required === false) replacePortalLocation('/login')
@@ -47,22 +52,17 @@ export function Setup() {
     }
 
     setBusy(true)
-    setError('')
+    setErrorStatus(undefined)
     try {
       await cloudRequest<void>('/setup', { method: 'POST', body: { code, username, password } })
       replacePortalLocation('/login')
     } catch (failure) {
-      const status = failure instanceof CloudRequestError ? failure.status : undefined
+      const status = failure instanceof CloudRequestError ? failure.status : 500
       if (status === 409) {
         replacePortalLocation('/login')
         return
       }
-      const messages: Record<number, string> = {
-        400: t('请检查管理员账号和密码后重试。', 'Check the administrator username and password, then try again.'),
-        403: t('请核对初始化码，并通过 Hub 的访问地址重试。', 'Check the setup code and try again from the Hub address.'),
-        429: t('尝试过于频繁，请稍后重试。', 'Too many attempts. Try again later.'),
-      }
-      setError((status && messages[status]) || t('暂时无法初始化，请稍后重试。', 'Unable to complete setup. Try again later.'))
+      setErrorStatus(status)
       setBusy(false)
       requestAnimationFrame(() => errorMessage.current?.focus())
     }
@@ -100,7 +100,7 @@ export function Setup() {
               </div>
               <p id="setup-password-hint" className="portal-field-hint mt-2">{passwordRule}</p>
             </div>
-            {error && <p ref={errorMessage} role="alert" tabIndex={-1} className="portal-field-error">{error}</p>}
+            {errorStatus !== undefined && <p ref={errorMessage} role="alert" tabIndex={-1} className="portal-field-error">{errorMessages[errorStatus] ?? t('暂时无法初始化，请稍后重试。', 'Unable to complete setup. Try again later.')}</p>}
             <button type="submit" className="btn-brand inline-flex items-center justify-center gap-2 px-4 py-3" disabled={busy}>
               {busy && <LoaderCircle className="animate-spin" size={16} aria-hidden="true" />}
               {busy ? t('正在创建…', 'Creating…') : t('创建管理员', 'Create administrator')}

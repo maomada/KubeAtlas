@@ -80,7 +80,7 @@ function ApplicationRuntimeCell({ apps, workloadClass, ready, desired }: { apps:
       </span>
     )
   }
-  const runtimes = apps.map(batchRuntimeForApp)
+  const runtimes = apps.map(app => batchRuntimeForApp(app, t))
   const worst = runtimes.reduce((current, runtime) => (HEALTH_RANK[runtime.health] ?? 0) > (HEALTH_RANK[current.health] ?? 0) ? runtime : current, runtimes[0])
   if (!worst) return <span className="text-xs text-theme-text-tertiary">{t('未运行', 'Idle')}</span>
   const same = runtimes.every((runtime) => runtime.label === worst.label)
@@ -94,7 +94,7 @@ function ApplicationRuntimeCell({ apps, workloadClass, ready, desired }: { apps:
 
 function applicationRuntimeLabel(apps: AppRow[], workloadClass: AppWorkloadClass, health: AppHealth, t: Translate): string {
   if (workloadClass !== 'job') return rolloutSummaryForApps(apps)?.detail || t(HEALTH_META[health].label, ENGLISH_HEALTH[health])
-  const labels = Array.from(new Set(apps.map((app) => batchRuntimeForApp(app).label)))
+  const labels = Array.from(new Set(apps.map(app => batchRuntimeForApp(app, t).label)))
   return labels.length === 1 ? labels[0] : t('多个批处理状态', 'Multiple batch states')
 }
 

@@ -109,7 +109,7 @@ const ACTION_META: Record<
 }
 
 export function RightsizingScanView({ namespaces }: RightsizingScanViewProps) {
-  const { t, locale } = useLocale()
+  const { t, locale } = useLocale('en')
   useAutoPromConnect()
   const settingsAvailable = !useNavCustomization().embedded
   const navigate = useNavigate()
@@ -459,7 +459,7 @@ export function ScanEmptyState({
   onClear: () => void
   onIncludeSystem: () => void
 }) {
-  const { t } = useLocale()
+  const { t } = useLocale('en')
   let headline = t('当前筛选条件下没有匹配结果', 'No results match the current filters')
   let body = t('请选择其他结果类型或清除筛选条件。', 'Choose another result type or clear a filter.')
   let actionLabel = t('清除筛选条件', 'Clear filters')
@@ -512,7 +512,7 @@ export function ScanEmptyState({
 }
 
 function FirstRunState({ namespaces, onRun }: { namespaces: string[]; onRun: () => void }) {
-  const { t } = useLocale()
+  const { t } = useLocale('en')
   const scope =
     namespaces.length === 0
       ? t('所有可见命名空间', 'all visible namespaces')
@@ -1124,7 +1124,7 @@ function warningMessage(code: string): string {
   return 'Some rightsizing data was unavailable.'
 }
 
-function formatScanTime(value: string, locale: string): string {
+function formatScanTime(value: string, locale?: string): string {
   const timestamp = new Date(value)
   return Number.isNaN(timestamp.getTime())
     ? value

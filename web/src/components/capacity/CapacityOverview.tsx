@@ -260,7 +260,7 @@ export function CapacityOverview({
   onOpenResource: (resource: SelectedResource) => void;
   onNavigate: (path: string) => void;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   const [showExplain, setShowExplain] = useState(false);
   const inventoryRef = useRef<HTMLDivElement>(null);
   const openExplainer = () => setShowExplain(true);
@@ -591,7 +591,7 @@ function ManagersTile({
   nodesObserved: boolean;
   karpenterMode?: string;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   const worst = worstManagerStatus(managers);
   // Denied, cache-scoped, unreadable and unparseable all mean the same thing to
   // an operator: detection did not run. Only a source that WAS read may report
@@ -754,7 +754,7 @@ function NodeGroupsSection({
   onOpenPool: (name: string) => void;
   onOpenResource: (resource: SelectedResource) => void;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   const nodesObserved = coverageHasObservations(coverage.nodes);
   // A group with no attributed manager means one of two very different things,
   // and only the detection source can tell them apart.
@@ -857,7 +857,7 @@ function ExplainDialog({
   open: boolean;
   onClose: () => void;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -1519,7 +1519,7 @@ function PendingDemandChips({
    *  result then means "none observed in scope", never a global "none". */
   podsPartial: boolean;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   // The "pods" resource duplicates the dedicated "Pod slots" chip below.
   const entries = summary.aggregateDemand
     ? sortedResourceEntries(summary.aggregateDemand.resources).filter(

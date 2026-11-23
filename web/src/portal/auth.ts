@@ -18,15 +18,21 @@ export async function probePortalSession(signal?: AbortSignal, t: Translate = de
   return 'authenticated'
 }
 
-export async function fetchAuthProviders(signal?: AbortSignal, t: Translate = defaultTranslate): Promise<AuthProviders> {
+export class AuthProvidersError extends Error {
+  constructor(readonly reason: 'unavailable' | 'invalid-response') {
+    super(reason)
+  }
+}
+
+export async function fetchAuthProviders(signal?: AbortSignal): Promise<AuthProviders> {
   const response = await fetch(apiUrl('/auth/providers', '/api'), {
     headers: getAuthHeaders(), credentials: getCredentialsMode(), cache: 'no-store', redirect: 'error',
     signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(10000)]) : AbortSignal.timeout(10000),
   })
   if (response.status === 404) return { registrationEnabled: false, oidcEnabled: false }
-  if (!response.ok) throw new Error(t('认证选项不可用。', 'Sign-in options are unavailable.'))
+  if (!response.ok) throw new AuthProvidersError('unavailable')
   const value: unknown = await response.json()
-  if (!value || typeof value !== 'object') throw new Error(t('认证选项无效。', 'The portal returned invalid sign-in options.'))
+  if (!value || typeof value !== 'object') throw new AuthProvidersError('invalid-response')
   const providers = value as Record<string, unknown>
   const oidc = providers.oidc && typeof providers.oidc === 'object' ? providers.oidc as Record<string, unknown> : undefined
   return { registrationEnabled: providers.registrationEnabled === true, oidcEnabled: oidc?.enabled === true }

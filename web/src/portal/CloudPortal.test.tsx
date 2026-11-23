@@ -185,6 +185,47 @@ beforeEach(() => {
   portalNavigation.nativeUnmounts = 0
 })
 
+it('translates an existing sign-in error without retrying the request', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  const languageKey = 'kubeatlas-portal-language'
+  const previousLanguage = localStorage.getItem(languageKey)
+  const previousDocumentLanguage = document.documentElement.lang
+  localStorage.setItem(languageKey, 'zh-CN')
+  window.history.replaceState({}, '', '/login')
+  const post = vi.fn(() => new Response(null, { status: 401 }))
+  vi.stubGlobal('fetch', vi.fn<typeof globalThis.fetch>(async input => {
+    if (String(input) === '/api/auth/providers') return Response.json({ registrationEnabled: false })
+    if (String(input) === '/api/auth/login') return post()
+    throw new Error(`Unexpected request: ${input}`)
+  }))
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<LocaleProvider><PortalEntry /></LocaleProvider>))
+    const form = host.querySelector('form')!
+    const languageSelect = host.querySelector<HTMLSelectElement>('header select')!
+    await act(async () => {
+      form.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }))
+    })
+    expect(form.querySelector('[role="alert"]')?.textContent).toBe('账号或密码不正确，请重新输入。')
+    await act(async () => {
+      languageSelect.value = 'en'
+      languageSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(form.querySelector('[role="alert"]')?.textContent).toBe('Incorrect username or password. Try again.')
+    expect(post).toHaveBeenCalledTimes(1)
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    if (previousLanguage === null) localStorage.removeItem(languageKey)
+    else localStorage.setItem(languageKey, previousLanguage)
+    document.documentElement.lang = previousDocumentLanguage
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
 it('validates and submits the first-run form before opening the login page', async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
   const languageKey = 'kubeatlas-portal-language'
@@ -223,7 +264,7 @@ it('validates and submits the first-run form before opening the login page', asy
       expect(fetch.mock.calls).toHaveLength(1)
     }
 
-    const languageSelect = host.querySelector('header select')!
+    const languageSelect = host.querySelector<HTMLSelectElement>('header select')!
     await act(async () => {
       languageSelect.value = 'en'
       languageSelect.dispatchEvent(new Event('change', { bubbles: true }))
@@ -241,6 +282,13 @@ it('validates and submits the first-run form before opening the login page', asy
     })
     expect(host.querySelector('[role="alert"]')?.textContent).toContain('Check the setup code')
     expect(portalNavigation.replace).not.toHaveBeenCalled()
+    const attempts = fetch.mock.calls.length
+    await act(async () => {
+      languageSelect.value = 'zh-CN'
+      languageSelect.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('请核对初始化码')
+    expect(fetch.mock.calls).toHaveLength(attempts)
 
     code.value = 'valid-code'
     await act(async () => form.requestSubmit())

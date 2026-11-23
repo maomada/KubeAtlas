@@ -291,7 +291,7 @@ export function ClusterSchedulingCard({
   onExplain: () => void;
   scope?: SchedulingScope;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   const rows = useMemo(
     () => deriveSchedulingRows(scheduling, pending),
     [scheduling, pending],

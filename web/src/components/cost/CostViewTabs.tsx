@@ -3,7 +3,7 @@ import { clsx } from 'clsx'
 import { useLocale } from '@maomada/k8s-ui/hooks/useLocale'
 
 export function CostViewTabs() {
-  const { t } = useLocale()
+  const { t } = useLocale('en')
   const { pathname, search } = useLocation()
   const rightsizing = pathname.startsWith('/cost/rightsizing')
   return (

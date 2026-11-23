@@ -6,18 +6,27 @@ import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
 import { PortalHeaderActions } from './PortalLanguageSelect'
 import { fetchAuthProviders } from './auth'
 
+type LoginError = 'credentials' | 'rate-limited' | 'unavailable' | 'session' | 'connection'
+
 export function Login() {
   const { t } = useLocale()
   useEffect(() => { document.title = t('登录 · KubeAtlas', 'Sign in · KubeAtlas') }, [t])
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState('')
+  const [error, setError] = useState<LoginError>()
   const [ssoEnabled, setSSOEnabled] = useState(false)
   const [registrationEnabled, setRegistrationEnabled] = useState(false)
   const [providerError, setProviderError] = useState(false)
   const expired = new URLSearchParams(window.location.search).get('expired') === '1'
   const ssoFailed = new URLSearchParams(window.location.search).get('error') === 'sso_failed'
+  const errorMessages: Record<LoginError, string> = {
+    credentials: t('账号或密码不正确，请重新输入。', 'Incorrect username or password. Try again.'),
+    'rate-limited': t('登录尝试过于频繁，请稍后再试。', 'Too many sign-in attempts. Try again later.'),
+    unavailable: t('暂时无法登录，请稍后重试。', 'Unable to sign in. Try again later.'),
+    session: t('无法建立登录会话，请重新登录。', 'Unable to start a session. Sign in again.'),
+    connection: t('连接门户失败，请检查网络后重试。', 'Unable to connect to the portal. Check your connection and try again.'),
+  }
 
   useEffect(() => {
     const controller = new AbortController()
@@ -36,7 +45,7 @@ export function Login() {
     event.preventDefault()
     if (busy) return
     setBusy(true)
-    setError('')
+    setError(undefined)
     try {
       const response = await fetch(apiUrl('/auth/login', '/api'), {
         method: 'POST', headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
@@ -44,17 +53,19 @@ export function Login() {
         signal: AbortSignal.timeout(10000),
       })
       if (!response.ok) {
-        if (response.status === 401) throw new Error(t('账号或密码不正确，请重新输入。', 'Incorrect username or password. Try again.'))
-        if (response.status === 429) throw new Error(t('登录尝试过于频繁，请稍后再试。', 'Too many sign-in attempts. Try again later.'))
-        throw new Error(t('暂时无法登录，请稍后重试。', 'Unable to sign in. Try again later.'))
+        setError(response.status === 401 ? 'credentials' : response.status === 429 ? 'rate-limited' : 'unavailable')
+        return
       }
       const session = await fetch(apiUrl('/auth/session', '/api'), {
         headers: getAuthHeaders(), credentials: getCredentialsMode(), cache: 'no-store', redirect: 'error', signal: AbortSignal.timeout(10000),
       })
-      if (!session.ok) throw new Error(t('无法建立登录会话，请重新登录。', 'Unable to start a session. Sign in again.'))
+      if (!session.ok) {
+        setError('session')
+        return
+      }
       window.location.replace('/')
-    } catch (cause) {
-      setError(cause instanceof Error && cause.name === 'Error' ? cause.message : t('连接门户失败，请检查网络后重试。', 'Unable to connect to the portal. Check your connection and try again.'))
+    } catch {
+      setError('connection')
     } finally {
       setPassword('')
       setBusy(false)
@@ -92,7 +103,7 @@ export function Login() {
         <form className="mt-7 space-y-5" onSubmit={submit} aria-busy={busy}>
           <div><label htmlFor="portal-username" className="mb-2 block text-sm font-medium">{t('用户名或邮箱', 'Username or email')}</label><input id="portal-username" name="username" autoComplete="username" className="portal-control w-full" placeholder={t('请输入用户名或邮箱', 'Enter your username or email')} value={username} onChange={event => setUsername(event.target.value)} required maxLength={256} disabled={busy} autoCapitalize="none" spellCheck={false} /></div>
           <div><label htmlFor="portal-password" className="mb-2 block text-sm font-medium">{t('密码', 'Password')}</label><input id="portal-password" name="password" type="password" autoComplete="current-password" className="portal-control w-full" placeholder={t('请输入密码', 'Enter your password')} value={password} onChange={event => setPassword(event.target.value)} required maxLength={4096} disabled={busy} /></div>
-          {error && <p role="alert" className="rounded-lg border border-theme-border bg-theme-base p-3 text-sm text-theme-text-secondary">{error}</p>}
+          {error && <p role="alert" className="rounded-lg border border-theme-border bg-theme-base p-3 text-sm text-theme-text-secondary">{errorMessages[error]}</p>}
           <button type="submit" className="btn-brand flex w-full items-center justify-center gap-2 py-3 text-sm font-medium" disabled={busy}>{busy ? <LoaderCircle size={17} className="animate-spin" /> : null}{busy ? t('正在登录…', 'Signing in…') : t('登录', 'Sign in')}{!busy && <ArrowRight size={17} />}</button>
         </form>
         {registrationEnabled && <p className="mt-5 text-sm text-theme-text-secondary">{t('还没有账号？', 'Need an account?')} <a className="text-accent-text" href="/register">{t('注册', 'Register')}</a></p>}

@@ -70,7 +70,8 @@ export function CostView(props: CostViewProps) {
 }
 
 function CostOverview({ onBack, onOpenResource }: CostViewProps) {
-  const { t, locale } = useLocale()
+  const { t, locale } = useLocale('en')
+  const { t: tConnection } = useLocale()
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useOpenCostSummary()
   const { data: nodeData } = useOpenCostNodes()
   const { data: clusterInfo } = useClusterInfo()
@@ -132,7 +133,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
     const message = costUnavailableMessage(reason, {
       settingsAvailable,
       namespaceScoped: namespaceScopeCount > 0,
-      t,
+      t: locale && t,
     })
     const apiBase = getApiBase()
     const cluster = navCustomization.clusterDisplayName ?? ''
@@ -144,7 +145,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
         <div className="flex min-h-64 items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-theme-text-secondary">
             <Coins className="w-8 h-8 text-theme-text-tertiary/40" />
-            <p className="text-sm">{canOfferInstall ? t('尚未接入成本数据。', 'No cost data source is connected.') : message}</p>
+            <p className="text-sm">{canOfferInstall ? tConnection('尚未接入成本数据。', 'No cost data source is connected.') : message}</p>
             {canOfferInstall && <OpenCostInstallAction key={apiBase} cluster={cluster} onInstalled={() => { void refetch() }} />}
             <CostConnectionAction reason={reason}>
             {(reason === 'no_prometheus' || reason === 'no_cost_source' || reason === 'source_unavailable') && (
@@ -156,7 +157,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
                 disabled={isFetching}
                 className="rounded-md border border-theme-border px-3 py-1.5 text-xs text-theme-text-secondary transition-colors hover:bg-theme-hover hover:text-theme-text-primary disabled:cursor-not-allowed disabled:text-theme-text-disabled"
               >
-                {isFetching ? t('正在检查…', 'Checking…') : t('重新检测', 'Check again')}
+                {isFetching ? tConnection('正在检查…', 'Checking…') : tConnection('重新检测', 'Check again')}
               </button>
             )}
             </CostConnectionAction>
@@ -164,7 +165,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
               onClick={onBack}
               className="text-xs text-accent-text hover:text-theme-text-primary transition-colors"
             >
-              {t('返回概览', 'Back to dashboard')}
+              {tConnection('返回概览', 'Back to dashboard')}
             </button>
           </div>
         </div>
@@ -384,7 +385,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
               <> &middot; {t('按原币种显示', 'shown in the source currency')}</>
             )}
           </span>
-          <span className="text-indigo-500 font-medium">{costSourceLabel(data.source, t)}</span>
+          <span className="text-indigo-500 font-medium">{costSourceLabel(data.source, tConnection)}</span>
         </div>
       </div>
 
@@ -418,7 +419,7 @@ export function costUnavailableMessage(
 }
 
 function CostOverviewState({ children }: { children: React.ReactNode }) {
-  const { t } = useLocale()
+  const { t } = useLocale('en')
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[1920px] flex-col gap-4 px-6 py-6">

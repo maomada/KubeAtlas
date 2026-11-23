@@ -38,7 +38,7 @@ export function CapacityPoolDetail({
   onNavigate: (path: string) => void;
   onOpenResource: (resource: SelectedResource) => void;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   const query = useCapacityPoolDetail(name);
   const poolPath = `/capacity/pools/${encodeURIComponent(name)}`;
 
@@ -473,7 +473,7 @@ function PoolSummaryTab({
   onNavigate: (path: string) => void;
   onOpenResource: (resource: SelectedResource) => void;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   const denied = coverageIsDenied(pool.coverage.pods);
   const resources = ledgerResourceKeys(pool.ledger);
   // Overview signals label their links "Diagnose pool", so a broken pool's

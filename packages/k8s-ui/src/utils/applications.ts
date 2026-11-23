@@ -1,4 +1,5 @@
 import { builtinGroupForKind } from './api-resources'
+import type { Translate } from '../hooks/useLocale'
 import type { ResourceRef } from '../types/core'
 import { groupQualifiesLaneId, laneId, laneResourceKey, parseLaneId } from './navigation'
 import { rolloutActivityLevel, type WorkloadRolloutActivity } from './workload-rollout'
@@ -1333,7 +1334,7 @@ export interface AppBatchRuntime {
   detail: string;
 }
 
-export function batchRuntimeForApp(app: AppRow): AppBatchRuntime {
+export function batchRuntimeForApp(app: AppRow, t: Translate = zh => zh): AppBatchRuntime {
   const activity = batchActivityForApp(app);
   if (
     activity.some(
@@ -1342,9 +1343,9 @@ export function batchRuntimeForApp(app: AppRow): AppBatchRuntime {
   ) {
     const active = activity.reduce((sum, item) => sum + item.activeRuns, 0);
     return {
-      label: active > 0 ? `运行中 · ${active}` : "Running",
+      label: active > 0 ? t(`运行中 · ${active}`, `Running · ${active}`) : "Running",
       health: "neutral",
-      detail: "批处理任务当前正在运行。",
+      detail: t("批处理任务当前正在运行。", "The batch job is running."),
     };
   }
   const failed = activity.filter(

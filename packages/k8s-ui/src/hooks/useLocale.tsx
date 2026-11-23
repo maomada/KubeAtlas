@@ -22,11 +22,14 @@ function initialLocale(): Locale {
   return defaultLocale
 }
 
-const LocaleContext = createContext<{ locale: Locale; setLocale: (locale: Locale) => void; t: Translate }>({
-  locale: defaultLocale,
+type LocaleValue = { locale?: Locale; setLocale: (locale: Locale) => void; t: Translate }
+
+const LocaleContext = createContext<LocaleValue | null>(null)
+const chineseFallback: LocaleValue = {
   setLocale: () => {},
   t: zh => zh,
-})
+}
+const englishFallback: LocaleValue = { ...chineseFallback, t: (_zh, en) => en }
 
 export function LocaleProvider({ children }: { children: ReactNode }) {
   const [locale, updateLocale] = useState(initialLocale)
@@ -58,6 +61,7 @@ export function LocaleProvider({ children }: { children: ReactNode }) {
   return <LocaleContext.Provider value={value}>{children}</LocaleContext.Provider>
 }
 
-export function useLocale() {
-  return useContext(LocaleContext)
+// Shared views keep their original copy and browser date formats without a provider.
+export function useLocale(fallbackLanguage: Locale = defaultLocale): LocaleValue {
+  return useContext(LocaleContext) ?? (fallbackLanguage === 'en' ? englishFallback : chineseFallback)
 }

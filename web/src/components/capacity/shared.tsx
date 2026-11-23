@@ -1171,7 +1171,7 @@ export function TokenGroup({
 }
 
 export function RefreshError({ message }: { message: string }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   return (
     <Notice>
       {t("刷新失败，正在显示最近一次成功获取的容量快照。", "Refresh failed; showing the last successful capacity snapshot.")} {message}
@@ -1303,7 +1303,7 @@ export function ScopeBadges({
   // it to pods would show "Cluster-wide" for a namespace-scoped view.
   source?: keyof CapacityCoverageBySource;
 }) {
-  const { t } = useLocale();
+  const { t } = useLocale("en");
   const pods = coverage[source];
   const scope = pods?.scope;
   const explicit = scope === "explicit_namespaces";
