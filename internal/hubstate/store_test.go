@@ -313,6 +313,146 @@ func TestTTLAndRefreshWindow(t *testing.T) {
 	}
 }
 
+func TestNonExpiringCredentialSurvivesReopenAndPruning(t *testing.T) {
+	s, now := testStore(t)
+	cluster(t, s, "alpha")
+	input := IssueInput{Label: "automation", ClusterIDs: []string{"alpha"}, ReadOnly: true, NeverExpires: true, TTLSeconds: minTTL}
+	_, err := s.Issue("owner", input)
+	errorCode(t, err, "invalid_parameters")
+	input.TTLSeconds = 0
+	issued, err := s.Issue("owner", input)
+	if err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(familyLifetime + retention + time.Hour)
+	reopened, err := OpenStore(s.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened.now = s.now
+	issue(t, reopened, minTTL)
+	credential, err := reopened.Authenticate(issued.Token, "owner")
+	if err != nil || !credential.NeverExpires || !credential.ExpiresAt.IsZero() || !credential.RefreshUntil.IsZero() {
+		t.Fatalf("non-expiring credential did not survive reopen and pruning: %v", err)
+	}
+	_, err = reopened.Rotate("owner", credential.ID, minTTL)
+	errorCode(t, err, "invalid_parameters")
+	rotated, err := reopened.Rotate("owner", credential.ID, 0)
+	if err != nil || !rotated.Credential.NeverExpires || !rotated.Credential.ReadOnly || !slices.Equal(rotated.Credential.ClusterIDs, credential.ClusterIDs) {
+		t.Fatalf("rotation did not preserve credential lifetime and grants: %v", err)
+	}
+	_, err = reopened.Authenticate(issued.Token, "owner")
+	errorCode(t, err, "credential_revoked")
+	if err := reopened.Revoke("owner", rotated.Credential.ID); err != nil {
+		t.Fatal(err)
+	}
+	_, err = reopened.Authenticate(rotated.Token, "owner")
+	errorCode(t, err, "credential_revoked")
+	*now = now.Add(retention + time.Duration(minTTL)*time.Second + time.Nanosecond)
+	finite := issue(t, reopened, minTTL)
+	listed := reopened.Credentials("owner")
+	if len(listed) != 1 || listed[0].ID != finite.Credential.ID {
+		t.Fatal("revoked non-expiring credentials should be pruned after retention")
+	}
+}
+
+func TestNonExpiringQuotaIsolatesOrganizationsAndAllowsReplacement(t *testing.T) {
+	s, now := testStore(t)
+	cluster(t, s, "alpha")
+	if err := s.EnsurePlatformOwner("owner", "kubeatlas:owner", "Owner"); err != nil {
+		t.Fatal(err)
+	}
+	other, err := s.CreateOrganization("Other", "owner")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateClusterForOrganization(other.ID, ClusterInput{ID: "beta", Name: "Beta"}); err != nil {
+		t.Fatal(err)
+	}
+	permanent := IssueInput{ClusterIDs: []string{"alpha"}, ReadOnly: true, NeverExpires: true}
+	issued := make([]IssuedCredential, maxNonExpiringCredentialsPerOrganization)
+	for i := range issued {
+		issued[i], err = s.Issue("owner", permanent)
+		if err != nil {
+			t.Fatalf("issue permanent credential %d: %v", i, err)
+		}
+	}
+	_, err = s.Issue("other-owner", permanent)
+	errorCode(t, err, "capacity_exceeded")
+	finite := issue(t, s, minTTL)
+	otherCredential, err := s.IssueForOrganization(other.ID, "owner", IssueInput{
+		ClusterIDs: []string{"beta"}, ReadOnly: true, NeverExpires: true,
+	})
+	if err != nil {
+		t.Fatalf("quota in one organization blocked another: %v", err)
+	}
+	rotated, err := s.Rotate("owner", issued[0].Credential.ID, 0)
+	if err != nil {
+		t.Fatalf("rotate a permanent credential at its organization's limit: %v", err)
+	}
+	_, err = s.Authenticate(issued[0].Token, "owner")
+	errorCode(t, err, "credential_invalid")
+	if err := s.Revoke("owner", issued[1].Credential.ID); err != nil {
+		t.Fatal(err)
+	}
+	*now = now.Add(time.Minute)
+	if err := s.Revoke("owner", issued[2].Credential.ID); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := s.Issue("owner", permanent)
+	if err != nil {
+		t.Fatalf("issue after revocation at the permanent credential limit: %v", err)
+	}
+	_, err = s.Authenticate(issued[1].Token, "owner")
+	errorCode(t, err, "credential_invalid")
+	_, err = s.Authenticate(issued[2].Token, "owner")
+	errorCode(t, err, "credential_revoked")
+	for _, credential := range []IssuedCredential{finite, rotated, replacement, otherCredential} {
+		if _, err := s.AuthenticateForOrganization(credential.Token, "owner", credential.Credential.OrganizationID); err != nil {
+			t.Fatalf("unrelated credential became unusable at capacity: %v", err)
+		}
+	}
+	if got := len(s.data.Credentials); got != maxNonExpiringCredentialsPerOrganization+2 {
+		t.Fatalf("retained %d records after replacement", got)
+	}
+}
+
+func TestNonExpiringRecordQuotaLeavesSharedCapacityAndReclaimsOnlyOrganizationRecords(t *testing.T) {
+	revoked := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	records := make(map[string]storedCredential, maxCredentials)
+	for i := range maxNonExpiringCredentials {
+		id := fmt.Sprintf("permanent-%04d", i)
+		organization := fmt.Sprintf("org-%d", i/maxNonExpiringCredentialsPerOrganization)
+		records[id] = storedCredential{Credential: Credential{OrganizationID: organization, NeverExpires: true}}
+	}
+	oldestOther := records["permanent-0000"]
+	oldestOther.RevokedAt = &revoked
+	records["permanent-0000"] = oldestOther
+	errorCode(t, makeCredentialRoom(records, "requesting-org", true), "capacity_exceeded")
+	if err := makeCredentialRoom(records, "requesting-org", false); err != nil {
+		t.Fatalf("permanent pool exhausted the finite credential pool: %v", err)
+	}
+	for _, id := range []string{"permanent-0001", "permanent-0002"} {
+		record := records[id]
+		record.OrganizationID, record.RevokedAt = "requesting-org", &revoked
+		records[id] = record
+	}
+	for i := len(records); i < maxCredentials; i++ {
+		records[fmt.Sprintf("finite-%d", i)] = storedCredential{}
+	}
+	if err := makeCredentialRoom(records, "requesting-org", true); err != nil {
+		t.Fatalf("cannot replace a revoked permanent record at shared capacity: %v", err)
+	}
+	if _, exists := records["permanent-0001"]; exists || len(records) != maxCredentials-1 {
+		t.Fatal("did not reclaim exactly one deterministic record")
+	}
+	for _, id := range []string{"permanent-0000", "permanent-0002"} {
+		if _, exists := records[id]; !exists {
+			t.Fatalf("unexpected reclamation of %s", id)
+		}
+	}
+}
+
 func TestConcurrentRefreshExactlyOneSuccess(t *testing.T) {
 	s, _ := testStore(t)
 	cluster(t, s, "alpha")

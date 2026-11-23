@@ -358,15 +358,12 @@ func (p *portalHub) serveBearer(w http.ResponseWriter, r *http.Request) {
 		hubHTTPError(w, http.StatusUnauthorized, "credential_revoked", "Credential request was cancelled")
 		return
 	}
-	var expiryTimer *time.Timer
-	if requestRelease != nil {
+	if requestRelease != nil && !credential.NeverExpires {
 		delay := time.Until(credential.ExpiresAt)
 		if delay <= 0 {
 			p.cancelCredentialRequests(ownerID, organizationID, credential.ID)
 		} else {
-			expiryTimer = time.AfterFunc(delay, func() { p.cancelCredentialRequests(ownerID, organizationID, credential.ID) })
-		}
-		if expiryTimer != nil {
+			expiryTimer := time.AfterFunc(delay, func() { p.cancelCredentialRequests(ownerID, organizationID, credential.ID) })
 			defer expiryTimer.Stop()
 		}
 	}

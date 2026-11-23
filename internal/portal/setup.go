@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/maomada/KubeAtlas/internal/hubstate"
 	"golang.org/x/crypto/bcrypt"
@@ -40,14 +42,24 @@ func NewStartupHandler(credentials Credentials, static fs.FS, stateFile string, 
 	store := credentials.Hub.Store
 	account, existing := store.LocalPlatformOwner()
 	provided := credentials.Username != "" || credentials.Password != ""
-	if provided && !validLocalCredentials(credentials.Username, credentials.Password) {
-		return nil, errors.New("provide an administrator username and a password of 16-4096 bytes together")
+	if provided && (!validLocalAdminUsername(credentials.Username) || credentials.Password == "") {
+		return nil, errors.New("provide a valid administrator username and password together")
 	}
 	if reset && !provided {
 		return nil, errors.New("--reset-admin requires administrator credentials")
 	}
-	if existing && account.PasswordHash == "" && !provided {
-		return nil, errors.New("existing Hub requires its original administrator credentials or an explicit reset")
+	reuseOwner := existing && account.PasswordHash != "" && (!reset ||
+		account.DisplayName == credentials.Username && bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), localPasswordInput(credentials.Password)) == nil)
+	// An older Hub can lack a persisted owner even after its v1 state has been migrated.
+	switch {
+	case !reuseOwner && !reset && (existing || store.LoadedExistingState()):
+		if !validLocalCredentials(credentials.Username, credentials.Password) {
+			return nil, errors.New("existing Hub requires its original administrator credentials or an explicit reset")
+		}
+	case !reuseOwner && provided:
+		if err := validateAdminPassword(credentials.Password); err != nil {
+			return nil, err
+		}
 	}
 
 	managed := credentials
@@ -59,8 +71,7 @@ func NewStartupHandler(credentials Credentials, static fs.FS, stateFile string, 
 	}
 	h := &StartupHandler{handler: handler}
 	switch {
-	case existing && account.PasswordHash != "" && (!reset ||
-		account.DisplayName == credentials.Username && bcrypt.CompareHashAndPassword([]byte(account.PasswordHash), localPasswordInput(credentials.Password)) == nil):
+	case reuseOwner:
 		h.activate(account)
 	case provided:
 		if err := h.setOwner(credentials.Username, credentials.Password, reset); err != nil {
@@ -113,6 +124,21 @@ func (h *Handler) setLocalOwner(account hubstate.Account) {
 func localPasswordInput(password string) []byte {
 	digest := sha256.Sum256([]byte("kubeatlas.hub.local-owner\x00" + password))
 	return []byte(base64.RawStdEncoding.EncodeToString(digest[:]))
+}
+
+func validateAdminPassword(password string) error {
+	if !utf8.ValidString(password) || len(password) > 4096 {
+		return errors.New("administrator password must be valid UTF-8 and at most 4096 bytes")
+	}
+	if strings.ContainsAny(password, "\r\n") {
+		return errors.New("administrator password must contain a single line")
+	}
+	if utf8.RuneCountInString(password) < 8 ||
+		!strings.ContainsAny(password, "ABCDEFGHIJKLMNOPQRSTUVWXYZ") ||
+		!strings.ContainsFunc(password, func(r rune) bool { return unicode.IsPunct(r) || unicode.IsSymbol(r) }) {
+		return errors.New("administrator password must have at least 8 characters, including an uppercase English letter and a special character")
+	}
+	return nil
 }
 
 func (h *StartupHandler) setOwner(username, password string, reset bool) error {
@@ -204,8 +230,12 @@ func (h *StartupHandler) completeSetup(w http.ResponseWriter, r *http.Request) {
 		hubHTTPError(w, http.StatusForbidden, "invalid_setup_code", "Setup code is invalid")
 		return
 	}
-	if !validLocalCredentials(request.Username, request.Password) {
-		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Enter a valid username and a password of 16-4096 bytes")
+	if !validLocalAdminUsername(request.Username) {
+		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", "Enter a valid administrator username")
+		return
+	}
+	if err := validateAdminPassword(request.Password); err != nil {
+		hubHTTPError(w, http.StatusBadRequest, "invalid_parameters", err.Error())
 		return
 	}
 	h.mu.Lock()

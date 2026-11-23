@@ -65,7 +65,7 @@ func TestListenPortOverride(t *testing.T) {
 
 func TestConfigureAdminReadsPasswordFileAndRequiresPair(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "password")
-	if err := os.WriteFile(path, []byte("new configuration password\r\n"), 0o600); err != nil {
+	if err := os.WriteFile(path, []byte("SetupOk!\r\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	credentials := portal.Credentials{Username: "legacy", Password: "legacy password text"}
@@ -75,7 +75,7 @@ func TestConfigureAdminReadsPasswordFileAndRequiresPair(t *testing.T) {
 	if err := configureAdmin(&credentials, "operator", "", false); err == nil {
 		t.Fatal("accepted an incomplete administrator configuration")
 	}
-	if err := configureAdmin(&credentials, "operator", path, false); err != nil || credentials.Username != "operator" || credentials.Password != "new configuration password" {
+	if err := configureAdmin(&credentials, "operator", path, false); err != nil || credentials.Username != "operator" || credentials.Password != "SetupOk!" {
 		t.Fatalf("administrator password file was not loaded: %v", err)
 	}
 	if err := os.WriteFile(path, []byte("invalid UTF-8 password\xff"), 0o600); err != nil {

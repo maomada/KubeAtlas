@@ -7,8 +7,9 @@ export interface MCPCredential {
   clusterIds: string[]
   readOnly: boolean
   createdAt: string
-  expiresAt: string
-  refreshUntil: string
+  expiresAt?: string
+  refreshUntil?: string
+  neverExpires?: boolean
   revokedAt?: string
 }
 
@@ -32,7 +33,8 @@ class ManagementRequestError extends Error {
 
 export function credentialStatus(credential: MCPCredential, now: number): 'active' | 'expired' | 'revoked' | 'unknown' {
   if (credential.revokedAt) return 'revoked'
-  const expires = Date.parse(credential.expiresAt)
+  if (credential.neverExpires === true) return 'active'
+  const expires = Date.parse(credential.expiresAt ?? '')
   if (!Number.isFinite(expires) || !Number.isFinite(now)) return 'unknown'
   return expires <= now ? 'expired' : 'active'
 }

@@ -127,19 +127,36 @@ func requiredV2Fields(data []byte) bool {
 	for section, fields := range map[string][]string{
 		"clusters":    {"id", "name", "description", "environment", "region", "organizationId", "createdAt", "updatedAt", "digest"},
 		"groups":      {"id", "name", "organizationId", "clusterIds", "createdAt", "updatedAt"},
-		"credentials": {"id", "ownerId", "organizationId", "label", "clusterIds", "readOnly", "createdAt", "expiresAt", "refreshUntil", "digest", "familyId", "familyCreatedAt", "originalTtlSeconds", "ttlSeconds"},
+		"credentials": {"id", "ownerId", "organizationId", "label", "clusterIds", "readOnly", "createdAt", "digest", "familyId", "familyCreatedAt", "originalTtlSeconds", "ttlSeconds"},
 	} {
 		var records map[string]map[string]json.RawMessage
 		if json.Unmarshal(file[section], &records) != nil || records == nil {
 			return false
 		}
 		for _, record := range records {
+			if section == "credentials" {
+				switch string(bytes.TrimSpace(record["neverExpires"])) {
+				case "true":
+					if record["expiresAt"] != nil || record["refreshUntil"] != nil {
+						return false
+					}
+				case "", "false":
+					if record["expiresAt"] == nil || record["refreshUntil"] == nil {
+						return false
+					}
+				default:
+					return false
+				}
+			}
 			for _, field := range fields {
 				if record[field] == nil {
 					return false
 				}
 			}
 			for field := range record {
+				if section == "credentials" && (field == "neverExpires" || field == "expiresAt" || field == "refreshUntil") {
+					continue
+				}
 				if !slices.Contains(fields, field) && field != "revokedAt" {
 					return false
 				}
@@ -328,6 +345,21 @@ func ttlSeconds(ttl, fallback int) (int, error) {
 	return ttl, nil
 }
 
+func validCredentialLifetime(c storedCredential) bool {
+	if c.NeverExpires {
+		return c.TTLSeconds == 0 && c.OriginalTTLSeconds == 0 && c.ExpiresAt.IsZero() && c.RefreshUntil.IsZero()
+	}
+	if !validTTL(c.TTLSeconds) || !validTTL(c.OriginalTTLSeconds) ||
+		!validTime(c.ExpiresAt) || !validTime(c.RefreshUntil) || !c.RefreshUntil.Equal(c.FamilyCreatedAt.Add(familyLifetime)) {
+		return false
+	}
+	expires := c.CreatedAt.Add(time.Duration(c.TTLSeconds) * time.Second)
+	if expires.After(c.RefreshUntil) {
+		expires = c.RefreshUntil
+	}
+	return c.ExpiresAt.Equal(expires) && c.ExpiresAt.Sub(c.CreatedAt) >= time.Duration(minTTL)*time.Second
+}
+
 func validLegacyFile(file legacyStoreFile) bool {
 	legacy := storeFile{Version: 1, Clusters: file.Clusters, Groups: file.Groups, Credentials: file.Credentials,
 		Organization: file.Organization, Members: file.Members, Connections: file.Connections}
@@ -492,19 +524,10 @@ func validFile(file storeFile) bool {
 		if id != credential.ID || !validHex(id) || !validHex(credential.FamilyID) || !validOwner(credential.OwnerID) ||
 			!validOrg(credential.OrganizationID, file.Organizations) || !validText(credential.Label, 128, false) ||
 			!validCredentialClusterScope(credential, file.Clusters) || !validHex(credential.Digest) || digests[credential.Digest] ||
-			!validTTL(credential.TTLSeconds) || !validTTL(credential.OriginalTTLSeconds) {
+			!validCredentialLifetime(credential) {
 			return false
 		}
-		if !validTime(credential.CreatedAt) || !validTime(credential.ExpiresAt) || !validTime(credential.RefreshUntil) ||
-			!validTime(credential.FamilyCreatedAt) || credential.CreatedAt.Before(credential.FamilyCreatedAt) ||
-			!credential.RefreshUntil.Equal(credential.FamilyCreatedAt.Add(familyLifetime)) {
-			return false
-		}
-		expires := credential.CreatedAt.Add(time.Duration(credential.TTLSeconds) * time.Second)
-		if expires.After(credential.RefreshUntil) {
-			expires = credential.RefreshUntil
-		}
-		if !credential.ExpiresAt.Equal(expires) || credential.ExpiresAt.Sub(credential.CreatedAt) < time.Duration(minTTL)*time.Second ||
+		if !validTime(credential.CreatedAt) || !validTime(credential.FamilyCreatedAt) || credential.CreatedAt.Before(credential.FamilyCreatedAt) ||
 			credential.RevokedAt != nil && (!validTime(*credential.RevokedAt) || credential.RevokedAt.Before(credential.CreatedAt)) {
 			return false
 		}

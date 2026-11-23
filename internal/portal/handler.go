@@ -306,9 +306,12 @@ func validUsername(value string) bool {
 	return true
 }
 
+func validLocalAdminUsername(username string) bool {
+	return validUsername(username) && len(username) <= 256 && strings.TrimSpace(username) == username
+}
+
 func validLocalCredentials(username, password string) bool {
-	return validUsername(username) && len(username) <= 256 && strings.TrimSpace(username) == username &&
-		len(password) >= 16 && len(password) <= 4096
+	return validLocalAdminUsername(username) && len(password) >= 16 && len(password) <= 4096
 }
 
 func sameSiteRequest(r *http.Request) bool {

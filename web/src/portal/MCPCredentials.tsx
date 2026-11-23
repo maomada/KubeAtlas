@@ -8,8 +8,14 @@ import { ConnectionProfileSelector, useConnectionProfiles } from './ConnectionPr
 
 const statusLabels = { active: '有效', expired: '已过期', revoked: '已撤销', unknown: '有效期未知' }
 const statusTones = { active: 'success', expired: 'warning', revoked: 'neutral', unknown: 'warning' } as const
-const formatDate = (value: string) => Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '未知'
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : '请求失败，请重试。'
+
+function CredentialExpiration({ credential }: { credential: MCPCredential }) {
+  if (credential.neverExpires === true) return '永不过期'
+  const expiration = new Date(credential.expiresAt ?? '')
+  if (!Number.isFinite(expiration.getTime())) return '未知'
+  return <time dateTime={credential.expiresAt}>{expiration.toLocaleString('zh-CN', { hour12: false })}</time>
+}
 
 function CopyValue({ value, label }: { value: string; label: string }) {
   const [status, setStatus] = useState('')
@@ -97,7 +103,8 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
     setBusy('create')
     setActionError('')
     try {
-      const result = await credentialsRequest<IssuedCredential>('', 'POST', { label: label.trim(), clusterIds: selectedIDs, readOnly: readOnlyOnly || readOnly, ttlSeconds })
+      const validity = ttlSeconds === 0 ? { neverExpires: true } : { ttlSeconds }
+      const result = await credentialsRequest<IssuedCredential>('', 'POST', { label: label.trim(), clusterIds: selectedIDs, readOnly: readOnlyOnly || readOnly, ...validity })
       if (!result.token || !result.credential?.id) throw new Error('未收到完整凭据，请刷新列表核对。')
       setIssued(result)
       setRevision(value => value + 1)
@@ -130,7 +137,7 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
     {actionError && <p role="alert" className="portal-card border-warning p-4 text-sm">{actionError}</p>}
     {issued && <section className="portal-card border-accent p-5" aria-label="新生成的 MCP 凭据">
       <h2 className="flex items-center gap-2 font-semibold"><KeyRound size={19} className="text-accent-text" />凭据已生成 · 原文仅此次可见</h2>
-      <p className="mt-2 text-sm text-theme-text-secondary">请保存 Token，关闭后无法再次查看。有效至 {formatDate(issued.credential.expiresAt)}。</p>
+      <p className="mt-2 text-sm text-theme-text-secondary">请保存 Token，关闭后无法再次查看。有效期：<CredentialExpiration credential={issued.credential} />。</p>
       <label className="mt-4 block text-sm">MCP Token<input aria-label="新生成的 MCP Token" type="password" readOnly autoComplete="off" spellCheck={false} className="portal-control portal-mono mt-2 w-full" value={issued.token} onFocus={event => event.target.select()} /></label>
       <div className="mt-4 flex flex-wrap items-start gap-3">
         {!endpointError && <CopyValue value={connectionInfo} label="复制连接信息" />}
@@ -146,7 +153,16 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
           <fieldset disabled={Boolean(busy || issued || loading || directoryLoading || loadError || directoryError)} className="min-w-0 space-y-4">
             <legend className="sr-only">MCP 凭据配置</legend>
             <label className="block text-sm">名称<input required maxLength={100} value={label} onChange={event => setLabel(event.target.value)} className="portal-control mt-2 w-full" placeholder="输入凭据名称" /></label>
-            <label className="block text-sm">有效期<select value={ttlSeconds} onChange={event => setTTL(Number(event.target.value))} className="portal-control mt-2 w-full"><option value={900}>15 分钟</option><option value={3600}>1 小时</option><option value={28800}>8 小时</option><option value={86400}>24 小时</option><option value={604800}>7 天</option></select></label>
+            <label className="block text-sm">有效期
+              <select value={ttlSeconds} onChange={event => setTTL(Number(event.target.value))} className="portal-control mt-2 w-full">
+                <option value={900}>15 分钟</option>
+                <option value={3600}>1 小时</option>
+                <option value={28800}>8 小时</option>
+                <option value={86400}>24 小时</option>
+                <option value={604800}>7 天</option>
+                <option value={0}>永不过期</option>
+              </select>
+            </label>
             <fieldset className="min-w-0"><legend className="mb-2 text-sm">允许访问的集群 · 至少选择一个</legend>
               {directoryError && <p role="alert" className="mb-2 text-xs text-warning-text">集群目录读取失败：{directoryError}。请恢复连接后刷新。</p>}
               <div className="max-h-60 space-y-2 overflow-auto rounded-lg border border-theme-border bg-theme-base p-3">
@@ -156,7 +172,7 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
             </fieldset>
             <label className="block text-sm">操作范围<select value={readOnlyOnly || readOnly ? 'read' : 'write'} disabled={readOnlyOnly} onChange={event => setReadOnly(event.target.value === 'read')} className="portal-control mt-2 w-full"><option value="read">只读 · 查询与诊断</option>{!readOnlyOnly && <option value="write">读写 · 查询与修改</option>}</select></label>
             <p className="text-xs text-theme-text-secondary">{readOnlyOnly || readOnly ? '仅查询所选集群。' : '可修改所选集群中你有权限的资源。'}</p>
-            <button type="submit" className="btn-brand inline-flex items-center gap-2 px-4 py-2.5 text-sm" disabled={!selectedIDs.length || !label.trim() || Boolean(directoryError)}><KeyRound size={16} />{busy === 'create' ? '正在生成…' : '生成限时 Token'}</button>
+            <button type="submit" className="btn-brand inline-flex items-center gap-2 px-4 py-2.5 text-sm" disabled={!selectedIDs.length || !label.trim() || Boolean(directoryError)}><KeyRound size={16} />{busy === 'create' ? '正在生成…' : '生成 Token'}</button>
           </fieldset>
           {issued && <p className="text-xs text-theme-text-secondary">请先保存并关闭上方原文，再生成其他凭据。</p>}
         </form>
@@ -184,7 +200,7 @@ export function MCPCredentials({ readOnlyOnly = false, organizationId, organizat
           const status = credentialStatus(credential, now)
           return <article key={credential.id} className="rounded-lg border border-theme-border p-4" aria-label={`凭据 ${credential.label}`}>
             <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="break-all font-medium">{credential.label}</h3><div className="flex gap-2"><Badge tone={credential.readOnly ? 'accent1' : 'accent2'}>{credential.readOnly ? '只读' : '读写'}</Badge><Badge severity={loadError ? 'neutral' : statusTones[status]}>{loadError ? '状态待确认' : statusLabels[status]}</Badge></div></div>
-            <dl className="mt-3 space-y-2 text-xs"><div><dt className="text-theme-text-tertiary">组织</dt><dd className="mt-1 break-all">{credential.organizationId === organizationId ? organizationName : credential.organizationId || '未知'}</dd></div><div><dt className="text-theme-text-tertiary">允许的集群</dt><dd className="mt-1 break-all">{credential.clusterIds.map(clusterLabel).join(' · ')}</dd></div><div><dt className="text-theme-text-tertiary">到期时间</dt><dd className="mt-1"><time dateTime={credential.expiresAt}>{formatDate(credential.expiresAt)}</time></dd></div></dl>
+            <dl className="mt-3 space-y-2 text-xs"><div><dt className="text-theme-text-tertiary">组织</dt><dd className="mt-1 break-all">{credential.organizationId === organizationId ? organizationName : credential.organizationId || '未知'}</dd></div><div><dt className="text-theme-text-tertiary">允许的集群</dt><dd className="mt-1 break-all">{credential.clusterIds.map(clusterLabel).join(' · ')}</dd></div><div><dt className="text-theme-text-tertiary">到期时间</dt><dd className="mt-1"><CredentialExpiration credential={credential} /></dd></div></dl>
             {!credential.revokedAt && <div className="mt-4 border-t border-theme-border pt-3">{revokeID === credential.id ? <div className="space-y-2"><p className="text-xs text-warning-text">确认撤销？使用此凭据的客户端将无法发起新请求。</p><div className="flex gap-2"><button type="button" className="portal-control" disabled={Boolean(busy)} onClick={() => revoke(credential.id)}>确认撤销</button><button type="button" className="portal-control" disabled={Boolean(busy)} onClick={() => setRevokeID('')}>取消</button></div></div> : <button type="button" className="text-xs text-accent-text" disabled={Boolean(busy)} onClick={() => setRevokeID(credential.id)}>撤销凭据</button>}</div>}
           </article>
         })}

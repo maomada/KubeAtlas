@@ -37,6 +37,9 @@ func newPortalHubFixture(t *testing.T, factory bool) (*Handler, string) {
 				if !ok || r.Header.Get("Authorization") != "" || r.Header.Get("Cookie") != "" {
 					t.Error("MCP boundary lacks principal or exposes credentials")
 				}
+				if r.Context().Err() != nil {
+					t.Error("MCP handler received an already cancelled request")
+				}
 				hubJSON(w, http.StatusOK, principal)
 			}), nil
 		}
@@ -168,6 +171,26 @@ func TestPortalHubCredentialBoundaryAndLifecycle(t *testing.T) {
 	hubRequest(t, h, cookie, "", "POST", "/api/mcp/credentials/"+refreshed.Credential.ID+"/revoke", `{}`, 204)
 	hubRequest(t, h, nil, refreshed.Token, "POST", "/mcp", `{}`, 401)
 	hubRequest(t, h, cookie, "", "POST", "/api/mcp/credentials/unknown/revoke", `{}`, 404)
+}
+
+func TestPortalHubNonExpiringCredentialLifecycle(t *testing.T) {
+	h, _ := newPortalHubFixture(t, true)
+	cookie := loginForTest(t, h)
+	hubRequest(t, h, cookie, "", "POST", "/api/hub/clusters", `{"id":"alpha","name":"Alpha"}`, 201)
+	const route = "/api/mcp/credentials"
+	hubRequest(t, h, cookie, "", "POST", route, `{"clusterIds":["alpha"],"readOnly":true,"ttlSeconds":900,"neverExpires":true}`, 400)
+	result := hubRequest(t, h, cookie, "", "POST", route, `{"label":"Persistent client","clusterIds":["alpha"],"readOnly":true,"neverExpires":true}`, 201)
+	issued := decodeHubResponse[hubstate.IssuedCredential](t, result)
+	if !issued.Credential.NeverExpires || strings.Contains(result.Body.String(), "expiresAt") || strings.Contains(result.Body.String(), "refreshUntil") {
+		t.Fatal("non-expiring credential has invalid lifetime metadata")
+	}
+	principal := decodeHubResponse[hub.Principal](t, hubRequest(t, h, nil, issued.Token, "POST", "/mcp", `{}`, 200))
+	if !principal.ReadOnly || principal.CredentialID != issued.Credential.ID || len(principal.ClusterIDs) != 1 || principal.ClusterIDs[0] != "alpha" {
+		t.Fatal("non-expiring credential granted unexpected permissions")
+	}
+	hubRequest(t, h, nil, issued.Token, "GET", route+"/current", "", 200)
+	hubRequest(t, h, cookie, "", "POST", route+"/"+issued.Credential.ID+"/revoke", `{}`, 204)
+	hubRequest(t, h, nil, issued.Token, "POST", "/mcp", `{}`, 401)
 }
 
 func TestPortalBrowserAPIRequiresSessionAndExactOrigin(t *testing.T) {

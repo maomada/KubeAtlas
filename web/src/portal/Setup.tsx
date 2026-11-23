@@ -30,9 +30,9 @@ export function Setup() {
     const username = String(data.get('username') ?? '').trim()
     const password = String(data.get('password') ?? '')
     const passwordBytes = new TextEncoder().encode(password).length
-    if (passwordBytes < 16 || passwordBytes > 4096) {
+    if (passwordBytes > 4096 || [...password].length < 8 || !/[A-Z]/.test(password) || !/[\p{P}\p{S}]/u.test(password)) {
       const input = form.elements.namedItem('password') as HTMLInputElement
-      input.setCustomValidity(passwordBytes < 16 ? '密码至少需要 16 字节。' : '密码过长，请缩短后重试。')
+      input.setCustomValidity(passwordBytes > 4096 ? '密码过长，请缩短后重试。' : '至少 8 个字符，含大写英文字母和符号。')
       input.reportValidity()
       return
     }
@@ -89,7 +89,7 @@ export function Setup() {
                   {showPassword ? <EyeOff size={18} aria-hidden="true" /> : <Eye size={18} aria-hidden="true" />}
                 </button>
               </div>
-              <p id="setup-password-hint" className="portal-field-hint mt-2">至少 16 字节</p>
+              <p id="setup-password-hint" className="portal-field-hint mt-2">至少 8 个字符，含大写英文字母和符号</p>
             </div>
             {error && <p ref={errorMessage} role="alert" tabIndex={-1} className="portal-field-error">{error}</p>}
             <button type="submit" className="btn-brand inline-flex items-center justify-center gap-2 px-4 py-3" disabled={busy}>

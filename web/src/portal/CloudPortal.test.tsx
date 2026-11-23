@@ -106,12 +106,19 @@ it('validates and submits the first-run form before opening the login page', asy
     const password = form.querySelector<HTMLInputElement>('[name="password"]')!
     code.value = 'wrong-code'
     username.value = 'platform-admin'
-    password.value = 'short'
-    await act(async () => form.requestSubmit())
-    expect(password.validationMessage).toBe('密码至少需要 16 字节。')
-    expect(fetch.mock.calls).toHaveLength(1)
+    for (const invalidPassword of ['管理测试用A🚀', '管理员测试用a！', '管理员测试用Aa']) {
+      password.value = invalidPassword
+      await act(async () => {
+        password.dispatchEvent(new Event('input', { bubbles: true }))
+        expect(password.validationMessage).toBe('')
+        form.requestSubmit()
+      })
+      expect(password.validationMessage).toBe('至少 8 个字符，含大写英文字母和符号。')
+      expect(fetch.mock.calls).toHaveLength(1)
+    }
 
-    password.value = '管理员测试用'
+    const validPassword = '管理员测试用A！'
+    password.value = validPassword
     await act(async () => {
       password.dispatchEvent(new Event('input', { bubbles: true }))
       form.requestSubmit()
@@ -122,7 +129,7 @@ it('validates and submits the first-run form before opening the login page', asy
     code.value = 'valid-code'
     await act(async () => form.requestSubmit())
     expect(fetch).toHaveBeenLastCalledWith('/api/setup', expect.objectContaining({
-      method: 'POST', body: JSON.stringify({ code: 'valid-code', username: 'platform-admin', password: '管理员测试用' }),
+      method: 'POST', body: JSON.stringify({ code: 'valid-code', username: 'platform-admin', password: validPassword }),
     }))
     expect(portalNavigation.replace).toHaveBeenCalledWith('/login')
   } finally {

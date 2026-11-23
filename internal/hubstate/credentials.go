@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	maxNonExpiringCredentials                = 1024
+	maxNonExpiringCredentialsPerOrganization = 64
+)
+
 func newCredentialID() (string, error) {
 	var id [32]byte
 	if _, err := rand.Read(id[:]); err != nil {
@@ -21,11 +26,21 @@ func (s *Store) Issue(ownerID string, input IssueInput) (IssuedCredential, error
 	return s.IssueForOrganization("self-hosted", ownerID, input)
 }
 
+func (input IssueInput) lifetimeSeconds() (int, error) {
+	if input.NeverExpires {
+		if input.TTLSeconds != 0 {
+			return 0, failure("invalid_parameters")
+		}
+		return 0, nil
+	}
+	return ttlSeconds(input.TTLSeconds, defaultTTL)
+}
+
 func (s *Store) IssueForOrganization(organizationID, ownerID string, input IssueInput) (IssuedCredential, error) {
 	if !validOwner(ownerID) || !validText(input.Label, 128, false) {
 		return IssuedCredential{}, failure("invalid_parameters")
 	}
-	ttl, err := ttlSeconds(input.TTLSeconds, defaultTTL)
+	ttl, err := input.lifetimeSeconds()
 	if err != nil {
 		return IssuedCredential{}, err
 	}
@@ -49,7 +64,7 @@ func (s *Store) IssueForMemberInOrganization(organizationID, ownerID string, inp
 	if !validOwner(ownerID) || !validText(input.Label, 128, false) {
 		return IssuedCredential{}, failure("invalid_parameters")
 	}
-	ttl, err := ttlSeconds(input.TTLSeconds, defaultTTL)
+	ttl, err := input.lifetimeSeconds()
 	if err != nil {
 		return IssuedCredential{}, err
 	}
@@ -75,8 +90,8 @@ func (s *Store) IssueForMemberInOrganization(organizationID, ownerID string, inp
 func (s *Store) issueLocked(ownerID, organizationID string, input IssueInput, ids []string, ttl int) (IssuedCredential, error) {
 	now := s.now().UTC()
 	next := s.next(now)
-	if len(next.Credentials) >= maxCredentials {
-		return IssuedCredential{}, failure("capacity_exceeded")
+	if err := makeCredentialRoom(next.Credentials, organizationID, input.NeverExpires); err != nil {
+		return IssuedCredential{}, err
 	}
 	id, err := newCredentialID()
 	if err != nil {
@@ -89,12 +104,60 @@ func (s *Store) issueLocked(ownerID, organizationID string, input IssueInput, id
 	if err != nil {
 		return IssuedCredential{}, err
 	}
-	c := storedCredential{Credential: Credential{ID: id, OwnerID: ownerID, OrganizationID: organizationID, Label: input.Label, ClusterIDs: ids, ReadOnly: input.ReadOnly, CreatedAt: now, ExpiresAt: now.Add(time.Duration(ttl) * time.Second), RefreshUntil: now.Add(familyLifetime)}, Digest: hash, FamilyID: id, FamilyCreatedAt: now, OriginalTTLSeconds: ttl, TTLSeconds: ttl}
+	c := storedCredential{
+		Credential: Credential{
+			ID: id, OwnerID: ownerID, OrganizationID: organizationID, Label: input.Label,
+			ClusterIDs: ids, ReadOnly: input.ReadOnly, CreatedAt: now, NeverExpires: input.NeverExpires,
+		},
+		Digest: hash, FamilyID: id, FamilyCreatedAt: now, OriginalTTLSeconds: ttl, TTLSeconds: ttl,
+	}
+	if !c.NeverExpires {
+		c.ExpiresAt = now.Add(time.Duration(ttl) * time.Second)
+		c.RefreshUntil = now.Add(familyLifetime)
+	}
 	next.Credentials[id] = c
 	if err := s.commit(next); err != nil {
 		return IssuedCredential{}, err
 	}
 	return IssuedCredential{Credential: cloneCredential(c.Credential), Token: token}, nil
+}
+
+// Non-expiring records have a separate budget so they cannot fill the shared
+// store. At capacity, reclaim a revoked record from the requesting organization
+// rather than blocking replacement until normal retention pruning runs.
+func makeCredentialRoom(records map[string]storedCredential, organizationID string, neverExpires bool) error {
+	if !neverExpires {
+		if len(records) >= maxCredentials {
+			return failure("capacity_exceeded")
+		}
+		return nil
+	}
+	var total, inOrganization int
+	var oldestID string
+	var oldestRevocation time.Time
+	for id, record := range records {
+		if !record.NeverExpires {
+			continue
+		}
+		total++
+		if record.OrganizationID != organizationID {
+			continue
+		}
+		inOrganization++
+		if record.RevokedAt != nil && (oldestID == "" || record.RevokedAt.Before(oldestRevocation) ||
+			(record.RevokedAt.Equal(oldestRevocation) && id < oldestID)) {
+			oldestID, oldestRevocation = id, *record.RevokedAt
+		}
+	}
+	if len(records) < maxCredentials && total < maxNonExpiringCredentials &&
+		inOrganization < maxNonExpiringCredentialsPerOrganization {
+		return nil
+	}
+	if oldestID == "" {
+		return failure("capacity_exceeded")
+	}
+	delete(records, oldestID)
+	return nil
 }
 
 func (s *Store) matchCredential(token, ownerID string) (storedCredential, error) {
@@ -184,7 +247,7 @@ func credentialStatus(c storedCredential, now time.Time) error {
 	if c.RevokedAt != nil {
 		return failure("credential_revoked")
 	}
-	if !now.Before(c.ExpiresAt) {
+	if !c.NeverExpires && !now.Before(c.ExpiresAt) {
 		return failure("credential_expired")
 	}
 	return nil
@@ -315,20 +378,33 @@ func (s *Store) renewWithScope(old storedCredential, requestedTTL int, clusterID
 	if err := credentialStatus(old, now); err != nil {
 		return IssuedCredential{}, err
 	}
-	ttl, err := ttlSeconds(requestedTTL, old.OriginalTTLSeconds)
-	if err != nil {
-		return IssuedCredential{}, err
-	}
-	if old.RefreshUntil.Sub(now) < time.Duration(minTTL)*time.Second {
-		return IssuedCredential{}, failure("credential_refresh_expired")
+	var ttl int
+	if old.NeverExpires {
+		if requestedTTL != 0 {
+			return IssuedCredential{}, failure("invalid_parameters")
+		}
+	} else {
+		var err error
+		ttl, err = ttlSeconds(requestedTTL, old.OriginalTTLSeconds)
+		if err != nil {
+			return IssuedCredential{}, err
+		}
+		if old.RefreshUntil.Sub(now) < time.Duration(minTTL)*time.Second {
+			return IssuedCredential{}, failure("credential_refresh_expired")
+		}
 	}
 	ids, err := scopeOrganization(clusterIDs, old.OrganizationID, s.data.Clusters, false)
 	if err != nil || !slices.Equal(ids, clusterIDs) {
 		return IssuedCredential{}, failure("permission_denied")
 	}
 	next := s.next(now)
-	if len(next.Credentials) >= maxCredentials {
-		return IssuedCredential{}, failure("capacity_exceeded")
+	// Include the old record as a revocation on the pending transaction so a
+	// non-expiring credential can rotate even when its organization is full.
+	retired := old
+	retired.RevokedAt = &now
+	next.Credentials[retired.ID] = retired
+	if err := makeCredentialRoom(next.Credentials, old.OrganizationID, old.NeverExpires); err != nil {
+		return IssuedCredential{}, err
 	}
 	id, err := newCredentialID()
 	if err != nil {
@@ -348,12 +424,13 @@ func (s *Store) renewWithScope(old storedCredential, requestedTTL int, clusterID
 	if old.ReadOnly {
 		c.ReadOnly = true
 	}
-	c.ExpiresAt = now.Add(time.Duration(ttl) * time.Second)
-	if c.ExpiresAt.After(c.RefreshUntil) {
-		c.ExpiresAt = c.RefreshUntil
+	if !c.NeverExpires {
+		c.ExpiresAt = now.Add(time.Duration(ttl) * time.Second)
+		if c.ExpiresAt.After(c.RefreshUntil) {
+			c.ExpiresAt = c.RefreshUntil
+		}
 	}
-	old.RevokedAt = &now
-	next.Credentials[old.ID], next.Credentials[id] = old, c
+	next.Credentials[id] = c
 	if err := s.commit(next); err != nil {
 		return IssuedCredential{}, err
 	}

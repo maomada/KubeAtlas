@@ -95,31 +95,50 @@ it('distinguishes identically named clusters before issuing a scoped credential'
   expect(JSON.parse(post?.[1]?.body as string).label).toBe('我的助手')
 })
 
-it('issues scoped credentials once, hides the secret after dismissal, and confirms revocation', async () => {
+it.each([
+  { lifespan: 'finite', issuedCredential: credential, submittedValidity: { ttlSeconds: 28800 } },
+  { lifespan: 'perpetual', issuedCredential: { ...credential, expiresAt: undefined, refreshUntil: undefined, neverExpires: true }, submittedValidity: { neverExpires: true } },
+])('issues $lifespan credentials once, hides the secret after dismissal, and confirms revocation', async ({ issuedCredential, submittedValidity }) => {
   let records: MCPCredential[] = []
   const fetch = vi.fn((url: string, options?: RequestInit) => {
     if (url === '/api/hub/connections') return Promise.resolve(response({ lanURL: 'https://hub.example.test', publicURL: '', ownerUserID: `kubeatlas:portal:${'a'.repeat(64)}`, catalogAvailable: false, catalog: { available: false } }))
     if (url === '/api/hub') return Promise.resolve(response({ enabled: true }))
     if (url === '/api/hub/clusters') return Promise.resolve(response({ clusters: [cluster, { id: 'revoked', name: 'Revoked', revokedAt: credential.createdAt }] }))
     if (url.endsWith('/revoke')) {
-      records = [{ ...credential, revokedAt: credential.createdAt }]
+      records = [{ ...issuedCredential, revokedAt: credential.createdAt }]
       return Promise.resolve(new Response(null, { status: 204 }))
     }
     if (options?.method === 'POST') {
-      records = [credential]
-      return Promise.resolve(response({ credential, token: 'unit-test-token-not-a-real-secret' }))
+      records = [issuedCredential]
+      return Promise.resolve(response({ credential: issuedCredential, token: secret }))
     }
     return Promise.resolve(response({ credentials: records, serverTime: credential.createdAt }))
   })
   vi.stubGlobal('fetch', fetch)
   await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials organizationId="org-1" organizationName="Example organization" /></ConnectionProfilesProvider>))
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(1)
-  expect(button('生成限时 Token').disabled).toBe(true)
+  expect(button('生成 Token').disabled).toBe(true)
+  const expiry = host.querySelector<HTMLSelectElement>('form select')!
+  expect(expiry.value).toBe('28800')
+  if (issuedCredential.neverExpires) {
+    await act(async () => {
+      expiry.value = [...expiry.options].find(option => option.textContent === '永不过期')!.value
+      expiry.dispatchEvent(new Event('change', { bubbles: true }))
+    })
+  }
   await act(async () => setName('我的助手'))
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   const post = fetch.mock.calls.find(([, options]) => options?.method === 'POST')!
-  expect(JSON.parse(post[1]!.body as string)).toEqual({ label: '我的助手', clusterIds: ['east'], readOnly: true, ttlSeconds: 28800 })
+  expect(JSON.parse(post[1]!.body as string)).toEqual({ label: '我的助手', clusterIds: ['east'], readOnly: true, ...submittedValidity })
+  if (issuedCredential.neverExpires) {
+    expect(host.querySelector('[aria-label="新生成的 MCP 凭据"]')?.textContent).toContain('永不过期')
+    expect(card()?.textContent).toContain('永不过期')
+    expect(card()?.querySelector('time')).toBeNull()
+    expect(card()?.textContent).not.toContain('有效期未知')
+  } else {
+    expect(card()?.querySelector('time')?.dateTime).toBe(issuedCredential.expiresAt)
+  }
   expect(host.textContent).toContain('当前组织：Example organization')
   expect(host.querySelector<HTMLInputElement>('[aria-label="新生成的 MCP Token"]')!.type).toBe('password')
   expect(host.textContent).toContain('原文仅此次可见')
@@ -136,7 +155,7 @@ it('issues scoped credentials once, hides the secret after dismissal, and confir
   await act(async () => button('复制连接信息').click())
   expect(copyStatus.textContent).not.toBe(firstAnnouncement)
   expect(copyStatus.textContent).not.toContain(secret)
-  expect(button('生成限时 Token').closest('fieldset')!.disabled).toBe(true)
+  expect(button('生成 Token').closest('fieldset')!.disabled).toBe(true)
   await act(async () => button('已保存，关闭原文').click())
   expect(host.querySelector('[aria-label="新生成的 MCP Token"]')).toBeNull()
   expect(button('复制连接信息')).toBeUndefined()
@@ -179,7 +198,7 @@ it('fails closed when the Hub directory cannot be read, without falling back to 
   vi.stubGlobal('fetch', fetch)
   await act(async () => root.render(<ConnectionProfilesProvider><MCPCredentials organizationId="org-1" organizationName="Example organization" /></ConnectionProfilesProvider>))
   expect(host.textContent).toContain('集群目录读取失败')
-  expect(button('生成限时 Token').closest('fieldset')!.disabled).toBe(true)
+  expect(button('生成 Token').closest('fieldset')!.disabled).toBe(true)
   expect(host.querySelectorAll('input[type="checkbox"]')).toHaveLength(0)
   await act(async () => host.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true })))
   expect(fetch.mock.calls).toHaveLength(3)
@@ -194,14 +213,14 @@ it('starts with an empty required name and rejects empty or whitespace-only subm
   expect(nameInput().required).toBe(true)
   expect(nameInput().placeholder).not.toContain('OpenCode')
   await act(async () => host.querySelector<HTMLInputElement>('input[type="checkbox"]')!.click())
-  expect(button('生成限时 Token').disabled).toBe(true)
+  expect(button('生成 Token').disabled).toBe(true)
   await submit()
   await act(async () => setName('   '))
-  expect(button('生成限时 Token').disabled).toBe(true)
+  expect(button('生成 Token').disabled).toBe(true)
   await submit()
   expect(fetch.mock.calls.some(([, options]) => options?.method === 'POST')).toBe(false)
   await act(async () => setName('  自定义名称  '))
-  expect(button('生成限时 Token').disabled).toBe(false)
+  expect(button('生成 Token').disabled).toBe(false)
   await submit()
   const posts = fetch.mock.calls.filter(([, options]) => options?.method === 'POST')
   expect(posts).toHaveLength(1)
