@@ -26,8 +26,11 @@ then emits `release-approval.json`; it does not publish. Review the release
 manifest, exact artifact inventory, checksums, build metadata, and CI/Semgrep CE
 evidence before signing. Binary approval also requires native smoke tests on
 Linux amd64 and arm64. Each runner validates the staged package checksums and
-runs `--version` and `--help` from the Hub DEB and RPM packages.
-Cluster acceptance is a separate check.
+runs the Hub binaries against their embedded Agent catalogs. The arm64 runner
+also installs both packages into fresh systemd environments using `apt` and
+`dnf`. It completes the first administrator setup and uses each Hub's
+registration command to connect an Agent and read a namespace in a disposable
+Kubernetes cluster. Review the acceptance evidence alongside the package hashes.
 
 The approval binds the repository, action, channel, selected source and version,
 workflow path and SHA, dry-run run ID and attempt, CI/Semgrep CE run URLs,
@@ -282,13 +285,14 @@ It checks main ancestry and exact-SHA CI and Semgrep CE evidence before building
 Builds use trusted release tooling checked out separately from the selected
 source, have read-only permissions, and never log in to a registry.
 
-The hosted workflow validates the full GoReleaser build, then stages the
-`hub-linux` publication profile with four Hub DEB and RPM packages, a
-manifest, and checksums. The Linux amd64 and arm64 runners smoke-test the
-exact staged packages. In parallel, the workflow assembles a multi-platform
-OCI image from the two validated Agent binaries, prepares the versioned
-catalog, and verifies import with the staged Hub executable. It creates the
-approval manifest after both checks.
+The hosted workflow validates the GoReleaser binaries, assembles a
+multi-platform OCI image from the two Agent binaries, and builds the
+versioned catalog. The matching Hub executable verifies and imports that
+catalog before it is embedded in the DEB and RPM packages with the systemd
+unit. The `hub-linux` publication profile stages four Hub packages, a
+manifest, and checksums. The Linux amd64 and arm64 runners smoke-test the exact
+staged packages. The arm64 installation and Agent acceptance must also pass
+before the workflow creates the approval manifest.
 
 With `publish=true`, the publisher downloads the signed approval and
 `kubeatlas-binary-publication` and `kubeatlas-hub-publication` from the
@@ -306,17 +310,16 @@ GitHub's latest release. It never overwrites, deletes,
 retries, or creates a mutable `latest` tag. Partial state remains for
 reconciliation and requires a fresh version.
 
-Run the non-publishing local package dry run with:
+The non-publishing package dry run uses Docker Buildx, Helm, `jq`, and
+nFPM to assemble the offline catalog and embed it in the Linux packages.
 
 ```sh
 KUBEATLAS_RELEASE_VERSION=1.2.3 make release-binaries-dry
 ```
 
-See [Binary packages](packaging.md) for install/uninstall behavior, supported
-architectures, no-autostart guarantees, and source/version provenance. GHCR
-images/charts and GitHub Release binaries are separate authorization paths.
-This implementation does not dispatch a release workflow or publish any
-artifact.
+See [Binary packages](packaging.md) for installation, supported
+architectures, and source/version provenance. GHCR images/charts and GitHub
+Release binaries are separate authorization paths.
 
 ## Separate local release path
 
@@ -340,7 +343,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 scripts/release_local.py check \
   --source-sha "$SOURCE_SHA" --bundle "$BUNDLE" --rules-source "$RULES_SOURCE"
 ```
 
-The scoped 0.1.0 local release uses the `local-linux-amd64` profile. The build
+The historical 0.1.0 local release uses the `local-linux-amd64` profile
+with its own acceptance contract. Use the `Release Binaries` profile above
+for the current systemd packages. The local build
 validates the full GoReleaser matrix as diagnostic evidence and stages four
 Linux amd64 DEB/RPM packages (KubeAtlas and Portal), `binary-manifest.json`, and
 `checksums.txt`. The bundle also contains two

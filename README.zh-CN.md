@@ -34,13 +34,16 @@ flowchart TB
 
 ## 部署 Hub
 
-请选择提供对应部署产物的发布版本。Hub 支持 Linux `amd64` 和 `arm64`，并需要一个目标集群能够访问的 HTTPS 地址。
+从 [v0.1.4](https://github.com/maomada/KubeAtlas/releases/tag/v0.1.4) 起，Linux 安装包内置 systemd 服务和同版本 Agent 离线包。按发行版和 CPU 架构下载一个安装包即可。
 
-| Hub 运行环境 | 部署指南 |
+| Linux 发行版 | `amd64` 安装示例 |
 | --- | --- |
-| Kubernetes 集群 | [Helm](deploy/helm/kubeatlas-portal/README.md) |
-| 使用 systemd 的 Linux 主机 | [DEB 或 RPM](docs/deploy-with-ai.md#install-from-the-release-bundle) |
-| Linux 容器主机 | [Docker Compose](deploy/compose/README.md) |
+| Debian 或 Ubuntu | `sudo apt install ./kubeatlas-portal_0.1.4_linux_amd64.deb` |
+| RPM 系发行版 | `sudo dnf install ./kubeatlas-portal_0.1.4_linux_amd64.rpm` |
+
+Hub 服务默认监听 `127.0.0.1:1333`。配置集群可访问的 HTTPS 地址，然后在浏览器用一次性设置码创建平台管理员。[Linux 配置和升级指南](docs/packaging.md#configure-https)
+
+[Helm](deploy/helm/kubeatlas-portal/README.md) · [Docker Compose](deploy/compose/README.md) · [v0.1.3 部署指南](https://github.com/maomada/KubeAtlas/blob/v0.1.3/docs/deploy-with-ai.md)
 
 ## 接入集群
 

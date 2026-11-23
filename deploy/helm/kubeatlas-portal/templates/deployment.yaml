@@ -4,9 +4,6 @@
 {{- if empty .Values.image.repository }}
 {{- fail "image.repository is required; build and supply a user-controlled Portal image" }}
 {{- end }}
-{{- if empty .Values.existingSecret }}
-{{- fail "existingSecret is required and must contain keys username and password" }}
-{{- end }}
 {{- if and .Values.hubArtifacts.enabled (empty .Values.hubArtifacts.existingClaim) }}
 {{- fail "hubArtifacts.existingClaim is required when hubArtifacts.enabled=true" }}
 {{- end }}
@@ -71,7 +68,7 @@ spec:
           image: {{ include "kubeatlas-portal.image" . | quote }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           args:
-            - --listen=0.0.0.0:9290
+            - {{ printf "--listen=0.0.0.0:%d" (int .Values.service.port) | quote }}
             - --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json
             {{- with .Values.hubOrigin }}
             - {{ printf "--hub-origin=%s" . | quote }}
@@ -85,23 +82,27 @@ spec:
             {{- end }}
           ports:
             - name: http
-              containerPort: 9290
+              containerPort: {{ .Values.service.port }}
               protocol: TCP
+          {{- if or .Values.httpIPOrigin .Values.existingSecret }}
           env:
             {{- if .Values.httpIPOrigin }}
             - name: KUBEATLAS_PORTAL_HTTP_IP_ORIGIN
               value: {{ .Values.httpIPOrigin | quote }}
             {{- end }}
+            {{- if .Values.existingSecret }}
             - name: KUBEATLAS_PORTAL_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
                   key: username
+                  optional: true
             - name: KUBEATLAS_PORTAL_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: {{ .Values.existingSecret }}
                   key: password
+                  optional: true
             - name: KUBEATLAS_PORTAL_HUB_GROUPS
               valueFrom:
                 secretKeyRef:
@@ -138,6 +139,8 @@ spec:
                   name: {{ .Values.existingSecret }}
                   key: mcp-allowed-hosts
                   optional: true
+            {{- end }}
+          {{- end }}
           livenessProbe:
             httpGet:
               path: /healthz

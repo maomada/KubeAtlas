@@ -25,6 +25,7 @@ import { ConnectionProfilesProvider } from './ConnectionProfiles'
 import { probePortalSession } from './auth'
 import { Login } from './Login'
 import { PortalLanding, Register } from './Registration'
+import { Setup } from './Setup'
 import { hubYamlDraftScope, reconcileHubYamlDrafts, subscribeToHubYamlDraftInvalidation, type HubYamlDraftInvalidationEvent } from './hubYamlDrafts'
 
 const NativeKubeAtlas = lazy(() => import('../KubeAtlasApp').then(module => ({ default: module.KubeAtlasApp })))
@@ -78,6 +79,7 @@ function PortalRoutes({ queryClient }: { queryClient: QueryClient }) {
   if (location.pathname === '/settings/platform') return <CloudLoading label="正在打开平台管理…" />
   if (location.pathname === '/login') return <Login />
   if (location.pathname === '/register') return <Register />
+  if (location.pathname === '/setup') return <Setup />
   return <PortalMode path={location.pathname} queryClient={queryClient} />
 }
 

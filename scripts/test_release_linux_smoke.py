@@ -62,7 +62,7 @@ class ReleaseLinuxSmokeTests(unittest.TestCase):
         with (
             patch.object(smoke, "validate_local_staged", return_value={"artifacts": packages}) as validate,
             patch.object(smoke, "extract_package", side_effect=self.extract) as extract,
-            patch.object(smoke.subprocess, "run", side_effect=self.run_binary),
+            patch.object(smoke.subprocess, "run", side_effect=self.run_binary) as run,
         ):
             smoke.smoke_packages(self.directory, self.source_sha, self.version, "arm64", self.evidence, "hub-linux")
 
@@ -73,6 +73,10 @@ class ReleaseLinuxSmokeTests(unittest.TestCase):
         self.assertEqual(
             [call.args[0].name for call in extract.call_args_list],
             [f"kubeatlas-portal_{self.version}_linux_arm64.{suffix}" for suffix in ("deb", "rpm")],
+        )
+        self.assertEqual(
+            [call.args[0][1] for call in run.call_args_list],
+            ["--version", "--help", "--check-hub-artifacts"] * 2,
         )
 
     @patch("release_linux_smoke.platform.machine", return_value="x86_64")

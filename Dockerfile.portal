@@ -47,7 +47,7 @@ LABEL org.opencontainers.image.version=$VERSION
 
 COPY LICENSE NOTICE /usr/share/licenses/kubeatlas/
 
-EXPOSE 9290
+EXPOSE 1333
 USER nonroot:nonroot
 ENTRYPOINT ["/kubeatlas-portal"]
 

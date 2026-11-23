@@ -83,6 +83,56 @@ beforeEach(() => {
   portalNavigation.nativeUnmounts = 0
 })
 
+it('validates and submits the first-run form before opening the login page', async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
+  window.history.replaceState({}, '', '/setup')
+  const fetch = vi.fn<typeof globalThis.fetch>(async (input, options) => {
+    if (String(input) !== '/api/setup') throw new Error(`Unexpected request: ${input}`)
+    if (options?.method === 'GET') return Response.json({ required: true })
+    const { code } = JSON.parse(String(options?.body))
+    if (code === 'wrong-code') return Response.json({ message: 'Server error details' }, { status: 403 })
+    return new Response(null, { status: 204 })
+  })
+  vi.stubGlobal('fetch', fetch)
+  const host = document.createElement('div')
+  document.body.appendChild(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(<PortalEntry />))
+    await waitForPortal(() => expect(host.querySelector('form')).not.toBeNull())
+    const form = host.querySelector('form')!
+    const code = form.querySelector<HTMLInputElement>('[name="code"]')!
+    const username = form.querySelector<HTMLInputElement>('[name="username"]')!
+    const password = form.querySelector<HTMLInputElement>('[name="password"]')!
+    code.value = 'wrong-code'
+    username.value = 'platform-admin'
+    password.value = 'short'
+    await act(async () => form.requestSubmit())
+    expect(password.validationMessage).toBe('密码至少需要 16 字节。')
+    expect(fetch.mock.calls).toHaveLength(1)
+
+    password.value = '管理员测试用'
+    await act(async () => {
+      password.dispatchEvent(new Event('input', { bubbles: true }))
+      form.requestSubmit()
+    })
+    expect(host.querySelector('[role="alert"]')?.textContent).toContain('请核对初始化码')
+    expect(portalNavigation.replace).not.toHaveBeenCalled()
+
+    code.value = 'valid-code'
+    await act(async () => form.requestSubmit())
+    expect(fetch).toHaveBeenLastCalledWith('/api/setup', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ code: 'valid-code', username: 'platform-admin', password: '管理员测试用' }),
+    }))
+    expect(portalNavigation.replace).toHaveBeenCalledWith('/login')
+  } finally {
+    act(() => root.unmount())
+    host.remove()
+    window.history.replaceState({}, '', '/')
+    vi.unstubAllGlobals()
+  }
+})
+
 it.each([
   { label: 'missing Hub', firstResponse: () => Promise.resolve(new Response(null, { status: 404 })) },
   { label: 'disabled Hub', firstResponse: () => Promise.resolve(Response.json({ enabled: false })) },

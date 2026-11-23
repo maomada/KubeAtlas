@@ -250,13 +250,13 @@ jobs:
           docker run --rm --network none --read-only "$image" --check-hub-artifacts
           docker run --detach --read-only --name kubeatlas-hub-smoke \
             --mount type=volume,source=kubeatlas-hub-smoke,target=/var/lib/kubeatlas-portal \
-            --publish 127.0.0.1::9290 \
+            --publish 127.0.0.1::1333 \
             --env KUBEATLAS_PORTAL_USERNAME=release-smoke-owner \
             --env KUBEATLAS_PORTAL_PASSWORD=release-smoke-password \
             --env KUBEATLAS_PORTAL_HUB_STATE_FILE=/var/lib/kubeatlas-portal/hub/state.json \
             --env KUBEATLAS_PORTAL_HUB_ORIGIN=https://hub.example.test \
-            "$image" --listen=0.0.0.0:9290
-          endpoint="$(docker port kubeatlas-hub-smoke 9290/tcp)"
+            "$image" --listen=0.0.0.0:1333
+          endpoint="$(docker port kubeatlas-hub-smoke 1333/tcp)"
           if ! curl --fail --silent --show-error --retry 15 --retry-all-errors --retry-delay 1 --max-time 5 "http://$endpoint/healthz"; then
             docker logs kubeatlas-hub-smoke
             exit 1

@@ -516,18 +516,21 @@ desktop-package-linux:
 KUBEATLAS_RELEASE_VERSION ?= 0.0.0-dev
 SOURCE_SHA ?= $(shell git rev-parse HEAD)
 RELEASE_ARTIFACT_TOOL ?= scripts/release_artifacts.py
+RELEASE_OCI_TOOL ?= scripts/validate_oci_archive.py
 RELEASE_EVIDENCE_URLS ?=
 RELEASE_EVIDENCE_ARGS = $(foreach url,$(RELEASE_EVIDENCE_URLS),--evidence-url "$(url)")
+RELEASE_HUB_BUNDLE = dist/hub/kubeatlas-hub-agent-bundle_$(KUBEATLAS_RELEASE_VERSION).tar.gz
 release-binaries-dry:
 	@command -v goreleaser >/dev/null 2>&1 || { echo "Error: goreleaser not found"; exit 1; }
 	KUBEATLAS_RELEASE_VERSION="$(KUBEATLAS_RELEASE_VERSION)" goreleaser release --snapshot --clean
+	bash scripts/release_hub_packages.sh dist "$(KUBEATLAS_RELEASE_VERSION)" "$(SOURCE_SHA)" "$(RELEASE_OCI_TOOL)"
 	python3 "$(RELEASE_ARTIFACT_TOOL)" create \
 		--dist dist --output dist/release \
 		--source-sha "$(SOURCE_SHA)" --version "$(KUBEATLAS_RELEASE_VERSION)" \
-		$(RELEASE_EVIDENCE_ARGS)
+		--native-hub-bundle "$(RELEASE_HUB_BUNDLE)" $(RELEASE_EVIDENCE_ARGS)
 	python3 "$(RELEASE_ARTIFACT_TOOL)" validate --directory dist/release \
 		--source-sha "$(SOURCE_SHA)" --version "$(KUBEATLAS_RELEASE_VERSION)" \
-		$(RELEASE_EVIDENCE_ARGS)
+		--native-hub-bundle "$(RELEASE_HUB_BUNDLE)" $(RELEASE_EVIDENCE_ARGS)
 
 # Interactive release (remote via CI or local)
 release:

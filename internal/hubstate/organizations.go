@@ -87,6 +87,12 @@ func (s *Store) EnsurePlatformOwner(id, userID, displayName string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if current, ok := s.localPlatformOwner(); ok && current.PasswordHash != "" {
+		if current.ID != id || current.UserID != userID || current.DisplayName != displayName {
+			return failure("already_initialized")
+		}
+		return nil
+	}
 	now := s.now().UTC()
 	next := s.next(now)
 	account, exists := next.Accounts[id]
@@ -123,18 +129,7 @@ func (s *Store) EnsurePlatformOwner(id, userID, displayName string) error {
 		changed = true
 	}
 	next.Accounts[id] = account
-	if next.Memberships["self-hosted"] == nil {
-		next.Memberships["self-hosted"] = map[string]Membership{}
-	}
-	membership, hasMembership := next.Memberships["self-hosted"][id]
-	if !hasMembership {
-		membership = Membership{Role: "owner", ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: now, UpdatedAt: now}
-		next.Memberships["self-hosted"][id] = membership
-		changed = true
-	} else if membership.Role != "owner" {
-		membership.Role, membership.UpdatedAt = "owner", now
-		next.Memberships["self-hosted"][id] = membership
-		revokeCredentials(next, "self-hosted", id, now)
+	if ensureDefaultOwnerMembership(next, id, now) {
 		changed = true
 	}
 	if !changed {
@@ -142,6 +137,24 @@ func (s *Store) EnsurePlatformOwner(id, userID, displayName string) error {
 	}
 	syncAliasesFromPrimary(&next)
 	return s.commit(next)
+}
+
+func ensureDefaultOwnerMembership(next storeFile, id string, now time.Time) bool {
+	if next.Memberships["self-hosted"] == nil {
+		next.Memberships["self-hosted"] = map[string]Membership{}
+	}
+	membership, hasMembership := next.Memberships["self-hosted"][id]
+	if !hasMembership {
+		membership = Membership{Role: "owner", ClusterIDs: []string{}, KubernetesGroups: []string{}, CreatedAt: now, UpdatedAt: now}
+		next.Memberships["self-hosted"][id] = membership
+		return true
+	} else if membership.Role != "owner" {
+		membership.Role, membership.UpdatedAt = "owner", now
+		next.Memberships["self-hosted"][id] = membership
+		revokeCredentials(next, "self-hosted", id, now)
+		return true
+	}
+	return false
 }
 
 func (s *Store) IsPlatformOwner(id string) bool {

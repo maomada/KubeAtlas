@@ -1,0 +1,23 @@
+[Unit]
+Description=KubeAtlas Hub
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+User=kubeatlas-portal
+Group=kubeatlas-portal
+UMask=0077
+StateDirectory=kubeatlas-portal
+StateDirectoryMode=0700
+Environment=KUBEATLAS_HUB_PREVIOUS_DIR= KUBEATLAS_HUB_PREVIOUS_VERSION= KUBEATLAS_PORTAL_OPTIONS=
+EnvironmentFile=-/etc/kubeatlas-portal/hub.env
+EnvironmentFile=-/var/lib/kubeatlas-portal-native/previous/catalog.env
+ExecStart=/usr/bin/kubeatlas-portal --hub-state-file=/var/lib/kubeatlas-portal/state.json --hub-artifacts-dir=/usr/share/kubeatlas-portal/agent-catalog --hub-previous-artifacts-dir=${KUBEATLAS_HUB_PREVIOUS_DIR} --hub-previous-artifacts-version=${KUBEATLAS_HUB_PREVIOUS_VERSION} $KUBEATLAS_PORTAL_OPTIONS
+Restart=on-failure
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

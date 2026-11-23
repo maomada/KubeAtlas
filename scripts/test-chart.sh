@@ -464,6 +464,14 @@ render_portal "Portal image tag defaults to chart appVersion"
 assert_contains 'image: "?example.test/kubeatlas-portal:0.0.0-unreleased"?$' "empty image.tag uses Chart.AppVersion"
 render_portal "Portal image tag override is honored" --set image.tag=0.2.0
 assert_contains 'image: "?example.test/kubeatlas-portal:0.2.0"?$' "explicit image.tag overrides Chart.AppVersion"
+render_portal "Portal can start without preconfigured administrator credentials" --set-string existingSecret=
+assert_not_contains 'KUBEATLAS_PORTAL_USERNAME' "fresh setup does not need an administrator Secret"
+assert_not_contains 'KUBEATLAS_PORTAL_PASSWORD' "fresh setup does not inject an administrator password"
+assert_contains 'containerPort: 1333' "the Hub container defaults to port 1333"
+assert_contains 'port: 1333' "the Hub Service defaults to port 1333"
+render_portal "Portal retains an explicitly configured port" --set service.port=9290
+assert_contains 'listen=0.0.0.0:9290' "the Hub listener uses the configured port"
+assert_contains 'containerPort: 9290' "the Hub container uses the configured port"
 render_portal "Portal HTTP IP origin is passed through explicitly" --set-string httpIPOrigin=http://192.0.2.10:9290
 assert_contains 'name: KUBEATLAS_PORTAL_HTTP_IP_ORIGIN' "HTTP IP origin uses its dedicated environment variable"
 assert_contains 'value: "http://192.0.2.10:9290"' "HTTP IP origin is rendered exactly"

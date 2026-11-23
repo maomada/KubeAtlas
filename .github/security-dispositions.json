@@ -1,10 +1,10 @@
 {
   "schemaVersion": 2,
   "engine": "1.180.0",
-  "sourceSha": "b2e716cfaf9aebc61b6bdd87b5f24458d889ad9f",
-  "sourceTreeSha256": "ccdd69ed2998cbb9709518e9152c3bbf3aec706750fd4247c77b91171e80f853",
+  "sourceSha": "cf19c91d37c4e3cd6e6b29ce4e6e3eb1ce2c3aef",
+  "sourceTreeSha256": "7cf9bee8dcc449936ba492bff54151f83d5cddf79708dfb155a4bcf13d431c83",
   "rulesLockSha256": "296024fcf2db65e68a0d7410d2723611ddf1d4aae917a0cd82b5bc57ebcd6f5d",
-  "rawFindingsSha256": "a7e64f00e67fd2e3f921e3e4a5931be11bea5f015253611c2f1d4edceb8e88c0",
+  "rawFindingsSha256": "b1adbc782af47106bc4b4eb81344b18c3e90895bc9041932500b1ed3fe24e372",
   "entries": [
     {
       "id": "SAST-001",
@@ -1070,12 +1070,14 @@
         "check_id": "rules.go.lang.security.filepath-clean-misuse",
         "path": "internal/portal/handler.go",
         "start": {
-          "line": 171,
-          "col": 11
+          "line": 181,
+          "col": 11,
+          "offset": 5216
         },
         "end": {
-          "line": 171,
-          "col": 58
+          "line": 181,
+          "col": 58,
+          "offset": 5263
         }
       },
       "reviewedSourceSha": "5adbf200c4b091fce6172e32da0e20f5c33a3712",
@@ -1089,7 +1091,7 @@
         "scope": "User approved the documented false-positive candidates; unresolved risks are not waived."
       },
       "disposition": "false-positive",
-      "revalidatedSourceSha": "84cbe0c26ee008431e4f7da26de72f5573c28ff7",
+      "revalidatedSourceSha": "cf19c91d37c4e3cd6e6b29ce4e6e3eb1ce2c3aef",
       "previousFinding": {
         "check_id": "rules.go.lang.security.filepath-clean-misuse",
         "path": "internal/portal/handler.go",
@@ -1133,6 +1135,21 @@
             }
           },
           "reference": "https://github.com/maomada/KubeAtlas/pull/16"
+        },
+        {
+          "sourceSha": "b2e716cfaf9aebc61b6bdd87b5f24458d889ad9f",
+          "finding": {
+            "check_id": "rules.go.lang.security.filepath-clean-misuse",
+            "path": "internal/portal/handler.go",
+            "start": {
+              "line": 171,
+              "col": 11
+            },
+            "end": {
+              "line": 171,
+              "col": 58
+            }
+          }
         }
       ],
       "revalidationEvidence": "Current source-to-sink review and limitations are recorded in docs/security-revalidation-pr17.md; historical approval remains separately bound to its original decision.",
@@ -4120,6 +4137,21 @@
       "newFindings": 0,
       "removedFindings": 0,
       "evidence": "Pinned local Semgrep CE scan of a temporary Git snapshot based on 8f7a6a366e8d8fb3644adeb7d367c09edcd8212c. The scan source SHA identifies the isolated snapshot and has no GitHub Actions run. The scanned production files match the workspace Git object IDs. All 1995 production targets were covered with no scanner errors. All 112 previously reviewed findings have identical location, byte offsets and source files. Earlier evidence and approval scopes are unchanged."
+    },
+    {
+      "previousBinding": {
+        "sourceSha": "b2e716cfaf9aebc61b6bdd87b5f24458d889ad9f",
+        "sourceTreeSha256": "ccdd69ed2998cbb9709518e9152c3bbf3aec706750fd4247c77b91171e80f853",
+        "rawFindingsSha256": "a7e64f00e67fd2e3f921e3e4a5931be11bea5f015253611c2f1d4edceb8e88c0"
+      },
+      "sourceSha": "cf19c91d37c4e3cd6e6b29ce4e6e3eb1ce2c3aef",
+      "reviewer": "Codex with independent scan review",
+      "scanSourceSha": "cf19c91d37c4e3cd6e6b29ce4e6e3eb1ce2c3aef",
+      "scanRunUrl": null,
+      "findingCount": 112,
+      "newFindings": 0,
+      "removedFindings": 0,
+      "evidence": "Pinned local Semgrep CE scan of a temporary Git snapshot based on 30eed7b2645adc959215dde6158170568575f4ac. The scan source SHA identifies the isolated snapshot and has no GitHub Actions run. The scanned production files match the workspace Git object IDs. All 1998 production targets were covered with no scanner errors. SAST-037 moved with the Hub startup changes. Its matched expression, prefix checks and embedded filesystem boundary are unchanged. SAST-038 and SAST-123 retain their matched code, positions and cookie-security checks. All other reviewed finding source files are unchanged. Original evidence, classifications and approval scopes are preserved."
     }
   ],
   "integratedBranchReviews": [

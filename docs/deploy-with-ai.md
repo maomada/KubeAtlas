@@ -4,7 +4,7 @@ Deploy **KubeAtlas Hub** first. Use the Hub to install **KubeAtlas Agent** in ea
 
 Share this [raw Markdown runbook](https://raw.githubusercontent.com/maomada/KubeAtlas/main/docs/deploy-with-ai.md) with your AI agent.
 
-> Use this runbook to deploy KubeAtlas Hub with `<Helm, DEB/RPM, or Docker Compose>` on `<Hub host or Kubernetes context>`. Serve it at `<https://hub.example.com>` and connect `<target Kubernetes context>`. Tell me the installed version, HTTPS address, and what you verified. I will enter credentials and approve the pairing in Hub.
+> Use this runbook to deploy KubeAtlas Hub with `<Helm, DEB/RPM, or Docker Compose>` on `<Hub host or Kubernetes context>`. Serve it at `<https://hub.example.com>` and connect `<target Kubernetes context>`. Tell me the installed version, HTTPS address, and what you verified. I will create the first administrator in my browser and approve the pairing in Hub.
 
 ## 1. Choose how to deploy Hub
 
@@ -12,37 +12,24 @@ Use a Linux `amd64` or `arm64` host or node. Pick a version from [GitHub Release
 
 | Deployment method | What to prepare |
 | --- | --- |
-| [Helm](../deploy/helm/kubeatlas-portal/README.md) | A Kubernetes context for Hub, persistent storage, an administrator Secret, and an HTTPS Ingress or reverse proxy. |
-| [DEB or RPM](#install-from-the-release-bundle) | A Linux systemd host, the release files, a private credentials file, and an HTTPS reverse proxy. |
-| [Docker Compose](../deploy/compose/README.md) | A Linux container host, a private environment file, and an HTTPS reverse proxy. |
+| [Helm](../deploy/helm/kubeatlas-portal/README.md) | A Kubernetes context for Hub, persistent storage, and an HTTPS Ingress or reverse proxy. |
+| [DEB or RPM](#install-a-deb-or-rpm) | A Linux systemd host, the package for its architecture, and an HTTPS reverse proxy. |
+| [Docker Compose](../deploy/compose/README.md) | A Linux container host and an HTTPS reverse proxy. |
 
 Use a dedicated HTTPS root address, such as `https://hub.example.com`. The registration shell and every eligible node must be able to reach it and trust its certificate. Pass the whole origin to Hub with the original `Host` header, WebSocket upgrades on `/agent`, and streaming responses on `/mcp`. Serve `/api/`, `/downloads/agent/`, and `/v2/` without rewriting paths or redirecting. If a private CA is used, configure trust on the registration host and in each node's container runtime. [HTTPS and Agent trust](hub-agent-onboarding.md#configure-lan-and-public-addresses)
 
-For an existing Hub, keep its credentials and state location, and take a verified backup before changing the release. Preserve the previous Agent image catalog while any Agent still uses it. [Hub state and recovery](hub-state.md) · [Retaining a previous catalog](hub-agent-onboarding.md#retain-a-previous-catalog)
+After a fresh Hub starts, open its HTTPS address and create the platform administrator using the one-time setup code. Each deployment guide shows how to obtain the code on the host or from the Hub Pod. The operator should enter the code and password directly in the browser. Agent onboarding is available once setup completes.
+
+For an existing Hub, keep its listener, state location, and credentials, and take a verified backup before changing the release. Preserve the previous Agent image catalog while any Agent still uses it. [Hub state and recovery](hub-state.md) · [Retaining a previous catalog](hub-agent-onboarding.md#retain-a-previous-catalog)
 
 <a name="3-run-a-shared-hub"></a>
+<a name="install-from-the-release-bundle"></a>
 
-### Install from the release bundle
+### Install a DEB or RPM
 
-Download the matching `kubeatlas-portal` DEB or RPM, `kubeatlas-hub-agent-bundle_<version>.tar.gz`, `install-hub.py`, and `hub-checksums.txt` into one directory. The bundle includes the Agent images, Helm chart, and install scripts.
+Use the package for your Linux architecture. With the complete package, `apt` or `dnf` installs the Hub binary, systemd service, and matching Agent catalog in one operation. Follow the [package installation guide](packaging.md#install) to set the HTTPS origin, read the one-time setup code, and confirm that the service is ready.
 
-The host needs Python 3, systemd, `useradd`, and `nologin`. DEB installation uses `dpkg` and `dpkg-deb`. RPM installation uses `rpm`, `rpm2cpio`, and `cpio`. Configure the HTTPS proxy to forward to `127.0.0.1:9290` first. With a separate proxy host, pass a private listener with `--listen` and restrict direct access to that proxy.
-
-On the Hub host, place the administrator credentials in a root-owned JSON file with mode `0600` and the keys `username` and `password`. Use a password at least 16 bytes long. Provide the credentials through the host or a secret manager.
-
-```bash
-# Use the exact file names from the selected release.
-VERSION='<version>'
-PACKAGE="kubeatlas-portal_${VERSION}_linux_amd64.deb"
-awk '$2 == "install-hub.py"' hub-checksums.txt | sha256sum --check - &&
-  sudo python3 ./install-hub.py install --package "./$PACKAGE" \
-    --checksums ./hub-checksums.txt --catalog-archive "./kubeatlas-hub-agent-bundle_$VERSION.tar.gz" \
-    --origin https://hub.example.com --credentials /root/kubeatlas-hub-credentials.json
-```
-
-Use the arm64 or RPM filename if it matches the target. With a private CA, pass its PEM file using `--ca-file`. The installer imports the Agent bundle, configures systemd, and checks that Hub and its downloads are reachable at the HTTPS address.
-
-For a Hub managed by the installer, use the `upgrade` command with the new files and the same package format. It backs up the state, retains the previous catalog, and rolls back on a failed cutover. Use `--retire-previous-catalog` only after migrating the Agents that still use the catalog it would replace. [Linux packages and upgrades](packaging.md)
+For v0.1.3, follow its [versioned deployment guide](https://github.com/maomada/KubeAtlas/blob/v0.1.3/docs/deploy-with-ai.md#install-from-the-release-bundle). Before replacing an existing service, check the [package upgrade and migration guide](packaging.md#upgrade-and-migration).
 
 <a name="5-connect-a-cluster"></a>
 

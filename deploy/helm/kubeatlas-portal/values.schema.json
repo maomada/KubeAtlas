@@ -14,7 +14,7 @@
         "pullPolicy": { "type": "string", "enum": ["Always", "IfNotPresent", "Never"] }
       }
     },
-    "existingSecret": { "type": "string", "minLength": 1 },
+    "existingSecret": { "type": "string" },
     "hubOrigin": { "type": "string", "pattern": "^(?:$|https://[^/?#\\s]+/?)$" },
     "httpIPOrigin": { "type": "string" },
     "hubArtifacts": {

@@ -5,6 +5,7 @@ image:
   tag: ""
   pullPolicy: IfNotPresent
 
+# Optional Secret for unattended administrator setup or additional Hub settings.
 existingSecret: ""
 
 # Initial HTTPS root address for Agent onboarding on a fresh Hub.
@@ -23,7 +24,7 @@ hubArtifacts:
 
 service:
   type: ClusterIP
-  port: 9290
+  port: 1333
 
 ingress:
   enabled: false

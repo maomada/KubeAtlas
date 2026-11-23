@@ -24,12 +24,14 @@ type Credentials struct {
 	MCPAllowedHosts      []string
 	Hub                  *HubConfig
 	OIDC                 *OIDCConfig
+	managedOwner         bool
 }
 
 type Handler struct {
 	static        fs.FS
 	username      [32]byte
 	password      [32]byte
+	passwordHash  string
 	sessions      *viewerSessions
 	secureCookies bool
 	httpIPOrigin  string
@@ -41,7 +43,12 @@ func NewHandler(credentials Credentials, static fs.FS) (*Handler, error) {
 	if credentials.Hub == nil {
 		return nil, errors.New("Hub configuration is required")
 	}
-	if !validUsername(credentials.Username) || len(credentials.Username) > 256 || len(credentials.Password) < 16 || len(credentials.Password) > 4096 {
+	owner, hasStoredOwner := persistedLocalOwner(credentials)
+	if hasStoredOwner {
+		credentials.managedOwner = true
+		credentials.Username, credentials.Password = "", ""
+	}
+	if !credentials.managedOwner && !validLocalCredentials(credentials.Username, credentials.Password) {
 		return nil, errors.New("Portal owner username must be valid (1-256 bytes) and password must contain 16-4096 bytes")
 	}
 	httpIPOrigin, err := normalizeHTTPIPOrigin(credentials.HTTPIPOrigin)
@@ -67,6 +74,9 @@ func NewHandler(credentials Credentials, static fs.FS) (*Handler, error) {
 			handler.Close()
 			return nil, err
 		}
+	}
+	if hasStoredOwner {
+		handler.setLocalOwner(owner)
 	}
 	return handler, nil
 }
@@ -294,6 +304,11 @@ func validUsername(value string) bool {
 		}
 	}
 	return true
+}
+
+func validLocalCredentials(username, password string) bool {
+	return validUsername(username) && len(username) <= 256 && strings.TrimSpace(username) == username &&
+		len(password) >= 16 && len(password) <= 4096
 }
 
 func sameSiteRequest(r *http.Request) bool {

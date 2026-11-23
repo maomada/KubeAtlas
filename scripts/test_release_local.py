@@ -518,9 +518,9 @@ class SkopeoCapabilityTests(unittest.TestCase):
 
 class BuildPreflightTests(unittest.TestCase):
     def test_missing_package_tools_stop_before_bundle_creation(self):
-        versions = {"go": "go version go1.26.10", "goreleaser": "2.13.3",
+        versions = {"go": "go version go1.26.10", "goreleaser": "2.13.3", "nfpm": "2.44.1",
                     "node": "v24.19.0", "helm": "v4.2.3"}
-        for missing in ("rpm", "dpkg-deb", "cpio", "rpm2cpio", "npx"):
+        for missing in ("rpm", "dpkg-deb", "cpio", "rpm2cpio", "npx", "nfpm", "jq"):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
                 bundle = Path(directory) / "not-created"
 
@@ -545,6 +545,7 @@ class BuildPreflightTests(unittest.TestCase):
             versions = {
                 "go": "go version go1.26.10",
                 "goreleaser": "2.13.3",
+                "nfpm": "2.44.1",
                 "node": "v24.19.0",
                 "helm": "v4.2.3",
             }

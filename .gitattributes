@@ -1,0 +1,5 @@
+/scripts/bootstrap-hub-agent.sh text eol=lf
+/scripts/install-hub-agent.sh text eol=lf
+/scripts/release_hub_packages.sh text eol=lf
+/scripts/release-native-acceptance/*.sh text eol=lf
+/deploy/linux/kubeatlas-portal/*.sh text eol=lf

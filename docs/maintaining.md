@@ -23,7 +23,7 @@
 | Distribution | Contents | How to build and publish |
 | --- | --- | --- |
 | GHCR | Versioned Hub container image with the Agent catalog, and the Hub OCI Helm chart | Run `Release GHCR` using the catalog from the binary dry run |
-| GitHub Releases | Linux amd64 and arm64 Hub DEB and RPM packages, systemd installer, Agent bundle, manifest, and checksums | Run `Release Binaries` |
+| GitHub Releases | Linux amd64 and arm64 Hub DEB and RPM packages with systemd and the Agent catalog, plus the standalone Agent bundle, manifest, and checksums | Run `Release Binaries` |
 | Hub enrollments | Version-matched Agent bootstrap, installer, chart, and OCI image served by the Hub | Use the [onboarding guide](hub-agent-onboarding.md) |
 
 Exercise Hub startup and Agent enrollment in a clean test environment.

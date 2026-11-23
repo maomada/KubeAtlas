@@ -461,7 +461,12 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	}
 	username := sha256.Sum256([]byte(credentials.Username))
 	password := sha256.Sum256([]byte(credentials.Password))
-	localValid := subtle.ConstantTimeCompare(username[:], h.username[:])&subtle.ConstantTimeCompare(password[:], h.password[:]) == 1
+	localValid := false
+	if h.passwordHash == "" {
+		localValid = subtle.ConstantTimeCompare(username[:], h.username[:])&subtle.ConstantTimeCompare(password[:], h.password[:]) == 1
+	} else if subtle.ConstantTimeCompare(username[:], h.username[:]) == 1 {
+		localValid = bcrypt.CompareHashAndPassword([]byte(h.passwordHash), localPasswordInput(credentials.Password)) == nil
+	}
 	ownerID := h.liveHub.ownerID
 	accountValid := false
 	if !localValid && len(credentials.Password) <= 72 {

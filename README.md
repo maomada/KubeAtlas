@@ -34,13 +34,16 @@ flowchart TB
 
 ## Deploy Hub
 
-Choose a release that provides the deployment artifacts for your environment. Hub runs on Linux `amd64` or `arm64`. Give it an HTTPS address reachable by the clusters you want to connect.
+Starting with [v0.1.4](https://github.com/maomada/KubeAtlas/releases/tag/v0.1.4), each Linux package includes the systemd service and the matching offline Agent catalog. Download one package for your distribution and architecture.
 
-| Where you run Hub | Deployment guide |
+| Linux distribution | Install command for `amd64` |
 | --- | --- |
-| A Kubernetes cluster | [Helm](deploy/helm/kubeatlas-portal/README.md) |
-| A Linux systemd host | [DEB or RPM](docs/deploy-with-ai.md#install-from-the-release-bundle) |
-| A Linux container host | [Docker Compose](deploy/compose/README.md) |
+| Debian or Ubuntu | `sudo apt install ./kubeatlas-portal_0.1.4_linux_amd64.deb` |
+| RPM-based | `sudo dnf install ./kubeatlas-portal_0.1.4_linux_amd64.rpm` |
+
+The packaged service listens on `127.0.0.1:1333` by default. Configure an HTTPS address reachable by your clusters, then use the one-time setup code to create the first administrator in your browser. [Linux setup and upgrades](docs/packaging.md#configure-https)
+
+[Helm](deploy/helm/kubeatlas-portal/README.md) · [Docker Compose](deploy/compose/README.md) · [v0.1.3 deployment guide](https://github.com/maomada/KubeAtlas/blob/v0.1.3/docs/deploy-with-ai.md)
 
 ## Connect a cluster
 
