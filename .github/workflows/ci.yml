@@ -131,7 +131,9 @@ jobs:
               - '!{cmd,internal,pkg}/**/testdata/**'
             helm:
               - 'deploy/helm/**'
+              - 'deploy/compose/**'
               - 'scripts/test-chart.sh'
+              - 'scripts/test-hub-compose.sh'
             containers:
               # PRs validate image/toolchain changes; ordinary application PRs
               # use the Go/frontend checks. Main always builds both platforms.
@@ -501,6 +503,9 @@ jobs:
       # test in isolation), e.g. checksum/rbac changing only with rbac values.
       - name: Chart template smoke tests
         run: ./scripts/test-chart.sh
+
+      - name: Hub Compose configuration tests
+        run: bash scripts/test-hub-compose.sh
 
       - name: Intall helmfile
         uses: helmfile/helmfile-action@v2.4.8

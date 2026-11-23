@@ -39,7 +39,7 @@ kubectl -n kubeatlas-portal exec deploy/kubeatlas-portal -- /kubeatlas-portal \
   --hub-state-file=/var/lib/kubeatlas-portal/hub/state.json --show-setup-code
 ```
 
-The chart runs one Hub replica and persists its state in a PVC. The Service defaults to `ClusterIP` on port `1333`. Set `service.port` to change both the Service and the Hub listener port. The proxy or Ingress must serve Hub at the domain root, preserve the external `Host`, support WebSocket upgrades and streaming, and forward Registry and API requests unchanged. Target nodes need to trust the Hub HTTPS certificate. [Proxy and trust requirements](../../../docs/deploy-with-ai.md#1-choose-how-to-deploy-hub)
+The chart runs one Hub replica and persists its state in a PVC. The Hub container listens on port `1333`. The `ClusterIP` Service forwards to it on the port set by `service.port`, which also defaults to `1333`. The proxy or Ingress must serve Hub at the domain root, preserve the external `Host`, support WebSocket upgrades and streaming, and forward Registry and API requests unchanged. Target nodes need to trust the Hub HTTPS certificate. [Proxy and trust requirements](../../../docs/deploy-with-ai.md#1-choose-how-to-deploy-hub)
 
 ## Upgrade
 

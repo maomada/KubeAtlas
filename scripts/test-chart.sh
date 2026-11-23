@@ -469,9 +469,13 @@ assert_not_contains 'KUBEATLAS_PORTAL_USERNAME' "fresh setup does not need an ad
 assert_not_contains 'KUBEATLAS_PORTAL_PASSWORD' "fresh setup does not inject an administrator password"
 assert_contains 'containerPort: 1333' "the Hub container defaults to port 1333"
 assert_contains 'port: 1333' "the Hub Service defaults to port 1333"
-render_portal "Portal retains an explicitly configured port" --set service.port=9290
-assert_contains 'listen=0.0.0.0:9290' "the Hub listener uses the configured port"
-assert_contains 'containerPort: 9290' "the Hub container uses the configured port"
+for service_port in 80 443 9290; do
+  render_portal "Hub Service exposes port $service_port independently of its container" --set "service.port=$service_port"
+  assert_contains "^[[:space:]]+port: $service_port$" "the Service uses the configured port"
+  assert_contains 'targetPort: http' "the Service targets the named container port"
+  assert_contains 'listen=0.0.0.0:1333' "the Hub listener stays on port 1333"
+  assert_contains 'containerPort: 1333' "the container port matches the Hub listener"
+done
 render_portal "Portal HTTP IP origin is passed through explicitly" --set-string httpIPOrigin=http://192.0.2.10:9290
 assert_contains 'name: KUBEATLAS_PORTAL_HTTP_IP_ORIGIN' "HTTP IP origin uses its dedicated environment variable"
 assert_contains 'value: "http://192.0.2.10:9290"' "HTTP IP origin is rendered exactly"

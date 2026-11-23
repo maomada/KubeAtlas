@@ -34,6 +34,28 @@ trap 'chmod -R u+w "$stage"; rm -rf -- "$stage"' EXIT
 mkdir -p "$stage/context" "$stage/layout" "$stage/portal" "$dist/hub"
 cp Dockerfile "$stage/context/"
 
+python3 - "$stage" "$version" <<'PY'
+import json
+from pathlib import Path
+import sys
+
+stage = Path(sys.argv[1])
+version = sys.argv[2]
+template = Path("deploy/linux/kubeatlas-portal/preinstall.sh")
+preinstall = stage / "preinstall.sh"
+source = template.read_text()
+version_placeholder = "@KUBEATLAS_RELEASE_VERSION@"
+if source.count(version_placeholder) != 1:
+    raise SystemExit(f"{template} must contain exactly one incoming release version placeholder")
+preinstall.write_text(source.replace(version_placeholder, version))
+config = Path("deploy/linux/kubeatlas-portal.nfpm.yaml").read_text().splitlines(keepends=True)
+preinstall_entry = f"  preinstall: {template}\n"
+if config.count(preinstall_entry) != 1:
+    raise SystemExit("Hub nFPM config must reference its preinstall template exactly once")
+config[config.index(preinstall_entry)] = f"  preinstall: {json.dumps(str(preinstall))}\n"
+(stage / "nfpm.yaml").write_text("".join(config))
+PY
+
 for arch in amd64 arm64; do
   agent="$stage/context/kubeatlas-$arch"
   portal="$stage/portal/kubeatlas-portal-$arch"
@@ -68,7 +90,7 @@ for arch in amd64 arm64; do
     KUBEATLAS_HUB_BINARY="$stage/portal/kubeatlas-portal-$arch" \
     KUBEATLAS_HUB_CATALOG="$stage/imported" \
     KUBEATLAS_RELEASE_VERSION="$version" KUBEATLAS_HUB_ARCH="$arch" \
-      nfpm package --config deploy/linux/kubeatlas-portal.nfpm.yaml \
+      nfpm package --config "$stage/nfpm.yaml" \
         --packager "$format" --target "$stage/$name"
     mv "$stage/$name" "$dist/$name"
   done

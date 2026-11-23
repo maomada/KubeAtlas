@@ -1,4 +1,6 @@
 import copy
+import json
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -80,9 +82,6 @@ class ReleasePolicyTests(unittest.TestCase):
     @patch.dict("os.environ", {"GITHUB_REPOSITORY": policy.REPOSITORY, "GITHUB_REF": "refs/heads/main"})
     @patch("release_policy.subprocess.run")
     def test_requires_both_workflows_and_main_ancestry(self, execute):
-        import json
-        import subprocess
-
         ci = run()
         security = copy.deepcopy(ci)
         security["path"] = ".github/workflows/security.yml"
@@ -97,6 +96,30 @@ class ReleasePolicyTests(unittest.TestCase):
         execute.side_effect = subprocess.CalledProcessError(1, ["git"])
         with self.assertRaises(subprocess.CalledProcessError):
             policy.validate_source("source", SHA, "1.0.0")
+
+    @patch.dict("os.environ", {"GITHUB_REPOSITORY": policy.REPOSITORY, "GITHUB_REF": "refs/heads/main"})
+    @patch("release_policy.subprocess.run")
+    def test_binary_source_requires_native_hub_packaging_before_evidence(self, execute):
+        for files in ((), policy.NATIVE_HUB_PACKAGING_FILES[:1], policy.NATIVE_HUB_PACKAGING_FILES[1:]):
+            with self.subTest(files=files):
+                execute.reset_mock()
+                execute.side_effect = [
+                    subprocess.CompletedProcess([], 0),
+                    subprocess.CompletedProcess([], 0, "\n".join(files)),
+                ]
+                with self.assertRaisesRegex(ValueError, "lacks the native Hub packaging contract"):
+                    policy.validate_source("source", SHA, "1.0.0", require_native_hub=True)
+                self.assertEqual(execute.call_count, 2)
+                self.assertEqual(execute.call_args.args[0][:7], ["git", "-C", "source", "ls-tree", "-r", "--name-only", SHA])
+
+        execute.side_effect = [
+            subprocess.CompletedProcess([], 0),
+            subprocess.CompletedProcess([], 0, "\n".join(policy.NATIVE_HUB_PACKAGING_FILES)),
+            subprocess.CompletedProcess([], 0, json.dumps([{"workflow_runs": [run()]}])),
+            subprocess.CompletedProcess([], 0, json.dumps([{"workflow_runs": [run(path=".github/workflows/security.yml")]}])),
+        ]
+        evidence = policy.validate_source("source", SHA, "1.0.0", require_native_hub=True)
+        self.assertEqual(set(evidence["checks"]), set(policy.WORKFLOWS))
 
 
 if __name__ == "__main__":
