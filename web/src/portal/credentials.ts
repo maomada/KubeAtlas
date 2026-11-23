@@ -1,4 +1,5 @@
 import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
+import { LocalizedCloudError } from './cloudApi'
 
 export interface MCPCredential {
   id: string
@@ -24,9 +25,9 @@ export interface CredentialCluster {
   revokedAt?: string
 }
 
-class ManagementRequestError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message)
+class ManagementRequestError extends LocalizedCloudError {
+  constructor(message: string, readonly status: number, englishMessage?: string) {
+    super(message, englishMessage)
     this.name = 'ManagementRequestError'
   }
 }
@@ -51,8 +52,13 @@ function safeExternalURL(value: string): string | undefined {
 
 export function mcpConnectionInfo(endpoint: string, token: string): string {
   const url = safeExternalURL(endpoint)
-  if (!url) throw new Error('请输入不含凭据、查询参数或片段的 HTTP / HTTPS 地址。')
-  if (!token || /\s/.test(token) || [...token].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) throw new Error('MCP Token 无效。')
+  if (!url) throw new LocalizedCloudError(
+    '请输入不含凭据、查询参数或片段的 HTTP / HTTPS 地址。',
+    'Enter an HTTP or HTTPS URL without credentials, a query, or a fragment.',
+  )
+  if (!token || /\s/.test(token) || [...token].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) {
+    throw new LocalizedCloudError('MCP Token 无效。', 'Invalid MCP token.')
+  }
   return `Transport: Streamable HTTP\nURL: ${url}\nAuthorization: Bearer ${token}`
 }
 
@@ -63,7 +69,7 @@ export async function credentialsRequest<T>(path = '', method = 'GET', body?: un
 export async function credentialClusters(signal: AbortSignal): Promise<CredentialCluster[]> {
   const data = await managementRequest<{ clusters: CredentialCluster[] }>('/hub/clusters', 'GET', undefined, signal)
   if (!Array.isArray(data.clusters) || !data.clusters.every(cluster => cluster && typeof cluster.id === 'string' && typeof cluster.name === 'string')) {
-    throw new Error('门户返回的 Hub 集群目录无效。')
+    throw new LocalizedCloudError('门户返回的 Hub 集群目录无效。', 'The Hub returned an invalid cluster directory.')
   }
   return data.clusters.filter(cluster => !cluster.revokedAt)
 }
@@ -77,10 +83,13 @@ async function managementRequest<T>(path: string, method: string, body?: unknown
   })
   if (response.status === 401) {
     window.location.replace('/login?expired=1')
-    throw new ManagementRequestError('门户登录已失效，请重新登录；MCP 凭据有独立的有效期。', response.status)
+    throw new ManagementRequestError(
+      '门户登录已失效，请重新登录；MCP 凭据有独立的有效期。', response.status,
+      'Your Portal session has expired. Sign in again. MCP credentials have their own lifetime.',
+    )
   }
   if (!response.ok) {
-    let message = `请求失败（HTTP ${response.status}）`
+    let message: string | undefined
     if (response.headers.get('Content-Type')?.includes('application/json')) {
       const error = await response.json().catch(() => undefined)
       if (error && typeof error === 'object') {
@@ -88,7 +97,10 @@ async function managementRequest<T>(path: string, method: string, body?: unknown
         else if ('error' in error && typeof error.error === 'string') message = error.error
       }
     }
-    throw new ManagementRequestError(message, response.status)
+    throw new ManagementRequestError(
+      message ?? `请求失败（HTTP ${response.status}）`, response.status,
+      message === undefined ? `Request failed (HTTP ${response.status})` : undefined,
+    )
   }
   return response.status === 204 ? undefined as T : await response.json() as T
 }

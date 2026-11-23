@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom'
 import { ChevronDown, Globe, Search } from 'lucide-react'
 import { Badge } from '../ui/Badge'
 import { Tooltip } from '../ui/Tooltip'
+import { useLocale } from '../../hooks/useLocale'
 import { useKeepInViewport } from '../../hooks/useKeepInViewport'
 import { MultiSelectPicker } from '../ui/MultiSelectPicker'
 
@@ -90,6 +91,7 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
   { scope, onApply, loading = false, pending = false, disabled = false, disabledTooltip, className = '', variant = 'chip', label, limitedListHelp },
   ref,
 ) {
+  const { t } = useLocale()
   const [isOpen, setIsOpen] = useState(false)
   const [search, setSearch] = useState('')
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0 })
@@ -243,34 +245,34 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
 
   const activeCount = scopeActives.length
   const triggerLabel =
-    activeCount === 0 ? '全部命名空间' : activeCount === 1 ? scopeActives[0] : `${activeCount} 个命名空间`
+    activeCount === 0 ? t('全部命名空间', 'All namespaces') : activeCount === 1 ? scopeActives[0] : t(`${activeCount} 个命名空间`, `${activeCount} namespaces`)
   const isClusterWide = activeCount === 0
   const cacheScopeLocked = scope.cacheScoped && !scope.namespaceRescope
   const needsNamespaces = scope.authoritative === false && limitedListHelp != null
-  const emptyStateLabel = needsNamespaces ? '尚无命名空间。' : '没有可用的命名空间。'
+  const emptyStateLabel = needsNamespaces ? t('尚无命名空间。', 'No namespaces yet.') : t('没有可用的命名空间。', 'No namespaces are available.')
   const isDisabled = disabled || loading || pending || cacheScopeLocked
   const canClearAll = scope.canClearNamespace || activeCount === 0
   const tooltipContent = disabled && disabledTooltip
     ? disabledTooltip
     : scope.cacheScoped
       ? scope.namespaceRescope
-        ? `为保持大型集群中的响应速度，KubeAtlas 仅监视 ${scope.cacheScopeNamespace || triggerLabel}。选择其他命名空间可重新指定范围（需要片刻，并会关闭已打开的终端）。`
-        : `KubeAtlas 在此集群中仅监视 ${scope.cacheScopeNamespace || triggerLabel}。`
+        ? t(`为保持大型集群中的响应速度，KubeAtlas 仅监视 ${scope.cacheScopeNamespace || triggerLabel}。选择其他命名空间可重新指定范围（需要片刻，并会关闭已打开的终端）。`, `KubeAtlas watches only ${scope.cacheScopeNamespace || triggerLabel} to stay responsive in large clusters. Changing scope can take a moment and closes open terminals.`)
+        : t(`KubeAtlas 在此集群中仅监视 ${scope.cacheScopeNamespace || triggerLabel}。`, `KubeAtlas only watches ${scope.cacheScopeNamespace || triggerLabel} in this cluster.`)
       : needsNamespaces && isClusterWide
-      ? 'KubeAtlas 无法列出此集群中的命名空间。'
+      ? t('KubeAtlas 无法列出此集群中的命名空间。', 'KubeAtlas cannot list namespaces in this cluster.')
       : scope.authoritative === false && isClusterWide
-      ? '正在显示你的账号有权访问的命名空间。'
+      ? t('正在显示你的账号有权访问的命名空间。', 'Showing namespaces your account can access.')
       : isClusterWide
-        ? '当前正在查看所有命名空间。点击以缩小范围。'
+        ? t('当前正在查看所有命名空间。点击以缩小范围。', 'Viewing all namespaces. Select to narrow the scope.')
         : activeCount === 1
-        ? `当前视图已筛选为命名空间 ${scopeActives[0]}。点击以切换或重置。`
-          : `当前视图已筛选为 ${activeCount} 个命名空间。点击以调整或重置。`
+        ? t(`当前视图已筛选为命名空间 ${scopeActives[0]}。点击以切换或重置。`, `Viewing namespace ${scopeActives[0]}. Select to change or reset it.`)
+          : t(`当前视图已筛选为 ${activeCount} 个命名空间。点击以调整或重置。`, `Viewing ${activeCount} namespaces. Select to change or reset them.`)
 
   const renderNamespaceMeta = (ns: string) => (
     <>
       {deniedNamespaces.has(ns) && (
-        <Badge severity="error" size="sm" title="KubeAtlas 无法列出此命名空间中的 Pod 或 Deployment。">
-          无权访问
+        <Badge severity="error" size="sm" title={t('KubeAtlas 无法列出此命名空间中的 Pod 或 Deployment。', 'KubeAtlas cannot list Pods or Deployments in this namespace.')}>
+          {t('无权访问', 'Access denied')}
         </Badge>
       )}
       {ns === scope.kubeconfigNamespace && ns !== '' && (
@@ -297,14 +299,14 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
               ? `flex items-center justify-center gap-1.5 px-3 py-1.5 h-full min-w-[110px] max-w-[200px] text-[13px] text-theme-text-primary hover:bg-theme-hover disabled:opacity-60 transition-colors ${className}`
               : `flex items-center gap-1.5 px-2 py-1 rounded text-sm bg-theme-elevated hover:bg-theme-hover text-theme-text-primary disabled:opacity-60 transition-colors ${className}`
           }
-          aria-label="切换当前命名空间"
+          aria-label={t('切换当前命名空间', 'Change current namespace')}
         >
           {label && (
             <span className="shrink-0 font-normal text-theme-text-tertiary">{label}</span>
           )}
           {isClusterWide && <Globe className="w-3.5 h-3.5 shrink-0 text-theme-text-tertiary" />}
           <span className={`font-medium truncate ${variant === 'segment' ? 'min-w-0' : 'max-w-[180px]'}`}>
-            {pending ? '正在切换…' : triggerLabel}
+            {pending ? t('正在切换…', 'Switching…') : triggerLabel}
           </span>
           <ChevronDown className="w-3 h-3 shrink-0 opacity-60" />
         </button>
@@ -326,23 +328,23 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
                       autoFocus
                       value={search}
                       onChange={e => setSearch(e.target.value)}
-                      placeholder="筛选命名空间"
+                      placeholder={t('筛选命名空间', 'Filter namespaces')}
                       className="flex-1 bg-transparent text-sm outline-none text-theme-text-primary placeholder:text-theme-text-tertiary"
                     />
                   </div>
                 )}
 
                 <div className="px-3 py-1.5 border-b border-theme-border text-[11px] leading-snug text-theme-text-secondary">
-                  为了在大型集群中保持响应速度，KubeAtlas 当前仅监视一个命名空间。
+                  {t('为了在大型集群中保持响应速度，KubeAtlas 当前仅监视一个命名空间。', 'KubeAtlas watches one namespace to stay responsive in large clusters.')}
                   {scope.namespaceRescope
-                    ? ' 选择其他命名空间可重新指定范围——需要片刻，并会关闭已打开的终端。'
-                    : ' 此实例已锁定为启动时指定的命名空间。'}
+                    ? t(' 选择其他命名空间可重新指定范围——需要片刻，并会关闭已打开的终端。', ' Selecting a different namespace can take a moment and closes open terminals.')
+                    : t(' 此实例已锁定为启动时指定的命名空间。', ' This instance is pinned to the namespace selected at startup.')}
                 </div>
 
                 <ul className="max-h-80 overflow-y-auto py-1">
                   {filteredItems.length === 0 && (
                     <li className="px-3 py-2 text-xs text-theme-text-tertiary">
-                      {search ? '没有匹配项。' : emptyStateLabel}
+                      {search ? t('没有匹配项。', 'No matches.') : emptyStateLabel}
                     </li>
                   )}
 
@@ -369,12 +371,12 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
                 </ul>
 
                 <div className="flex items-center justify-between px-3 py-1.5 border-t border-theme-border text-[11px] text-theme-text-tertiary">
-                  <span>{draft.size === 1 ? Array.from(draft)[0] : '选择命名空间'}</span>
+                  <span>{draft.size === 1 ? Array.from(draft)[0] : t('选择命名空间', 'Select namespace')}</span>
                   <button
                     onClick={closeAndApply}
                     className="px-2 py-0.5 rounded bg-theme-elevated hover:bg-theme-hover text-theme-text-primary"
                   >
-                    完成
+                    {t('完成', 'Done')}
                   </button>
                 </div>
               </>
@@ -388,18 +390,18 @@ export const NamespacePicker = forwardRef<NamespacePickerHandle, NamespacePicker
                 onSelectOnly={selectOnly}
                 search={search}
                 onSearchChange={setSearch}
-                searchPlaceholder="筛选命名空间"
-                summaryEmptyLabel="全部命名空间"
+                searchPlaceholder={t('筛选命名空间', 'Filter namespaces')}
+                summaryEmptyLabel={t('全部命名空间', 'All namespaces')}
                 noItemsLabel={emptyStateLabel}
                 clearAllDisabled={!canClearAll || activeCount === 0}
-                clearAllAriaLabel="清除命名空间选择"
+                clearAllAriaLabel={t('清除命名空间选择', 'Clear namespace selection')}
                 renderItemMeta={renderNamespaceMeta}
               />
             )}
 
             {needsNamespaces && (
               <div className="px-3 py-2 border-t border-theme-border text-[11px] text-theme-text-secondary">
-                找不到所需的命名空间？{limitedListHelp}
+                {t('找不到所需的命名空间？', 'Missing a namespace? ')}{limitedListHelp}
               </div>
             )}
           </div>,

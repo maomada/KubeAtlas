@@ -3,6 +3,7 @@ import { clsx } from 'clsx'
 import { RefreshCw, Check } from 'lucide-react'
 import { Tooltip } from './Tooltip'
 import { useRefreshAnimation } from '../../hooks/useRefreshAnimation'
+import { useLocale } from '../../hooks/useLocale'
 import { formatUpdatedAgo, msToNextBucket } from '../../utils/format'
 
 export type FreshnessMode = 'auto' | 'snapshot'
@@ -50,6 +51,7 @@ export function FreshnessControl({
   paused = false,
   className,
 }: FreshnessControlProps) {
+  const { locale, t } = useLocale()
   const [, force] = useState(0)
   const showAge = typeof dataUpdatedAt === 'number' && dataUpdatedAt > 0
 
@@ -81,28 +83,29 @@ export function FreshnessControl({
   // polled views keep it as a "check now" escape hatch.
   const showRefresh = !!onRefresh
 
-  const exact = showAge ? `最近更新于 ${new Date(dataUpdatedAt as number).toLocaleTimeString()}` : null
-  const age = showAge ? formatUpdatedAgo(Date.now() - (dataUpdatedAt as number)) : null
+  const updatedAt = showAge ? new Date(dataUpdatedAt as number).toLocaleTimeString(locale) : null
+  const exact = updatedAt ? t(`最近更新于 ${updatedAt}`, `Last updated at ${updatedAt}`) : null
+  const age = showAge ? formatUpdatedAgo(Date.now() - (dataUpdatedAt as number), locale) : null
 
   // Tooltip is only rendered when it ADDS information beyond the visible label.
   let label: string | null
   let tooltip: string | null
   let live = false
   if (connectionState === 'syncing') {
-    label = '正在加载集群数据…'
-    tooltip = '正在进行初始同步；已完成加载的资源类型会显示实时数据。'
+    label = t('正在加载集群数据…', 'Loading cluster data…')
+    tooltip = t('正在进行初始同步；已完成加载的资源类型会显示实时数据。', 'Initial sync is in progress. Resource types already loaded show live data.')
   } else if (degraded) {
-    label = '正在重新连接…'
-    tooltip = '尚未连接到集群；连接恢复前，数据可能已过期。'
+    label = t('正在重新连接…', 'Reconnecting…')
+    tooltip = t('尚未连接到集群；连接恢复前，数据可能已过期。', 'The cluster is disconnected. Data may be stale until it reconnects.')
   } else if (mode === 'auto' && paused) {
-    label = '已暂停'
-    tooltip = '实时更新已暂停；恢复后此视图会继续保持最新。'
+    label = t('已暂停', 'Paused')
+    tooltip = t('实时更新已暂停；恢复后此视图会继续保持最新。', 'Live updates are paused. Resume to keep the view current.')
   } else if (mode === 'auto') {
-    label = '自动更新'
-    tooltip = exact ?? '数据变化时会自动更新。'
+    label = t('自动更新', 'Auto-updating')
+    tooltip = exact ?? t('数据变化时会自动更新。', 'Updates as data changes.')
     live = true
   } else if (age) {
-    label = `更新于 ${age}`
+    label = t(`更新于 ${age}`, `Updated ${age}`)
     tooltip = exact
   } else {
     // Snapshot before its first load — render just the button, no stale text.
@@ -125,7 +128,7 @@ export function FreshnessControl({
         />
       )}
       <span className="tabular-nums">{label}</span>
-      {ageSuffix && <span className="tabular-nums text-theme-text-quaternary">· 已更新 {ageSuffix}</span>}
+      {ageSuffix && <span className="tabular-nums text-theme-text-quaternary">{t(`· 已更新 ${ageSuffix}`, `· Updated ${ageSuffix}`)}</span>}
     </span>
   ) : null
 
@@ -136,14 +139,14 @@ export function FreshnessControl({
         ? <Tooltip content={tooltip} delay={100} position="bottom">{labelNode}</Tooltip>
         : labelNode)}
       {showRefresh && (
-        <Tooltip content="立即刷新" delay={100} position="bottom">
+        <Tooltip content={t('立即刷新', 'Refresh now')} delay={100} position="bottom">
           <button
             type="button"
             onClick={refresh}
             // Only disable during the button's own refresh animation (prevents
             // double-trigger); stay clickable during background refetches.
             disabled={phase === 'spinning'}
-            aria-label="立即刷新"
+            aria-label={t('立即刷新', 'Refresh now')}
             className="p-1.5 rounded-lg text-theme-text-tertiary hover:text-theme-text-secondary hover:bg-theme-hover transition-colors disabled:opacity-50"
           >
             {phase === 'success' ? (

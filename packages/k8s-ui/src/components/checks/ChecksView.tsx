@@ -16,6 +16,7 @@ import {
   SEVERITY_TEXT_CLASS,
 } from './severity'
 import { useAnimatedUnmount } from '../../hooks/useAnimatedUnmount'
+import { useLocale } from '../../hooks/useLocale'
 import { CopyableCommand } from '../trace/TracePanel'
 import { TRANSITION_MENU, overlayExitMs, overlayTransitionStyle } from '../../utils/animation'
 import { CORE_RESOURCES } from '../../utils/api-resources'
@@ -27,17 +28,19 @@ const CATEGORY_LABELS: Record<string, string> = {
   Efficiency: '效率',
 }
 
-const AUDIT_INPUT_LABELS = new Map<string, string>([
-  ...CORE_RESOURCES.map(({ name, kind }) => [name, kind] as const),
-  ['limitranges', 'LimitRange'],
-  ['poddisruptionbudgets', 'PodDisruptionBudget'],
-  ['replicaset-ownership', 'ReplicaSet 所有权'],
-  ['configmap-references', 'ConfigMap 引用'],
-  ['secret-references', 'Secret 引用'],
-  ['pvc-consumers', 'PVC 使用方'],
-  ['pv-deletion-events', 'PV 删除事件'],
-  ['pv-release-time', 'PV 释放时间'],
+const AUDIT_INPUT_LABELS = new Map<string, readonly [string, string]>([
+  ...CORE_RESOURCES.map(({ name, kind }) => [name, [kind, kind]] as const),
+  ['limitranges', ['LimitRange', 'LimitRange']],
+  ['poddisruptionbudgets', ['PodDisruptionBudget', 'PodDisruptionBudget']],
+  ['replicaset-ownership', ['ReplicaSet 所有权', 'ReplicaSet ownership']],
+  ['configmap-references', ['ConfigMap 引用', 'ConfigMap references']],
+  ['secret-references', ['Secret 引用', 'Secret references']],
+  ['pvc-consumers', ['PVC 使用方', 'PVC consumers']],
+  ['pv-deletion-events', ['PV 删除事件', 'PV deletion events']],
+  ['pv-release-time', ['PV 释放时间', 'PV release time']],
 ])
+
+const ENGLISH_SEVERITY: Record<CheckSeverity, string> = { critical: 'Critical', high: 'High', medium: 'Medium', low: 'Low' }
 
 // Leading severity glyph, one per tier of the 4-tier ladder: critical = octagon,
 // high = triangle, medium = circle, low = info.
@@ -135,6 +138,7 @@ const CHECKS_FILTER_SCHEMA = defineFilterSchema({
 })
 
 export function ChecksView({ checks, catalog, anyData, evaluated, missingInputs = [], resourceHref, onResourceClick, clusterLabel, clusterLabelById, clusterFilter: clusterFilterProp, onClusterFilterChange, emptyAction, onHideCheck, onHideCategory, ignoreChecksAnnotation }: ChecksViewProps) {
+  const { t } = useLocale()
   // Severity / category / framework / search live in the URL (shareable,
   // bookmarkable audit links) via the shared filter-state contract. The cluster
   // facet is deliberately NOT here — it's a host-controlled seam (see
@@ -284,17 +288,17 @@ export function ChecksView({ checks, catalog, anyData, evaluated, missingInputs 
           <div className="flex items-baseline gap-2">
             <span className="text-2xl font-semibold tabular-nums text-theme-text-primary">{fleetChecks.length}</span>
             <span className="text-sm text-theme-text-secondary">
-              个检查
-              {totalFindings > fleetChecks.length && <span className="text-theme-text-tertiary"> · {totalFindings} 个发现项</span>}
+              {t('个检查', fleetChecks.length === 1 ? 'check' : 'checks')}
+              {totalFindings > fleetChecks.length && <span className="text-theme-text-tertiary">{t(` · ${totalFindings} 个发现项`, ` · ${totalFindings} findings`)}</span>}
               {clusterOptions.length > 1 && clusterCount > 0 && (
-                <span className="text-theme-text-tertiary"> · {clusterCount} 个集群</span>
+                <span className="text-theme-text-tertiary">{t(` · ${clusterCount} 个集群`, ` · ${clusterCount} cluster${clusterCount === 1 ? '' : 's'}`)}</span>
               )}
             </span>
           </div>
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-theme-text-tertiary" />
             <Input
-              placeholder="搜索检查…"
+              placeholder={t('搜索检查…', 'Search checks…')}
               value={search}
               onChange={(e) => filters.setString('q', e.target.value)}
               className="w-64 rounded-lg border border-theme-border-light bg-theme-base py-1.5 pl-9 pr-8 text-sm text-theme-text-primary placeholder-theme-text-disabled focus:outline-none focus:ring-2 focus:ring-[var(--color-kubeatlas-accent,var(--accent))]"
@@ -303,7 +307,7 @@ export function ChecksView({ checks, catalog, anyData, evaluated, missingInputs 
               <button
                 type="button"
                 onClick={() => filters.setString('q', '')}
-                aria-label="清除搜索"
+                aria-label={t('清除搜索', 'Clear search')}
                 className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-theme-text-tertiary hover:text-theme-text-primary"
               >
                 <X className="h-3.5 w-3.5" />
@@ -320,7 +324,7 @@ export function ChecksView({ checks, catalog, anyData, evaluated, missingInputs 
           ))}
           <span className="mx-1.5 h-5 w-px bg-theme-border" />
           {CATEGORIES.map((c) => (
-            <FilterPill key={c} label={CATEGORY_LABELS[c] ?? c} active={categoryFilter.has(c)} onClick={() => filters.toggle('category', c)} />
+            <FilterPill key={c} label={t(CATEGORY_LABELS[c] ?? c, c)} active={categoryFilter.has(c)} onClick={() => filters.toggle('category', c)} />
           ))}
           {frameworks.length > 0 && (
             <>
@@ -360,7 +364,7 @@ export function ChecksView({ checks, catalog, anyData, evaluated, missingInputs 
                     <button
                       type="button"
                       onClick={() => toggle(setClusterFilter, id)}
-                      aria-label={`移除 ${label} 筛选条件`}
+                      aria-label={t(`移除 ${label} 筛选条件`, `Remove ${label} filter`)}
                       className="rounded-full p-0.5 text-theme-text-tertiary transition-colors hover:bg-theme-hover hover:text-theme-text-primary"
                     >
                       <X className="h-3 w-3" />
@@ -376,16 +380,22 @@ export function ChecksView({ checks, catalog, anyData, evaluated, missingInputs 
       {missingInputs.length > 0 && (
         <AlertBanner
           variant="warning"
-          title="部分检查无法运行"
+          title={t('部分检查无法运行', 'Some checks could not run')}
           message={
             <>
-              发现项仅涵盖可用输入。
-              <Disclosure summary={`不可用的输入（${missingInputs.length}）`} className="mt-2">
-                {missingInputs.map(input => AUDIT_INPUT_LABELS.get(input) ?? input).join(', ')}.
+              {t('发现项仅涵盖可用输入。', 'Findings cover the available inputs.')}
+              <Disclosure summary={t(`不可用的输入（${missingInputs.length}）`, `Unavailable inputs (${missingInputs.length})`)} className="mt-2">
+                {missingInputs.map(input => {
+                  const label = AUDIT_INPUT_LABELS.get(input)
+                  return label ? t(...label) : input
+                }).join(', ')}.
               </Disclosure>
               {(missingInputs.includes('replicasets') || missingInputs.includes('replicaset-ownership')) && (
                 <p className="mt-2">
-                  <em>同一节点上的副本</em>无法完整评估：ReplicaSet 清单或所有权证据不可用，因此跳过了受影响的 Deployment，而非判定为通过。
+                  <em>{t('同一节点上的副本', 'Replicas on the same node')}</em>{t(
+                    '无法完整评估：ReplicaSet 清单或所有权证据不可用，因此跳过了受影响的 Deployment，而非判定为通过。',
+                    ' could not be fully evaluated. Missing ReplicaSet inventory or ownership data caused the check to skip affected Deployments.',
+                  )}
                 </p>
               )}
             </>
@@ -398,35 +408,35 @@ export function ChecksView({ checks, catalog, anyData, evaluated, missingInputs 
           <EmptyState
             tone="filtered"
             variant="card"
-            headline="没有检查符合当前筛选条件"
-            body="清除筛选条件以查看更多内容。"
+            headline={t('没有检查符合当前筛选条件', 'No checks match these filters')}
+            body={t('清除筛选条件以查看更多内容。', 'Clear filters to see more checks.')}
             action={
               <button
                 type="button"
                 onClick={clearAll}
                 className="badge badge-sm border border-theme-border bg-theme-elevated text-theme-text-primary transition-colors hover:bg-theme-hover"
               >
-                清除所有筛选条件
+                {t('清除所有筛选条件', 'Clear all filters')}
               </button>
             }
           />
         ) : missingInputs.length > 0 ? (
           <EmptyState
-            headline="可用数据中没有发现项"
-            body="审计尚未完成；这不表示所有检查都已通过。"
+            headline={t('可用数据中没有发现项', 'No findings in the available data')}
+            body={t('审计尚未完成；这不表示所有检查都已通过。', 'Audit coverage is incomplete.')}
           />
         ) : evaluated === 0 ? (
-          <EmptyState headline="没有评估资源" body="当前范围和检查设置下没有评估任何资源。" />
+          <EmptyState headline={t('没有评估资源', 'No resources evaluated')} body={t('当前范围和检查设置下没有评估任何资源。', 'No resources were evaluated within the current scope and settings.')} />
         ) : anyData ? (
           <EmptyState
             tone="healthy"
             variant="card"
             icon={ShieldCheck}
-            headline="没有需要处理的问题"
-            body="所有已审计资源均通过检查。"
+            headline={t('没有需要处理的问题', 'No checks need attention')}
+            body={t('所有已审计资源均通过检查。', 'All audited resources passed their checks.')}
           />
         ) : (
-          <EmptyState headline="暂无检查数据" body="运行审计后即可填充处理队列。" action={emptyAction} />
+          <EmptyState headline={t('暂无检查数据', 'No check data yet')} body={t('运行审计后即可填充处理队列。', 'Run an audit to see findings here.')} action={emptyAction} />
         )
       ) : (
         <ol className="flex flex-col gap-1.5">
@@ -452,18 +462,20 @@ export function ChecksView({ checks, catalog, anyData, evaluated, missingInputs 
 }
 
 export function CheckSeverityBar({ totals }: { totals: Record<CheckSeverity, number> }) {
+  const { t } = useLocale()
   return (
     <DistributionBar
-      ariaLabel="严重性分布"
+      ariaLabel={t('严重性分布', 'Severity distribution')}
       segments={CHECK_SEVERITIES.map((s) => ({ key: s, count: totals[s], fillClass: SEVERITY_FILL_CLASS[s] }))}
     />
   )
 }
 
 export function CheckSeverityChip({ severity, count, active, onClick }: { severity: CheckSeverity; count: number; active: boolean; onClick: () => void }) {
+  const { t } = useLocale()
   return (
     <DistributionLegendChip
-      label={SEVERITY_LABEL[severity]}
+      label={t(SEVERITY_LABEL[severity], ENGLISH_SEVERITY[severity])}
       count={count}
       fillClass={SEVERITY_FILL_CLASS[severity]}
       textClass={SEVERITY_TEXT_CLASS[severity]}
@@ -490,6 +502,7 @@ export interface CheckRemediationBlockProps {
 // mono chips when the catalog copy carries them. The 'stack' layout is the
 // compact single-column variant for narrow hosts.
 export function CheckRemediationBlock({ description, remediation, references, layout = 'columns' }: CheckRemediationBlockProps) {
+  const { t } = useLocale()
   if (!description && !remediation && (!references || references.length === 0)) return null
 
   if (layout === 'stack') {
@@ -498,7 +511,7 @@ export function CheckRemediationBlock({ description, remediation, references, la
         {description && <p className="text-[13px] leading-relaxed text-theme-text-secondary">{renderProse(description)}</p>}
         {remediation && (
           <div>
-            <div className="text-[11px] uppercase tracking-wider text-theme-text-tertiary">修复方法</div>
+            <div className="text-[11px] uppercase tracking-wider text-theme-text-tertiary">{t('修复方法', 'How to fix')}</div>
             <p className="mt-0.5 text-[13px] leading-relaxed text-theme-text-secondary">{renderProse(remediation)}</p>
           </div>
         )}
@@ -510,12 +523,12 @@ export function CheckRemediationBlock({ description, remediation, references, la
   return (
     <div className="flex flex-col divide-y divide-theme-border/70 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
       {description && (
-        <CardSection icon={Info} label="重要性" tone="neutral">
+        <CardSection icon={Info} label={t('重要性', 'Why it matters')} tone="neutral">
           <CardBody>{renderProse(description)}</CardBody>
         </CardSection>
       )}
       {(remediation || (references && references.length > 0)) && (
-        <CardSection icon={Wrench} label="修复方法" tone="fix">
+        <CardSection icon={Wrench} label={t('修复方法', 'How to fix')} tone="fix">
           {remediation && <CardBody>{renderProse(remediation)}</CardBody>}
           {references && references.length > 0 && <CheckReferenceLinks references={references} />}
         </CardSection>
@@ -572,6 +585,7 @@ export function CheckCardShell({
   className,
   dimmed,
 }: CheckCardShellProps) {
+  const { t } = useLocale()
   const Container = as
   const sev = normalizeCheckSeverity(severity)
   const SeverityIcon = CHECK_SEVERITY_ICON[sev]
@@ -621,7 +635,7 @@ export function CheckCardShell({
         </div>
 
         <span className={`badge-sm shrink-0 px-2.5 py-0.5 text-xs font-semibold ${open ? SEVERITY_SOLID_CLASS[sev] : SEVERITY_BADGE_CLASS[sev]}`}>
-          {SEVERITY_LABEL[sev]}
+          {t(SEVERITY_LABEL[sev], ENGLISH_SEVERITY[sev])}
         </span>
         {renderActions?.()}
         <CollapseChevron open={open} className="h-4 w-4" />
@@ -661,6 +675,7 @@ export function CheckClusterBreakdownShell<T extends CheckClusterBreakdownGroup>
   clusterCap = CLUSTER_CAP,
   autoExpandLimit = AUTO_EXPAND_CLUSTERS,
 }: CheckClusterBreakdownShellProps<T>) {
+  const { t } = useLocale()
   const [openClusters, setOpenClusters] = useState<Set<string>>(
     () => new Set(groups.length <= autoExpandLimit ? groups.map((g) => g.id) : []),
   )
@@ -716,7 +731,7 @@ export function CheckClusterBreakdownShell<T extends CheckClusterBreakdownGroup>
           onClick={() => setShowAllClusters(true)}
           className="mt-0.5 inline-flex w-fit items-center gap-1 rounded px-2 py-1 text-xs font-medium text-[var(--color-kubeatlas-accent,var(--accent))] hover:underline"
         >
-          查看全部 {groups.length} 个集群 →
+          {t(`查看全部 ${groups.length} 个集群 →`, `View all ${groups.length} clusters →`)}
         </button>
       )}
     </section>
@@ -746,12 +761,14 @@ function FleetCheckRow({
   onHideCategory?: (category: string) => void
   ignoreChecksAnnotation?: string
 }) {
+  const { t } = useLocale()
   const clusterCount = fc.clusters.length
   const single = clusterCount <= 1
+  const clusterCountLabel = t(`${clusterCount} 个集群`, `${clusterCount} clusters`)
 
   const menuItems: { label: string; onClick: () => void }[] = []
-  if (onHideCheck) menuItems.push({ label: `隐藏“${fc.title}”检查`, onClick: () => onHideCheck(fc.checkID, fc.title) })
-  if (onHideCategory) menuItems.push({ label: `隐藏所有 ${fc.category} 检查`, onClick: () => onHideCategory(fc.category) })
+  if (onHideCheck) menuItems.push({ label: t(`隐藏“${fc.title}”检查`, `Hide “${fc.title}” check`), onClick: () => onHideCheck(fc.checkID, fc.title) })
+  if (onHideCategory) menuItems.push({ label: t(`隐藏所有 ${fc.category} 检查`, `Hide all ${fc.category} checks`), onClick: () => onHideCategory(fc.category) })
 
   return (
     <CheckCardShell
@@ -763,12 +780,12 @@ function FleetCheckRow({
       summary={
         <div className="flex min-w-0 items-center gap-1.5 text-xs text-theme-text-tertiary">
           <span className="shrink-0 font-medium text-theme-text-secondary tabular-nums">
-            {fc.totalResources} 个资源
+            {t(`${fc.totalResources} 个资源`, `${fc.totalResources} resource${fc.totalResources === 1 ? '' : 's'}`)}
           </span>
           {clusterCount > 1 && (
             <>
               <span aria-hidden>·</span>
-              <span className="shrink-0 tabular-nums">{clusterCount} 个集群</span>
+              <span className="shrink-0 tabular-nums">{clusterCountLabel}</span>
             </>
           )}
         </div>
@@ -778,16 +795,16 @@ function FleetCheckRow({
       <CheckRemediationBlock description={meta?.description} remediation={meta?.remediation} references={meta?.references} />
 
       {ignoreChecksAnnotation && (
-        <CardSection icon={EyeOff} label="对单个资源跳过检查">
-          <CardBody>为下方列出的资源添加此注解后，该资源对应的此项检查发现将被隐藏。</CardBody>
+        <CardSection icon={EyeOff} label={t('对单个资源跳过检查', 'Skip this check for a resource')}>
+          <CardBody>{t('为下方列出的资源添加此注解后，该资源对应的此项检查发现将被隐藏。', 'Add this annotation to a resource below to hide this check’s finding for that resource.')}</CardBody>
           <CopyableCommand command={`${ignoreChecksAnnotation}: ${fc.checkID}`} />
         </CardSection>
       )}
 
       <CardSection
         icon={Layers}
-        label="受影响的资源"
-        labelExtra={single ? `· ${fc.totalResources}` : `· ${fc.totalResources} · ${clusterCount} 个集群`}
+        label={t('受影响的资源', 'Affected resources')}
+        labelExtra={single ? `· ${fc.totalResources}` : `· ${fc.totalResources} · ${clusterCountLabel}`}
       >
         {single ? (
           <ResourceList check={fc.clusters[0]} resourceHref={resourceHref} onResourceClick={onResourceClick} />
@@ -814,6 +831,7 @@ function ClusterBreakdown({
   resourceHref?: (ref: CheckResourceRef) => string
   onResourceClick?: (ref: CheckResourceRef) => void
 }) {
+  const { t } = useLocale()
   return (
     <CheckClusterBreakdownShell
       // Heading omitted — the wrapping CardSection (Layers · "Affected
@@ -822,7 +840,7 @@ function ClusterBreakdown({
         id: c.subject.cluster_id,
         label: <ClusterName name={clusterLabel?.(c) || c.subject.cluster_id} />,
         environment: c.environment,
-        count: `${c.affectedResources} 个资源`,
+        count: t(`${c.affectedResources} 个资源`, `${c.affectedResources} resource${c.affectedResources === 1 ? '' : 's'}`),
         check: c,
       }))}
       renderGroupBody={(group) => (
@@ -846,6 +864,7 @@ function ResourceList({
   resourceHref?: (ref: CheckResourceRef) => string
   onResourceClick?: (ref: CheckResourceRef) => void
 }) {
+  const { t } = useLocale()
   const [showAll, setShowAll] = useState(false)
   const commonMessage = check.findings[0]?.message || ''
   const shareMessage = !!commonMessage && check.findings.every((f) => f.message === commonMessage)
@@ -873,7 +892,7 @@ function ResourceList({
           onClick={() => setShowAll(true)}
           className="mt-0.5 inline-flex w-fit items-center gap-1 rounded px-2 py-1 text-xs font-medium text-[var(--color-kubeatlas-accent,var(--accent))] hover:underline"
         >
-          查看全部 {check.findings.length} 项 →
+          {t(`查看全部 ${check.findings.length} 项 →`, `View all ${check.findings.length} →`)}
         </button>
       )}
     </section>
@@ -941,6 +960,7 @@ function ClusterFilter({
   onToggle: (id: string) => void
   onClear: () => void
 }) {
+  const { t } = useLocale()
   const [menu, setMenu] = useState<{ top: number; left: number } | null>(null)
   // `menu` is the logical open state; the placement outlives it so the exit
   // transition plays where the menu was. Re-measured on the next open.
@@ -994,7 +1014,7 @@ function ClusterFilter({
           active ? 'border-theme-border bg-theme-elevated text-theme-text-primary' : 'border-theme-border-light text-theme-text-secondary hover:bg-theme-hover/60',
         ].join(' ')}
       >
-        集群
+        {t('集群', 'Clusters')}
         <ChevronDown className="h-3 w-3" />
       </button>
       {shouldRender && placement &&
@@ -1018,7 +1038,7 @@ function ClusterFilter({
                 onClick={onClear}
                 className="flex w-full items-center px-3 py-1.5 text-left text-xs text-theme-text-tertiary hover:bg-theme-hover hover:text-theme-text-primary"
               >
-                清除选择
+                {t('清除选择', 'Clear selection')}
               </button>
             )}
             {options.map((o) => {
@@ -1052,6 +1072,7 @@ function ClusterFilter({
 // category). Portaled to document.body so the row's overflow-hidden can't clip
 // it; position captured at open time, any scroll/resize closes it.
 function RowMenu({ items }: { items: { label: string; onClick: () => void }[] }) {
+  const { t } = useLocale()
   const [menu, setMenu] = useState<{ top: number; right: number } | null>(null)
   // See ClusterFilter: placement outlives the logical open state for the exit.
   const placementRef = useRef<{ top: number; right: number } | null>(null)
@@ -1094,7 +1115,7 @@ function RowMenu({ items }: { items: { label: string; onClick: () => void }[] })
       <button
         ref={btnRef}
         type="button"
-        aria-label="更多操作"
+        aria-label={t('更多操作', 'More actions')}
         aria-haspopup="menu"
         aria-expanded={menu != null}
         onClick={toggle}

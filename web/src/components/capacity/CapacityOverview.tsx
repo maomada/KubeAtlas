@@ -1,3 +1,4 @@
+import { useLocale } from "@maomada/k8s-ui/hooks/useLocale";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { Layers3, X } from "lucide-react";
 import {
@@ -259,6 +260,7 @@ export function CapacityOverview({
   onOpenResource: (resource: SelectedResource) => void;
   onNavigate: (path: string) => void;
 }) {
+  const { t } = useLocale();
   const [showExplain, setShowExplain] = useState(false);
   const inventoryRef = useRef<HTMLDivElement>(null);
   const openExplainer = () => setShowExplain(true);
@@ -288,7 +290,7 @@ export function CapacityOverview({
       query.data,
       query.error,
       query.isLoading,
-      "Loading capacity overview…",
+      t("正在加载容量概览…", "Loading capacity overview…"),
     );
     if (blocked) return blocked;
   }
@@ -304,7 +306,7 @@ export function CapacityOverview({
     return (
       <ScreenEmptyState
         icon={Layers3}
-        title="NodePool inventory unavailable"
+        title={t("无法读取 NodePool 清单", "NodePool inventory unavailable")}
         detail={coverageMessage(data.coverage.nodePools, "NodePool inventory")}
       />
     );
@@ -337,10 +339,10 @@ export function CapacityOverview({
           <div>
             <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
               <h1 className="text-lg font-semibold text-theme-text-primary">
-                Capacity overview
+                {t("容量概览", "Capacity overview")}
               </h1>
               <span className="text-xs text-theme-text-tertiary">
-                cluster capacity posture · read-only diagnosis
+                {t("集群容量诊断 · 只读", "cluster capacity posture · read-only diagnosis")}
               </span>
             </div>
             <button
@@ -348,7 +350,7 @@ export function CapacityOverview({
               onClick={() => setShowExplain(true)}
               className="mt-1 text-xs font-medium text-accent-text hover:underline"
             >
-              Scheduling capacity ≠ actual usage — how to read these numbers
+              {t("如何理解调度容量与实际用量", "Scheduling capacity ≠ actual usage — how to read these numbers")}
             </button>
           </div>
           <div className="flex items-center gap-2">
@@ -367,9 +369,7 @@ export function CapacityOverview({
 
       {coverageIsDenied(coverage.nodePools) && (
         <Notice>
-          Karpenter view unavailable — your identity cannot list NodePools. The
-          cluster capacity below is derived from nodes and pods only; the
-          NodePool detail, Demand, and Activity screens stay unavailable.
+          {t("当前身份无权列出 NodePool。下方的集群容量来自节点和 Pod。NodePool 详情、需求与活动暂不可用。", "Karpenter view unavailable — your identity cannot list NodePools. The cluster capacity below is derived from nodes and pods only; the NodePool detail, Demand, and Activity screens stay unavailable.")}
         </Notice>
       )}
 
@@ -382,13 +382,13 @@ export function CapacityOverview({
           karpenterMode={data.provider.controllerMode}
         />
         <KpiTile
-          label="Node groups"
+          label={t("节点组", "Node groups")}
           value={data.groups.length}
           sub={nodeGroupsSubline(summary, data, coverage)}
           certainty={groupsCertainty.certainty}
           certaintyTitle={groupsCertainty.title}
           attention={data.pools.some((pool) => pool.ready === false)}
-          linkLabel="View inventory ↓"
+          linkLabel={t("查看清单 ↓", "View inventory ↓")}
           onClick={() =>
             inventoryRef.current?.scrollIntoView({
               behavior: "smooth",
@@ -397,7 +397,7 @@ export function CapacityOverview({
           }
         />
         <KpiTile
-          label="Nodes"
+          label={t("节点", "Nodes")}
           value={summary.nodeCount ?? "—"}
           sub={nodesSubline(summary, coverage)}
           certainty={coverageCertainty(coverage.nodes)}
@@ -423,24 +423,24 @@ export function CapacityOverview({
         )}
         {podsDeniedFlag ? (
           <KpiTile
-            label="Pending pods"
-            value="Unavailable"
-            sub="Pod access denied — not zero"
+            label={t("待调度 Pod", "Pending pods")}
+            value={t("不可用", "Unavailable")}
+            sub={t("无权读取 Pod，数量未知", "Pod access denied — not zero")}
             certainty="unknown"
-            certaintyTitle="Unknown — the current identity cannot list Pods. Absence of data is not zero."
+            certaintyTitle={t("当前身份无权列出 Pod，数量未知。", "Unknown — the current identity cannot list Pods. Absence of data is not zero.")}
           />
         ) : (
           <KpiTile
-            label="Pending pods"
+            label={t("待调度 Pod", "Pending pods")}
             value={summary.pendingPodCount ?? "—"}
-            sub="scheduling demand, not usage"
+            sub={t("调度需求", "scheduling demand, not usage")}
             certainty={coverageCertainty(coverage.pods)}
             certaintyTitle={coverageMessage(coverage.pods, "Pending demand")}
             attention={(summary.pendingPodCount ?? 0) > 0}
             // Without Karpenter there is no Demand screen, but a pending count
             // must never dead-end: Issues carries the scheduler verdicts on
             // every cluster.
-            linkLabel={karpenterActive ? "Open Demand →" : "View issues →"}
+            linkLabel={karpenterActive ? t("打开需求 →", "Open Demand →") : t("查看问题 →", "View issues →")}
             onClick={
               karpenterActive
                 ? () => onNavigate("/capacity/demand")
@@ -471,17 +471,17 @@ export function CapacityOverview({
           shown empty. */}
       {karpenterActive && (
         <SectionCard
-          title="Operational signals"
-          subtitle="prioritized · each links to its diagnosis"
+          title={t("运维信号", "Operational signals")}
+          subtitle={t("按优先级排列，可打开诊断", "prioritized · each links to its diagnosis")}
           actions={
             <div className="flex items-center gap-4">
               <LinkButton onClick={() => onNavigate("/capacity/demand")}>
                 {summary.pendingPodCount !== undefined && !podsDeniedFlag
-                  ? `All demand · ${summary.pendingPodCount} →`
-                  : "All demand →"}
+                  ? t(`全部需求 · ${summary.pendingPodCount} →`, `All demand · ${summary.pendingPodCount} →`)
+                  : t("全部需求 →", "All demand →")}
               </LinkButton>
               <LinkButton onClick={() => onNavigate("/capacity/activity")}>
-                Activity timeline →
+                {t("活动时间线 →", "Activity timeline →")}
               </LinkButton>
             </div>
           }
@@ -489,8 +489,8 @@ export function CapacityOverview({
         >
           {signals.length === 0 ? (
             <InlineEmpty
-              title="No operational signals"
-              detail="KubeAtlas reported no capacity-affecting actions for this cluster."
+              title={t("暂无运维信号", "No operational signals")}
+              detail={t("KubeAtlas 未发现影响该集群容量的操作。", "KubeAtlas reported no capacity-affecting actions for this cluster.")}
             />
           ) : (
             signals.map((signal) => (
@@ -591,6 +591,7 @@ function ManagersTile({
   nodesObserved: boolean;
   karpenterMode?: string;
 }) {
+  const { t } = useLocale();
   const worst = worstManagerStatus(managers);
   // Denied, cache-scoped, unreadable and unparseable all mean the same thing to
   // an operator: detection did not run. Only a source that WAS read may report
@@ -609,11 +610,11 @@ function ManagersTile({
     <div className="rounded-xl border border-theme-border bg-theme-surface px-4 py-3 shadow-theme-sm">
       <div className="flex items-center gap-1.5">
         <span className="text-[11px] font-medium uppercase tracking-wide text-theme-text-tertiary">
-          Capacity managers
+          {t("容量管理器", "Capacity managers")}
         </span>
         {worst === "degraded" && (
           <Badge severity="warning" size="sm">
-            Attention
+            {t("需关注", "Attention")}
           </Badge>
         )}
       </div>
@@ -622,7 +623,7 @@ function ManagersTile({
           detectionFailure ? (
             <>
               <div className="text-sm font-medium text-theme-text-primary">
-                Detection unavailable
+                {t("无法检测", "Detection unavailable")}
               </div>
               <div className="mt-0.5 text-xs text-theme-text-tertiary">
                 {detectionFailure}
@@ -631,7 +632,7 @@ function ManagersTile({
           ) : nodesObserved ? (
             <>
               <div className="text-sm text-theme-text-secondary">
-                None detected
+                {t("未检测到", "None detected")}
               </div>
               {notPublishedDetail && (
                 <div className="mt-0.5 text-xs text-theme-text-tertiary">
@@ -641,7 +642,7 @@ function ManagersTile({
             </>
           ) : (
             <div className="text-xs text-theme-text-tertiary">
-              Not yet observed
+              {t("尚未观察到", "Not yet observed")}
             </div>
           )
         ) : (
@@ -664,7 +665,7 @@ function ManagersTile({
                 tip={`The autoscaler publishes its own timestamp; a quiet cluster republishes rarely, so an old reading is context, not breakage. Published ${formatTimestamp(observedAt)}.`}
               >
                 <div className="mt-0.5 text-[11px] text-theme-text-tertiary">
-                  as of {relativeTime(observedAt)}
+                  {t(`观测于 ${relativeTime(observedAt)}`, `as of ${relativeTime(observedAt)}`)}
                 </div>
               </WithTooltip>
             )}
@@ -753,6 +754,7 @@ function NodeGroupsSection({
   onOpenPool: (name: string) => void;
   onOpenResource: (resource: SelectedResource) => void;
 }) {
+  const { t } = useLocale();
   const nodesObserved = coverageHasObservations(coverage.nodes);
   // A group with no attributed manager means one of two very different things,
   // and only the detection source can tell them apart.
@@ -768,23 +770,23 @@ function NodeGroupsSection({
   return (
     <div ref={sectionRef} className="scroll-mt-4">
       <SectionCard
-        title="Node groups"
-        subtitle="logical groups across every capacity manager"
+        title={t("节点组", "Node groups")}
+        subtitle={t("各容量管理器识别的逻辑分组", "logical groups across every capacity manager")}
         bodyClassName=""
       >
         {groups.length === 0 ? (
           nodesObserved ? (
             <InlineEmpty
-              title="No node groups identified"
+              title={t("未识别到节点组", "No node groups identified")}
               detail={
                 (poolCount ?? 0) > 0
-                  ? "Nodes carry no group-identity labels and no Karpenter NodePool owns them yet."
-                  : "Nodes carry no group-identity labels."
+                  ? t("节点没有分组标签，也尚未归属任何 Karpenter NodePool。", "Nodes carry no group-identity labels and no Karpenter NodePool owns them yet.")
+                  : t("节点没有分组标签。", "Nodes carry no group-identity labels.")
               }
             />
           ) : (
             <InlineEmpty
-              title="Node groups unavailable"
+              title={t("无法读取节点组", "Node groups unavailable")}
               detail={coverageMessage(coverage.nodes, "Node inventory")}
             />
           )
@@ -794,21 +796,21 @@ function NodeGroupsSection({
               <table className="w-full min-w-[980px] text-left">
                 <thead className={TABLE_HEAD}>
                   <tr>
-                    <th className={TH}>Group</th>
-                    <th className={TH}>Status</th>
-                    <th className={TH}>Manager</th>
-                    <th className={TH}>Nodes</th>
+                    <th className={TH}>{t("节点组", "Group")}</th>
+                    <th className={TH}>{t("状态", "Status")}</th>
+                    <th className={TH}>{t("管理器", "Manager")}</th>
+                    <th className={TH}>{t("节点", "Nodes")}</th>
                     <th className={TH}>
-                      <WithTooltip tip="Allocatable the kubelet offers the scheduler across this group's nodes">
-                        <span>Allocatable</span>
+                      <WithTooltip tip={t("此组节点上的 kubelet 向调度器提供的可分配资源", "Allocatable the kubelet offers the scheduler across this group's nodes")}>
+                        <span>{t("可分配资源", "Allocatable")}</span>
                       </WithTooltip>
                     </th>
                     <th className={TH}>
-                      <WithTooltip tip="Sum of scheduled pod requests on this group's nodes">
-                        <span>Scheduled requests</span>
+                      <WithTooltip tip={t("此组节点上已调度 Pod 的资源请求总和", "Sum of scheduled pod requests on this group's nodes")}>
+                        <span>{t("已调度请求", "Scheduled requests")}</span>
                       </WithTooltip>
                     </th>
-                    <th className={TH}>Scaling</th>
+                    <th className={TH}>{t("扩缩容", "Scaling")}</th>
                   </tr>
                 </thead>
                 <tbody className={TBODY}>
@@ -832,11 +834,11 @@ function NodeGroupsSection({
             </div>
             {unattributedNodeCount > 0 && (
               <div className="border-t border-theme-border-subtle px-4 py-2.5">
-                <WithTooltip tip="No group-identity label and no Karpenter ownership — KubeAtlas does not guess group membership from node names.">
+                <WithTooltip tip={t("节点既没有分组标签，也未归属 Karpenter NodePool。", "No group-identity label and no Karpenter ownership — KubeAtlas does not guess group membership from node names.")}>
                   <span className="text-xs text-theme-text-tertiary">
-                    {`${unattributedNodeCount} ${
+                    {t(`${unattributedNodeCount} 个未分组节点`, `${unattributedNodeCount} ${
                       unattributedNodeCount === 1 ? "node" : "nodes"
-                    } without group identity`}
+                    } without group identity`)}
                   </span>
                 </WithTooltip>
               </div>
@@ -855,6 +857,7 @@ function ExplainDialog({
   open: boolean;
   onClose: () => void;
 }) {
+  const { t } = useLocale();
   const dialogRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!open) return;
@@ -876,19 +879,19 @@ function ExplainDialog({
         ref={dialogRef}
         tabIndex={-1}
         role="dialog"
-        aria-label="How to read capacity numbers"
+        aria-label={t("如何理解容量指标", "How to read capacity numbers")}
         className="dialog relative mx-4 flex max-h-[85vh] w-full max-w-3xl flex-col outline-none"
       >
         <div className="flex shrink-0 items-center justify-between border-b border-theme-border/50 px-6 py-4">
           <div className="flex items-center gap-3">
             <Layers3 className="h-5 w-5 text-accent-text" />
             <h3 className="text-lg font-semibold text-theme-text-primary">
-              How to read these numbers
+              {t("如何理解这些指标", "How to read these numbers")}
             </h3>
           </div>
           <button
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t("关闭", "Close")}
             className="rounded-md p-1.5 transition-colors hover:bg-theme-elevated"
           >
             <X className="h-5 w-5 text-theme-text-tertiary" />
@@ -896,9 +899,7 @@ function ExplainDialog({
         </div>
         <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
           <p className="text-sm text-theme-text-secondary">
-            Scheduling capacity ≠ actual usage. Requests are what the scheduler
-            consumes; usage is an efficiency signal — the two never mix, and no
-            bar here is a health score.
+            {t("调度器根据资源请求安排 Pod。实际用量用于衡量使用效率。这里的图表分别展示两类指标。", "Scheduling capacity ≠ actual usage. Requests are what the scheduler consumes; usage is an efficiency signal — the two never mix, and no bar here is a health score.")}
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-2">
             {EXPLAIN_CARDS.map((card) => (
@@ -913,12 +914,9 @@ function ExplainDialog({
             ))}
           </div>
           <p className="mt-4 border-t border-theme-border-subtle pt-3 text-[11px] text-theme-text-tertiary">
-            Certainty on each value — <span className="font-mono">=</span> exact
-            · <span className="font-mono">≥</span> lower bound ·{" "}
-            <span className="font-mono">≤</span> upper bound (a difference
-            computed from a lower-bound input) ·{" "}
-            <span className="font-mono">?</span> unknown. Hover a glyph for its
-            coverage detail.
+            {t("数值可信度：", "Certainty on each value —")} <span className="font-mono">=</span> {t("精确 ·", "exact ·")} <span className="font-mono">≥</span> {t("下界 ·", "lower bound ·")}{" "}
+            <span className="font-mono">≤</span> {t("上界（根据含下界的输入计算）·", "upper bound (a difference computed from a lower-bound input) ·")}{" "}
+            <span className="font-mono">?</span> {t("未知。悬停在符号上可查看覆盖范围。", "unknown. Hover a glyph for its coverage detail.")}
           </p>
         </div>
       </div>
@@ -1521,6 +1519,7 @@ function PendingDemandChips({
    *  result then means "none observed in scope", never a global "none". */
   podsPartial: boolean;
 }) {
+  const { t } = useLocale();
   // The "pods" resource duplicates the dedicated "Pod slots" chip below.
   const entries = summary.aggregateDemand
     ? sortedResourceEntries(summary.aggregateDemand.resources).filter(
@@ -1531,16 +1530,16 @@ function PendingDemandChips({
   return (
     <div className="flex flex-wrap items-center gap-2">
       <span className="text-xs text-theme-text-tertiary">
-        Active pending requests (scheduling demand, not usage):
+        {t("待调度资源请求：", "Active pending requests (scheduling demand, not usage):")}
       </span>
       {podsDenied ? (
         <DeniedBadge />
       ) : !podsObserved ? (
         // Pods not yet observed (syncing/unavailable) — absence is not zero.
-        <span className="text-xs text-theme-text-tertiary">Not observed</span>
+        <span className="text-xs text-theme-text-tertiary">{t("未观察到", "Not observed")}</span>
       ) : entries.length === 0 ? (
         <span className="text-xs text-theme-text-tertiary">
-          {podsPartial ? "None observed in scope" : "None pending"}
+          {podsPartial ? t("当前范围内未观察到", "None observed in scope") : t("暂无待调度请求", "None pending")}
         </span>
       ) : (
         <>
@@ -1553,7 +1552,7 @@ function PendingDemandChips({
           ))}
           {summary.pendingPodCount !== undefined && (
             <Badge tone="structural" size="sm">
-              <span className="font-mono">{`Pod slots ${summary.pendingPodCount}`}</span>
+              <span className="font-mono">{t(`Pod 槽位 ${summary.pendingPodCount}`, `Pod slots ${summary.pendingPodCount}`)}</span>
             </Badge>
           )}
           {demandCertainty && demandCertainty !== "exact" && (

@@ -1,3 +1,4 @@
+import type { Translate } from '../../hooks/useLocale';
 import type { IssueSeverity } from './types';
 import { BADGE_SEVERITY_COLORS as sev } from '../ui/Badge';
 import { NEUTRAL_CHIP_CLASS } from '../ui/CardSection';
@@ -133,8 +134,11 @@ function humanize(raw: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-export function categoryLabel(category: string): string {
-  return CATEGORY_LABEL[category] ?? humanize(category);
+const preferChinese: Translate = zh => zh;
+
+export function categoryLabel(category: string, t: Translate = preferChinese): string {
+  const english = category === 'crashloop' ? 'Crash loop' : humanize(category);
+  return t(CATEGORY_LABEL[category] ?? english, english);
 }
 
 // Reasons filed under a category whose label names a different operation:
@@ -160,10 +164,11 @@ export function issueReasonTitle(reason: string | undefined): string | undefined
 }
 
 /** An issue row's title: its category, unless the reason names it better. */
-export function issueTitle(issue: { category: string; reason?: string }): string {
-  return issueReasonTitle(issue.reason) || categoryLabel(issue.category);
+export function issueTitle(issue: { category: string; reason?: string }, t: Translate = preferChinese): string {
+  return issueReasonTitle(issue.reason) || categoryLabel(issue.category, t);
 }
 
-export function groupLabel(group: string): string {
-  return GROUP_LABEL[group] ?? humanize(group);
+export function groupLabel(group: string, t: Translate = preferChinese): string {
+  const english = humanize(group);
+  return t(GROUP_LABEL[group] ?? english, english);
 }

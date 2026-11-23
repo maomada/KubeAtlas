@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import type { IssuesResponse } from '../api/client'
-import { cloudRequest, clusterBase, CloudRequestError, type HubCluster } from './cloudApi'
+import { cloudRequest, clusterBase, CloudRequestError, LocalizedCloudError, type HubCluster } from './cloudApi'
 
 export interface ClusterResult<T> { cluster: HubCluster; data?: T; error?: Error }
 
@@ -19,13 +19,18 @@ export async function fetchFleet<T>(clusters: HubCluster[], path: string, signal
       const index = next++
       const cluster = clusters[index]
       if (cluster.state !== 'connected') {
-        results[index] = { cluster, error: new CloudRequestError(cluster.revokedAt ? 'Agent 访问已撤销' : 'Agent 未连接', 503, 'cluster_unavailable') }
+        const error = new CloudRequestError(
+          cluster.revokedAt ? 'Agent 访问已撤销' : 'Agent 未连接',
+          503, 'cluster_unavailable', undefined,
+          cluster.revokedAt ? 'Agent access has been revoked' : 'Agent disconnected',
+        )
+        results[index] = { cluster, error }
         continue
       }
       try { results[index] = { cluster, data: await cloudRequest<T>(path, { base: clusterBase(cluster.id), signal }) } }
       catch (error) {
         signal.throwIfAborted()
-        results[index] = { cluster, error: error instanceof Error ? error : new Error('集群请求失败') }
+        results[index] = { cluster, error: error instanceof Error ? error : new LocalizedCloudError('集群请求失败', 'Cluster request failed') }
       }
     }
   }))

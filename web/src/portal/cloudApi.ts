@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
+import type { Translate } from '@maomada/k8s-ui/hooks/useLocale'
 import { apiUrl, getAuthHeaders, getCredentialsMode } from '../api/config'
 
 export interface HubCluster {
@@ -27,11 +28,23 @@ export interface HubGroup {
   clusterIds: string[]
 }
 
-export class CloudRequestError extends Error {
-  constructor(message: string, readonly status: number, readonly code?: string, readonly requestId?: string) {
-    super(message)
+export class LocalizedCloudError extends Error {
+  constructor(message: string, readonly englishMessage?: string, options?: ErrorOptions) {
+    super(message, options)
+  }
+}
+
+export class CloudRequestError extends LocalizedCloudError {
+  constructor(message: string, readonly status: number, readonly code?: string, readonly requestId?: string, englishMessage?: string) {
+    super(message, englishMessage)
     this.name = 'CloudRequestError'
   }
+}
+
+export function cloudErrorMessage(error: unknown, t: Translate) {
+  if (!(error instanceof Error)) return t('数据不可用', 'Data unavailable')
+  if (error instanceof LocalizedCloudError && error.englishMessage) return t(error.message, error.englishMessage)
+  return error.message
 }
 
 export function clusterBase(clusterId: string): string {
@@ -62,7 +75,7 @@ export async function cloudRequest<T>(path: string, options: {
   } catch (failure) {
     if (signal?.aborted || (failure instanceof Error && failure.name === 'AbortError')) throw failure
     if (failure instanceof TypeError) {
-      throw new Error('网络请求失败，请检查网络连接后重试。', { cause: failure })
+      throw new LocalizedCloudError('网络请求失败，请检查网络连接后重试。', 'Network request failed. Check your connection and try again.', { cause: failure })
     }
     throw failure
   }
@@ -71,11 +84,12 @@ export async function cloudRequest<T>(path: string, options: {
       ? await response.json().catch(() => null) : null
     const detail = error && typeof error === 'object' ? error as Record<string, unknown> : {}
     const message = typeof detail.message === 'string' ? detail.message
-      : typeof detail.error === 'string' ? detail.error : `请求失败（HTTP ${response.status}）`
+      : typeof detail.error === 'string' ? detail.error : undefined
     if (response.status === 401 && base === '/api') window.location.replace('/login?expired=1')
-    throw new CloudRequestError(message, response.status,
+    throw new CloudRequestError(message ?? `请求失败（HTTP ${response.status}）`, response.status,
       typeof detail.error_code === 'string' ? detail.error_code : undefined,
-      typeof detail.requestId === 'string' ? detail.requestId : undefined)
+      typeof detail.requestId === 'string' ? detail.requestId : undefined,
+      message === undefined ? `Request failed (HTTP ${response.status})` : undefined)
   }
   if (response.status === 204) return undefined as T
   return response.json() as Promise<T>

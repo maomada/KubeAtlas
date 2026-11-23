@@ -1,3 +1,4 @@
+import { useLocale } from "@maomada/k8s-ui/hooks/useLocale";
 import { useState, type ReactNode } from "react";
 import { CircleHelp, Layers3 } from "lucide-react";
 import {
@@ -37,6 +38,7 @@ export function CapacityPoolDetail({
   onNavigate: (path: string) => void;
   onOpenResource: (resource: SelectedResource) => void;
 }) {
+  const { t } = useLocale();
   const query = useCapacityPoolDetail(name);
   const poolPath = `/capacity/pools/${encodeURIComponent(name)}`;
 
@@ -44,18 +46,15 @@ export function CapacityPoolDetail({
     return (
       <ScrollableContent>
         <div className="mx-auto max-w-xl">
-          <SectionCard title="Not found" bodyClassName="px-4 py-4">
+          <SectionCard title={t("未找到", "Not found")} bodyClassName="px-4 py-4">
             <p className="text-sm text-theme-text-secondary">
-              NodePool “<span className="font-mono">{name}</span>” no longer
-              exists. It may have been deleted since this link was created.
-              Claims it owned appear as orphans in the Overview until they
-              drain.
+              {t("NodePool「", "NodePool “")}<span className="font-mono">{name}</span>{t("」已不存在。它原有的 NodeClaim 会在概览中显示为孤立项，直到排空。", "” no longer exists. It may have been deleted since this link was created. Claims it owned appear as orphans in the Overview until they drain.")}
             </p>
             <LinkButton
               className="mt-3"
               onClick={() => onNavigate("/capacity")}
             >
-              ← Back to Capacity overview
+              {t("← 返回容量概览", "← Back to Capacity overview")}
             </LinkButton>
           </SectionCard>
         </div>
@@ -67,7 +66,7 @@ export function CapacityPoolDetail({
     query.data,
     query.error,
     query.isLoading,
-    `Loading ${name}…`,
+    t(`正在加载 ${name}…`, `Loading ${name}…`),
   );
   if (blocked) return blocked;
 
@@ -76,7 +75,7 @@ export function CapacityPoolDetail({
     return (
       <ScreenEmptyState
         icon={Layers3}
-        title="NodePool inventory unavailable"
+        title={t("无法读取 NodePool 清单", "NodePool inventory unavailable")}
         detail={coverageMessage(
           response.coverage.nodePools,
           "NodePool inventory",
@@ -89,8 +88,8 @@ export function CapacityPoolDetail({
     return (
       <ScreenEmptyState
         icon={CircleHelp}
-        title="NodePool unavailable"
-        detail="The Capacity API did not return an observation for this NodePool."
+        title={t("NodePool 不可用", "NodePool unavailable")}
+        detail={t("容量 API 未返回该 NodePool 的观测数据。", "The Capacity API did not return an observation for this NodePool.")}
       />
     );
   }
@@ -103,7 +102,7 @@ export function CapacityPoolDetail({
     <ScrollableContent>
       <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <LinkButton onClick={() => onNavigate("/capacity")}>
-          ← Overview
+          {t("← 概览", "← Overview")}
         </LinkButton>
         <Badge tone="structural" size="sm">
           NodePool
@@ -119,16 +118,16 @@ export function CapacityPoolDetail({
         )}
         <WithTooltip tip="metadata.generation vs status.observedGeneration">
           <span className="font-mono text-xs text-theme-text-tertiary">
-            generation {pool.generation}
+            {t("代次", "generation")} {pool.generation}
             {pool.observedGeneration !== undefined
-              ? ` · observed ${pool.observedGeneration}`
+              ? t(` · 已观测 ${pool.observedGeneration}`, ` · observed ${pool.observedGeneration}`)
               : ""}
           </span>
         </WithTooltip>
         {staleGeneration && (
-          <WithTooltip tip="The controller has not yet observed the latest spec. Status below may describe the previous generation.">
+          <WithTooltip tip={t("控制器尚未观测到最新配置，下方状态可能来自上一代。", "The controller has not yet observed the latest spec. Status below may describe the previous generation.")}>
             <Badge severity="warning" size="sm">
-              Stale generation
+              {t("观测代次已过时", "Stale generation")}
             </Badge>
           </WithTooltip>
         )}
@@ -139,15 +138,15 @@ export function CapacityPoolDetail({
             onNavigate(`/capacity/activity?pool=${encodeURIComponent(name)}`)
           }
         >
-          Pool activity →
+          {t("节点池活动 →", "Pool activity →")}
         </LinkButton>
         <LinkButton
-          title="Raw resource, YAML, events"
+          title={t("原始资源、YAML 和事件", "Raw resource, YAML, events")}
           onClick={() =>
             onOpenResource(identityToSelectedResource(pool.resource))
           }
         >
-          Resource drawer →
+          {t("查看资源详情 →", "Resource drawer →")}
         </LinkButton>
         <CapacityFreshness
           meta={response}
@@ -190,7 +189,7 @@ export function CapacityPoolDetail({
                 : "border-transparent text-theme-text-secondary hover:text-theme-text-primary"
             }`}
           >
-            {tab.label}
+            {t(tab.labelZh, tab.label)}
           </button>
         ))}
       </div>
@@ -474,6 +473,7 @@ function PoolSummaryTab({
   onNavigate: (path: string) => void;
   onOpenResource: (resource: SelectedResource) => void;
 }) {
+  const { t } = useLocale();
   const denied = coverageIsDenied(pool.coverage.pods);
   const resources = ledgerResourceKeys(pool.ledger);
   // Overview signals label their links "Diagnose pool", so a broken pool's
@@ -484,7 +484,7 @@ function PoolSummaryTab({
   const diagnosisFirst = pool.issues.length > 0;
   const scaledToZero = pool.nodes?.total === 0;
   const issuesCard = (
-    <SectionCard title="Issues & conditions" bodyClassName="px-4 py-4">
+    <SectionCard title={t("问题与状态条件", "Issues & conditions")} bodyClassName="px-4 py-4">
       <PostureView
         pool={pool}
         onOpenResource={onOpenResource}
@@ -502,21 +502,19 @@ function PoolSummaryTab({
     <div className="space-y-4">
       {diagnosisFirst && issuesCard}
       <SectionCard
-        title="Capacity ledger"
-        subtitle="every column is a different concept — they are never combined into one number"
+        title={t("容量明细", "Capacity ledger")}
+        subtitle={t("各列独立展示不同的容量指标", "every column is a different concept — they are never combined into one number")}
       >
         {scaledToZero && (
           <p className="px-4 pt-3 text-xs text-theme-text-secondary">
-            No nodes exist in this pool right now — the observed columns are
-            true zeros, and Configured limit is the ceiling provisioning would
-            run against.
+            {t("此节点池当前没有节点，所以观测值为零。配置上限是可供给的最大值。", "No nodes exist in this pool right now — the observed columns are true zeros, and Configured limit is the ceiling provisioning would run against.")}
           </p>
         )}
         <div className={TABLE_WRAP}>
           <table className="w-full min-w-[1180px] text-left">
             <thead className={TABLE_HEAD}>
               <tr>
-                <th className={TH}>Resource</th>
+                <th className={TH}>{t("资源", "Resource")}</th>
                 {LEDGER_COLUMNS.map((column) => (
                   <th key={column.key} className={TH}>
                     <WithTooltip tip={column.tooltip}>
@@ -533,7 +531,7 @@ function PoolSummaryTab({
                     className={`${TD} text-theme-text-tertiary`}
                     colSpan={LEDGER_COLUMNS.length + 1}
                   >
-                    No ledger dimensions were reported for this pool.
+                    {t("未报告该节点池的容量指标。", "No ledger dimensions were reported for this pool.")}
                   </td>
                 </tr>
               ) : (
@@ -573,25 +571,23 @@ function PoolSummaryTab({
           Sources: nodepool spec/status · node allocatable · pod list requests ·
           metrics API. Granularity: aggregate per pool; unallocated is aggregate
           subtraction, <b>not bin-packed</b>, and does not prove another pod can
-          schedule. Certainty glyphs: <span className="font-mono">=</span> exact
-          · <span className="font-mono">≥</span> lower bound ·{" "}
-          <span className="font-mono">≤</span> upper bound (a difference
-          computed from a lower-bound input) ·{" "}
+          schedule. Certainty glyphs: <span className="font-mono">=</span> {t("精确 ·", "exact ·")} <span className="font-mono">≥</span> {t("下界 ·", "lower bound ·")}{" "}
+          <span className="font-mono">≤</span> {t("上界（根据含下界的输入计算）·", "upper bound (a difference computed from a lower-bound input) ·")}{" "}
           <span className="font-mono">?</span> unknown. Hover any value for its
           definition, certainty and source.
         </p>
       </SectionCard>
 
       <div className="grid gap-4 lg:grid-cols-2">
-        <SectionCard title="Lifecycle" bodyClassName="space-y-4 px-4 py-4">
+        <SectionCard title={t("生命周期", "Lifecycle")} bodyClassName="space-y-4 px-4 py-4">
           <LifecycleGrid pool={pool} denied={denied} />
         </SectionCard>
 
-        <SectionCard title="Composition" bodyClassName="px-4 py-4">
+        <SectionCard title={t("构成", "Composition")} bodyClassName="px-4 py-4">
           <CompositionView pool={pool} />
         </SectionCard>
 
-        <SectionCard title="Workload attribution" bodyClassName="px-4 py-4">
+        <SectionCard title={t("工作负载归属", "Workload attribution")} bodyClassName="px-4 py-4">
           <WorkloadAttribution
             pool={pool}
             denied={denied}
@@ -600,7 +596,7 @@ function PoolSummaryTab({
           />
         </SectionCard>
 
-        <SectionCard title="Actual usage" bodyClassName="px-4 py-4">
+        <SectionCard title={t("实际用量", "Actual usage")} bodyClassName="px-4 py-4">
           <ActualUsageDetail
             usage={pool.ledger.actualUsage}
             coverage={pool.coverage.nodeMetrics}

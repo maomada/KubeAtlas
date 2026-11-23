@@ -1,3 +1,4 @@
+import { useLocale } from "@maomada/k8s-ui/hooks/useLocale";
 import {
   useCallback,
   useEffect,
@@ -75,11 +76,11 @@ export type { CapacityRoute, CapacityTopTab, PoolSection } from './routes'
 export type CapacityConnectionState =
   "connected" | "disconnected" | "connecting";
 
-export const POOL_SECTIONS: { id: PoolSection; label: string }[] = [
-  { id: "summary", label: "Summary" },
-  { id: "workloads", label: "Workloads" },
-  { id: "members", label: "Nodes & claims" },
-  { id: "configuration", label: "Configuration" },
+export const POOL_SECTIONS: { id: PoolSection; label: string; labelZh: string }[] = [
+  { id: "summary", label: "Summary", labelZh: "概览" },
+  { id: "workloads", label: "Workloads", labelZh: "工作负载" },
+  { id: "members", label: "Nodes & claims", labelZh: "节点和 NodeClaim" },
+  { id: "configuration", label: "Configuration", labelZh: "配置" },
 ];
 
 export function identityToSelectedResource(
@@ -1170,9 +1171,10 @@ export function TokenGroup({
 }
 
 export function RefreshError({ message }: { message: string }) {
+  const { t } = useLocale();
   return (
     <Notice>
-      Refresh failed; showing the last successful capacity snapshot. {message}
+      {t("刷新失败，正在显示最近一次成功获取的容量快照。", "Refresh failed; showing the last successful capacity snapshot.")} {message}
     </Notice>
   );
 }
@@ -1301,25 +1303,26 @@ export function ScopeBadges({
   // it to pods would show "Cluster-wide" for a namespace-scoped view.
   source?: keyof CapacityCoverageBySource;
 }) {
+  const { t } = useLocale();
   const pods = coverage[source];
   const scope = pods?.scope;
   const explicit = scope === "explicit_namespaces";
   const scopeLabel = explicit
-    ? `Explicit namespaces${pods?.namespaces?.length ? ` (${pods.namespaces.length})` : ""}`
+    ? t(`指定命名空间${pods?.namespaces?.length ? ` (${pods.namespaces.length})` : ""}`, `Explicit namespaces${pods?.namespaces?.length ? ` (${pods.namespaces.length})` : ""}`)
     : scope === "all_authorized_namespaces"
-      ? "Authorized namespaces"
-      : "Cluster-wide";
+      ? t("已授权命名空间", "Authorized namespaces")
+      : t("整个集群", "Cluster-wide");
   return (
     <span className="flex items-center gap-2">
-      <WithTooltip tip="Pool, node and claim data is cluster-scoped. Pod and workload data covers authorized namespaces.">
+      <WithTooltip tip={t("节点池、节点和 NodeClaim 数据的范围是集群。Pod 和工作负载数据只覆盖已授权命名空间。", "Pool, node and claim data is cluster-scoped. Pod and workload data covers authorized namespaces.")}>
         <Badge tone="structural" size="sm">
           {scopeLabel}
         </Badge>
       </WithTooltip>
       {coverageIsLowerBound(pods) && (
-        <WithTooltip tip="Pod and workload data is restricted to authorized namespaces. Namespaced counts and demand are lower bounds.">
+        <WithTooltip tip={t("Pod 和工作负载数据只覆盖已授权命名空间，因此命名空间计数和需求是下界。", "Pod and workload data is restricted to authorized namespaces. Namespaced counts and demand are lower bounds.")}>
           <Badge severity="warning" size="sm">
-            ≥ Namespaced data is a lower bound
+            {t("≥ 命名空间数据为下界", "≥ Namespaced data is a lower bound")}
           </Badge>
         </WithTooltip>
       )}

@@ -47,6 +47,7 @@
       "./src/components/charts/*.tsx",
       "./src/components/charts/*.ts"
     ],
+    "./hooks/useLocale": "./src/hooks/useLocale.tsx",
     "./hooks/*": [
       "./src/hooks/*.ts",
       "./src/hooks/*.tsx"

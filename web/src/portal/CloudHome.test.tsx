@@ -1,9 +1,10 @@
 // @vitest-environment jsdom
 import { renderToStaticMarkup } from 'react-dom/server'
+import { LocaleProvider } from '@maomada/k8s-ui/hooks/useLocale'
 import { beforeEach, expect, it, vi } from 'vitest'
 import { CloudHome } from './CloudHome'
 import { CloudChecks, CloudIssues } from './CloudFleetViews'
-import type { HubCluster } from './cloudApi'
+import { LocalizedCloudError, type HubCluster } from './cloudApi'
 
 const responses = new Map<string, unknown>()
 const fetching = new Set<string>()
@@ -78,4 +79,27 @@ it('localizes dashboard copy while preserving native resource names and identifi
   expect(issues).toContain('aria-label="严重程度"')
   expect(issues).toContain('<option value="critical">严重</option>')
   expect(issues).toContain('<option value="warning">警告</option>')
+})
+
+it('renders fleet labels, check notices, and local errors in the saved locale', () => {
+  responses.set('/dashboard', [{ cluster, error: new LocalizedCloudError('Agent 未连接', 'Agent disconnected') }])
+  responses.set('/audit', result({ checks: {}, summary: { passing: 0, warning: 0, danger: 0 }, missingInputs: [] }))
+  const key = 'kubeatlas-portal-language'
+  const previous = window.localStorage.getItem(key)
+  window.localStorage.setItem(key, 'en')
+  try {
+    const html = renderToStaticMarkup(<LocaleProvider>
+      <CloudHome clusters={[cluster]} search={null} />
+      <CloudIssues clusters={[cluster]} />
+      <CloudChecks clusters={[cluster]} />
+    </LocaleProvider>)
+    expect(html).toContain('Incomplete cluster coverage')
+    expect(html).toContain('Demo: Agent disconnected')
+    expect(html).toContain('aria-label="Search issues"')
+    expect(html).toContain('Some checks could not run')
+    expect(html).toContain('Demo: grouped checks unavailable')
+  } finally {
+    if (previous === null) window.localStorage.removeItem(key)
+    else window.localStorage.setItem(key, previous)
+  }
 })

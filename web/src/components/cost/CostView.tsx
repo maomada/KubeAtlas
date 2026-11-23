@@ -25,6 +25,7 @@ import {
   X,
 } from 'lucide-react'
 import { PaneLoader, FreshnessControl, PageHeader } from '@maomada/k8s-ui'
+import { useLocale, type Translate } from '@maomada/k8s-ui/hooks/useLocale'
 import { CostTrendChart } from './CostTrendChart'
 import {
   COST_HOURS_PER_MONTH,
@@ -69,6 +70,7 @@ export function CostView(props: CostViewProps) {
 }
 
 function CostOverview({ onBack, onOpenResource }: CostViewProps) {
+  const { t, locale } = useLocale()
   const { data, isLoading, isFetching, dataUpdatedAt, refetch } = useOpenCostSummary()
   const { data: nodeData } = useOpenCostNodes()
   const { data: clusterInfo } = useClusterInfo()
@@ -90,7 +92,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
   if (isLoading) {
     return (
       <CostOverviewState>
-        <PaneLoader label="Loading cost data…" className="min-h-64" />
+        <PaneLoader label={t('正在加载成本数据…', 'Loading cost data…')} className="min-h-64" />
       </CostOverviewState>
     )
   }
@@ -106,11 +108,10 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
               <Loader2 className="w-8 h-8 animate-spin text-theme-text-tertiary/60" />
               <div>
                 <p className="text-sm font-medium text-theme-text-primary">
-                  Looking for cost data…
+                  {t('正在查找成本数据…', 'Looking for cost data…')}
                 </p>
                 <p className="mt-1 text-xs text-theme-text-tertiary">
-                  KubeAtlas is checking OpenCost metrics in a PromQL-compatible backend and a local
-                  Kubecost 3 Aggregator. First discovery can take a few seconds.
+                  {t('正在检测兼容的 OpenCost 指标和本地 Kubecost 3 Aggregator。首次检测可能需要几秒。', 'Checking for OpenCost metrics and a local Kubecost 3 Aggregator. First discovery can take a few seconds.')}
                 </p>
               </div>
               <button
@@ -121,7 +122,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
                 disabled={isFetching}
                 className="text-xs text-accent-text hover:text-theme-text-primary disabled:cursor-not-allowed disabled:text-theme-text-disabled transition-colors"
               >
-                {isFetching ? 'Checking…' : 'Check again'}
+                {isFetching ? t('正在检查…', 'Checking…') : t('重新检测', 'Check again')}
               </button>
             </div>
           </div>
@@ -131,6 +132,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
     const message = costUnavailableMessage(reason, {
       settingsAvailable,
       namespaceScoped: namespaceScopeCount > 0,
+      t,
     })
     const apiBase = getApiBase()
     const cluster = navCustomization.clusterDisplayName ?? ''
@@ -142,7 +144,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
         <div className="flex min-h-64 items-center justify-center">
           <div className="flex flex-col items-center gap-3 text-theme-text-secondary">
             <Coins className="w-8 h-8 text-theme-text-tertiary/40" />
-            <p className="text-sm">{canOfferInstall ? '尚未接入成本数据。' : message}</p>
+            <p className="text-sm">{canOfferInstall ? t('尚未接入成本数据。', 'No cost data source is connected.') : message}</p>
             {canOfferInstall && <OpenCostInstallAction key={apiBase} cluster={cluster} onInstalled={() => { void refetch() }} />}
             <CostConnectionAction reason={reason}>
             {(reason === 'no_prometheus' || reason === 'no_cost_source' || reason === 'source_unavailable') && (
@@ -154,7 +156,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
                 disabled={isFetching}
                 className="rounded-md border border-theme-border px-3 py-1.5 text-xs text-theme-text-secondary transition-colors hover:bg-theme-hover hover:text-theme-text-primary disabled:cursor-not-allowed disabled:text-theme-text-disabled"
               >
-                {isFetching ? '正在检查…' : '重新检测'}
+                {isFetching ? t('正在检查…', 'Checking…') : t('重新检测', 'Check again')}
               </button>
             )}
             </CostConnectionAction>
@@ -162,7 +164,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
               onClick={onBack}
               className="text-xs text-accent-text hover:text-theme-text-primary transition-colors"
             >
-              返回概览
+              {t('返回概览', 'Back to dashboard')}
             </button>
           </div>
         </div>
@@ -172,7 +174,8 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
 
   const hourlyCost = data.totalHourlyCost ?? 0
   const currency = data.currency ?? DEFAULT_COST_CURRENCY
-  const rateLabels = costRateLabels(data.source === 'kubecost' ? data.window : undefined)
+  const rateLabels = costRateLabels(data.source === 'kubecost' ? data.window : undefined, t)
+  const freshness = costFreshnessLabel(data.source, data.window, data.dataThrough, t, locale)
   const namespaces = data.namespaces ?? []
   const totalCpu = namespaces.reduce((sum, ns) => sum + ns.cpuCost, 0)
   const totalMem = namespaces.reduce((sum, ns) => sum + ns.memoryCost, 0)
@@ -198,7 +201,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
               <Coins className="w-5 h-5 text-indigo-500" />
-              <h1 className="text-lg font-semibold text-theme-text-primary">Cost Insights</h1>
+              <h1 className="text-lg font-semibold text-theme-text-primary">{t('成本分析', 'Cost Insights')}</h1>
             </div>
             <span className="text-theme-text-quaternary">·</span>
             <button
@@ -206,7 +209,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
               className="flex items-center gap-1 text-xs text-theme-text-tertiary hover:text-indigo-400 cursor-help transition-colors duration-150"
             >
               <HelpCircle className="w-3.5 h-3.5" />
-              How this works
+              {t('计算方法', 'How this works')}
             </button>
             {clusterConsoleLink && (
               <Tooltip content={clusterConsoleLink.label}>
@@ -217,7 +220,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
                   aria-label={clusterConsoleLink.label}
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
-                  Cloud console
+                  {t('云控制台', 'Cloud console')}
                 </button>
               </Tooltip>
             )}
@@ -233,13 +236,13 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
             />
             <div className="flex flex-col items-end">
               <span className="text-[10px] font-medium uppercase tracking-wide text-theme-text-tertiary">
-                Allocated workload cost
+                {t('工作负载分配成本', 'Allocated workload cost')}
               </span>
               <div className="flex items-baseline gap-1">
                 <span className="text-2xl font-bold text-theme-text-primary tabular-nums">
                   {formatProjectedMonthlyCost(hourlyCost, currency)}
                 </span>
-                <span className="text-xs text-theme-text-tertiary">/mo</span>
+                <span className="text-xs text-theme-text-tertiary">{t('/月', '/mo')}</span>
               </div>
               <div className="mt-0.5 flex items-baseline gap-2 text-theme-text-secondary">
                 <span className="text-sm font-medium tabular-nums">
@@ -251,9 +254,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
                 </span>
               </div>
               <span className="text-[10px] text-theme-text-quaternary">
-                {data.source === 'kubecost'
-                  ? costFreshnessLabel(data.source, data.window, data.dataThrough)
-                  : `projected from ${costFreshnessLabel(data.source, data.window)}`}
+                {data.source === 'kubecost' ? freshness : t(`按${freshness}估算`, `projected from ${freshness}`)}
               </span>
             </div>
           </div>
@@ -263,9 +264,8 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
 
         {namespaceScopeCount > 0 && (
           <div className="rounded-lg border border-theme-border bg-theme-surface/50 px-4 py-3 text-xs text-theme-text-secondary">
-            Allocated workload cost, trend, and namespace breakdown are scoped to {namespaceScopeCount}{' '}
-            {namespaceScopeCount === 1 ? 'namespace' : 'namespaces'}.
-            {nodes.length > 0 && ' Node costs below remain cluster-wide.'}
+            {t(`分配成本、趋势和成本明细仅涵盖所选的 ${namespaceScopeCount} 个命名空间。`, `Allocated workload cost, trend, and breakdown cover ${namespaceScopeCount} ${namespaceScopeCount === 1 ? 'namespace' : 'namespaces'}.`)}
+            {nodes.length > 0 && t(' 下方节点成本仍涵盖整个集群。', ' Node costs below still cover the whole cluster.')}
           </div>
         )}
 
@@ -273,7 +273,7 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
         <div className="rounded-lg border border-theme-border bg-theme-surface/50 p-4">
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs font-medium text-theme-text-secondary">
-              {namespaceScopeCount > 0 ? 'Scoped allocated workload cost' : 'Allocated workload cost'}
+              {namespaceScopeCount > 0 ? t('所选命名空间的分配成本', 'Scoped allocated workload cost') : t('工作负载分配成本', 'Allocated workload cost')}
             </span>
             <div className="flex items-center gap-4 text-xs text-theme-text-tertiary">
               <span className="flex items-center gap-1.5">
@@ -282,12 +282,12 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
               </span>
               <span className="flex items-center gap-1.5">
                 <span className="w-2.5 h-2.5 rounded-sm bg-amber-500" />
-                Memory {formatProjectedMonthlyRate(totalMem, currency)}
+                {t('内存', 'Memory')} {formatProjectedMonthlyRate(totalMem, currency)}
               </span>
               {hasStorage && (
                 <span className="flex items-center gap-1.5">
                   <span className="w-2.5 h-2.5 rounded-sm bg-teal-500" />
-                  Storage {formatProjectedMonthlyRate(totalStorage, currency)}
+                  {t('存储', 'Storage')} {formatProjectedMonthlyRate(totalStorage, currency)}
                 </span>
               )}
             </div>
@@ -319,14 +319,14 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
             <div className="flex items-center justify-between">
               <div>
                 <span className="text-sm font-semibold text-theme-text-primary">
-                  Namespace Breakdown
+                  {t('命名空间成本明细', 'Namespace Breakdown')}
                 </span>
                 <span className="text-[10px] text-theme-text-quaternary ml-2">
-                  projected monthly from {rateLabels.rate}
+                  {t(`按${rateLabels.rate}估算月成本`, `projected monthly from ${rateLabels.rate}`)}
                 </span>
               </div>
               <span className="text-xs text-theme-text-tertiary">
-                {namespaces.length} namespaces
+                {t(`${namespaces.length} 个命名空间`, `${namespaces.length} ${namespaces.length === 1 ? 'namespace' : 'namespaces'}`)}
               </span>
             </div>
           </div>
@@ -334,20 +334,20 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
 
           {/* Table header */}
           <div className="grid grid-cols-[minmax(180px,1fr)_110px_90px_minmax(160px,1fr)_150px] gap-2 px-4 py-2 border-b border-theme-border text-[11px] font-medium text-theme-text-tertiary uppercase tracking-wider">
-            <span>Namespace</span>
+            <span>{t('命名空间', 'Namespace')}</span>
             <Tooltip
-              content={`Projected from ${rateLabels.rate} — not historical spend`}
+              content={t('根据小时费率估算月成本。', `Estimated monthly cost based on the ${rateLabels.rate}.`)}
               wrapperClassName="!block text-right"
             >
-              <span className="cursor-help">Projected/mo*</span>
+              <span className="cursor-help">{t('预计每月*', 'Projected/mo*')}</span>
             </Tooltip>
-            <span className="text-right">Hourly</span>
-            <span>CPU / Memory</span>
+            <span className="text-right">{t('每小时', 'Hourly')}</span>
+            <span>{t('CPU / 内存', 'CPU / Memory')}</span>
             <Tooltip
-              content={`Projected monthly CPU and memory allocation from the ${rateLabels.rate}`}
+              content={t('根据小时费率估算 CPU 和内存的月分配成本。', `Projected monthly CPU and memory allocation from the ${rateLabels.rate}`)}
               wrapperClassName="!block text-right"
             >
-              <span className="cursor-help">CPU / Memory/mo*</span>
+              <span className="cursor-help">{t('CPU / 内存每月*', 'CPU / Memory/mo*')}</span>
             </Tooltip>
           </div>
 
@@ -378,13 +378,13 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
         {/* Footer */}
         <div className="flex items-center justify-between text-xs text-theme-text-tertiary pb-4">
           <span>
-            {currency} &middot; {costFreshnessLabel(data.source, data.window, data.dataThrough)} &middot;
-            *monthly projections assume {COST_HOURS_PER_MONTH} hrs/mo
+            {currency} &middot; {freshness} &middot;
+            {t(`*按每月 ${COST_HOURS_PER_MONTH} 小时估算`, `*monthly projections assume ${COST_HOURS_PER_MONTH} hrs/mo`)}
             {currency !== DEFAULT_COST_CURRENCY && (
-              <> &middot; no conversion</>
+              <> &middot; {t('按原币种显示', 'shown in the source currency')}</>
             )}
           </span>
-          <span className="text-indigo-500 font-medium">{costSourceLabel(data.source)}</span>
+          <span className="text-indigo-500 font-medium">{costSourceLabel(data.source, t)}</span>
         </div>
       </div>
 
@@ -396,34 +396,36 @@ function CostOverview({ onBack, onOpenResource }: CostViewProps) {
 
 export function costUnavailableMessage(
   reason?: CostUnavailableReason,
-  options: { settingsAvailable?: boolean; namespaceScoped?: boolean } = {},
+  options: { settingsAvailable?: boolean; namespaceScoped?: boolean; t?: Translate } = {},
 ): string {
+  const t = options.t ?? ((_zh, en) => en)
   if (reason === 'no_metrics' && options.namespaceScoped) {
-    return 'No allocation data is visible in the current namespace scope'
+    return t('当前命名空间范围内没有可见的分配数据。', 'No allocation data is visible in the current namespace scope')
   }
-  const integrationMessage = costIntegrationUnavailableMessage(reason, options.settingsAvailable ?? true)
+  const integrationMessage = costIntegrationUnavailableMessage(reason, options.settingsAvailable ?? true, options.t)
   if (integrationMessage) return integrationMessage
 
   switch (reason) {
     case 'no_prometheus':
-      return 'No compatible cost source found — connect OpenCost metrics through a PromQL-compatible backend or configure Kubecost'
+      return t('未找到兼容的成本来源。请通过兼容 PromQL 的后端接入 OpenCost 指标，或配置 Kubecost。', 'No compatible cost source found — connect OpenCost metrics through a PromQL-compatible backend or configure Kubecost')
     case 'no_metrics':
-      return 'Cost data is not ready — the selected source returned no allocation data'
+      return t('所选成本来源尚未返回分配数据。', 'Cost data is not ready — the selected source returned no allocation data')
     case 'access_denied':
-      return 'You do not have access to view cluster cost data'
+      return t('你没有查看集群成本数据的权限。', 'You do not have access to view cluster cost data')
     default:
-      return 'No compatible cost data was detected'
+      return t('未检测到兼容的成本数据。', 'No compatible cost data was detected')
   }
 }
 
 function CostOverviewState({ children }: { children: React.ReactNode }) {
+  const { t } = useLocale()
   return (
     <div className="flex-1 overflow-y-auto">
       <div className="mx-auto flex w-full max-w-[1920px] flex-col gap-4 px-6 py-6">
         <PageHeader
           icon={Coins}
-          title="Cost Insights"
-          description="Understand current allocation and find CPU and memory requests worth tuning."
+          title={t('成本分析', 'Cost Insights')}
+          description={t('查看当前成本分配和 CPU、内存资源优化建议。', 'Understand current allocation and find CPU and memory requests worth tuning.')}
         />
         <CostViewTabs />
         {children}
