@@ -252,7 +252,7 @@ jobs:
             --mount type=volume,source=kubeatlas-hub-smoke,target=/var/lib/kubeatlas-portal \
             --publish 127.0.0.1::1333 \
             --env KUBEATLAS_PORTAL_USERNAME=release-smoke-owner \
-            --env KUBEATLAS_PORTAL_PASSWORD=release-smoke-password \
+            --env KUBEATLAS_PORTAL_PASSWORD=Release-smoke-password \
             --env KUBEATLAS_PORTAL_HUB_STATE_FILE=/var/lib/kubeatlas-portal/hub/state.json \
             --env KUBEATLAS_PORTAL_HUB_ORIGIN=https://hub.example.test \
             "$image" --listen=0.0.0.0:1333
@@ -264,7 +264,7 @@ jobs:
           proxy=(-H "Host: hub.example.test" -H "Origin: https://hub.example.test")
           headers="$(curl --fail --silent --show-error "${proxy[@]}" --dump-header - --output /dev/null \
             --header "Content-Type: application/json" \
-            --data '{"username":"release-smoke-owner","password":"release-smoke-password"}' \
+            --data '{"username":"release-smoke-owner","password":"Release-smoke-password"}' \
             "http://$endpoint/api/auth/login")"
           session="$(awk -F '[; ]' 'tolower($1) == "set-cookie:" {print $2}' <<< "$headers")"
           [[ "$session" == __Host-kubeatlas_portal_session=* ]]
@@ -272,14 +272,21 @@ jobs:
             "http://$endpoint/api/hub/connections")"
           jq -e --arg version "$RELEASE_VERSION" '.publicURL == "https://hub.example.test" and
             .catalogAvailable and .catalog.bootstrapAvailable and .catalog.version == $version' <<< "$connections" >/dev/null
-          chart_sha="$(jq -er '.catalog.openCostChartSHA256 | select(test("^[0-9a-f]{64}$"))' <<< "$connections")"
-          image_digest="$(jq -er '.catalog.openCostImageDigest | select(test("^sha256:[0-9a-f]{64}$"))' <<< "$connections")"
-          curl --fail --silent --show-error "${proxy[@]}" \
-            "http://$endpoint/downloads/agent/$RELEASE_VERSION/opencost.tgz" > "$RUNNER_TEMP/opencost-chart.tgz"
-          printf '%s  %s\n' "$chart_sha" "$RUNNER_TEMP/opencost-chart.tgz" | sha256sum --check --status
-          curl --fail --silent --show-error "${proxy[@]}" \
-            "http://$endpoint/v2/kubeatlas/opencost/manifests/$image_digest" > "$RUNNER_TEMP/opencost-manifest.json"
-          printf '%s  %s\n' "${image_digest#sha256:}" "$RUNNER_TEMP/opencost-manifest.json" | sha256sum --check --status
+          # Decide whether OpenCost is mandatory from the selected source's
+          # package builder. Older eligible revisions never passed this flag.
+          packager=source/scripts/release_hub_packages.sh
+          test -r "$packager"
+          if grep -Eq '^[[:space:]]*--opencost-chart([[:space:]=]|$)' "$packager" ||
+            jq -e '.catalog | has("openCostChartSHA256") or has("openCostImageDigest")' <<< "$connections" >/dev/null; then
+            chart_sha="$(jq -er '.catalog.openCostChartSHA256 | strings | select(test("^[0-9a-f]{64}$"))' <<< "$connections")"
+            image_digest="$(jq -er '.catalog.openCostImageDigest | strings | select(test("^sha256:[0-9a-f]{64}$"))' <<< "$connections")"
+            curl --fail --silent --show-error "${proxy[@]}" \
+              "http://$endpoint/downloads/agent/$RELEASE_VERSION/opencost.tgz" > "$RUNNER_TEMP/opencost-chart.tgz"
+            printf '%s  %s\n' "$chart_sha" "$RUNNER_TEMP/opencost-chart.tgz" | sha256sum --check --status
+            curl --fail --silent --show-error "${proxy[@]}" \
+              "http://$endpoint/v2/kubeatlas/opencost/manifests/$image_digest" > "$RUNNER_TEMP/opencost-manifest.json"
+            printf '%s  %s\n' "${image_digest#sha256:}" "$RUNNER_TEMP/opencost-manifest.json" | sha256sum --check --status
+          fi
           curl --fail --silent --show-error "${proxy[@]}" --header "Cookie: $session" \
             --header "Content-Type: application/json" --data '{"profile":"public"}' \
             "http://$endpoint/api/hub/enrollments/command" \

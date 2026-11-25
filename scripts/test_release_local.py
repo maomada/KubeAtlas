@@ -520,20 +520,27 @@ class BuildPreflightTests(unittest.TestCase):
     def test_missing_package_tools_stop_before_bundle_creation(self):
         versions = {"go": "go version go1.26.10", "goreleaser": "2.13.3", "nfpm": "2.44.1",
                     "node": "v24.19.0", "helm": "v4.2.3"}
-        for missing in ("rpm", "dpkg-deb", "cpio", "rpm2cpio", "npx", "nfpm", "jq"):
+        for missing in ("rpm", "dpkg-deb", "cpio", "rpm2cpio", "npx", "nfpm", "jq", "curl", "PyYAML", "python3"):
             with self.subTest(missing=missing), tempfile.TemporaryDirectory() as directory:
                 bundle = Path(directory) / "not-created"
 
                 def run(argv, **kwargs):
                     if argv[0] == missing:
                         raise FileNotFoundError(missing)
+                    if argv[0] == "python3" and missing == "PyYAML":
+                        return subprocess.CompletedProcess(argv, 1, "", "ModuleNotFoundError: yaml")
                     return subprocess.CompletedProcess(argv, 0, versions.get(argv[0], "test version"), "")
 
+                error = (
+                    "Python 3 with PyYAML is required"
+                    if missing in ("PyYAML", "python3")
+                    else f"required tool is unavailable: {missing}"
+                )
                 with (
                     patch.object(release_local, "assert_authority", return_value=SOURCE_SHA),
                     patch.object(release_local.subprocess, "run", side_effect=run) as commands,
                     patch.object(release_local.shutil, "which", side_effect=lambda tool: None if tool == missing else f"/usr/bin/{tool}"),
-                    self.assertRaisesRegex(release_local.LocalReleaseError, f"required tool is unavailable: {missing}"),
+                    self.assertRaisesRegex(release_local.LocalReleaseError, error),
                 ):
                     release_local.build_bundle(SOURCE_SHA, bundle)
                 self.assertFalse(bundle.exists())
