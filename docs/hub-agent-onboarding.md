@@ -2,6 +2,8 @@
 
 KubeAtlas Hub supplies the version-matched Agent installer, Helm chart, bootstrap script, and images. After [deploying Hub](deploy-with-ai.md), use **Clusters → Connect cluster** to generate the Agent installation command. Hub validates the local catalog at startup and serves the pinned files and image digests from it.
 
+New official releases also include the OpenCost offline chart and exporter in the same catalog. Nodes pull the exporter from the same Hub registry as the Agent image. See [offline OpenCost installation](opencost-offline.md) for Prometheus requirements and how to prepare a previously registered Agent.
+
 ## Prepare a private bundle
 
 Start with an already approved OCI image layout for the exact source revision and image digest. The preparation command packages the repository chart with the existing Helm executable and copies the image layout, installer, and same-origin bootstrap into a new, private output directory. It does not build, pull, tag, or push an image.
@@ -29,7 +31,7 @@ Use a clean, committed checkout and build the Portal with the same build version
 
 Complete [Hub DEB and RPM packages](packaging.md) include the matching catalog. Official Hub images with a built-in catalog use `/opt/kubeatlas/agent-catalog`. To supply a private catalog or configure one for an older custom Hub, use `--hub-artifacts-dir` or `KUBEATLAS_PORTAL_HUB_ARTIFACTS_DIR`. The Hub chart supports a private catalog on an existing read-only PVC through `hubArtifacts.enabled=true` and `hubArtifacts.existingClaim`.
 
-To offer OpenCost on new clusters, prepare the catalog with `--opencost-chart`, `--opencost-layout`, and `--opencost-digest` together. Supply an operator-reviewed offline archive with JSON-compatible `opencost/values.yaml` and an embedded exporter chart, plus a local OCI image layout and its pinned image digest. Match the OpenCost layout to all supported Agent platforms. The chart and exporter are served by the Hub from the same origin as the Agent. Nodes already able to pull the Agent from that registry can pull the OpenCost exporter using the same runtime configuration.
+To include OpenCost in a private catalog, pass `--opencost-chart`, `--opencost-layout`, and `--opencost-digest` together. Supply an operator-reviewed offline archive with JSON-compatible `opencost/values.yaml` and an embedded exporter chart, plus a local OCI image layout and its pinned image digest. Match the OpenCost layout to all supported Agent platforms.
 
 Follow the [OpenCost offline preparation guide](opencost-offline.md) to build and verify the operator-managed inputs.
 

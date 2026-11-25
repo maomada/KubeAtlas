@@ -1,4 +1,10 @@
+import hashlib
+import json
 import re
+import shutil
+import subprocess
+import tempfile
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -127,8 +133,12 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(target.index("release_hub_packages.sh"), target.index('" create'))
         self.assertIn('tar --extract --to-stdout --file "$dist/kubeatlas_v${version}_linux_${arch}.tar.gz"', catalog)
         self.assertIn("docker buildx build --target release", catalog)
+        self.assertIn('scripts/prepare-opencost-base.py --release-dir "$stage/opencost"', catalog)
+        self.assertIn('--opencost-chart "$stage/opencost/opencost.tgz"', catalog)
+        self.assertIn('--opencost-layout "$stage/opencost/opencost-oci" --opencost-digest "$opencost_digest"', catalog)
         self.assertIn("--import-hub-artifacts", catalog)
         self.assertLess(catalog.index("--import-hub-artifacts"), catalog.index("nfpm package"))
+        self.assertLess(catalog.index(".opencost.imageDigest"), catalog.index("nfpm package"))
         self.assertIn('KUBEATLAS_HUB_CATALOG="$stage/imported"', catalog)
         self.assertIn("needs: [validate, build, linux-smoke]", dry_run)
         self.assertIn("validate --profile hub-linux --directory release/packages", dry_run)
@@ -238,8 +248,66 @@ class ReleaseWorkflowTests(unittest.TestCase):
         self.assertLess(build_job.index("--check-hub-artifacts"), build_job.index("Record archive checksum"))
         self.assertLess(build_job.index(hub_validator), build_job.index("Upload Hub release archive"))
         self.assertIn(".catalog.bootstrapAvailable and .catalog.version == $version", build_job)
+        password = re.search(r"KUBEATLAS_PORTAL_PASSWORD=(\S+)", build_job).group(1)
+        self.assertGreaterEqual(len(password), 16)
+        self.assertRegex(password, r"[A-Z]")
+        self.assertRegex(password, r"[^a-zA-Z0-9\s]")
+        self.assertIn(f'"username":"release-smoke-owner","password":"{password}"', build_job)
         self.assertIn("name: release-image-kubeatlas-portal", build_job)
         self.assertNotIn("name: release-image-kubeatlas\n", build_job)
+
+    @unittest.skipUnless(shutil.which("bash") and shutil.which("jq"), "Bash and jq are used by the GHCR smoke check")
+    def test_ghcr_smoke_requires_opencost_only_for_capable_or_advertising_sources(self):
+        bash = shutil.which("bash")
+        workflow = (ROOT / ".github/workflows/release.yml").read_text()
+        smoke = workflow.split("      - name: Verify the staged Hub image and a fresh persistent volume\n", 1)[1]
+        start = smoke.index("          packager=source/scripts/release_hub_packages.sh\n")
+        end = smoke.index('\n          curl --fail --silent --show-error "${proxy[@]}" --header "Cookie: $session"', start)
+        check = textwrap.dedent(smoke[start:end])
+        harness = r'''
+set -Eeuo pipefail
+connections=$1
+endpoint=127.0.0.1:1333
+RELEASE_VERSION=0.1.5
+RUNNER_TEMP=.
+proxy=()
+curl() {
+  case "${!#}" in
+    */downloads/agent/0.1.5/opencost.tgz) printf 'chart bytes' ;;
+    */v2/kubeatlas/opencost/manifests/sha256:*) printf 'manifest bytes' ;;
+    *) return 22 ;;
+  esac
+}
+'''
+        catalog = {
+            "openCostChartSHA256": hashlib.sha256(b"chart bytes").hexdigest(),
+            "openCostImageDigest": "sha256:" + hashlib.sha256(b"manifest bytes").hexdigest(),
+        }
+        legacy = "# legacy\n"
+        capable = '  --opencost-chart "$stage/opencost/opencost.tgz"\n'
+        inline_flag = 'go run ./cmd/prepare-hub-artifacts --opencost-chart="$stage/opencost/opencost.tgz"\n'
+        cases = (
+            ("older source without OpenCost", legacy, {}, True),
+            ("capable source without OpenCost", capable, {}, False),
+            ("capable source with inline flag without OpenCost", inline_flag, {}, False),
+            ("capable source with verified artifacts", capable, catalog, True),
+            ("older source with verified artifacts", legacy, catalog, True),
+            ("older source with incomplete metadata", legacy, {"openCostChartSHA256": catalog["openCostChartSHA256"]}, False),
+            ("older source with invalid metadata", legacy, dict(catalog, openCostImageDigest=None), False),
+            ("capable source with mismatched checksum", capable, dict(catalog, openCostChartSHA256="a" * 64), False),
+            ("capable source with mismatched image digest", capable, dict(catalog, openCostImageDigest="sha256:" + "a" * 64), False),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            packager = Path(directory, "source", "scripts", "release_hub_packages.sh")
+            packager.parent.mkdir(parents=True)
+            for scenario, packager_script, advertised, expected in cases:
+                with self.subTest(scenario=scenario):
+                    packager.write_text(packager_script)
+                    result = subprocess.run(
+                        [bash, "-c", harness + check, "opencost-smoke", json.dumps({"catalog": advertised})],
+                        cwd=directory, capture_output=True, encoding="utf-8", timeout=10,
+                    )
+                    self.assertEqual(result.returncode == 0, expected, result.stdout + result.stderr)
 
     def test_binary_release_is_manual_and_builds_without_registry_access(self):
         workflow = (ROOT / ".github/workflows/release-binaries.yml").read_text()

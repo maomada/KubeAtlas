@@ -39,7 +39,9 @@ For v0.1.3, follow its [versioned deployment guide](https://github.com/maomada/K
 2. In the intended organization, select **Clusters → Connect cluster** (`集群 → 连接集群`). Check `kubectl config current-context` on the registration host and run the generated command. Confirm the displayed cluster identity, then approve its matching code in Hub.
 3. Confirm the cluster is **Connected** in Hub and open nodes or namespaces to verify access. Report the Hub version, Agent version, and connected cluster ID. [Registration prerequisites and recovery](hub-agent-onboarding.md#bootstrap-a-new-cluster)
 
+New official Hub releases include the OpenCost offline chart and exporter. When connecting a cluster, the installer checks for a compatible Prometheus and prepares the offline package. Leave the final **Install OpenCost** action on the Cost page for the operator to confirm. [Prometheus requirements and existing Agents](opencost-offline.md)
+
 <a name="manual-hub-setup"></a>
 <a name="4-prepare-agent-artifacts-manually"></a>
 
-For deployments using custom service configuration or a private mirror, see [Hub configuration](portal.md#deployment-and-security) and [private Agent catalogs](hub-agent-onboarding.md#prepare-a-private-bundle). To add one-click OpenCost installation for supported clusters, see [OpenCost offline preparation](opencost-offline.md).
+For deployments using custom service configuration or a private mirror, see [Hub configuration](portal.md#deployment-and-security) and [private Agent catalogs](hub-agent-onboarding.md#prepare-a-private-bundle).

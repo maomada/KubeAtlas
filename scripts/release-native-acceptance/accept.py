@@ -66,7 +66,7 @@ def initialize(args, hub):
         text=True, timeout=30,
     ).strip()
     require(re.fullmatch(r"[A-Za-z0-9_-]{43}", code), "Invalid one-time setup code")
-    credentials = {"username": "acceptance-owner", "password": secrets.token_urlsafe(32)}
+    credentials = {"username": "acceptance-owner", "password": "Qa-" + secrets.token_urlsafe(32)}
     hub.request("/api/setup", {**credentials, "code": code}, status=204)
     require(hub.request("/api/setup") == {"required": False}, "Hub setup did not complete")
     subprocess.run(

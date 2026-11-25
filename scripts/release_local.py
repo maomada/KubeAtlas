@@ -1892,6 +1892,7 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
             "rpm": "",
             "cpio": "",
             "docker": "",
+            "curl": "",
             "jq": "",
             "skopeo": "",
             "helm": "v4.2.3",
@@ -1910,6 +1911,7 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
         "goreleaser": ["--version"],
         "nfpm": ["--version"],
         "docker": ["--version"],
+        "curl": ["--version"],
         "jq": ["--version"],
         "skopeo": ["--version"],
         "helm": ["version", "--short"],
@@ -1947,6 +1949,19 @@ def _validate_tools_for_gate(gate: str) -> dict[str, str]:
             if executable is None:
                 raise LocalReleaseError(f"required tool is unavailable: {tool}")
             versions[tool] = f"executable available: {executable}"
+        try:
+            result = subprocess.run(
+                ["python3", "-c", "import yaml; print(yaml.__version__)"],
+                capture_output=True,
+                text=True,
+                check=False,
+                env=_command_environment(),
+            )
+        except OSError as error:
+            raise LocalReleaseError("Python 3 with PyYAML is required for offline OpenCost packaging") from error
+        if result.returncode != 0:
+            raise LocalReleaseError("Python 3 with PyYAML is required for offline OpenCost packaging")
+        versions["pyyaml"] = result.stdout.strip()
         require_skopeo_copy_capabilities()
         try:
             result = subprocess.run(
