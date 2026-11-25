@@ -276,7 +276,7 @@ jobs:
           # package builder. Older eligible revisions never passed this flag.
           packager=source/scripts/release_hub_packages.sh
           test -r "$packager"
-          if grep -Eq '^[[:space:]]*--opencost-chart([[:space:]=]|$)' "$packager" ||
+          if grep -Eq '(^|[[:space:]])--opencost-chart([[:space:]=]|$)' "$packager" ||
             jq -e '.catalog | has("openCostChartSHA256") or has("openCostImageDigest")' <<< "$connections" >/dev/null; then
             chart_sha="$(jq -er '.catalog.openCostChartSHA256 | strings | select(test("^[0-9a-f]{64}$"))' <<< "$connections")"
             image_digest="$(jq -er '.catalog.openCostImageDigest | strings | select(test("^sha256:[0-9a-f]{64}$"))' <<< "$connections")"

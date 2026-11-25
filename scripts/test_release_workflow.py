@@ -283,22 +283,26 @@ curl() {
             "openCostChartSHA256": hashlib.sha256(b"chart bytes").hexdigest(),
             "openCostImageDigest": "sha256:" + hashlib.sha256(b"manifest bytes").hexdigest(),
         }
+        legacy = "# legacy\n"
+        capable = '  --opencost-chart "$stage/opencost/opencost.tgz"\n'
+        inline_flag = 'go run ./cmd/prepare-hub-artifacts --opencost-chart="$stage/opencost/opencost.tgz"\n'
         cases = (
-            ("older source without OpenCost", False, {}, True),
-            ("capable source without OpenCost", True, {}, False),
-            ("capable source with verified artifacts", True, catalog, True),
-            ("older source with verified artifacts", False, catalog, True),
-            ("older source with incomplete metadata", False, {"openCostChartSHA256": catalog["openCostChartSHA256"]}, False),
-            ("older source with invalid metadata", False, dict(catalog, openCostImageDigest=None), False),
-            ("capable source with mismatched checksum", True, dict(catalog, openCostChartSHA256="a" * 64), False),
-            ("capable source with mismatched image digest", True, dict(catalog, openCostImageDigest="sha256:" + "a" * 64), False),
+            ("older source without OpenCost", legacy, {}, True),
+            ("capable source without OpenCost", capable, {}, False),
+            ("capable source with inline flag without OpenCost", inline_flag, {}, False),
+            ("capable source with verified artifacts", capable, catalog, True),
+            ("older source with verified artifacts", legacy, catalog, True),
+            ("older source with incomplete metadata", legacy, {"openCostChartSHA256": catalog["openCostChartSHA256"]}, False),
+            ("older source with invalid metadata", legacy, dict(catalog, openCostImageDigest=None), False),
+            ("capable source with mismatched checksum", capable, dict(catalog, openCostChartSHA256="a" * 64), False),
+            ("capable source with mismatched image digest", capable, dict(catalog, openCostImageDigest="sha256:" + "a" * 64), False),
         )
         with tempfile.TemporaryDirectory() as directory:
             packager = Path(directory, "source", "scripts", "release_hub_packages.sh")
             packager.parent.mkdir(parents=True)
-            for scenario, capable, advertised, expected in cases:
+            for scenario, packager_script, advertised, expected in cases:
                 with self.subTest(scenario=scenario):
-                    packager.write_text('  --opencost-chart "$stage/opencost/opencost.tgz"\n' if capable else "# legacy\n")
+                    packager.write_text(packager_script)
                     result = subprocess.run(
                         [bash, "-c", harness + check, "opencost-smoke", json.dumps({"catalog": advertised})],
                         cwd=directory, capture_output=True, encoding="utf-8", timeout=10,
