@@ -18,6 +18,10 @@ existing annotation-based scrape configuration. The bootstrap host needs
 exporter from the same origin as the Agent, so they need the same registry
 access and certificate trust. [Hub Agent onboarding](hub-agent-onboarding.md)
 
+The bundled chart gives the exporter a writable temporary directory for its
+pricing configuration. On self-managed clusters without provider pricing,
+OpenCost uses its built-in estimates.
+
 ## Stage the chart and exporter
 
 Follow these steps when you maintain a private Agent catalog.

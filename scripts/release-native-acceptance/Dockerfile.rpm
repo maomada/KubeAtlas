@@ -1,5 +1,10 @@
 FROM openeuler/openeuler:22.03-lts-sp4@sha256:f4f7b49430a7eec2f8dfd9d25d6d677cb81aa7ccbf2cd4cac70c4f9acc39f7ee
 ENV container=docker
-RUN dnf install -y --setopt=install_weak_deps=False systemd shadow-utils util-linux curl \
+# Fetch update metadata and packages from the same official repository.
+RUN dnf install -y --setopt=install_weak_deps=False \
+    --setopt=update.metalink= --setopt=update.mirrorlist= \
+    --setopt='update.baseurl=https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/$basearch/' \
+    --setopt=update.gpgcheck=1 --setopt=update.sslverify=1 \
+    systemd shadow-utils util-linux curl \
     && dnf clean all
 STOPSIGNAL SIGRTMIN+3

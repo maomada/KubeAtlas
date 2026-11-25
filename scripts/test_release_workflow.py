@@ -162,6 +162,11 @@ class ReleaseWorkflowTests(unittest.TestCase):
         fixture = ROOT / "scripts/release-native-acceptance"
         runner = (fixture / "run.sh").read_text()
         accept = (fixture / "accept.py").read_text()
+        rpm_image = (fixture / "Dockerfile.rpm").read_text()
+        self.assertRegex(rpm_image, r"\AFROM openeuler/openeuler:22\.03-lts-sp4@sha256:[0-9a-f]{64}\n")
+        self.assertIn("--setopt=update.metalink= --setopt=update.mirrorlist=", rpm_image)
+        self.assertIn("'update.baseurl=https://repo.openeuler.org/openEuler-22.03-LTS-SP4/update/$basearch/'", rpm_image)
+        self.assertIn("--setopt=update.gpgcheck=1 --setopt=update.sslverify=1", rpm_image)
         self.assertIn('= Linux:aarch64 ]]', runner)
         self.assertIn('kind create cluster --name "$name"', runner)
         self.assertIn('docker exec "$container" unshare --net apt install -y', runner)
