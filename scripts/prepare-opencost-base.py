@@ -73,6 +73,11 @@ def prepare_chart(files):
 
     # Registration replaces the placeholders after discovering the target cluster's Prometheus.
     image["fullImageName"] = f"kubeatlas.invalid/kubeatlas/opencost@{EXPORTER_DIGEST}"
+    # OpenCost's non-root exporter writes pricing state under /var/configs.
+    cost["exporter"]["extraVolumeMounts"].append(
+        {"name": "pricing-configs", "mountPath": "/var/configs"}
+    )
+    values["extraVolumes"].append({"name": "pricing-configs", "emptyDir": {}})
     cost["prometheus"]["internal"]["enabled"] = False
     cost["prometheus"]["external"].update(enabled=True, url="http://prometheus.invalid:9090")
     cost["metrics"]["serviceMonitor"].update(enabled=False, namespace="", additionalLabels={})
