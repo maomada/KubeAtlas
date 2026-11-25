@@ -22,6 +22,7 @@ packages:
   - 'deploy/helm/kubeatlas/**'
   - 'scripts/bootstrap-hub-agent.sh'
   - 'scripts/install-hub-agent.sh'
+  - 'scripts/prepare-opencost-base.py'
   - 'scripts/release_hub_packages.sh'
   - 'scripts/validate_oci_archive.py'
   - 'LICENSE'

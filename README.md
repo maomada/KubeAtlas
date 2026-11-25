@@ -29,7 +29,7 @@ flowchart TB
 
 - **Investigate issues** with workload health, logs, events, and a timeline of resource changes. [Cluster checks](docs/cluster-checks.md) · <a name="kubernetes-upgrade-impact"></a>[Upgrade impact checks](docs/upgrade-impact.md)
 - **Explore applications** and their resource dependencies, inspect live traffic when a source is available, and review Helm releases and Argo CD or Flux sync status. [Integrations](docs/integrations.md)
-- **Review capacity and cost** with scheduling requests, node capacity, and cost allocation. If the cluster has a compatible Prometheus and the Hub has an offline bundle, you can install OpenCost from the Cost page. [Capacity](docs/capacity.md) · [Offline OpenCost](docs/opencost-offline.md)
+- **Review capacity and cost** with scheduling requests, node capacity, and cost allocation. New releases bundle the offline files to install OpenCost from the Cost page on clusters with a compatible Prometheus. [Capacity](docs/capacity.md) · [Offline OpenCost](docs/opencost-offline.md)
 - **Connect an AI client** over MCP using a credential scoped to selected clusters and your permissions. [Hub MCP](docs/hub-live-mcp.md)
 
 ## Deploy Hub

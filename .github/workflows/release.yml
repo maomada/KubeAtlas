@@ -268,10 +268,18 @@ jobs:
             "http://$endpoint/api/auth/login")"
           session="$(awk -F '[; ]' 'tolower($1) == "set-cookie:" {print $2}' <<< "$headers")"
           [[ "$session" == __Host-kubeatlas_portal_session=* ]]
-          curl --fail --silent --show-error "${proxy[@]}" --header "Cookie: $session" \
-            "http://$endpoint/api/hub/connections" \
-            | jq -e --arg version "$RELEASE_VERSION" '.publicURL == "https://hub.example.test" and
-                .catalogAvailable and .catalog.bootstrapAvailable and .catalog.version == $version' >/dev/null
+          connections="$(curl --fail --silent --show-error "${proxy[@]}" --header "Cookie: $session" \
+            "http://$endpoint/api/hub/connections")"
+          jq -e --arg version "$RELEASE_VERSION" '.publicURL == "https://hub.example.test" and
+            .catalogAvailable and .catalog.bootstrapAvailable and .catalog.version == $version' <<< "$connections" >/dev/null
+          chart_sha="$(jq -er '.catalog.openCostChartSHA256 | select(test("^[0-9a-f]{64}$"))' <<< "$connections")"
+          image_digest="$(jq -er '.catalog.openCostImageDigest | select(test("^sha256:[0-9a-f]{64}$"))' <<< "$connections")"
+          curl --fail --silent --show-error "${proxy[@]}" \
+            "http://$endpoint/downloads/agent/$RELEASE_VERSION/opencost.tgz" > "$RUNNER_TEMP/opencost-chart.tgz"
+          printf '%s  %s\n' "$chart_sha" "$RUNNER_TEMP/opencost-chart.tgz" | sha256sum --check --status
+          curl --fail --silent --show-error "${proxy[@]}" \
+            "http://$endpoint/v2/kubeatlas/opencost/manifests/$image_digest" > "$RUNNER_TEMP/opencost-manifest.json"
+          printf '%s  %s\n' "${image_digest#sha256:}" "$RUNNER_TEMP/opencost-manifest.json" | sha256sum --check --status
           curl --fail --silent --show-error "${proxy[@]}" --header "Cookie: $session" \
             --header "Content-Type: application/json" --data '{"profile":"public"}' \
             "http://$endpoint/api/hub/enrollments/command" \

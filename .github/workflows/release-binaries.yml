@@ -129,7 +129,7 @@ jobs:
           cache: npm
           cache-dependency-path: source/package-lock.json
       - name: Install package inspection tools
-        run: sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio
+        run: sudo apt-get update && sudo apt-get install --yes rpm dpkg-dev cpio python3-yaml skopeo
       - name: Reclaim unused runner SDK space
         run: |
           df -h /

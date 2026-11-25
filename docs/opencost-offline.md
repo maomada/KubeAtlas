@@ -1,11 +1,15 @@
 # Prepare OpenCost for offline installation
 
-To enable one-click OpenCost installation, the Hub operator adds the OpenCost
-chart and exporter image to a version-matched, read-only Agent catalog. If you
-are starting from the DEB or RPM release, follow the
-[Agent artifact setup](deploy-with-ai.md#4-prepare-agent-artifacts-manually).
-Enrollment prepares a cluster-specific package. OpenCost deploys once an
-authorized user confirms **Install OpenCost** on the cluster's Cost page.
+New official Hub releases include OpenCost Helm chart `2.5.34` and exporter
+`1.121.4` for Linux `amd64` and `arm64` in the bundled Agent catalog. The DEB and
+RPM packages and the Hub container image used by Helm and Docker Compose all
+use this catalog. On Hub `v0.1.4`, supply a private catalog using the steps
+below or upgrade to a release that includes OpenCost.
+
+When you connect a cluster, enrollment prepares a cluster-specific package.
+OpenCost deploys once an authorized user confirms **Install OpenCost** on the
+cluster's Cost page. For Agents registered before the package was available,
+[prepare the existing release in place](#check-preparation-and-installation).
 
 The target cluster needs a working Prometheus Service that can scrape the
 exporter through a compatible Prometheus Operator `ServiceMonitor` or an
@@ -15,6 +19,8 @@ exporter from the same origin as the Agent, so they need the same registry
 access and certificate trust. [Hub Agent onboarding](hub-agent-onboarding.md)
 
 ## Stage the chart and exporter
+
+Follow these steps when you maintain a private Agent catalog.
 
 Run these commands in the source checkout for the selected KubeAtlas release
 on a staging host with internet access, Python 3 with PyYAML, Skopeo, and jq.
@@ -101,9 +107,9 @@ chart and serves only verified image content. The exporter layout must cover
 every Linux architecture present in the Agent layout.
 [Hub catalog configuration](hub-agent-onboarding.md#prepare-a-private-bundle)
 
-The signed KubeAtlas release manifest covers the product build. The
-operator-supplied chart, exporter, and assembled catalog keep their own
-provenance and checksum records.
+The signed release covers the official catalog and its bundled OpenCost assets.
+Keep separate provenance and checksum records for an operator-supplied chart,
+exporter, and private catalog.
 
 ## Check preparation and installation
 
@@ -114,7 +120,10 @@ It selects an existing Prometheus query endpoint and configures the matching
 scrape method. For troubleshooting, use the helper from the same KubeAtlas
 checkout with the exact inputs the installer uses. Set `CONTEXT` to the target
 context and `HUB_AUTHORITY` to the chosen Hub host with an explicit port if it
-has one, such as `hub.example.com` or `hub.example.com:8443`.
+has one, such as `hub.example.com` or `hub.example.com:8443`. With an official
+catalog, use its `opencost.tgz` as the base chart. Read the chart checksum
+and exporter digest from `opencost.chartSHA256` and `opencost.imageDigest`
+in the catalog's `manifest.json`.
 
 ```bash
 python3 deploy/helm/kubeatlas/files/prepare-opencost.py \
@@ -133,7 +142,8 @@ release using the verified Agent Helm chart for the running version. Set
 `hub.openCostBundle.sha256` to the prepared archive's checksum,
 `hub.openCostBundle.data` to its base64 contents, and
 `traffic.prometheusUrl` to the helper's `prometheusURL`. Keep the Agent's
-existing Hub values and Secret when upgrading the release.
+existing Hub values and Secret when upgrading the release to preserve its
+registration.
 
 On a test cluster, confirm that the Agent registers and the cost page offers
 installation while the `opencost` release is still absent. After you confirm

@@ -1,6 +1,6 @@
 # KubeAtlas Hub Linux packages
 
-Complete `kubeatlas-portal` packages for Linux `amd64` and `arm64` include a systemd service and the same-version Agent catalog. The catalog contains the Agent installer, Helm chart, and images that Hub serves when you connect a cluster.
+Complete `kubeatlas-portal` packages for Linux `amd64` and `arm64` include a systemd service and the same-version Agent catalog. The catalog contains the Agent installer, Helm chart, and images that Hub serves when you connect a cluster. New releases also bundle the [OpenCost offline chart and exporter](opencost-offline.md).
 
 These steps apply to the complete packages built from this source. For the published v0.1.3 packages, use the [v0.1.3 installation guide](https://github.com/maomada/KubeAtlas/blob/v0.1.3/docs/deploy-with-ai.md#install-from-the-release-bundle).
 

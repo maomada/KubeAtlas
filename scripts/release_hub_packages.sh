@@ -19,9 +19,10 @@ case "$(uname -s):$(uname -m)" in
   Linux:aarch64) host_arch=arm64 ;;
   *) echo "A native Linux amd64 or arm64 package builder is required" >&2; exit 1 ;;
 esac
-for tool in docker helm jq nfpm; do
+for tool in curl docker helm jq nfpm python3 skopeo; do
   command -v "$tool" >/dev/null || { echo "Required tool missing: $tool" >&2; exit 1; }
 done
+python3 -c 'import yaml' || { echo "PyYAML is required to prepare the OpenCost chart" >&2; exit 1; }
 for script in scripts/{bootstrap,install}-hub-agent.sh deploy/linux/kubeatlas-portal/*.sh; do
   if LC_ALL=C grep -q $'\r' "$script"; then
     printf 'Package script must use LF line endings: %s\n' "$script" >&2
@@ -33,6 +34,12 @@ stage="$(mktemp -d)"
 trap 'chmod -R u+w "$stage"; rm -rf -- "$stage"' EXIT
 mkdir -p "$stage/context" "$stage/layout" "$stage/portal" "$dist/hub"
 cp Dockerfile "$stage/context/"
+opencost_digest="$(python3 scripts/prepare-opencost-base.py --release-dir "$stage/opencost")"
+{
+  cat NOTICE
+  printf '\nOpenCost exporter redistribution notice\n\n'
+  cat "$stage/opencost/exporter-NOTICE"
+} > "$stage/release-NOTICE"
 
 python3 - "$stage" "$version" <<'PY'
 import json
@@ -76,13 +83,17 @@ digest="$(jq -er '.manifests | select(length == 1) | .[0].digest' "$stage/layout
 archive="$dist/hub/kubeatlas-hub-agent-bundle_${version}.tar.gz"
 go run ./cmd/prepare-hub-artifacts --layout "$stage/layout" --image-digest "$digest" \
   --version "$version" --chart-version "$version" --revision "$revision" \
-  --output "$stage/catalog" --archive "$archive"
+  --opencost-chart "$stage/opencost/opencost.tgz" \
+  --opencost-layout "$stage/opencost/opencost-oci" --opencost-digest "$opencost_digest" \
+  --notice "$stage/release-NOTICE" --output "$stage/catalog" --archive "$archive"
 
 archive_hash="$(sha256sum "$archive" | cut -d ' ' -f 1)"
 portal="$stage/portal/kubeatlas-portal-$host_arch"
 "$portal" --import-hub-artifacts "$archive" --hub-artifacts-sha256 "$archive_hash" \
   --hub-artifacts-dir "$stage/imported"
 "$portal" --check-hub-artifacts --hub-artifacts-dir "$stage/imported"
+jq -e --arg digest "$opencost_digest" '.opencost.imageDigest == $digest' \
+  "$stage/imported/manifest.json" >/dev/null
 
 for arch in amd64 arm64; do
   for format in deb rpm; do

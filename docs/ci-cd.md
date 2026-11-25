@@ -312,8 +312,10 @@ GitHub's latest release. It never overwrites, deletes,
 retries, or creates a mutable `latest` tag. Partial state remains for
 reconciliation and requires a fresh version.
 
-The non-publishing package dry run uses Docker Buildx, Helm, `jq`, and
-nFPM to assemble the offline catalog and embed it in the Linux packages.
+The non-publishing package dry run uses Docker Buildx, Helm, `jq`, nFPM,
+Skopeo, curl, and Python 3 with PyYAML. It fetches the pinned OpenCost
+Chart and exporter at build time and embeds the verified offline catalog in
+the Linux packages.
 
 ```sh
 KUBEATLAS_RELEASE_VERSION=1.2.3 make release-binaries-dry

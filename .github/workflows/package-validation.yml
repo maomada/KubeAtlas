@@ -51,7 +51,7 @@ jobs:
         with:
           node-version: '24'
           cache: npm
-      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y rpm rpm2cpio dpkg-dev cpio
+      - run: sudo apt-get update && sudo apt-get install --no-install-recommends -y rpm rpm2cpio dpkg-dev cpio python3-yaml skopeo
       - name: Reclaim unused runner SDK space
         run: |
           df -h /

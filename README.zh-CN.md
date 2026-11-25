@@ -29,7 +29,7 @@ flowchart TB
 
 - **排查问题**。查看工作负载健康状态、日志、事件和资源变更时间线。[集群检查](docs/cluster-checks.md) · <a name="kubernetes-upgrade-impact"></a>[升级影响检查](docs/upgrade-impact.md)
 - **查看应用和拓扑**。梳理资源依赖，查看 Helm 发布及 Argo CD 或 Flux 同步状态。接入流量数据源后可查看实时流量。[集成说明](docs/integrations.md)
-- **查看容量和成本**。查看资源请求、节点容量和成本分配。集群具备兼容的 Prometheus 且 Hub 已配置离线包时，可在成本页安装 OpenCost。[容量](docs/capacity.md) · [OpenCost 离线安装](docs/opencost-offline.md)
+- **查看容量和成本**。查看资源请求、节点容量和成本分配。新版自带 OpenCost 离线包，集群具备兼容的 Prometheus 时可在成本页安装。[容量](docs/capacity.md) · [OpenCost 离线安装](docs/opencost-offline.md)
 - **接入 AI 客户端**。通过 MCP 访问所选集群，操作受当前用户权限约束。[Hub MCP](docs/hub-live-mcp.md)
 
 ## 部署 Hub
